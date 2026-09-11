@@ -160,13 +160,23 @@ struct HearingPageState {
     std::string consequence;
     /// Paper view: the sheet as phrases. Facts, not paragraphs.
     std::vector<std::string> paper;
-    /// Judged view: the check block.
+    /// Judged view: the check block. The badge is drawn only over a weighing
+    /// -- a hearing with no plea (mercy given once) weighs nothing, prints
+    /// nothing, and wears no badge saying it did.
     std::string weighsBadge = "THE PRIEST WEIGHS";
-    /// "24 THE FLAME + 6 TONGUE + 10 THE DOOR - 2 HEAT = 38"
+    /// "24 THE FLAME + 6 TONGUE + 10 THE DOOR - 2 HEAT MAKES 38" -- the record
+    /// as one string, for the summary and the suite.
     std::string arithmetic;
-    /// "+ 6 CONFESSED = 44" / "+ 4 THE PRIEST IS A MAN = 42" -- empty on a
-    /// hearing with no plea (mercy given once: nothing is weighed).
+    /// THE SAME ARITHMETIC AS TERMS, one token a term with its sign glued on
+    /// ("24 THE FLAME", "+ 6 TONGUE", "- 2 HEAT", "MAKES 38"), which is what
+    /// the pane DRAWS: a token is never split across rows, so a sign cannot
+    /// wrap away from the term it belongs to at any width (packTerms).
+    std::vector<std::string> arithmeticTerms;
+    /// "+ 6 CONFESSED MAKES 44" / "+ 4 THE PRIEST IS A MAN MAKES 42" -- empty
+    /// on a hearing with no plea (mercy given once: nothing is weighed).
     std::string pleaTerm;
+    /// Its tokens: the plea's own term, then the sum.
+    std::vector<std::string> pleaTerms;
     /// "THE LINES: 55 SPARED  38 FINED  14 HELD" / "THE LINE: 24 MERCY"
     std::string lines;
     /// "SPARED" .. "THE ROPE". The verdict badge, in `verdictAccent`.
@@ -196,6 +206,15 @@ struct HearingPageState {
 
 /// Draws the whole page over a rendered frame.
 void drawHearingPage(Framebuffer& target, const HearingPageState& state);
+
+/// THE ARITHMETIC'S OWN WRAP: the terms packed into rows of at most `cells`
+/// cells, one space between terms, and A TERM IS NEVER SPLIT -- a row breaks
+/// only between terms, so "- 20 THE WARD" reaches the next row whole and its
+/// sign stays on it. A term wider than the row stands alone on one (the
+/// pane's own clip is the last resort, never a break inside it). Pure, and
+/// exposed so a case can pin the rows at every width without a framebuffer.
+[[nodiscard]] std::vector<std::string> packTerms(const std::vector<std::string>& terms,
+                                                 int cells);
 
 /// THE COMPOSITION, RESOLVED, WITHOUT DRAWING ANYTHING -- casebookPageMetrics'
 /// own contract: the geometry is a pure function of the state and the window,

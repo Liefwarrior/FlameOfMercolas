@@ -1411,15 +1411,20 @@ TEST_CASE("every branch's integers: the fine and its shortfall days, the nights 
     CHECK(owed.finePaid == 0);  // a purse below zero pays nothing and owes nothing more
 
     // HELD: the fine AND the cell -- the shipped one-to-three nights off the
-    // arrest's own draw, exactly where they were. A conviction: the roofs
-    // warm, the Tarwalk at the end of it, the body mended by the days.
+    // arrest's own draw, exactly where they were, ROUNDED TO WHOLE NIGHTS
+    // ONCE (cellNights) so the nights the page promises and the hours the
+    // clock skips are one number: thirty-four hours off the draw is one
+    // night, and one night is twenty-four hours on the clock. A conviction:
+    // the roofs warm, the Tarwalk at the end of it, the body mended by the
+    // days.
     const SentenceTerms held = sentenceTerms(judgedOf(Judgment::Held, Judgment::Held, false), 100);
     REQUIRE(held.served);
     CHECK(held.fineAsked == 23);
-    CHECK(held.cellHours == heldHours(10));
-    CHECK(held.cellHours == kHeldHoursMin + 10);
+    CHECK(heldHours(10) == kHeldHoursMin + 10);
+    CHECK(cellNights(10) == 1);
+    CHECK(held.cellHours == kHoursPerNight);
     CHECK(held.bondDays == 0);
-    CHECK(held.hours == 34);
+    CHECK(held.hours == 24);
     CHECK(held.days == 1);
     CHECK(held.mends);
     CHECK_FALSE(held.releaseHere);
@@ -1427,31 +1432,42 @@ TEST_CASE("every branch's integers: the fine and its shortfall days, the nights 
     CHECK(held.roofsDelta == kConvictionRoofsGain);
     CHECK(held.templeDelta == 0);
     // THE NIGHTS BY CHARGE, over every residue the draw can give: one to
-    // three days, and two to six doubled. The nights are the draw's low
-    // residue; the band above them (the plea) never touches them.
+    // three WHOLE nights (the nearest night to the draw's hours, one at
+    // least), and two to six doubled. The nights are the draw's low
+    // residue; the band above them (the plea) never touches them; and the
+    // hours the clock will skip are exactly the nights times twenty-four, so
+    // "TWO NIGHTS" is never forty-nine hours.
+    int nightsSeen[4] = {0, 0, 0, 0};
     for (std::uint64_t residue = 0; residue < 49; ++residue) {
         const std::uint64_t draw = residue | (static_cast<std::uint64_t>(7) << kPriestBandShift);
         const SentenceTerms once =
             sentenceTerms(judgedOf(Judgment::Held, Judgment::Held, false, 68, 0, draw), 100);
         const SentenceTerms twice =
             sentenceTerms(judgedOf(Judgment::Held, Judgment::Held, true, 68, 0, draw), 100);
-        CHECK(once.cellHours == heldHours(draw));
-        CHECK(once.cellHours >= kHeldHoursMin);
-        CHECK(once.cellHours <= kHeldHoursMax);
-        CHECK(once.days >= 1);
-        CHECK(once.days <= 3);
+        const std::int32_t nights = cellNights(draw);
+        CHECK(nights == std::max(1, (heldHours(draw) + kHoursPerNight / 2) / kHoursPerNight));
+        CHECK(nights >= 1);
+        CHECK(nights <= 3);
+        ++nightsSeen[nights];
+        CHECK(once.cellHours == nights * kHoursPerNight);
+        CHECK(once.cellHours % kHoursPerNight == 0);
+        CHECK(once.days == nights);
+        CHECK(once.hours == once.days * kHoursPerNight);
         CHECK(twice.cellHours == 2 * once.cellHours);
-        CHECK(twice.days >= 2);
-        CHECK(twice.days <= 6);
+        CHECK(twice.days == 2 * nights);
         CHECK(twice.fineAsked == 2 * once.fineAsked);
         CHECK(twice.templeDelta == -kLieTempleCost);
     }
+    // All three lengths are reachable, and the residue decides which.
+    CHECK(nightsSeen[1] > 0);
+    CHECK(nightsSeen[2] > 0);
+    CHECK(nightsSeen[3] > 0);
     // A cell plus a short purse: the shortfall's days on top of the nights.
     const SentenceTerms heldShort =
         sentenceTerms(judgedOf(Judgment::Held, Judgment::Held, false), 3);
     CHECK(heldShort.finePaid == 3);
     CHECK(heldShort.shortfallDays == 5);  // 20 / 4
-    CHECK(heldShort.hours == 34 + 120);
+    CHECK(heldShort.hours == 24 + 120);
     CHECK(heldShort.days == 6);
 
     // BOUND: the fine forgiven, five days in the Mission's yard, ten for a
@@ -1484,7 +1500,7 @@ TEST_CASE("every branch's integers: the fine and its shortfall days, the nights 
     REQUIRE(hand.served);
     CHECK(hand.hand);
     CHECK(hand.fineAsked == 23);
-    CHECK(hand.cellHours == heldHours(10));
+    CHECK(hand.cellHours == cellNights(10) * kHoursPerNight);
     CHECK(hand.bondDays == 0);
     CHECK(hand.days == 1);
     CHECK(hand.roofsDelta == kConvictionRoofsGain);
@@ -1501,7 +1517,7 @@ TEST_CASE("every branch's integers: the fine and its shortfall days, the nights 
     const SentenceTerms handSpared =
         sentenceTerms(judgedOf(Judgment::Held, Judgment::Fined, false), 100);
     CHECK_FALSE(handSpared.hand);
-    CHECK(handSpared.cellHours == heldHours(10));
+    CHECK(handSpared.cellHours == cellNights(10) * kHoursPerNight);
 
     // COMMUTED: the hand ("the rope does not un-take the hand"), twelve days
     // bondsworn, the fine forgiven, the Flame's mercy remembered. Never
@@ -1587,7 +1603,8 @@ TEST_CASE("HELD is served in the room: the fine, the nights on the world clock, 
           fineFor(hearing.sheet.heatAtArrest, hearing.sheet.unitsSeized));
     CHECK(served.terms.finePaid == expected.finePaid);
     CHECK(served.terms.shortfallDays == expected.shortfallDays);
-    CHECK(served.terms.cellHours == heldHours(hearing.sheet.draw));
+    CHECK(served.terms.cellHours == cellNights(hearing.sheet.draw) * kHoursPerNight);
+    CHECK(served.terms.cellHours % kHoursPerNight == 0);
     CHECK(served.terms.hours == expected.hours);
     CHECK(served.terms.days == expected.days);
     CHECK(served.coinBefore == purse);
@@ -2149,4 +2166,34 @@ TEST_CASE("a scripted arrest, plea and sentence twin-runs byte-identical, and th
     CHECK(std::get<0>(other) != std::get<0>(first));
     CHECK(three.tavern().lastServed().terms.doubled ==
           (three.tavern().dialogue().crimes().lastJudgment() != Judgment::Spared));
+}
+
+TEST_CASE("the short-way arrest writes combat/build's bits and no more: the Condemned rung condemns and takes the hand, spends no mercy and serves no blood") {
+    // Combat/build's one-call arrest set condemned_ and maimed_ on the rope's
+    // rung and touched nothing else; the court's COMMUTED writes more
+    // (commuted_ spent, murderer_ served), and the short way must not borrow
+    // it -- the comment on arrest() claims bit-for-bit, and this is the bit.
+    CrimeLedger slain;
+    slain.markMurderer(2);
+    REQUIRE(slain.warrant());
+    REQUIRE(slain.murderer());
+    const CrimeLedger::ArrestOutcome rope = slain.arrest(false, 100, 0x1ull);
+    CHECK(rope.sentence == Sentence::Condemned);
+    CHECK(slain.condemned());
+    CHECK(slain.maimed());
+    CHECK_FALSE(slain.commuted());   // mercy is the bench's to spend
+    CHECK(slain.murderer());         // only the bench serves the blood
+    CHECK_FALSE(slain.executed());
+    CHECK(slain.arrests() == 1);
+    CHECK(slain.heat() == kHeatAfterSentence);
+    CHECK_FALSE(slain.warrant());
+    CHECK(slain.lastSentence() == Sentence::Condemned);
+    // The bench's COMMUTED on the same record is the fuller write.
+    CrimeLedger bench;
+    bench.markMurderer(2);
+    bench.sentence(Judgment::Commuted, kCommutedDays);
+    CHECK(bench.condemned());
+    CHECK(bench.maimed());
+    CHECK(bench.commuted());
+    CHECK_FALSE(bench.murderer());
 }

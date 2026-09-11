@@ -345,6 +345,17 @@ inline constexpr std::int32_t kBoundDays = 5;
 /// to lose every open contract, on purpose. Never doubled -- the rope tier
 /// has nothing under it to double.
 inline constexpr std::int32_t kCommutedDays = 12;
+/// A NIGHT IS A WHOLE NIGHT. The arrest draw's low residue reads twenty-four
+/// to seventy-two HOURS (heldHours, watch.hpp: "a range wants a roll"), and
+/// the page promises the cell in NIGHTS -- so the hours are rounded to whole
+/// nights HERE, once, before the clock or the page reads them, and the two
+/// cannot disagree by a day: "TWO NIGHTS" from 23:00 turns you loose at
+/// 23:00 two days on, never at midnight of the third. Nearest night, one at
+/// least: 24..35 h is one, 36..59 two, 60..72 three -- the spec's own one to
+/// three nights, doubled to two to six on a lie. The residue itself is not
+/// touched (same-roll discipline: no sentence-length baseline moves).
+inline constexpr std::int32_t kHoursPerNight = 24;
+[[nodiscard]] std::int32_t cellNights(std::uint64_t draw) noexcept;
 /// A fine the purse cannot pay is worked off: one day bondsworn per this
 /// many Royals of shortfall, rounded UP the way the tenure ruling's bond
 /// works arrears off (nobody owes a fraction of a day), and no more than
@@ -382,9 +393,10 @@ struct SentenceTerms {
     std::int32_t finePaid = 0;
     std::int32_t shortfall = 0;
     std::int32_t shortfallDays = 0;
-    /// THE CELL: heldHours off the arrest's own draw (24..72, the shipped
-    /// one-to-three nights), doubled if the plea failed. HELD, and THE HAND
-    /// at HELD's band.
+    /// THE CELL: whole nights off the arrest's own draw (cellNights: the
+    /// shipped one-to-three nights, rounded once so the promise and the
+    /// clock agree), in hours, doubled if the plea failed. HELD, and THE
+    /// HAND at HELD's band.
     std::int32_t cellHours = 0;
     /// BONDSWORN: BOUND's five (doubled), COMMUTED's twelve, and the
     /// shortfall's days -- all of them labour in the Mission's yard, all of

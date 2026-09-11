@@ -190,6 +190,11 @@ Arraignment weighArraignment(const ChargeSheet& sheet, Plea plea) {
 // the sentence, in integers
 // ---------------------------------------------------------------------------
 
+std::int32_t cellNights(std::uint64_t draw) noexcept {
+    const std::int32_t hours = heldHours(draw);
+    return std::max(1, (hours + kHoursPerNight / 2) / kHoursPerNight);
+}
+
 SentenceTerms sentenceTerms(const HearingState& hearing, std::int32_t purse) noexcept {
     SentenceTerms out;
     if (!hearing.judged() || hearing.judgment == Judgment::None) {
@@ -267,9 +272,11 @@ SentenceTerms sentenceTerms(const HearingState& hearing, std::int32_t purse) noe
                      (out.shortfall + kShortfallRoyalsPerDay - 1) / kShortfallRoyalsPerDay);
     }
     // THE CELL. The shipped one-to-three nights off the arrest's own draw,
-    // exactly where they always were, and twice that for a lie.
+    // exactly where they always were -- rounded to WHOLE nights once, here,
+    // so what the page promises and what the clock skips are one number --
+    // and twice that for a lie.
     if (cell) {
-        out.cellHours = heldHours(sheet.draw) * twice;
+        out.cellHours = cellNights(sheet.draw) * kHoursPerNight * twice;
     }
     // THE YARD. BOUND's days, COMMUTED's days, and the fine's shortfall --
     // all bondsworn to the Mission.

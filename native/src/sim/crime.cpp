@@ -102,18 +102,19 @@ void putByte(std::vector<std::uint8_t>& out, std::uint8_t value) {
 }
 
 /// The ladder's own answer, served the short way: what combat/build's
-/// one-call arrest wrote on the record, said as the court's type.
+/// one-call arrest wrote on the record, said as the court's type. The
+/// Condemned rung has NO judgment of its own here: combat's inert status
+/// (condemned_ and the hand, nothing else) is neither COMMUTED (which also
+/// spends mercy and serves the blood) nor THE ROPE, so arrest() writes those
+/// two bits itself beside HELD's record rather than borrowing a judgment
+/// that would write more.
 [[nodiscard]] Judgment ladderJudgment(Sentence tier) noexcept {
     switch (tier) {
         case Sentence::Held:
+        case Sentence::Condemned:
             return Judgment::Held;
         case Sentence::Maimed:
             return Judgment::TheHand;
-        case Sentence::Condemned:
-            // The inert Condemned status combat shipped IS a commutation in
-            // the court's vocabulary: the rope passed, the hand taken, the
-            // man alive and recognised for the rest of the run.
-            return Judgment::Commuted;
         case Sentence::Fined:
         case Sentence::None:
             break;
@@ -451,11 +452,16 @@ std::int32_t CrimeLedger::servedTally(Crime crime) const noexcept {
 CrimeLedger::ArrestOutcome CrimeLedger::arrest(bool skyrunner, std::int32_t purse,
                                                std::uint64_t draw) {
     // THE SHORT WAY: charge, seize, and serve the ladder's own answer at once.
-    // Combat/build's one call, kept bit-for-bit in what it writes on the record
-    // (a prior, the heat after a sentence, the paper torn up, the hand, the
-    // condemned status) so the ladder's tests and the murder hook read as they
-    // did. The room's arrest with paper does not come through here any more:
-    // it opens a hearing and the sentence waits on the plea.
+    // Combat/build's one call, kept bit-for-bit in what it writes on the
+    // record's shipped fields (a prior, the heat after a sentence, the paper
+    // torn up, the hand, the condemned status) so the ladder's tests and the
+    // murder hook read as they did: the Condemned rung sets condemned_ and
+    // maimed_ and NOTHING ELSE -- not commuted_ (mercy is the bench's to
+    // spend) and not murderer_ (only the bench serves the blood). What the
+    // court added to the record (lastJudgment_, servedTallies_) is written as
+    // HELD's; combat had neither field. The room's arrest with paper does not
+    // come through here any more: it opens a hearing and the sentence waits
+    // on the plea.
     ArrestOutcome out;
     const ChargeSheet sheet = charge(skyrunner, 0, 0, 0);
     out.sentence = sheet.tier;
@@ -474,6 +480,11 @@ CrimeLedger::ArrestOutcome CrimeLedger::arrest(bool skyrunner, std::int32_t purs
         case Sentence::Condemned:
             out.heldHours = heldHours(draw);
             sentence(ladderJudgment(out.sentence), out.heldHours / 24);
+            if (out.sentence == Sentence::Condemned) {
+                condemned_ = true;
+                // The rope does not un-take the hand.
+                maimed_ = true;
+            }
             break;
         case Sentence::None:
             break;

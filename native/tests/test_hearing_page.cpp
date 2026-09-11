@@ -7,10 +7,13 @@
 // PRESENTATION -- JUSTICE-SPEC sections 5 and 6 -- proved the way
 // test_casebook_page.cpp proves the book:
 //
-//   TAKEN      an arrest with paper puts the body at the Mission's door, says
-//              the hour, and opens the page; the body cannot walk out of
-//              custody; the world verbs and the pages are refused; PAUSE still
-//              opens over it with WAIT refused.
+//   TAKEN      an arrest with paper has its moment ON SCREEN before the page:
+//              the officer's line on the row with his hand on you, then the
+//              plate -- TAKEN TO THE MISSION with the hour, pinned on the
+//              rendered frame -- then the body at the Mission's door and the
+//              page; the body cannot walk out of custody; the world verbs and
+//              the pages are refused; PAUSE still opens over it with WAIT
+//              refused.
 //   THE PAGE   what it SAYS (the paper laid, the charge off the sheet, what the
 //              paper asks, the rows, the consequence of the hovered row, the
 //              sheet as phrases) and that it draws BYTE-IDENTICAL twice; both
@@ -326,11 +329,99 @@ TEST_CASE("TAKEN: an arrest with paper puts the body at the Mission's door, says
     REQUIRE_MESSAGE(taken, "Cull never took the player at reach");
     REQUIRE(gull.lastArrest().sentence == Sentence::Held);
 
-    // THE PAGE IS UP, off the release step() read: the body at the Mission's
+    // THE ARREST HAS ITS MOMENT ON SCREEN, before the bench does anything.
+    // BEAT ONE, off the release step() read: the officer's own line -- the
+    // room's watch.held row, his name on it -- said on the alert row, his
+    // hand on you, the room still around you: the page is NOT up, the body
+    // is still in the Gull, and the beat holds.
+    REQUIRE(session.takenBeatUp());
+    CHECK(session.inCustody());
+    CHECK_FALSE(session.courtOpen());
+    CHECK_FALSE(session.takenPlateUp());
+    CHECK(gull.playerInside());
+    CHECK(gull.hearingPending());
+    CHECK(session.lastMessage() == gull.lastArrest().line);
+    CHECK(session.lastMessage().rfind("Watchman Cull: ", 0) == 0);
+    mustRead("the officer's line", session.lastMessage());
+    // Nothing reaches the body or the world from under his hand: a held
+    // forward key moves nothing, the pages are refused, ENTER is swallowed.
+    {
+        MoveInput walk;
+        walk.forward = 1;
+        const std::int32_t wx = session.body().tileX();
+        const std::int32_t wy = session.body().tileY();
+        session.stepMany(walk, 10);
+        CHECK(session.body().tileX() == wx);
+        CHECK(session.body().tileY() == wy);
+        CHECK(press(session, Key::Enter));
+        CHECK(press(session, Key::Num1));
+        CHECK_FALSE(press(session, Key::Escape));  // Pause falls through, as from the page
+        session.toggleCasebook();
+        CHECK_FALSE(session.casebookOpen());
+    }
+    // BEAT TWO, THE PLATE: the beat spent to the cut, and the cut is an
+    // instant black with the one line the spec promised on it, said (the
+    // message row carries it) and DRAWN -- the rendered frame is the plate
+    // byte for byte against the plate composed alone over black, and it is
+    // not black alone. It holds for its whole hold, and the page is still
+    // not up.
+    for (int i = 0; i < render::kTakenOfficerSteps + 2 && !session.takenPlateUp(); ++i) {
+        session.stepMany(MoveInput{}, 1);
+    }
+    REQUIRE(session.takenPlateUp());
+    CHECK_FALSE(session.takenBeatUp());
+    CHECK_FALSE(session.courtOpen());
+    CHECK(session.inCustody());
+    const std::string plate = session.takenPlate();
+    INFO("plate: ", plate);
+    CHECK(plate == session.lastMessage());
+    CHECK(plate.rfind("TAKEN TO THE MISSION. ", 0) == 0);
+    CHECK(plate.size() == std::string_view("TAKEN TO THE MISSION. 23:40.").size());
+    CHECK(plate.back() == '.');
+    CHECK(plate[plate.size() - 4] == ':');
+    mustRead("plate", plate);
+    {
+        const render::Framebuffer drawn = shot(session, 320, 180);
+        render::Framebuffer black(320, 180);
+        black.fillRect(0, 0, 320, 180, render::Rgb{0.0F, 0.0F, 0.0F}, 1.0F);
+        render::Framebuffer expected(320, 180);
+        expected.fillRect(0, 0, 320, 180, render::Rgb{0.0F, 0.0F, 0.0F}, 1.0F);
+        session.composeTakenPlate(expected);
+        CHECK(same(drawn, expected));
+        CHECK_FALSE(same(drawn, black));
+        // The line is on the frame's middle band and nowhere else: ink above
+        // and below the centre is black.
+        bool inkMid = false;
+        bool inkTop = false;
+        for (int y = 0; y < 180; ++y) {
+            for (int x = 0; x < 320; ++x) {
+                const bool ink = drawn.pixels()[drawn.index(x, y)] != black.pixels()[black.index(x, y)];
+                if (ink && y >= 60 && y < 120) {
+                    inkMid = true;
+                } else if (ink) {
+                    inkTop = true;
+                }
+            }
+        }
+        CHECK(inkMid);
+        CHECK_FALSE(inkTop);
+        // And it holds: the same frame halfway through the hold.
+        session.stepMany(MoveInput{}, render::kTakenPlateSteps / 2);
+        REQUIRE(session.takenPlateUp());
+        CHECK(same(drawn, shot(session, 320, 180)));
+        CHECK_FALSE(session.courtOpen());
+    }
+    // THE PAGE, when the plate's hold runs out: the body at the Mission's
     // own arrival tile (the sign's aim point, snapped to ground -- outside
     // the Gull, inside the Mission's footprint or a tile off its door), the
-    // seam dipped, the line said with the live minute on it.
+    // seam dipped, the line still on the row with the live minute on it.
+    for (int i = 0; i < render::kTakenPlateSteps + 2 && !session.courtOpen(); ++i) {
+        session.stepMany(MoveInput{}, 1);
+    }
     CHECK(session.courtOpen());
+    CHECK_FALSE(session.takenPlateUp());
+    CHECK_FALSE(session.takenBeatUp());
+    CHECK(session.takenPlate().empty());
     CHECK(session.inCustody());
     CHECK(gull.hearingPending());
     CHECK(gull.hearing().awaitingPlea());
@@ -516,10 +607,14 @@ TEST_CASE("the page says the charge off the sheet, the consequence of the hovere
     CHECK(page.cursor == 1);
     CHECK(page.consequence.rfind("A DENIAL IS WEIGHED WITH THE PRIEST'S OWN DOUBT IN IT.", 0) == 0);
     CHECK(page.consequence.find("THE SENTENCE DOUBLES") != std::string::npos);
-    // The priest's opening, out of court.paper, rotated on the hearings.
+    // The priest's opening, BY THE CASE: this thief has given at the door
+    // (temple 30 -- the sheet's own THE DOOR term is above zero), so it is
+    // court.paper.door, rotated on the hearings; the row that names the
+    // door is true of him.
     const BarkTables& barks = session.tavern().dialogue().barks();
     REQUIRE(barks.has("court.paper"));
-    CHECK(page.priest == std::string(barks.line("court.paper", 0)));
+    REQUIRE(barks.has("court.paper.door"));
+    CHECK(page.priest == std::string(barks.line("court.paper.door", 0)));
     CHECK(page.priest == "I have read what you gave at this door. It is the only reason we are talking.");
     // THE OFFICER WHO WALKED YOU IN stands by the wall under the rows: his
     // name off the record, his line out of court.taken, rotated with the
@@ -544,7 +639,7 @@ TEST_CASE("the page says the charge off the sheet, the consequence of the hovere
     session.courtBack();
     REQUIRE_FALSE(session.courtPleaArmed());
     page = session.hearingPageState();
-    CHECK(page.priest == std::string(barks.line("court.paper", 0)));
+    CHECK(page.priest == std::string(barks.line("court.paper.door", 0)));
     session.moveCourtCursor(1);
     page = session.hearingPageState();
     CHECK(page.cursor == 1);
@@ -589,12 +684,16 @@ TEST_CASE("the page says the charge off the sheet, the consequence of the hovere
     for (const std::string& row : session.courtRows()) {
         mustRead("courtRows", row);
     }
-    // EVERY AUTHORED COURT ROW READS, all fourteen tables: the redline list
-    // is drawable to the glyph, and no row is blank in anybody's mouth.
-    for (const char* key : {"court.taken", "court.paper", "court.blood", "court.roofs",
-                            "court.nothing", "court.plead", "court.spared", "court.fined",
-                            "court.held", "court.bound", "court.hand", "court.commuted",
-                            "court.rope", "court.lie"}) {
+    // EVERY AUTHORED COURT ROW READS, all sixteen tables: the redline list
+    // is drawable to the glyph, and no row is blank in anybody's mouth. The
+    // openings are keyed BY THE CASE (court.paper / court.paper.door,
+    // court.roofs.hand / court.roofs.rope) so every row of a table is true
+    // of every hearing that table can open.
+    for (const char* key : {"court.taken", "court.paper", "court.paper.door", "court.blood",
+                            "court.roofs.hand", "court.roofs.rope", "court.nothing",
+                            "court.plead", "court.spared", "court.fined", "court.held",
+                            "court.bound", "court.hand", "court.commuted", "court.rope",
+                            "court.lie"}) {
         const std::vector<std::string>* rows = barks.rows(key);
         REQUIRE(rows != nullptr);
         CHECK(rows->size() >= 3);
@@ -669,8 +768,18 @@ TEST_CASE("the check block shows the weighing: the arithmetic, + 6 CONFESSED, th
     CHECK(page.view == render::HearingView::Judged);
     CHECK(page.weighsBadge == "THE PRIEST WEIGHS");
     CHECK(page.arithmetic == "24 THE FLAME + 6 TONGUE + 10 THE DOOR - 3 THE WARD - 2 HEAT MAKES 35");
+    CHECK(page.arithmeticTerms == std::vector<std::string>{"24 THE FLAME", "+ 6 TONGUE",
+                                                            "+ 10 THE DOOR", "- 3 THE WARD",
+                                                            "- 2 HEAT", "MAKES 35"});
     CHECK(page.pleaTerm == "+ 6 CONFESSED MAKES 41");
-    CHECK(page.lines == "THE LINES: 55 SPARED  38 FINED  14 HELD");
+    CHECK(page.pleaTerms == std::vector<std::string>{"+ 6 CONFESSED", "MAKES 41"});
+    // A CONFESSION CAN NEVER BE SPARED (paperBand), so its block prints only
+    // the lines it could have crossed.
+    CHECK(page.lines == "THE LINES: 38 FINED  14 HELD");
+    // The officer walked you in and laid the paper; the bench has answered
+    // and his line is not beside the answer.
+    CHECK(page.officerSays.empty());
+    CHECK(page.officerName.empty());
     CHECK(page.verdict == "FINED");
     const SentenceTerms terms = sentenceTerms(hearing, session.tavern().playerCoin());
     CHECK(page.sentence == std::to_string(terms.finePaid) + " ROYALS.");
@@ -732,11 +841,16 @@ TEST_CASE("a disbelieved denial doubles on the page: THE PRIEST IS A MAN in the 
     CHECK(page.pleaTerm == "- 10 THE PRIEST IS A MAN MAKES 25");
     CHECK(page.verdict == "HELD");
     const SentenceTerms terms = sentenceTerms(hearing, session.tavern().playerCoin());
-    CHECK(terms.cellHours == 2 * (24 + 30));
+    // WHOLE NIGHTS: 24 + 30 hours off the draw is two nights (cellNights),
+    // doubled to four, and the clock will skip exactly those.
+    CHECK(cellNights(drawOf(-10, 30)) == 2);
+    CHECK(terms.cellHours == 2 * 2 * kHoursPerNight);
     CHECK(page.sentence == "FOUR NIGHTS. " + std::to_string(terms.finePaid) + " ROYALS.");
+    // The denial's lines carry SPARED: it was on the table.
+    CHECK(page.lines == "THE LINES: 55 SPARED  38 FINED  14 HELD");
     const BarkTables& barks = session.tavern().dialogue().barks();
     CHECK(page.priest == std::string(barks.line("court.lie", 0)));
-    CHECK(page.priest == "You lied to the Flame's face. The Mission will remember which.");
+    CHECK(page.priest == "You lied to the Flame's face. The Mission will remember the lie longer than the sentence.");
     session.stepMany(MoveInput{}, kJudgmentHoldSteps);
     page = session.hearingPageState();
     REQUIRE(page.rows.size() == 1);
@@ -744,10 +858,14 @@ TEST_CASE("a disbelieved denial doubles on the page: THE PRIEST IS A MAN in the 
     // SERVE IT: the nights on the world clock, then the Tarwalk with the
     // day and the hour on the row.
     const std::int32_t dayBefore = session.tavern().dayNumber();
+    const int clockBefore = session.timeOfDay();
     REQUIRE(press(session, Key::Enter));
     session.stepMany(MoveInput{}, 1);
     CHECK_FALSE(session.courtOpen());
-    CHECK(session.tavern().dayNumber() >= dayBefore + 4);
+    // FOUR NIGHTS PROMISED, FOUR DAYS ON THE CALENDAR, and the clock face
+    // back where the sentence started: the promise and the calendar agree.
+    CHECK(session.tavern().dayNumber() == dayBefore + 4);
+    CHECK(session.tavern().lastServed().timeReleased / 60 == clockBefore / 60);
     CHECK(session.body().tileX() == gull::kStreetX);
     CHECK(session.body().tileY() == gull::kStreetY);
     const std::string& line = session.lastMessage();
@@ -824,7 +942,13 @@ TEST_CASE("a murder hearing reads the corpse's name and who saw it, weighs BLOOD
     CHECK(page.asks == "THE PAPER ASKS FOR THE ROPE.");
     const BarkTables& barks = session.tavern().dialogue().barks();
     CHECK(page.priest == std::string(barks.line("court.blood", 0)));
-    CHECK(page.consequence.find("MERCY OR THE ROPE") != std::string::npos);
+    CHECK(page.consequence.find("MERCY OR THE ROPE, AND NOTHING ELSE.") != std::string::npos);
+    CHECK(page.consequence.find("ROPE FOR THE TONGUE") == std::string::npos);
+    session.moveCourtCursor(1);
+    page = session.hearingPageState();
+    CHECK(page.consequence.find("MERCY OR THE ROPE, AND NEVER SPARED.") != std::string::npos);
+    CHECK(page.consequence.find("CORPSE") == std::string::npos);
+    session.moveCourtCursor(-1);
     REQUIRE(press(session, Key::Num1));
     REQUIRE(press(session, Key::Num1));
     const HearingState& hearing = gull.hearing();
@@ -1016,11 +1140,30 @@ TEST_CASE("mercy is given once on the page: a commuted man before a rope bench g
     CHECK(session.tavern().hearing().judgment == Judgment::TheRope);
     page = session.hearingPageState();
     CHECK(page.arithmetic.empty());  // nothing is weighed
+    CHECK(page.arithmeticTerms.empty());
     CHECK(page.pleaTerm.empty());
     CHECK(page.lines.empty());
     CHECK(page.verdict == "THE ROPE");
     CHECK(page.sentence == "THE ROPE.");
     CHECK(page.priest == std::string(barks.line("court.rope", 0)));  // the first hearing pleaded
+    // NO BADGE OVER NOTHING: the page with its weighs badge and the page
+    // with the badge blanked draw the same pixels -- [THE PRIEST WEIGHS] is
+    // not on a frame where nothing was weighed -- and the verdict leads.
+    session.stepMany(MoveInput{}, 16);
+    render::HearingPageState blank = session.hearingPageState();
+    blank.commitPulse = 0.0F;
+    render::HearingPageState badged = blank;
+    blank.weighsBadge.clear();
+    render::Framebuffer withBadge(320, 180);
+    render::Framebuffer without(320, 180);
+    render::drawHearingPage(withBadge, badged);
+    render::drawHearingPage(without, blank);
+    CHECK(same(withBadge, without));
+    const render::HearingPageMetrics metrics = render::hearingPageMetrics(badged, 320, 180);
+    REQUIRE(metrics.usable);
+    // The verdict, the sentence and the priest: no badge row, no block, no
+    // air before the verdict.
+    CHECK(metrics.detailRowsWanted <= 1 + 1 + 4);
 }
 
 // ===========================================================================
@@ -1043,7 +1186,8 @@ TEST_CASE("THE ROPE staged: the drop, the held black dip, the plate that never f
     CHECK(page.asks == "THE PAPER ASKS FOR THE ROPE.");
     CHECK(page.charge == "THE WARD HAS YOU FOR A LIFT.");
     const BarkTables& barks = gull.dialogue().barks();
-    CHECK(page.priest == std::string(barks.line("court.roofs", crimes.hearings())));
+    CHECK(page.priest == std::string(barks.line("court.roofs.rope", crimes.hearings())));
+    CHECK(page.priest.find("second rung") != std::string::npos);
     REQUIRE(press(session, Key::Num1));
     REQUIRE(press(session, Key::Num1));
     REQUIRE(gull.hearing().judged());
@@ -1113,7 +1257,33 @@ TEST_CASE("THE ROPE staged: the drop, the held black dip, the plate that never f
     CHECK_FALSE(session.pauseOpen());
     session.interact();
     CHECK_FALSE(session.talking());
-    // LEAVE: the shipped quit.
+    // THE ROWS ARM ON THE FIRST PRESS (the QUIT pattern): the armed row
+    // carries SURE and the device's confirm on its tail, the run has not
+    // ended, and the frame changed -- the one state of the plate that is
+    // not the plate. Moving the cursor or ESC disarms it.
+    CHECK(press(session, Key::Num2));
+    CHECK(session.ropeRowArmed() == 1);
+    CHECK_FALSE(session.runEnded());
+    CHECK(session.ropeRows()[1] == "2 - LEAVE -- SURE? " +
+                                       std::string(render::promptConfirmKey(render::InputDevice::KeyboardMouse)));
+    CHECK(session.ropeRows()[0] == "1 - A NEW MAN");
+    const render::Framebuffer armedLeave = shot(session, 320, 180);
+    CHECK_FALSE(same(onLeave, armedLeave));
+    CHECK(press(session, Key::Escape));
+    CHECK(session.ropeRowArmed() == -1);
+    CHECK_FALSE(session.runEnded());
+    CHECK(press(session, Key::Num2));
+    CHECK(session.ropeRowArmed() == 1);
+    CHECK(press(session, Key::Up));
+    CHECK(session.ropeRowArmed() == -1);
+    CHECK(session.ropeCursor() == 0);
+    // A digit on another row arms THAT row, not the one it left.
+    CHECK(press(session, Key::Num1));
+    CHECK(session.ropeRowArmed() == 0);
+    CHECK(press(session, Key::Num2));
+    CHECK(session.ropeRowArmed() == 1);
+    CHECK_FALSE(session.runEnded());
+    // LEAVE, on the second press: the shipped quit.
     CHECK(press(session, Key::Num2));
     CHECK(session.runEnded());
     CHECK(session.runEndReason() == Session::RunEndChoice::Leave);
@@ -1138,12 +1308,21 @@ TEST_CASE("A NEW MAN reaches the creation screen: the end reason routes the loop
     CHECK(session.ropePlateMid() == "BY THE WARD. FOR THE SECOND RUNG.");
     session.stepMany(MoveInput{}, render::kPageEaseSteps + kDeathHoldSteps);
     REQUIRE(session.ropeRowsUp());
-    // A NEW MAN, on the pad: the D-pad is already on it; A takes it.
+    // A NEW MAN, on the pad: the D-pad is already on it; A arms it -- the
+    // tail names the pad's own confirm -- and A takes it.
     session.noteInputDevice(render::InputDevice::Pad);
+    CHECK(press(session, Key::PadSouth));
+    CHECK(session.ropeRowArmed() == 0);
+    CHECK_FALSE(session.runEnded());
+    CHECK(session.ropeRows()[0] == "1 - A NEW MAN -- SURE? " +
+                                       std::string(render::promptConfirmKey(render::InputDevice::Pad)));
     CHECK(press(session, Key::PadSouth));
     CHECK(session.runEnded());
     CHECK(session.runEndReason() == Session::RunEndChoice::NewMan);
     CHECK_FALSE(session.quitRequested());
+    // The row that ended the run stays lit with its tail: the last frame
+    // before main() opens the creation window is not the bare plate.
+    CHECK(session.ropeRowArmed() == 0);
     // The row is one-shot: a second press changes nothing.
     CHECK(press(session, Key::PadDown));
     CHECK(press(session, Key::PadSouth));
@@ -1220,4 +1399,254 @@ TEST_CASE("the tag is drawn: WANTED, WANTED FOR BLOOD and CONDEMNED each change 
         }
     }
     CHECK(cornerDiffers);
+}
+
+// ===========================================================================
+// THE CHECK BLOCK'S TERMS, THE TAG ROW'S WIDTH, AND WHAT EACH TIER SAYS
+// ===========================================================================
+
+TEST_CASE("the arithmetic is packed by term: a sign never wraps away from its term at any window the game runs at") {
+    // The packer itself: rows break only between terms.
+    const std::vector<std::string> terms = {"24 THE FLAME", "+ 24 THE DOOR", "- 20 THE WARD",
+                                            "- 1 HEAT", "MAKES 27"};
+    CHECK(render::packTerms(terms, 30) ==
+          std::vector<std::string>{"24 THE FLAME + 24 THE DOOR", "- 20 THE WARD - 1 HEAT",
+                                   "MAKES 27"});
+    CHECK(render::packTerms(terms, 100) ==
+          std::vector<std::string>{"24 THE FLAME + 24 THE DOOR - 20 THE WARD - 1 HEAT MAKES 27"});
+    // A term wider than the row stands alone; it is never cut.
+    CHECK(render::packTerms(terms, 8) == terms);
+    CHECK(render::packTerms({}, 30).empty());
+
+    // On the page: the widest block the bench prints -- a denial with the
+    // tongue, the door, the ward, the priors and the heat all weighed -- at
+    // every window. Every packed row fits the detail pane, every row is
+    // whole terms, and no row ends on a sign.
+    Session session(docksAt(20));
+    thiefLedger(session);
+    CrimeLedger& crimes = session.tavern().dialogue().crimes();
+    crimes.sentence(Judgment::Held, 1);  // a prior: TAKEN BEFORE weighs
+    crimes.commit(Crime::Lift, true);
+    crimes.addHeat(kWarrantAt + 8);
+    seedHearing(session, drawOf(-10, 5), 40, 84, -15);
+    REQUIRE(press(session, Key::Num2));
+    REQUIRE(press(session, Key::Num2));
+    session.stepMany(MoveInput{}, kJudgmentHoldSteps + 1);
+    const render::HearingPageState judged = session.hearingPageState();
+    REQUIRE(judged.view == render::HearingView::Judged);
+    INFO(judged.arithmetic);
+    REQUIRE(judged.arithmeticTerms.size() >= 6);
+    CHECK(judged.pleaTerms ==
+          std::vector<std::string>{"- 10 THE PRIEST IS A MAN",
+                                   "MAKES " + std::to_string(session.tavern().hearing().scored)});
+    for (const Window& window : kWindows) {
+        INFO("window ", window.width, "x", window.height);
+        const render::HearingPageMetrics metrics =
+            render::hearingPageMetrics(judged, window.width, window.height);
+        REQUIRE(metrics.usable);
+        REQUIRE(metrics.split);
+        for (const std::vector<std::string>* tokens :
+             {&judged.arithmeticTerms, &judged.pleaTerms}) {
+            const std::vector<std::string> rows = render::packTerms(*tokens, metrics.detailCells);
+            std::string joined;
+            for (const std::string& row : rows) {
+                INFO(row);
+                CHECK(static_cast<int>(row.size()) <= metrics.detailCells);
+                CHECK(row.back() != '+');
+                CHECK(row.back() != '-');
+                if (!joined.empty()) {
+                    joined += ' ';
+                }
+                joined += row;
+            }
+            std::string whole;
+            for (const std::string& token : *tokens) {
+                if (!whole.empty()) {
+                    whole += ' ';
+                }
+                whole += token;
+            }
+            CHECK(joined == whole);
+        }
+        // And the block still fits the body at this width.
+        CHECK(metrics.detailRowsWanted <= metrics.bodyRows);
+    }
+}
+
+TEST_CASE("the tag row fits its thirty-four columns by construction: the number is never lost, a rider that does not fit is dropped whole") {
+    Session session(docksAt(20));
+    CrimeLedger& crimes = session.tavern().dialogue().crimes();
+    // A commuted man with fresh blood on him: WANTED FOR BLOOD, and the
+    // CONDEMNED word gives way to it -- the two together are thirty-six.
+    // The hand the commutation took still shows: MAIMED beside the blood
+    // fits the row.
+    crimes.sentence(Judgment::Commuted, kCommutedDays);
+    REQUIRE(crimes.condemned());
+    REQUIRE(crimes.maimed());
+    crimes.markMurderer(2);
+    REQUIRE(crimes.warrant());
+    std::string line = session.heatLine();
+    INFO(line);
+    CHECK(line == "MAIMED  WANTED FOR BLOOD  HEAT " + std::to_string(crimes.heat()));
+    CHECK(line.size() <= 34);
+    CHECK(line.find("CONDEMNED") == std::string::npos);
+    CHECK(line.find("HEAT " + std::to_string(crimes.heat())) != std::string::npos);
+    // A rider that would push the row past its width is dropped whole,
+    // never cut mid-word, and the number stays.
+    crimes.takeLoot(12);
+    line = session.heatLine();
+    INFO(line);
+    CHECK(line == "MAIMED  WANTED FOR BLOOD  HEAT " + std::to_string(crimes.heat()));
+    CHECK(line.size() <= 34);
+    // The riders on a plain murderer's row: the loot fits and rides; the
+    // bale would not and is dropped whole.
+    Session plain(docksAt(20));
+    CrimeLedger& blood = plain.tavern().dialogue().crimes();
+    blood.markMurderer(2);
+    REQUIRE(blood.warrant());
+    blood.takeLoot(12);
+    line = plain.heatLine();
+    INFO(line);
+    CHECK(line == "WANTED FOR BLOOD  HEAT " + std::to_string(blood.heat()) + "  LOOT 12");
+    CHECK(line.size() <= 34);
+    blood.takeBale(Contraband::Flower, kBaleUnits);
+    REQUIRE(blood.carryingBale());
+    line = plain.heatLine();
+    INFO(line);
+    CHECK(line.size() <= 34);
+    CHECK(line.find("HEAT " + std::to_string(blood.heat())) != std::string::npos);
+    CHECK(line.find("LOOT 12") != std::string::npos);
+    CHECK(line.find("BALE") == std::string::npos);
+    // MAIMED beside the blood is the row's full width and keeps both.
+    Session other(docksAt(20));
+    CrimeLedger& maimed = other.tavern().dialogue().crimes();
+    maimed.sentence(Judgment::TheHand, 1);
+    maimed.markMurderer(3);
+    while (maimed.heat() < 100) {
+        maimed.addHeat(1);
+    }
+    line = other.heatLine();
+    INFO(line);
+    CHECK(line == "MAIMED  WANTED FOR BLOOD  HEAT 100");
+    CHECK(line.size() == 34);
+}
+
+TEST_CASE("each tier's consequence says only what is on the table: no rope on a cell or a hand charge, the two answers on the rope's") {
+    Session session(docksAt(20));
+    thiefLedger(session);
+    seedHearing(session, drawOf(0, 5), 12, 0, -15);
+    render::HearingPageState page = session.hearingPageState();
+    // A thief the Mission does not know: the cold opening, none of the
+    // door's rows.
+    const BarkTables& barks = session.tavern().dialogue().barks();
+    CHECK(page.priest == std::string(barks.line("court.paper", 0)));
+    CHECK(page.priest.find("gave at this door") == std::string::npos);
+    CHECK(std::find(page.paper.begin(), page.paper.end(), "THE MISSION DOES NOT KNOW YOU.") !=
+          page.paper.end());
+    // The cell tier: a confession is never doubled and never spared, and
+    // there is no rope to mention.
+    CHECK(page.cursor == 0);
+    CHECK(page.consequence.find("NEVER DOUBLED, AND NEVER SPARED.") != std::string::npos);
+    CHECK(page.consequence.find("ROPE") == std::string::npos);
+    CHECK(page.consequence.find("MERCY") == std::string::npos);
+    session.moveCourtCursor(1);
+    page = session.hearingPageState();
+    CHECK(page.consequence.find("THE SENTENCE DOUBLES") != std::string::npos);
+    CHECK(page.consequence.find("ROPE") == std::string::npos);
+
+    // The hand tier: a Skyrunner's first, the same two literals -- the
+    // hand is on the table, the rope is not -- and the roofs' own opening.
+    Session roofs(docksAt(20));
+    thiefLedger(roofs);
+    seedHearing(roofs, drawOf(0, 5), 12, 0, -15, true);
+    page = roofs.hearingPageState();
+    REQUIRE(page.asks == "THE PAPER ASKS FOR THE HAND.");
+    CHECK(page.priest == std::string(barks.line("court.roofs.hand", 0)));
+    CHECK(page.consequence.find("ROPE") == std::string::npos);
+    CHECK(page.consequence.find("NEVER DOUBLED, AND NEVER SPARED.") != std::string::npos);
+    mustRead("consequence", page.consequence);
+}
+
+TEST_CASE("the priest's openings are chosen by the case, and every row of the chosen table is true of the sheet") {
+    const auto opening = [](std::int32_t temple, bool skyrunner, bool second, bool blood) {
+        Session session(docksAt(20));
+        CrimeLedger& crimes = session.tavern().dialogue().crimes();
+        if (second) {
+            crimes.commit(Crime::RoofRun, true);
+            crimes.sentence(Judgment::Held, 1);
+        }
+        crimes.commit(Crime::Lift, true);
+        crimes.addHeat(kWarrantAt + 2);
+        if (blood) {
+            crimes.markMurderer(2);
+        }
+        seedHearing(session, drawOf(0, 5), 10, temple, 0, skyrunner);
+        const render::HearingPageState page = session.hearingPageState();
+        const BarkTables& barks = session.tavern().dialogue().barks();
+        std::string table;
+        for (const char* key : {"court.paper", "court.paper.door", "court.blood",
+                                "court.roofs.hand", "court.roofs.rope", "court.nothing"}) {
+            const std::vector<std::string>* rows = barks.rows(key);
+            REQUIRE(rows != nullptr);
+            if (std::find(rows->begin(), rows->end(), page.priest) != rows->end()) {
+                table = key;
+            }
+        }
+        return table;
+    };
+    CHECK(opening(0, false, false, false) == "court.paper");
+    CHECK(opening(1, false, false, false) == "court.paper.door");
+    CHECK(opening(84, false, false, false) == "court.paper.door");
+    CHECK(opening(0, true, false, false) == "court.roofs.hand");
+    CHECK(opening(0, true, true, false) == "court.roofs.rope");
+    CHECK(opening(0, false, false, true) == "court.blood");
+    CHECK(opening(0, true, true, true) == "court.blood");  // the corpse outranks the roofs
+    // The rows that depend on the sheet live only in the table keyed by it:
+    // no cold row names a gift at the door, no hand row names the rope, no
+    // rope row names the hand.
+    Session session(docksAt(20));
+    const BarkTables& barks = session.tavern().dialogue().barks();
+    for (const std::string& row : *barks.rows("court.paper")) {
+        INFO(row);
+        CHECK(row.find("gave") == std::string::npos);
+    }
+    for (const std::string& row : *barks.rows("court.roofs.hand")) {
+        INFO(row);
+        CHECK(row.find("rope") == std::string::npos);
+        CHECK(row.find("second") == std::string::npos);
+    }
+    for (const std::string& row : *barks.rows("court.roofs.rope")) {
+        INFO(row);
+        CHECK(row.find("hand") == std::string::npos);
+    }
+    // No judgment row names a shape the judgment may not have: HELD never
+    // names a corpse, the lie never names the nights or the fine, SPARED
+    // never thanks a gift.
+    for (const std::string& row : *barks.rows("court.held")) {
+        INFO(row);
+        CHECK(row.find(" him") == std::string::npos);
+    }
+    for (const std::string& row : *barks.rows("court.lie")) {
+        INFO(row);
+        CHECK(row.find("night") == std::string::npos);
+        CHECK(row.find("fine") == std::string::npos);
+    }
+    for (const std::string& row : *barks.rows("court.spared")) {
+        INFO(row);
+        CHECK(row.find("gave") == std::string::npos);
+    }
+    // And the learned word is never said to a layman, not even nearly; no
+    // spoken row carries an em-dash or the design document's own words.
+    for (const BarkTables::Table& table : barks.tables()) {
+        if (table.key.rfind("court.", 0) != 0) {
+            continue;
+        }
+        for (const std::string& row : table.rows) {
+            INFO(table.key, ": ", row);
+            CHECK(row.find("Bloodletter") == std::string::npos);
+            CHECK(row.find("do not name") == std::string::npos);
+            CHECK(row.find("Canon") == std::string::npos);
+            CHECK(row.find(" -- ") == std::string::npos);
+        }
+    }
 }

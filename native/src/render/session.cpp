@@ -4,6 +4,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <iterator>
 #include <sstream>
 #include <utility>
 
@@ -3813,19 +3814,45 @@ void Session::step(const sim::MoveInput& input) {
     if (tavern_->takeArrestRelease()) {
         if (courtServing_) {
             closeCourt();
-        } else if (!tavern_->hearingPending()) {
+        } else if (tavern_->hearingPending()) {
+            // TAKEN, WITH PAPER -- THE ARREST HAS ITS MOMENT ON SCREEN before
+            // the bench does anything (JUSTICE-SPEC 2.2): the officer's own
+            // line (the room's watch.held / maimed / condemned row) said on
+            // the alert row with his hand on you and the room still around
+            // you, and held; then the plate; then the page. The body stays
+            // where he took it until the cut. Nothing here touches the sim:
+            // the hearing is already open on the ledger.
+            say(tavern_->lastArrest().line);
+            takenHold_ = kTakenOfficerSteps + kTakenPlateSteps;
+            takenPlate_.clear();
+        } else {
             placeBodyAt(sim::gull::kStreetX, sim::gull::kStreetY, sim::gull::kGroundBand);
             awaitingLanding_ = false;
             syncTavernToBody();
             say(tavern_->lastArrest().line);
         }
     }
-    // TAKEN. A hearing open on the ledger with no page up -- the arrest a
-    // step ago, or a record reopened between the arrest and the plea --
-    // opens the bench: the page is DERIVED from the hashed record, never the
-    // other way round.
-    if (!courtOpen_ && !courtServing_ && !ropeCeremonyUp() && tavern_->hearingPending() &&
-        !tavern_->executed()) {
+    // THE ARREST BEAT, spent once a step. At the cut the plate is written
+    // off the live clock and said (it is the line the spec promised, and
+    // lastMessage() carries it for the drive); when the hold runs out the
+    // page opens over it and the plate goes.
+    if (takenHold_ > 0) {
+        --takenHold_;
+        if (takenHold_ == kTakenPlateSteps) {
+            takenPlate_ = "TAKEN TO THE MISSION. " + travelClockText(timeOfDay_) + ".";
+            say(takenPlate_);
+        }
+        if (takenHold_ == 0) {
+            takenPlate_.clear();
+            openCourt();
+        }
+    }
+    // TAKEN. A hearing open on the ledger with no page up and no beat
+    // running -- a record reopened between the arrest and the plea -- opens
+    // the bench at once: the page is DERIVED from the hashed record, never
+    // the other way round.
+    if (!courtOpen_ && takenHold_ <= 0 && !courtServing_ && !ropeCeremonyUp() &&
+        tavern_->hearingPending() && !tavern_->executed()) {
         openCourt();
     }
 
@@ -6662,23 +6689,24 @@ enum class CourtRowKind : std::uint8_t { Guilty, NotGuilty, Paper, Back, NoPlea,
 /// The consequence of the hovered row, in the pane beside it -- the
 /// informed choice (UI-REFERENCE: "View X's stats"). Fixed literals.
 [[nodiscard]] std::string rowConsequence(CourtRowKind kind, sim::Sentence tier) {
+    // EACH TIER'S LITERAL SAYS ONLY WHAT IS ON THE TABLE: the rope tier has
+    // two answers and names them; a cell or a hand charge has no rope on the
+    // table and does not mention one. A confession is never doubled and never
+    // spared on any tier; a denial can be either, on the tiers that have
+    // either.
+    const bool rope = tier == sim::Sentence::Condemned;
     switch (kind) {
         case CourtRowKind::Guilty:
-            return tier == sim::Sentence::Condemned
-                       ? "A CONFESSION IS WEIGHED AS IT IS GIVEN. THE FLAME'S ANSWER IS FIXED "
-                         "BEFORE YOU SPEAK IT. NO ROPE FOR THE TONGUE, AND NO MERCY FROM IT "
-                         "EITHER -- MERCY OR THE ROPE, AND NOTHING ELSE."
-                       : "A CONFESSION IS WEIGHED AS IT IS GIVEN. THE FLAME'S ANSWER IS FIXED "
-                         "BEFORE YOU SPEAK IT. NO ROPE FOR THE TONGUE, AND NO MERCY FROM IT "
-                         "EITHER.";
+            return rope ? "A CONFESSION IS WEIGHED AS IT IS GIVEN. THE FLAME'S ANSWER IS FIXED "
+                          "BEFORE YOU SPEAK IT. MERCY OR THE ROPE, AND NOTHING ELSE."
+                        : "A CONFESSION IS WEIGHED AS IT IS GIVEN. THE FLAME'S ANSWER IS FIXED "
+                          "BEFORE YOU SPEAK IT. NEVER DOUBLED, AND NEVER SPARED.";
         case CourtRowKind::NotGuilty:
-            return tier == sim::Sentence::Condemned
-                       ? "A DENIAL IS WEIGHED WITH THE PRIEST'S OWN DOUBT IN IT. TEN POINTS "
-                         "EITHER WAY. THE CORPSE IS ON THE ROSTER: MERCY OR THE ROPE, NEVER "
-                         "SPARED."
-                       : "A DENIAL IS WEIGHED WITH THE PRIEST'S OWN DOUBT IN IT. TEN POINTS "
-                         "EITHER WAY. DENIED AND DISBELIEVED, THE SENTENCE DOUBLES AND THE "
-                         "MISSION REMEMBERS THE LIE.";
+            return rope ? "A DENIAL IS WEIGHED WITH THE PRIEST'S OWN DOUBT IN IT. TEN POINTS "
+                          "EITHER WAY. MERCY OR THE ROPE, AND NEVER SPARED."
+                        : "A DENIAL IS WEIGHED WITH THE PRIEST'S OWN DOUBT IN IT. TEN POINTS "
+                          "EITHER WAY. DENIED AND DISBELIEVED, THE SENTENCE DOUBLES AND THE "
+                          "MISSION REMEMBERS THE LIE.";
         case CourtRowKind::Paper:
             return "THE CHARGE, WHAT THE PAPER ASKS, AND WHAT THE PRIEST WILL WEIGH -- IN "
                    "WORDS, BEFORE YOU SPEAK.";
@@ -6925,13 +6953,13 @@ HearingPageState Session::hearingPageState() const {
     // THE OFFICER WHO WALKED YOU IN, and his line as he lays the paper
     // (court.taken), off the record's own officer and rotated with the
     // priest's opening -- one hearing, one rotation, both voices. He stands
-    // by the wall for the whole hearing: the block reads under the rows
-    // until the page closes.
-    if (!hearing.officer.empty()) {
+    // by the wall UNTIL THE ANSWER: his walking-in line is said as the paper
+    // is laid, and a judged page has nothing of his on it -- the bench has
+    // spoken, and "sit where he points" beside a sentence is a line from
+    // before the sentence.
+    if (!hearing.officer.empty() && hearing.awaitingPlea()) {
         out.officerName = upperAscii(hearing.officer);
-        const std::int32_t escortRotation =
-            hearing.judged() ? std::max<std::int32_t>(0, crimes.hearings() - 1) : crimes.hearings();
-        out.officerSays = std::string(barks.line("court.taken", escortRotation));
+        out.officerSays = std::string(barks.line("court.taken", crimes.hearings()));
     }
 
     // --- the rows ---------------------------------------------------------
@@ -6989,14 +7017,22 @@ HearingPageState Session::hearingPageState() const {
     };
     if (hearing.awaitingPlea()) {
         out.view = courtPaperOpen_ ? HearingView::Paper : HearingView::Plea;
-        // THE PRIEST OPENS, by what the paper is: the reading's own tables.
-        std::string_view opening = "court.paper";
+        // THE PRIEST OPENS, BY THE CASE, and the rotation runs only within
+        // the case: every row of the table chosen is true of the sheet in
+        // front of him. A commuted man back for the rope; a killing; a
+        // Skyrunner's second rung (the rope with no corpse) or his first (the
+        // hand); and a thief -- one the Mission knows from its own door, or
+        // one it has never seen (the sheet's own THE DOOR term, and HEAR THE
+        // PAPER's own phrase, decide which).
+        std::string_view opening = sheet.templeStanding > 0 ? "court.paper.door" : "court.paper";
         if (sheet.tier == sim::Sentence::Condemned && sheet.commutedBefore) {
             opening = "court.nothing";
         } else if (sheet.blood) {
             opening = "court.blood";
-        } else if (sheet.skyrunner && (sheet.tier == sim::Sentence::Maimed || sheet.secondRung)) {
-            opening = "court.roofs";
+        } else if (sheet.skyrunner && sheet.secondRung) {
+            opening = "court.roofs.rope";
+        } else if (sheet.skyrunner && sheet.tier == sim::Sentence::Maimed) {
+            opening = "court.roofs.hand";
         }
         out.priest = bark(opening);
         // THE PRIEST PRESSES once a plea is armed (court.plead): the "-- SURE?"
@@ -7027,8 +7063,13 @@ HearingPageState Session::hearingPageState() const {
         // A MAN) rides the terms list the sim returns and is printed on its
         // OWN line under the record's sum, the reference's threshold-then-
         // verdict order.
+        // EACH TERM IS ONE TOKEN with its sign glued on ("- 20 THE WARD"),
+        // and the sum is a token of its own ("MAKES 27"): the pane packs the
+        // tokens by row and never splits one, so a sign cannot wrap away
+        // from its term at any width. The joined string is the same record
+        // for the summary and the suite.
         const sim::Arraignment answer = sim::weighArraignment(sheet, hearing.plea);
-        std::string arithmetic;
+        std::vector<std::string> terms;
         for (const sim::ArraignmentTerm& term : answer.terms) {
             if (term.name == sim::kTermConfessed || term.name == sim::kTermPriestIsAMan) {
                 continue;
@@ -7036,38 +7077,61 @@ HearingPageState Session::hearingPageState() const {
             const std::string name = term.name == sim::kTermSawIt
                                          ? countWord(term.count) + " " + std::string(term.name)
                                          : std::string(term.name);
-            if (arithmetic.empty()) {
-                arithmetic = std::to_string(term.value) + " " + name;
+            if (terms.empty()) {
+                terms.push_back(std::to_string(term.value) + " " + name);
             } else {
-                arithmetic += (term.value >= 0 ? " + " : " - ") + std::to_string(std::abs(term.value)) +
-                              " " + name;
+                terms.push_back(std::string(term.value >= 0 ? "+ " : "- ") +
+                                std::to_string(std::abs(term.value)) + " " + name);
             }
         }
-        if (!arithmetic.empty()) {
-            arithmetic += " MAKES " + std::to_string(answer.weight);
+        if (!terms.empty()) {
+            terms.push_back("MAKES " + std::to_string(answer.weight));
         }
-        out.arithmetic = arithmetic;
+        const auto joined = [](const std::vector<std::string>& tokens) {
+            std::string out;
+            for (const std::string& token : tokens) {
+                if (!out.empty()) {
+                    out += ' ';
+                }
+                out += token;
+            }
+            return out;
+        };
+        out.arithmeticTerms = terms;
+        out.arithmetic = joined(terms);
+        std::vector<std::string> pleaTerms;
         switch (answer.plea) {
             case sim::Plea::Guilty:
-                out.pleaTerm = "+ " + std::to_string(answer.pleaTerm) + " " +
-                               std::string(sim::kTermConfessed) + " MAKES " +
-                               std::to_string(answer.scored);
+                pleaTerms.push_back("+ " + std::to_string(answer.pleaTerm) + " " +
+                                    std::string(sim::kTermConfessed));
+                pleaTerms.push_back("MAKES " + std::to_string(answer.scored));
                 break;
             case sim::Plea::NotGuilty:
-                out.pleaTerm = std::string(answer.pleaTerm >= 0 ? "+ " : "- ") +
-                               std::to_string(std::abs(answer.pleaTerm)) + " " +
-                               std::string(sim::kTermPriestIsAMan) + " MAKES " +
-                               std::to_string(answer.scored);
+                pleaTerms.push_back(std::string(answer.pleaTerm >= 0 ? "+ " : "- ") +
+                                    std::to_string(std::abs(answer.pleaTerm)) + " " +
+                                    std::string(sim::kTermPriestIsAMan));
+                pleaTerms.push_back("MAKES " + std::to_string(answer.scored));
                 break;
             default:
                 break;
         }
-        if (answer.plea != sim::Plea::NoPlea && answer.plea != sim::Plea::None) {
-            out.lines = sheet.tier == sim::Sentence::Condemned
-                            ? "THE LINE: " + std::to_string(sim::kMercyLine) + " MERCY"
-                            : "THE LINES: " + std::to_string(sim::kSparedLine) + " SPARED  " +
-                                  std::to_string(sim::kFinedLine) + " FINED  " +
-                                  std::to_string(sim::kHeldLine) + " HELD";
+        out.pleaTerms = pleaTerms;
+        out.pleaTerm = joined(pleaTerms);
+        // THE LINES THE SCORE WAS READ AGAINST -- and only those. SPARED is a
+        // denial's line and no other plea's (paperBand): a confession's
+        // block does not print a line it could never have crossed. The rope
+        // tier has the one line. Nothing weighed, nothing printed.
+        if (answer.plea == sim::Plea::Guilty || answer.plea == sim::Plea::NotGuilty) {
+            if (sheet.tier == sim::Sentence::Condemned) {
+                out.lines = "THE LINE: " + std::to_string(sim::kMercyLine) + " MERCY";
+            } else {
+                out.lines = "THE LINES: ";
+                if (answer.plea == sim::Plea::NotGuilty) {
+                    out.lines += std::to_string(sim::kSparedLine) + " SPARED  ";
+                }
+                out.lines += std::to_string(sim::kFinedLine) + " FINED  " +
+                             std::to_string(sim::kHeldLine) + " HELD";
+            }
         }
         out.verdict = judgmentWord(hearing.judgment);
         out.verdictAccent = judgmentAccent(hearing.judgment);
@@ -7253,8 +7317,9 @@ bool Session::routeCourtKey(Key key) {
     const bool numbered = slot >= 0 && slot < 9;
     const bool zero = action == Action::QuickSlot0;
     if (ropeRowsUp_) {
-        // THE END ROWS: the only live input. ESC does nothing on the plate,
-        // PAUSE is refused, and nothing reaches the world.
+        // THE END ROWS: the only live input. ESC disarms an armed row and
+        // does nothing else on the plate, PAUSE is refused, and nothing
+        // reaches the world.
         if (up) {
             moveRopeCursor(-1);
         } else if (downward) {
@@ -7263,12 +7328,21 @@ bool Session::routeCourtKey(Key key) {
             chooseRopeRow();
         } else if (numbered) {
             chooseRopeVisibleRow(slot);
+        } else if (back) {
+            ropeArmed_ = -1;
         }
         return true;
     }
     if (ropeCeremonySteps_ > 0) {
         // THE PLATE: no input accepted.
         return true;
+    }
+    if (takenHold_ > 0) {
+        // THE ARREST BEAT: the officer's hand is on you and the page is not
+        // up yet. Every key is swallowed but Pause (a player can always
+        // quit the game), which falls through to the client as it does
+        // from the page.
+        return !(action == Action::Pause || key == Key::Escape);
     }
     // THE PAGE. PAUSE falls through to the client, which opens the pause
     // menu over the court (a player can always quit the game); ESC is Pause's
@@ -7321,20 +7395,40 @@ void Session::armRopeCeremony() {
     ropeCeremonySteps_ = kRopeDipInSteps + sim::kDeathHoldSteps;
     ropeRowsUp_ = false;
     ropeCursor_ = 0;
+    ropeArmed_ = -1;
     // SILENCE. No one-shot: ThudHeavy is "every path to the floor" and this
     // is not the floor. The drop is silent by ruling.
 }
 
+namespace {
+/// The two end rows, bare. No save row: no save exists, so there is nothing
+/// to load and the run is genuinely over. The day a save lands, "1 - THE
+/// LAST SAVE" goes first.
+constexpr std::string_view kRopeRowLabels[] = {"1 - A NEW MAN", "2 - LEAVE"};
+}  // namespace
+
 std::vector<std::string> Session::ropeRows() const {
-    // No save row: no save exists, so there is nothing to load and the run
-    // is genuinely over. The day a save lands, "1 - THE LAST SAVE" goes first.
-    return {"1 - A NEW MAN", "2 - LEAVE"};
+    // THE ARMED ROW NAMES THE DEVICE'S OWN CONFIRM on its tail -- the QUIT
+    // row's exact shape, and the plea rows' -- so the state of the row is
+    // in the row.
+    std::vector<std::string> out;
+    for (std::size_t i = 0; i < std::size(kRopeRowLabels); ++i) {
+        std::string row(kRopeRowLabels[i]);
+        if (static_cast<int>(i) == ropeArmed_) {
+            row += " -- SURE? " + std::string(promptConfirmKey(promptDevice_));
+        }
+        out.push_back(std::move(row));
+    }
+    return out;
 }
 
 void Session::moveRopeCursor(int delta) {
     if (!ropeRowsUp_) {
         return;
     }
+    // Moving the cursor disarms the row -- the pause card's own rule for
+    // QUIT: a player who backed off the row plainly changed their mind.
+    ropeArmed_ = -1;
     if (audio_ != nullptr && delta != 0) {
         audio_->playOneShot(audio::SoundId::UiTick);
     }
@@ -7346,6 +7440,11 @@ void Session::chooseRopeVisibleRow(int slot) {
     if (!ropeRowsUp_ || slot < 0 || slot >= static_cast<int>(ropeRows().size())) {
         return;
     }
+    // A digit on a row other than the armed one disarms it -- the pause
+    // menu's own "picking a different row calls it off".
+    if (ropeArmed_ >= 0 && ropeArmed_ != slot) {
+        ropeArmed_ = -1;
+    }
     ropeCursor_ = slot;
     chooseRopeRow();
 }
@@ -7356,6 +7455,14 @@ void Session::chooseRopeRow() {
     }
     if (audio_ != nullptr) {
         audio_->playOneShot(audio::SoundId::UiConfirm);
+    }
+    // ARMED ON THE FIRST PRESS, CONFIRMED ON THE SECOND -- the QUIT pattern
+    // on the two rows that end a run, so a leaned-on ENTER after the plate's
+    // hold cannot start a new man or leave the game. The armed row keeps its
+    // tail once taken: the run is over and the row that ended it stays lit.
+    if (ropeArmed_ != ropeCursor_) {
+        ropeArmed_ = ropeCursor_;
+        return;
     }
     runEnded_ = true;
     if (ropeCursor_ == 0) {
@@ -7413,7 +7520,14 @@ void Session::composeRopeCeremony(Framebuffer& target) const {
     // the pause card's cursor wears.
     const PanelMetric metric = panelMetric(target.height());
     const std::vector<std::string> rows = ropeRows();
+    // THE ZONE HOLDS THE ARMED WIDTH WHETHER OR NOT A ROW IS ARMED, so
+    // arming one moves no row: the tail every row could grow is measured
+    // for all of them.
+    const std::string tail = " -- SURE? " + std::string(promptConfirmKey(promptDevice_));
     int widest = 0;
+    for (const std::string_view row : kRopeRowLabels) {
+        widest = std::max(widest, static_cast<int>(row.size() + tail.size()));
+    }
     for (const std::string& row : rows) {
         widest = std::max(widest, static_cast<int>(row.size()));
     }
@@ -7430,6 +7544,24 @@ void Session::composeRopeCeremony(Framebuffer& target) const {
             drawCellText(target, zone, metric, 1, r, rows[i], ink.prose, 1.0F);
         }
     }
+}
+
+void Session::composeTakenPlate(Framebuffer& target) const {
+    if (!takenPlateUp()) {
+        return;
+    }
+    // THE CUT: an instant black, the one line on it in the rope plate's own
+    // register (bone, centred), at full alpha for the whole hold -- the
+    // "TAKEN TO THE MISSION. 23:00." the spec promised, on the frame for as
+    // long as it takes to read, and nothing under it (no page yet, no HUD
+    // to hide it). The page opens over it when the hold runs out.
+    target.fillRect(0, 0, target.width(), target.height(), Rgb{0.0F, 0.0F, 0.0F}, 1.0F);
+    const int scale = hudScale(target.height());
+    const Rgb bone{0.86F, 0.82F, 0.72F};
+    const int w = textWidth(takenPlate_, scale);
+    const int glyphH = 6 * scale;
+    drawText(target, target.width() / 2 - w / 2, target.height() / 2 - glyphH / 2, takenPlate_,
+             bone, 1.0F, scale);
 }
 
 // ---------------------------------------------------------------------------
@@ -8307,31 +8439,47 @@ std::string Session::heatLine() const {
         !crimes.maimed() && !crimes.condemned() && !sheetCarry_) {
         return {};
     }
+    // THE ROW IS THIRTY-FOUR COLUMNS AND IT FITS THEM BY CONSTRUCTION: the
+    // tag and the number are never clipped, and a rider (the loot, the
+    // bale, the man on your shoulder) is appended only while the row still
+    // holds it whole -- a rider that does not fit is dropped, never cut in
+    // half, and the number is never lost to it.
+    constexpr std::size_t kHeatColumns = 34;
     std::string line;
     // THE CRIMINAL TAG (JUSTICE BUILD, section 1.2). Three states the ledger
     // keeps, one row. The two the ward has done TO you outrank everything
     // else on the line: a condemned man wants to know he is one before he
     // wants his heat. CONDEMNED is the shipped word with the court's meaning
-    // -- the rope passed and commuted, for the rest of the run.
-    if (crimes.condemned()) {
+    // -- the rope passed and commuted, for the rest of the run. WANTED is
+    // paper; WANTED FOR BLOOD is paper with a corpse behind it, which only
+    // the bench clears. A murderer whose heat has cooled is not WANTED on
+    // this row -- the paper lapsed -- but the next arrest on any paper is a
+    // rope hearing, and the row does not pretend otherwise by inventing a
+    // word for it: standing stays a phrase, heat stays a number. A commuted
+    // man with fresh blood on him is WANTED FOR BLOOD and nothing else: the
+    // two tags together do not fit the row, and of the two it is the blood
+    // that decides what the next arrest is (mercy is given once).
+    const bool blood = crimes.warrant() && crimes.murderer();
+    if (crimes.condemned() && !blood) {
         line = "CONDEMNED  ";
     } else if (crimes.maimed()) {
+        // "MAIMED  WANTED FOR BLOOD  HEAT 100" is the row's full width.
         line = "MAIMED  ";
     }
-    // WANTED is paper; WANTED FOR BLOOD is paper with a corpse behind it,
-    // which only the bench clears. A murderer whose heat has cooled is not
-    // WANTED on this row -- the paper lapsed -- but the next arrest on any
-    // paper is a rope hearing, and the row does not pretend otherwise by
-    // inventing a word for it: standing stays a phrase, heat stays a number.
     if (crimes.warrant()) {
-        line += crimes.murderer() ? "WANTED FOR BLOOD  " : "WANTED  ";
+        line += blood ? "WANTED FOR BLOOD  " : "WANTED  ";
     }
     line += "HEAT " + std::to_string(crimes.heat());
+    const auto rider = [&line, kHeatColumns](const std::string& tail) {
+        if (line.size() + tail.size() <= kHeatColumns) {
+            line += tail;
+        }
+    };
     if (crimes.loot() > 0) {
-        line += "  LOOT " + std::to_string(crimes.loot());
+        rider("  LOOT " + std::to_string(crimes.loot()));
     }
     if (crimes.carryingBale()) {
-        line += "  BALE";
+        rider("  BALE");
     }
     // COURIER CASE. The man in hand rides the same row the bale does -- a
     // carried thing the ward would mind, worn on the HUD until the back room
@@ -8340,9 +8488,9 @@ std::string Session::heatLine() const {
     // the owner: he read "FINCH IN HAND" as unclear, so the row now says what
     // the body is doing rather than naming an idiom.
     if (sheetCarry_) {
-        line += "  CARRYING FINCH";
+        rider("  CARRYING FINCH");
     }
-    return clip(std::move(line), 34);
+    return clip(std::move(line), kHeatColumns);
 }
 
 bool Session::conversingNow() const noexcept {
@@ -9418,6 +9566,7 @@ FrameStats Session::drawFrame(Framebuffer& target) const {
             dipTravelSeam(target, travelFadeAnim_.value());
             composeDeathCeremony(target);
             composeRopeCeremony(target);
+            composeTakenPlate(target);
         }
         panelTailTiles_ = false;
         panelTailCourt_ = false;
@@ -9456,6 +9605,7 @@ FrameStats Session::drawFrame(Framebuffer& target) const {
             dipTravelSeam(target, travelFadeAnim_.value());
             composeDeathCeremony(target);
             composeRopeCeremony(target);
+            composeTakenPlate(target);
         }
         panelTailTiles_ = false;
         panelTailCourt_ = false;
@@ -9510,6 +9660,7 @@ FrameStats Session::drawFrame(Framebuffer& target) const {
             dipTravelSeam(target, travelFadeAnim_.value());
             composeDeathCeremony(target);
             composeRopeCeremony(target);
+            composeTakenPlate(target);
         }
         panelTailTiles_ = false;
         panelTailCourt_ = false;
@@ -9557,6 +9708,7 @@ FrameStats Session::drawFrame(Framebuffer& target) const {
             dipTravelSeam(target, travelFadeAnim_.value());
             composeDeathCeremony(target);
             composeRopeCeremony(target);
+            composeTakenPlate(target);
         }
         // The memo: this frame's panel fade belonged to the tiles. Only the
         // LIVE menu re-arms it -- a tail frame keeps it as-is, so the tail
@@ -9587,6 +9739,7 @@ FrameStats Session::drawFrame(Framebuffer& target) const {
             dipTravelSeam(target, travelFadeAnim_.value());
             composeDeathCeremony(target);
             composeRopeCeremony(target);
+            composeTakenPlate(target);
         }
         return stats;
     }
@@ -9618,6 +9771,7 @@ FrameStats Session::drawFrame(Framebuffer& target) const {
             dipTravelSeam(target, travelFadeAnim_.value());
             composeDeathCeremony(target);
             composeRopeCeremony(target);
+            composeTakenPlate(target);
         }
         panelTailTiles_ = false;
         // The memo: this frame's panel fade belonged to the bench. Only the
@@ -9661,6 +9815,7 @@ FrameStats Session::drawFrame(Framebuffer& target) const {
         dipTravelSeam(target, travelFadeAnim_.value());
         composeDeathCeremony(target);
         composeRopeCeremony(target);
+        composeTakenPlate(target);
     }
     return stats;
 }
@@ -10810,20 +10965,30 @@ std::string gWatchHaltNote;
 
 /// How many beats runCourtLine tries to land, by ending. THE PAGE (the
 /// default): Cull can SEE the player beside a patron; the paper -- lifts in
-/// his sight until the row reads WANTED; taken at reach with paper, the body
-/// at the Mission's door with TAKEN TO THE MISSION on the row and the page
-/// up. Three. "paper" adds HEAR THE PAPER open (four); "plea" adds I DID IT
-/// pleaded and the check block on the page (four); "deny" is the other plea,
-/// I DID NOT, weighed with THE PRIEST IS A MAN in the block (four); "serve"
-/// pleads I DID IT and TAKES the sentence row -- the coin paid, the nights
-/// or the days on the world clock, the record closed, TURNED LOOSE on the
-/// row with the day it ended on (five); "rope" is its own line: a killing
-/// before the Watch drinks, the paper with blood on it, taken to a rope
-/// hearing, THE ROPE passed and the drop taken, the plate with the end rows
-/// under it (five); "newman" takes the rope's own first row after the plate,
-/// the answer main() reads to open the creation window again (six). "wanted"
-/// stops on the first beat: the tag on the HUD, paper out, nobody's hand on
-/// you yet (one).
+/// his sight until the row reads WANTED; taken at reach with paper, his own
+/// line on the row with his hand on you; the plate, and the body at the
+/// Mission's door with the page up. Three. "cull" stops on the second beat,
+/// his line on the alert row in the room (two); "taken" stops on the plate,
+/// TAKEN TO THE MISSION over black before the page (three); "paper" adds
+/// HEAR THE PAPER open (four); "armed" presses I DID IT once, the row armed
+/// with SURE on its tail and the priest pressing for the answer (four);
+/// "plea" adds I DID IT pleaded and the check block on the page (four);
+/// "deny" is the other plea, I DID NOT, weighed with THE PRIEST IS A MAN in
+/// the block (four); "hand" takes the Skyrunners' oath off Finch first and
+/// then the same road, so the paper asks for the hand and I DID IT lands
+/// THE HAND (four); "serve" pleads I DID IT and TAKES the sentence row --
+/// the coin paid, the nights or the days on the world clock, the record
+/// closed, TURNED LOOSE on the row with the day it ended on (five).
+///
+/// The killing's endings: "bloodtag" stops on the corpse, WANTED FOR BLOOD
+/// on the HUD (one); "ropepage" is a killing before the Watch drinks, the
+/// paper with blood on it, taken to a rope hearing, I DID IT and THE ROPE
+/// passed -- the rope hearing page, THE DROP offered and not taken (four);
+/// "rope" takes the drop: the plate with the end rows under it (five);
+/// "newman" arms the rope's own first row after the plate (six) and takes
+/// it, the answer main() reads to open the creation window again (seven).
+/// "wanted" stops on the first beat: the tag on the HUD, paper out, nobody's
+/// hand on you yet (one).
 ///
 /// BARKS & GATE LANE. A line before this one may leave the clock at eight
 /// (--flame, the Mission's own hour: what you gave at the door is the only
@@ -10831,24 +10996,41 @@ std::string gWatchHaltNote;
 /// court then waits for Cull through the wait page's own jump, exactly as
 /// the rope line does after its killing.
 constexpr std::int32_t kCourtBeats = 3;
+constexpr std::int32_t kCourtCullBeats = 2;
+constexpr std::int32_t kCourtTakenBeats = 3;
 constexpr std::int32_t kCourtPaperBeats = 4;
+constexpr std::int32_t kCourtArmedBeats = 4;
 constexpr std::int32_t kCourtPleaBeats = 4;
 constexpr std::int32_t kCourtServeBeats = 5;
+constexpr std::int32_t kCourtBloodTagBeats = 1;
+constexpr std::int32_t kCourtRopePageBeats = 4;
 constexpr std::int32_t kCourtRopeBeats = 5;
-constexpr std::int32_t kCourtNewManBeats = 6;
+constexpr std::int32_t kCourtNewManBeats = 7;
 
 [[nodiscard]] std::int32_t courtBeatsFor(const std::string& ending) {
-    if (ending == "wanted") {
-        return 1;
+    if (ending == "wanted" || ending == "bloodtag") {
+        return ending == "wanted" ? 1 : kCourtBloodTagBeats;
+    }
+    if (ending == "cull") {
+        return kCourtCullBeats;
+    }
+    if (ending == "taken") {
+        return kCourtTakenBeats;
     }
     if (ending == "paper") {
         return kCourtPaperBeats;
     }
-    if (ending == "plea" || ending == "deny") {
+    if (ending == "armed") {
+        return kCourtArmedBeats;
+    }
+    if (ending == "plea" || ending == "deny" || ending == "hand") {
         return kCourtPleaBeats;
     }
     if (ending == "serve") {
         return kCourtServeBeats;
+    }
+    if (ending == "ropepage") {
+        return kCourtRopePageBeats;
     }
     if (ending == "rope") {
         return kCourtRopeBeats;
@@ -10859,10 +11041,10 @@ constexpr std::int32_t kCourtNewManBeats = 6;
     return kCourtBeats;
 }
 
-/// The endings whose line is the killing's: the rope, and the new man after
-/// it.
+/// The endings whose line is the killing's: the tag it leaves, the rope
+/// hearing, the rope, and the new man after it.
 [[nodiscard]] bool courtEndingHangs(const std::string& ending) {
-    return ending == "rope" || ending == "newman";
+    return ending == "bloodtag" || ending == "ropepage" || ending == "rope" || ending == "newman";
 }
 
 /// What the court line found, for the summary -- the nemesis line's rule: a
@@ -10986,6 +11168,23 @@ std::string gCourtNote;
     session.closeConversation();
     const bool hangs = courtEndingHangs(ending);
 
+    if (ending == "hand") {
+        // THE ROOFS FIRST: the Skyrunners' oath off Finch (the skyrun line's
+        // own first beat; he keeps the snug after ten), so the paper the
+        // lifts earn asks for the hand -- a Skyrunner's first. Then the same
+        // road as everybody else's.
+        if (speakTo(session, "Finch")) {
+            pick(session, sim::TopicKind::Join);
+            session.closeConversation();
+        }
+        const std::int32_t roofs = tavern.dialogue().factions().indexOf("skyrunners");
+        if (roofs < 0 || !tavern.dialogue().standings().isMember(roofs)) {
+            gCourtNote += " oath=refused";
+            return landed;
+        }
+        gCourtNote += " oath=sworn";
+    }
+
     if (hangs) {
         // THE KILLING, BEFORE THE WATCH DRINKS: the line starts at eight, the
         // room full and Cull not yet on his stool, so the corpse is made in
@@ -11021,6 +11220,18 @@ std::string gCourtNote;
         }
         gCourtNote += " slew=" + tavern.slainName() + " saw=" + std::to_string(crimes.slewWitnesses());
         ++landed;  // 1: a corpse on the roster, the ward knows whose hand
+        if (ending == "bloodtag") {
+            // THE TAG, photographed: WANTED FOR BLOOD on the row, the room
+            // still around you, nobody's hand on you yet. The row's own
+            // ease, fully up.
+            session.stepMany(sim::MoveInput{}, 16);
+            gCourtNote += " heat=" + std::to_string(crimes.heat());
+            if (session.heatLine().rfind("WANTED FOR BLOOD", 0) != 0) {
+                gCourtNote += " tag=none";
+                --landed;
+            }
+            return landed;
+        }
         // THE WAIT: the wait page's own jump to the hour the Watch drinks,
         // the body out of the fight's reach first (skipToHour is refused
         // with fists up) and the heat cooling honestly through the hours --
@@ -11085,17 +11296,48 @@ std::string gCourtNote;
         }
     }
 
-    // TAKEN AT REACH, WITH PAPER. The arrest opens the hearing; the step
-    // that reads the release puts the body at the Mission's door and the
-    // page up.
+    // TAKEN AT REACH, WITH PAPER. The arrest opens the hearing on the ledger
+    // and the ARREST BEAT on the screen: the officer's own line on the row
+    // with his hand on you, then the plate, then the page.
     if (!standUntilTakenBy(session, cullId) || tavern.lastArrest().sentence == sim::Sentence::Fined) {
         gCourtNote += " arrest=" + std::string(tavern.lastArrest().happened ? "paperless" : "none");
         return landed;
     }
-    ++landed;  // 2: taken with paper
-    session.stepMany(sim::MoveInput{}, 1);
     gCourtNote += " ask=" + std::string(sim::sentenceName(tavern.lastArrest().sentence));
-    if (!session.courtOpen() || tavern.playerInside() ||
+    if (!session.takenBeatUp() || session.courtOpen() || !tavern.playerInside() ||
+        session.lastMessage().rfind(tavern.lastArrest().officer + ": ", 0) != 0) {
+        gCourtNote += " beat=no";
+        return landed;
+    }
+    ++landed;  // 2: taken with paper, his line on the row, his hand on you
+    if (ending == "cull") {
+        // The row's own ease, fully up, well inside the beat's hold. A
+        // capture of this ending wants --settle-steps=0: the rest steps
+        // would walk the beat through to the page.
+        session.stepMany(sim::MoveInput{}, 16);
+        return landed;
+    }
+    // THE PLATE: the beat spent to the cut, one step at a time, so the frame
+    // is the plate's first.
+    for (int step = 0; step < kTakenOfficerSteps + 2 && !session.takenPlateUp(); ++step) {
+        session.stepMany(sim::MoveInput{}, 1);
+    }
+    if (!session.takenPlateUp() || session.courtOpen() ||
+        session.lastMessage().rfind("TAKEN TO THE MISSION. ", 0) != 0 ||
+        session.takenPlate() != session.lastMessage()) {
+        gCourtNote += " plate=no";
+        return landed;
+    }
+    if (ending == "taken") {
+        ++landed;  // 3: the plate, TAKEN TO THE MISSION over black
+        return landed;
+    }
+    // THE PAGE, when the plate's hold runs out: the body at the Mission's
+    // door, the page up.
+    for (int step = 0; step < kTakenPlateSteps + 2 && !session.courtOpen(); ++step) {
+        session.stepMany(sim::MoveInput{}, 1);
+    }
+    if (!session.courtOpen() || tavern.playerInside() || session.takenPlateUp() ||
         session.lastMessage().rfind("TAKEN TO THE MISSION. ", 0) != 0) {
         gCourtNote += " page=no";
         return landed;
@@ -11111,7 +11353,22 @@ std::string gCourtNote;
         }
         return landed;
     }
-    if (ending == "plea" || ending == "deny" || ending == "serve" || hangs) {
+    if (ending == "armed") {
+        // THE ROW ARMED: one press on I DID IT, SURE on its tail, the priest
+        // pressing for the answer (court.plead) where his opening was.
+        (void)session.routeCourtKey(Key::Num1);
+        const HearingPageState page = session.hearingPageState();
+        const std::string pressing =
+            std::string(tavern.dialogue().barks().line("court.plead", crimes.hearings()));
+        if (session.courtPleaArmed() && page.armed == 0 && !page.rows.empty() &&
+            page.rows[0].label.find("-- SURE? ") != std::string::npos && page.priest == pressing) {
+            ++landed;  // 4: armed, the question in the priest's mouth
+        } else {
+            gCourtNote += " armed=no";
+        }
+        return landed;
+    }
+    if (ending == "plea" || ending == "deny" || ending == "hand" || ending == "serve" || hangs) {
         // THE PLEA, armed and confirmed -- I DID IT on every ending but the
         // denial's -- then the judgment's own hold so the sentence row is on
         // the list under the check block.
@@ -11126,7 +11383,22 @@ std::string gCourtNote;
         if (hearing.judged() && session.courtSentenceOffered()) {
             ++landed;  // 4: pleaded, weighed, the row offered
         }
-        if (ending == "plea" || ending == "deny") {
+        if (ending == "hand" && hearing.judgment != sim::Judgment::TheHand) {
+            // The oath was sworn and the paper asked for the hand; a
+            // judgment that spared it is the bench working, but it is not
+            // the frame this ending owes.
+            gCourtNote += " hand=no";
+            --landed;
+        }
+        if (ending == "plea" || ending == "deny" || ending == "hand") {
+            return landed;
+        }
+        if (ending == "ropepage") {
+            // THE ROPE HEARING PAGE: the blood reading, THE ROPE on the
+            // badge, THE DROP offered and not taken.
+            if (hearing.judgment != sim::Judgment::TheRope) {
+                gCourtNote += " rope=no";
+            }
             return landed;
         }
         if (ending == "serve") {
@@ -11169,8 +11441,19 @@ std::string gCourtNote;
             ++landed;  // 5: hanged, the plate and the rows
         }
         if (ending == "newman" && session.ropeRowsUp()) {
-            // A NEW MAN, by the row itself: the answer main() reads beside
+            // A NEW MAN, by the row itself: ARMED on the first press (SURE
+            // on its tail -- the one state of the plate that is not the
+            // plate), TAKEN on the second: the answer main() reads beside
             // quitRequested to open the creation window again. Not a quit.
+            (void)session.routeCourtKey(Key::Num1);
+            session.stepMany(sim::MoveInput{}, 1);
+            if (session.ropeRowArmed() == 0 && !session.runEnded() &&
+                session.ropeRows()[0].find("-- SURE? ") != std::string::npos) {
+                ++landed;  // 6: the row armed
+                gCourtNote += " armed=new-man";
+            } else {
+                gCourtNote += " armed=no";
+            }
             (void)session.routeCourtKey(Key::Num1);
             session.stepMany(sim::MoveInput{}, 1);
             const Session::RunEndChoice reason = session.runEndReason();
@@ -11180,7 +11463,7 @@ std::string gCourtNote;
                                                                     : "none");
             if (session.runEnded() && reason == Session::RunEndChoice::NewMan &&
                 !session.quitRequested()) {
-                ++landed;  // 6: a new man asked for, the window's loop owed
+                ++landed;  // 7: a new man asked for, the window's loop owed
             }
         }
     }
@@ -13822,9 +14105,12 @@ SmokeRunResult runSmoke(const SmokeRunConfig& config) {
     if (config.court) {
         summary << " | court beats=" << result.courtBeats << '/' << courtBeatsFor(config.courtEnd)
                 << " page=" << (session.courtOpen() ? "up" : "down")
+                << " plate=" << (session.takenPlateUp() ? "up" : (session.takenBeatUp() ? "beat" : "down"))
                 << " hearing=" << (session.tavern().hearingPending() ? "pending" : "none")
                 << " executed=" << (session.tavern().executed() ? "yes" : "no")
-                << " rows=" << (session.ropeRowsUp() ? "up" : "down") << gCourtNote << " row=\""
+                << " rows=" << (session.ropeRowsUp() ? "up" : "down")
+                << " armed=" << (session.courtPleaArmed() ? "yes" : (session.ropeRowArmed() >= 0 ? "end-row" : "no"))
+                << gCourtNote << " row=\""
                 << session.lastMessage() << '"';
     }
     if (config.nemesis) {

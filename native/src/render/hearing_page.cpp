@@ -145,8 +145,12 @@ struct Composition {
 /// number ink (the reference's yellow-then-green, translated: the sum is a
 /// mechanical fact), the plea's term the same, the line(s) it was read
 /// against dim -- reference material -- and the sentence in number ink
-/// because it is the consequence stated as a figure.
-[[nodiscard]] std::vector<PanelLine> weighingLines(const HearingPageState& state) {
+/// because it is the consequence stated as a figure. THE ARITHMETIC IS
+/// PACKED BY TERM at the pane's width (packTerms) and each packed row is its
+/// own line, already narrower than the pane, so drawProse has nothing left
+/// to wrap and no sign can part from its term. The joined string is the
+/// fallback for a state that carried no tokens.
+[[nodiscard]] std::vector<PanelLine> weighingLines(const HearingPageState& state, int cells) {
     std::vector<PanelLine> lines;
     const auto plain = [&lines](const std::string& text, InkRole ink) {
         if (text.empty()) {
@@ -157,10 +161,32 @@ struct Composition {
         line.bodyInk = ink;
         lines.push_back(std::move(line));
     };
-    plain(state.arithmetic, InkRole::Number);
-    plain(state.pleaTerm, InkRole::Number);
+    const auto packed = [&](const std::vector<std::string>& terms, const std::string& joined) {
+        if (terms.empty()) {
+            plain(joined, InkRole::Number);
+            return;
+        }
+        for (const std::string& row : packTerms(terms, cells)) {
+            plain(row, InkRole::Number);
+        }
+    };
+    packed(state.arithmeticTerms, state.arithmetic);
+    packed(state.pleaTerms, state.pleaTerm);
     plain(state.lines, InkRole::Dim);
     return lines;
+}
+
+/// The rows the weighing takes at the top of the judged pane: the badge and
+/// the packed block, or NOTHING when nothing was weighed (mercy given once:
+/// no arithmetic, no lines, and no badge claiming otherwise). One walk for
+/// the draw, the measure and the pulse.
+[[nodiscard]] int weighingRows(const HearingPageState& state, const PanelRect& detail,
+                               const PanelMetric& metric) {
+    const std::vector<PanelLine> lines = weighingLines(state, metric.cellsIn(detail.w));
+    if (lines.empty()) {
+        return 0;
+    }
+    return 1 + measureProse(detail, metric, lines);
 }
 
 [[nodiscard]] std::vector<PanelLine> priestLines(const HearingPageState& state) {
@@ -216,19 +242,41 @@ struct Composition {
     return lines;
 }
 
+/// THE JUDGED PANE'S LAYOUT, resolved once for the draw, the measure and the
+/// pulse: the weighing (badge and block, or nothing), a row of air, the
+/// verdict badge, then the sentence and the priest. THE AIR IS THE ONE ROW
+/// THAT GIVES: when the block is at its tallest -- a denial with every term
+/// weighed, packed by whole terms at the narrowest window -- the row of air
+/// before the verdict is the row that goes, before a word of the priest's
+/// is clipped. Nothing else moves.
+struct JudgedLayout {
+    int weighed = 0;
+    int air = 0;
+    int verdictRow = 0;
+    int priest = 0;
+    int wanted = 0;
+};
+
+[[nodiscard]] JudgedLayout judgedLayoutOf(const HearingPageState& state, const PanelRect& detail,
+                                          const PanelMetric& metric) {
+    JudgedLayout out;
+    const int rows = metric.rowsIn(detail.h);
+    out.weighed = weighingRows(state, detail, metric);
+    out.priest = measureProse(detail, metric, priestLines(state));
+    const int base = out.weighed + 1 + out.priest;  // the block, the verdict, the rest
+    out.air = (out.weighed > 0 && base + 1 <= rows) ? 1 : 0;
+    out.verdictRow = out.weighed + out.air;
+    out.wanted = base + out.air;
+    return out;
+}
+
 /// The rows the detail pane wants for the JUDGED view at `detail`'s width:
-/// badge, blank, the weighing, blank, the verdict badge, the sentence and
-/// the priest. The tallest thing any view can ask of the pane, which is what
+/// badge, the weighing, air, the verdict badge, the sentence and the priest.
+/// The tallest thing any view can ask of the pane, which is what
 /// kHearingBodyRows was chosen against.
 [[nodiscard]] int judgedRowsWanted(const HearingPageState& state, const PanelRect& detail,
                                    const PanelMetric& metric) {
-    int at = 0;
-    at += 1;  // THE PRIEST WEIGHS
-    at += measureProse(detail, metric, weighingLines(state));
-    at += 1;  // air
-    at += 1;  // the verdict
-    at += measureProse(detail, metric, priestLines(state));
-    return at;
+    return judgedLayoutOf(state, detail, metric).wanted;
 }
 
 /// THE NAV BAND: the one key this page honours, worded for the tutor tier.
@@ -283,6 +331,14 @@ struct Composition {
         detail = std::max(detail, static_cast<int>(fact.size()));
     }
     detail = std::max(detail, static_cast<int>(state.lines.size()));
+    // A TERM IS NEVER SPLIT, so the pane is at least as wide as the widest
+    // term it will pack -- "- 10 THE PRIEST IS A MAN" and its kin.
+    for (const std::string& term : state.arithmeticTerms) {
+        detail = std::max(detail, static_cast<int>(term.size()));
+    }
+    for (const std::string& term : state.pleaTerms) {
+        detail = std::max(detail, static_cast<int>(term.size()));
+    }
     detail = std::max(detail, static_cast<int>(state.verdict.size()) + 2);
     detail = std::max(detail, static_cast<int>(state.weighsBadge.size()) + 2);
     int want = masterDetailCellsFor(kMasterShare, kMinMasterCells, master, detail);
@@ -356,16 +412,22 @@ void drawDetail(Framebuffer& target, const Composition& comp, const HearingPageS
         }
         case HearingView::Judged: {
             // THE CHECK BLOCK. The name of the check, its arithmetic, the
-            // threshold, the verdict -- then the consequence, in prose.
+            // threshold, the verdict -- then the consequence, in prose. A
+            // hearing that weighed nothing (mercy given once) starts at the
+            // verdict: no badge over an empty block.
             int at = 0;
-            drawBadge(target, detail, metric, at, state.weighsBadge, ink.accent, alpha);
-            at += 1;
-            if (at < rows) {
-                const PanelRect weighRect{detail.x, detail.y + metric.heightOf(at), detail.w,
-                                          metric.heightOf(rows - at)};
-                at += drawProse(target, weighRect, metric, weighingLines(state), alpha);
+            const JudgedLayout layout = judgedLayoutOf(state, detail, metric);
+            const std::vector<PanelLine> weighed = weighingLines(state, metric.cellsIn(detail.w));
+            if (!weighed.empty()) {
+                drawBadge(target, detail, metric, at, state.weighsBadge, ink.accent, alpha);
+                at += 1;
+                if (at < rows) {
+                    const PanelRect weighRect{detail.x, detail.y + metric.heightOf(at), detail.w,
+                                              metric.heightOf(rows - at)};
+                    at += drawProse(target, weighRect, metric, weighed, alpha);
+                }
+                at += layout.air;  // air before the verdict, when the pane has it
             }
-            at += 1;  // air before the verdict
             if (at < rows) {
                 drawBadge(target, detail, metric, at, state.verdict, state.verdictAccent, alpha);
                 at += 1;
@@ -381,6 +443,31 @@ void drawDetail(Framebuffer& target, const Composition& comp, const HearingPageS
 }
 
 }  // namespace
+
+std::vector<std::string> packTerms(const std::vector<std::string>& terms, int cells) {
+    std::vector<std::string> rows;
+    std::string row;
+    for (const std::string& term : terms) {
+        if (term.empty()) {
+            continue;
+        }
+        if (row.empty()) {
+            row = term;
+            continue;
+        }
+        if (static_cast<int>(row.size() + 1 + term.size()) <= std::max(1, cells)) {
+            row += ' ';
+            row += term;
+        } else {
+            rows.push_back(std::move(row));
+            row = term;
+        }
+    }
+    if (!row.empty()) {
+        rows.push_back(std::move(row));
+    }
+    return rows;
+}
 
 HearingPageMetrics hearingPageMetrics(const HearingPageState& state, int frameWidth,
                                       int frameHeight) {
@@ -504,7 +591,7 @@ void drawHearingPage(Framebuffer& target, const HearingPageState& state) {
         if (state.view == HearingView::Judged && state.commitPulse > 0.0F &&
             !state.verdict.empty()) {
             const PanelRect detail = detailRectOf(comp);
-            const int row = 1 + measureProse(detail, metric, weighingLines(state)) + 1;
+            const int row = judgedLayoutOf(state, detail, metric).verdictRow;
             if (row < metric.rowsIn(detail.h)) {
                 const int cells = std::min(metric.cellsIn(detail.w),
                                            static_cast<int>(state.verdict.size()) + 2);
