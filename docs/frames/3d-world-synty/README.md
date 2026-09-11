@@ -1,7 +1,7 @@
-# 3D world, the Synty kit on the Docks, second pass
+# 3D world, the Synty kit on the Docks, third pass
 
 Every frame here is `dist\granadad.exe` (the docker gate's mingw build, branch
-`3d/build`, commit `6d4b8656`) shot on the Windows host with a real GPU through
+`3d/build`, commit `624164ad`) shot on the Windows host with a real GPU through
 the shutter. 1280x720, the 640x360 render upscaled 2x, the terminal HUD on top.
 Nothing is staged. The placements are a pure function of the tile map and the
 catalogue (`content/raws/world3d/docks-pieces.json`), the people are where the
@@ -11,11 +11,25 @@ Reshoot any frame on this commit with the command in the table. `--hold` keeps
 the body on its spawn tile, `--pitch=DEG` looks up or down, a narrow `--fov` is
 the zoom. Run them from the repo root.
 
-## The critic's fourteen
+## The critic's six
 
-A Bethesda-style pass on the first cut scored it 6/10 and listed fourteen
-defects. This is where each one landed. Code lines are in
-`native/src/render3d/static_pieces.cpp` unless said otherwise.
+The second cut scored 7/10 with two blockers and four minors. Where each one
+landed. Code is `native/src/render3d/static_pieces.cpp` unless said otherwise.
+
+| # | the defect | what changed | see |
+|---|---|---|---|
+| 1 | a 0.25 m pixel band round the Gull's ceiling line wherever a wall stands over the room, and a hole over every pillar | a wall's underside quad hangs at the slab plane now, the same plane the floor ceilings round it hang at, so there is no recess and no slab side to see (`ceilings()`, the underside pass). The ceiling pass also takes a floor over a WALL that stands inside a room, a pillar, the bar, the hearth (`overRoomWall()`), so the room's ceiling is one plane. | 13, 21, 22, 23 |
+| 2 | every rowboat a capsized dome, six to a frame | the boat is upright. Its glTF says so (normals down at the keel, up on the boards, the winding agrees, the cleats on the gunwale at Y 1.09); it read as a dome because a flat unlit colour is a dome and a bowl alike. Point pieces are drawn shaded by their own normals now (`kDrawShaded`, the four-tint shader in `rl_backend.cpp`: faces that look down to half, faces that look up lifted an eighth, the sides as they were), so the inside is bright, the outer hull dark and the rim between them reads. And `boatEvery` 7 to 14. | 08, 17, 18 |
+| 3 | hard-edged squares behind every lantern by day, bright rectangles at night, a tan square through the brazier | a flame's quad is drawn as a halo (`kDrawHalo`): its alpha falls off radially over the quad to nothing at the edge. By day it keeps an eighth of its alpha, not a third (`kFlameDayAlpha`). The lantern wears a warm tint; it has no glass submesh (one atlas material), so the whole lamp is its own warm light. The brazier is 0.6 and its tray and flame are placed at the stand's own scale. | 03, 15, 16, 25 |
+| 4 | the quay wall below the lip chunk atlas, dark chevrons under the quay, a sliver of atlas at a hull's waterline | the chevrons were the cornice's dentils on the harbour band; the cornice stays above it now. A masonry face on the harbour band with the water beside it is a quay wall and wears the flag piece stood on edge (`QuayWall`, `SM_Env_Path_Stone_01`) from the coping down into the water. The sliver was the wedge a leaning quad opens at every corner of a hull, and no rectangle closes a wedge, so the lean is a knob and ships at zero: the hull stands plumb with its gunwale beam and its lines. | 24, 08, 17 |
+| 5 | light steps at the Gull's jamb at night, a lighter hairline at every plaster cut by day, no window beside the door | a run's cut at a jamb is lit between the jamb cell and the gap cell, and the door frame is lit across the gap from the same pair, so the two meet at one value (`runLight()` with `beyondA0/A1`). Thin plaster quads overlap whatever they meet by half a centimetre and stand a hair proud, staggered, so no hairline of the chunk shows at a cut. The frame's end returns stay inside the wall's own thickness (the frame's trim is thicker than the wall but stops short of the ends; proud of it, the return's edge was the hairline). A run that ends at a jamb is cut from the door, so the door's bay is a whole bay and the window rhythm starts on it: a window beside every door. | 03, 16, 25 |
+| 6 | flags fitted 3 m over 2 tiles as crazy paving, a brick top wearing street cobbles with a red lip, four banded piles either side of the door like a fortress gate | the roof finish keys on the building top: a floor of a roofing material, or any floor with a room under it, or one over that room's walls, whatever the tile says (`roofCell()`), wears the flag piece at its own 1:1 module on whole 3x3 blocks over a dark fill, the rest lead, and its lips in the roof's own dark. A timber post (a lone cell, or one whose single wall neighbour is of another kind) is a square pillar, plaster indoors and timber out; within two cells of the water it keeps its tarred boards and carries one pile, its head over the core. | 05, 06, 11, 01 |
+
+## The critic's fourteen, from the second pass
+
+The first cut scored 6/10 and listed fourteen defects. Where each one
+landed. Code lines are in `native/src/render3d/static_pieces.cpp` unless said
+otherwise.
 
 | # | the defect | what changed | see |
 |---|---|---|---|
@@ -57,10 +71,12 @@ defects. This is where each one landed. Code lines are in
 | 17 | the quay edge at the water | `--spawn=147,59,19 --yaw=330 --pitch=-14 --hold --time=10 --screenshot=17.png` |
 | 18 | a pier head, the crane on it | `--spawn=131,44,19 --yaw=0 --pitch=-4 --hold --time=10 --screenshot=18.png` |
 | 19 | the overview at nine at night | `--spawn=153,72,21 --yaw=300 --pitch=-20 --hold --time=21 --screenshot=19.png` |
-| 20 | the 1x1 timber posts flanking the Gull's door | `--spawn=152,61,19 --yaw=180 --pitch=2 --fov=55 --hold --time=10 --screenshot=20.png` |
+| 20 | the Gull's door, lantern and window at 55 degrees (the posts either side are in 01) | `--spawn=152,61,19 --yaw=180 --pitch=2 --fov=55 --hold --time=10 --screenshot=20.png` |
 | 21 | the Gull's hearth, head on | `--spawn=150,73,19 --yaw=180 --hold --time=20 --screenshot=21.png` |
 | 22 | the Gull's tables, pillars and bar from the snug end | `--spawn=156,67,19 --yaw=250 --pitch=-3 --hold --time=20 --screenshot=22.png` |
 | 23 | the doorway corner from inside the room | `--spawn=155,69,19 --yaw=325 --pitch=6 --fov=50 --hold --time=20 --screenshot=23.png` |
+| 24 | the quay wall from the pier, coping to water | `--spawn=132,54,19 --yaw=120 --pitch=-22 --fov=70 --hold --time=10 --screenshot=24.png` |
+| 25 | the Gull's door bay, the window beside the door, the lantern between | `--spawn=152,60,19 --yaw=180 --pitch=6 --fov=50 --hold --time=10 --screenshot=25.png` |
 
 ## What is placed
 
@@ -73,12 +89,15 @@ every test draws). The pieces are a skin over it, placed by
   (`SM_Bld_Base_Wall_Thin_01`) on rendered stone out of doors and on every
   indoor face, tinted per material. The plank quad stood on edge on timber.
   A timber wall beside the harbour is a hull and wears the plank quad across,
-  leaning out, tarred.
+  tarred, plumb (the lean is a knob, shipped at zero). A masonry face on the
+  harbour band with the water beside it is a quay wall and wears the flag
+  piece on edge, coping to water.
 - **corners**. A brick wall tile with exactly two exposed adjacent faces gets
   the corner piece. Other convex ends extend so the two faces close the
   corner. One-sided quads extend to their standoff and meet there.
 - **windows**. Every second piece along an outdoor run, on whole modules, only
-  where a room stands behind. The kit window on masonry, a hung window
+  where a room stands behind, counted from the door's end so the bay beside a
+  door gets one. The kit window on masonry, a hung window
   (`SM_Bld_House_Window_04`) on timber. The pane is dark by day and warm at
   night over a lit or a homely room.
 - **doors**. A two or three tile gap in a wall line, roofed on one side and
@@ -86,19 +105,22 @@ every test draws). The pieces are a skin over it, placed by
   rendered building, and a leaf hung open on each jamb. Four to eight tiles
   is a gate and gets a post each side and a beam across.
 - **cornices, caps, undersides**. The trim along every outdoor masonry roof
-  line, the wall heads capped in the wall's colour, the plaster quad under
-  every dressed wall that stands over an open cell.
+  line above the harbour band, the wall heads capped in the wall's colour, the
+  plaster quad under every dressed wall that stands over an open cell, at the
+  slab plane.
 - **floors and lips**. Two cobble blocks alternating and turning by hash on
   brick and granite streets over a flat fill, flags on Reman concrete, planks
   on oak and trudgeon, the flat fill on dirt and ash. The slab side quad
   wherever a floor edge faces air.
 - **ceilings and joists**. The plaster quad under every floor slab with a room
-  or the water under it, tinted per the floor. Beams across every room
-  ceiling on the odd grid lines.
-- **roofs**. Roofing planes (thatch in the tiles) wear the flagstone piece as
-  slates over a slate fill, loose tiles one cell in seven, an upstand along
-  every edge cell, chimneys one in twelve over masonry walls, a crate or a
-  barrel one edge cell in nine.
+  or the water under it, and under the slab over a pillar, a bar or a hearth
+  inside a room, tinted per the floor. Beams across every room ceiling on the
+  odd grid lines.
+- **roofs**. Every building top with sky over it (a roofing material, a floor
+  over a room, the ring over that room's walls) wears the flagstone piece at
+  its own module as slates over a slate fill, loose tiles one cell in seven,
+  an upstand along every edge cell, chimneys one in twelve over masonry
+  walls, a crate or a barrel one edge cell in nine.
 - **water**. The Dungeon Realms water plane over the harbour's surface, to 140
   tiles.
 - **props and furniture**. One floor cell in eleven against exactly one wall
@@ -106,12 +128,17 @@ every test draws). The pieces are a skin over it, placed by
   indoor lantern, tables with benches and mugs on the lattice and shelves with
   bottles on the masonry. A free-standing two-cell masonry block in a roofed
   room is a hearth.
-- **posts**. A lone 1x1 timber cell is a plastered square pillar indoors and a
-  tarred core with four banded posts out of doors.
+- **posts**. A timber post (a lone 1x1 cell, or one against a wall of another
+  kind) is a square pillar, plastered indoors and timber out of doors. Within
+  two cells of the water it is a tarred core with one pile through it.
 - **lamps**. Every baked lamp. A fire is a brazier with an ember tray and a
   flame. A lantern beside a wall hangs from a bracket arm, a lantern beside a
   door hangs beside it, a lantern under or beside a roof hangs on a chain, a
-  lantern in the open is the lamp post. Every flame is its own light.
+  lantern in the open is the lamp post. Every flame is its own light, a soft
+  halo that fades by day.
+- **shading**. A prop, a boat, a pillar, a chimney, a leaf: anything placed
+  at a point is shaded by its own normals, undersides dark and tops lifted,
+  so it has volume under a flat sky.
 - **harbour**. Rowboats along quay edges over clear water, cranes one cell back
   from pier heads, mooring lines down the hulls.
 
@@ -139,8 +166,13 @@ one line once the tiles say so.
   Gull's tables are these, in the sim's terms), so the dressing keeps the
   footprint and makes it a pillar or a post cluster rather than pretending
   it is thin.
-- The lantern halo is two crossed translucent quads. It reads as a glow from
-  the street and as a square up close.
+- The lantern halo is two crossed translucent quads with a radial falloff.
+  It reads as a glow; walk through one and the crossing shows.
+- The roof flags land on whole 3x3 blocks at their own module. A roof strip
+  narrower than three stays the plain dark fill, lead rather than slate.
+- The hull stands plumb. A lean is a knob (`hullFlareDegrees`) but a leaning
+  rectangle opens a wedge at every corner, so the shipped catalogue keeps it
+  at zero.
 - Props, furniture and boats are render-only. The sim knows nothing of them
   and a body walks through a table.
 - Some crowd bodies render white in daylight (a rig's embedded texture does
@@ -148,11 +180,11 @@ one line once the tiles say so.
 
 ## Numbers
 
-Gate stamp `6d4b8656`, native digest
-`7c1b6522b35b425cf16b7077a5deb6e3dcbc969b90ca84c50577eada41072203`, 1184
+Gate stamp `624164ad`, native digest
+`5570bd9d9054c6e1a25b969cf69de754430d382403599ff6cab60c86eccf2dfd`, 1186
 ctest cases, `verify-windows.ps1` PASS with both reports byte-identical.
 Tavern baseline `0x86E05F527E54E795` and population baseline
 `0x2646C1AAA2BA38DF`, both twice, unmoved. Scene hash on this build,
-`--smoke=40 --time=20` twice as separate processes, `0x52F94078E844DB03` both
-times with byte-identical PNGs. 19,134 pieces placed over the district, about
-3,700 described from the spawn.
+`--smoke=40 --time=20` twice as separate processes, `0xA47D544D1681F761` both
+times with byte-identical PNGs (sha256 `FD3D16BB...4A70A1`). 19,234 pieces
+placed over the district, about 3,600 described from the spawn.
