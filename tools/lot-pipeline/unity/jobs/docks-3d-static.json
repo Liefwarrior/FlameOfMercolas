@@ -1,0 +1,109 @@
+{
+  "jobName": "docks-3d-static",
+  "subdir": "static",
+  "sheetCell": 128,
+  "sheetColumns": 12,
+  "light": { "euler": [50, -30, 0], "intensity": 1.15, "ambient": 0.45, "color": [1, 0.97, 0.9] },
+  "sets": [
+    {
+      "pack": "PolygonGeneric", "role": "world",
+      "folder": "Assets/Synty/PolygonGeneric/Prefabs/Base",
+      "names": [
+        "SM_Bld_Base_Floor_01", "SM_Bld_Base_Floor_Half_01", "SM_Bld_Base_Floor_Quarter_Combined_01", "SM_Bld_Base_Floor_Hole_01",
+        "SM_Bld_Base_Ceiling_01", "SM_Bld_Base_Ceiling_Half_01",
+        "SM_Bld_Base_Wall_01", "SM_Bld_Base_Wall_Half_01", "SM_Bld_Base_Wall_Quarter_01", "SM_Bld_Base_Wall_Corner_01",
+        "SM_Bld_Base_Wall_Door_01", "SM_Bld_Base_Wall_Door_Double_01", "SM_Bld_Base_Wall_Door_Large_01",
+        "SM_Bld_Base_Wall_Window_01", "SM_Bld_Base_Wall_Window_Double_01", "SM_Bld_Base_Wall_Window_Half_01",
+        "SM_Bld_Base_Wall_Thin_01", "SM_Bld_Base_Wall_Thin_Half_01", "SM_Bld_Base_Wall_Trim_01", "SM_Bld_Base_Wall_Destroyed_01",
+        "SM_Bld_Base_Door_01", "SM_Bld_Base_Door_Large_01",
+        "SM_Bld_Base_Pillar_01", "SM_Bld_Base_Pillar_Half_01",
+        "SM_Bld_Base_Roof_Straight_01", "SM_Bld_Base_Roof_Half_01", "SM_Bld_Base_Roof_Cap_01", "SM_Bld_Base_Roof_Cap_End_01",
+        "SM_Bld_Base_Roof_Corner_In_01", "SM_Bld_Base_Roof_Corner_Out_01", "SM_Bld_Base_Roof_Trim_01",
+        "SM_Bld_Base_Stairs_01", "SM_Bld_Base_Stairs_02", "SM_Bld_Base_Stairwell_Wall_01",
+        "SM_Bld_Base_45_Wall_01"
+      ]
+    },
+    {
+      "pack": "PolygonGeneric", "role": "prop",
+      "folder": "Assets/Synty/PolygonGeneric/Prefabs/Props",
+      "names": [
+        "SM_Gen_Prop_Barrel_Wood_01", "SM_Gen_Prop_Barrel_Wood_02", "SM_Gen_Prop_Barrel_Wood_03", "SM_Gen_Prop_Barrel_Metal_01",
+        "SM_Gen_Prop_Crate_01", "SM_Gen_Prop_Crate_02", "SM_Gen_Prop_Crate_03", "SM_Gen_Prop_Crate_Preset_01",
+        "SM_Gen_Prop_Chain_01", "SM_Gen_Prop_Chain_Anchor_01", "SM_Gen_Prop_Rope_01", "SM_Gen_Prop_Rope_Knot_01",
+        "SM_Gen_Prop_Sack_01", "SM_Gen_Prop_Sack_Stack_01", "SM_Gen_Prop_Plank_01", "SM_Gen_Prop_Plank_02", "SM_Gen_Prop_Hook_01",
+        "SM_Gen_Prop_Bottle_01", "SM_Gen_Prop_Mug_01", "SM_Gen_Prop_Table_01", "SM_Gen_Prop_Chair_01", "SM_Gen_Prop_Chest_01",
+        "SM_Gen_Prop_Shelf_01", "SM_Gen_Prop_Pot_01", "SM_Gen_Prop_Light_Wall_01", "SM_Gen_Prop_Food_Bread_01"
+      ]
+    },
+    {
+      "pack": "PolygonGeneric", "role": "world",
+      "folder": "Assets/Synty/PolygonGeneric/Prefabs/Building",
+      "names": [ "SM_Gen_Bld_Beam_01", "SM_Gen_Bld_Beam_02", "SM_Gen_Bld_Ladder_01" ]
+    },
+    {
+      "pack": "PolygonGeneric", "role": "world",
+      "folder": "Assets/Synty/PolygonGeneric/Prefabs/Environment",
+      "names": [ "SM_Gen_Env_Water_Plane_01", "SM_Gen_Env_Ground_Dirt_01" ]
+    },
+    {
+      "pack": "PolygonKnights", "role": "world",
+      "folder": "Assets/Synty/PolygonKnights/Prefabs/Buildings",
+      "names": [
+        "SM_Bld_House_Room_01", "SM_Bld_House_Room_02", "SM_Bld_House_RoomTall_01", "SM_Bld_House_RoomTop_01", "SM_Bld_House_TopRoomSmall_01",
+        "SM_Bld_House_Door_01", "SM_Bld_House_Door_02", "SM_Bld_House_Window_01", "SM_Bld_House_Window_02", "SM_Bld_House_Chimney_01",
+        "SM_Bld_House_Foundation_01", "SM_Bld_House_Foundation_02", "SM_Bld_House_Foundation_Beams_01", "SM_Bld_House_Extension_01",
+        "SM_Bld_House_StepsSmall_01", "SM_Bld_Leanto_01",
+        "SM_Bld_Castle_Wall_01", "SM_Bld_Castle_Door_01", "SM_Bld_Castle_Iron_Gate_01", "SM_Bld_Castle_Wall_Gate_01", "SM_Bld_Castle_Tower_Mini_01",
+        "SM_Bld_Rockwall_Straight_01", "SM_Bld_Rockwall_Archway_01", "SM_Bld_StairsLarge_01", "SM_Bld_Village_Well_01", "SM_Bld_Tent_01"
+      ]
+    },
+    {
+      "pack": "PolygonKnights", "role": "prop",
+      "folder": "Assets/Synty/PolygonKnights/Prefabs/Props",
+      "names": [
+        "SM_Prop_Lampost_01", "SM_Prop_Brazier_01", "SM_Prop_CampFire_01", "SM_Prop_Crate_01", "SM_Prop_Cart_01", "SM_Prop_CartWheel_01",
+        "SM_Prop_Fence_01", "SM_Prop_Fence_02", "SM_Prop_Grate_01", "SM_Prop_Rowboat_01", "SM_Prop_ShopSign_01", "SM_Prop_Banner_01",
+        "SM_Prop_Beam_01", "SM_Prop_Trapdoor_01", "SM_Prop_WaterWheel_01", "SM_Prop_Weathervane_01", "SM_Prop_Plinth_01", "SM_Prop_Gravestone_01"
+      ]
+    },
+    {
+      "pack": "PolygonKnights", "role": "world",
+      "folder": "Assets/Synty/PolygonKnights/Prefabs/Environments",
+      "names": [
+        "SM_Env_Canal_01", "SM_Env_Canal_02", "SM_Env_Canal_Block_01", "SM_Env_Canal_Bridge_01",
+        "SM_Env_Path_Cobble_01", "SM_Env_Path_Cobble_02", "SM_Env_Path_Cobble_Stone_01", "SM_Env_Path_Stone_01", "SM_Env_Path_Tile_01",
+        "SM_Env_Tile_Dirt_01", "SM_Env_Tile_Grass_01", "SM_Env_Tile_Water_01", "SM_Env_RockPile_01", "SM_Env_Tree_01", "SM_Env_Tree_Twisted_01"
+      ]
+    },
+    {
+      "pack": "PolygonDungeonRealms", "role": "prop",
+      "folder": "Assets/Synty/PolygonDungeonRealms/Prefabs/Props",
+      "names": [
+        "SM_Prop_Barrel_01", "SM_Prop_Barrel_Small_01", "SM_Prop_Barrel_Stack_01", "SM_Prop_Barrel_Broken_01",
+        "SM_Prop_Crate_01", "SM_Prop_Crate_Stack_01", "SM_Prop_Crate_Broken_01",
+        "SM_Prop_Camp_Lantern_01", "SM_Prop_Camp_Plank_01", "SM_Prop_Camp_Table_01", "SM_Prop_Camp_HangingBag_01",
+        "SM_Prop_Chair_01", "SM_Prop_Mug_01", "SM_Prop_Dwarf_Torch_01", "SM_Prop_Dwarf_Chain_01", "SM_Prop_Dwarf_Chair_Bench_01", "SM_Prop_Dwarf_Fire_Pit_01"
+      ]
+    },
+    {
+      "pack": "PolygonDungeonRealms", "role": "world",
+      "folder": "Assets/Synty/PolygonDungeonRealms/Prefabs/Generic",
+      "names": [ "SM_Generic_Water_Plane_01" ]
+    },
+    {
+      "pack": "PolygonFantasyHeroCharacters", "role": "weapon",
+      "folder": "Assets/Synty/PolygonFantasyHeroCharacters/Prefabs/Weapons",
+      "names": [ "SM_Wep_Dagger_01", "SM_Wep_Sword_01", "SM_Wep_Sword_Small_01", "SM_Wep_Mace_01", "SM_Wep_Axe_01" ]
+    },
+    {
+      "pack": "PolygonDungeonRealms", "role": "weapon",
+      "folder": "Assets/Synty/PolygonDungeonRealms/Prefabs/Weapons",
+      "names": [ "SM_Wep_Knife_Small_01", "SM_Wep_Mace_Medium_01", "SM_Wep_Sword_Medium_01", "SM_Wep_Staff_01" ]
+    },
+    {
+      "pack": "PolygonKnights", "role": "weapon",
+      "folder": "Assets/Synty/PolygonKnights/Prefabs/Weapons",
+      "names": [ "SM_Wep_Broadsword_01", "SM_Wep_Rapier_01" ]
+    }
+  ]
+}

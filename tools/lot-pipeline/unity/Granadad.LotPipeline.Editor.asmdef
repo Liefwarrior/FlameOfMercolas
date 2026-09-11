@@ -1,0 +1,35 @@
+{
+    "name": "Granadad.LotPipeline.Editor",
+    "rootNamespace": "Granadad.LotPipeline",
+    "references": [
+        "Unity.RenderPipelines.Universal.Runtime",
+        "Unity.RenderPipelines.Core.Runtime",
+        "Unity.Mathematics",
+        "glTFast",
+        "glTFast.Export",
+        "UnityGLTFScripts",
+        "GLTFSerialization"
+    ],
+    "includePlatforms": [
+        "Editor"
+    ],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [
+        {
+            "name": "com.unity.cloud.gltfast",
+            "expression": "",
+            "define": "LOT_GLTFAST"
+        },
+        {
+            "name": "org.khronos.unitygltf",
+            "expression": "",
+            "define": "LOT_UNITYGLTF"
+        }
+    ],
+    "noEngineReferences": false
+}
