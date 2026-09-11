@@ -51,6 +51,18 @@ ViewmodelPose ViewmodelMachine::step(const ViewmodelInputs& in) noexcept {
         ++pose_.swingSeq;
     }
     pose_.chargeSteps = in.chargeSteps;
+    // STANCE: the hands-up fact rides along; a flip restarts the ease the
+    // Idle pose plays, except on the very first step, which adopts it.
+    if (!primed_) {
+        primed_ = true;
+        pose_.handsUp = in.handsUp;
+        pose_.stanceSteps = kStanceSaturated;
+    } else if (in.handsUp != pose_.handsUp) {
+        pose_.handsUp = in.handsUp;
+        pose_.stanceSteps = 0;
+    } else if (pose_.stanceSteps < kStanceSaturated) {
+        ++pose_.stanceSteps;
+    }
     if (viewmodelStateOneShot(next) && oneShot > 0) {
         --oneShot;
     }

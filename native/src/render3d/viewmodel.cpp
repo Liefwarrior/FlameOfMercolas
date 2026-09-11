@@ -184,6 +184,39 @@ struct HandPose {
     return pose;
 }
 
+/// STANCE (combat feel): the hands DOWN -- fighting mode off. The arms hang
+/// at the sides, dropped and let out, so only the top of each fist shows at
+/// the bottom edge of the frame (the fist's top-front corner lands near row
+/// 169 of 180 under the 55-degree field): the tell that the hands exist, and
+/// the raise on the first Attack press is the whole fighting-mode moment.
+[[nodiscard]] HandPose loweredPose(float side) noexcept {
+    HandPose pose;
+    pose.position = Vec3{side * 0.34F, side < 0.0F ? -0.39F : -0.375F, -0.64F};
+    pose.rotation = Vec3{0.10F, side * 0.25F, side * 0.12F};
+    return pose;
+}
+
+/// How far the licensed rig drops in view space with the hands down -- the
+/// glb path's one lever, since its idle clip is the raised Idle_Combat.
+constexpr float kViewmodelLoweredDrop = 0.11F;
+
+/// How far down the hands are, 0 raised .. 1 hanging: non-zero only in
+/// Idle (every other state has them up by the sim's own rules), easing
+/// across a stance flip over ViewmodelMachine::kStanceSteps.
+[[nodiscard]] float loweredAmount(const ViewmodelPose& pose) noexcept {
+    if (pose.state != ViewmodelState::Idle) {
+        return 0.0F;
+    }
+    const float target = pose.handsUp ? 0.0F : 1.0F;
+    if (pose.stanceSteps >= ViewmodelMachine::kStanceSteps) {
+        return target;
+    }
+    const float e = smooth(static_cast<float>(pose.stanceSteps) /
+                           static_cast<float>(ViewmodelMachine::kStanceSteps));
+    const float from = 1.0F - target;
+    return from + (target - from) * e;
+}
+
 }  // namespace
 
 ViewmodelKind viewmodelKindOf(sim::Weapon weapon) noexcept {
@@ -298,6 +331,10 @@ void poseViewmodel(ViewmodelInstance& out, ViewmodelKind kind, const ViewmodelPo
     out.stateSteps = pose.stateSteps;
     out.fovyDegrees = kViewmodelFovyDegrees;
     out.rigOffset = kViewmodelRigOffset;
+    // STANCE: the licensed rig drops with the hands (its idle clip is the
+    // raised Idle_Combat; the drop is the glb path's lowered idle).
+    const float down = loweredAmount(pose);
+    out.rigOffset.y -= kViewmodelLoweredDrop * down;
     out.rigYaw = kViewmodelRigYaw;
     out.rigScale = 1.0F;
     out.tint = tint;
@@ -333,8 +370,15 @@ void poseViewmodel(ViewmodelInstance& out, ViewmodelKind kind, const ViewmodelPo
         HandPose hand = idle;
         switch (pose.state) {
             case ViewmodelState::Idle: {
-                // A slow breathing sway, from rest at re-entry (sin 0 = 0) so
-                // a swing's return lands on it without a jump.
+                // STANCE: the raised rest with the hands up, the arms hanging
+                // with them down, eased across a flip (loweredAmount). Then a
+                // slow breathing sway, from rest at re-entry (sin 0 = 0) so a
+                // swing's return lands on it without a jump.
+                if (down > 0.0F) {
+                    const HandPose lowered = loweredPose(side);
+                    hand.position = lerp(idle.position, lowered.position, down);
+                    hand.rotation = lerp(idle.rotation, lowered.rotation, down);
+                }
                 const float t = static_cast<float>(pose.stateSteps);
                 hand.position.y += 0.008F * std::sin(t * (2.0F * kPi / 96.0F));
                 hand.position.x += side * 0.004F * std::sin(t * (2.0F * kPi / 192.0F));

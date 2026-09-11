@@ -69,6 +69,14 @@ struct ViewmodelInputs {
     bool cast = false;
     /// A blow landed on the player this step and the guard did not catch it.
     bool hit = false;
+    /// STANCE (combat feel): Tavern::playerHandsUp() -- fighting mode. NOT
+    /// a state of this machine (the state enum is the glb clip order and
+    /// may not grow): a fact the Idle pose reads -- raised fists while
+    /// true, the arms hanging with the knuckles at the bottom edge while
+    /// false. Every other state has the hands up by the sim's own rules (a
+    /// charge, a guard and a caught blow all raise them). Defaults to up,
+    /// so a machine fed without the stance poses as it did before it.
+    bool handsUp = true;
 };
 
 struct ViewmodelPose {
@@ -81,6 +89,13 @@ struct ViewmodelPose {
     /// The sim's charge count this step, carried so the wind-up can scrub
     /// by the real fraction rather than by stateSteps.
     std::int32_t chargeSteps = 0;
+    /// STANCE: ViewmodelInputs::handsUp, carried. Read by the Idle pose.
+    bool handsUp = true;
+    /// Steps since handsUp last flipped, saturating at kStanceSaturated --
+    /// what the Idle pose eases the hands up or down over (kStanceSteps),
+    /// so LOWER HANDS reads as a motion and not a cut. Saturated at rest
+    /// and on an unstepped machine, so a hand-built pose is at its rest.
+    std::int32_t stanceSteps = 1 << 20;
 };
 
 /// Integer-clocked, one step() per movement step, so a settled capture is
@@ -91,6 +106,10 @@ public:
     static constexpr std::int32_t kSwingSteps = 18;
     static constexpr std::int32_t kCastSteps = 24;
     static constexpr std::int32_t kHitSteps = 12;
+    /// The stance ease: steps the Idle pose takes to raise or lower the
+    /// hands after playerHandsUp() flips.
+    static constexpr std::int32_t kStanceSteps = 8;
+    static constexpr std::int32_t kStanceSaturated = 1 << 20;
 
     ViewmodelPose step(const ViewmodelInputs& in) noexcept;
     [[nodiscard]] const ViewmodelPose& pose() const noexcept { return pose_; }
@@ -98,6 +117,10 @@ public:
 private:
     ViewmodelPose pose_;
     std::int32_t oneShotLeft_ = 0;
+    /// False until the first step: that step ADOPTS the stance it is fed
+    /// rather than easing to it, so a session boots with its hands where
+    /// the sim says they are (down) instead of lowering them on frame one.
+    bool primed_ = false;
 };
 
 /// The clip's name in the exported glb (and in the asset lane's job file):

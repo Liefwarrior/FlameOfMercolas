@@ -3517,8 +3517,14 @@ render3d::SceneStats present_frame(render3d::Backend& video, const Options& opti
     const render::Framebuffer output =
         needsUpscale ? render::upscaleNearest(shot, options.smoke.captureScale) : shot;
     const bool ok = render::writePng(output, options.smoke.screenshot);
+    // THE SCENE HASH IS PRINTED ON PURPOSE: it is the whole SceneDescription
+    // (chunks, sky, the crowd, the hands, the camera) folded to one number,
+    // so two separate processes of the same scripted drive prove the 3D
+    // frame's INPUT twin-runs identical across processes -- the frame's
+    // bytes are never hashed on a GPU, the description is.
     std::printf("granadad: 3d shutter -- %s backend, %dx%d, %zu instance(s), %zu triangle(s), "
-                "%zu bod%s (%zu skinned, %zu rig file(s)), hands %s/%s %zu part(s)%s%s%s\n",
+                "%zu bod%s (%zu skinned, %zu rig file(s)), hands %s/%s %s %zu part(s)%s%s, "
+                "scene 0x%016llX%s\n",
                 video->kind() == render3d::VideoKind::Software ? "rlsw" : "gpu", output.width(),
                 output.height(), stats.instancesDrawn, stats.trianglesDrawn, stats.actorsDrawn,
                 stats.actorsDrawn == 1 ? "y" : "ies", stats.actorsSkinned, stats.rigModelsLoaded,
@@ -3526,8 +3532,10 @@ render3d::SceneStats present_frame(render3d::Backend& video, const Options& opti
                     static_cast<render3d::ViewmodelKind>(rig.scene.viewmodel.kind))
                     .data(),
                 render::viewmodelStateName(rig.scene.viewmodel.state).data(),
-                stats.viewmodelPartsDrawn, stats.viewmodelSkinned ? " (skinned glb)" : "",
+                session.viewmodel().handsUp ? "up" : "down", stats.viewmodelPartsDrawn,
+                stats.viewmodelSkinned ? " (skinned glb)" : "",
                 stats.viewmodelWeaponLoaded ? " (weapon file)" : "",
+                static_cast<unsigned long long>(render3d::sceneHash(rig.scene)),
                 options.video3d ? " (the Docks in 3D under the HUD)"
                                 : " (software world in the overlay: --2d)");
     return ok;

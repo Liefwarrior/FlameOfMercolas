@@ -390,8 +390,14 @@ TEST_CASE("the viewmodel is described from the sim's own hand and hashes") {
     CHECK(scene.meshes.size() == meshCount);  // idempotent
 
     // A session's hands: bare at spawn, four parts, fists below the eye
-    // line and in front of it, right on the right.
+    // line and in front of it, right on the right -- and DOWN, because the
+    // room's own stance (Tavern::playerHandsUp, STANCE & ROOM BUILD) is
+    // down until the first Attack press: the fists hang below the raised
+    // rest the pose tables call idle, and the licensed rig drops with them.
     render::Session session(sessionConfig(8));
+    session.step(sim::MoveInput{});
+    CHECK_FALSE(session.tavern().playerHandsUp());
+    CHECK_FALSE(session.viewmodel().handsUp);
     ViewmodelInstance hands = viewmodelInstance(session);
     CHECK(hands.visible);
     CHECK(hands.kind == static_cast<std::uint8_t>(ViewmodelKind::Fists));
@@ -406,12 +412,60 @@ TEST_CASE("the viewmodel is described from the sim's own hand and hashes") {
     }
     REQUIRE(partOf(hands, ViewmodelPartId::RightFist) != nullptr);
     REQUIRE(partOf(hands, ViewmodelPartId::LeftFist) != nullptr);
-    // Copied, not pointed at: `hands` is reassigned below.
-    const Vec3 restRight = partOf(hands, ViewmodelPartId::RightFist)->position;
-    const Vec3 restLeft = partOf(hands, ViewmodelPartId::LeftFist)->position;
+    const Vec3 downRight = partOf(hands, ViewmodelPartId::RightFist)->position;
+    const Vec3 downLeft = partOf(hands, ViewmodelPartId::LeftFist)->position;
+    CHECK(downRight.x > 0.0F);
+    CHECK(downLeft.x < 0.0F);
+    CHECK(partOf(hands, ViewmodelPartId::Weapon) == nullptr);
+    CHECK(hands.rigOffset.y < kViewmodelRigOffset.y);
+
+    // THE RAISED REST: the pose tables' own idle with the hands up, at
+    // re-entry -- what a hand-built pose is (handsUp defaults to up, the
+    // stance ease saturated), and what every comparison below is against.
+    ViewmodelPose raised;
+    ViewmodelInstance rest;
+    poseViewmodel(rest, ViewmodelKind::Fists, raised, Rgba8{});
+    CHECK(rest.rigOffset.y == kViewmodelRigOffset.y);
+    REQUIRE(partOf(rest, ViewmodelPartId::RightFist) != nullptr);
+    REQUIRE(partOf(rest, ViewmodelPartId::LeftFist) != nullptr);
+    const Vec3 restRight = partOf(rest, ViewmodelPartId::RightFist)->position;
+    const Vec3 restLeft = partOf(rest, ViewmodelPartId::LeftFist)->position;
     CHECK(restRight.x > 0.0F);
     CHECK(restLeft.x < 0.0F);
-    CHECK(partOf(hands, ViewmodelPartId::Weapon) == nullptr);
+    CHECK(downRight.y < restRight.y - 0.08F);
+    CHECK(downLeft.y < restLeft.y - 0.08F);
+
+    // A GUARD PRESSED AND RELEASED puts the hands UP by the room's own rule
+    // (a guard raises them, a release does not lower them): the fists rise
+    // to the raised rest over the stance ease and stay there. LOWER HANDS
+    // drops them again the same way. The row and the hands read one bit.
+    session.setBlocking(true);
+    session.step(sim::MoveInput{});
+    CHECK(session.tavern().playerHandsUp());
+    CHECK(session.viewmodel().handsUp);
+    session.setBlocking(false);
+    session.stepMany(sim::MoveInput{}, ViewmodelMachine::kStanceSteps + 4);
+    CHECK(session.viewmodel().state == ViewmodelState::Idle);
+    CHECK(session.viewmodel().handsUp);
+    hands = viewmodelInstance(session);
+    REQUIRE(partOf(hands, ViewmodelPartId::RightFist) != nullptr);
+    CHECK(std::fabs(partOf(hands, ViewmodelPartId::RightFist)->position.y - restRight.y) < 0.02F);
+    CHECK(hands.rigOffset.y == kViewmodelRigOffset.y);
+    session.tavern().lowerPlayerHands();
+    session.step(sim::MoveInput{});
+    CHECK_FALSE(session.viewmodel().handsUp);
+    CHECK(session.viewmodel().stanceSteps == 0);
+    // Half way through the ease the fist is between the two rests.
+    session.stepMany(sim::MoveInput{}, ViewmodelMachine::kStanceSteps / 2);
+    hands = viewmodelInstance(session);
+    REQUIRE(partOf(hands, ViewmodelPartId::RightFist) != nullptr);
+    CHECK(partOf(hands, ViewmodelPartId::RightFist)->position.y < restRight.y - 0.02F);
+    CHECK(partOf(hands, ViewmodelPartId::RightFist)->position.y > downRight.y + 0.02F);
+    session.stepMany(sim::MoveInput{}, ViewmodelMachine::kStanceSteps);
+    hands = viewmodelInstance(session);
+    REQUIRE(partOf(hands, ViewmodelPartId::RightFist) != nullptr);
+    CHECK(partOf(hands, ViewmodelPartId::RightFist)->position.y < restRight.y - 0.08F);
+    CHECK(hands.rigOffset.y < kViewmodelRigOffset.y);
 
     // The hash covers the hands: the same session twice is the same digest,
     // one step of a charge is another.
@@ -638,6 +692,17 @@ TEST_CASE("the raised fists render over the Docks and in front of the nearest wa
     // half that the world and the crowd alone did not.
     render::Session session(sessionConfig(8));
     session.stepMany(sim::MoveInput{}, 2);
+    // STANCE: the hands come UP by the room's own rule (a guard raises
+    // them) and settle at the raised rest before the picture is taken --
+    // this case is about the RAISED fists; the lowered ones are measured
+    // after it.
+    session.setBlocking(true);
+    session.step(sim::MoveInput{});
+    session.setBlocking(false);
+    session.stepMany(sim::MoveInput{}, ViewmodelMachine::kStanceSteps + 4);
+    REQUIRE(session.tavern().playerHandsUp());
+    REQUIRE(session.viewmodel().state == ViewmodelState::Idle);
+    REQUIRE(session.viewmodel().handsUp);
     Stack stack(session);
     REQUIRE(stack.scene.viewmodel.visible);
     SceneStats docksStats;
@@ -665,6 +730,37 @@ TEST_CASE("the raised fists render over the Docks and in front of the nearest wa
     MESSAGE("hand pixels over the Docks: " << lower << " in the lower half, " << upper << " above");
     CHECK(lower > 1500U);
     CHECK(upper < 200U);
+
+    // THE HANDS DOWN. LOWER HANDS, the stance ease played out, the same
+    // picture: the fists hang below the frame with only the knuckles
+    // showing at the bottom edge -- fewer pixels than raised, every one of
+    // them in the bottom quarter, none above it.
+    session.tavern().lowerPlayerHands();
+    session.stepMany(sim::MoveInput{}, ViewmodelMachine::kStanceSteps + 4);
+    REQUIRE_FALSE(session.viewmodel().handsUp);
+    stack.refresh(session);
+    REQUIRE(stack.scene.viewmodel.visible);
+    const render::Framebuffer docksDown = drawOnce(*video, stack.scene, nullptr, nullptr);
+    SceneDescription bareDown = stack.scene;
+    bareDown.viewmodel.visible = false;
+    const render::Framebuffer noHandsDown = drawOnce(*video, bareDown, nullptr, nullptr);
+    std::size_t down = 0;
+    std::size_t downHigh = 0;
+    for (int y = 0; y < kHeight; ++y) {
+        for (int x = 0; x < kWidth; ++x) {
+            if (pixelAt(docksDown, x, y) != pixelAt(noHandsDown, x, y)) {
+                ++down;
+                if (y < kHeight * 3 / 4) {
+                    ++downHigh;
+                }
+            }
+        }
+    }
+    MESSAGE("hand pixels over the Docks, hands down: " << down << " (" << downHigh
+                                                        << " above the bottom quarter)");
+    CHECK(down > 0U);
+    CHECK(down < lower);
+    CHECK(downHigh == 0U);
 }
 
 TEST_CASE("the washes are overlay pixels over the 3D frame") {

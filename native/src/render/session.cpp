@@ -3976,6 +3976,12 @@ void Session::step(const sim::MoveInput& input) {
         hands.releasedHard = viewmodelSwingPending_ == 2;
         hands.cast = viewmodelCastPending_;
         hands.hit = hpNow < lastPlayerHp_ && blockedNow <= lastBlowsBlocked_;
+        // STANCE & ROOM BUILD meets the 3D build: the room's own hashed
+        // fighting-mode bit is what the hands read -- raised fists while
+        // it is true, the arms hanging while it is false -- the identical
+        // fact the FISTS UP row shows, so the row and the hands can never
+        // disagree. Read here, on the step, like every input above.
+        hands.handsUp = tavern_->playerHandsUp();
         (void)viewmodel_.step(hands);
         viewmodelSwingPending_ = 0;
         viewmodelCastPending_ = false;
