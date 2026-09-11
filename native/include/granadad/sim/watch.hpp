@@ -218,10 +218,19 @@ inline constexpr std::int32_t kMurderHeat = 60;
 /// DECISIONS.md names for a second Skyrunner offence is a status bit. The
 /// consequence is real and the PLACE it happens in is not built.
 ///
+/// JUSTICE BUILD: THERE IS A BENCH. Sentence is now what the paper ASKS FOR
+/// -- the Watch's petition, this ladder verbatim -- and what an arrest with
+/// paper RESOLVES TO is the Flame's answer at the Mission: justice.hpp's
+/// Judgment, off a plea and the priest's weighing, with the rope as the
+/// game's one true end. The cell as a PLACE is still not built (named
+/// ceiling); a served sentence is still the clock jump.
+///
 /// The heat left after a night in a cell. NOT ZERO: the ward has not forgotten
 /// what you did, it has been paid for it. Below kWarrantLapsesAt so the paper
 /// goes with the sentence -- you cannot be wanted for the thing you have just
-/// served for.
+/// served for. JUSTICE BUILD: written by CrimeLedger::sentence, which the room
+/// calls AFTER the skip so the skip's cooling cannot take it to nothing --
+/// the constant was dead by ordering before.
 inline constexpr std::int32_t kHeatAfterSentence = 12;
 
 }  // namespace granadad::sim

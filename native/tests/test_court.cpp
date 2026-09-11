@@ -470,6 +470,15 @@ TEST_CASE("weighArraignment is weighPetition's shape: the base, the caps, the ba
         CHECK(termNamed(denial, kTermPriestIsAMan)->value == jitter);
         CHECK(denial.scored == denial.weight + jitter);
         CHECK(heldHours(sheet.draw) == kHeldHoursMin + static_cast<std::int32_t>(sheet.draw % 49U));
+        // SAME-ROLL DISCIPLINE: the band is blind to the nights' residue. The
+        // same high bits over ANY low bits read the same doubt, while the
+        // nights under them move -- one draw, two residues, never shared.
+        ChargeSheet lowBits = sheet;
+        lowBits.draw |= 0xBEEFu;
+        const Arraignment same = weighArraignment(lowBits, Plea::NotGuilty);
+        CHECK(same.pleaTerm == jitter);
+        CHECK(same.judgment == denial.judgment);
+        CHECK(heldHours(lowBits.draw) != heldHours(sheet.draw));
     }
     // A denial never confesses and a confession is never a man's doubt.
     const Arraignment confessed = weighArraignment(sheetOf(Sentence::Held), Plea::Guilty);
