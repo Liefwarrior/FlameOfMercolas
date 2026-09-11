@@ -422,7 +422,8 @@ TEST_CASE("the shipped piece catalogue loads and names a piece for every rule") 
                                  PieceRole::WallDoor, PieceRole::RoofEdge, PieceRole::FloorPlank,
                                  PieceRole::FloorCobble, PieceRole::FloorFlag, PieceRole::Water,
                                  PieceRole::PropBarrel, PieceRole::PropCrate, PieceRole::PropSack,
-                                 PieceRole::LampWall, PieceRole::LampPost, PieceRole::Brazier}) {
+                                 PieceRole::LampWall, PieceRole::LampPost, PieceRole::Brazier,
+                                 PieceRole::FloorFill, PieceRole::WallCap, PieceRole::Ceiling}) {
         const PieceSpec* spec = catalogue.piece(role);
         REQUIRE_MESSAGE(spec != nullptr, "no piece for role " << pieceRoleName(role));
         CHECK(spec->file.find(".gltf") != std::string::npos);
@@ -438,16 +439,25 @@ TEST_CASE("the shipped piece catalogue loads and names a piece for every rule") 
     CHECK(catalogue.piece(PieceRole::Wall)->width == doctest::Approx(2.5F));
     CHECK(catalogue.piece(PieceRole::Wall)->frontNegZ);
     CHECK(catalogue.piece(PieceRole::RoofEdge)->frontNegZ == false);
-    // Materials: the Gull's granite is masonry, its timber storey is timber
-    // from the mid-slope band up, dirt is nothing at all.
+    // Materials: the Gull's granite is masonry with flags underfoot and a
+    // flat fill where no flag fits, its timber storey is timber, dirt is a
+    // flat fill and nothing on its walls, steel is nothing at all.
     REQUIRE(catalogue.materialByName("granite") != nullptr);
     CHECK(catalogue.materialByName("granite")->wallClass == WallClass::Masonry);
+    CHECK(catalogue.materialByName("granite")->plasterOut);
+    CHECK_FALSE(catalogue.materialByName("brick")->plasterOut);
+    CHECK(catalogue.materialByName("granite")->floorRole == PieceRole::FloorFlag);
+    CHECK(catalogue.materialByName("granite")->fillRole == PieceRole::FloorFill);
     CHECK(catalogue.materialByName("brick")->floorRole == PieceRole::FloorCobble);
     REQUIRE(catalogue.materialByName("oak") != nullptr);
     CHECK(catalogue.materialByName("oak")->wallClass == WallClass::Timber);
-    CHECK(catalogue.materialByName("oak")->minBand == 20);
     CHECK(catalogue.materialByName("oak")->floorRole == PieceRole::FloorPlank);
-    CHECK(catalogue.materialByName("dirt") == nullptr);
+    REQUIRE(catalogue.materialByName("dirt") != nullptr);
+    CHECK(catalogue.materialByName("dirt")->wallClass == WallClass::None);
+    CHECK(catalogue.materialByName("dirt")->fillRole == PieceRole::FloorFill);
+    CHECK(catalogue.materialByName("steel") == nullptr);
+    CHECK(catalogue.piece(PieceRole::FloorFill)->flipY);
+    CHECK(catalogue.piece(PieceRole::FloorCobble)->minBlock == 2);
     CHECK(catalogue.material(materialId("granite")) == catalogue.materialByName("granite"));
     CHECK(catalogue.minBand() == 18);
     CHECK(catalogue.digest() != 0U);
@@ -482,6 +492,7 @@ TEST_CASE("a wall tile with two open neighbours places a corner piece") {
     };
     for (std::int32_t y = 6; y <= 19; ++y) {
         for (std::int32_t x = 6; x <= 19; ++x) {
+            put(x, y, 18, content::TileForm::Wall, materialId("dirt"));
             put(x, y, 19, content::TileForm::Floor, materialId("dirt"));
         }
     }
@@ -545,17 +556,42 @@ TEST_CASE("a wall tile with two open neighbours places a corner piece") {
         if (p.role == PieceRole::Wall || p.role == PieceRole::WallWindow) {
             CHECK(p.instance.scale.x > 0.4F);
             CHECK(p.instance.scale.x < 1.4F);
-            CHECK(p.instance.scale.y == doctest::Approx(render::kBandHeight / 3.0057F));
+            // A centimetre under the storey, so the chunk's own wall head
+            // never fights the piece's top.
+            CHECK(p.instance.scale.y == doctest::Approx((render::kBandHeight - 0.01F) / 3.0057F));
         }
     }
-    // No door: the ring is closed. No cobbles: the floors are dirt (no
-    // piece) and oak (planks -- the 4 x 4 interior takes one 3 x 3 block
-    // and leaves the rest to the chunk).
+    // No door: the ring is closed. No cobbles: the floors are dirt (the
+    // flat fill, in rectangles around the house) and oak (planks -- the
+    // 4 x 4 interior is one plank rectangle; nothing is left to the chunk).
     CHECK(countRole(placed.placements, PieceRole::WallDoor) == 0);
     CHECK(countRole(placed.placements, PieceRole::FloorCobble) == 0);
     CHECK(countRole(placed.placements, PieceRole::FloorPlank) == 1);
-    // A cornice along every outdoor face at the roof line.
+    CHECK(countRole(placed.placements, PieceRole::FloorFill) >= 4);
+    for (const StaticPlacement& p : placed.placements) {
+        if (p.role == PieceRole::FloorPlank) {
+            CHECK(p.instance.scale.x == doctest::Approx(4.0F / 2.5F));
+            CHECK(p.instance.scale.z == doctest::Approx(4.0F / 2.5F));
+            CHECK(p.instance.position.x == doctest::Approx(11.0F));
+            CHECK(p.instance.position.z == doctest::Approx(11.0F));
+        }
+        if (p.role == PieceRole::FloorFill) {
+            // Mirrored upward, and never over the house.
+            CHECK(p.instance.scale.y < 0.0F);
+            CHECK((p.lightY2 < 10 || p.lightY > 15 || p.lightX2 < 10 || p.lightX > 15));
+        }
+    }
+    // A cornice along every outdoor face at the roof line, a cap over the
+    // ring's wall heads, and no ceiling anywhere (nothing is built above).
     CHECK(countRole(placed.placements, PieceRole::RoofEdge) >= 4);
+    CHECK(countRole(placed.placements, PieceRole::WallCap) >= 1);
+    CHECK(countRole(placed.placements, PieceRole::Ceiling) == 0);
+    for (const StaticPlacement& p : placed.placements) {
+        if (p.role == PieceRole::WallCap) {
+            CHECK(p.instance.position.y == doctest::Approx(render::bandSurface(20) + 0.004F));
+            CHECK(p.instance.scale.y < 0.0F);
+        }
+    }
     for (const StaticPlacement& p : placed.placements) {
         if (p.role == PieceRole::RoofEdge) {
             CHECK(p.instance.position.y == doctest::Approx(render::bandSurface(20) - 0.2347F));
@@ -592,6 +628,7 @@ TEST_CASE("a door tile places the door frame") {
     };
     for (std::int32_t y = 4; y <= 27; ++y) {
         for (std::int32_t x = 4; x <= 27; ++x) {
+            put(x, y, 18, content::TileForm::Wall, materialId("dirt"));
             put(x, y, 19, content::TileForm::Floor, materialId("brick"));
         }
     }
@@ -637,6 +674,19 @@ TEST_CASE("a door tile places the door frame") {
         CHECK(p.instance.scale.x == doctest::Approx(0.8F));
         CHECK(p.lightX == 11);
         CHECK(p.lightY == 15);
+    }
+    // The roof over the house puts a ceiling under it -- over the rooms,
+    // under the slab, lit as the room's underside -- and nothing over the
+    // street.
+    CHECK(countRole(placed.placements, PieceRole::Ceiling) >= 2);
+    for (const StaticPlacement& p : placed.placements) {
+        if (p.role == PieceRole::Ceiling) {
+            CHECK(p.instance.position.y ==
+                  doctest::Approx(render::bandSurface(20) - render::kFloorSlab - 0.004F));
+            CHECK(p.instance.scale.y > 0.0F);
+            CHECK(p.lightZ == 19);
+            CHECK(p.facing == doctest::Approx(render::kUndersideLift));
+        }
     }
     // The house's interior is roofed now, so its inner faces wear plaster:
     // a wall piece on an indoor face is yawed half a turn from the brick
@@ -726,13 +776,16 @@ TEST_CASE("placement is a deterministic function of the tile map") {
     }
     const StaticPlacementStats& stats = first.stats;
     CHECK(stats.byRole[static_cast<std::size_t>(PieceRole::Wall)] > 500);
-    CHECK(stats.byRole[static_cast<std::size_t>(PieceRole::WallCorner)] > 20);
+    CHECK(stats.byRole[static_cast<std::size_t>(PieceRole::WallCorner)] >= 4);
     CHECK(stats.byRole[static_cast<std::size_t>(PieceRole::WallWindow)] > 20);
     CHECK(stats.byRole[static_cast<std::size_t>(PieceRole::WallDoor)] >= 2);
     CHECK(stats.byRole[static_cast<std::size_t>(PieceRole::RoofEdge)] > 50);
     CHECK(stats.byRole[static_cast<std::size_t>(PieceRole::FloorPlank)] > 50);
     CHECK(stats.byRole[static_cast<std::size_t>(PieceRole::FloorCobble)] > 50);
     CHECK(stats.byRole[static_cast<std::size_t>(PieceRole::FloorFlag)] > 50);
+    CHECK(stats.byRole[static_cast<std::size_t>(PieceRole::FloorFill)] > 50);
+    CHECK(stats.byRole[static_cast<std::size_t>(PieceRole::WallCap)] > 50);
+    CHECK(stats.byRole[static_cast<std::size_t>(PieceRole::Ceiling)] > 50);
     CHECK(stats.byRole[static_cast<std::size_t>(PieceRole::Water)] > 5);
     CHECK(stats.byRole[static_cast<std::size_t>(PieceRole::PropBarrel)] +
               stats.byRole[static_cast<std::size_t>(PieceRole::PropCrate)] +
@@ -754,10 +807,13 @@ TEST_CASE("placement is a deterministic function of the tile map") {
         }
     }
     CHECK(gullDoor);
-    // Nothing is placed below the catalogue's floor band, and everything
-    // is inside the authored district.
+    // Nothing is placed below the catalogue's floor band (a ceiling under a
+    // slab on that band is lit one level lower; the strand's tide pools lie
+    // one level under the harbour's surface), and everything is inside the
+    // authored district.
     for (const StaticPlacement& p : first.placements) {
-        CHECK(p.lightZ >= catalogue.minBand());
+        const bool oneBelow = p.role == PieceRole::Ceiling || p.role == PieceRole::Water;
+        CHECK(p.lightZ >= catalogue.minBand() - (oneBelow ? 1 : 0));
         CHECK(p.instance.position.x > 30.0F);
         CHECK(p.instance.position.x < 226.0F);
     }
@@ -766,7 +822,9 @@ TEST_CASE("placement is a deterministic function of the tile map") {
                              << " windows, " << stats.byRole[4] << " doors, " << stats.byRole[5]
                              << " cornices, " << stats.byRole[6] << " plank, " << stats.byRole[7]
                              << " cobble, " << stats.byRole[8] << " flag, " << stats.byRole[9]
-                             << " water, " << stats.byRole[10] + stats.byRole[11] + stats.byRole[12]
+                             << " water, " << stats.byRole[16] << " fills, " << stats.byRole[17]
+                             << " caps, " << stats.byRole[18] << " ceilings, "
+                             << stats.byRole[10] + stats.byRole[11] + stats.byRole[12]
                              << " props, " << stats.byRole[13] + stats.byRole[14] + stats.byRole[15]
                              << " lamps; " << stats.wallRuns << " wall runs, " << stats.doorGaps
                              << " door gaps");

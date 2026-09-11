@@ -199,20 +199,36 @@ void WorldScene::relightPieces(const ChunkLighting& lighting) {
     litTints_.resize(placements_.placements.size());
     for (std::size_t i = 0; i < placements_.placements.size(); ++i) {
         const StaticPlacement& p = placements_.placements[i];
-        const render::Rgb baked =
-            glow_ != nullptr ? glow_->at(p.lightX, p.lightY, p.lightZ) : render::Rgb{};
-        const render::Rgb live = hasDynamic ? render::dynamicGlowAt(*lighting.dynamicLamps, p.lightX,
-                                                                    p.lightY, p.lightZ)
-                                            : render::Rgb{};
-        const auto lit = [&p](float ambient, float b, float d, std::uint8_t tint) {
-            const float light = std::min(1.15F, ambient + std::max(b, d)) * p.facing;
+        // Averaged over the cells the piece spans (at most a few), so a
+        // stretched segment is lit as a whole and not as one end of it.
+        const std::int32_t x0 = std::min(p.lightX, p.lightX2);
+        const std::int32_t x1 = std::max(p.lightX, p.lightX2);
+        const std::int32_t y0 = std::min(p.lightY, p.lightY2);
+        const std::int32_t y1 = std::max(p.lightY, p.lightY2);
+        render::Rgb sum{};
+        int count = 0;
+        for (std::int32_t y = y0; y <= y1; ++y) {
+            for (std::int32_t x = x0; x <= x1; ++x) {
+                const render::Rgb baked =
+                    glow_ != nullptr ? glow_->at(x, y, p.lightZ) : render::Rgb{};
+                const render::Rgb live =
+                    hasDynamic ? render::dynamicGlowAt(*lighting.dynamicLamps, x, y, p.lightZ)
+                               : render::Rgb{};
+                sum.r += std::max(baked.r, live.r);
+                sum.g += std::max(baked.g, live.g);
+                sum.b += std::max(baked.b, live.b);
+                ++count;
+            }
+        }
+        const float inv = 1.0F / static_cast<float>(std::max(1, count));
+        const auto lit = [&p, inv](float ambient, float glow, std::uint8_t tint) {
+            const float light = std::min(1.15F, ambient + glow * inv) * p.facing;
             return static_cast<std::uint8_t>(
                 std::clamp(light * static_cast<float>(tint), 0.0F, 255.0F) + 0.5F);
         };
-        litTints_[i] = Rgba8{lit(sky.ambient.r, baked.r, live.r, p.instance.tint.r),
-                             lit(sky.ambient.g, baked.g, live.g, p.instance.tint.g),
-                             lit(sky.ambient.b, baked.b, live.b, p.instance.tint.b),
-                             p.instance.tint.a};
+        litTints_[i] = Rgba8{lit(sky.ambient.r, sum.r, p.instance.tint.r),
+                             lit(sky.ambient.g, sum.g, p.instance.tint.g),
+                             lit(sky.ambient.b, sum.b, p.instance.tint.b), p.instance.tint.a};
     }
     ++stats_.piecesRelit;
 }

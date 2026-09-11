@@ -197,6 +197,10 @@ struct StaticModel {
     std::vector<Color> baseColour;
     /// Per mesh: its material's alpha is under 255 -- drawn in the late pass.
     std::vector<bool> translucent;
+    /// Per mesh: translucent AND untextured -- a pane of glass, which
+    /// reads dark from the street (the room behind it is unlit) rather than
+    /// as a white wash over the wall the chunk mesh puts behind it.
+    std::vector<bool> glass;
 };
 
 /// S LANE. A translucent sub-mesh held back for the late pass.
@@ -205,6 +209,7 @@ struct DeferredMesh {
     int mesh = 0;
     Matrix transform{};
     Color tint{};
+    bool mirrored = false;
 };
 
 /// A glTF asset faces +Z (the spec's own convention, and the asset lane's
@@ -419,11 +424,18 @@ struct Backend::Impl {
 #endif
                 }
                 candidate->translucent.resize(static_cast<std::size_t>(candidate->model.meshCount));
+                candidate->glass.resize(static_cast<std::size_t>(candidate->model.meshCount));
                 for (int i = 0; i < candidate->model.meshCount; ++i) {
                     const int m = candidate->model.meshMaterial[i];
-                    candidate->translucent[static_cast<std::size_t>(i)] =
-                        m >= 0 && m < candidate->model.materialCount &&
-                        candidate->model.materials[m].maps[MATERIAL_MAP_DIFFUSE].color.a < 255;
+                    const bool inRange = m >= 0 && m < candidate->model.materialCount;
+                    const bool translucent =
+                        inRange && candidate->model.materials[m].maps[MATERIAL_MAP_DIFFUSE].color.a < 255;
+                    candidate->translucent[static_cast<std::size_t>(i)] = translucent;
+                    candidate->glass[static_cast<std::size_t>(i)] =
+                        translucent &&
+                        (candidate->model.materials[m].maps[MATERIAL_MAP_DIFFUSE].texture.id == 0 ||
+                         candidate->model.materials[m].maps[MATERIAL_MAP_DIFFUSE].texture.id ==
+                             defaultTexture.id);
                 }
                 loaded = std::move(candidate);
             } else {
@@ -467,19 +479,22 @@ struct Backend::Impl {
             MatrixTranslate(piece.position.x, piece.position.y, piece.position.z));
         const Matrix full = MatrixMultiply(model->model.transform, transform);
         const Color tint = colourOf(piece.tint);
+        // A mirrored piece (one negative scale axis: a ceiling quad laid as
+        // a floor) has its winding reversed, so it is drawn both-sided.
+        const bool mirrored = piece.scale.x * piece.scale.y * piece.scale.z < 0.0F;
         for (int i = 0; i < model->model.meshCount; ++i) {
             if (model->translucent[static_cast<std::size_t>(i)]) {
-                deferred.push_back(DeferredMesh{model, i, full, tint});
+                deferred.push_back(DeferredMesh{model, i, full, tint, mirrored});
                 continue;
             }
-            drawStaticMesh(*model, i, full, tint, stats);
+            drawStaticMesh(*model, i, full, tint, mirrored, stats);
         }
         ++stats.staticsDrawn;
         ++stats.instancesDrawn;
     }
 
     void drawStaticMesh(StaticModel& model, int i, const Matrix& transform, const Color& tint,
-                        SceneStats& stats) {
+                        bool mirrored, SceneStats& stats) {
         const int m = model.model.meshMaterial[i];
         if (m < 0 || m >= model.model.materialCount) {
             return;
@@ -489,9 +504,22 @@ struct Backend::Impl {
             return static_cast<unsigned char>((static_cast<unsigned>(a) * static_cast<unsigned>(b) + 127U) /
                                               255U);
         };
+        // Glass: a third of the light, blue-grey -- a dark pane, not a wash.
+        const bool glass = model.glass[static_cast<std::size_t>(i)];
+        const Color paneTint = glass ? Color{static_cast<unsigned char>(tint.r / 4),
+                                             static_cast<unsigned char>(tint.g / 4 + tint.g / 16),
+                                             static_cast<unsigned char>(tint.b / 3), tint.a}
+                                     : tint;
         model.model.materials[m].maps[MATERIAL_MAP_DIFFUSE].color =
-            Color{ch(base.r, tint.r), ch(base.g, tint.g), ch(base.b, tint.b), ch(base.a, tint.a)};
+            Color{ch(base.r, paneTint.r), ch(base.g, paneTint.g), ch(base.b, paneTint.b),
+                  ch(base.a, paneTint.a)};
+        if (mirrored) {
+            rlDisableBackfaceCulling();
+        }
         DrawMesh(model.model.meshes[i], model.model.materials[m], transform);
+        if (mirrored) {
+            rlEnableBackfaceCulling();
+        }
         stats.trianglesDrawn += static_cast<std::size_t>(model.model.meshes[i].triangleCount);
     }
 
@@ -986,7 +1014,7 @@ SceneStats Backend::drawScene(const SceneDescription& scene) {
         }
     }
     for (const DeferredMesh& late : impl.deferred) {
-        impl.drawStaticMesh(*late.model, late.mesh, late.transform, late.tint, stats);
+        impl.drawStaticMesh(*late.model, late.mesh, late.transform, late.tint, late.mirrored, stats);
     }
     impl.deferred.clear();
     EndMode3D();

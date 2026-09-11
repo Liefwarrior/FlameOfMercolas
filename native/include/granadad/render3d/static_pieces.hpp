@@ -43,7 +43,9 @@
 //                  brick module reads at 0.8..1.33 of its authored width
 //                  rather than being chopped per tile. Outdoor masonry faces
 //                  wear the brick side out; indoor faces (the neighbour cell
-//                  has a ceiling) and timber walls wear the plaster side.
+//                  has a ceiling) and timber walls wear the plaster side,
+//                  tinted per material (a hull of oak is a brown plank wall,
+//                  a granite taproom is cream plaster).
 //   CORNERS        a wall tile with exactly two exposed ADJACENT faces, both
 //                  outdoors, is a convex corner: the corner piece (an L,
 //                  brick on the outside of the bend) goes there and the two
@@ -58,22 +60,32 @@
 //                  frame, fitted to the gap, brick side to the street.
 //   ROOF EDGES     the cornice along every outdoor face of a wall cell with
 //                  nothing solid above it -- the roof line. Roof PLANES stay
-//                  the chunk's own flat, walkable thatch: the Skyrunners run
-//                  them, and a sloped kit roof would be a picture of a wall
-//                  the sim lets you stand on.
-//   FLOORS         plank, cobble and flagstone pieces over square blocks of
-//                  FLOOR cells of one material (3x3 first, then 2x2, greedy
-//                  in row order); cells no block fits keep the atlas tile.
-//   WATER          the harbour's surface, in square blocks of the topmost
-//                  wet cells at one height, the kit's water plane fitted to
-//                  the block and floated a hair over the chunk's own water.
+//                  flat and walkable (the Skyrunners run them; a sloped kit
+//                  roof would be a picture of a wall the sim lets you stand
+//                  on) and wear the flat fill in thatch; every wall head
+//                  with sky above it is capped in the wall's colour.
+//   CEILINGS       the flat quad under every floor slab with a room (or the
+//                  street, or the water) beneath it, tinted per the floor's
+//                  material: a plastered taproom ceiling, the dark underside
+//                  of a pier.
+//   FLOORS         plank, cobble and flagstone pieces over rectangles of
+//                  FLOOR cells of one material (a greedy row-order merge:
+//                  the widest run, stacked as deep as it repeats; patterned
+//                  pieces take 2..3-tile blocks, planks any rectangle up to
+//                  six), then the material's flat fill over every cell the
+//                  pattern could not fit, so a dressed floor never shows
+//                  the atlas tile; dirt and thatch are the flat fill alone.
+//   WATER          the harbour's surface, in rectangles of the topmost wet
+//                  cells at one height, the kit's water plane fitted to
+//                  each and floated a hair over the chunk's own water.
 //   PROPS          a floor cell against exactly one wall, chosen by a hash
 //                  of its coordinates (one in `every`), gets a barrel, a
 //                  crate or a sack pushed against that wall. Render-only:
 //                  the sim knows nothing of them and a body walks through.
 //   LAMPS          every baked lamp: a fire is a brazier on its tile, a
 //                  lantern beside a wall is a wall lamp on that wall, a
-//                  lantern in the open is a lamp post.
+//                  lantern on a doorstep hangs on the jamb beside the door,
+//                  a lantern in the open is a lamp post.
 //
 // Floats are legal here (render-side); nothing in this file is read by the
 // simulation.
@@ -113,8 +125,18 @@ enum class PieceRole : std::uint8_t {
     LampWall,
     LampPost,
     Brazier,
+    /// A flat, uniform quad: the fill under every floor cell a patterned
+    /// piece could not cover, and the whole floor of a material that has
+    /// no pattern (dirt, thatch) -- tinted per material.
+    FloorFill,
+    /// The same quad over the top of every wall cell with sky above it (the
+    /// parapets and wall heads a roof view sees), in the wall's own colour.
+    WallCap,
+    /// The quad under every floor slab that has a room, a street or water
+    /// beneath it: the ceilings, tinted per the floor's material.
+    Ceiling,
 };
-inline constexpr std::size_t kPieceRoleCount = 16;
+inline constexpr std::size_t kPieceRoleCount = 19;
 
 /// The JSON key of a role ("wall", "wall_corner", ...), and back. None for
 /// an unknown key.
@@ -152,9 +174,15 @@ struct PieceSpec {
     /// side; false when it is on +Z (the cornice, the wall lamp).
     bool frontNegZ = true;
     /// Floors and water: the piece's local footprint [minX, minZ, maxX,
-    /// maxZ], fitted to a square block of `footprintTiles` tiles.
+    /// maxZ], fitted to a block of whole tiles between minBlock and
+    /// maxBlock on a side (a patterned piece wants 2..3 so its stones stay
+    /// stones; a plank or a flat fill takes any rectangle).
     float minX = 0.0F, minZ = 0.0F, maxX = 2.5F, maxZ = 2.5F;
-    std::int32_t footprintTiles = 3;
+    std::int32_t minBlock = 1;
+    std::int32_t maxBlock = 3;
+    /// A downward-facing quad laid upward: the piece is mirrored in Y (the
+    /// adapter draws a mirrored piece without back-face culling).
+    bool flipY = false;
     /// Y offset above the surface it stands on.
     float lift = 0.0F;
     /// Radians added to the rule's yaw.
@@ -172,12 +200,28 @@ struct PieceSpec {
 struct MaterialRule {
     std::string material;
     WallClass wallClass = WallClass::None;
+    /// Masonry that shows the kit's plaster side to the street (a rendered
+    /// stone building) rather than its brick; the corner piece, whose
+    /// outside is brick, is then not used on it.
+    bool plasterOut = false;
+    /// The outward finish's tint (the brick, or a timber wall's plaster).
     Rgba8 tint{255, 255, 255, 255};
-    /// Walls of this material below this band keep the chunk face (a hull
-    /// on the piers is oak; a storey over a stone ground floor is timber).
+    /// The plaster's tint on a masonry wall's indoor face.
+    Rgba8 insideTint{255, 255, 255, 255};
+    /// Walls of this material below this band keep the chunk face.
     std::int32_t minBand = 0;
+    /// The floor piece its FLOOR cells wear, and the flat fill laid over
+    /// the cells the floor piece could not fit (None: the atlas tile).
     PieceRole floorRole = PieceRole::None;
     Rgba8 floorTint{255, 255, 255, 255};
+    PieceRole fillRole = PieceRole::None;
+    Rgba8 fillTint{255, 255, 255, 255};
+    /// The wall cap's tint (default: the outward tint) and the tint of a
+    /// ceiling under a floor of this material (default: the catalogue's).
+    Rgba8 topTint{255, 255, 255, 255};
+    bool topTintSet = false;
+    Rgba8 ceilingTint{255, 255, 255, 255};
+    bool ceilingTintSet = false;
 };
 
 /// THE CATALOGUE. Loaded from JSON, queried by role and by material.
@@ -240,8 +284,13 @@ private:
 struct StaticPlacement {
     StaticInstance instance;
     PieceRole role = PieceRole::None;
+    /// The cells the piece spans, inclusive: its light is the average over
+    /// them, so a stretched wall segment under a lamp is lit as its middle
+    /// and not as one end.
     std::int32_t lightX = 0;
     std::int32_t lightY = 0;
+    std::int32_t lightX2 = 0;
+    std::int32_t lightY2 = 0;
     std::int32_t lightZ = 0;
     float facing = 1.0F;
 };

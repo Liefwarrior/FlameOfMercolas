@@ -1,6 +1,7 @@
 #include "granadad/render3d/static_pieces.hpp"
 
 #include <algorithm>
+#include <climits>
 #include <cmath>
 #include <fstream>
 #include <map>
@@ -25,7 +26,8 @@ constexpr float kHalfPi = kPi / 2.0F;
 constexpr std::string_view kRoleNames[kPieceRoleCount] = {
     "none",        "wall",        "wall_corner", "wall_window", "wall_door", "roof_edge",
     "floor_plank", "floor_cobble", "floor_flag", "water",       "prop_barrel", "prop_crate",
-    "prop_sack",   "lamp_wall",   "lamp_post",   "brazier",
+    "prop_sack",   "lamp_wall",   "lamp_post",   "brazier",     "floor_fill",  "wall_cap",
+    "ceiling",
 };
 
 // ---------------------------------------------------------------------------
@@ -161,6 +163,8 @@ struct FaceRun {
     std::uint16_t material = 0;
     WallClass cls = WallClass::None;
     bool outdoor = false;
+    /// The kit's brick side faces out (outdoor masonry not rendered).
+    bool brickOut = false;
     Rgba8 tint{255, 255, 255, 255};
     /// The wall line ends there (a convex corner of the plan).
     bool convexA0 = false;
@@ -203,6 +207,8 @@ public:
         roofEdges();
         doors();
         floors();
+        wallCaps();
+        ceilings();
         water();
         props();
         lampPieces();
@@ -237,8 +243,10 @@ private:
         return !cellRoofed(tiles_, x + kSideDx[side], y + kSideDy[side], z);
     }
 
+    /// A storey's piece is fitted to the band less a centimetre, so its top
+    /// cap sits just under the chunk's own wall top and the two never fight.
     [[nodiscard]] float heightScale(const PieceSpec& spec) const noexcept {
-        return spec.height > 0.01F ? render::kBandHeight / spec.height : 1.0F;
+        return spec.height > 0.01F ? (render::kBandHeight - 0.01F) / spec.height : 1.0F;
     }
 
     void emit(StaticPlacement placement) {
@@ -252,11 +260,14 @@ private:
     /// the face, standing on `yBase`.
     void facePiece(const FaceRun& run, PieceRole role, const PieceSpec& spec, float a0, float a1,
                    bool frontOut, float standoff, float yBase, std::int32_t lightX,
-                   std::int32_t lightY, const Rgba8& tint) {
+                   std::int32_t lightY, const Rgba8& tint, std::int32_t lightX2 = INT32_MIN,
+                   std::int32_t lightY2 = INT32_MIN) {
         const bool flip = spec.frontNegZ != frontOut;
         const float aOrigin = flip ? a1 : a0;
         StaticPlacement p;
         p.role = role;
+        p.lightX2 = lightX2 == INT32_MIN ? lightX : lightX2;
+        p.lightY2 = lightY2 == INT32_MIN ? lightY : lightY2;
         p.instance.piece = static_cast<std::uint16_t>(catalogue_.pieceIndex(role));
         p.instance.position =
             Vec3{run.baseX + kTangentX[run.side] * aOrigin + kNormalX[run.side] * standoff,
@@ -343,7 +354,8 @@ private:
             for (std::int32_t z = std::max(0, catalogue_.minBand()); z < tiles_.sizeZ(); ++z) {
                 for (std::int32_t y = 0; y < tiles_.sizeY(); ++y) {
                     for (std::int32_t x = 0; x < tiles_.sizeX(); ++x) {
-                        if (!isWall(tiles_, x, y, z) || wallClassAt(x, y, z) != WallClass::Masonry) {
+                        if (!isWall(tiles_, x, y, z) || wallClassAt(x, y, z) != WallClass::Masonry ||
+                            rule(x, y, z)->plasterOut) {
                             continue;
                         }
                         int exposed = 0;
@@ -421,7 +433,8 @@ private:
             }
             const int k = std::max(1, static_cast<int>(std::lround((hi - lo) / wall->width)));
             const float len = (hi - lo) / static_cast<float>(k);
-            const bool brickOut = r.outdoor && r.cls == WallClass::Masonry;
+            const bool brickOut = r.brickOut;
+            const bool windowOk = r.outdoor && r.cls == WallClass::Masonry;
             const std::int32_t cells = std::max(1, static_cast<std::int32_t>(std::lround(r.a1 - r.a0)));
             std::int32_t dx = 0, dy = 0;
             runStep(r.side, dx, dy);
@@ -432,11 +445,15 @@ private:
                 // window draw.
                 const std::int32_t along = std::clamp(
                     static_cast<std::int32_t>(std::floor(pa0 + 0.5F * len - r.a0)), 0, cells - 1);
+                const std::int32_t first = std::clamp(
+                    static_cast<std::int32_t>(std::floor(pa0 - r.a0 + 0.01F)), 0, cells - 1);
+                const std::int32_t last = std::clamp(
+                    static_cast<std::int32_t>(std::floor(pa1 - r.a0 - 0.01F)), 0, cells - 1);
                 const std::int32_t lx = r.firstX + dx * along;
                 const std::int32_t ly = r.firstY + dy * along;
                 PieceRole role = PieceRole::Wall;
                 const PieceSpec* spec = wall;
-                if (brickOut && window != nullptr && catalogue_.windowEvery() > 0 &&
+                if (windowOk && window != nullptr && catalogue_.windowEvery() > 0 &&
                     len >= 1.6F) {
                     const std::uint32_t h =
                         cellHash(lx, ly, r.z, 0x57494E44U + static_cast<std::uint32_t>(r.side));
@@ -445,9 +462,11 @@ private:
                         spec = window;
                     }
                 }
+                // Lit over the cells it spans, first to last.
                 facePiece(r, role, *spec, pa0, pa1, brickOut,
                           spec->standoffSet ? spec->standoff : spec->thickness * 0.5F,
-                          render::bandSurface(r.z), lx, ly, r.tint);
+                          render::bandSurface(r.z), r.firstX + dx * first, r.firstY + dy * first,
+                          r.tint, r.firstX + dx * last, r.firstY + dy * last);
             }
         }
     }
@@ -478,6 +497,8 @@ private:
         p.instance.tint = mulTint(spec.tint, c.tint);
         p.lightX = c.x;
         p.lightY = c.y;
+        p.lightX2 = c.x;
+        p.lightY2 = c.y;
         p.lightZ = c.z;
         p.facing = (render::kFacingX + render::kFacingY) * 0.5F;
         emit(std::move(p));
@@ -515,7 +536,10 @@ private:
                             outdoor = faceOutdoor(x, y, z, side);
                             material = tiles_.material(x, y, z);
                             if (roofEdge) {
-                                qualifies = outdoor && !isWall(tiles_, x, y, z + 1);
+                                // A cornice belongs to masonry: a hull or a
+                                // shed of timber has no roof line to trim.
+                                qualifies = outdoor && cls == WallClass::Masonry &&
+                                            !isWall(tiles_, x, y, z + 1);
                             }
                         }
                         const bool joins = qualifies && open && current.material == material &&
@@ -546,7 +570,14 @@ private:
                             current.cls = cls;
                             current.outdoor = outdoor;
                             const MaterialRule* r = rule(x, y, z);
-                            current.tint = r != nullptr ? r->tint : Rgba8{};
+                            // Out of doors the face wears the material's
+                            // tint on its finish (brick, or plaster for a
+                            // rendered building); an indoor masonry face is
+                            // plaster in its own tint.
+                            const bool plaster = cls == WallClass::Masonry && !outdoor;
+                            current.tint = r == nullptr ? Rgba8{} : (plaster ? r->insideTint : r->tint);
+                            current.brickOut = outdoor && cls == WallClass::Masonry &&
+                                               (r == nullptr || !r->plasterOut);
                             current.convexA0 = !isWall(tiles_, x - dx, y - dy, z);
                             open = true;
                         }
@@ -717,56 +748,97 @@ private:
         }
     }
 
-    /// A flat piece fitted to the n x n block whose north-west tile is
+    /// A fresh cover map for a pass that fits its own kind of cell (caps on
+    /// wall heads, ceilings under slabs the floor pass already covered).
+    void resetCover() {
+        covered_.clear();
+        ensureCover();
+    }
+
+    /// A flat piece fitted to the w x h block whose north-west tile is
     /// (x, y): the piece's local footprint is mapped onto the block.
     void blockPiece(PieceRole role, const PieceSpec& spec, std::int32_t x, std::int32_t y,
-                    std::int32_t z, std::int32_t n, float surface, const Rgba8& tint) {
-        const float nf = static_cast<float>(n);
-        const float sx = nf / std::max(0.01F, spec.maxX - spec.minX);
-        const float sz = nf / std::max(0.01F, spec.maxZ - spec.minZ);
+                    std::int32_t z, std::int32_t w, std::int32_t h, float surface,
+                    const Rgba8& tint) {
+        const float sx = static_cast<float>(w) / std::max(0.01F, spec.maxX - spec.minX);
+        const float sz = static_cast<float>(h) / std::max(0.01F, spec.maxZ - spec.minZ);
         StaticPlacement p;
         p.role = role;
         p.instance.piece = static_cast<std::uint16_t>(catalogue_.pieceIndex(role));
         p.instance.position = Vec3{static_cast<float>(x) - spec.minX * sx, surface + spec.lift,
                                    static_cast<float>(y) - spec.minZ * sz};
         p.instance.yaw = wrapYaw(spec.yawOffset);
-        p.instance.scale = Vec3{sx * spec.scale, spec.scale, sz * spec.scale};
+        p.instance.scale =
+            Vec3{sx * spec.scale, spec.flipY ? -spec.scale : spec.scale, sz * spec.scale};
         p.instance.tint = mulTint(spec.tint, tint);
-        p.lightX = x + n / 2;
-        p.lightY = y + n / 2;
+        p.lightX = x;
+        p.lightY = y;
+        p.lightX2 = x + w - 1;
+        p.lightY2 = y + h - 1;
         p.lightZ = z;
         p.facing = 1.0F;
         emit(std::move(p));
     }
 
-    void floors() {
-        ensureCover();
-        const std::int32_t zLo = std::max(0, catalogue_.minBand());
-        for (std::int32_t z = zLo; z < tiles_.sizeZ(); ++z) {
-            for (std::int32_t y = 0; y < tiles_.sizeY(); ++y) {
-                for (std::int32_t x = 0; x < tiles_.sizeX(); ++x) {
-                    if (covered_[coverIndex(x, y, z)] != 0U || !floorCell(x, y, z)) {
-                        continue;
-                    }
-                    const MaterialRule* r = rule(x, y, z);
-                    if (r == nullptr || r->floorRole == PieceRole::None) {
-                        continue;
-                    }
-                    const PieceSpec* spec = catalogue_.piece(r->floorRole);
-                    if (spec == nullptr) {
-                        continue;
-                    }
-                    const std::uint16_t material = tiles_.material(x, y, z);
-                    for (std::int32_t n = std::max(2, spec->footprintTiles); n >= 2; --n) {
-                        if (!blockFits(x, y, z, n, material)) {
-                            continue;
-                        }
-                        markCovered(x, y, z, n);
-                        blockPiece(r->floorRole, *spec, x, y, z, n, render::bandSurface(z),
-                                   r->floorTint);
+    /// How many rows from `y` down a w-wide run at x stacks (every cell
+    /// uncovered and accepted), at most maxSide.
+    template <typename Same>
+    [[nodiscard]] std::int32_t stackHeight(std::int32_t x, std::int32_t y, std::int32_t z,
+                                           std::int32_t w, std::int32_t maxSide,
+                                           const Same& same) const {
+        std::int32_t h = 1;
+        while (h < maxSide && y + h < tiles_.sizeY()) {
+            for (std::int32_t xx = x; xx < x + w; ++xx) {
+                if (covered_[coverIndex(xx, y + h, z)] != 0U || !same(xx, y + h)) {
+                    return h;
+                }
+            }
+            ++h;
+        }
+        return h;
+    }
+
+    /// THE RECTANGLE MERGE, the one floor-fitting rule. Over one level, in
+    /// row order, every uncovered cell that `same` accepts anchors the
+    /// widest run to its east (up to `maxSide`), then the run is extended
+    /// south while every cell of the next row also qualifies -- a block of
+    /// w x h whole tiles, marked covered and placed with the piece fitted
+    /// to it. A patterned piece asks for `minSide` on both axes; a block
+    /// short of it tries narrower runs (which may stack taller) and
+    /// otherwise leaves its cells for a later pass -- the flat fill.
+    template <typename Same, typename Place>
+    void mergeRectangles(std::int32_t z, std::int32_t minSide, std::int32_t maxSide,
+                         const Same& same, const Place& place) {
+        for (std::int32_t y = 0; y < tiles_.sizeY(); ++y) {
+            for (std::int32_t x = 0; x < tiles_.sizeX(); ++x) {
+                if (covered_[coverIndex(x, y, z)] != 0U || !same(x, y)) {
+                    continue;
+                }
+                std::int32_t w = 1;
+                while (w < maxSide && x + w < tiles_.sizeX() &&
+                       covered_[coverIndex(x + w, y, z)] == 0U && same(x + w, y)) {
+                    ++w;
+                }
+                if (w < minSide) {
+                    continue;
+                }
+                for (std::int32_t ww = w; ww >= minSide; --ww) {
+                    const std::int32_t hh = stackHeight(x, y, z, ww, maxSide, same);
+                    if (hh >= minSide) {
+                        markCovered(x, y, z, ww, hh);
+                        place(x, y, ww, hh);
                         break;
                     }
                 }
+            }
+        }
+    }
+
+    void markCovered(std::int32_t x, std::int32_t y, std::int32_t z, std::int32_t w,
+                     std::int32_t h) noexcept {
+        for (std::int32_t yy = y; yy < y + h; ++yy) {
+            for (std::int32_t xx = x; xx < x + w; ++xx) {
+                covered_[coverIndex(xx, yy, z)] = 1U;
             }
         }
     }
@@ -775,26 +847,109 @@ private:
         return tiles_.form(x, y, z) == content::TileForm::Floor && tiles_.fluidDepth(x, y, z) == 0;
     }
 
-    [[nodiscard]] bool blockFits(std::int32_t x, std::int32_t y, std::int32_t z, std::int32_t n,
-                                 std::uint16_t material) const noexcept {
-        if (x + n > tiles_.sizeX() || y + n > tiles_.sizeY()) {
-            return false;
-        }
-        for (std::int32_t yy = y; yy < y + n; ++yy) {
-            for (std::int32_t xx = x; xx < x + n; ++xx) {
-                if (covered_[coverIndex(xx, yy, z)] != 0U || !floorCell(xx, yy, z) ||
-                    tiles_.material(xx, yy, z) != material) {
-                    return false;
+    /// Floors, per material and level: the material's own floor piece
+    /// first (a patterned block piece wants whole 2..3 tile blocks; planks
+    /// and flat fills take any rectangle), then the material's fill piece
+    /// over whatever the first pass could not fit -- so no cell of a
+    /// dressed material keeps the atlas tile unless the catalogue says so.
+    void floors() {
+        ensureCover();
+        const std::int32_t zLo = std::max(0, catalogue_.minBand());
+        const std::span<const std::string_view> ids = render::materialIds();
+        for (std::int32_t z = zLo; z < tiles_.sizeZ(); ++z) {
+            for (std::size_t m = 0; m < ids.size(); ++m) {
+                const auto material = static_cast<std::uint16_t>(m);
+                const MaterialRule* r = catalogue_.material(material);
+                if (r == nullptr || (r->floorRole == PieceRole::None && r->fillRole == PieceRole::None)) {
+                    continue;
+                }
+                const auto same = [&](std::int32_t x, std::int32_t y) {
+                    return floorCell(x, y, z) && tiles_.material(x, y, z) == material;
+                };
+                const PieceSpec* spec =
+                    r->floorRole != PieceRole::None ? catalogue_.piece(r->floorRole) : nullptr;
+                if (spec != nullptr) {
+                    const PieceRole role = r->floorRole;
+                    const Rgba8 tint = r->floorTint;
+                    mergeRectangles(z, std::max(1, spec->minBlock), std::max(1, spec->maxBlock), same,
+                                    [&](std::int32_t x, std::int32_t y, std::int32_t w, std::int32_t h) {
+                                        blockPiece(role, *spec, x, y, z, w, h, render::bandSurface(z), tint);
+                                    });
+                }
+                const PieceSpec* fill =
+                    r->fillRole != PieceRole::None ? catalogue_.piece(r->fillRole) : nullptr;
+                if (fill != nullptr) {
+                    const PieceRole role = r->fillRole;
+                    const Rgba8 tint = r->fillTint;
+                    mergeRectangles(z, 1, std::max(1, fill->maxBlock), same,
+                                    [&](std::int32_t x, std::int32_t y, std::int32_t w, std::int32_t h) {
+                                        blockPiece(role, *fill, x, y, z, w, h, render::bandSurface(z), tint);
+                                    });
                 }
             }
         }
-        return true;
     }
 
-    void markCovered(std::int32_t x, std::int32_t y, std::int32_t z, std::int32_t n) noexcept {
-        for (std::int32_t yy = y; yy < y + n; ++yy) {
-            for (std::int32_t xx = x; xx < x + n; ++xx) {
-                covered_[coverIndex(xx, yy, z)] = 1U;
+    /// Every wall head with the sky over it, capped in the wall's colour.
+    void wallCaps() {
+        const PieceSpec* cap = catalogue_.piece(PieceRole::WallCap);
+        if (cap == nullptr) {
+            return;
+        }
+        resetCover();
+        const std::int32_t zLo = std::max(0, catalogue_.minBand());
+        const std::span<const std::string_view> ids = render::materialIds();
+        for (std::int32_t z = zLo; z < tiles_.sizeZ(); ++z) {
+            for (std::size_t m = 0; m < ids.size(); ++m) {
+                const auto material = static_cast<std::uint16_t>(m);
+                const MaterialRule* r = catalogue_.material(material);
+                if (r == nullptr || r->wallClass == WallClass::None || z < r->minBand) {
+                    continue;
+                }
+                const auto same = [&](std::int32_t x, std::int32_t y) {
+                    return isWall(tiles_, x, y, z) && tiles_.material(x, y, z) == material &&
+                           tiles_.form(x, y, z + 1) == content::TileForm::Open;
+                };
+                const Rgba8 tint = r->topTintSet ? r->topTint : r->tint;
+                mergeRectangles(z, 1, std::max(1, cap->maxBlock), same,
+                                [&](std::int32_t x, std::int32_t y, std::int32_t w, std::int32_t h) {
+                                    blockPiece(PieceRole::WallCap, *cap, x, y, z, w, h,
+                                               render::bandSurface(z + 1), tint);
+                                });
+            }
+        }
+    }
+
+    /// The quad under every floor slab with something other than solid
+    /// under it: a room's ceiling, a pier's underside.
+    void ceilings() {
+        const PieceSpec* ceiling = catalogue_.piece(PieceRole::Ceiling);
+        if (ceiling == nullptr) {
+            return;
+        }
+        resetCover();
+        const std::int32_t zLo = std::max(1, catalogue_.minBand());
+        const std::span<const std::string_view> ids = render::materialIds();
+        for (std::int32_t z = zLo; z < tiles_.sizeZ(); ++z) {
+            for (std::size_t m = 0; m < ids.size(); ++m) {
+                const auto material = static_cast<std::uint16_t>(m);
+                const MaterialRule* r = catalogue_.material(material);
+                const auto same = [&](std::int32_t x, std::int32_t y) {
+                    return tiles_.form(x, y, z) == content::TileForm::Floor &&
+                           tiles_.material(x, y, z) == material && isOpenish(tiles_, x, y, z - 1);
+                };
+                // The material's own ceiling tint, or the piece's plain
+                // plaster for a material the catalogue does not dress.
+                const Rgba8 tint = (r != nullptr && r->ceilingTintSet) ? r->ceilingTint : Rgba8{};
+                mergeRectangles(z, 1, std::max(1, ceiling->maxBlock), same,
+                                [&](std::int32_t x, std::int32_t y, std::int32_t w, std::int32_t h) {
+                                    // Lit by the room under it, as an underside.
+                                    blockPiece(PieceRole::Ceiling, *ceiling, x, y, z, w, h,
+                                               render::bandSurface(z) - render::kFloorSlab, tint);
+                                    StaticPlacement& p = out_.placements.back();
+                                    p.lightZ = z - 1;
+                                    p.facing = render::kUndersideLift;
+                                });
             }
         }
     }
@@ -818,44 +973,19 @@ private:
         if (spec == nullptr) {
             return;
         }
-        ensureCover();
+        resetCover();
         for (std::int32_t z = 0; z < tiles_.sizeZ(); ++z) {
-            for (std::int32_t y = 0; y < tiles_.sizeY(); ++y) {
-                for (std::int32_t x = 0; x < tiles_.sizeX(); ++x) {
-                    if (covered_[coverIndex(x, y, z)] != 0U) {
-                        continue;
-                    }
-                    const int depth = waterSurfaceDepth(x, y, z);
-                    if (depth == 0) {
-                        continue;
-                    }
-                    for (std::int32_t n = std::max(2, spec->footprintTiles); n >= 2; --n) {
-                        if (!waterBlockFits(x, y, z, n, depth)) {
-                            continue;
-                        }
-                        markCovered(x, y, z, n);
-                        blockPiece(PieceRole::Water, *spec, x, y, z, n,
-                                   render::bandSurface(z) + render::waterSurface(depth), Rgba8{});
-                        break;
-                    }
-                }
+            for (int depth = 1; depth <= 7; ++depth) {
+                const auto same = [&](std::int32_t x, std::int32_t y) {
+                    return waterSurfaceDepth(x, y, z) == depth;
+                };
+                const float surface = render::bandSurface(z) + render::waterSurface(depth);
+                mergeRectangles(z, 1, std::max(1, spec->maxBlock), same,
+                                [&](std::int32_t x, std::int32_t y, std::int32_t w, std::int32_t h) {
+                                    blockPiece(PieceRole::Water, *spec, x, y, z, w, h, surface, Rgba8{});
+                                });
             }
         }
-    }
-
-    [[nodiscard]] bool waterBlockFits(std::int32_t x, std::int32_t y, std::int32_t z,
-                                      std::int32_t n, int depth) const noexcept {
-        if (x + n > tiles_.sizeX() || y + n > tiles_.sizeY()) {
-            return false;
-        }
-        for (std::int32_t yy = y; yy < y + n; ++yy) {
-            for (std::int32_t xx = x; xx < x + n; ++xx) {
-                if (covered_[coverIndex(xx, yy, z)] != 0U || waterSurfaceDepth(xx, yy, z) != depth) {
-                    return false;
-                }
-            }
-        }
-        return true;
     }
 
     // --- props ------------------------------------------------------------
@@ -928,6 +1058,8 @@ private:
                     p.instance.tint = spec->tint;
                     p.lightX = x;
                     p.lightY = y;
+                    p.lightX2 = x;
+                    p.lightY2 = y;
                     p.lightZ = z;
                     p.facing = 1.0F;
                     emit(std::move(p));
@@ -952,17 +1084,42 @@ private:
                 }
                 continue;
             }
+            // The wall it hangs on: the wall beside the lamp's tile, or --
+            // a door lamp, the tile in front of a door -- the jamb beside
+            // the gap, with the lamp hung toward the doorway.
             int wallSide = -1;
-            for (int s = 0; s < 4; ++s) {
+            float shift = 0.0F;
+            std::int32_t jambX = lamp.x;
+            std::int32_t jambY = lamp.y;
+            for (int s = 0; s < 4 && wallSide < 0; ++s) {
                 if (isWall(tiles_, lamp.x + kSideDx[s], lamp.y + kSideDy[s], lamp.z)) {
                     wallSide = s;
-                    break;
+                }
+            }
+            for (int s = 0; s < 4 && wallSide < 0; ++s) {
+                const std::int32_t ax = lamp.x + kSideDx[s];
+                const std::int32_t ay = lamp.y + kSideDy[s];
+                if (!isWalkableForm(tiles_, ax, ay, lamp.z)) {
+                    continue;
+                }
+                // Across the gap cell, along the wall line either way.
+                const std::int32_t tx = kSideDy[s] != 0 ? 1 : 0;
+                const std::int32_t ty = kSideDx[s] != 0 ? 1 : 0;
+                for (int dir = -1; dir <= 1 && wallSide < 0; dir += 2) {
+                    if (isWall(tiles_, ax + tx * dir, ay + ty * dir, lamp.z)) {
+                        wallSide = s;
+                        jambX = lamp.x + tx * dir;
+                        jambY = lamp.y + ty * dir;
+                        // Toward the gap: 0.3 of a tile in from the jamb's
+                        // edge nearest the door.
+                        shift = -0.2F * static_cast<float>(dir);
+                    }
                 }
             }
             if (wallSide >= 0 && wallLamp != nullptr) {
                 // Hung on that wall's face, which looks back at the lamp's
-                // own tile: the piece's local +Z (its lamp) points away from
-                // the wall.
+                // own row or column: the piece's local +Z (its lamp) points
+                // away from the wall.
                 const int face = opposite(wallSide);
                 FaceRun r;
                 r.z = lamp.z;
@@ -972,8 +1129,12 @@ private:
                                              : static_cast<float>(face == kWest ? lamp.x + 1 : lamp.x);
                 setBase(r, lineCoord);
                 float a0 = 0.0F, a1 = 0.0F;
-                cellInterval(face, lamp.x, lamp.y, a0, a1);
-                const float centre = (a0 + a1) * 0.5F;
+                cellInterval(face, jambX, jambY, a0, a1);
+                // In tangent terms the shift is along +x or +y of the world:
+                // north and east faces read with the axis, south and west
+                // against it.
+                const float centre = (a0 + a1) * 0.5F +
+                                     ((face == kNorth || face == kEast) ? shift : -shift);
                 const bool flip = !wallLamp->frontNegZ;
                 StaticPlacement p;
                 p.role = PieceRole::LampWall;
@@ -987,6 +1148,8 @@ private:
                 p.instance.tint = wallLamp->tint;
                 p.lightX = lamp.x;
                 p.lightY = lamp.y;
+                p.lightX2 = lamp.x;
+                p.lightY2 = lamp.y;
                 p.lightZ = lamp.z;
                 p.facing = 1.0F;
                 emit(std::move(p));
@@ -1009,6 +1172,8 @@ private:
         p.instance.tint = spec.tint;
         p.lightX = x;
         p.lightY = y;
+        p.lightX2 = x;
+        p.lightY2 = y;
         p.lightZ = z;
         p.facing = 1.0F;
         emit(std::move(p));
@@ -1110,7 +1275,9 @@ StaticCatalogue StaticCatalogue::fromJson(std::string_view json) {
                 spec.maxX = e[2].is_number() ? e[2].get<float>() : 2.5F;
                 spec.maxZ = e[3].is_number() ? e[3].get<float>() : 2.5F;
             }
-            spec.footprintTiles = intOf(row, "footprintTiles", 3);
+            spec.minBlock = intOf(row, "minBlock", 1);
+            spec.maxBlock = intOf(row, "maxBlock", 3);
+            spec.flipY = row.value("flipY", false);
             spec.lift = floatOf(row, "lift", 0.0F);
             spec.yawOffset = floatOf(row, "yawOffsetDegrees", 0.0F) * (kPi / 180.0F);
             spec.scale = floatOf(row, "scale", 1.0F);
@@ -1137,11 +1304,25 @@ StaticCatalogue StaticCatalogue::fromJson(std::string_view json) {
             rule.wallClass = cls == "masonry" ? WallClass::Masonry
                              : cls == "timber" ? WallClass::Timber
                                                : WallClass::None;
+            rule.plasterOut = row.value("finish", std::string("brick")) == "plaster";
             rule.tint = tintFromJson(row.contains("tint") ? row["tint"] : nlohmann::json(), Rgba8{});
+            rule.insideTint =
+                tintFromJson(row.contains("insideTint") ? row["insideTint"] : nlohmann::json(), Rgba8{});
             rule.minBand = intOf(row, "minBand", 0);
             rule.floorRole = pieceRoleFromName(row.value("floor", std::string("none")));
             rule.floorTint =
                 tintFromJson(row.contains("floorTint") ? row["floorTint"] : nlohmann::json(), Rgba8{});
+            rule.fillRole = pieceRoleFromName(row.value("fill", std::string("none")));
+            rule.fillTint =
+                tintFromJson(row.contains("fillTint") ? row["fillTint"] : nlohmann::json(), Rgba8{});
+            if (row.contains("topTint")) {
+                rule.topTint = tintFromJson(row["topTint"], Rgba8{});
+                rule.topTintSet = true;
+            }
+            if (row.contains("ceilingTint")) {
+                rule.ceilingTint = tintFromJson(row["ceilingTint"], Rgba8{});
+                rule.ceilingTintSet = true;
+            }
             out.materials_.push_back(std::move(rule));
         }
         // By name, so lookups by id below are stable whatever the file's order.
@@ -1221,7 +1402,9 @@ std::uint64_t StaticCatalogue::digest() const noexcept {
         h.mixF32(spec.minZ);
         h.mixF32(spec.maxX);
         h.mixF32(spec.maxZ);
-        h.mixI32(spec.footprintTiles);
+        h.mixI32(spec.minBlock);
+        h.mixI32(spec.maxBlock);
+        h.mixU8(static_cast<std::uint8_t>(spec.flipY ? 1 : 0));
         h.mixF32(spec.lift);
         h.mixF32(spec.yawOffset);
         h.mixF32(spec.scale);
@@ -1234,14 +1417,30 @@ std::uint64_t StaticCatalogue::digest() const noexcept {
     for (const MaterialRule& rule : materials_) {
         h.mix(rule.material.data(), rule.material.size());
         h.mixU8(static_cast<std::uint8_t>(rule.wallClass));
+        h.mixU8(static_cast<std::uint8_t>(rule.plasterOut ? 1 : 0));
         h.mixU8(rule.tint.r);
         h.mixU8(rule.tint.g);
         h.mixU8(rule.tint.b);
+        h.mixU8(rule.insideTint.r);
+        h.mixU8(rule.insideTint.g);
+        h.mixU8(rule.insideTint.b);
         h.mixI32(rule.minBand);
         h.mixU8(static_cast<std::uint8_t>(rule.floorRole));
         h.mixU8(rule.floorTint.r);
         h.mixU8(rule.floorTint.g);
         h.mixU8(rule.floorTint.b);
+        h.mixU8(static_cast<std::uint8_t>(rule.fillRole));
+        h.mixU8(rule.fillTint.r);
+        h.mixU8(rule.fillTint.g);
+        h.mixU8(rule.fillTint.b);
+        h.mixU8(static_cast<std::uint8_t>(rule.topTintSet ? 1 : 0));
+        h.mixU8(rule.topTint.r);
+        h.mixU8(rule.topTint.g);
+        h.mixU8(rule.topTint.b);
+        h.mixU8(static_cast<std::uint8_t>(rule.ceilingTintSet ? 1 : 0));
+        h.mixU8(rule.ceilingTint.r);
+        h.mixU8(rule.ceilingTint.g);
+        h.mixU8(rule.ceilingTint.b);
     }
     h.mixI32(minBand_);
     h.mixI32(propEvery_);
