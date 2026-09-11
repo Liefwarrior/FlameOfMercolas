@@ -23,11 +23,13 @@
 #include "granadad/audio/audio_engine.hpp"
 #include "granadad/audio/decode.hpp"
 #include "granadad/audio/mixer.hpp"
+#include "granadad/audio/music_director.hpp"
 #include "granadad/audio/sound_bank.hpp"
 #include "granadad/content/content_dir.hpp"
 #include "granadad/render/atlas.hpp"
 #include "granadad/render/session.hpp"
 #include "granadad/sim/player.hpp"
+#include "granadad/sim/tavern.hpp"
 
 using granadad::audio::AudioEngine;
 using granadad::audio::BedId;
@@ -35,12 +37,18 @@ using granadad::audio::Bus;
 using granadad::audio::kChannels;
 using granadad::audio::kSampleRate;
 using granadad::audio::kSoundIdCount;
+using granadad::audio::kSurfaceCount;
+using granadad::audio::kTrackIdCount;
 using granadad::audio::Mixer;
+using granadad::audio::MusicDirector;
+using granadad::audio::MusicMood;
+using granadad::audio::MusicZone;
 using granadad::audio::ProcLayer;
 using granadad::audio::Sample;
 using granadad::audio::SoundBank;
 using granadad::audio::SoundId;
 using granadad::audio::Surface;
+using granadad::audio::TrackId;
 
 namespace {
 
@@ -52,6 +60,48 @@ namespace {
 [[nodiscard]] bool vendoredAudioPresent() {
     std::error_code ec;
     return std::filesystem::is_directory(audioRoot(), ec);
+}
+
+/// THE LOT PASS: the second root. Staged, gitignored, absent from every
+/// gate by design -- a case that needs it SKIPS, never fails, without it.
+[[nodiscard]] std::filesystem::path lotAudioRoot() {
+    return granadad::content::contentDir() /
+           std::filesystem::path(granadad::audio::kLotAudioRootRel);
+}
+
+[[nodiscard]] bool lotAudioPresent() {
+    std::error_code ec;
+    return std::filesystem::is_directory(lotAudioRoot(), ec);
+}
+
+/// How many variants SoundBank::load is expected to hold for `id` on THIS
+/// checkout: the LOT rows where the LOT tree is staged and the id has any,
+/// else the Kenney rows where the Kenney tree is vendored, else none.
+[[nodiscard]] std::size_t expectedVariants(SoundId id) {
+    if (lotAudioPresent() && !granadad::audio::lotSoundPaths(id).empty()) {
+        return granadad::audio::lotSoundPaths(id).size();
+    }
+    if (vendoredAudioPresent()) {
+        return granadad::audio::soundPaths(id).size();
+    }
+    return 0;
+}
+
+/// A short stereo loop per track, generated -- the director's loader in every
+/// test, so the machine is proved with no files. Runs on the director's
+/// worker thread; captures nothing.
+[[nodiscard]] std::shared_ptr<const Sample> syntheticTrack(TrackId id) {
+    constexpr std::size_t kFrames = 4800;  // 100 ms
+    Sample s;
+    s.stereo.resize(kFrames * 2U);
+    const float hz = 110.0F + 20.0F * static_cast<float>(granadad::audio::trackIndex(id));
+    const float step = 2.0F * 3.14159265358979323846F * hz / static_cast<float>(kSampleRate);
+    for (std::size_t n = 0; n < kFrames; ++n) {
+        const float v = 0.3F * std::sin(step * static_cast<float>(n));
+        s.stereo[n * 2U] = v;
+        s.stereo[n * 2U + 1U] = -v;
+    }
+    return std::make_shared<const Sample>(std::move(s));
 }
 
 [[nodiscard]] std::shared_ptr<const Sample> constantSample(std::size_t frames,
@@ -129,26 +179,48 @@ TEST_CASE("every material id resolves to a footstep sound with manifest entries"
 // The manifest against the vendored files.
 // ---------------------------------------------------------------------------
 
-TEST_CASE("every sound id has manifest paths, and every path exists where the Kenney tree is vendored") {
+TEST_CASE("every sound id has manifest paths under one root or the other, and every path exists where its tree is vendored") {
     for (std::size_t i = 0; i < kSoundIdCount; ++i) {
         const SoundId id = static_cast<SoundId>(i);
         CAPTURE(i);
-        CHECK_FALSE(granadad::audio::soundPaths(id).empty());
+        // THE LOT PASS: a Kenney row, a LOT row, or both -- never neither.
+        CHECK((!granadad::audio::soundPaths(id).empty() ||
+               !granadad::audio::lotSoundPaths(id).empty()));
     }
-    if (!vendoredAudioPresent()) {
+    if (vendoredAudioPresent()) {
+        const std::filesystem::path root = audioRoot();
+        for (std::size_t i = 0; i < kSoundIdCount; ++i) {
+            const SoundId id = static_cast<SoundId>(i);
+            for (const std::string_view rel : granadad::audio::soundPaths(id)) {
+                const std::filesystem::path p = root / std::filesystem::path(rel);
+                CAPTURE(rel);
+                CHECK(std::filesystem::exists(p));
+            }
+        }
+    } else {
         // The docker build context excludes content/art on purpose; the
         // native verify pass is where this half always runs.
-        MESSAGE("vendored audio absent; file-existence half skipped");
-        return;
+        MESSAGE("vendored audio absent; Kenney file-existence half skipped");
     }
-    const std::filesystem::path root = audioRoot();
-    for (std::size_t i = 0; i < kSoundIdCount; ++i) {
-        const SoundId id = static_cast<SoundId>(i);
-        for (const std::string_view rel : granadad::audio::soundPaths(id)) {
-            const std::filesystem::path p = root / std::filesystem::path(rel);
-            CAPTURE(rel);
-            CHECK(std::filesystem::exists(p));
+    if (lotAudioPresent()) {
+        const std::filesystem::path root = lotAudioRoot();
+        for (std::size_t i = 0; i < kSoundIdCount; ++i) {
+            const SoundId id = static_cast<SoundId>(i);
+            for (const granadad::audio::LotSoundFile& file :
+                 granadad::audio::lotSoundPaths(id)) {
+                const std::filesystem::path p = root / std::filesystem::path(file.rel);
+                CAPTURE(file.rel);
+                CHECK(std::filesystem::exists(p));
+            }
         }
+        for (std::size_t i = 1; i < kTrackIdCount; ++i) {
+            const std::string_view rel = granadad::audio::trackPath(static_cast<TrackId>(i));
+            CAPTURE(rel);
+            CHECK_FALSE(rel.empty());
+            CHECK(std::filesystem::exists(root / std::filesystem::path(rel)));
+        }
+    } else {
+        MESSAGE("LOT audio absent (the gate's normal state); LOT file-existence half skipped");
     }
 }
 
@@ -177,18 +249,25 @@ TEST_CASE("a real vendored ogg decodes to mono 48k samples in range") {
     }
 }
 
-TEST_CASE("the full bank loads every manifest file where the tree is vendored") {
-    if (!vendoredAudioPresent()) {
-        MESSAGE("vendored audio absent; skipped");
+TEST_CASE("the full bank loads every manifest file where the tree is vendored, LOT rows first") {
+    if (!vendoredAudioPresent() && !lotAudioPresent()) {
+        MESSAGE("no vendored audio at all; skipped");
         return;
     }
     const SoundBank bank = SoundBank::load(granadad::content::contentDir());
-    CHECK(bank.missingFiles() == 0);
+    if (vendoredAudioPresent()) {
+        CHECK(bank.missingFiles() == 0);
+    }
+    if (lotAudioPresent()) {
+        CHECK(bank.lotMissingFiles() == 0);
+        CHECK(bank.lotFiles() > 0);
+    } else {
+        CHECK(bank.lotFiles() == 0);
+    }
     for (std::size_t i = 0; i < kSoundIdCount; ++i) {
         const SoundId id = static_cast<SoundId>(i);
         CAPTURE(i);
-        CHECK(bank.variantCount(id) ==
-              granadad::audio::soundPaths(id).size());
+        CHECK(bank.variantCount(id) == expectedVariants(id));
     }
 }
 
@@ -201,6 +280,8 @@ TEST_CASE("a checkout with no audio constructs, plays silence, and never throws"
         SoundBank::load(std::filesystem::path("granadad-no-such-dir"));
     CHECK_FALSE(bank.anyLoaded());
     CHECK(bank.missingFiles() > 0);
+    CHECK(bank.lotMissingFiles() > 0);
+    CHECK(bank.lotFiles() == 0);
     auto engine = AudioEngine::createNull(1, std::move(bank));
     REQUIRE(engine != nullptr);
     CHECK_FALSE(engine->deviceOpen());
@@ -440,11 +521,12 @@ TEST_CASE("a bed's sparse one-shots actually fire over time") {
     engine->setTimeOfDay(12 * 3600);
     engine->startBed(BedId::Harbour, 0.1F);
     // The first sparse fire is primed to land within ~4 seconds. Count voice
-    // starts over 8 simulated seconds.
+    // starts over 8 simulated seconds -- ABOVE the bed's own loop voice,
+    // which the LOT pass keeps running for as long as the bed does.
     bool sawVoice = false;
     for (int i = 0; i < 160; ++i) {
         engine->update(0.05F);
-        if (engine->mixer().activeVoices() > 0) {
+        if (engine->mixer().activeVoices() > 1) {
             sawVoice = true;
         }
         (void)engineStats(*engine, 2400);
@@ -519,4 +601,430 @@ TEST_CASE("dayness is 0 at night, 1 at noon, and ramps through dawn") {
     // And a wrapped engine-clock total behaves.
     CHECK(dayness(86400 + 12 * 3600) == 1.0F);
     CHECK(dayness(-3600) == dayness(23 * 3600));
+}
+
+// ---------------------------------------------------------------------------
+// THE LOT PASS. The second root, the new surfaces, the owner's beds and vox,
+// the music director -- every case below runs on the synthetic bank or on
+// whichever trees this checkout has, and NONE of them requires a LOT file:
+// the docker gate has no LOT audio, and that is the law.
+// ---------------------------------------------------------------------------
+
+TEST_CASE("the second root: LOT variants stand in front of Kenney rows per id, and without the LOT tree the bank is exactly the Kenney bank") {
+    SoundBank bank = SoundBank::load(granadad::content::contentDir());
+    if (lotAudioPresent()) {
+        // Twelve concrete steps, not Kenney's five: the LOT rows won the id.
+        CHECK(bank.variantCount(SoundId::FootstepStone) ==
+              granadad::audio::lotSoundPaths(SoundId::FootstepStone).size());
+        CHECK(bank.variantCount(SoundId::FootstepStone) !=
+              granadad::audio::soundPaths(SoundId::FootstepStone).size());
+        CHECK(bank.variantCount(SoundId::PlayerHurt) == 4);
+        CHECK(bank.variantCount(SoundId::AmbienceCoastal) == 1);
+    } else {
+        // The gate: nothing LOT-only loaded, and the LOT-only ids are silent.
+        CHECK(bank.lotFiles() == 0);
+        CHECK(bank.variantCount(SoundId::PlayerHurt) == 0);
+        CHECK(bank.variantCount(SoundId::AmbienceCoastal) == 0);
+        if (vendoredAudioPresent()) {
+            CHECK(bank.variantCount(SoundId::FootstepStone) ==
+                  granadad::audio::soundPaths(SoundId::FootstepStone).size());
+            // A LOT-added id with a Kenney stand-in speaks the stand-in.
+            CHECK(bank.variantCount(SoundId::Sheathe) ==
+                  granadad::audio::soundPaths(SoundId::Sheathe).size());
+        }
+    }
+    if (vendoredAudioPresent()) {
+        // An id the LOT pass never touched is Kenney in both worlds.
+        CHECK(granadad::audio::lotSoundPaths(SoundId::UiClick).empty());
+        CHECK(bank.variantCount(SoundId::UiClick) ==
+              granadad::audio::soundPaths(SoundId::UiClick).size());
+    }
+    // And whichever world this is, every LOT-pass id plays or stays silent
+    // through an engine without a crash -- the missing-content contract.
+    auto engine = AudioEngine::createNull(41, std::move(bank));
+    for (std::size_t i = granadad::audio::soundIndex(SoundId::FootstepMetal);
+         i < kSoundIdCount; ++i) {
+        engine->playOneShot(static_cast<SoundId>(i));
+        engine->playOneShotRoundRobin(static_cast<SoundId>(i));
+    }
+    engine->update(0.05F);
+    (void)engineStats(*engine, 480);
+}
+
+TEST_CASE("a LOT row's gain is baked into the PCM at load") {
+    Sample s;
+    s.mono.assign(100, 0.25F);
+    granadad::audio::applyGainDb(s, 6.0206F);  // x2
+    CHECK(s.mono[50] == doctest::Approx(0.5F).epsilon(0.001));
+    Sample st;
+    st.stereo.assign(100, 0.5F);
+    granadad::audio::applyGainDb(st, -6.0206F);  // /2
+    CHECK(st.stereo[3] == doctest::Approx(0.25F).epsilon(0.001));
+    granadad::audio::applyGainDb(st, 0.0F);  // the common case is a no-op
+    CHECK(st.stereo[3] == doctest::Approx(0.25F).epsilon(0.001));
+    CHECK(st.isStereo());
+    CHECK(st.frames() == 50);
+    CHECK_FALSE(s.isStereo());
+    CHECK(s.frames() == 100);
+}
+
+TEST_CASE("a stereo sample plays its own two channels through the mixer") {
+    Mixer mixer;
+    Sample s;
+    s.stereo.resize(48000 * 2U);
+    for (std::size_t f = 0; f < 48000; ++f) {
+        s.stereo[f * 2U] = 0.5F;   // left only
+        s.stereo[f * 2U + 1U] = 0.0F;
+    }
+    const auto id = mixer.play(std::make_shared<const Sample>(std::move(s)),
+                               Bus::Music, 1.0F, 0.0F, 1.0F, true);
+    CHECK(id != Mixer::kNoVoice);
+    // A loop fades in over 50 ms; read the second block.
+    (void)renderStats(mixer, 4800);
+    const BlockStats stats = renderStats(mixer, 480);
+    CHECK(stats.peakL > 0.1F);
+    CHECK(stats.peakR < 1.0e-4F);
+    CHECK(mixer.voiceGain(id) == doctest::Approx(1.0F).epsilon(0.01));
+    CHECK(mixer.voiceGain(Mixer::kNoVoice) == 0.0F);
+    CHECK(mixer.voiceGain(id + 1000) == 0.0F);
+}
+
+TEST_CASE("a real LOT track decodes stereo, and a real LOT one-shot decodes mono, where the tree is staged") {
+    if (!lotAudioPresent()) {
+        MESSAGE("LOT audio absent; skipped");
+        return;
+    }
+    const auto track = granadad::audio::loadTrack(granadad::content::contentDir(),
+                                                  TrackId::InteriorExplore);
+    REQUIRE(track != nullptr);
+    CHECK(track->isStereo());
+    // 35 tomb of echoes is 112 s at 48 kHz.
+    CHECK(track->frames() > static_cast<std::size_t>(kSampleRate) * 100U);
+    CHECK(track->frames() < static_cast<std::size_t>(kSampleRate) * 120U);
+    for (std::size_t i = 0; i < track->stereo.size(); i += 997) {
+        REQUIRE(std::isfinite(track->stereo[i]));
+        REQUIRE(std::fabs(track->stereo[i]) <= 1.5F);
+    }
+    CHECK(granadad::audio::loadTrack(granadad::content::contentDir(), TrackId::None) ==
+          nullptr);
+    const SoundBank bank = SoundBank::load(granadad::content::contentDir());
+    const auto coastal = bank.sample(SoundId::AmbienceCoastal, 0);
+    REQUIRE(coastal != nullptr);
+    CHECK_FALSE(coastal->isStereo());
+    CHECK(coastal->frames() == static_cast<std::size_t>(kSampleRate) * 6U);  // 6.00 s
+}
+
+TEST_CASE("the LOT surfaces: steel is metal, the shards are gravel, the melt is mud, and every surface has a footstep id with rows") {
+    const auto table = granadad::audio::materialSurfaceTable();
+    const auto surfaceOf = [&](std::string_view material) {
+        for (const auto& row : table) {
+            if (row.materialId == material) {
+                return row.surface;
+            }
+        }
+        FAIL("material not in the table: " << material);
+        return Surface::Stone;
+    };
+    CHECK(surfaceOf("steel") == Surface::Metal);
+    CHECK(surfaceOf("lightstone_shards") == Surface::Gravel);
+    CHECK(surfaceOf("chromatis_melt") == Surface::Mud);
+    // The five that were never in question stay where they were.
+    CHECK(surfaceOf("granite") == Surface::Stone);
+    CHECK(surfaceOf("oak") == Surface::Wood);
+    CHECK(surfaceOf("dirt") == Surface::Earth);
+    CHECK(surfaceOf("cloth") == Surface::Cloth);
+    CHECK(surfaceOf("ice") == Surface::Ice);
+    CHECK(granadad::audio::footstepSoundFor(Surface::Metal) == SoundId::FootstepMetal);
+    CHECK(granadad::audio::footstepSoundFor(Surface::Gravel) == SoundId::FootstepGravel);
+    CHECK(granadad::audio::footstepSoundFor(Surface::Mud) == SoundId::FootstepMud);
+    for (std::size_t i = 0; i < kSurfaceCount; ++i) {
+        const Surface surface = static_cast<Surface>(i);
+        const SoundId step = granadad::audio::footstepSoundFor(surface);
+        CAPTURE(i);
+        // Every surface keeps a Kenney row, so the gate steps; the six the
+        // Footsteps Pack covers carry twelve LOT variants each, and Wood and
+        // Cloth stay Kenney by design (no LOT set was staged for them).
+        const bool lotSet = surface != Surface::Wood && surface != Surface::Cloth;
+        CHECK(granadad::audio::lotSoundPaths(step).size() == (lotSet ? 12U : 0U));
+        CHECK_FALSE(granadad::audio::soundPaths(step).empty());
+        CHECK(granadad::audio::busFor(step) == Bus::Footsteps);
+    }
+    CHECK(granadad::audio::lotSoundPaths(SoundId::WadeSplash).size() == 12);
+}
+
+TEST_CASE("the beds carry the owner's loops: coastal on the wharf, stone under a roof, and the crossfade retires the old loop") {
+    CHECK(granadad::audio::bedHasLoop(BedId::Harbour));
+    CHECK(granadad::audio::bedHasLoop(BedId::Interior));
+    CHECK_FALSE(granadad::audio::bedHasLoop(BedId::None));
+    CHECK(granadad::audio::bedLoopSound(BedId::Harbour) == SoundId::AmbienceCoastal);
+    CHECK(granadad::audio::bedLoopSound(BedId::Interior) == SoundId::AmbienceStone);
+    CHECK(granadad::audio::busFor(SoundId::AmbienceCoastal) == Bus::Ambient);
+    CHECK(granadad::audio::busFor(SoundId::AmbienceStone) == Bus::Ambient);
+    CHECK(granadad::audio::busFor(SoundId::AmbienceOrganic) == Bus::Ambient);
+    // The organic loop is registered and held: no bed reads it.
+    CHECK(granadad::audio::bedLoopSound(BedId::Harbour) != SoundId::AmbienceOrganic);
+    CHECK(granadad::audio::bedLoopSound(BedId::Interior) != SoundId::AmbienceOrganic);
+
+    auto engine = AudioEngine::createNull(29, SoundBank::synthetic());
+    engine->setTimeOfDay(12 * 3600);
+    // Outside: the harbour bed's loop voice starts the moment the bed does.
+    engine->startBed(BedId::Harbour, 0.2F);
+    CHECK(engine->mixer().activeVoices() == 1);
+    // Under a roof: the stone loop rises while the coastal one fades...
+    engine->startBed(BedId::Interior, 0.2F);
+    CHECK(engine->currentBed() == BedId::Interior);
+    CHECK(engine->mixer().activeVoices() == 2);
+    // ...and 0.8 s later (fade 0.2 s + the voice's own 0.2 s stop) the old
+    // loop is gone. Before the first sparse creak can fire (primed >= 1 s).
+    for (int i = 0; i < 16; ++i) {
+        engine->update(0.05F);
+        (void)engineStats(*engine, 2400);
+    }
+    CHECK(engine->mixer().activeVoices() == 1);
+}
+
+TEST_CASE("the owner's hurt vox plays in strict turn, and the random path never repeats a variant") {
+    auto engine = AudioEngine::createNull(37, SoundBank::synthetic());  // 2 per id
+    CHECK(engine->lastVariant(SoundId::PlayerHurt) == -1);
+    engine->playOneShotRoundRobin(SoundId::PlayerHurt);
+    CHECK(engine->lastVariant(SoundId::PlayerHurt) == 0);
+    engine->playOneShotRoundRobin(SoundId::PlayerHurt);
+    CHECK(engine->lastVariant(SoundId::PlayerHurt) == 1);
+    engine->playOneShotRoundRobin(SoundId::PlayerHurt);
+    CHECK(engine->lastVariant(SoundId::PlayerHurt) == 0);
+    engine->playOneShotRoundRobin(SoundId::PlayerHurt);
+    CHECK(engine->lastVariant(SoundId::PlayerHurt) == 1);
+    CHECK(engine->mixer().activeVoices() == 4);
+    // The random draw: with two variants, never the same twice running.
+    int last = engine->lastVariant(SoundId::UiClick);
+    CHECK(last == -1);
+    for (int i = 0; i < 12; ++i) {
+        engine->playOneShot(SoundId::UiClick);
+        const int now = engine->lastVariant(SoundId::UiClick);
+        CHECK(now >= 0);
+        CHECK(now != last);
+        last = now;
+    }
+    // A silent id (empty bank) neither advances nor crashes.
+    auto mute = AudioEngine::createNull(1, SoundBank::empty());
+    mute->playOneShotRoundRobin(SoundId::PlayerHurt);
+    CHECK(mute->lastVariant(SoundId::PlayerHurt) == -1);
+    CHECK(mute->mixer().activeVoices() == 0);
+}
+
+TEST_CASE("the music director: the pair is what is held, the combat edge swaps it, calm brings it back, the crossfade is monotone, and off is silent") {
+    auto engine = AudioEngine::createNull(31, SoundBank::synthetic());
+    MusicDirector& music = engine->music();
+
+    // No loader: nothing wanted, nothing played, nothing loaded.
+    music.setZone(MusicZone::Docks);
+    engine->update(0.05F);
+    CHECK(music.wanted() == TrackId::None);
+    CHECK(music.playing() == TrackId::None);
+    CHECK(music.loadedTracks() == 0);
+    CHECK(engine->mixer().activeVoices() == 0);
+
+    // The curation itself.
+    CHECK(granadad::audio::musicCueFor(MusicZone::Docks).explore == TrackId::DocksExplore);
+    CHECK(granadad::audio::musicCueFor(MusicZone::Docks).combat == TrackId::DocksCombat);
+    CHECK(granadad::audio::musicCueFor(MusicZone::Interior).explore == TrackId::InteriorExplore);
+    CHECK(granadad::audio::musicCueFor(MusicZone::Interior).combat == TrackId::InteriorExplore);
+    CHECK(granadad::audio::trackName(TrackId::DocksExplore) == "13_whispers_of_the_abyss_loop.ogg");
+    CHECK(granadad::audio::trackName(TrackId::DocksCombat) == "14_chains_of_the_damned_loop.ogg");
+    CHECK(granadad::audio::trackName(TrackId::InteriorExplore) == "35_tomb_of_echoes_loop.ogg");
+    CHECK(granadad::audio::trackName(TrackId::Climax) == "15_the_final_eclipse_loop.ogg");
+
+    // A loader: the active pair is requested at once and nothing else.
+    music.setTrackLoader(&syntheticTrack);
+    engine->update(0.05F);
+    music.finishLoading();
+    CHECK(music.loadedTracks() == 2);
+    CHECK(music.pendingLoads() == 0);
+    engine->update(0.05F);
+    CHECK(music.wanted() == TrackId::DocksExplore);
+    CHECK(music.playing() == TrackId::DocksExplore);
+    CHECK(engine->mixer().activeVoices() == 1);
+
+    // The rise is monotone and arrives at the track gain (2.5 s; render 4 s).
+    float last = 0.0F;
+    for (int i = 0; i < 40; ++i) {
+        (void)engineStats(*engine, 4800);
+        const float g = engine->mixer().voiceGain(music.voice());
+        CHECK(g >= last - 1.0e-5F);
+        last = g;
+    }
+    CHECK(last == doctest::Approx(granadad::audio::kMusicTrackGain).epsilon(0.01));
+
+    // The combat edge: the pair swaps, one voice rising as the other fades,
+    // both monotone, and the faded one is reaped.
+    music.noteCombat();
+    CHECK(music.mood() == MusicMood::Combat);
+    engine->update(0.05F);
+    CHECK(music.playing() == TrackId::DocksCombat);
+    CHECK(engine->mixer().activeVoices() == 2);
+    const Mixer::VoiceId rising = music.voice();
+    const Mixer::VoiceId fading = music.fadingVoice();
+    CHECK(rising != fading);
+    CHECK(fading != Mixer::kNoVoice);
+    float up = 0.0F;
+    float down = granadad::audio::kMusicTrackGain;
+    for (int i = 0; i < 40; ++i) {
+        (void)engineStats(*engine, 4800);
+        const float gu = engine->mixer().voiceGain(rising);
+        const float gd = engine->mixer().voiceGain(fading);
+        CHECK(gu >= up - 1.0e-5F);
+        CHECK(gd <= down + 1.0e-5F);
+        up = gu;
+        down = gd;
+    }
+    CHECK(up == doctest::Approx(granadad::audio::kMusicTrackGain).epsilon(0.01));
+    CHECK(down == 0.0F);
+    engine->update(0.05F);
+    CHECK(engine->mixer().activeVoices() == 1);
+    CHECK(music.fadingVoice() == Mixer::kNoVoice);
+    CHECK(music.loadedTracks() == 2);  // still just the pair
+
+    // The calm clock: brawlers standing hold it at zero; a swing thrown
+    // resets it without starting anything; kMusicCalmSteps quiet steps end it.
+    for (int i = 0; i < 100; ++i) {
+        music.step(true);
+    }
+    CHECK(music.mood() == MusicMood::Combat);
+    CHECK(music.calmSteps() == 0);
+    for (int i = 0; i < 300; ++i) {
+        music.step(false);
+    }
+    CHECK(music.calmSteps() == 300);
+    music.noteSwing();
+    CHECK(music.calmSteps() == 0);
+    CHECK(music.mood() == MusicMood::Combat);
+    for (int i = 0; i < granadad::audio::kMusicCalmSteps - 1; ++i) {
+        music.step(false);
+    }
+    CHECK(music.mood() == MusicMood::Combat);
+    music.step(false);
+    CHECK(music.mood() == MusicMood::Exploration);
+    CHECK(music.calmSteps() == 0);
+    engine->update(0.05F);
+    CHECK(music.playing() == TrackId::DocksExplore);
+    // In exploration a swing at air starts nothing.
+    music.noteSwing();
+    CHECK(music.mood() == MusicMood::Exploration);
+    for (int i = 0; i < 60; ++i) {
+        (void)engineStats(*engine, 4800);
+    }
+    engine->update(0.05F);
+    CHECK(engine->mixer().activeVoices() == 1);
+
+    // Under a roof the interior pair replaces the docks pair -- one track,
+    // both cues -- and the cache never exceeds two.
+    music.setZone(MusicZone::Interior);
+    music.setZone(MusicZone::Interior);  // re-asserting is a no-op
+    engine->update(0.05F);
+    music.finishLoading();
+    engine->update(0.05F);
+    CHECK(music.playing() == TrackId::InteriorExplore);
+    CHECK(music.loadedTracks() <= 2);
+    music.noteCombat();
+    engine->update(0.05F);
+    CHECK(music.wanted() == TrackId::InteriorExplore);
+    CHECK(music.playing() == TrackId::InteriorExplore);  // same track: no swap
+    for (int i = 0; i < 60; ++i) {
+        (void)engineStats(*engine, 4800);
+    }
+    engine->update(0.05F);
+    CHECK(engine->mixer().activeVoices() == 1);
+
+    // --music-off: everything fades to nothing and nothing is wanted.
+    music.setEnabled(false);
+    CHECK_FALSE(music.enabled());
+    engine->update(0.05F);
+    CHECK(music.wanted() == TrackId::None);
+    CHECK(music.playing() == TrackId::None);
+    for (int i = 0; i < 40; ++i) {
+        (void)engineStats(*engine, 4800);
+    }
+    engine->update(0.05F);
+    CHECK(engine->mixer().activeVoices() == 0);
+    CHECK(music.describe() == "music off (--music-off)");
+    music.setEnabled(true);
+    CHECK(music.describe().find("13_whispers_of_the_abyss_loop.ogg") != std::string::npos);
+    CHECK(music.describe().find("35_tomb_of_echoes_loop.ogg") != std::string::npos);
+    CHECK(music.describe().find("stereo") != std::string::npos);
+}
+
+TEST_CASE("the music director survives a cue whose track is missing, and a bus at zero mutes it") {
+    auto engine = AudioEngine::createNull(43, SoundBank::synthetic());
+    MusicDirector& music = engine->music();
+    // A loader that has only the interior track: the docks cues stay silent
+    // (the loader said null, once, and is never asked again), no wait, no
+    // throw -- the missing-content contract, for music.
+    music.setTrackLoader([](TrackId id) {
+        return id == TrackId::InteriorExplore ? syntheticTrack(id)
+                                              : std::shared_ptr<const Sample>();
+    });
+    music.setZone(MusicZone::Docks);
+    engine->update(0.05F);
+    music.finishLoading();
+    engine->update(0.05F);
+    CHECK(music.loadedTracks() == 0);
+    CHECK(music.playing() == TrackId::None);
+    CHECK(engine->mixer().activeVoices() == 0);
+    music.noteCombat();
+    engine->update(0.05F);
+    CHECK(music.playing() == TrackId::None);
+    music.setZone(MusicZone::Interior);
+    engine->update(0.05F);
+    music.finishLoading();
+    engine->update(0.05F);
+    CHECK(music.playing() == TrackId::InteriorExplore);
+    CHECK(engine->mixer().activeVoices() == 1);
+    // Bus::Music at zero silences the loop and only the loop.
+    engine->setBusGain(Bus::Music, 0.0F);
+    (void)engineStats(*engine, 4800);
+    const BlockStats muted = engineStats(*engine, 480);
+    CHECK(muted.nonZero == 0);
+    engine->playOneShot(SoundId::UiConfirm);
+    const BlockStats withUi = engineStats(*engine, 480);
+    CHECK(withUi.nonZero > 0);
+}
+
+TEST_CASE("the stance speaks both edges through the session: the draw on hands up, the store on hands down") {
+    granadad::render::SessionConfig config;
+    config.contentDir = granadad::content::contentDir();
+    granadad::render::Session session(config);
+    auto engine = AudioEngine::createNull(0x10F0u, SoundBank::synthetic());
+    session.setAudio(engine.get());
+    CHECK(engine->lastVariant(SoundId::SwordDraw) == -1);
+    CHECK(engine->lastVariant(SoundId::Sheathe) == -1);
+    CHECK_FALSE(session.tavern().playerHandsUp());
+
+    // The down-edge raises the hands in the sim; the step catches the edge.
+    const granadad::sim::MoveInput still{};
+    session.attackDown();
+    CHECK(session.tavern().playerHandsUp());
+    session.step(still);
+    CHECK(engine->lastVariant(SoundId::SwordDraw) >= 0);
+    CHECK(engine->lastVariant(SoundId::Sheathe) == -1);
+    // A tap at nobody: the swing gets its air, and the hands stay up.
+    session.attackUp();
+    session.step(still);
+    CHECK(session.tavern().playerHandsUp());
+    CHECK(engine->lastVariant(SoundId::Sheathe) == -1);
+    // The lull: kLowerHandsSteps of nothing (after the swing's own recovery)
+    // lowers them, and the falling edge is the store.
+    for (int i = 0; i < granadad::sim::kLowerHandsSteps + 200 && session.tavern().playerHandsUp(); ++i) {
+        session.step(still);
+    }
+    CHECK_FALSE(session.tavern().playerHandsUp());
+    session.step(still);
+    CHECK(engine->lastVariant(SoundId::Sheathe) >= 0);
+    // Detached, the identical edges are inert.
+    session.setAudio(nullptr);
+    const int detached = engine->mixer().activeVoices();
+    session.attackDown();
+    session.step(still);
+    session.attackUp();
+    session.step(still);
+    CHECK(engine->mixer().activeVoices() == detached);
 }

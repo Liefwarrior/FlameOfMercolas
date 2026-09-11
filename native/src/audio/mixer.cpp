@@ -80,7 +80,7 @@ float Mixer::procSample(std::size_t layer) noexcept {
 
 Mixer::VoiceId Mixer::play(std::shared_ptr<const Sample> sample, Bus bus,
                            float gain, float pan, float pitch, bool loop) {
-    if (!sample || sample->mono.empty()) {
+    if (!sample || sample->frames() == 0) {
         return kNoVoice;
     }
     const std::lock_guard<std::mutex> lock(mutex_);
@@ -151,6 +151,19 @@ void Mixer::setVoiceGain(VoiceId voice, float gain, float rampSec) {
     }
 }
 
+float Mixer::voiceGain(VoiceId voice) const {
+    if (voice == kNoVoice) {
+        return 0.0F;
+    }
+    const std::lock_guard<std::mutex> lock(mutex_);
+    for (const Voice& v : voices_) {
+        if (v.id == voice) {
+            return v.gain;
+        }
+    }
+    return 0.0F;
+}
+
 void Mixer::setBusGain(Bus bus, float gain) {
     const std::lock_guard<std::mutex> lock(mutex_);
     busGain_[busIndex(bus)] = std::clamp(gain, 0.0F, 2.0F);
@@ -196,8 +209,12 @@ void Mixer::render(float* out, int frames) {
 
     // Voices.
     for (Voice& v : voices_) {
-        const std::vector<float>& mono = v.sample->mono;
-        const std::size_t n = mono.size();
+        // THE LOT PASS: one layout pick per voice, outside the sample loop.
+        // A stereo sample (music) reads L/R planes from the interleaved
+        // buffer; everything else is the mono path it always was.
+        const bool stereo = v.sample->isStereo();
+        const float* pcm = stereo ? v.sample->stereo.data() : v.sample->mono.data();
+        const std::size_t n = v.sample->frames();
         const float bus = busGain_[busIndex(v.bus)];
         for (int f = 0; f < frames; ++f) {
             if (v.gainStep != 0.0F) {
@@ -215,10 +232,19 @@ void Mixer::render(float* out, int frames) {
             }
             const float frac = static_cast<float>(v.pos - static_cast<double>(i0));
             const std::size_t i1 = (i0 + 1 < n) ? i0 + 1 : (v.loop ? 0 : i0);
-            const float s =
-                (mono[i0] * (1.0F - frac) + mono[i1] * frac) * v.gain * bus;
-            out[static_cast<std::size_t>(f) * 2U] += s * v.panL;
-            out[static_cast<std::size_t>(f) * 2U + 1U] += s * v.panR;
+            const float g = v.gain * bus;
+            if (stereo) {
+                const float l =
+                    pcm[i0 * 2U] * (1.0F - frac) + pcm[i1 * 2U] * frac;
+                const float r =
+                    pcm[i0 * 2U + 1U] * (1.0F - frac) + pcm[i1 * 2U + 1U] * frac;
+                out[static_cast<std::size_t>(f) * 2U] += l * g * v.panL;
+                out[static_cast<std::size_t>(f) * 2U + 1U] += r * g * v.panR;
+            } else {
+                const float s = (pcm[i0] * (1.0F - frac) + pcm[i1] * frac) * g;
+                out[static_cast<std::size_t>(f) * 2U] += s * v.panL;
+                out[static_cast<std::size_t>(f) * 2U + 1U] += s * v.panR;
+            }
             v.pos += v.step;
             if (v.pos >= static_cast<double>(n)) {
                 if (v.loop) {
@@ -239,7 +265,7 @@ void Mixer::render(float* out, int frames) {
                                return true;
                            }
                            return !v.loop &&
-                                  v.pos >= static_cast<double>(v.sample->mono.size());
+                                  v.pos >= static_cast<double>(v.sample->frames());
                        }),
         voices_.end());
 
