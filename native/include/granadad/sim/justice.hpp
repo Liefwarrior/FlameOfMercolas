@@ -422,6 +422,13 @@ struct SentenceTerms {
 // the end of the run
 // ---------------------------------------------------------------------------
 
+/// HEARING PAGE LANE. How long the judgment's badge is HELD on the page
+/// before the row that serves the sentence (or takes the drop) is offered,
+/// in movement steps: a beat and a half, so a leaned-on ENTER cannot plead
+/// and be sentenced in one breath. The cross-lane contract's own number
+/// (JUSTICE-SPEC section 5); presentation reads it, the sim never does.
+inline constexpr std::int32_t kJudgmentHoldSteps = 90;
+
 /// Where the ward hangs a man: K21, the Saltgate watch-post and its gibbet,
 /// DOCKS-GAZETTEER's own authored law texture. The plate names it.
 inline constexpr std::string_view kRopePlace = "THE SALTGATE POST";

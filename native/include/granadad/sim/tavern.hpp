@@ -1147,6 +1147,14 @@ public:
     /// beside quitRequested_ to read.
     [[nodiscard]] const RunEnd& runEnd() const noexcept { return runEnd_; }
     [[nodiscard]] bool runEnded() const noexcept { return executed(); }
+    /// HEARING PAGE LANE. Who the blood on the paper is FOR: the corpse on
+    /// the roster (Activity::Dead, never removed) whose memory carries
+    /// Deed::Slew -- the last such man in roster order, exactly the rule the
+    /// rope's own RunEnd reads at the drop, so the reading of the charge
+    /// ("THE WARD SAYS YOU PUT CANNIC DOWN...") and the plate ("FOR CANNIC.")
+    /// can never name two different men. Empty when no corpse of the
+    /// player's is on the roster. Pure, no draw, reads hashed state only.
+    [[nodiscard]] std::string slainName() const;
 
     /// Which day of the world this is. Monotonic across midnight and across a
     /// night in a cell, because a deadline that wrapped with the wall clock

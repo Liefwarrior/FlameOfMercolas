@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
 #include <sstream>
 #include <utility>
 
@@ -611,6 +612,9 @@ sim::RoofResult Session::tryClimb() {
 }
 
 void Session::climb() {
+    if (refusedInCustody()) {
+        return;
+    }
     recordWatchOp(WatchOpKind::Climb);
     const WatchDepthGuard watchGuard(watchDepth_);
     dismissOverlays();
@@ -644,6 +648,9 @@ sim::RoofResult Session::tryDropDown() {
 }
 
 void Session::dropDown() {
+    if (refusedInCustody()) {
+        return;
+    }
     recordWatchOp(WatchOpKind::Drop);
     const WatchDepthGuard watchGuard(watchDepth_);
     dismissOverlays();
@@ -658,6 +665,9 @@ void Session::dropDown() {
 }
 
 void Session::vertical() {
+    if (refusedInCustody()) {
+        return;
+    }
     dismissOverlays();
     if (talking() || picking()) {
         return;
@@ -723,6 +733,9 @@ bool Session::stealNearestThing() {
 }
 
 void Session::steal() {
+    if (refusedInCustody()) {
+        return;
+    }
     dismissOverlays();
     if (talking()) {
         return;
@@ -736,6 +749,9 @@ void Session::steal() {
 // ---------------------------------------------------------------------------
 
 void Session::toggleCrouch() {
+    if (refusedInCustody()) {
+        return;
+    }
     recordWatchOp(WatchOpKind::Crouch);
     const WatchDepthGuard watchGuard(watchDepth_);
     dismissOverlays();
@@ -822,6 +838,9 @@ std::string Session::lockLine() const {
 }
 
 void Session::lift() {
+    if (refusedInCustody()) {
+        return;
+    }
     dismissOverlays();
     if (talking()) {
         return;
@@ -956,6 +975,9 @@ int Session::sheetLeadInLookReach() const {
 }
 
 void Session::examine() {
+    if (refusedInCustody()) {
+        return;
+    }
     recordWatchOp(WatchOpKind::Examine);
     const WatchDepthGuard watchGuard(watchDepth_);
     if (talking() || picking()) {
@@ -1795,6 +1817,12 @@ void Session::togglePause() {
     if (talking() || picking()) {
         return;
     }
+    // JUSTICE BUILD: PAUSE still opens over the hearing (a player can always
+    // quit the game) -- and is REFUSED on the rope's plate and the end rows,
+    // whose two rows are the only live input (spec 5).
+    if (ropeCeremonyUp()) {
+        return;
+    }
     const bool willOpen = !pauseOpen_;
     // EVERY OTHER OVERLAY STANDS DOWN, same as toggleOptions -- opening the
     // pause menu over an already-open casebook or keys page would be the same
@@ -1827,9 +1855,13 @@ std::vector<std::string> Session::pauseRows() const {
     // because the two rows a player reaches for mid-game (resume, pass the
     // hours) belong above the two they visit once (controls, settings), and
     // QUIT stays last where a quit belongs.
+    // JUSTICE BUILD: at the bench the WAIT row is the refusal itself --
+    // state changes the label (UI-REFERENCE: never a greyed-out row), and
+    // choosePause says the same line and does nothing. The row keeps its
+    // place so CONTROLS, SETTINGS and QUIT keep their digits.
     return {
         "RESUME",
-        "WAIT",
+        courtOpen_ ? "THE PRIEST IS WAITING." : "WAIT",
         "CONTROLS",
         "SETTINGS",
         // SHIP NOTE MOVE 3: the armed row names the device's own confirm.
@@ -1885,6 +1917,12 @@ void Session::choosePause() {
             // shape the two rows below have. Wait mode, never sleep: the
             // healing door is the bed's Interact press and only that -- the
             // owner's ruling, enforced by which door you walked through.
+            // JUSTICE BUILD: refused out loud at the bench, the page staying
+            // up -- the row already reads the refusal.
+            if (courtOpen_) {
+                say("THE PRIEST IS WAITING.");
+                return;
+            }
             openWait(false);
             return;
         case 2:
@@ -1923,6 +1961,9 @@ void Session::choosePause() {
 }
 
 void Session::setCrouched(bool crouched) {
+    if (refusedInCustody()) {
+        return;
+    }
     dismissOverlays();
     if (talking()) {
         return;
@@ -1974,6 +2015,9 @@ void Session::showQuickBar() {
 }
 
 void Session::jump() {
+    if (refusedInCustody()) {
+        return;
+    }
     dismissOverlays();
     if (talking() || picking()) {
         return;
@@ -2025,6 +2069,9 @@ void Session::toggleKeys() {
 // ---------------------------------------------------------------------------
 
 void Session::toggleGrimoire() {
+    if (refusedInCustody()) {
+        return;
+    }
     if (talking() || picking()) {
         return;
     }
@@ -2055,6 +2102,9 @@ void Session::toggleGrimoire() {
 // ---------------------------------------------------------------------------
 
 void Session::toggleDistrictMap() {
+    if (refusedInCustody()) {
+        return;
+    }
     // Inert while a conversation or the wire owns the keyboard, exactly like
     // toggleGrimoire -- a page opening under a topic list is the split-brain
     // bug toggleOptions' own comment describes.
@@ -2712,6 +2762,9 @@ constexpr int kWaitHours = 24;
 }  // namespace
 
 void Session::openWait(bool sleepMode) {
+    if (refusedInCustody()) {
+        return;
+    }
     if (talking() || picking()) {
         return;
     }
@@ -2864,6 +2917,9 @@ void Session::chooseWaitRow(int slot) {
 }
 
 void Session::toggleMenuFocused(int focus) {
+    if (refusedInCustody()) {
+        return;
+    }
     if (talking() || picking()) {
         return;
     }
@@ -2924,6 +2980,9 @@ void Session::toggleMenuFocused(int focus) {
 }
 
 void Session::toggleCasebook() {
+    if (refusedInCustody()) {
+        return;
+    }
     recordWatchOp(WatchOpKind::Casebook);
     const WatchDepthGuard watchGuard(watchDepth_);
     toggleMenuFocused(kMenuFocusJournal);
@@ -3645,7 +3704,13 @@ void Session::step(const sim::MoveInput& input) {
     // and the body is TOLD, rather than the client keeping a second copy of it
     // that the hasher cannot see. The room is told back how the body is moving,
     // which is how footfalls reach the notice rule.
-    sim::MoveInput moved = input;
+    // JUSTICE BUILD: THE PLAYER CANNOT WALK OUT OF CUSTODY (PLAY-MODE-SPEC's
+    // own rule -- "you cannot just walk out of custody by holding a key").
+    // While the hearing page, the rope's plate or the end rows own the frame
+    // the movement input is dropped HERE, before the body hears it, so a
+    // held key and a scripted stepMany alike move nothing; the world keeps
+    // stepping underneath, as it does under every page.
+    sim::MoveInput moved = inCustody() ? sim::MoveInput{} : input;
     moved.crouch = tavern_->stance() == sim::Stance::Crouched;
     const bool walking = moved.forward != 0 || moved.strafe != 0;
     // FATIGUE BUILD: THE SPRINT GATE, before the body ever hears the key. An
@@ -3738,11 +3803,30 @@ void Session::step(const sim::MoveInput& input) {
     // seizure and the clock; the BODY is this file's, so the walk to the
     // impound and the morning at its gate happen here -- which is to say they
     // do not happen at all, and that is stated rather than implied.
+    //
+    // JUSTICE BUILD (HEARING PAGE LANE). THE SAME RELEASE, THREE MEANINGS:
+    // with a hearing pending it is "to the Mission's door" (openCourt below
+    // takes the body there off the pending record); after the page served a
+    // sentence it is "turned loose" -- at the Mission's door or on the
+    // Tarwalk, by the terms; and a paperless search is the shipped Tarwalk
+    // release exactly as it always was.
     if (tavern_->takeArrestRelease()) {
-        placeBodyAt(sim::gull::kStreetX, sim::gull::kStreetY, sim::gull::kGroundBand);
-        awaitingLanding_ = false;
-        syncTavernToBody();
-        say(tavern_->lastArrest().line);
+        if (courtServing_) {
+            closeCourt();
+        } else if (!tavern_->hearingPending()) {
+            placeBodyAt(sim::gull::kStreetX, sim::gull::kStreetY, sim::gull::kGroundBand);
+            awaitingLanding_ = false;
+            syncTavernToBody();
+            say(tavern_->lastArrest().line);
+        }
+    }
+    // TAKEN. A hearing open on the ledger with no page up -- the arrest a
+    // step ago, or a record reopened between the arrest and the plea --
+    // opens the bench: the page is DERIVED from the hashed record, never the
+    // other way round.
+    if (!courtOpen_ && !courtServing_ && !ropeCeremonyUp() && tavern_->hearingPending() &&
+        !tavern_->executed()) {
+        openCourt();
     }
 
     // AND SOMEBODY PUT YOU ON THE FLOOR. Same shape, same reason: the room owns
@@ -3781,6 +3865,19 @@ void Session::step(const sim::MoveInput& input) {
     // so nothing here touches sim state and the player is free underneath it.
     if (deathCeremonySteps_ > 0) {
         --deathCeremonySteps_;
+    }
+    // JUSTICE BUILD. The judgment's held badge, and the rope's dip and
+    // plate, spent once a step the same way. When the plate's hold runs out
+    // the end rows come up under it; nothing fades back.
+    if (courtJudgmentHold_ > 0) {
+        --courtJudgmentHold_;
+    }
+    if (ropeCeremonySteps_ > 0) {
+        --ropeCeremonySteps_;
+        if (ropeCeremonySteps_ == 0) {
+            ropeRowsUp_ = true;
+            ropeCursor_ = 0;
+        }
     }
 
     // THE SPEECH REVEAL CLOCK. A courtesy for whoever is watching the screen
@@ -3881,6 +3978,11 @@ void Session::step(const sim::MoveInput& input) {
         const bool mapUp = districtMapOpen_;
         const bool bookUp = casebookPageOpen();
         const bool keysUp = keysOpen_;
+        const bool courtUp = courtOpen_;
+        if (courtUp && !courtTutorWasOpen_) {
+            courtTutor_.raise();
+        }
+        courtTutorWasOpen_ = courtUp;
         if (mapUp && !mapTutorWasOpen_) {
             mapTutor_.raise();
         }
@@ -3904,7 +4006,12 @@ void Session::step(const sim::MoveInput& input) {
             if (keysUp) {
                 keysTutor_.raise();
             }
+            if (courtUp) {
+                courtTutor_.raise();
+            }
         }
+        courtTutor_.sync(!courtUp);
+        courtTutor_.advance();
         mapTutor_.sync(!mapUp);
         casebookTutor_.sync(!bookUp);
         keysTutor_.sync(!keysUp);
@@ -4304,6 +4411,9 @@ bool Session::talkToWard() {
 }
 
 void Session::interact() {
+    if (refusedInCustody()) {
+        return;
+    }
     recordWatchOp(WatchOpKind::Interact);
     const WatchDepthGuard watchGuard(watchDepth_);
     dismissOverlays();
@@ -6074,6 +6184,9 @@ constexpr float kFoundBodyWhiffGain = 0.35F;
 }  // namespace
 
 void Session::attackDown() {
+    if (refusedInCustody()) {
+        return;
+    }
     // The down-edge. A Punch watch-op is recorded here (case_watch replays it
     // as punch()); dismissOverlays and the sim's hold clock start exactly where
     // the legacy punch() started them.
@@ -6084,6 +6197,9 @@ void Session::attackDown() {
 }
 
 void Session::attackUp() {
+    if (refusedInCustody()) {
+        return;
+    }
     const WatchDepthGuard watchGuard(watchDepth_);
     const sim::Tavern::PlayerSwingResult result = tavern_->playerAttackUp();
     if (result.refused) {
@@ -6190,6 +6306,9 @@ void Session::attackUp() {
 }
 
 void Session::punch() {
+    if (refusedInCustody()) {
+        return;
+    }
     // ACTION-COMBAT BUILD: a TAP of the new verbs -- down then immediately up
     // with no movement step between, so the sim's charge counter never leaves
     // zero and the swing is always the light (Subdue) tier. The six un-migrated
@@ -6200,6 +6319,9 @@ void Session::punch() {
 }
 
 void Session::castEquipped() {
+    if (refusedInCustody()) {
+        return;
+    }
     dismissOverlays();
     if (talking() || picking()) {
         // The keyboard is a topic list's (or a lock's) right now. Inert, the
@@ -6237,6 +6359,9 @@ void Session::applyPlayerAttributes(const sim::AttributeBlock& attributes) {
 }
 
 void Session::restHere() {
+    if (refusedInCustody()) {
+        return;
+    }
     dismissOverlays();
     const sim::ServiceResult slept = tavern_->sleep();
     if (slept == sim::ServiceResult::Served) {
@@ -6296,6 +6421,982 @@ const sim::Tavern::SentenceReport& Session::serveSentence() {
         syncClockAfterSkip();
     }
     return served;
+}
+
+// ---------------------------------------------------------------------------
+// JUSTICE BUILD (HEARING PAGE LANE): the court, the rope, the end
+// ---------------------------------------------------------------------------
+//
+// Spec sections 5 and 6, as presentation over the SIM the two lanes before
+// this one built: the hearing on the crime ledger (justice.hpp's HearingState,
+// hashed and codec'd), Tavern::plead as the stepped input, Tavern::serveSentence
+// as the clock and the coin, tavern().runEnd() as the end. Nothing here rolls,
+// nothing here decides; this file reads the record, draws it in the terminal
+// register, and turns keypresses into the two stepped inputs the sim owns.
+
+namespace {
+
+/// The count words the reading uses: "TWO LIFTS", "THREE SAW IT". One is the
+/// article ("A LIFT"), so it is the caller's; past twelve the figure is the
+/// word, as the census's own tallies are.
+[[nodiscard]] std::string countWord(std::int32_t n) {
+    static constexpr std::string_view kWords[] = {
+        "",     "ONE", "TWO",   "THREE", "FOUR",  "FIVE",   "SIX",
+        "SEVEN", "EIGHT", "NINE", "TEN", "ELEVEN", "TWELVE",
+    };
+    if (n >= 1 && n <= 12) {
+        return std::string(kWords[n]);
+    }
+    return std::to_string(n);
+}
+
+/// "THE FOURTH DAY" -- the ordinal the plate reads. Day one, not day zero:
+/// formatCaseDay's own translation, applied to the ordinal here. Past what
+/// the words carry the plate says the figure, which is still the ward's roll.
+[[nodiscard]] std::string ordinalWord(std::int32_t day) {
+    static constexpr std::string_view kOnes[] = {
+        "",        "FIRST",   "SECOND",     "THIRD",      "FOURTH",    "FIFTH",     "SIXTH",
+        "SEVENTH", "EIGHTH",  "NINTH",      "TENTH",      "ELEVENTH",  "TWELFTH",   "THIRTEENTH",
+        "FOURTEENTH", "FIFTEENTH", "SIXTEENTH", "SEVENTEENTH", "EIGHTEENTH", "NINETEENTH",
+    };
+    static constexpr std::string_view kTens[] = {
+        "", "", "TWENTY", "THIRTY", "FORTY", "FIFTY", "SIXTY", "SEVENTY", "EIGHTY", "NINETY",
+    };
+    static constexpr std::string_view kTensOrdinal[] = {
+        "",         "",          "TWENTIETH", "THIRTIETH", "FORTIETH",
+        "FIFTIETH", "SIXTIETH",  "SEVENTIETH", "EIGHTIETH", "NINETIETH",
+    };
+    if (day >= 1 && day < 20) {
+        return std::string(kOnes[day]);
+    }
+    if (day >= 20 && day < 100) {
+        const int tens = day / 10;
+        const int ones = day % 10;
+        if (ones == 0) {
+            return std::string(kTensOrdinal[tens]);
+        }
+        return std::string(kTens[tens]) + "-" + std::string(kOnes[ones]);
+    }
+    return std::to_string(day) + "TH";
+}
+
+/// The six acts, in the reading's own words: "A LIFT" / "TWO LIFTS", "A
+/// CRACKED BOX" / "TWO CRACKED BOXES". The tally words crime.hpp's own
+/// crimeTally uses (lifts, cracks, runs, fences, leans, roofs), spoken.
+[[nodiscard]] std::string crimePhrase(sim::Crime crime, std::int32_t count) {
+    const bool one = count == 1;
+    const std::string n = one ? std::string("A") : countWord(count);
+    switch (crime) {
+        case sim::Crime::Lift:
+            return n + (one ? " LIFT" : " LIFTS");
+        case sim::Crime::Burgle:
+            return n + (one ? " CRACKED BOX" : " CRACKED BOXES");
+        case sim::Crime::Smuggle:
+            return n + (one ? " RUN" : " RUNS");
+        case sim::Crime::Fence:
+            return n + (one ? " FENCED LOT" : " FENCED LOTS");
+        case sim::Crime::Extort:
+            return n + (one ? " LEAN" : " LEANS");
+        case sim::Crime::RoofRun:
+            return n + (one ? " ROOF-RUN" : " ROOF-RUNS");
+    }
+    return n;
+}
+
+/// Which rows the page prints, by kind, so the cursor and the digits and the
+/// confirm all read one list.
+enum class CourtRowKind : std::uint8_t { Guilty, NotGuilty, Paper, Back, NoPlea, Serve };
+
+[[nodiscard]] std::vector<CourtRowKind> courtRowKindsFor(const sim::HearingState& hearing,
+                                                          bool paperOpen, bool offered) {
+    std::vector<CourtRowKind> kinds;
+    if (hearing.awaitingPlea()) {
+        if (hearing.sheet.tier == sim::Sentence::Condemned && hearing.sheet.commutedBefore) {
+            // MERCY IS GIVEN ONCE. The page opens, the priest speaks, and
+            // the one row is I HAVE NOTHING TO SAY.
+            kinds.push_back(CourtRowKind::NoPlea);
+            return kinds;
+        }
+        kinds.push_back(CourtRowKind::Guilty);
+        kinds.push_back(CourtRowKind::NotGuilty);
+        kinds.push_back(CourtRowKind::Paper);
+        if (paperOpen) {
+            kinds.push_back(CourtRowKind::Back);
+        }
+        return kinds;
+    }
+    if (hearing.judged() && offered) {
+        kinds.push_back(CourtRowKind::Serve);
+    }
+    return kinds;
+}
+
+/// The judgment as the badge prints it.
+[[nodiscard]] std::string judgmentWord(sim::Judgment judgment) {
+    switch (judgment) {
+        case sim::Judgment::Spared:
+            return "SPARED";
+        case sim::Judgment::Fined:
+            return "FINED";
+        case sim::Judgment::Held:
+            return "HELD";
+        case sim::Judgment::Bound:
+            return "BOUND";
+        case sim::Judgment::TheHand:
+            return "THE HAND";
+        case sim::Judgment::Commuted:
+            return "COMMUTED";
+        case sim::Judgment::TheRope:
+            return "THE ROPE";
+        case sim::Judgment::None:
+            break;
+    }
+    return {};
+}
+
+/// The verdict badge's own accent: SPARED in the number green, the coin and
+/// the cell in the page accent, the hand and the rope in the tag's red.
+[[nodiscard]] Rgb judgmentAccent(sim::Judgment judgment) {
+    switch (judgment) {
+        case sim::Judgment::Spared:
+            return panelInk().number;
+        case sim::Judgment::TheHand:
+        case sim::Judgment::Commuted:
+        case sim::Judgment::TheRope:
+            return Rgb{0.88F, 0.34F, 0.26F};
+        default:
+            return panelInk().accent;
+    }
+}
+
+/// The one row after the judgment: what the player does about it. The drop
+/// is taken by the player's own hand, like everything else on this page.
+[[nodiscard]] std::string serveWord(sim::Judgment judgment) {
+    switch (judgment) {
+        case sim::Judgment::Spared:
+            return "WALK OUT.";
+        case sim::Judgment::Fined:
+            return "PAY IT.";
+        case sim::Judgment::TheRope:
+            return "THE DROP.";
+        default:
+            return "SERVE IT.";
+    }
+}
+
+/// "TWO NIGHTS." / "SIX NIGHTS." off the cell's hours -- whole nights, one at
+/// least: the shipped one-to-three nights doubled reads as its days.
+[[nodiscard]] std::string nightsWord(std::int32_t cellHours) {
+    const std::int32_t nights = std::max<std::int32_t>(1, cellHours / 24);
+    return countWord(nights) + (nights == 1 ? " NIGHT." : " NIGHTS.");
+}
+
+[[nodiscard]] std::string daysWord(std::int32_t days) {
+    return "BONDSWORN " + std::to_string(days) + (days == 1 ? " DAY." : " DAYS.");
+}
+
+/// THE SENTENCE, IN NUMBERS -- the last row of the check block, the way
+/// "HELD HARD -- CUDGEL 14-18" states its span. Off the pure branch.
+[[nodiscard]] std::string sentenceLine(const sim::SentenceTerms& terms) {
+    if (!terms.served) {
+        return {};
+    }
+    std::string out;
+    const auto coin = [&terms]() { return std::to_string(terms.finePaid) + " ROYALS."; };
+    switch (terms.judgment) {
+        case sim::Judgment::Spared:
+            return "NOTHING OWED.";
+        case sim::Judgment::Fined:
+            out = coin();
+            break;
+        case sim::Judgment::Held:
+            out = nightsWord(terms.cellHours) + " " + coin();
+            break;
+        case sim::Judgment::Bound:
+            return daysWord(terms.bondDays);
+        case sim::Judgment::TheHand:
+            out = "THE HAND. ";
+            if (terms.band == sim::Judgment::Bound) {
+                return out + daysWord(terms.bondDays);
+            }
+            out += nightsWord(terms.cellHours) + " " + coin();
+            break;
+        case sim::Judgment::Commuted:
+            return "THE HAND. " + daysWord(terms.bondDays);
+        case sim::Judgment::TheRope:
+            return "THE ROPE.";
+        case sim::Judgment::None:
+            return {};
+    }
+    if (terms.shortfallDays > 0) {
+        out += " " + daysWord(terms.shortfallDays);
+    }
+    return out;
+}
+
+/// The priest's own words for the answer -- the bark tables keyed like the
+/// shipped watch.*, rotated on the count of hearings so a second visit to the
+/// bench hears a second row.
+[[nodiscard]] std::string_view judgmentTable(sim::Judgment judgment) {
+    switch (judgment) {
+        case sim::Judgment::Spared:
+            return "court.spared";
+        case sim::Judgment::Fined:
+            return "court.fined";
+        case sim::Judgment::Held:
+            return "court.held";
+        case sim::Judgment::Bound:
+            return "court.bound";
+        case sim::Judgment::TheHand:
+            return "court.hand";
+        case sim::Judgment::Commuted:
+            return "court.commuted";
+        case sim::Judgment::TheRope:
+            return "court.rope";
+        case sim::Judgment::None:
+            break;
+    }
+    return "court.paper";
+}
+
+/// The consequence of the hovered row, in the pane beside it -- the
+/// informed choice (UI-REFERENCE: "View X's stats"). Fixed literals.
+[[nodiscard]] std::string rowConsequence(CourtRowKind kind, sim::Sentence tier) {
+    switch (kind) {
+        case CourtRowKind::Guilty:
+            return tier == sim::Sentence::Condemned
+                       ? "A CONFESSION IS WEIGHED AS IT IS GIVEN. THE FLAME'S ANSWER IS FIXED "
+                         "BEFORE YOU SPEAK IT. NO ROPE FOR THE TONGUE, AND NO MERCY FROM IT "
+                         "EITHER -- MERCY OR THE ROPE, AND NOTHING ELSE."
+                       : "A CONFESSION IS WEIGHED AS IT IS GIVEN. THE FLAME'S ANSWER IS FIXED "
+                         "BEFORE YOU SPEAK IT. NO ROPE FOR THE TONGUE, AND NO MERCY FROM IT "
+                         "EITHER.";
+        case CourtRowKind::NotGuilty:
+            return tier == sim::Sentence::Condemned
+                       ? "A DENIAL IS WEIGHED WITH THE PRIEST'S OWN DOUBT IN IT. TEN POINTS "
+                         "EITHER WAY. THE CORPSE IS ON THE ROSTER: MERCY OR THE ROPE, NEVER "
+                         "SPARED."
+                       : "A DENIAL IS WEIGHED WITH THE PRIEST'S OWN DOUBT IN IT. TEN POINTS "
+                         "EITHER WAY. DENIED AND DISBELIEVED, THE SENTENCE DOUBLES AND THE "
+                         "MISSION REMEMBERS THE LIE.";
+        case CourtRowKind::Paper:
+            return "THE CHARGE, WHAT THE PAPER ASKS, AND WHAT THE PRIEST WILL WEIGH -- IN "
+                   "WORDS, BEFORE YOU SPEAK.";
+        case CourtRowKind::Back:
+            return "BACK TO THE ROWS.";
+        case CourtRowKind::NoPlea:
+            return "MERCY WAS GIVEN ONCE. NOTHING IS WEIGHED: THE PRIEST SPEAKS, AND THE WARD "
+                   "HAS YOU.";
+        case CourtRowKind::Serve:
+            break;
+    }
+    return {};
+}
+
+/// THE SHEET AS PHRASES, NEVER NUMBERS (spec 3.2): what the priest will
+/// weigh, in words, before the plea. The arithmetic is shown after.
+[[nodiscard]] std::vector<std::string> paperPhrases(const sim::ChargeSheet& sheet) {
+    std::vector<std::string> out;
+    if (sheet.blood) {
+        out.push_back("BLOOD ON THE PAPER.");
+        if (sheet.witnesses > 0) {
+            out.push_back(countWord(sheet.witnesses) + " SAW IT.");
+        }
+    }
+    if (sheet.secondRung) {
+        out.push_back("THE ROOFS, A SECOND TIME.");
+    } else if (sheet.skyrunner && sheet.tier == sim::Sentence::Maimed) {
+        out.push_back("A SKYRUNNER'S FIRST.");
+    }
+    if (sheet.priors <= 0) {
+        out.push_back("NEVER TAKEN BEFORE.");
+    } else if (sheet.priors == 1) {
+        out.push_back("TAKEN ONCE BEFORE.");
+    } else if (sheet.priors == 2) {
+        out.push_back("TAKEN TWICE BEFORE.");
+    } else {
+        out.push_back("TAKEN " + countWord(sheet.priors) + " TIMES BEFORE.");
+    }
+    if (sheet.heatAtArrest - sim::kWarrantAt >= 16) {
+        out.push_back("THE PAPER IS HOT.");
+    }
+    if (sheet.templeStanding >= 52) {
+        out.push_back("THE MISSION KNOWS YOU WELL.");
+    } else if (sheet.templeStanding > 0) {
+        out.push_back("THE MISSION KNOWS YOUR NAME.");
+    } else {
+        out.push_back("THE MISSION DOES NOT KNOW YOU.");
+    }
+    if (sheet.reputation >= 10) {
+        out.push_back("THE WARD THINKS WELL OF YOU.");
+    } else if (sheet.reputation <= -10) {
+        out.push_back("THE WARD THINKS ILL OF YOU.");
+    }
+    if (sheet.streetwise >= 20) {
+        out.push_back("A QUICK TONGUE.");
+    } else if (sheet.streetwise <= 0) {
+        out.push_back("NO TONGUE TO SPEAK OF.");
+    }
+    if (sheet.condemnedBefore) {
+        out.push_back("THE ROPE PASSED YOU ONCE.");
+    }
+    if (sheet.commutedBefore) {
+        out.push_back("MERCY WAS GIVEN ONCE.");
+    }
+    return out;
+}
+
+}  // namespace
+
+bool Session::courtSentenceOffered() const noexcept {
+    return courtOpen_ && tavern_->hearing().judged() && courtJudgmentHold_ <= 0;
+}
+
+std::vector<std::string> Session::courtRows() const {
+    std::vector<std::string> out;
+    const HearingPageState page = hearingPageState();
+    out.reserve(page.rows.size());
+    for (const HearingRow& row : page.rows) {
+        out.push_back(row.key + " - " + row.label);
+    }
+    return out;
+}
+
+bool Session::missionArrivalTile(std::int32_t& outX, std::int32_t& outY,
+                                 std::int32_t& outBand) const {
+    // THE MISSION IS ALREADY A TRAVEL TARGET with an arrival tile: the sign's
+    // own aim point (the door you knock on) snapped to standable ground on
+    // the place's band -- exactly the travel verb's landing rule, so the
+    // Watch's walk lands where a walked-to Mission lands.
+    const int at = mapPlaceIndex("Mission of the Flame");
+    if (at < 0) {
+        return false;
+    }
+    const MapPlace& place = mapPlaces()[static_cast<std::size_t>(at)];
+    std::int32_t aimX = 0;
+    std::int32_t aimY = 0;
+    mapAimPoint(place, body_->tileX(), body_->tileY(), aimX, aimY);
+    if (!travelStandable(*tiles_, aimX, aimY, place.band, &outX, &outY)) {
+        return false;
+    }
+    outBand = place.band;
+    return true;
+}
+
+void Session::openCourt() {
+    if (courtOpen_) {
+        return;
+    }
+    // CUSTODY. Whatever the player was doing, they are not doing it: the wire
+    // out of the lock, the conversation ended, every page and the pause menu
+    // down. The TAKEN line follows and outranks any of theirs.
+    if (picking()) {
+        tavern_->abandonPick();
+    }
+    if (talking()) {
+        tavern_->endConversation();
+        wardTalkId_ = -1;
+        topicCursor_ = 0;
+        topicPage_ = 0;
+        haggleOffer_ = 0;
+        forgeOpen_ = false;
+    }
+    dismissOverlays();
+    // THE WALK ELIDED. The body to the Mission's arrival tile through
+    // placeBodyAt (a relocation like any other: the room you were taken in
+    // must not ghost over the Mission's door), the seam dipped to black --
+    // the same cloth every scripted cut wears -- and the arrival line.
+    std::int32_t x = 0;
+    std::int32_t y = 0;
+    std::int32_t band = 0;
+    if (missionArrivalTile(x, y, band)) {
+        placeBodyAt(x, y, band);
+    }
+    awaitingLanding_ = false;
+    syncTavernToBody();
+    dressInstantCut();
+    courtOpen_ = true;
+    courtCursor_ = 0;
+    courtPaperOpen_ = false;
+    courtArmed_ = -1;
+    courtServing_ = false;
+    // A hearing already judged (a run reopened between the plea and the
+    // sentence) holds its badge the same beat a fresh judgment does.
+    courtJudgmentHold_ = tavern_->hearing().judged() ? sim::kJudgmentHoldSteps : 0;
+    say("TAKEN TO THE MISSION. " + travelClockText(timeOfDay_) + ".");
+    syncPanelAnim();
+}
+
+void Session::closeCourt() {
+    courtOpen_ = false;
+    courtServing_ = false;
+    courtArmed_ = -1;
+    courtPaperOpen_ = false;
+    courtJudgmentHold_ = 0;
+    courtCursor_ = 0;
+    // TURNED LOOSE. Where the sentence left the body: SPARED and FINED walk
+    // out of the Mission's door where they stand; everything that cost a
+    // cell ends on the shipped Tarwalk, exactly as the paperless search
+    // does. The line prints the day and the clock face the sentence ended
+    // on -- day one, not day zero, formatCaseDay's own translation.
+    const sim::Tavern::SentenceReport& served = tavern_->lastServed();
+    const std::string when = "DAY " + std::to_string(served.dayReleased + 1) + ". " +
+                             travelClockText(served.timeReleased) + ".";
+    if (served.served && served.terms.releaseHere) {
+        say("TURNED LOOSE AT THE MISSION'S DOOR. " + when);
+    } else {
+        placeBodyAt(sim::gull::kStreetX, sim::gull::kStreetY, sim::gull::kGroundBand);
+        awaitingLanding_ = false;
+        syncTavernToBody();
+        dressInstantCut();
+        say("TURNED LOOSE ON THE TARWALK. " + when);
+    }
+    syncPanelAnim();
+}
+
+HearingPageState Session::hearingPageState() const {
+    HearingPageState out;
+    out.open = courtOpen_;
+    if (!courtOpen_) {
+        return out;
+    }
+    const sim::HearingState& hearing = tavern_->hearing();
+    const sim::ChargeSheet& sheet = hearing.sheet;
+    const sim::CrimeLedger& crimes = tavern_->dialogue().crimes();
+    const sim::BarkTables& barks = tavern_->dialogue().barks();
+    const InputDevice dev = promptDevice_;
+    out.confirmKey = std::string(promptConfirmKey(dev));
+    out.backKey = std::string(promptBackKey(dev));
+    out.tutor = courtTutor_.value();
+    out.commitPulse = commitPulse_.value();
+    // THE READOUT: the day and the live clock (UI-EA-SPEC sec. 4 #10), the
+    // two facts a man at the bench wants -- how long he has been in the
+    // ward, and what hour the sentence starts from.
+    out.readout = "DAY " + std::to_string(tavern_->dayNumber() + 1) + "  " +
+                  travelClockText(timeOfDay_);
+
+    // --- the reading ------------------------------------------------------
+    out.laid = (hearing.officer.empty() ? std::string("THE WATCH") : upperAscii(hearing.officer)) +
+               " LAYS THE PAPER ON THE TABLE.";
+    if (sheet.blood) {
+        const std::string slain = tavern_->slainName();
+        out.charge = "THE WARD SAYS YOU PUT " + (slain.empty() ? std::string("A MAN") : upperAscii(slain)) +
+                     " DOWN IN THE GILDED GULL.";
+        if (sheet.witnesses > 0) {
+            out.charge += " " + countWord(sheet.witnesses) + " SAW IT.";
+        }
+    } else {
+        // The worst line first, then the rest of what is new since the bench
+        // last heard you, in the ledger's own order.
+        std::vector<std::string> parts;
+        if (sheet.hasWorst && sheet.since[static_cast<std::size_t>(sheet.worst)] > 0) {
+            parts.push_back(crimePhrase(sheet.worst, sheet.since[static_cast<std::size_t>(sheet.worst)]));
+        }
+        for (std::size_t c = 0; c < sim::kSheetCrimes; ++c) {
+            const auto crime = static_cast<sim::Crime>(c);
+            if (sheet.since[c] <= 0 || (sheet.hasWorst && crime == sheet.worst)) {
+                continue;
+            }
+            parts.push_back(crimePhrase(crime, sheet.since[c]));
+        }
+        if (parts.empty()) {
+            out.charge = sheet.secondRung ? std::string("THE WARD HAS YOU FOR THE ROOFS, A SECOND TIME.")
+                                          : std::string("THE WARD HAS PAPER ON YOU.");
+        } else {
+            std::string list;
+            for (std::size_t i = 0; i < parts.size(); ++i) {
+                if (i > 0) {
+                    list += (i + 1 == parts.size()) ? " AND " : ", ";
+                }
+                list += parts[i];
+            }
+            out.charge = "THE WARD HAS YOU FOR " + list + ".";
+        }
+    }
+    switch (sheet.tier) {
+        case sim::Sentence::Maimed:
+            out.asks = "THE PAPER ASKS FOR THE HAND.";
+            break;
+        case sim::Sentence::Condemned:
+            out.asks = "THE PAPER ASKS FOR THE ROPE.";
+            break;
+        default:
+            out.asks = "THE PAPER ASKS FOR A CELL.";
+            break;
+    }
+
+    // --- the rows ---------------------------------------------------------
+    const bool offered = courtSentenceOffered();
+    const std::vector<CourtRowKind> kinds = courtRowKindsFor(hearing, courtPaperOpen_, offered);
+    for (std::size_t i = 0; i < kinds.size(); ++i) {
+        HearingRow row;
+        switch (kinds[i]) {
+            case CourtRowKind::Guilty:
+                row.key = "1";
+                row.label = "I DID IT.";
+                break;
+            case CourtRowKind::NotGuilty:
+                row.key = "2";
+                row.label = "I DID NOT.";
+                break;
+            case CourtRowKind::Paper:
+                row.key = "3";
+                row.label = "HEAR THE PAPER";
+                break;
+            case CourtRowKind::Back:
+                row.key = "0";
+                row.label = "BACK";
+                row.accent = panelInk().dim;
+                break;
+            case CourtRowKind::NoPlea:
+                row.key = "1";
+                row.label = "I HAVE NOTHING TO SAY.";
+                break;
+            case CourtRowKind::Serve:
+                row.key = "1";
+                row.label = serveWord(hearing.judgment);
+                row.accent = judgmentAccent(hearing.judgment);
+                break;
+        }
+        // THE ARMED ROW NAMES THE DEVICE'S OWN CONFIRM -- the QUIT row's
+        // exact shape: "1 - I DID IT. -- SURE? ENTER".
+        if (static_cast<int>(i) == courtArmed_) {
+            row.label += " -- SURE? " + out.confirmKey;
+        }
+        out.rows.push_back(std::move(row));
+    }
+    out.cursor = kinds.empty() ? 0 : std::clamp(courtCursor_, 0, static_cast<int>(kinds.size()) - 1);
+    out.armed = courtArmed_;
+
+    // --- the detail pane ----------------------------------------------------
+    const std::int32_t rotation = crimes.hearings();
+    const auto bark = [&barks, rotation](std::string_view key) {
+        return std::string(barks.line(key, rotation));
+    };
+    if (hearing.awaitingPlea()) {
+        out.view = courtPaperOpen_ ? HearingView::Paper : HearingView::Plea;
+        // THE PRIEST OPENS, by what the paper is: the reading's own tables.
+        std::string_view opening = "court.paper";
+        if (sheet.tier == sim::Sentence::Condemned && sheet.commutedBefore) {
+            opening = "court.nothing";
+        } else if (sheet.blood) {
+            opening = "court.blood";
+        } else if (sheet.skyrunner && (sheet.tier == sim::Sentence::Maimed || sheet.secondRung)) {
+            opening = "court.roofs";
+        }
+        out.priest = bark(opening);
+        if (!kinds.empty()) {
+            out.consequence = rowConsequence(kinds[static_cast<std::size_t>(out.cursor)], sheet.tier);
+        }
+        out.paper = paperPhrases(sheet);
+        out.backVerb = courtPaperOpen_ ? "THE ROWS" : (courtArmed_ >= 0 ? "DISARM" : "");
+        return out;
+    }
+    if (hearing.judged()) {
+        out.view = HearingView::Judged;
+        // THE CHECK BLOCK, RE-DERIVED from the hashed record: the weighing is
+        // a pure function of the sheet and the plea (weighArraignment), so
+        // the page prints the same lines the sim scored, whenever it is
+        // drawn, without the sim keeping a term list.
+        const sim::Arraignment answer = sim::weighArraignment(sheet, hearing.plea);
+        std::string arithmetic;
+        for (const sim::ArraignmentTerm& term : answer.terms) {
+            const std::string name = term.name == sim::kTermSawIt
+                                         ? countWord(term.count) + " " + std::string(term.name)
+                                         : std::string(term.name);
+            if (arithmetic.empty()) {
+                arithmetic = std::to_string(term.value) + " " + name;
+            } else {
+                arithmetic += (term.value >= 0 ? " + " : " - ") + std::to_string(std::abs(term.value)) +
+                              " " + name;
+            }
+        }
+        if (!arithmetic.empty()) {
+            arithmetic += " = " + std::to_string(answer.weight);
+        }
+        out.arithmetic = arithmetic;
+        switch (answer.plea) {
+            case sim::Plea::Guilty:
+                out.pleaTerm = "+ " + std::to_string(answer.pleaTerm) + " " +
+                               std::string(sim::kTermConfessed) + " = " + std::to_string(answer.scored);
+                break;
+            case sim::Plea::NotGuilty:
+                out.pleaTerm = std::string(answer.pleaTerm >= 0 ? "+ " : "- ") +
+                               std::to_string(std::abs(answer.pleaTerm)) + " " +
+                               std::string(sim::kTermPriestIsAMan) + " = " +
+                               std::to_string(answer.scored);
+                break;
+            default:
+                break;
+        }
+        if (answer.plea != sim::Plea::NoPlea && answer.plea != sim::Plea::None) {
+            out.lines = sheet.tier == sim::Sentence::Condemned
+                            ? "THE LINE: " + std::to_string(sim::kMercyLine) + " MERCY"
+                            : "THE LINES: " + std::to_string(sim::kSparedLine) + " SPARED  " +
+                                  std::to_string(sim::kFinedLine) + " FINED  " +
+                                  std::to_string(sim::kHeldLine) + " HELD";
+        }
+        out.verdict = judgmentWord(hearing.judgment);
+        out.verdictAccent = judgmentAccent(hearing.judgment);
+        out.sentence = sentenceLine(sim::sentenceTerms(hearing, tavern_->playerCoin()));
+        out.priest = hearing.doubled ? bark("court.lie") : bark(judgmentTable(hearing.judgment));
+        out.backVerb.clear();
+        return out;
+    }
+    return out;
+}
+
+void Session::moveCourtCursor(int delta) {
+    if (!courtOpen_) {
+        return;
+    }
+    // MOVING THE CURSOR DISARMS THE PLEA -- movePauseCursor's own rule for
+    // QUIT: a player who backed off the row plainly changed their mind.
+    courtArmed_ = -1;
+    const std::vector<CourtRowKind> kinds =
+        courtRowKindsFor(tavern_->hearing(), courtPaperOpen_, courtSentenceOffered());
+    const int count = static_cast<int>(kinds.size());
+    if (count <= 0) {
+        return;
+    }
+    if (audio_ != nullptr && delta != 0) {
+        audio_->playOneShot(audio::SoundId::UiTick);
+    }
+    courtCursor_ = ((std::clamp(courtCursor_, 0, count - 1) + delta) % count + count) % count;
+}
+
+void Session::chooseCourtVisibleRow(int slot) {
+    if (!courtOpen_) {
+        return;
+    }
+    const std::vector<CourtRowKind> kinds =
+        courtRowKindsFor(tavern_->hearing(), courtPaperOpen_, courtSentenceOffered());
+    if (slot < 0) {
+        // THE ZERO KEY: the digit BACK prints while the paper is open, and
+        // nothing otherwise.
+        for (std::size_t i = 0; i < kinds.size(); ++i) {
+            if (kinds[i] == CourtRowKind::Back) {
+                courtCursor_ = static_cast<int>(i);
+                chooseCourtRow();
+                return;
+            }
+        }
+        return;
+    }
+    // THE PRINTED DIGIT PICKS THE ROW IT PRINTS. BACK prints 0, never a
+    // slot digit, so the slots address the rows above it only.
+    int printed = 0;
+    for (std::size_t i = 0; i < kinds.size(); ++i) {
+        if (kinds[i] == CourtRowKind::Back) {
+            continue;
+        }
+        if (printed == slot) {
+            // A digit on a row other than the armed one disarms it -- the
+            // pause menu's own "picking a different row calls it off".
+            if (courtArmed_ >= 0 && courtArmed_ != static_cast<int>(i)) {
+                courtArmed_ = -1;
+            }
+            courtCursor_ = static_cast<int>(i);
+            chooseCourtRow();
+            return;
+        }
+        ++printed;
+    }
+}
+
+void Session::chooseCourtRow() {
+    if (!courtOpen_) {
+        return;
+    }
+    const sim::HearingState& hearing = tavern_->hearing();
+    const std::vector<CourtRowKind> kinds =
+        courtRowKindsFor(hearing, courtPaperOpen_, courtSentenceOffered());
+    if (kinds.empty()) {
+        return;
+    }
+    const int at = std::clamp(courtCursor_, 0, static_cast<int>(kinds.size()) - 1);
+    courtCursor_ = at;
+    // AUDIO: the press is what is acknowledged, arms and refusals included.
+    if (audio_ != nullptr) {
+        audio_->playOneShot(audio::SoundId::UiConfirm);
+    }
+    switch (kinds[static_cast<std::size_t>(at)]) {
+        case CourtRowKind::Paper:
+            courtArmed_ = -1;
+            courtPaperOpen_ = true;
+            return;
+        case CourtRowKind::Back:
+            courtArmed_ = -1;
+            courtPaperOpen_ = false;
+            // Back to the row that opened the paper.
+            courtCursor_ = 2;
+            return;
+        case CourtRowKind::Guilty:
+        case CourtRowKind::NotGuilty:
+        case CourtRowKind::NoPlea: {
+            // ARMED ON THE FIRST PRESS, CONFIRMED ON THE SECOND -- the QUIT
+            // pattern, so a leaned-on ENTER cannot plead.
+            if (courtArmed_ != at) {
+                courtArmed_ = at;
+                return;
+            }
+            courtArmed_ = -1;
+            const CourtRowKind kind = kinds[static_cast<std::size_t>(at)];
+            const sim::Plea plea = kind == CourtRowKind::Guilty      ? sim::Plea::Guilty
+                                   : kind == CourtRowKind::NotGuilty ? sim::Plea::NotGuilty
+                                                                     : sim::Plea::NoPlea;
+            // THE PLEA: the sim's own stepped input. Recorded on the watch
+            // tape like every other verb the page owns.
+            const sim::Arraignment answer = tavern_->plead(plea);
+            courtPaperOpen_ = false;
+            courtCursor_ = 0;
+            if (answer.heard) {
+                // The badge lands with the commit beat and is HELD before the
+                // row that serves it is offered.
+                commitPulse_.trigger();
+                courtJudgmentHold_ = sim::kJudgmentHoldSteps;
+            }
+            return;
+        }
+        case CourtRowKind::Serve: {
+            // THE SENTENCE, SERVED THROUGH THE WAIT MACHINERY (Session::
+            // serveSentence): the coin, the clock, the mirror, the record,
+            // and the arrest's own release -- which the next step() reads and
+            // closes the page on. THE ROPE serves no clock and fires no
+            // release: the page comes down here and the ceremony goes up.
+            commitPulse_.trigger();
+            courtServing_ = true;
+            const sim::Tavern::SentenceReport& served = serveSentence();
+            if (!served.served) {
+                courtServing_ = false;
+                return;
+            }
+            if (served.terms.rope) {
+                courtServing_ = false;
+                courtOpen_ = false;
+                courtArmed_ = -1;
+                courtPaperOpen_ = false;
+                courtJudgmentHold_ = 0;
+                armRopeCeremony();
+                syncPanelAnim();
+            }
+            return;
+        }
+    }
+}
+
+void Session::courtBack() {
+    if (!courtOpen_) {
+        return;
+    }
+    // THE GRAMMAR EXCEPTION: ESC disarms an armed plea, closes the paper,
+    // and does nothing else. There is no leaving the bench.
+    if (courtArmed_ >= 0) {
+        courtArmed_ = -1;
+        return;
+    }
+    if (courtPaperOpen_) {
+        courtPaperOpen_ = false;
+        courtCursor_ = 2;
+    }
+}
+
+bool Session::routeCourtKey(Key key) {
+    if (!inCustody() || key == Key::None) {
+        return false;
+    }
+    if (awaitingKey_) {
+        return false;
+    }
+    const Action action = controls_.actionFor(key);
+    const bool up = key == Key::Up || key == Key::PadUp || action == Action::Forward ||
+                    action == Action::QuickPrev;
+    const bool downward = key == Key::Down || key == Key::PadDown || action == Action::Back ||
+                          action == Action::QuickNext;
+    const bool confirm = key == Key::Enter || key == Key::PadSouth || action == Action::Interact;
+    const bool back = key == Key::Escape || key == Key::PadEast;
+    const int slotBase = static_cast<int>(Action::QuickSlot1);
+    const int slot = static_cast<int>(action) - slotBase;
+    const bool numbered = slot >= 0 && slot < 9;
+    const bool zero = action == Action::QuickSlot0;
+    if (ropeRowsUp_) {
+        // THE END ROWS: the only live input. ESC does nothing on the plate,
+        // PAUSE is refused, and nothing reaches the world.
+        if (up) {
+            moveRopeCursor(-1);
+        } else if (downward) {
+            moveRopeCursor(1);
+        } else if (confirm) {
+            chooseRopeRow();
+        } else if (numbered) {
+            chooseRopeVisibleRow(slot);
+        }
+        return true;
+    }
+    if (ropeCeremonySteps_ > 0) {
+        // THE PLATE: no input accepted.
+        return true;
+    }
+    // THE PAGE. PAUSE falls through to the client, which opens the pause
+    // menu over the court (a player can always quit the game); ESC is Pause's
+    // own key, so it backs the page out of the paper or an armed plea FIRST
+    // and only reaches the pause menu when there is nothing to back out of.
+    if (back && (courtPaperOpen_ || courtArmed_ >= 0)) {
+        courtBack();
+        return true;
+    }
+    if (action == Action::Pause || key == Key::Escape) {
+        return false;
+    }
+    if (up) {
+        moveCourtCursor(-1);
+    } else if (downward) {
+        moveCourtCursor(1);
+    } else if (confirm) {
+        chooseCourtRow();
+    } else if (numbered) {
+        chooseCourtVisibleRow(slot);
+    } else if (zero) {
+        chooseCourtVisibleRow(-1);
+    }
+    // EVERY OTHER KEY IS SWALLOWED: no world verb reaches the body from the
+    // bench, and no page opens over the court but the pause menu.
+    return true;
+}
+
+// --- the rope -----------------------------------------------------------------
+
+namespace {
+/// The dip before the plate: one page-ease, the death ceremony's own. The
+/// HOLD is the sim's number (kDeathHoldSteps); there is no fade-out.
+constexpr std::int32_t kRopeDipInSteps = kPageEaseSteps;
+}  // namespace
+
+void Session::armRopeCeremony() {
+    // From the run's end, written by the room at the drop off hashed state:
+    // the place the ward hangs a man, the ward as the killer, the reason --
+    // the corpse's roster name, or THE SECOND RUNG -- and the dateline. The
+    // end's grammar, distinct from the revive's on purpose (spec 5): "HANGED
+    // AT ... / BY THE WARD. FOR ..." can never be confused with "PUT DOWN IN
+    // ... / BY <killer>. BY <weapon>." on screen.
+    const sim::RunEnd& end = tavern_->runEnd();
+    ropePlateTop_ = "HANGED AT " + (end.place.empty() ? std::string(sim::kRopePlace) : end.place) + ".";
+    ropePlateMid_ = "BY THE WARD. FOR " +
+                    (end.reason.empty() ? std::string(sim::kRopeForSecondRung) : upperAscii(end.reason)) +
+                    ".";
+    ropePlateFoot_ = "THE " + ordinalWord(end.day + 1) + " DAY. " + travelClockText(end.secondOfDay) + ".";
+    ropeCeremonySteps_ = kRopeDipInSteps + sim::kDeathHoldSteps;
+    ropeRowsUp_ = false;
+    ropeCursor_ = 0;
+    // SILENCE. No one-shot: ThudHeavy is "every path to the floor" and this
+    // is not the floor. The drop is silent by ruling.
+}
+
+std::vector<std::string> Session::ropeRows() const {
+    // No save row: no save exists, so there is nothing to load and the run
+    // is genuinely over. The day a save lands, "1 - THE LAST SAVE" goes first.
+    return {"1 - A NEW MAN", "2 - LEAVE"};
+}
+
+void Session::moveRopeCursor(int delta) {
+    if (!ropeRowsUp_) {
+        return;
+    }
+    if (audio_ != nullptr && delta != 0) {
+        audio_->playOneShot(audio::SoundId::UiTick);
+    }
+    const int count = static_cast<int>(ropeRows().size());
+    ropeCursor_ = ((ropeCursor_ + delta) % count + count) % count;
+}
+
+void Session::chooseRopeVisibleRow(int slot) {
+    if (!ropeRowsUp_ || slot < 0 || slot >= static_cast<int>(ropeRows().size())) {
+        return;
+    }
+    ropeCursor_ = slot;
+    chooseRopeRow();
+}
+
+void Session::chooseRopeRow() {
+    if (!ropeRowsUp_ || runEnded_) {
+        return;
+    }
+    if (audio_ != nullptr) {
+        audio_->playOneShot(audio::SoundId::UiConfirm);
+    }
+    runEnded_ = true;
+    if (ropeCursor_ == 0) {
+        // A NEW MAN: a fresh run through the boot path. main.cpp's loop
+        // reads this beside quitRequested and goes back to the creation
+        // window; there is no save to erase.
+        runEndReason_ = RunEndChoice::NewMan;
+    } else {
+        // LEAVE: the shipped quit, the one exit that has always existed.
+        runEndReason_ = RunEndChoice::Leave;
+        quitRequested_ = true;
+    }
+}
+
+void Session::composeRopeCeremony(Framebuffer& target) const {
+    if (ropeCeremonySteps_ <= 0 && !ropeRowsUp_) {
+        return;
+    }
+    constexpr std::int32_t kTotal = kRopeDipInSteps + sim::kDeathHoldSteps;
+    // THE VEIL: ramps up over the dip and then HOLDS. There is no fade-out
+    // phase; the frame under it is never seen again.
+    float dip = 1.0F;
+    if (ropeCeremonySteps_ > sim::kDeathHoldSteps) {
+        const std::int32_t elapsed = kTotal - ropeCeremonySteps_;  // 0 .. kRopeDipInSteps
+        dip = static_cast<float>(elapsed) / static_cast<float>(kRopeDipInSteps);
+    }
+    dip = dip < 0.0F ? 0.0F : (dip > 1.0F ? 1.0F : dip);
+    target.fillRect(0, 0, target.width(), target.height(), Rgb{0.0F, 0.0F, 0.0F}, dip);
+    // THE PLATE, centred, in the epitaph's own bone register: the place, the
+    // ward and the reason; the dateline dim under them, drawRouteCard's foot
+    // idiom. The black field IS its backing.
+    const int scale = hudScale(target.height());
+    const int glyphH = 6 * scale;
+    const int lineStep = glyphH + 2 * scale;
+    const int cx = target.width() / 2;
+    const int topY = target.height() / 2 - 2 * lineStep;
+    const Rgb bone{0.86F, 0.82F, 0.72F};
+    const Rgb dim{0.56F, 0.53F, 0.46F};
+    const auto centre = [&](const std::string& line, int y, const Rgb& ink) {
+        if (line.empty()) {
+            return;
+        }
+        const int w = textWidth(line, scale);
+        drawText(target, cx - w / 2, y, line, ink, dip, scale);
+    };
+    centre(ropePlateTop_, topY, bone);
+    centre(ropePlateMid_, topY + lineStep, bone);
+    centre(ropePlateFoot_, topY + 2 * lineStep, dim);
+    if (!ropeRowsUp_) {
+        return;
+    }
+    // THE PENDING-DECISION ZONE RISES UNDER IT once the hold has run:
+    // option-list idiom, inverted-fill selection, never an arrow. The rows
+    // are drawn in the page grid's own cells so the fill is the same shape
+    // the pause card's cursor wears.
+    const PanelMetric metric = panelMetric(target.height());
+    const std::vector<std::string> rows = ropeRows();
+    int widest = 0;
+    for (const std::string& row : rows) {
+        widest = std::max(widest, static_cast<int>(row.size()));
+    }
+    const int rowsY = topY + 4 * lineStep;
+    const PanelRect zone{cx - metric.widthOf(widest + 2) / 2, rowsY, metric.widthOf(widest + 2),
+                         metric.heightOf(static_cast<int>(rows.size()))};
+    const PanelInk& ink = panelInk();
+    for (std::size_t i = 0; i < rows.size(); ++i) {
+        const int r = static_cast<int>(i);
+        if (r == ropeCursor_) {
+            drawInvertedFill(target, zone, metric, 0, r, widest + 2, ink.accent, 1.0F);
+            drawCellTextKnockout(target, zone, metric, 1, r, rows[i], ink.knockout, 1.0F);
+        } else {
+            drawCellText(target, zone, metric, 1, r, rows[i], ink.prose, 1.0F);
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -7217,8 +8318,11 @@ bool Session::conversingNow() const noexcept {
     // overprint findings happen: two places computing the same fact, and
     // nothing catching them when a seventh page joined the list and only one
     // of the two remembered to add it.
+    // JUSTICE BUILD: the hearing page is a page like the others for the
+    // panel ease and the HUD's stand-down -- and unlike them it is not in
+    // dismissOverlays(), which is the whole of its exception.
     return talking() || casebookOpen_ || keysOpen_ || grimoireOpen_ || waitOpen_ ||
-           districtMapOpen_ || optionsOpen_ || pauseOpen_;
+           districtMapOpen_ || optionsOpen_ || pauseOpen_ || courtOpen_;
 }
 
 void Session::syncPanelAnim() noexcept {
@@ -8280,8 +9384,10 @@ FrameStats Session::drawFrame(Framebuffer& target) const {
             drawHud(target, hud);
             dipTravelSeam(target, travelFadeAnim_.value());
             composeDeathCeremony(target);
+            composeRopeCeremony(target);
         }
         panelTailTiles_ = false;
+        panelTailCourt_ = false;
         return stats;
     }
     // PANES PASS: THE CONTROLS PAGE IS THE FIRST SURFACE DRAWN IN THE
@@ -8316,8 +9422,10 @@ FrameStats Session::drawFrame(Framebuffer& target) const {
             drawHud(target, hud);
             dipTravelSeam(target, travelFadeAnim_.value());
             composeDeathCeremony(target);
+            composeRopeCeremony(target);
         }
         panelTailTiles_ = false;
+        panelTailCourt_ = false;
         return stats;
     }
     // MORROWIND ROUND: THE TILED MENU IS A DIFFERENT SURFACE FROM THE SINGLE
@@ -8368,8 +9476,10 @@ FrameStats Session::drawFrame(Framebuffer& target) const {
             drawHud(target, hud);
             dipTravelSeam(target, travelFadeAnim_.value());
             composeDeathCeremony(target);
+            composeRopeCeremony(target);
         }
         panelTailTiles_ = false;
+        panelTailCourt_ = false;
         return stats;
     }
     // UI-EA-SPEC sec. 3 rule 4 -- CLOSE HONESTY: the tiled Menu's close tail
@@ -8413,6 +9523,7 @@ FrameStats Session::drawFrame(Framebuffer& target) const {
             drawHud(target, hud);
             dipTravelSeam(target, travelFadeAnim_.value());
             composeDeathCeremony(target);
+            composeRopeCeremony(target);
         }
         // The memo: this frame's panel fade belonged to the tiles. Only the
         // LIVE menu re-arms it -- a tail frame keeps it as-is, so the tail
@@ -8442,7 +9553,43 @@ FrameStats Session::drawFrame(Framebuffer& target) const {
             drawHud(target, hud);
             dipTravelSeam(target, travelFadeAnim_.value());
             composeDeathCeremony(target);
+            composeRopeCeremony(target);
         }
+        return stats;
+    }
+    // JUSTICE BUILD (HEARING PAGE LANE). THE HEARING PAGE: a full-page
+    // composition in the terminal register (hearing_page.hpp), drawn into
+    // the framebuffer exactly as the casebook page is, so the 3D overlay
+    // composites it unchanged. Below the pause card on purpose -- PAUSE is
+    // the one page allowed over the bench -- and above the conversation
+    // panel, which cannot be open under it (openCourt ends any talk). The
+    // HUD stands down the way it does under every composed page; a bouncer's
+    // warning still outranks it and rides the page's own header band.
+    if (courtOpen_ || (panelTailCourt_ && !conversing && panelAnim_.value() > 0.0F)) {
+        HearingPageState page = hearingPageState();
+        page.openAmount = panelAnim_.value();
+        page.open = page.open || panelAnim_.value() > 0.0F;
+        if (warned) {
+            page.alert = std::string(tavern_->lastWarning());
+        }
+        hud.timeOfDaySeconds = -1;
+        hud.coin = -1;
+        hud.showCompass = false;
+        hud.placePlateFade = 0.0F;
+        hud.casePlateFade = 0.0F;
+        hud.showHealth = false;
+        hud.showAlert = false;
+        if (furniture) {
+            drawHearingPage(target, page);
+            drawHud(target, hud);
+            dipTravelSeam(target, travelFadeAnim_.value());
+            composeDeathCeremony(target);
+            composeRopeCeremony(target);
+        }
+        panelTailTiles_ = false;
+        // The memo: this frame's panel fade belonged to the bench. Only the
+        // LIVE page re-arms it, exactly as the tiles' memo works.
+        panelTailCourt_ = panelTailCourt_ || courtOpen_;
         return stats;
     }
     DialogueViewState panel = dialogueView();
@@ -8470,6 +9617,7 @@ FrameStats Session::drawFrame(Framebuffer& target) const {
     panel.openAmount = panelAnim_.value();
     if (conversing) {
         panelTailTiles_ = false;
+        panelTailCourt_ = false;
     }
     panel.open = panel.open || panelAnim_.value() > 0.0F;
     // The panel FIRST, the HUD over it: a bouncer's warning has to survive
@@ -8479,6 +9627,7 @@ FrameStats Session::drawFrame(Framebuffer& target) const {
         drawHud(target, hud);
         dipTravelSeam(target, travelFadeAnim_.value());
         composeDeathCeremony(target);
+        composeRopeCeremony(target);
     }
     return stats;
 }

@@ -353,6 +353,12 @@ add_library(granadad-render STATIC
     # This is the surface the owner's playthrough stalled on: three leads opened
     # at the Weighhouse and nothing on the screen said so. See the header.
     src/render/casebook_page.cpp
+    # JUSTICE BUILD (HEARING PAGE LANE) -- the Flame's bench as a page: the
+    # paper laid, the charge off the ledger, the three rows, the priest's
+    # weighing in the reference's own four-line check block, the judgment
+    # badge, the sentence in numbers. Draws into the Framebuffer like every
+    # other page, so the 3D overlay composites it unchanged. See the header.
+    src/render/hearing_page.cpp
 )
 target_include_directories(granadad-render PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
 # GRANADAD_CONTENT_DIR_DEFAULT arrives through granadad-content.
@@ -510,6 +516,10 @@ if(GRANADAD_BUILD_TESTS)
         # fast path, the plea as a stepped input, a scripted arrest-and-plea
         # twin-run, and the two player-end paths asserted apart both ways.
         tests/test_court.cpp
+        # JUSTICE BUILD (HEARING PAGE LANE): the hearing page pixel-exact and
+        # word-exact, the register grammar on keyboard and pad, the rope's
+        # plate and the end rows, A NEW MAN reaching the creation screen.
+        tests/test_hearing_page.cpp
         tests/test_lamps.cpp
         tests/test_atlas.cpp
         tests/test_render.cpp

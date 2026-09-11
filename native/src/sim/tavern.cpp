@@ -3913,21 +3913,10 @@ const Tavern::SentenceReport& Tavern::serveSentence() {
         runEnd_.day = dayNumber();
         runEnd_.secondOfDay = timeOfDay_;
         if (hearing.sheet.blood) {
-            // The corpse is on the roster (Activity::Dead, never removed) and
-            // the social ledger remembers who it was: the last man in roster
-            // order the player put down. BOTH clauses -- a witness to the
-            // killing carries Deed::Slew on his memory too (spreadWitness),
-            // and he is alive. Roster order is id order, deterministic and
-            // never reordered.
-            for (const Actor& actor : actors_) {
-                if (actor.activity() != Activity::Dead) {
-                    continue;
-                }
-                const Memory* memory = dialogue_.ledger().memoryOf(actor.id());
-                if (memory != nullptr && memory->lastDeed == Deed::Slew) {
-                    runEnd_.reason = actor.name();
-                }
-            }
+            // The corpse is on the roster and the social ledger remembers who
+            // it was -- slainName(), the one rule the hearing page's reading
+            // of the charge shares with this plate.
+            runEnd_.reason = slainName();
         }
         if (runEnd_.reason.empty()) {
             runEnd_.reason = std::string(kRopeForSecondRung);
@@ -3985,6 +3974,25 @@ const Tavern::SentenceReport& Tavern::serveSentence() {
     // arrest fired.
     arrestRelease_ = true;
     return lastServed_;
+}
+
+std::string Tavern::slainName() const {
+    // The corpse is on the roster (Activity::Dead, never removed) and the
+    // social ledger remembers who it was: the last man in roster order the
+    // player put down. BOTH clauses -- a witness to the killing carries
+    // Deed::Slew on his memory too (spreadWitness), and he is alive. Roster
+    // order is id order, deterministic and never reordered.
+    std::string name;
+    for (const Actor& actor : actors_) {
+        if (actor.activity() != Activity::Dead) {
+            continue;
+        }
+        const Memory* memory = dialogue_.ledger().memoryOf(actor.id());
+        if (memory != nullptr && memory->lastDeed == Deed::Slew) {
+            name = actor.name();
+        }
+    }
+    return name;
 }
 
 const Actor* Tavern::respondingWatchman() const noexcept {

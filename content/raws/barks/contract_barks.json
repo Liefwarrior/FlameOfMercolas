@@ -1,6 +1,6 @@
 {
   "id": "contract_barks",
-  "notes": "S6 ADDITION, and it obeys the same rule every other bark file does: NOTHING in the code writes a spoken line. The contract board composes a BRIEF from the notables' own file, which is menu furniture and a journal entry; what a broker actually SAYS when he hands you work, and what a watchman says when he puts his hand on your shoulder, is here. Keys resolve through the same fallback chain barks.json uses - the specific key first, then the generic - so a broker with no table of his own still speaks.",
+  "notes": "S6 ADDITION, and it obeys the same rule every other bark file does: NOTHING in the code writes a spoken line. JUSTICE BUILD (2026-09-11) APPENDS THE BENCH: the twelve court.* tables are Father Maell at the Mission hearing the Watch's paper -- court.paper / court.blood / court.roofs / court.nothing open the hearing by what the paper is (a thief, a killing, the roofs, a commuted man back for the rope), court.spared .. court.rope are his word on each of the seven judgments, court.lie is a denial disbelieved; three rows each, rotated on the count of hearings, the watch.condemned precedent. One court.blood row nearly says the learned word (the diction rule allows the PRIEST it and no common-folk line ever does). Listed for the owner's redline. The contract board composes a BRIEF from the notables' own file, which is menu furniture and a journal entry; what a broker actually SAYS when he hands you work, and what a watchman says when he puts his hand on your shoulder, is here. Keys resolve through the same fallback chain barks.json uses - the specific key first, then the generic - so a broker with no table of his own still speaks.",
   "tables": [
     {
       "key": "contract.none",
@@ -143,6 +143,102 @@
         "Twice. There is no third and you have always known there was no third.",
         "The rope, then. It was never anything else once you took the first rung.",
         "You will be held until they build the thing they hold you for."
+      ]
+    },
+    {
+      "key": "court.paper",
+      "rows": [
+        "I have read what you gave at this door. It is the only reason we are talking.",
+        "The Watch brings me paper and asks for a cell. I ask the man. Speak.",
+        "Sit. The Flame has heard worse than a thief tonight and will hear worse tomorrow."
+      ]
+    },
+    {
+      "key": "court.blood",
+      "rows": [
+        "You took a life in the dark, the way the thing we do not name to laymen takes them. Tell me why I should not let the ward have you.",
+        "There is a man on the Gull's floor who will not get up. The Watch wants your neck for it. I want the truth first.",
+        "The lamp does not go out because you put a man under it. It goes out when I stop asking. Speak."
+      ]
+    },
+    {
+      "key": "court.roofs",
+      "rows": [
+        "The roofs, and the Watch wants the hand for it. I have overruled a sergeant before. Give me a reason.",
+        "You climbed. Everyone on this quay has climbed. Most of them were not caught with a bale.",
+        "The rope is for the second rung and you are standing on it. I will hear you anyway."
+      ]
+    },
+    {
+      "key": "court.nothing",
+      "rows": [
+        "I gave you mercy once and told you it was once. I do not have a second.",
+        "You will say nothing, because there is nothing left to say. The ward may have you.",
+        "The Flame remembers its own bargains. So did you, and you came back."
+      ]
+    },
+    {
+      "key": "court.spared",
+      "rows": [
+        "Go. The paper is torn and the ward will not remember why. I will.",
+        "I believe you, which is more than the Watch does. Walk out of my door before it changes its mind.",
+        "Spared. Do not thank me; thank whatever you gave this Mission before tonight."
+      ]
+    },
+    {
+      "key": "court.fined",
+      "rows": [
+        "You will pay the ward for its evening and you will pay me nothing. Go.",
+        "A fine, and no cell. The Flame does not want your nights; the ward wants your coin.",
+        "Pay it and be gone. If the purse is short, the yard will take the rest in days."
+      ]
+    },
+    {
+      "key": "court.held",
+      "rows": [
+        "A cell, and the nights the ward asks for. Sleep. It is more than you gave him.",
+        "The Watch has its cell. I have your name, and I will keep it longer than they keep you.",
+        "Held. When you come out the paper will be gone and the heat will not. That is the ward, not me."
+      ]
+    },
+    {
+      "key": "court.bound",
+      "rows": [
+        "No fine. The Flame has better use for you than a purse. Five days in my yard, and you will carry the pot.",
+        "Bondsworn to this Mission. You will be fed, and preached at, and worked. Two of those are a kindness.",
+        "The yard. Nobody has ever died of it, though several have asked to."
+      ]
+    },
+    {
+      "key": "court.hand",
+      "rows": [
+        "The hand. Canon is the hand and I am not going to pretend the sergeant is wrong. It is done quickly.",
+        "A Skyrunner's first. The ward takes the hand so it need not take the rest. Hold it out.",
+        "I would spare it if you had given me anything to spare it with. You did not."
+      ]
+    },
+    {
+      "key": "court.commuted",
+      "rows": [
+        "The rope does not un-take the hand. The hand, and twelve days in my yard, and your life. Remember who gave it.",
+        "The Flame does not want you dead. The ward may still. Twelve days, and you walk out of here marked.",
+        "Commuted. Once. There is no word in this Mission for twice."
+      ]
+    },
+    {
+      "key": "court.rope",
+      "rows": [
+        "The Flame does not want you. The ward may have you.",
+        "I have nothing to weigh you against. Go with the sergeant.",
+        "It is the rope. I will say the words at the post; I will not say them here."
+      ]
+    },
+    {
+      "key": "court.lie",
+      "rows": [
+        "You lied to the Flame's face. The Mission will remember which.",
+        "Denied, and disbelieved. The sentence doubles and so does the memory of it.",
+        "You told me you did not, and the lamp went dim as you said it. Twice the nights."
       ]
     }
   ]

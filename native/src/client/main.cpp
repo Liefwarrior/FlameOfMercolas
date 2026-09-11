@@ -1579,6 +1579,19 @@ void print_usage() {
         return false;
     }
 
+    // JUSTICE BUILD (HEARING PAGE LANE). THE BENCH. Below the pause branch on
+    // purpose: PAUSE is the one page allowed over the court, and while it is
+    // up its own rows read the keys. Otherwise the page takes EVERY key
+    // (Session::routeCourtKey is the whole grammar -- arrows and the D-pad,
+    // the printed digits, ENTER/A, ESC/B for the paper and an armed plea) and
+    // declines only Pause/Escape-with-nothing-to-back-out-of, which falls
+    // through to pressed()'s Action::Pause and opens the pause menu over it.
+    // No world verb can reach the body from the bench; this is the build's
+    // declared un-backable modal (JUSTICE-SPEC 6.3).
+    if (session.inCustody()) {
+        return session.routeCourtKey(key);
+    }
+
     if (session.optionsOpen()) {
         // UI-EA-SPEC sec. 4 violation #2: KEYS AND OPTIONS ARE SIBLING TABS,
         // stepped on TAB and the bumpers like every other tabbed pair --
@@ -2090,8 +2103,11 @@ void print_usage() {
 /// a cursor on screen" are the same question, and two hand-kept copies of that
 /// list is the drift session.hpp's own menuOpen() comment warns about.
 [[nodiscard]] bool pointer_page_open(const render::Session& session) {
+    // JUSTICE BUILD: the hearing page, the rope's plate and the end rows own
+    // the input the way every page does -- the pointer comes back over the
+    // bench, and the pad's B is Escape there (pageBackRemap).
     return session.menuOpen() || session.pauseOpen() || session.talking() ||
-           session.waitOpen() || session.picking();
+           session.waitOpen() || session.picking() || session.inCustody();
 }
 
 /// A hover or a click at framebuffer pixel (px, py). `click` commits; a hover
@@ -2146,6 +2162,31 @@ bool session_pointer(render::Session& session, int frameWidth, int frameHeight, 
             session.armCommitPulse();
             session.faceDistrictMapSelection();
         }
+        return true;
+    }
+    if (session.courtOpen() && !session.pauseOpen()) {
+        // JUSTICE BUILD. THE BENCH: hearingRowAtPixel is the exact inverse of
+        // what drawHearingPage drew. Hover moves the same cursor the keys
+        // move (and disarms an armed plea, as moving it always does); a click
+        // is the same press ENTER makes on the row -- which ARMS a plea on
+        // the first click and confirms it on the second, so a stray click
+        // cannot plead either. Off the rows is still a click ON THE PAGE:
+        // taken and dropped, never a punch through the court.
+        const render::HearingPageState page = session.hearingPageState();
+        const int at = render::hearingRowAtPixel(page, frameWidth, frameHeight, px, py);
+        if (at >= 0) {
+            if (at != page.cursor) {
+                session.moveCourtCursor(at - page.cursor);
+            }
+            if (click) {
+                session.chooseCourtRow();
+            }
+        }
+        return true;
+    }
+    if (session.inCustody() && !session.pauseOpen()) {
+        // The plate and the end rows: the pointer is taken and dropped; the
+        // two rows are the keys' and the pad's.
         return true;
     }
     if (session.keysOpen()) {
@@ -3317,6 +3358,12 @@ int run_creation_capture(const Options& options) {
 //
 // Returns an UNCONFIRMED CreationResult if the player closed the window --
 // main() treats that exactly like closing the game, not like starting one.
+/// JUSTICE BUILD (HEARING PAGE LANE). run_client's answer when the run ended
+/// on the rope and the player chose A NEW MAN: main() reads it and goes back
+/// to the creation window rather than exiting. Distinct from 0 (closed) and
+/// 1 (a failure), and never returned to the shell -- main() consumes it.
+constexpr int kRunClientNewMan = 3;
+
 render::CreationResult run_creation_window(const Options& options) {
     render::CreationFlow flow(granadad::content::contentDir());
 
@@ -4153,6 +4200,8 @@ int run_client(const Options& options, const render::CreationResult& chosen) {
     render::InputDevice lastPromptDevice = session.promptDevice();
 
     bool running = true;
+    /// JUSTICE BUILD: the end rows' A NEW MAN, read beside quitRequested.
+    bool newMan = false;
     std::int64_t frames = 0;
     /// The demo's next frame deadline. See the throttle at the foot of the loop.
     Uint64 demoDeadlineNs = 0;
@@ -4696,7 +4745,7 @@ int run_client(const Options& options, const render::CreationResult& chosen) {
         const bool listening =
             demo != nullptr || watch != nullptr || session.talking() || session.picking() ||
             (session.menuOpen() && !session.firstRun()) || session.pauseOpen() ||
-            session.waitOpen();
+            session.waitOpen() || session.inCustody();
         const bool* keys = listening ? nullptr : SDL_GetKeyboardState(nullptr);
         const Uint32 mouseButtons = listening ? 0U : SDL_GetMouseState(nullptr, nullptr);
         SDL_Gamepad* livePad = listening ? nullptr : pad;
@@ -4888,6 +4937,18 @@ int run_client(const Options& options, const render::CreationResult& chosen) {
         // place that reads it -- one frame after the confirming press, so the
         // menu's own last frame still draws before the window goes.
         if (session.quitRequested()) {
+            running = false;
+        }
+        // JUSTICE BUILD (HEARING PAGE LANE). THE ROPE'S OTHER ROW. A NEW MAN
+        // ends this window's loop the same way QUIT does -- one frame after
+        // the confirming press, so the plate's own last frame still draws --
+        // and run_client answers main() with kRunClientNewMan, which loops
+        // back to the creation window for a fresh run. LEAVE sets
+        // quitRequested itself and takes the quit path above. There is no
+        // save, so there is nothing to erase and nothing to load.
+        if (session.runEnded() &&
+            session.runEndReason() == render::Session::RunEndChoice::NewMan) {
+            newMan = true;
             running = false;
         }
 
@@ -5109,6 +5170,9 @@ int run_client(const Options& options, const render::CreationResult& chosen) {
     session.setAudio(nullptr);
     audio.reset();
     SDL_Quit();
+    if (newMan && watchExit == 0) {
+        return kRunClientNewMan;
+    }
     return watchExit;
 }
 
@@ -5180,18 +5244,31 @@ int main(int argc, char** argv) {
         // line -- a capture or a test wants a frame of the Docks (or, now,
         // of the creation flow via --creation), never a frame of one menu
         // blocking another.
-        const render::CreationResult chosen = run_creation_window(options);
-        if (!chosen.confirmed) {
-            std::printf("granadad: no character was made -- closing.\n");
-            return 0;
+        // JUSTICE BUILD (HEARING PAGE LANE). THE RUN'S END LOOPS BACK TO THE
+        // ORIGIN SCREEN. run_creation_window() and run_client() each init and
+        // quit their own SDL and destroy their own Session on return (the
+        // seam #84 proved), so A NEW MAN -- the rope's fresh-run row -- is
+        // this loop and nothing else: the client answers kRunClientNewMan,
+        // the creation window opens again, and a new sheet starts a new run
+        // with a clean ledger. Every other answer is the shell's.
+        for (;;) {
+            const render::CreationResult chosen = run_creation_window(options);
+            if (!chosen.confirmed) {
+                std::printf("granadad: no character was made -- closing.\n");
+                return 0;
+            }
+            std::printf("granadad: playing as %s (%s)\n", chosen.name.c_str(),
+                        chosen.originId.c_str());
+            // #84 CLOSED THE SEAM #80 LEFT HERE. `chosen` used to stop being
+            // read the moment this function returned -- see run_client()'s own
+            // header for where the sheet is actually applied now, and why the
+            // attribute bonus pool still is not.
+            const int code = run_client(options, chosen);
+            if (code != kRunClientNewMan) {
+                return code;
+            }
+            std::printf("granadad: hanged -- a new man.\n");
         }
-        std::printf("granadad: playing as %s (%s)\n", chosen.name.c_str(),
-                    chosen.originId.c_str());
-        // #84 CLOSED THE SEAM #80 LEFT HERE. `chosen` used to stop being read
-        // the moment this function returned -- see run_client()'s own header
-        // for where the sheet is actually applied now, and why the attribute
-        // bonus pool still is not.
-        return run_client(options, chosen);
     } catch (const std::exception& error) {
         std::printf("granadad: %s\n", error.what());
         std::printf("granadad: content directory is %s (set %s to move it)\n",

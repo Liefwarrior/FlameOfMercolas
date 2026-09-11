@@ -95,7 +95,9 @@ TEST_CASE("the owner's bark tables load, all of them") {
     // 211 tables in the owner's content/raws/barks/barks.json (210 plus the
     // EVICTION war-rumor table gossip.maell-netter-shortfall), plus the 32 in
     // content/raws/barks/flame_barks.json (S4), the 22 in roof_barks.json (S5),
-    // the 18 in contract_barks.json (S6), the 12 in house_barks.json (S7), the
+    // the 18 in contract_barks.json (S6) plus the 12 court.* tables the
+    // JUSTICE BUILD appended there (the priest at the bench: the four
+    // openings, the seven judgments, the lie), the 12 in house_barks.json (S7), the
     // 8 in nemesis_barks.json (S8), the 25 in ward_barks.json (#79), the 4 in
     // tone_barks.json and the 26 in topic_barks.json (both #82), and the 16 in
     // contract_tone_barks.json (#81 -- the register reaching a radiant offer)
@@ -104,7 +106,7 @@ TEST_CASE("the owner's bark tables load, all of them") {
     // rather than editing 59KB of canon, and BarkTables::load reads the whole
     // directory. Pinned: content added should be a visible change here, and
     // content LOST should be red.
-    CHECK(barks().tableCount() == 377);
+    CHECK(barks().tableCount() == 389);
     CHECK(barks().rowCount() > 500);
     // Sorted by key, which is what makes lookup a binary search rather than a
     // hash whose iteration order is the standard library's business.
