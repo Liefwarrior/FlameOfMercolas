@@ -92,27 +92,57 @@ integrate lane's frame on the previous build. Population baseline on this
 build's `granadad-twin-gate.exe --population --population-hour 16 --ticks
 7200`: run A == run B == `0x2646C1AAA2BA38DF`, PASS.
 
-## The gap that matters (frame 26)
+## The live window (frames 26 and 27)
 
-Frame 26 is the LIVE WINDOW, not the shutter: `dist\granadad.exe --time=8`
-launched windowed on the host, photographed five seconds in. It is white. The
-loop runs (4,837 frames in ~13 s, the character screen and the world both
-reached through a virtual-pad script, the software `shot:` frames correct), but
-nothing the loop presents reaches the screen: BitBlt, PrintWindow and a DWM
-thumbnail all show white, sandboxed or not, moved, minimised and restored, at
-`--scale=1`, and under `--2d`. Host: NVIDIA RTX 5090 Laptop + Intel iGPU,
-150 % DPI. The shutter's frames come from `LoadImageFromScreen` BEFORE the
-swap, so they never proved the swap; this is the first look at it. Until it is
-fixed the game cannot be played on this machine, whatever the frames say.
+Frame 26 is the LIVE WINDOW as the ship lane photographed it, not the shutter:
+`dist\granadad.exe --time=8` launched windowed on the host, five seconds in.
+It is white -- BitBlt, PrintWindow and a DWM thumbnail all white, sandboxed or
+not, moved, minimised and restored, at `--scale=1` and under `--2d`, while the
+loop ran (4,837 frames in ~13 s) and the software `shot:` frames were correct.
+
+Frame 27 is the same window twenty-five minutes later, off the same desktop, on
+the gated exe of this tree: the Tarwalk at 08:00 past the character screen
+(DEVIN, BEGIN, the casebook closed), captured with `Graphics.CopyFromScreen` of
+the window's client rect -- mean luma 62.00, near-white fraction 0.0000 of
+1280x720. The character screen, the casebook page and the street all reach the
+screen; `PrintWindow(PW_RENDERFULLCONTENT)` agrees with the screen grab;
+focused or unfocused, DPI-aware or not, launched from either shell, under
+either exe name.
+
+WHAT WAS WRONG WAS THE HOST, NOT THE PRESENT PATH. The path is what the
+contract says: `BeginDrawing`/`ClearBackground`, the 3D pass, the overlay,
+`rlDrawRenderBatchActive`, the readback, `EndDrawing` -- one window, GLFW's
+(class `GLFW30`), SDL initialised for the gamepad and the audio device only.
+Nothing in `native/` changed between the white captures and frame 27 except
+the audio merge; the bytes that present correctly are the bytes that
+photographed white. The white launches all fall between 05:56 and 06:08 on
+this host; the System log holds one event in the hour around them --
+`Kernel-Power 105, Power source change` at 06:11:24 (AC off) and 06:14:28 (AC
+on), a display re-configuration on this NVIDIA RTX 5090 Laptop + Intel iGPU
+machine (the panel is on the NVIDIA GPU; the iGPU has no output) -- and
+every launch after it presents. A GL window that swaps but photographs white
+is what the desktop's redirection surface looks like when the frames are
+going straight to a hardware overlay plane or a stalled DWM path instead of
+through the compositor: the frame may well have been ON THE PANEL the whole
+time, where no capture of the lane's could see it. So: no code change for
+this; the proof is frame 27 and the numbers above, and the thing to do if a
+white window is ever seen again is to LOOK AT THE SCREEN before reading any
+capture.
 
 ## The gate behind these frames
 
-Docker gate on this tree: GATE EXIT 0, hostcheck ctest 92/92 (1,164 cases,
-floor 537), mingw cross published `dist\`, native/ digest
-`541906326dd670d7887d0e6e894b55d025f1bea59124466a6dfd3c6362fca6ba`
-(307 files). `scripts\verify-windows.ps1` on that dist: PASS -- content
-suite 71/71, sim suite, twin gate, the shutter through a real window, the
+Docker gate on this tree (the audio pass merged: wip tip 9c8dc7a, the LOT
+music director, real footsteps and combat impacts under the 3D session): GATE
+EXIT 0, hostcheck ctest 92/92 (1,174 cases, floor 537), mingw cross published
+`dist\`, native/ digest
+`18a9beabc6d8047885494eec05230af14e9acfb61dc9d04b3d13265cb5df1a50`
+(309 files). `scripts\verify-windows.ps1` on that dist: PASS -- content
+suite, sim suite, twin gate, the shutter through a real window, the
 content-fingerprint and world-hash reports byte-identical linux/gcc vs
-mingw/windows and unchanged from a21dc3e (`97850DCB...`, `924F6EA6...`).
+mingw/windows and unchanged (`97850DCB...`, `924F6EA6...`). Baselines on the
+gated exe: `--tavern --ticks 900` `0x86E05F527E54E795`, `--population
+--population-hour 16 --ticks 7200` `0x2646C1AAA2BA38DF`; the scene hash
+`0xD44BE903143928AE` twice as separate processes with byte-identical PNGs;
+`--audio-selftest` starts the music director with all 111 LOT files found.
 Nothing under `native/src/sim`, `native/include/granadad/sim` or `content/`
-differs from the wip tip ac1f1c8.
+differs from the wip tip 9c8dc7a.
