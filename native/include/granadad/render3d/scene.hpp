@@ -279,6 +279,10 @@ struct StaticInstance {
     /// Radians about the piece's own X, applied after the scale and before
     /// the yaw: what stands a flat plank quad up as a timber wall.
     float pitch = 0.0F;
+    /// Radians about the piece's own Z, applied after the scale and before
+    /// the pitch: what stands a plank quad up with its planks ACROSS (a
+    /// hull's strakes), and leans it.
+    float roll = 0.0F;
     Vec3 scale{1.0F, 1.0F, 1.0F};
     /// The light at the piece's local x = gradientFrom end...
     Rgba8 tint;
@@ -289,6 +293,19 @@ struct StaticInstance {
     Rgba8 tint2;
     float gradientFrom = 0.0F;
     float gradientTo = 0.0F;
+    /// The second row of the blend, for a flat block lit at its four
+    /// corners: tint3 / tint4 are the light at the local z = gradientToZ
+    /// edge (over x = gradientFrom .. gradientTo), tint / tint2 the
+    /// z = gradientFromZ edge; the adapter blends bilinearly. A run piece
+    /// carries tint3 == tint and tint4 == tint2 with an empty Z span.
+    Rgba8 tint3;
+    Rgba8 tint4;
+    float gradientFromZ = 0.0F;
+    float gradientToZ = 0.0F;
+    /// What a pane of glass in the piece is drawn with: dark (the room
+    /// behind it is unlit, or it is day) or the warm lit-window tint. The
+    /// world scene decides; the adapter draws it verbatim.
+    Rgba8 pane{40, 44, 52, 255};
 };
 
 struct SceneDescription {

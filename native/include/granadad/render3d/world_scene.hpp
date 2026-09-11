@@ -75,10 +75,12 @@ struct WorldSceneStats {
     std::size_t trianglesBuilt = 0;
     std::size_t meshesRecoloured = 0;
     bool anyTruncated = false;
-    /// S LANE. Pieces placed over the whole district, pieces described this
-    /// frame (inside their reach), and how many times the placements were
-    /// relit (once per lighting bucket, never per frame).
+    /// S LANE. Pieces placed over the whole district, pieces inside their
+    /// reach this frame, pieces described this frame (inside the reach AND
+    /// the frustum), and how many times the placements were relit (once
+    /// per lighting bucket, never per frame).
     std::size_t piecesPlaced = 0;
+    std::size_t piecesInReach = 0;
     std::size_t piecesInstanced = 0;
     std::size_t piecesRelit = 0;
 };
@@ -149,7 +151,9 @@ private:
     const std::vector<render::Lamp>* lamps_ = nullptr;
     StaticPlacements placements_;
     bool piecesPlaced_ = false;
-    /// The lit tint per placement, for the lighting bucket `litVersion_`.
+    /// The lit tints per placement -- the four blend corners and the pane
+    /// -- for the lighting bucket `litVersion_`.
+    static constexpr std::size_t kLitSlots = 5;
     std::vector<Rgba8> litTints_;
     std::uint32_t litVersion_ = 0;
 };

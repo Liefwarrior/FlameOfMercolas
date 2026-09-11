@@ -85,10 +85,44 @@
 //   CHIMNEYS       one roof-plane edge cell in so many that stands over a
 //                  wall (by tile hash) carries a chimney stack, turned along
 //                  the wall beneath it -- the skyline's punctuation.
-//   LAMPS          every baked lamp: a fire is a brazier on its tile, a
-//                  lantern beside a wall is a wall lamp on that wall, a
-//                  lantern on a doorstep hangs on the jamb beside the door,
-//                  a lantern in the open is a lamp post.
+//   LAMPS          every baked lamp: a fire is a brazier on its tile with an
+//                  ember tray and a flame in its cage, a lantern beside a
+//                  wall hangs from a bracket arm on that wall, a lantern on
+//                  a doorstep hangs beside the door, a lantern in the open
+//                  is a lamp post -- or, under a roof, a lantern on a chain
+//                  from the ceiling. Every flame is a pair of crossed warm
+//                  quads drawn as their own light.
+//   UNDERSIDES     the plaster quad under every WALL cell that stands over
+//                  an open cell (the storey partition over a taproom, the
+//                  facade over a doorway) in the room's own ceiling tint, so
+//                  no atlas face shows from below.
+//   LIPS           the side of every floor slab that faces open air (a pier
+//                  deck's edge, a hole in a deck): the plank quad on timber,
+//                  the plaster quad tinted on stone, the slab's own height.
+//   DOOR INSIDES   behind a door frame on a rendered building the frame's
+//                  brick would face the room: the plaster quad stands behind
+//                  the header and both jambs. A door leaf hangs open on each
+//                  jamb. A gate wider than a door gets a post at each jamb
+//                  and a beam across.
+//   FURNITURE      round every indoor lantern: tables with benches and mugs
+//                  on floor cells two from a wall, shelves with bottles on
+//                  indoor masonry faces, barrel racks against walls; a
+//                  free-standing two-cell masonry block in a roofed room is
+//                  a hearth and wears the fireplace; joists cross every
+//                  room's ceiling on the odd grid lines; a lone 1x1 timber
+//                  cell indoors is a square pillar, out of doors a bundle of
+//                  tarred piles.
+//   ROOFS          a roof plane (a floor with sky above, of a roofing
+//                  material) is a tar-dark flat fill with loose tiles
+//                  scattered by hash, an upstand along every edge cell
+//                  (brick over masonry, boards over timber), chimneys over
+//                  masonry walls only, and the odd crate or barrel at the
+//                  edge. FLAT, always: every roof cell in the district is
+//                  standable and the Skyrunners route across them.
+//   HARBOUR        a timber wall with water beside it is a hull: its plank
+//                  quad leans outward from the waterline, tarred, with a
+//                  gunwale beam along an open top; rowboats moor along quay
+//                  edges by hash; a pier head carries a crane.
 //
 // Floats are legal here (render-side); nothing in this file is read by the
 // simulation.
@@ -144,8 +178,62 @@ enum class PieceRole : std::uint8_t {
     /// A chimney stack on a roof plane, over the wall line beneath it, one
     /// in `chimneyEvery` of the roof's edge cells by tile hash.
     Chimney,
+    // --- the second iteration (the critic's fourteen) ---------------------
+    /// The side of a timber floor slab facing open air: the plank quad, the
+    /// slab's own height.
+    LipPlank,
+    /// The same on a stone floor: the plaster quad, tinted.
+    LipStone,
+    /// The plaster quad behind a door frame's header and jambs on a
+    /// rendered (plaster-out) building, so the room never sees the frame's
+    /// brick side.
+    DoorInside,
+    /// A door leaf standing open against the reveal, hinged on the jamb.
+    DoorLeaf,
+    /// A post at each jamb of a gate wider than a door.
+    GatePost,
+    /// The warm quad inside every lamp: a pair crossed, its own light.
+    Flame,
+    /// The ember tray in a fire's cage.
+    Ember,
+    /// The bracket arm a wall lantern hangs from.
+    LampBracket,
+    /// The chain a ceiling lantern hangs from.
+    LampChain,
+    /// A beam under a room's ceiling, on the odd grid lines.
+    Joist,
+    Table,
+    Bench,
+    Mug,
+    Bottle,
+    Shelf,
+    BarrelRack,
+    Fireplace,
+    /// A lone 1x1 timber cell indoors: a square pillar the cell's size.
+    Pillar,
+    /// One of the piles bundled round a lone 1x1 timber cell out of doors.
+    Post,
+    /// The upstand along a roof edge cell (brick over masonry; the plank
+    /// quad stands in for it over timber).
+    Parapet,
+    /// Loose tiles scattered on a roof plane.
+    RoofTile,
+    Rowboat,
+    Crane,
+    /// The beam along the open top of a hull wall.
+    Gunwale,
+    /// A hung window on a timber storey.
+    WindowTimber,
+    /// A mooring line down a hull's boards from its gunwale.
+    Rope,
+    /// A hull's boards: the plank quad stood across, leaning outward.
+    Hull,
+    /// A plaster face: the thin plaster quad, one-sided, so a corner it
+    /// extends past shows no brick back and no brick end (the kit wall is
+    /// brick on its other side and its ends).
+    WallPlaster,
 };
-inline constexpr std::size_t kPieceRoleCount = 21;
+inline constexpr std::size_t kPieceRoleCount = 49;
 
 /// The JSON key of a role ("wall", "wall_corner", ...), and back. None for
 /// an unknown key.
@@ -166,9 +254,12 @@ enum class WallClass : std::uint8_t {
     Canvas,
 };
 
-/// One catalogue row.
+/// One catalogue row. A row that lists several `files` becomes one spec per
+/// file, `variant` 0..n-1, sharing every other field: the rule picks a
+/// variant by tile hash.
 struct PieceSpec {
     PieceRole role = PieceRole::None;
+    std::uint8_t variant = 0;
     /// "<pack>/<file>" under the static model directory.
     std::string file;
     /// The piece's module along its local X, metres: what one tile-run is
@@ -199,6 +290,10 @@ struct PieceSpec {
     /// A flat quad (extent in its local XZ) stood on edge as a wall: its
     /// local Z becomes the height, its +Y normal the outward finish.
     bool upright = false;
+    /// An upright quad stood the other way: its local X becomes the height
+    /// and its local Z runs along the face, so a plank quad's boards lie
+    /// across (a hull's strakes). Implies upright.
+    bool across = false;
     /// Drawn at its own colours whatever the light where it stands: a lamp
     /// or a brazier is its own light and should not go black at night.
     bool selfLit = false;
@@ -213,6 +308,14 @@ struct PieceSpec {
     /// The cheap cull: pieces farther than this from the eye are not
     /// described. Props draw closer than walls.
     float maxDistance = 64.0F;
+    /// A door frame's opening in its own module: the jamb width on each
+    /// side (`cutX`, from either end) and the opening's height (`cutY`).
+    /// What the inside plaster is cut around.
+    float cutX = 0.0F;
+    float cutY = 0.0F;
+    /// A flat quad drawn on both sides (its scale is mirrored, which the
+    /// adapter draws without back-face culling).
+    bool twoSided = false;
 };
 
 /// One material row: how a tile material's walls and floors are dressed.
@@ -241,6 +344,48 @@ struct MaterialRule {
     bool topTintSet = false;
     Rgba8 ceilingTint{255, 255, 255, 255};
     bool ceilingTintSet = false;
+    /// The quad on the side of this material's floor slabs where they face
+    /// open air (LipPlank / LipStone), and its tint; None: the atlas side.
+    PieceRole lipRole = PieceRole::None;
+    Rgba8 lipTint{255, 255, 255, 255};
+    /// A roofing material: its floor planes with sky above are roofs and
+    /// get the roof rules (upstands, loose tiles, chimneys, clutter).
+    bool roof = false;
+};
+
+/// The rule knobs: one in how many. 0 turns a rule off.
+struct RuleKnobs {
+    /// One outdoor wall piece in this many, along a run, is a window: the
+    /// rhythm is by piece index, never a coin flip.
+    std::int32_t windowEvery = 0;
+    /// One roof-edge cell over a masonry wall in this many carries a chimney.
+    std::int32_t chimneyEvery = 0;
+    /// One floor cell against exactly one wall in this many gets a prop.
+    std::int32_t propEvery = 0;
+    std::int32_t propBarrelPercent = 40;
+    std::int32_t propCratePercent = 35;
+    /// The lattice pitch of the tables round an indoor lantern: every
+    /// this-many cells both ways (2 = every other), where a 3 x 3 of clear
+    /// floor allows.
+    std::int32_t tableEvery = 0;
+    /// One indoor masonry face cell near an indoor lantern in this many
+    /// gets a shelf.
+    std::int32_t shelfEvery = 0;
+    /// One roof cell in this many gets loose tiles; one roof-edge cell in
+    /// this many gets a crate or a barrel.
+    std::int32_t roofTileEvery = 0;
+    std::int32_t roofPropEvery = 0;
+    /// One quay-edge cell over open water in this many moors a rowboat.
+    std::int32_t boatEvery = 0;
+    /// A hull's plank quad leans outward from the waterline by this many
+    /// degrees; its tarred tint.
+    float hullFlareDegrees = 0.0F;
+    Rgba8 hullTint{255, 255, 255, 255};
+    /// The warm tints of a lantern's flame, a fire's flame, and a lit
+    /// window pane at night.
+    Rgba8 lanternFlame{255, 214, 150, 255};
+    Rgba8 fireFlame{255, 150, 64, 255};
+    Rgba8 litPane{255, 196, 120, 255};
 };
 
 /// THE CATALOGUE. Loaded from JSON, queried by role and by material.
@@ -256,11 +401,14 @@ public:
     [[nodiscard]] bool empty() const noexcept { return pieces_.empty(); }
     /// The rows in table order (PieceRole order, only the roles present).
     [[nodiscard]] const std::vector<PieceSpec>& pieces() const noexcept { return pieces_; }
-    /// The row for a role, or null when the catalogue has none.
-    [[nodiscard]] const PieceSpec* piece(PieceRole role) const noexcept;
+    /// The row for a role (its `variant`, 0 by default), or null when the
+    /// catalogue has none.
+    [[nodiscard]] const PieceSpec* piece(PieceRole role, std::uint8_t variant = 0) const noexcept;
     /// The row's index in pieces() (== the StaticInstance::piece value), or
     /// -1 when absent.
-    [[nodiscard]] int pieceIndex(PieceRole role) const noexcept;
+    [[nodiscard]] int pieceIndex(PieceRole role, std::uint8_t variant = 0) const noexcept;
+    /// How many variants a role has (0 when absent).
+    [[nodiscard]] std::uint8_t variantCount(PieceRole role) const noexcept;
     /// The material rule for a registry material id (render::materialIds()
     /// order), or null for a material the catalogue does not dress.
     [[nodiscard]] const MaterialRule* material(std::uint16_t materialId) const noexcept;
@@ -270,15 +418,15 @@ public:
 
     /// Below this band nothing is placed (the substrate under the harbour).
     [[nodiscard]] std::int32_t minBand() const noexcept { return minBand_; }
+    /// The rule knobs (see RuleKnobs).
+    [[nodiscard]] const RuleKnobs& knobs() const noexcept { return knobs_; }
     /// One floor cell in this many (against a wall) gets a prop; 0 = none.
-    [[nodiscard]] std::int32_t propEvery() const noexcept { return propEvery_; }
-    /// Percent weights of barrel / crate / sack among the props.
-    [[nodiscard]] std::int32_t propBarrelPercent() const noexcept { return propBarrel_; }
-    [[nodiscard]] std::int32_t propCratePercent() const noexcept { return propCrate_; }
+    [[nodiscard]] std::int32_t propEvery() const noexcept { return knobs_.propEvery; }
     /// One outdoor wall piece in this many is the window wall; 0 = none.
-    [[nodiscard]] std::int32_t windowEvery() const noexcept { return windowEvery_; }
-    /// One roof-edge cell over a wall in this many carries a chimney; 0 = none.
-    [[nodiscard]] std::int32_t chimneyEvery() const noexcept { return chimneyEvery_; }
+    [[nodiscard]] std::int32_t windowEvery() const noexcept { return knobs_.windowEvery; }
+    /// One roof-edge cell over a masonry wall in this many carries a
+    /// chimney; 0 = none.
+    [[nodiscard]] std::int32_t chimneyEvery() const noexcept { return knobs_.chimneyEvery; }
 
     [[nodiscard]] const std::string& error() const noexcept { return error_; }
     [[nodiscard]] const std::vector<std::string>& warnings() const noexcept { return warnings_; }
@@ -290,11 +438,7 @@ private:
     std::vector<PieceSpec> pieces_;
     std::vector<MaterialRule> materials_;
     std::int32_t minBand_ = 0;
-    std::int32_t propEvery_ = 0;
-    std::int32_t propBarrel_ = 40;
-    std::int32_t propCrate_ = 35;
-    std::int32_t windowEvery_ = 0;
-    std::int32_t chimneyEvery_ = 0;
+    RuleKnobs knobs_;
     std::string error_;
     std::vector<std::string> warnings_;
 };
@@ -317,11 +461,38 @@ struct StaticPlacement {
     float facing = 1.0F;
     /// A run piece: lit at (lightX, lightY) on its a0 end and (lightX2,
     /// lightY2) on its a1 end, blended between. `flipped` says the piece's
-    /// local X runs from the a1 end, so the two swap into tint / tint2.
+    /// local X runs from the a1 end, so the two swap into tint / tint2;
+    /// `alongZ` says the blend runs along the piece's local Z instead
+    /// (a quad stood across).
     bool gradient = false;
     bool flipped = false;
+    bool alongZ = false;
+    /// Each end of a run piece is lit AT THE CUT: the light between the
+    /// two cell centres the cut falls between, blended by where it falls
+    /// (endAT / endBT, 0 = at the first cell's centre, 1 = at the second's),
+    /// so two pieces meeting at a cut share one value and the light runs on
+    /// across the seam. (endAX, endAY) pairs with (lightX, lightY); (endBX,
+    /// endBY) with (lightX2, lightY2). The same cell twice, weight 0, at a
+    /// run's own end.
+    std::int32_t endAX = 0, endAY = 0, endBX = 0, endBY = 0;
+    float endAT = 0.0F, endBT = 0.0F;
+    /// A block (a floor, a ceiling): lit at its four corner POINTS, each
+    /// the average of the cells that meet there, blended bilinearly by the
+    /// adapter -- so two blocks that share a corner share its light.
+    bool bilinear = false;
+    /// A window: the cell behind it, whose light says whether the room is
+    /// lit (the pane goes warm at night). `homely` says the room behind is
+    /// a roofed floor and the tile hash keeps a candle in it: the pane goes
+    /// warm at night whether or not a lamp reaches the cell, two windows
+    /// in three, so the ward is not dead after dark.
+    bool hasInside = false;
+    bool homely = false;
+    std::int32_t insideX = 0, insideY = 0, insideZ = 0;
     /// The piece keeps its catalogue tint through the relight.
     bool selfLit = false;
+    /// How far the piece reaches from its origin, in tiles: the frustum
+    /// cull's margin.
+    float radius = 1.0F;
 };
 
 struct StaticPlacementStats {

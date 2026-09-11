@@ -197,10 +197,33 @@ struct StaticModel {
     std::vector<Color> baseColour;
     /// Per mesh: its material's alpha is under 255 -- drawn in the late pass.
     std::vector<bool> translucent;
-    /// Per mesh: translucent AND untextured -- a pane of glass, which
-    /// reads dark from the street (the room behind it is unlit) rather than
-    /// as a white wash over the wall the chunk mesh puts behind it.
+    /// Per mesh: translucent AND untextured -- a pane of glass, drawn with
+    /// the instance's pane tint (dark by day and over an unlit room, warm
+    /// over a lit room at night) rather than as a white wash over the wall
+    /// the chunk mesh puts behind it.
     std::vector<bool> glass;
+};
+
+/// S LANE. The four blend corners of a piece and their spans: the light
+/// at local (x, z) = (from, fromZ), (to, fromZ), (from, toZ), (to, toZ).
+struct PieceTints {
+    Color a{};
+    Color b{};
+    Color c{};
+    Color d{};
+    float from = 0.0F;
+    float to = 0.0F;
+    float fromZ = 0.0F;
+    float toZ = 0.0F;
+    /// What a pane of glass in the piece is drawn with.
+    Color pane{};
+
+    [[nodiscard]] bool uniform() const noexcept {
+        const auto same = [](const Color& p, const Color& q) {
+            return p.r == q.r && p.g == q.g && p.b == q.b;
+        };
+        return same(a, b) && same(a, c) && same(a, d);
+    }
 };
 
 /// S LANE. A translucent sub-mesh held back for the late pass.
@@ -208,10 +231,7 @@ struct DeferredMesh {
     StaticModel* model = nullptr;
     int mesh = 0;
     Matrix transform{};
-    Color tint{};
-    Color tint2{};
-    float gradientFrom = 0.0F;
-    float gradientTo = 0.0F;
+    PieceTints tints{};
     bool mirrored = false;
 };
 
@@ -236,10 +256,12 @@ constexpr float kViewmodelDepthSpan = 0.2F;
 
 #if !defined(GRAPHICS_API_OPENGL_11)
 /// S LANE. The static pieces' own vertex shader: raylib's default with the
-/// tint blended along the piece's local X between two colours, so a wall
-/// segment reads the light of the cells it spans instead of one flat step.
-/// GL 3.3 only; the software rasterizer has no shaders and never has the
-/// licensed files to draw with it anyway.
+/// tint blended BILINEARLY over the piece's local X and Z between four
+/// colours, so a wall segment reads the light of the cells it spans
+/// instead of one flat step and a floor block reads its four corners
+/// instead of one patch. A run piece passes an empty Z span (its factor
+/// 0), a point piece both. GL 3.3 only; the software rasterizer has no
+/// shaders and never has the licensed files to draw with it anyway.
 constexpr const char* kBlendVertexShader =
     "#version 330\n"
     "in vec3 vertexPosition;\n"
@@ -248,13 +270,16 @@ constexpr const char* kBlendVertexShader =
     "uniform mat4 mvp;\n"
     "uniform vec4 tintA;\n"
     "uniform vec4 tintB;\n"
-    "uniform vec2 tintSpan;\n"
+    "uniform vec4 tintC;\n"
+    "uniform vec4 tintD;\n"
+    "uniform vec4 tintSpan;\n"
     "out vec2 fragTexCoord;\n"
     "out vec4 fragColor;\n"
     "void main() {\n"
-    "    float t = clamp((vertexPosition.x - tintSpan.x) * tintSpan.y, 0.0, 1.0);\n"
+    "    float tx = clamp((vertexPosition.x - tintSpan.x) * tintSpan.y, 0.0, 1.0);\n"
+    "    float tz = clamp((vertexPosition.z - tintSpan.z) * tintSpan.w, 0.0, 1.0);\n"
     "    fragTexCoord = vertexTexCoord;\n"
-    "    fragColor = vertexColor * mix(tintA, tintB, t);\n"
+    "    fragColor = vertexColor * mix(mix(tintA, tintB, tx), mix(tintC, tintD, tx), tz);\n"
     "    gl_Position = mvp * vec4(vertexPosition, 1.0);\n"
     "}\n";
 constexpr const char* kBlendFragmentShader =
@@ -270,10 +295,13 @@ constexpr const char* kBlendFragmentShader =
     "}\n";
 #endif
 
-[[nodiscard]] Color averageColour(const Color& a, const Color& b) noexcept {
-    return Color{static_cast<unsigned char>((a.r + b.r) / 2), static_cast<unsigned char>((a.g + b.g) / 2),
-                 static_cast<unsigned char>((a.b + b.b) / 2), static_cast<unsigned char>((a.a + b.a) / 2)};
+[[nodiscard]] Color averageColour(const PieceTints& t) noexcept {
+    return Color{static_cast<unsigned char>((t.a.r + t.b.r + t.c.r + t.d.r) / 4),
+                 static_cast<unsigned char>((t.a.g + t.b.g + t.c.g + t.d.g) / 4),
+                 static_cast<unsigned char>((t.a.b + t.b.b + t.c.b + t.d.b) / 4), t.a.a};
 }
+
+[[nodiscard]] float channelOf(unsigned char c) noexcept { return static_cast<float>(c) / 255.0F; }
 
 [[nodiscard]] Vector3 vec(const Vec3& v) noexcept { return Vector3{v.x, v.y, v.z}; }
 
@@ -351,6 +379,8 @@ struct Backend::Impl {
     bool blendTried = false;
     int blendTintA = -1;
     int blendTintB = -1;
+    int blendTintC = -1;
+    int blendTintD = -1;
     int blendSpan = -1;
 
     void ensureBlendShader() {
@@ -363,6 +393,8 @@ struct Backend::Impl {
         if (blend.id != 0 && blend.id != rlGetShaderIdDefault()) {
             blendTintA = GetShaderLocation(blend, "tintA");
             blendTintB = GetShaderLocation(blend, "tintB");
+            blendTintC = GetShaderLocation(blend, "tintC");
+            blendTintD = GetShaderLocation(blend, "tintD");
             blendSpan = GetShaderLocation(blend, "tintSpan");
         } else {
             blend = Shader{};
@@ -541,54 +573,64 @@ struct Backend::Impl {
             ++stats.staticsMissing;
             return;
         }
-        // Scale, pitch about the piece's own X, yaw, place.
+        // Scale, roll about the piece's own Z, pitch about its X, yaw, place.
         const Matrix transform = MatrixMultiply(
-            MatrixMultiply(MatrixMultiply(MatrixScale(piece.scale.x, piece.scale.y, piece.scale.z),
+            MatrixMultiply(MatrixMultiply(MatrixMultiply(MatrixScale(piece.scale.x, piece.scale.y, piece.scale.z),
+                                                         MatrixRotateZ(piece.roll)),
                                           MatrixRotateX(piece.pitch)),
                            MatrixRotateY(-piece.yaw)),
             MatrixTranslate(piece.position.x, piece.position.y, piece.position.z));
         const Matrix full = MatrixMultiply(model->model.transform, transform);
-        const Color tint = colourOf(piece.tint);
         // A mirrored piece (one negative scale axis: a ceiling quad laid as
-        // a floor) has its winding reversed, so it is drawn both-sided.
+        // a floor, a flat quad drawn both sides) has its winding reversed,
+        // so it is drawn both-sided.
         const bool mirrored = piece.scale.x * piece.scale.y * piece.scale.z < 0.0F;
-        const Color tint2 = colourOf(piece.tint2);
+        PieceTints tints;
+        tints.a = colourOf(piece.tint);
+        tints.b = colourOf(piece.tint2);
+        tints.c = colourOf(piece.tint3);
+        tints.d = colourOf(piece.tint4);
+        tints.from = piece.gradientFrom;
+        tints.to = piece.gradientTo;
+        tints.fromZ = piece.gradientFromZ;
+        tints.toZ = piece.gradientToZ;
+        tints.pane = colourOf(piece.pane);
+        // A translucent instance (a flame's halo, its tint alpha under 255)
+        // is held back whole, like a pane of glass.
+        const bool seeThrough = piece.tint.a < 255;
         for (int i = 0; i < model->model.meshCount; ++i) {
-            if (model->translucent[static_cast<std::size_t>(i)]) {
-                deferred.push_back(DeferredMesh{model, i, full, tint, tint2, piece.gradientFrom,
-                                                piece.gradientTo, mirrored});
+            if (model->translucent[static_cast<std::size_t>(i)] || seeThrough) {
+                deferred.push_back(DeferredMesh{model, i, full, tints, mirrored});
                 continue;
             }
-            drawStaticMesh(*model, i, full, tint, tint2, piece.gradientFrom, piece.gradientTo,
-                           mirrored, stats);
+            drawStaticMesh(*model, i, full, tints, mirrored, stats);
         }
         ++stats.staticsDrawn;
         ++stats.instancesDrawn;
     }
 
-    void drawStaticMesh(StaticModel& model, int i, const Matrix& transform, const Color& tintIn,
-                        const Color& tint2In, float gradientFrom, float gradientTo, bool mirrored,
-                        SceneStats& stats) {
+    void drawStaticMesh(StaticModel& model, int i, const Matrix& transform, const PieceTints& tints,
+                        bool mirrored, SceneStats& stats) {
         const int m = model.model.meshMaterial[i];
         if (m < 0 || m >= model.model.materialCount) {
             return;
         }
-        // The blend: two tints along the piece when the shader is there,
-        // their average when it is not (the software path).
-        const bool blended = blend.id != 0 && gradientTo > gradientFrom &&
-                             (tintIn.r != tint2In.r || tintIn.g != tint2In.g || tintIn.b != tint2In.b);
-        const Color tint = blended ? Color{255, 255, 255, tintIn.a} : averageColour(tintIn, tint2In);
+        // The blend: the four tints over the piece when the shader is there
+        // and they differ, their average when it is not (the software path)
+        // or they do not.
+        const bool spanned = tints.to > tints.from || tints.toZ > tints.fromZ;
+        const bool blended = blend.id != 0 && spanned && !tints.uniform();
+        const Color tint = blended ? Color{255, 255, 255, tints.a.a} : averageColour(tints);
         const Color base = model.baseColour[static_cast<std::size_t>(m)];
         const auto ch = [](unsigned char a, unsigned char b) {
             return static_cast<unsigned char>((static_cast<unsigned>(a) * static_cast<unsigned>(b) + 127U) /
                                               255U);
         };
-        // Glass: a third of the light, blue-grey -- a dark pane, not a wash.
+        // Glass wears the pane tint the world scene decided -- dark by day
+        // and over an unlit room, warm over a lit room at night -- flat,
+        // never blended.
         const bool glass = model.glass[static_cast<std::size_t>(i)];
-        const Color paneTint = glass ? Color{static_cast<unsigned char>(tint.r / 4),
-                                             static_cast<unsigned char>(tint.g / 4 + tint.g / 16),
-                                             static_cast<unsigned char>(tint.b / 3), tint.a}
-                                     : tint;
+        const Color paneTint = glass ? tints.pane : tint;
         model.model.materials[m].maps[MATERIAL_MAP_DIFFUSE].color =
             Color{ch(base.r, paneTint.r), ch(base.g, paneTint.g), ch(base.b, paneTint.b),
                   ch(base.a, paneTint.a)};
@@ -597,18 +639,23 @@ struct Backend::Impl {
         }
         Material& material = model.model.materials[m];
         const Shader keep = material.shader;
-        if (blended) {
+        if (blended && !glass) {
             // The material's own colour factor stays in colDiffuse; the
-            // two lit tints go through the shader's own slots.
+            // four lit tints go through the shader's own slots. An empty
+            // span gets a zero factor: its blend stays at its first tint.
             material.shader = blend;
-            const float a[4] = {static_cast<float>(tintIn.r) / 255.0F, static_cast<float>(tintIn.g) / 255.0F,
-                                static_cast<float>(tintIn.b) / 255.0F, 1.0F};
-            const float b[4] = {static_cast<float>(tint2In.r) / 255.0F, static_cast<float>(tint2In.g) / 255.0F,
-                                static_cast<float>(tint2In.b) / 255.0F, 1.0F};
-            const float span[2] = {gradientFrom, 1.0F / (gradientTo - gradientFrom)};
+            const float a[4] = {channelOf(tints.a.r), channelOf(tints.a.g), channelOf(tints.a.b), 1.0F};
+            const float b[4] = {channelOf(tints.b.r), channelOf(tints.b.g), channelOf(tints.b.b), 1.0F};
+            const float c[4] = {channelOf(tints.c.r), channelOf(tints.c.g), channelOf(tints.c.b), 1.0F};
+            const float d[4] = {channelOf(tints.d.r), channelOf(tints.d.g), channelOf(tints.d.b), 1.0F};
+            const float span[4] = {tints.from, tints.to > tints.from ? 1.0F / (tints.to - tints.from) : 0.0F,
+                                   tints.fromZ,
+                                   tints.toZ > tints.fromZ ? 1.0F / (tints.toZ - tints.fromZ) : 0.0F};
             SetShaderValue(blend, blendTintA, a, SHADER_UNIFORM_VEC4);
             SetShaderValue(blend, blendTintB, b, SHADER_UNIFORM_VEC4);
-            SetShaderValue(blend, blendSpan, span, SHADER_UNIFORM_VEC2);
+            SetShaderValue(blend, blendTintC, c, SHADER_UNIFORM_VEC4);
+            SetShaderValue(blend, blendTintD, d, SHADER_UNIFORM_VEC4);
+            SetShaderValue(blend, blendSpan, span, SHADER_UNIFORM_VEC4);
         }
         DrawMesh(model.model.meshes[i], material, transform);
         material.shader = keep;
@@ -1114,8 +1161,7 @@ SceneStats Backend::drawScene(const SceneDescription& scene) {
         }
     }
     for (const DeferredMesh& late : impl.deferred) {
-        impl.drawStaticMesh(*late.model, late.mesh, late.transform, late.tint, late.tint2,
-                            late.gradientFrom, late.gradientTo, late.mirrored, stats);
+        impl.drawStaticMesh(*late.model, late.mesh, late.transform, late.tints, late.mirrored, stats);
     }
     impl.deferred.clear();
     EndMode3D();

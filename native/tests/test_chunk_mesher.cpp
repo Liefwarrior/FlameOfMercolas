@@ -31,6 +31,7 @@
 #include "granadad/content/world_reader.hpp"
 #include "granadad/render/atlas.hpp"
 #include "granadad/render/lamps.hpp"
+#include "granadad/render/lighting.hpp"
 #include "granadad/render/vertical.hpp"
 #include "granadad/render/world_renderer.hpp"
 #include "granadad/render3d/chunk_mesher.hpp"
@@ -418,24 +419,42 @@ TEST_CASE("the shipped piece catalogue loads and names a piece for every rule") 
     }
     CHECK(catalogue.warnings().empty());
     REQUIRE_FALSE(catalogue.empty());
-    for (const PieceRole role : {PieceRole::Wall, PieceRole::WallCorner, PieceRole::WallWindow,
-                                 PieceRole::WallDoor, PieceRole::RoofEdge, PieceRole::FloorPlank,
-                                 PieceRole::FloorCobble, PieceRole::FloorFlag, PieceRole::Water,
-                                 PieceRole::PropBarrel, PieceRole::PropCrate, PieceRole::PropSack,
-                                 PieceRole::LampWall, PieceRole::LampPost, PieceRole::Brazier,
-                                 PieceRole::FloorFill, PieceRole::WallCap, PieceRole::Ceiling,
-                                 PieceRole::WallTimber, PieceRole::Chimney}) {
+    for (std::size_t r = 1; r < kPieceRoleCount; ++r) {
+        const auto role = static_cast<PieceRole>(r);
         const PieceSpec* spec = catalogue.piece(role);
         REQUIRE_MESSAGE(spec != nullptr, "no piece for role " << pieceRoleName(role));
         CHECK(spec->file.find(".gltf") != std::string::npos);
         CHECK(spec->file.find('/') != std::string::npos);
         CHECK(catalogue.pieceIndex(role) >= 0);
         CHECK(catalogue.pieces()[static_cast<std::size_t>(catalogue.pieceIndex(role))].role == role);
+        CHECK(catalogue.variantCount(role) >= 1);
     }
-    // The table is in role order, so piece indices agree on every machine.
+    // The table is in role order, variants in file order, so piece indices
+    // agree on every machine.
     for (std::size_t i = 1; i < catalogue.pieces().size(); ++i) {
-        CHECK(catalogue.pieces()[i - 1].role < catalogue.pieces()[i].role);
+        const PieceSpec& a = catalogue.pieces()[i - 1];
+        const PieceSpec& b = catalogue.pieces()[i];
+        CHECK((a.role < b.role || (a.role == b.role && a.variant + 1 == b.variant)));
     }
+    // Variants: the cobbles alternate two blocks, the chimneys three stacks,
+    // and each variant is its own row at its own index.
+    CHECK(catalogue.variantCount(PieceRole::FloorCobble) == 2);
+    CHECK(catalogue.variantCount(PieceRole::Chimney) == 3);
+    CHECK(catalogue.variantCount(PieceRole::RoofTile) == 3);
+    CHECK(catalogue.pieceIndex(PieceRole::Chimney, 2) == catalogue.pieceIndex(PieceRole::Chimney, 0) + 2);
+    CHECK(catalogue.piece(PieceRole::Chimney, 1)->file != catalogue.piece(PieceRole::Chimney, 0)->file);
+    CHECK(catalogue.piece(PieceRole::Chimney, 3) == nullptr);
+    // The knobs: the rhythm, the chimney rate over masonry, the furniture.
+    CHECK(catalogue.knobs().windowEvery == 2);
+    CHECK(catalogue.knobs().chimneyEvery == 12);
+    CHECK(catalogue.knobs().tableEvery > 0);
+    CHECK(catalogue.knobs().boatEvery > 0);
+    CHECK(catalogue.knobs().hullFlareDegrees > 0.0F);
+    // The door frame knows its opening, so the inside plaster is cut round it.
+    CHECK(catalogue.piece(PieceRole::WallDoor)->cutX == doctest::Approx(0.17F));
+    CHECK(catalogue.piece(PieceRole::WallDoor)->cutY == doctest::Approx(2.029F));
+    CHECK(catalogue.piece(PieceRole::Flame)->twoSided);
+    CHECK(catalogue.piece(PieceRole::Flame)->selfLit);
     // The kit's own module: 2.5 m walls, 3 m storeys, the brick on -Z.
     CHECK(catalogue.piece(PieceRole::Wall)->width == doctest::Approx(2.5F));
     CHECK(catalogue.piece(PieceRole::Wall)->frontNegZ);
@@ -456,7 +475,18 @@ TEST_CASE("the shipped piece catalogue loads and names a piece for every rule") 
     REQUIRE(catalogue.materialByName("dirt") != nullptr);
     CHECK(catalogue.materialByName("dirt")->wallClass == WallClass::None);
     CHECK(catalogue.materialByName("dirt")->fillRole == PieceRole::FloorFill);
-    CHECK(catalogue.materialByName("steel") == nullptr);
+    // Steel is dressed now (the quay's undressed patch); chromatis is not.
+    REQUIRE(catalogue.materialByName("steel") != nullptr);
+    CHECK(catalogue.materialByName("steel")->wallClass == WallClass::Masonry);
+    CHECK(catalogue.materialByName("chromatis") == nullptr);
+    // Slab sides: planks on timber, tinted plaster on stone; thatch is the
+    // roofing material and its planes get the roof rules.
+    CHECK(catalogue.materialByName("oak")->lipRole == PieceRole::LipPlank);
+    CHECK(catalogue.materialByName("granite")->lipRole == PieceRole::LipStone);
+    CHECK(catalogue.materialByName("thatch")->roof);
+    CHECK_FALSE(catalogue.materialByName("granite")->roof);
+    CHECK(catalogue.materialByName("thatch")->floorRole == PieceRole::None);
+    CHECK(catalogue.materialByName("thatch")->fillRole == PieceRole::FloorFill);
     CHECK(catalogue.piece(PieceRole::FloorFill)->flipY);
     CHECK(catalogue.piece(PieceRole::FloorCobble)->minBlock == 2);
     CHECK(catalogue.material(materialId("granite")) == catalogue.materialByName("granite"));
@@ -577,16 +607,35 @@ TEST_CASE("a wall tile with two open neighbours places a corner piece") {
             CHECK(p.instance.position.z == doctest::Approx(11.0F));
         }
         if (p.role == PieceRole::FloorFill) {
-            // Mirrored upward, and never over the house.
+            // Mirrored upward, lit at its four corner points, and never
+            // over the house: its footprint (origin plus the fitted extent)
+            // stays outside the ring.
             CHECK(p.instance.scale.y < 0.0F);
-            CHECK((p.lightY2 < 10 || p.lightY > 15 || p.lightX2 < 10 || p.lightX > 15));
+            CHECK(p.bilinear);
+            const float x1 = p.instance.position.x + p.instance.scale.x * 2.5F;
+            const float z1 = p.instance.position.z + p.instance.scale.z * 2.5F;
+            CHECK((z1 <= 10.01F || p.instance.position.z >= 15.99F || x1 <= 10.01F ||
+                   p.instance.position.x >= 15.99F));
         }
     }
     // A cornice along every outdoor face at the roof line, a cap over the
-    // ring's wall heads, and no ceiling anywhere (nothing is built above).
+    // ring's wall heads, and no ceiling anywhere (nothing is built above,
+    // and the ring stands on solid ground -- a wall over the substrate is
+    // nobody's ceiling).
     CHECK(countRole(placed.placements, PieceRole::RoofEdge) >= 4);
     CHECK(countRole(placed.placements, PieceRole::WallCap) >= 1);
     CHECK(countRole(placed.placements, PieceRole::Ceiling) == 0);
+    // Windows keep a rhythm now, not a coin flip: every second piece along
+    // a run, never the first -- so the six-tile faces (one stretched piece
+    // between the corner legs) carry none and the four-tile inner faces
+    // (two plaster pieces each) carry exactly one each. And every window
+    // knows the cell behind it.
+    for (const StaticPlacement& p : placed.placements) {
+        if (p.role == PieceRole::WallWindow) {
+            CHECK(p.hasInside);
+            CHECK(p.insideZ == 19);
+        }
+    }
     for (const StaticPlacement& p : placed.placements) {
         if (p.role == PieceRole::WallCap) {
             CHECK(p.instance.position.y == doctest::Approx(render::bandSurface(20) + 0.004F));
@@ -680,7 +729,7 @@ TEST_CASE("a door tile places the door frame") {
     }
     // The roof over the house puts a ceiling under it -- over the rooms,
     // under the slab, lit as the room's underside -- and nothing over the
-    // street.
+    // street. Joists cross it on the odd grid lines.
     CHECK(countRole(placed.placements, PieceRole::Ceiling) >= 2);
     for (const StaticPlacement& p : placed.placements) {
         if (p.role == PieceRole::Ceiling) {
@@ -689,21 +738,53 @@ TEST_CASE("a door tile places the door frame") {
             CHECK(p.instance.scale.y > 0.0F);
             CHECK(p.lightZ == 19);
             CHECK(p.facing == doctest::Approx(render::kUndersideLift));
+            CHECK(p.bilinear);
+        }
+        if (p.role == PieceRole::Joist) {
+            CHECK(p.instance.position.y < render::bandSurface(20) - render::kFloorSlab);
+            CHECK(p.instance.position.y > render::bandSurface(20) - render::kFloorSlab - 0.4F);
+            CHECK((static_cast<int>(std::lround(p.instance.position.z)) & 1) == 1);
         }
     }
+    CHECK(countRole(placed.placements, PieceRole::Joist) >= 4);
+    // The frame on a rendered building was turned to show its plaster to
+    // the street, so its brick faces the room: the thin plaster stands
+    // behind the header and both jambs, cut round the opening, a hair
+    // inside the facade plane. Two leaves hang open on the jambs.
+    // Three behind the frame (the header and both jambs) and two returns
+    // over the frame's ends in the reveal planes.
+    CHECK(countRole(placed.placements, PieceRole::DoorInside) == 5);
+    std::size_t behind = 0;
+    for (const StaticPlacement& p : placed.placements) {
+        if (p.role == PieceRole::DoorInside && p.instance.yaw == doctest::Approx(3.14159265F)) {
+            ++behind;
+            CHECK(p.instance.position.z < 16.0F);
+            CHECK(p.instance.position.z > 15.9F);
+        }
+    }
+    CHECK(behind == 3);
+    CHECK(countRole(placed.placements, PieceRole::DoorLeaf) == 2);
     // The house's interior is roofed now, so its inner faces wear plaster:
-    // a wall piece on an indoor face is yawed half a turn from the brick
-    // rule -- checked on the north wall's south face, which looks south
-    // into the room and would face south (yaw pi) brick-out.
+    // the thin one-sided plaster quad, turned half a turn so its face
+    // looks into the room -- checked on the north wall's south face, which
+    // looks south into the room (the quad's +Z is its face; yawed to face
+    // south it would sit at pi, and turned to show that face it is at 0).
     bool plasterSeen = false;
     for (const StaticPlacement& p : placed.placements) {
-        if (p.role == PieceRole::Wall && p.lightY == 8 && p.lightX > 8 && p.lightX < 15 &&
-            p.instance.position.z > 8.9F && p.instance.position.z < 9.2F) {
+        if (p.role == PieceRole::WallPlaster && p.lightY == 8 && p.lightX > 8 && p.lightX < 15 &&
+            p.instance.position.z > 9.1F && p.instance.position.z < 9.3F) {
             plasterSeen = true;
             CHECK(p.instance.yaw == doctest::Approx(0.0F));
         }
     }
     CHECK(plasterSeen);
+    // And no kit wall stands on an indoor face: its other side is brick.
+    for (const StaticPlacement& p : placed.placements) {
+        if (p.role == PieceRole::Wall) {
+            CHECK((p.lightX == 8 || p.lightX == 15 || p.lightY == 8 || p.lightY == 15 || p.lightX == 18 ||
+                   p.lightX == 24));
+        }
+    }
     // The window rule only fires out of doors, on a stretched piece: none
     // of the pieces inside the room are windows.
     for (const StaticPlacement& p : placed.placements) {
@@ -732,18 +813,30 @@ TEST_CASE("a door tile places the door frame") {
     lamps[2].warmth = render::LampWarmth::Fire;
     const StaticPlacements lit = placeStaticPieces(tiles, catalogue, lamps);
     CHECK(countRole(lit.placements, PieceRole::LampWall) == 1);
+    CHECK(countRole(lit.placements, PieceRole::LampBracket) == 1);
     CHECK(countRole(lit.placements, PieceRole::LampPost) == 1);
     CHECK(countRole(lit.placements, PieceRole::Brazier) == 1);
+    CHECK(countRole(lit.placements, PieceRole::Ember) == 1);
+    // Every lamp but the post (its glass is its own) carries a crossed pair
+    // of flame quads, drawn as their own light.
+    CHECK(countRole(lit.placements, PieceRole::Flame) == 4);
     for (const StaticPlacement& p : lit.placements) {
         if (p.role == PieceRole::LampWall) {
-            // On the door-side wall's south face (z = 16), hung out over
-            // the lamp's own tile.
-            CHECK(p.instance.position.z == doctest::Approx(16.0F + 0.323F));
+            // On the door-side wall's south face (z = 16), hung from its
+            // bracket out over the lamp's own tile, at head height and
+            // above.
+            const PieceSpec* lantern = catalogue.piece(PieceRole::LampWall);
+            CHECK(p.instance.position.z == doctest::Approx(16.0F + lantern->standoff));
             CHECK(p.instance.position.x == doctest::Approx(9.5F));
-            CHECK(p.instance.position.y == doctest::Approx(render::bandSurface(19) + 2.1F));
+            CHECK(p.instance.position.y == doctest::Approx(render::bandSurface(19) + lantern->lift));
+            CHECK(p.selfLit);
+        }
+        if (p.role == PieceRole::Flame) {
+            CHECK(p.selfLit);
+            CHECK(p.instance.scale.z < 0.0F);
         }
     }
-    CHECK(lit.placements.size() == placed.placements.size() + 3);
+    CHECK(lit.placements.size() == placed.placements.size() + 4 + 4 + 1);
 }
 
 TEST_CASE("placement is a deterministic function of the tile map") {
@@ -778,18 +871,81 @@ TEST_CASE("placement is a deterministic function of the tile map") {
         REQUIRE(a.scale.z == b.scale.z);
     }
     const StaticPlacementStats& stats = first.stats;
-    CHECK(stats.byRole[static_cast<std::size_t>(PieceRole::Wall)] > 500);
+    // Brick out of doors on the brick buildings; the thin plaster quad on
+    // every rendered and every indoor face.
+    CHECK(stats.byRole[static_cast<std::size_t>(PieceRole::Wall)] > 100);
+    CHECK(stats.byRole[static_cast<std::size_t>(PieceRole::WallPlaster)] > 2000);
     CHECK(stats.byRole[static_cast<std::size_t>(PieceRole::WallTimber)] > 100);
     CHECK(stats.byRole[static_cast<std::size_t>(PieceRole::Chimney)] > 3);
-    // Timber stands the plank quad on its edge: a quarter turn about X.
+    // Timber stands the plank quad on its edge: a quarter turn about X. A
+    // hull's boards stand ACROSS -- a quarter turn about Z -- and lean
+    // outward from it by the catalogue's flare. A lip is the slab's own
+    // height; a parapet the coping's. Nothing else pitches or rolls.
+    const float flare = catalogue.knobs().hullFlareDegrees * 3.14159265F / 180.0F;
+    std::size_t hulls = 0;
     for (const StaticPlacement& p : first.placements) {
+        const bool upright = p.role == PieceRole::WallTimber || p.role == PieceRole::LipPlank ||
+                             p.role == PieceRole::LipStone || p.role == PieceRole::Parapet ||
+                             p.role == PieceRole::Hull;
+        if (p.role == PieceRole::Hull) {
+            ++hulls;
+            CHECK(p.instance.pitch == 0.0F);
+            CHECK(p.instance.roll == doctest::Approx(3.14159265F / 2.0F + flare));
+            CHECK(p.alongZ);
+        } else {
+            CHECK(p.instance.roll == 0.0F);
+        }
         if (p.role == PieceRole::WallTimber) {
             CHECK(p.instance.pitch == doctest::Approx(-3.14159265F / 2.0F));
-            CHECK(p.instance.scale.z == doctest::Approx((render::kBandHeight - 0.01F) / 2.5F));
-        } else {
+            if (p.instance.scale.z > 0.5F) {
+                CHECK(p.instance.scale.z == doctest::Approx((render::kBandHeight - 0.01F) / 2.5F));
+            }
+        } else if (p.role == PieceRole::LipPlank || p.role == PieceRole::LipStone) {
+            CHECK(p.instance.pitch == doctest::Approx(-3.14159265F / 2.0F));
+            CHECK(p.instance.scale.z == doctest::Approx((render::kFloorSlab - 0.01F) / 2.5F));
+        } else if (!upright) {
             CHECK(p.instance.pitch == 0.0F);
         }
     }
+    // The moored hulls lean: their boards, and a gunwale beam along the
+    // open top of each.
+    CHECK(hulls > 10);
+    CHECK(stats.byRole[static_cast<std::size_t>(PieceRole::Gunwale)] > 0);
+    CHECK(stats.byRole[static_cast<std::size_t>(PieceRole::LipPlank)] > 20);
+    CHECK(stats.byRole[static_cast<std::size_t>(PieceRole::LipStone)] > 0);
+    CHECK(stats.byRole[static_cast<std::size_t>(PieceRole::Rowboat)] > 3);
+    CHECK(stats.byRole[static_cast<std::size_t>(PieceRole::Crane)] > 0);
+    CHECK(stats.byRole[static_cast<std::size_t>(PieceRole::Parapet)] > 50);
+    CHECK(stats.byRole[static_cast<std::size_t>(PieceRole::RoofTile)] > 20);
+    CHECK(stats.byRole[static_cast<std::size_t>(PieceRole::DoorInside)] > 0);
+    CHECK(stats.byRole[static_cast<std::size_t>(PieceRole::DoorLeaf)] > 0);
+    CHECK(stats.byRole[static_cast<std::size_t>(PieceRole::Joist)] > 50);
+    CHECK(stats.byRole[static_cast<std::size_t>(PieceRole::Table)] > 0);
+    CHECK(stats.byRole[static_cast<std::size_t>(PieceRole::Fireplace)] > 0);
+    CHECK(stats.byRole[static_cast<std::size_t>(PieceRole::Pillar)] > 0);
+    CHECK(stats.byRole[static_cast<std::size_t>(PieceRole::Post)] > 0);
+    // The chimneys stand over masonry only, and they vary.
+    bool chimneyVariants[3] = {false, false, false};
+    std::size_t chimneys = 0;
+    for (const StaticPlacement& p : first.placements) {
+        if (p.role == PieceRole::Chimney) {
+            const std::int32_t x = static_cast<std::int32_t>(std::floor(p.instance.position.x));
+            const std::int32_t y = static_cast<std::int32_t>(std::floor(p.instance.position.z));
+            CHECK(tilesA.form(x, y, p.lightZ - 1) == content::TileForm::Wall);
+            const MaterialRule* below = catalogue.material(tilesA.material(x, y, p.lightZ - 1));
+            REQUIRE(below != nullptr);
+            CHECK(below->wallClass == WallClass::Masonry);
+            const std::size_t v = static_cast<std::size_t>(p.instance.piece) -
+                                  static_cast<std::size_t>(catalogue.pieceIndex(PieceRole::Chimney));
+            REQUIRE(v < 3);
+            chimneyVariants[v] = true;
+            ++chimneys;
+        }
+    }
+    MESSAGE("Docks chimneys: " << chimneys);
+
+
+    CHECK((chimneyVariants[0] ? 1 : 0) + (chimneyVariants[1] ? 1 : 0) + (chimneyVariants[2] ? 1 : 0) >= 2);
     CHECK(stats.byRole[static_cast<std::size_t>(PieceRole::WallCorner)] >= 4);
     CHECK(stats.byRole[static_cast<std::size_t>(PieceRole::WallWindow)] > 20);
     CHECK(stats.byRole[static_cast<std::size_t>(PieceRole::WallDoor)] >= 2);
@@ -825,10 +981,11 @@ TEST_CASE("placement is a deterministic function of the tile map") {
     CHECK(gullDoor);
     // Nothing is placed below the catalogue's floor band (a ceiling under a
     // slab on that band is lit one level lower; the strand's tide pools lie
-    // one level under the harbour's surface), and everything is inside the
-    // authored district.
+    // one level under the harbour's surface; a joist hangs in the room
+    // under its ceiling), and everything is inside the authored district.
     for (const StaticPlacement& p : first.placements) {
-        const bool oneBelow = p.role == PieceRole::Ceiling || p.role == PieceRole::Water;
+        const bool oneBelow =
+            p.role == PieceRole::Ceiling || p.role == PieceRole::Water || p.role == PieceRole::Joist;
         CHECK(p.lightZ >= catalogue.minBand() - (oneBelow ? 1 : 0));
         CHECK(p.instance.position.x > 30.0F);
         CHECK(p.instance.position.x < 226.0F);
@@ -860,6 +1017,10 @@ TEST_CASE("placement is a deterministic function of the tile map") {
     CHECK(worldA.stats().piecesPlaced == first.placements.size());
     CHECK(worldA.stats().piecesInstanced > 100);
     CHECK(worldA.stats().piecesInstanced < worldA.stats().piecesPlaced);
+    // The frustum cull: of the pieces inside their reach, only those in
+    // front of the eye and inside its cone are described.
+    CHECK(worldA.stats().piecesInReach > worldA.stats().piecesInstanced);
+    CHECK(worldA.stats().piecesInstanced * 3 > worldA.stats().piecesInReach);
     CHECK(worldA.stats().piecesRelit == 1);
     REQUIRE(sceneA.statics.size() == worldA.stats().piecesInstanced);
     REQUIRE(sceneA.pieces.size() == catalogue.pieces().size());
@@ -888,4 +1049,335 @@ TEST_CASE("placement is a deterministic function of the tile map") {
     CHECK(plain.statics.empty());
     CHECK(plain.pieces.empty());
     CHECK(bare.stats().piecesPlaced == 0);
+}
+
+// ---------------------------------------------------------------------------
+// S LANE, SECOND PASS -- the critic's fourteen, each with a case
+// ---------------------------------------------------------------------------
+
+namespace {
+
+/// A rendered stone house on the quayside band: a granite ring from (8, 8)
+/// to (15, 15) on an oak floor, a two-tile door in its south wall, a roof
+/// of thatch over all of it at z = 20 -- and, over the taproom, a one-cell
+/// oak partition standing on the roof band where a floor would be, so one
+/// ceiling cell is the underside of a WALL. A trudgeon post stands inside
+/// (a table, in the sim's own terms) and another on the street; a two-cell
+/// granite block stands free inside the room (a hearth).
+struct HouseWorld {
+    content::World world{content::Coords(1, 1, 3), content::LaneLayout::core()};
+    std::span<std::uint8_t> forms = world.byteLane(content::kFormLane);
+    std::span<std::uint16_t> materials = world.shortLane(content::kMaterialLane);
+    sim::TileQuery tiles{world};
+
+    HouseWorld() {
+        std::fill(forms.begin(), forms.end(), static_cast<std::uint8_t>(content::TileForm::Open));
+        for (std::int32_t y = 4; y <= 27; ++y) {
+            for (std::int32_t x = 4; x <= 27; ++x) {
+                put(x, y, 18, content::TileForm::Wall, materialId("dirt"));
+                put(x, y, 19, content::TileForm::Floor, materialId("brick"));
+            }
+        }
+        for (std::int32_t y = 8; y <= 15; ++y) {
+            for (std::int32_t x = 8; x <= 15; ++x) {
+                const bool ring = x == 8 || x == 15 || y == 8 || y == 15;
+                put(x, y, 19, ring ? content::TileForm::Wall : content::TileForm::Floor,
+                    ring ? materialId("granite") : materialId("oak"));
+                put(x, y, 20, content::TileForm::Floor, materialId("thatch"));
+            }
+        }
+        put(11, 15, 19, content::TileForm::Floor, materialId("oak"));
+        put(12, 15, 19, content::TileForm::Floor, materialId("oak"));
+        // The partition over the room's (13, 10): a WALL on the roof band.
+        put(13, 10, 20, content::TileForm::Wall, materialId("oak"));
+        // A post inside (the sim's table) and one on the street.
+        put(13, 12, 19, content::TileForm::Wall, materialId("trudgeon_wood"));
+        put(20, 20, 19, content::TileForm::Wall, materialId("trudgeon_wood"));
+        // The hearth: two granite cells against nothing, two rows in from
+        // the north wall, the room to their south.
+        put(10, 10, 19, content::TileForm::Wall, materialId("granite"));
+        put(11, 10, 19, content::TileForm::Wall, materialId("granite"));
+    }
+
+    void put(std::int32_t x, std::int32_t y, std::int32_t z, content::TileForm form,
+             std::uint16_t material) {
+        forms[tiles.index(x, y, z)] = static_cast<std::uint8_t>(form);
+        materials[tiles.index(x, y, z)] = material;
+    }
+};
+
+const StaticPlacement* findRole(const std::vector<StaticPlacement>& placements, PieceRole role) {
+    for (const StaticPlacement& p : placements) {
+        if (p.role == role) {
+            return &p;
+        }
+    }
+    return nullptr;
+}
+
+}  // namespace
+
+TEST_CASE("a wall cell over an open cell gets a ceiling") {
+    HouseWorld house;
+    const StaticCatalogue& catalogue = shippedCatalogue();
+    const StaticPlacements placed = placeStaticPieces(house.tiles, catalogue, {});
+    // The partition's underside: a ceiling quad at the wall's own foot
+    // (the roof band's surface), over the taproom cell (13, 10), lit as the
+    // room's underside and in the room's ceiling tint (the thatch floor
+    // beside it), not the oak wall's own.
+    bool underside = false;
+    for (const StaticPlacement& p : placed.placements) {
+        if (p.role != PieceRole::Ceiling) {
+            continue;
+        }
+        CHECK(p.lightZ == 19);
+        if (p.instance.position.y == doctest::Approx(render::bandSurface(20) - 0.004F)) {
+            underside = true;
+            CHECK(p.instance.position.x == doctest::Approx(13.0F));
+            CHECK(p.instance.position.z == doctest::Approx(10.0F));
+            CHECK(p.facing == doctest::Approx(render::kUndersideLift));
+            const Rgba8 thatch = catalogue.materialByName("thatch")->ceilingTint;
+            CHECK(p.instance.tint.r == thatch.r);
+            CHECK(p.instance.tint.g == thatch.g);
+            CHECK(p.instance.tint.b == thatch.b);
+        } else {
+            // The slab ceilings hang under the roof slab as before.
+            CHECK(p.instance.position.y ==
+                  doctest::Approx(render::bandSurface(20) - render::kFloorSlab - 0.004F));
+        }
+    }
+    CHECK(underside);
+}
+
+TEST_CASE("a lit room's window is warm at night") {
+    HouseWorld house;
+    const StaticCatalogue& catalogue = shippedCatalogue();
+    std::vector<render::Lamp> lamps(1);
+    lamps[0].name = "lamp_house_bar";
+    lamps[0].x = 12;
+    lamps[0].y = 11;
+    lamps[0].z = 19;
+    lamps[0].luminance = 18;
+    lamps[0].warmth = render::LampWarmth::Lantern;
+    const render::LampGlow glow = render::LampGlow::build(house.tiles, lamps);
+    REQUIRE(glow.litCellCount() > 0);
+    WorldScene world(house.tiles, proceduralAtlas(), &glow, &catalogue, &lamps);
+    render::Camera eye;
+    eye.x = 11.5F;
+    eye.y = 20.5F;
+    eye.z = render::bandSurface(19) + 1.6F;
+    eye.yaw = 0.0F;  // north, at the house's south face
+    eye.pitch = 0.0F;
+    eye.hfovTan = 1.0F;
+    WorldSceneParams params;
+    SceneDescription scene;
+    const Rgba8 warm = catalogue.knobs().litPane;
+    const auto panes = [&](int hour, std::size_t& windows, std::size_t& lit) {
+        params.timeOfDaySeconds = hour * 3600;
+        world.refresh(scene, eye, 16.0F / 9.0F, params);
+        windows = 0;
+        lit = 0;
+        for (const StaticInstance& piece : scene.statics) {
+            if (piece.role != static_cast<std::uint8_t>(PieceRole::WallWindow)) {
+                continue;
+            }
+            ++windows;
+            if (piece.pane.r == warm.r && piece.pane.g == warm.g && piece.pane.b == warm.b) {
+                ++lit;
+            }
+        }
+    };
+    std::size_t windows = 0;
+    std::size_t lit = 0;
+    // At noon the panes are dark whatever the lamp does; at nine at night
+    // the room glows and every window the eye sees is warm.
+    panes(12, windows, lit);
+    CHECK(windows >= 1);
+    CHECK(lit == 0);
+    // Every window on the ring knows the room behind it.
+    std::size_t placedWindows = 0;
+    for (const StaticPlacement& p : world.placements()) {
+        if (p.role == PieceRole::WallWindow) {
+            ++placedWindows;
+            CHECK(p.hasInside);
+            CHECK(house.tiles.form(p.insideX, p.insideY, p.insideZ) == content::TileForm::Floor);
+        }
+    }
+    CHECK(placedWindows >= 2);
+    panes(21, windows, lit);
+    CHECK(windows >= 1);
+    CHECK(lit == windows);
+    // And with the lamp out, only the windows the tile hash keeps a candle
+    // behind (two in three, a roofed room behind them) stay warm: the
+    // others go dark.
+    const std::vector<render::Lamp> none;
+    const render::LampGlow dark = render::LampGlow::build(house.tiles, none);
+    WorldScene unlit(house.tiles, proceduralAtlas(), &dark, &catalogue, &none);
+    SceneDescription sceneUnlit;
+    params.timeOfDaySeconds = 21 * 3600;
+    unlit.refresh(sceneUnlit, eye, 16.0F / 9.0F, params);
+    std::size_t seen = 0;
+    std::size_t homely = 0;
+    for (const StaticPlacement& p : unlit.placements()) {
+        if (p.role == PieceRole::WallWindow) {
+            CHECK(p.hasInside);
+            homely += p.homely ? 1 : 0;
+        }
+    }
+    for (const StaticInstance& piece : sceneUnlit.statics) {
+        if (piece.role == static_cast<std::uint8_t>(PieceRole::WallWindow)) {
+            ++seen;
+        }
+    }
+    CHECK(seen >= 1);
+    CHECK(homely <= placedWindows);
+    std::size_t warmSeen = 0;
+    for (const StaticInstance& piece : sceneUnlit.statics) {
+        if (piece.role == static_cast<std::uint8_t>(PieceRole::WallWindow) && piece.pane.r == warm.r &&
+            piece.pane.g == warm.g && piece.pane.b == warm.b) {
+            ++warmSeen;
+        }
+    }
+    CHECK(warmSeen <= homely);
+}
+
+TEST_CASE("a lone timber cell is a pillar indoors and a bundle of piles out of doors") {
+    HouseWorld house;
+    const StaticCatalogue& catalogue = shippedCatalogue();
+    const StaticPlacements placed = placeStaticPieces(house.tiles, catalogue, {});
+    // Indoors: one pillar on the cell, fitted to it, and no board on any of
+    // its four faces.
+    CHECK(countRole(placed.placements, PieceRole::Pillar) == 1);
+    const StaticPlacement* pillar = findRole(placed.placements, PieceRole::Pillar);
+    REQUIRE(pillar != nullptr);
+    CHECK(pillar->instance.position.x == doctest::Approx(13.5F));
+    CHECK(pillar->instance.position.z == doctest::Approx(12.5F));
+    CHECK(pillar->instance.scale.x > 2.0F);
+    for (const StaticPlacement& p : placed.placements) {
+        if (p.role == PieceRole::WallTimber) {
+            const bool onIndoorPost = p.instance.position.x > 12.9F && p.instance.position.x < 14.1F &&
+                                      p.instance.position.z > 11.9F && p.instance.position.z < 13.1F;
+            CHECK_FALSE(onIndoorPost);
+        }
+    }
+    // Out of doors: four piles round the cell's corners, and the boards
+    // between them tarred (darker than the material's own tint). (The
+    // partition on the roof band is a lone timber cell too, and gets its
+    // own four.)
+    CHECK(countRole(placed.placements, PieceRole::Post) == 8);
+    std::size_t tarred = 0;
+    for (const StaticPlacement& p : placed.placements) {
+        if (p.role == PieceRole::Post && p.lightZ == 19) {
+            CHECK(std::fabs(p.instance.position.x - 20.5F) > 0.5F);
+            CHECK(std::fabs(p.instance.position.z - 20.5F) > 0.5F);
+            CHECK(std::fabs(p.instance.position.x - 20.5F) < 0.7F);
+            CHECK(p.instance.position.y == doctest::Approx(render::bandSurface(19)));
+        }
+        if (p.role == PieceRole::WallTimber && p.lightX == 20 && p.lightY == 20) {
+            const Rgba8 own = catalogue.materialByName("trudgeon_wood")->tint;
+            CHECK(p.instance.tint.r < own.r);
+            CHECK(p.instance.tint.g < own.g);
+            ++tarred;
+        }
+    }
+    CHECK(tarred == 4);
+}
+
+TEST_CASE("a lantern's room gets tables and a hearth") {
+    HouseWorld house;
+    const StaticCatalogue& catalogue = shippedCatalogue();
+    // No lantern: no tables. Then a lantern in the room.
+    const StaticPlacements bare = placeStaticPieces(house.tiles, catalogue, {});
+    CHECK(countRole(bare.placements, PieceRole::Table) == 0);
+    std::vector<render::Lamp> lamps(1);
+    lamps[0].name = "lamp_house_bar";
+    lamps[0].x = 12;
+    lamps[0].y = 11;
+    lamps[0].z = 19;
+    lamps[0].luminance = 18;
+    lamps[0].warmth = render::LampWarmth::Lantern;
+    const StaticPlacements placed = placeStaticPieces(house.tiles, catalogue, lamps);
+    CHECK(countRole(placed.placements, PieceRole::Table) >= 1);
+    CHECK(countRole(placed.placements, PieceRole::Bench) >= 2);
+    CHECK(countRole(placed.placements, PieceRole::Mug) >= 1);
+    for (const StaticPlacement& p : placed.placements) {
+        if (p.role == PieceRole::Table) {
+            // Inside the room, two from every wall, on the floor.
+            CHECK(p.instance.position.x > 9.9F);
+            CHECK(p.instance.position.x < 14.1F);
+            CHECK(p.instance.position.z > 10.9F);
+            CHECK(p.instance.position.z < 14.1F);
+            CHECK(p.instance.position.y == doctest::Approx(render::bandSurface(19)));
+        }
+    }
+    // The hearth: the free-standing pair at (10..11, 10) wears the
+    // fireplace on its south face, where the room is (one row of floor
+    // and then the wall to its north), with a fire in it. The block is the
+    // rule; it needs no lantern.
+    CHECK(countRole(placed.placements, PieceRole::Fireplace) == 1);
+    CHECK(countRole(bare.placements, PieceRole::Fireplace) == 1);
+    const StaticPlacement* hearth = findRole(placed.placements, PieceRole::Fireplace);
+    REQUIRE(hearth != nullptr);
+    // Its footprint is centred on the pair: the origin sits its own local
+    // centre (turned to face south, so along -X) back from x = 11.
+    const PieceSpec* fireplace = catalogue.piece(PieceRole::Fireplace);
+    CHECK(hearth->instance.position.x ==
+          doctest::Approx(11.0F - 0.5F * (fireplace->minX + fireplace->maxX) * fireplace->scale));
+    CHECK(hearth->instance.position.z > 11.0F);
+    CHECK(hearth->instance.position.z < 12.5F);
+    CHECK(hearth->instance.yaw == doctest::Approx(0.0F));
+    CHECK(countRole(placed.placements, PieceRole::Flame) >= 2 + 2);
+}
+
+TEST_CASE("a roof plane is flat, dressed, and chimneyed over masonry only") {
+    HouseWorld house;
+    const StaticCatalogue& catalogue = shippedCatalogue();
+    // A second house of oak walls east of the first, thatch over it.
+    for (std::int32_t y = 8; y <= 15; ++y) {
+        for (std::int32_t x = 18; x <= 25; ++x) {
+            const bool ring = x == 18 || x == 25 || y == 8 || y == 15;
+            house.put(x, y, 19, ring ? content::TileForm::Wall : content::TileForm::Floor, materialId("oak"));
+            house.put(x, y, 20, content::TileForm::Floor, materialId("thatch"));
+        }
+    }
+    const StaticPlacements placed = placeStaticPieces(house.tiles, catalogue, {});
+    // The thatch planes wear the flat fill (tar), never floorboards, and an
+    // upstand runs round every edge: brick over the granite ring, boards
+    // over the oak one.
+    for (const StaticPlacement& p : placed.placements) {
+        if (p.role == PieceRole::FloorPlank) {
+            CHECK(p.lightZ != 20);
+        }
+    }
+    std::size_t brickUpstands = 0;
+    std::size_t boardUpstands = 0;
+    const auto parapetPiece = static_cast<std::uint16_t>(catalogue.pieceIndex(PieceRole::Parapet));
+    for (const StaticPlacement& p : placed.placements) {
+        if (p.role == PieceRole::Parapet) {
+            CHECK(p.instance.position.y == doctest::Approx(render::bandSurface(20)));
+            if (p.instance.piece == parapetPiece) {
+                ++brickUpstands;
+                CHECK(p.instance.position.x < 17.0F);
+            } else {
+                ++boardUpstands;
+                CHECK(p.instance.position.x > 17.0F);
+            }
+        }
+    }
+    CHECK(brickUpstands == 4);
+    CHECK(boardUpstands == 4);
+    // Chimneys, if any, stand over the granite ring and never the oak.
+    for (const StaticPlacement& p : placed.placements) {
+        if (p.role == PieceRole::Chimney) {
+            CHECK(p.instance.position.x < 17.0F);
+        }
+    }
+    // Nothing pitched over either plane: every piece on the roof band is
+    // flat, an upstand, a lip, or the boards of the lone partition.
+    for (const StaticPlacement& p : placed.placements) {
+        if (p.lightZ == 20 && p.role != PieceRole::Parapet && p.role != PieceRole::LipStone &&
+            p.role != PieceRole::WallTimber) {
+            CHECK(p.instance.pitch == 0.0F);
+        }
+    }
 }
