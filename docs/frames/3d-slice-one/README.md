@@ -104,3 +104,15 @@ thumbnail all show white, sandboxed or not, moved, minimised and restored, at
 150 % DPI. The shutter's frames come from `LoadImageFromScreen` BEFORE the
 swap, so they never proved the swap; this is the first look at it. Until it is
 fixed the game cannot be played on this machine, whatever the frames say.
+
+## The gate behind these frames
+
+Docker gate on this tree: GATE EXIT 0, hostcheck ctest 92/92 (1,164 cases,
+floor 537), mingw cross published `dist\`, native/ digest
+`541906326dd670d7887d0e6e894b55d025f1bea59124466a6dfd3c6362fca6ba`
+(307 files). `scripts\verify-windows.ps1` on that dist: PASS -- content
+suite 71/71, sim suite, twin gate, the shutter through a real window, the
+content-fingerprint and world-hash reports byte-identical linux/gcc vs
+mingw/windows and unchanged from a21dc3e (`97850DCB...`, `924F6EA6...`).
+Nothing under `native/src/sim`, `native/include/granadad/sim` or `content/`
+differs from the wip tip ac1f1c8.
