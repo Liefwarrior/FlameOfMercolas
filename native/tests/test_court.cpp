@@ -1964,6 +1964,8 @@ TEST_CASE("THE ROPE ends the run: the end is written off the record, nothing rev
     CHECK_FALSE(gull.playerFloored());
     CHECK_FALSE(gull.takeDefeatRelease());
     CHECK(gull.nemesis().defeats() == defeatsBefore);
+    room.settleToIdle();  // the last swing's recovery run out, so the press would be heard
+    REQUIRE(gull.playerCombatIdle());
     gull.playerAttackDown();
     CHECK(gull.playerCombatIdle());
     CHECK_FALSE(gull.playerHandsUp());
@@ -2092,12 +2094,10 @@ TEST_CASE("a Violence arrest with paper flows to the same bench and the same sen
     }
     REQUIRE(closing);
     REQUIRE(gull.watchInterest() == WatchCause::Violence);
-    bool taken = false;
-    for (int s = 0; s < 60 && !taken; ++s) {
-        room.run(1);
-        taken = gull.takeArrestRelease();
-    }
-    REQUIRE(taken);
+    // Taken at reach: this Room ticks without walking anybody, so the
+    // proven shape stands in his face (test_contract's own arrest setup).
+    REQUIRE(standUntilTaken(room, 60));
+    REQUIRE(gull.takeArrestRelease());
     CHECK(gull.lastArrest().cause == WatchCause::Violence);
     // THE SAME BENCH: a hearing open on the paper, nothing served at the
     // door, the room let go of the fight.

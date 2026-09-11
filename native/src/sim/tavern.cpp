@@ -3915,9 +3915,14 @@ const Tavern::SentenceReport& Tavern::serveSentence() {
         if (hearing.sheet.blood) {
             // The corpse is on the roster (Activity::Dead, never removed) and
             // the social ledger remembers who it was: the last man in roster
-            // order the player put down. Roster order is id order, which is
-            // deterministic and never reordered.
+            // order the player put down. BOTH clauses -- a witness to the
+            // killing carries Deed::Slew on his memory too (spreadWitness),
+            // and he is alive. Roster order is id order, deterministic and
+            // never reordered.
             for (const Actor& actor : actors_) {
+                if (actor.activity() != Activity::Dead) {
+                    continue;
+                }
                 const Memory* memory = dialogue_.ledger().memoryOf(actor.id());
                 if (memory != nullptr && memory->lastDeed == Deed::Slew) {
                     runEnd_.reason = actor.name();
