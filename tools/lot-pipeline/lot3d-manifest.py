@@ -142,7 +142,7 @@ def run(out: Path, root: Path, lot_root: Path, dry_run: bool) -> int:
                "Coordinates: %s." % job.get("coordinates", ""), "",
                "| prefab | role | file | tris | bounds (glTF, m) | materials | licence |", "|---|---|---|---|---|---|---|"]
         for a in job.get("assets", []):
-            f = out / a["file"]
+            f = static_manifest.parent / a["file"]     # "file" is relative to the manifest's own folder (<out>/static/)
             try:
                 js, refs = read_gltf(f)
                 d = describe(js)
@@ -161,7 +161,7 @@ def run(out: Path, root: Path, lot_root: Path, dry_run: bool) -> int:
             rows.append({"pack": a["pack"], "src": src_rel(a["source"]), "dst": rel(f), "bytes": a["bytes"], "sha256": record["sha256"],
                          "purpose": "%s %s, %d tris (+ .bin)" % (a["role"], a["name"], d["triangles"]), "license": LICENCE})
             md.append("| `%s` | %s | `%s` | %d | %s | %s | %s |" % (
-                a["name"], a["role"], a["file"], d["triangles"], bounds, ", ".join(d["materials"]), LICENCE))
+                a["name"], a["role"], rel(f), d["triangles"], bounds, ", ".join(d["materials"]), LICENCE))
         md.append("")
         sheet = out / "static" / "contact-sheet.png"
         if sheet.is_file():
@@ -176,7 +176,7 @@ def run(out: Path, root: Path, lot_root: Path, dry_run: bool) -> int:
                "One `.glb` per humanoid: a single skin over one bone list, textures embedded, every clip baked to node TRS at 30 fps "
                "(LINEAR samplers, no KHR_animation_pointer). Animation index = the job's clip order = the C++ enum; names are the job's names.", ""]
         for a in job.get("assets", []):
-            f = out / a["file"]
+            f = rig_manifest.parent / a["file"]        # relative to <out>/characters/
             try:
                 js, json_len, bin_len = read_glb(f)
                 d = describe(js)
@@ -198,7 +198,7 @@ def run(out: Path, root: Path, lot_root: Path, dry_run: bool) -> int:
                          "bytes": a["bytes"], "sha256": record["sha256"],
                          "purpose": "%s %s: %d bones, %d tris, clips %s" % (a["role"], a["name"], d["joints"], d["triangles"], "/".join(got)),
                          "license": LICENCE})
-            md += ["### `%s` -- `%s`" % (a["name"], a["file"]), "",
+            md += ["### `%s` -- `%s`" % (a["name"], rel(f)), "",
                    "- source: `%s` (avatar `%s`)%s" % (a["source"], a.get("avatarModel", ""), (", weapon `%s`" % a["weapon"]) if a.get("weapon") else ""),
                    "- %d joints (root `%s`), %d tris, %d materials, %d embedded images, %s bytes; glTF bounds %s .. %s" % (
                        d["joints"], a.get("rootBone", ""), d["triangles"], len(d["materials"]), len(d["images"]), format(a["bytes"], ","),

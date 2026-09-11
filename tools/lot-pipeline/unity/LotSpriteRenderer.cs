@@ -398,7 +398,10 @@ namespace Granadad.LotPipeline {
             var sheet = job.sheetCell > 0 ? new ContactSheet(job.sheetCell, job.sheetColumns, entries.Count) : null;
             var manifest = new ExportManifest(job.jobName, jobPath, "gltf");
             var flattener = new MaterialFlattener();
+            var materialExport = new FlatMaterialExport();
+            var logger = new GLTFast.Logging.ConsoleLogger();
             int written = 0;
+            var sw = System.Diagnostics.Stopwatch.StartNew();
             try {
                 foreach (var entry in entries) {
                     var set = entry.Key; var path = entry.Value;
@@ -415,10 +418,11 @@ namespace Granadad.LotPipeline {
                         ComponentMask = ComponentType.Mesh,                // no lights, no cameras
                         Deterministic = true,
                     };
-                    var export = new GameObjectExport(settings, new GameObjectExportSettings { OnlyActiveInHierarchy = true, DisabledComponents = false });
+                    var export = new GameObjectExport(settings, new GameObjectExportSettings { OnlyActiveInHierarchy = true, DisabledComponents = false }, materialExport, null, logger);
                     if (!export.AddScene(new[] { go }, name)) throw new InvalidOperationException("glTFast refused " + path);
                     bool ok = SyncRunner.Run(() => export.SaveToFileAndDispose(file));
                     if (!ok || !File.Exists(file)) throw new IOException("glTFast export failed for " + path + " (see log)");
+                    if (written % 20 == 0) Debug.Log($"[LotSpriteRenderer] gltf {written + 1}/{entries.Count} {set.pack}/{name} ({sw.Elapsed.TotalSeconds:0}s)");
 
                     var stats = MeshStats.Of(go);
                     var mats = MaterialFlattener.Used(go).ToList();
@@ -427,12 +431,14 @@ namespace Granadad.LotPipeline {
                     Object.DestroyImmediate(go);
                     written++;
                 }
+                // Before the scene goes: Dispose opens a new scene, and that unloads every
+                // asset nothing serialized points at -- the sheet's Texture2D included.
+                if (sheet != null) sheet.Write(Path.Combine(outDir, "contact-sheet.png"));
+                manifest.Write(Path.Combine(outDir, "manifest.json"));
             } finally {
                 scene.Dispose();
                 flattener.Dispose();
             }
-            if (sheet != null) sheet.Write(Path.Combine(outDir, "contact-sheet.png"));
-            manifest.Write(Path.Combine(outDir, "manifest.json"));
             return written;
 #endif
         }
@@ -458,7 +464,33 @@ namespace Granadad.LotPipeline {
             foreach (var t in go.GetComponentsInChildren<Transform>(true))
                 if (System.Text.RegularExpressions.Regex.IsMatch(t.name, "_LOD[1-9]$")) t.gameObject.SetActive(false);
             flattener.Flatten(go);
+            // Synty imports its meshes with Read/Write off. glTFast then goes through
+            // AsyncGPUReadback (an engine Awaitable that only completes from the player
+            // loop, which a blocking -executeMethod never runs -- the export hung on the
+            // first prefab, 2026-09-11). A script-made copy is readable, so the writer
+            // takes its plain AcquireReadOnlyMeshData path instead. The Editor can read
+            // the source data whatever the flag says; only a Player enforces it.
+            foreach (var mf in go.GetComponentsInChildren<MeshFilter>(true))
+                if (mf.sharedMesh != null && !mf.sharedMesh.isReadable) mf.sharedMesh = ReadableCopy(mf.sharedMesh);
             return go;
+        }
+
+        // A readable duplicate the exporters can read on the CPU. Owned by the caller's
+        // scene object; it goes with DestroyImmediate(go) since nothing else references it.
+        public static Mesh ReadableCopy(Mesh src) {
+            var m = new Mesh { name = src.name, indexFormat = src.indexFormat };
+            m.vertices = src.vertices;
+            if (src.normals.Length == src.vertexCount) m.normals = src.normals;
+            if (src.tangents.Length == src.vertexCount) m.tangents = src.tangents;
+            if (src.uv.Length == src.vertexCount) m.uv = src.uv;
+            if (src.uv2.Length == src.vertexCount) m.uv2 = src.uv2;
+            if (src.colors.Length == src.vertexCount) m.colors = src.colors;
+            m.subMeshCount = src.subMeshCount;
+            for (int s = 0; s < src.subMeshCount; s++) m.SetIndices(src.GetIndices(s), src.GetTopology(s), s);
+            if (src.bindposes.Length > 0) m.bindposes = src.bindposes;
+            if (src.boneWeights.Length == src.vertexCount) m.boneWeights = src.boneWeights;
+            m.RecalculateBounds();
+            return m;
         }
 
         // ---------------------------------------------------------------- glb (animated rigs, UnityGLTF)
@@ -556,13 +588,13 @@ namespace Granadad.LotPipeline {
                     Object.DestroyImmediate(settings);
                     written++;
                 }
+                if (sheet != null) sheet.Write(Path.Combine(outDir, "contact-sheet.png"));   // before Dispose's new scene unloads the sheet texture
+                manifest.Write(Path.Combine(outDir, "manifest.json"));
             } finally {
                 if (AnimationMode.InAnimationMode()) AnimationMode.StopAnimationMode();
                 scene.Dispose();
                 flattener.Dispose();
             }
-            if (sheet != null) sheet.Write(Path.Combine(outDir, "contact-sheet.png"));
-            manifest.Write(Path.Combine(outDir, "manifest.json"));
             return written;
 #endif
         }
@@ -685,9 +717,9 @@ namespace Granadad.LotPipeline {
                 urp.renderShadows = false;
                 urp.dithering = false;
             }
-            rt = new RenderTexture(cs.width, cs.height, 24, RenderTextureFormat.ARGB32) { antiAliasing = Mathf.Max(1, cs.msaa) };
+            rt = new RenderTexture(cs.width, cs.height, 24, RenderTextureFormat.ARGB32) { antiAliasing = Mathf.Max(1, cs.msaa), hideFlags = HideFlags.HideAndDontSave };
             rt.Create();
-            readback = new Texture2D(cs.width, cs.height, TextureFormat.RGBA32, false);
+            readback = new Texture2D(cs.width, cs.height, TextureFormat.RGBA32, false) { hideFlags = HideFlags.HideAndDontSave };
         }
 
         public Rig SpawnRig(string prefabPath, string avatarModel, string[] keepRenderers) {
@@ -1126,7 +1158,7 @@ namespace Granadad.LotPipeline {
             this.cell = Mathf.Max(16, cell);
             this.cols = Mathf.Max(1, cols);
             rows = Mathf.Max(1, (Mathf.Max(1, count) + this.cols - 1) / this.cols);
-            tex = new Texture2D(this.cols * this.cell, rows * this.cell, TextureFormat.RGBA32, false);
+            tex = new Texture2D(this.cols * this.cell, rows * this.cell, TextureFormat.RGBA32, false) { hideFlags = HideFlags.HideAndDontSave };
             var fill = new Color32(24, 24, 28, 255);
             tex.SetPixels32(Enumerable.Repeat(fill, tex.width * tex.height).ToArray());
         }
@@ -1156,12 +1188,80 @@ namespace Granadad.LotPipeline {
         }
     }
 
+    // ---------------------------------------------------------------- glTFast material/image export
+
+#if LOT_GLTFAST
+    // The atlas as the .gltf references it: the SOURCE PNG copied beside the .gltf,
+    // never re-encoded. glTFast's own ImageExport picks JPEG (quality 60) for any
+    // texture imported without an alpha channel -- most Synty atlases -- and would
+    // blit + encode it again for every prefab. One image per texture (Equals on the
+    // texture, so a prefab using the same atlas through several materials gets one
+    // image), and a copy that already sits in the pack directory is left alone.
+    class AtlasImageExport : ImageExportBase {
+        readonly Texture2D tex;
+        readonly string assetPath;
+        public AtlasImageExport(Texture2D tex) { this.tex = tex; assetPath = AssetDatabase.GetAssetPath(tex); }
+        bool SourceIsPng => !string.IsNullOrEmpty(assetPath) && assetPath.EndsWith(".png", StringComparison.OrdinalIgnoreCase) && File.Exists(assetPath);
+        public override string FileName => (string.IsNullOrEmpty(assetPath) ? tex.name : Path.GetFileNameWithoutExtension(assetPath)) + ".png";
+        public override string MimeType => "image/png";
+        public override FilterMode FilterMode => tex.filterMode;
+        public override TextureWrapMode WrapModeU => tex.wrapModeU;
+        public override TextureWrapMode WrapModeV => tex.wrapModeV;
+        public override bool Write(string filePath, bool overwrite) {
+            if (SourceIsPng) {
+                if (File.Exists(filePath) && new FileInfo(filePath).Length == new FileInfo(assetPath).Length) return true;
+                File.Copy(assetPath, filePath, true);
+                return true;
+            }
+            var data = GetData();
+            if (data == null) return false;
+            File.WriteAllBytes(filePath, data);
+            return true;
+        }
+        public override byte[] GetData() => SourceIsPng ? File.ReadAllBytes(assetPath) : EncodeTexture(tex, ImageFormat.Png, 100);
+        public override bool Equals(object obj) => obj is AtlasImageExport o && o.tex == tex;
+        public override int GetHashCode() => tex != null ? tex.GetInstanceID() : 0;
+    }
+
+    // The flattened URP/Lit clone -> a glTF material that is exactly baseColorTexture
+    // (the atlas) + baseColorFactor, metallic 0, roughness 1, BLEND for the water and
+    // glass clones. Nothing else: no normal/ORM/emissive lookups, which is also what
+    // keeps glTFast's URP exporter from touching the pack's shader-graph properties.
+    class FlatMaterialExport : IMaterialExport {
+        public bool ConvertMaterial(UnityEngine.Material uMaterial, out GLTFast.Schema.Material material, IGltfWritable gltf, GLTFast.Logging.ICodeLogger logger) {
+            material = new GLTFast.Schema.Material {
+                name = uMaterial.name,
+                pbrMetallicRoughness = new GLTFast.Schema.PbrMetallicRoughness { metallicFactor = 0f, roughnessFactor = 1f },
+                doubleSided = false,
+            };
+            material.pbrMetallicRoughness.BaseColor = uMaterial.HasProperty("_BaseColor") ? uMaterial.GetColor("_BaseColor") : Color.white;
+            var tex = uMaterial.HasProperty("_BaseMap") ? uMaterial.GetTexture("_BaseMap") as Texture2D : null;
+            if (tex != null) {
+                var imageId = gltf.AddImage(new AtlasImageExport(tex));
+                var samplerId = gltf.AddSampler(tex.filterMode, tex.wrapModeU, tex.wrapModeV);
+                var textureId = gltf.AddTexture(imageId, samplerId);
+                material.pbrMetallicRoughness.baseColorTexture = new GLTFast.Schema.TextureInfo { index = textureId };
+            }
+            bool transparent = uMaterial.HasProperty("_Surface") && uMaterial.GetFloat("_Surface") > 0.5f;
+            material.SetAlphaMode(transparent ? GLTFast.Schema.MaterialBase.AlphaMode.Blend : GLTFast.Schema.MaterialBase.AlphaMode.Opaque);
+            return true;
+        }
+    }
+#endif
+
     // ---------------------------------------------------------------- sync runner
 
-    // glTFast's export is async; the Editor's own menu entry pumps it on the main
-    // thread with an exclusive SynchronizationContext, and that helper is internal.
-    // Same idea here: every continuation posts back to this queue, which we drain
-    // until the task ends, so nothing blocks waiting for a main thread we hold.
+    // glTFast's export is async; its own menu entries are `async` MenuItems pumped by
+    // the editor's UnitySynchronizationContext, which we do not have in a batch
+    // -executeMethod call. So: an exclusive SynchronizationContext (the same shape as
+    // glTFast's internal AsyncHelpers) -- every continuation posts back to this
+    // queue, which we drain until the task ends. ONE THING the editor loop does that
+    // a plain queue does not: it kicks the job system. glTFast schedules Burst jobs
+    // and then spins `while (!job.IsCompleted) await Task.Yield();` -- and a job
+    // scheduled from the main thread does not START until JobHandle.ScheduleBatchedJobs()
+    // (or the end of a player-loop frame, which never comes here). Without the kick
+    // the first prefab hangs forever on a 0-byte .gltf (first run, 2026-09-11).
+    // Each pass through the pump therefore flushes the batched jobs.
     static class SyncRunner {
         public static T Run<T>(Func<Task<T>> task) {
             var old = SynchronizationContext.Current;
@@ -1198,8 +1298,10 @@ namespace Granadad.LotPipeline {
                     KeyValuePair<SendOrPostCallback, object> item;
                     bool has;
                     lock (queue) { has = queue.Count > 0; item = has ? queue.Dequeue() : default; }
+                    // Main thread, so this is allowed: start whatever the last callback scheduled.
+                    Unity.Jobs.JobHandle.ScheduleBatchedJobs();
                     if (has) item.Key(item.Value);
-                    else pending.WaitOne();
+                    else pending.WaitOne(50);   // bounded: a job finishing on a worker posts nothing, the next pass re-polls
                 }
             }
             public override SynchronizationContext CreateCopy() => this;
