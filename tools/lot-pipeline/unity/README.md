@@ -140,9 +140,9 @@ runner without `-KeepScript`).
 
 ```powershell
 # from the fom-assets worktree root; -Out may point at another worktree's content/art/lot-3d
-pwsh tools/lot-pipeline/unity/render-lot.ps1 -Job tools/lot-pipeline/unity/jobs/docks-3d-static.json -Out C:epositoriesom-3d\contentrt\lot-3d
-pwsh tools/lot-pipeline/unity/render-lot.ps1 -Job tools/lot-pipeline/unity/jobs/docks-3d-rigs.json   -Out C:epositoriesom-3d\contentrt\lot-3d -TimeoutMinutes 40
-python tools/lot-pipeline/lot3d-manifest.py --out C:epositoriesom-3d\contentrt\lot-3d   # the runner does this itself
+pwsh tools/lot-pipeline/unity/render-lot.ps1 -Job tools/lot-pipeline/unity/jobs/docks-3d-static.json -Out C:/repositories/fom-3d/content/art/lot-3d
+pwsh tools/lot-pipeline/unity/render-lot.ps1 -Job tools/lot-pipeline/unity/jobs/docks-3d-rigs.json   -Out C:/repositories/fom-3d/content/art/lot-3d -TimeoutMinutes 40
+python tools/lot-pipeline/lot3d-manifest.py --out C:/repositories/fom-3d/content/art/lot-3d   # the runner does this itself
 ```
 
 **gltf** (glTFast 6.14.1, already resolved in LOT): every prefab named in the job is
