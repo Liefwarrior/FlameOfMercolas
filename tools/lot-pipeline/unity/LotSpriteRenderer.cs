@@ -381,7 +381,7 @@ namespace Granadad.LotPipeline {
 
         // Thumbnail view directions (Unity space): props from front-right-above, rigs from the front.
         static readonly Vector3 kPropViewDir = new Vector3(1f, 0.8f, -1.2f);
-        static readonly Vector3 kRigViewDir = new Vector3(0.25f, 0.25f, -1f);
+        static readonly Vector3 kRigViewDir = new Vector3(-0.25f, 0.25f, 1f);   // a body faces +Z: this is its front-left three-quarter, so the sheet shows faces, not backs
 
         public static int ExportStatic(string jobPath, string outRoot) {
 #if !LOT_GLTFAST
@@ -427,7 +427,9 @@ namespace Granadad.LotPipeline {
                     };
                     var export = new GameObjectExport(settings, new GameObjectExportSettings { OnlyActiveInHierarchy = true, DisabledComponents = false }, materialExport, null, logger);
                     if (!export.AddScene(new[] { go }, name)) throw new InvalidOperationException("glTFast refused " + path);
-                    bool ok = SyncRunner.Run(() => export.SaveToFileAndDispose(file));
+                    bool ok;
+                    try { ok = SyncRunner.Run(() => export.SaveToFileAndDispose(file)); }
+                    catch (Exception e) { throw new InvalidOperationException($"glTFast export of {path} ({written + 1}/{entries.Count}) failed: {e.Message}", e); }
                     if (!ok || !File.Exists(file)) throw new IOException("glTFast export failed for " + path + " (see log)");
                     if (written % 20 == 0) Debug.Log($"[LotSpriteRenderer] gltf {written + 1}/{entries.Count} {set.pack}/{name} ({sw.Elapsed.TotalSeconds:0}s)");
 
@@ -568,6 +570,17 @@ namespace Granadad.LotPipeline {
                     settings.BakeAnimationSpeed = false;
                     settings.UniqueAnimationNames = false;
                     settings.TryExportTexturesFromDisk = false;
+                    // PNG for EVERY texture. The heuristic re-encodes any atlas with no
+                    // alpha as JPEG, and raylib at config.h defaults has no JPEG decoder
+                    // (SUPPORT_FILEFORMAT_JPG is off) -- the Watch, the knight, the
+                    // dockhand and both viewmodels drew flat white in the shipped exe
+                    // (critic, 2026-09-11). lot3d-manifest.py refuses a non-PNG image.
+                    settings.UseTextureFileTypeHeuristic = false;
+                    // And no export cache: UnityGLTF keys cached image BYTES by texture
+                    // hash only, so a run after a JPEG run re-embeds the cached JPEG
+                    // under a fresh "image/png" label (the dockhand and both viewmodels,
+                    // take 3, 2026-09-11). Encode every image on every run.
+                    settings.UseCaching = false;
                     settings.ExportVertexColors = false;
                     settings.BlendShapeExportProperties = GLTFSettings.BlendShapeExportPropertyFlags.None;
                     settings.UseMainCameraVisibility = false;
@@ -791,7 +804,15 @@ namespace Granadad.LotPipeline {
             wep.transform.SetParent(hand, false);
             wep.transform.localPosition = new Vector3(w.localPos[0], w.localPos[1], w.localPos[2]);
             wep.transform.localRotation = Quaternion.Euler(w.localEuler[0], w.localEuler[1], w.localEuler[2]);
-            wep.transform.localScale = Vector3.one * w.localScale;
+            // localScale is meant in METRES (root space), not in the hand's own units:
+            // Synty's humanoid bone chains carry a 0.01 world scale, so a sword parented
+            // at localScale 1 came out 12 mm long and the viewmodel_sword glb had no
+            // visible blade (critic, 2026-09-11). Divide the hand's lossy scale out.
+            var lossy = hand.lossyScale;
+            wep.transform.localScale = new Vector3(
+                w.localScale / Mathf.Max(Mathf.Abs(lossy.x), 1e-6f),
+                w.localScale / Mathf.Max(Mathf.Abs(lossy.y), 1e-6f),
+                w.localScale / Mathf.Max(Mathf.Abs(lossy.z), 1e-6f));
             return wep;
         }
 
@@ -1332,9 +1353,14 @@ namespace Granadad.LotPipeline {
     // the first prefab hangs forever on a 0-byte .gltf (first run, 2026-09-11).
     // Each pass through the pump therefore flushes the batched jobs.
     static class SyncRunner {
-        public static T Run<T>(Func<Task<T>> task) {
+        // timeoutSeconds: a task that has not finished by then is abandoned with a
+        // TimeoutException naming nothing but the wait -- the CALLER names the prefab.
+        // Without it a single export that never completes (ward-3d-static hung on
+        // prefab 275 of 683, a skinned tent cloth, 2026-09-11) sits until the runner's
+        // whole-job timeout kills the editor, and the log never says which one.
+        public static T Run<T>(Func<Task<T>> task, double timeoutSeconds = 120) {
             var old = SynchronizationContext.Current;
-            var ctx = new ExclusiveContext();
+            var ctx = new ExclusiveContext { TimeoutSeconds = timeoutSeconds };
             SynchronizationContext.SetSynchronizationContext(ctx);
             T result = default;
             try {
@@ -1356,6 +1382,7 @@ namespace Granadad.LotPipeline {
             readonly AutoResetEvent pending = new AutoResetEvent(false);
             bool done;
             public Exception Error;
+            public double TimeoutSeconds = 120;
             public override void Send(SendOrPostCallback d, object state) => throw new NotSupportedException("Send on the exclusive context");
             public override void Post(SendOrPostCallback d, object state) {
                 lock (queue) queue.Enqueue(new KeyValuePair<SendOrPostCallback, object>(d, state));
@@ -1363,7 +1390,12 @@ namespace Granadad.LotPipeline {
             }
             public void End() => Post(_ => done = true, null);
             public void Loop() {
+                var sw = System.Diagnostics.Stopwatch.StartNew();
                 while (!done) {
+                    if (sw.Elapsed.TotalSeconds > TimeoutSeconds) {
+                        Error = new TimeoutException($"async export still running after {TimeoutSeconds:0}s -- abandoned");
+                        break;
+                    }
                     KeyValuePair<SendOrPostCallback, object> item;
                     bool has;
                     lock (queue) { has = queue.Count > 0; item = has ? queue.Dequeue() : default; }

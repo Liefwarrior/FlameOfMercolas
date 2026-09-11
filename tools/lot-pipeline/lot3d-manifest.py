@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import struct
 import sys
 from pathlib import Path
@@ -28,6 +29,7 @@ import lotstage  # noqa: E402
 
 TOOL = "lot3d"
 LICENCE = "asset-store-eula"
+FLAT_MAP = re.compile(r"^(White_|Noise_|Black_|Grey_)", re.I)   # maps that carry no colour of their own
 
 
 # ---------------------------------------------------------------- readers
@@ -110,11 +112,29 @@ def describe(js: dict) -> dict:
         "triangles": tris,
         "materials": [m.get("name", "") for m in js.get("materials", [])],
         "images": [i.get("uri", "(embedded)") for i in js.get("images", [])],
+        "imageTypes": [i.get("mimeType", "") for i in js.get("images", [])],
         "skins": len(skins),
         "joints": len(skins[0].get("joints", [])) if skins else 0,
         "animations": anims,
         "extensionsUsed": js.get("extensionsUsed", []),
     }
+
+
+def embedded_image_signatures(path: Path, js: dict) -> list[str]:
+    """For a .glb: the images whose bytes do not start with the PNG signature, as 'name: sig'."""
+    data = path.read_bytes()
+    json_len = struct.unpack_from("<I", data, 12)[0]
+    bin_off = 20 + json_len + 8
+    bad = []
+    for im in js.get("images", []):
+        if "bufferView" not in im:
+            continue
+        bv = js["bufferViews"][im["bufferView"]]
+        start = bin_off + bv.get("byteOffset", 0)
+        sig = data[start:start + 8]
+        if sig != bytes.fromhex("89504e470d0a1a0a"):   # the PNG signature
+            bad.append("%s: %r" % (im.get("name", "?"), sig[:4]))
+    return bad
 
 
 # ---------------------------------------------------------------- the pass
@@ -154,6 +174,13 @@ def run(out: Path, root: Path, lot_root: Path, dry_run: bool) -> int:
                     atlases[r] = {"pack": a["pack"], "texture": next((m["texture"] for m in a.get("materials", []) if m.get("texture")), "")}
             bg = a.get("boundsGltf", {})
             bounds = "%s .. %s" % (bg.get("min"), bg.get("max"))
+            # A piece whose every material samples a white or noise map has its colour
+            # in a shader the flattener cannot read (PolygonNature's trees, ferns and
+            # river planes, 2026-09-11): it draws as a white or charcoal blob. Refuse it.
+            maps = [Path(m.get("texture", "")).name for m in a.get("materials", [])]
+            flat = [n for n in maps if n and FLAT_MAP.match(n)]
+            if flat:
+                problems.append("%s: material samples a flat map (%s) -- colour lives in the shader, not the export" % (a["file"], ", ".join(flat)))
             record = dict(a)
             record.update({"sha256": lotstage.sha256_of(f), "binSha256": lotstage.sha256_of(f.with_suffix(".bin")) if f.with_suffix(".bin").is_file() else "",
                            "gltf": d, "license": LICENCE})
@@ -191,6 +218,16 @@ def run(out: Path, root: Path, lot_root: Path, dry_run: bool) -> int:
                 problems.append("%s: animation order %s != job order %s" % (a["file"], got, want))
             if d["joints"] > 128:
                 problems.append("%s: %d joints > raylib's 128-bone GPU skinning cap" % (a["file"], d["joints"]))
+            # raylib at config.h defaults decodes PNG and nothing else out of a glb
+            # (SUPPORT_FILEFORMAT_JPG is off); a JPEG atlas draws the body flat white.
+            bad_types = [t for t in d["imageTypes"] if t != "image/png"]
+            if bad_types:
+                problems.append("%s: embedded image type %s (raylib reads image/png only -- UseTextureFileTypeHeuristic must be off)" % (a["file"], bad_types))
+            # The label is not the bytes: UnityGLTF's export cache once re-embedded a
+            # JPEG under an image/png label. Check the signature of every image blob.
+            bad_sigs = embedded_image_signatures(f, js)
+            if bad_sigs:
+                problems.append("%s: embedded image bytes are not PNG: %s (UseCaching must be off)" % (a["file"], bad_sigs))
             record = dict(a)
             record.update({"sha256": lotstage.sha256_of(f), "gltf": d, "license": LICENCE})
             assets.append(record)
