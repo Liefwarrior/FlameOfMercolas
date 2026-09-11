@@ -15,6 +15,7 @@
 
 #include <doctest/doctest.h>
 
+#include <cmath>
 #include <cstdint>
 #include <cstdlib>
 #include <set>
@@ -25,7 +26,10 @@
 #include "granadad/render/framebuffer.hpp"
 #include "granadad/render/lamps.hpp"
 #include "granadad/render/lighting.hpp"
+#include "granadad/render/session.hpp"
+#include "granadad/render/vertical.hpp"
 #include "granadad/render/world_renderer.hpp"
+#include "granadad/render3d/actor_instances.hpp"
 #include "granadad/render3d/backend.hpp"
 #include "granadad/render3d/scene.hpp"
 #include "granadad/render3d/starter_scene.hpp"
@@ -374,6 +378,132 @@ TEST_CASE("the Docks render to a 3D frame with a world in it") {
                             << stats.trianglesDrawn << " triangles");
 
     // And again, byte for byte -- the frame is a function of the description.
+    const render::Framebuffer second = drawOnce(*video, scene, nullptr, nullptr);
+    CHECK(frame.pixels() == second.pixels());
+}
+
+TEST_CASE("the ward's people render as figures in the 3D frame") {
+    // THE A LANE'S FRAME. A real session at eight in the morning, the real
+    // Docks meshed by chunk, and the ward's own roster instanced into the
+    // description -- then the eye is stood two tiles from the nearest body
+    // on the same storey, looking straight at it, and the frame is drawn
+    // headless through rlsw. What is asserted: the body put pixels in the
+    // picture that the world alone did not, near the middle of the frame
+    // where a figure two tiles away stands, the stats count it as a body
+    // drawn through its placeholder (no glb in this container, ever), and
+    // the same description draws the same bytes again.
+    if (!Backend::headlessCapable()) {
+        MESSAGE("skipped: this build renders through a GPU window, not rlsw");
+        return;
+    }
+    namespace sim = granadad::sim;
+    render::SessionConfig config;
+    config.width = kWidth;
+    config.height = kHeight;
+    config.timeOfDay = 8 * 3600;
+    config.timeOfDayGiven = true;
+    render::Session session(config);
+
+    // The nearest visible person on the body's own band, and a standable
+    // tile two steps from it (orthogonal first) to put the eye on.
+    const render::Camera spawn = session.camera();
+    const sim::WardActor* subject = nullptr;
+    float best = 1e9F;
+    for (const sim::WardActor& actor : session.people().actors()) {
+        if (!actor.visible() || !sim::isPerson(actor.type) || actor.band != session.body().band()) {
+            continue;
+        }
+        const float dx = static_cast<float>(actor.x) + 0.5F - spawn.x;
+        const float dy = static_cast<float>(actor.y) + 0.5F - spawn.y;
+        const float d = dx * dx + dy * dy;
+        if (d < best) {
+            best = d;
+            subject = &actor;
+        }
+    }
+    REQUIRE(subject != nullptr);
+    const std::int32_t offsets[4][2] = {{0, 2}, {2, 0}, {0, -2}, {-2, 0}};
+    render::Camera eye = spawn;
+    bool placed = false;
+    for (const auto& offset : offsets) {
+        const std::int32_t ex = subject->x + offset[0];
+        const std::int32_t ey = subject->y + offset[1];
+        const std::int32_t mx = subject->x + offset[0] / 2;
+        const std::int32_t my = subject->y + offset[1] / 2;
+        if (session.tiles().standable(ex, ey, subject->band) &&
+            session.tiles().standable(mx, my, subject->band)) {
+            eye.x = static_cast<float>(ex) + 0.5F;
+            eye.y = static_cast<float>(ey) + 0.5F;
+            eye.z = render::bandSurface(subject->band) +
+                    static_cast<float>(sim::kEyeHeightTilesQ8) / 256.0F;
+            // Yaw clockwise from north (-y): atan2 of east over north.
+            eye.yaw = std::atan2(static_cast<float>(-offset[0]), static_cast<float>(offset[1]));
+            eye.pitch = 0.0F;
+            placed = true;
+            break;
+        }
+    }
+    REQUIRE(placed);
+    MESSAGE("subject: " << sim::wardTypeName(subject->type) << " #" << subject->id << " at ("
+                        << subject->x << "," << subject->y << ") band " << subject->band
+                        << "; eye at (" << eye.x << "," << eye.y << ") yaw " << eye.yaw);
+
+    WorldSceneParams params;
+    params.timeOfDaySeconds = session.timeOfDay();
+    WorldScene docks(session.tiles(), session.atlas(), &session.renderer().glow());
+    SceneDescription scene;
+    docks.refresh(scene, eye, static_cast<float>(kWidth) / static_cast<float>(kHeight), params);
+    putActorRigs(scene);
+    scene.actors = actorInstances(session, eye);
+    REQUIRE(!scene.actors.empty());
+    // The subject is among them, two tiles ahead of the eye.
+    bool subjectInstanced = false;
+    for (const ActorInstance& body : scene.actors) {
+        if (std::fabs(body.instance.position.x - (static_cast<float>(subject->x) + 0.5F)) < 1e-4F &&
+            std::fabs(body.instance.position.z - (static_cast<float>(subject->y) + 0.5F)) < 1e-4F) {
+            subjectInstanced = true;
+            CHECK(body.skinned);
+        }
+    }
+    CHECK(subjectInstanced);
+
+    std::unique_ptr<Backend> video = Backend::open(headlessConfig());
+    REQUIRE(video != nullptr);
+    SceneStats stats;
+    const render::Framebuffer frame = drawOnce(*video, scene, nullptr, &stats);
+    CHECK(stats.actorsDrawn == scene.actors.size());
+    CHECK(stats.actorsSkinned == 0);  // no glb here: every body is its placeholder
+    CHECK(stats.rigModelsLoaded == 0);
+    CHECK(stats.instancesDrawn == scene.instances.size() + scene.actors.size());
+
+    // The world alone, for the difference: everything the people put there.
+    SceneDescription empty = scene;
+    empty.actors.clear();
+    SceneStats emptyStats;
+    const render::Framebuffer world = drawOnce(*video, empty, nullptr, &emptyStats);
+    CHECK(emptyStats.actorsDrawn == 0);
+    std::size_t peoplePixels = 0;
+    std::size_t centrePixels = 0;
+    for (int y = 0; y < kHeight; ++y) {
+        for (int x = 0; x < kWidth; ++x) {
+            if (pixelAt(frame, x, y) != pixelAt(world, x, y)) {
+                ++peoplePixels;
+                if (x > kWidth / 4 && x < kWidth * 3 / 4 && y > kHeight / 6 && y < kHeight) {
+                    ++centrePixels;
+                }
+            }
+        }
+    }
+    MESSAGE("people pixels: " << peoplePixels << " (" << centrePixels << " in the centre), "
+                              << stats.actorsDrawn << " bodies, " << stats.trianglesDrawn
+                              << " triangles");
+    // A figure 1.875 tiles tall two tiles away spans most of the frame's
+    // height at a 90-degree field: hundreds of pixels at the least.
+    CHECK(peoplePixels > 300U);
+    CHECK(centrePixels > 200U);
+    CHECK(peoplePixels < frame.pixels().size() / 2);
+
+    // And again, byte for byte.
     const render::Framebuffer second = drawOnce(*video, scene, nullptr, nullptr);
     CHECK(frame.pixels() == second.pixels());
 }

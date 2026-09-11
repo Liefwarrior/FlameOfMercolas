@@ -12,18 +12,25 @@
 
 #include <doctest/doctest.h>
 
+#include <algorithm>
 #include <cmath>
 #include <cstdint>
 #include <set>
+#include <string>
 
+#include "granadad/render/session.hpp"
+#include "granadad/render/vertical.hpp"
 #include "granadad/render/world_renderer.hpp"
+#include "granadad/render3d/actor_instances.hpp"
 #include "granadad/render3d/chunk_mesher.hpp"
 #include "granadad/render3d/scene.hpp"
 #include "granadad/render3d/starter_scene.hpp"
 #include "granadad/render3d/viewmodel.hpp"
+#include "granadad/sim/human_scale.hpp"
 
 using namespace granadad::render3d;
 namespace render = granadad::render;
+namespace sim = granadad::sim;
 
 namespace {
 
@@ -103,6 +110,28 @@ TEST_CASE("any byte of the description moved is a different hash") {
         SceneDescription fewer = base;
         fewer.instances.pop_back();
         CHECK(sceneHash(fewer) != reference);
+    }
+    SUBCASE("a body added, and then its clip changed") {
+        // A LANE: the actor list is part of the digest, and so is what a
+        // body is doing -- a punch and an idle are different pictures.
+        SceneDescription crowd = base;
+        ActorInstance body;
+        body.rig = 0;
+        body.instance.meshId = actorRigMeshId(0);
+        body.instance.position = Vec3{1.0F, 0.0F, -3.0F};
+        body.clip = ActorClip::Idle;
+        body.clipFrame = 7;
+        crowd.actors.push_back(body);
+        const std::uint64_t withBody = sceneHash(crowd);
+        CHECK(withBody != reference);
+        crowd.actors[0].clip = ActorClip::PunchLeft;
+        CHECK(sceneHash(crowd) != withBody);
+        crowd.actors[0].clip = ActorClip::Idle;
+        crowd.actors[0].clipFrame = 8;
+        CHECK(sceneHash(crowd) != withBody);
+        crowd.actors[0].clipFrame = 7;
+        crowd.actors[0].skinned = true;
+        CHECK(sceneHash(crowd) != withBody);
     }
 }
 
@@ -251,4 +280,267 @@ TEST_CASE("the viewmodel machine plays a swing for its own steps and falls back 
     hit.hit = true;
     CHECK(arms.step(hit).state == ViewmodelState::Hit);
     CHECK(arms.pose().stateSteps == 0);
+}
+
+// ---------------------------------------------------------------------------
+// A LANE -- the people, as instances
+// ---------------------------------------------------------------------------
+
+namespace {
+
+constexpr float kTestPi = 3.14159265358979323846F;
+
+/// A session at eight in the morning, small frame (the frame size only
+/// sizes the HUD; the people are the same).
+render::SessionConfig morningConfig() {
+    render::SessionConfig config;
+    config.width = 160;
+    config.height = 90;
+    config.timeOfDay = 8 * 3600;
+    config.timeOfDayGiven = true;
+    return config;
+}
+
+/// The actor half of the description: rigs, bodies, camera. The world's
+/// chunks are the W lane's own proof and are left out to keep this cheap.
+SceneDescription crowdScene(const render::Session& session) {
+    SceneDescription scene;
+    putActorRigs(scene);
+    scene.camera = cameraFrom(session.camera(), 16.0F / 9.0F);
+    scene.actors = actorInstances(session, session.camera());
+    return scene;
+}
+
+[[nodiscard]] bool nearly(float a, float b, float eps = 1e-4F) { return std::fabs(a - b) <= eps; }
+
+}  // namespace
+
+TEST_CASE("an actor is drawn where the simulation says the actor is") {
+    // THE A LANE'S FIRST CLAIM. For every body the sim holds within the
+    // instancing radius there is exactly one ActorInstance, and it stands
+    // on the tile the sim put it on: the ward's slide between prevX and x
+    // (wardSprites' own arithmetic, off the same counter), the Gull's Q8
+    // straight out of the actor, the band through bandSurface, the BAM
+    // facing as the yaw, and the rig that is its WardType. Nothing here is
+    // drawn -- the description is the claim, and it is what gets hashed.
+    render::Session session(morningConfig());
+    const render::Camera eye = session.camera();
+    const SceneDescription scene = crowdScene(session);
+
+    // Every rig's placeholder is in the description, in the actor id range,
+    // closed and small, with its nose in FRONT (-Z) of its head.
+    for (std::uint32_t rig = 0; rig < kActorRigCount; ++rig) {
+        const MeshData* mesh = scene.findMesh(actorRigMeshId(rig));
+        REQUIRE(mesh != nullptr);
+        CHECK(mesh->id >= kActorMeshIdBase);
+        CHECK(mesh->id < kViewmodelMeshIdBase);
+        CHECK(mesh->version == 1);
+        CHECK(mesh->triangleCount() > 0);
+        CHECK(mesh->vertexCount() < 200U);
+        float minZ = 1e9F;
+        float minY = 1e9F;
+        for (std::size_t v = 0; v < mesh->vertexCount(); ++v) {
+            minY = std::min(minY, mesh->positions[v * 3 + 1]);
+            minZ = std::min(minZ, mesh->positions[v * 3 + 2]);
+        }
+        CHECK(minY == doctest::Approx(0.0F));  // stands on its feet
+        CHECK(minZ < 0.0F);                    // and has a front
+        for (const std::uint16_t index : mesh->indices) {
+            CHECK(index < mesh->vertexCount());
+        }
+    }
+
+    // The ward: one instance per visible body within the radius, at the
+    // tile centre (stepsThisSecond is 0 at spawn, so no slide yet).
+    REQUIRE(session.stepsThisSecond() == 0);
+    std::size_t expected = 0;
+    std::size_t checked = 0;
+    for (const sim::WardActor& actor : session.people().actors()) {
+        if (!actor.visible()) {
+            continue;
+        }
+        const float px = static_cast<float>(actor.x) + 0.5F;
+        const float py = static_cast<float>(actor.y) + 0.5F;
+        const float dx = px - eye.x;
+        const float dy = py - eye.y;
+        if (std::sqrt(dx * dx + dy * dy) > 64.0F) {
+            continue;
+        }
+        ++expected;
+        const Vec3 where = toScene(px, py, render::bandSurface(actor.band));
+        bool found = false;
+        for (const ActorInstance& body : scene.actors) {
+            if (nearly(body.instance.position.x, where.x) &&
+                nearly(body.instance.position.y, where.y) &&
+                nearly(body.instance.position.z, where.z) &&
+                body.instance.meshId == actorRigMeshId(actorRigOf(actor.type))) {
+                found = true;
+                CHECK(body.rig == static_cast<std::uint8_t>(actor.type));
+                CHECK(body.instance.yaw ==
+                      doctest::Approx(static_cast<float>(actor.facing) * (2.0F * kTestPi / 65536.0F)));
+                CHECK(body.clip == wardClip(actor.x != actor.prevX || actor.y != actor.prevY));
+                CHECK(body.clipFrame == actorClipFrame(session.body().stepCount(), actor.id));
+                CHECK(body.instance.tint.a == 255);
+                if (sim::isPerson(actor.type)) {
+                    CHECK(body.instance.scale > 0.5F);
+                    CHECK(body.instance.scale < 1.2F);
+                } else {
+                    CHECK(body.instance.scale == 1.0F);
+                }
+                ++checked;
+                break;
+            }
+        }
+        CHECK(found);
+    }
+    // The Gull's present bodies within the radius, at their Q8 position.
+    for (const sim::Actor& actor : session.tavern().actors()) {
+        if (!actor.present()) {
+            continue;
+        }
+        const float px = static_cast<float>(actor.x()) / 256.0F;
+        const float py = static_cast<float>(actor.y()) / 256.0F;
+        const float dx = px - eye.x;
+        const float dy = py - eye.y;
+        if (std::sqrt(dx * dx + dy * dy) > 64.0F) {
+            continue;
+        }
+        ++expected;
+        const Vec3 where = toScene(px, py, render::bandSurface(actor.band()));
+        bool found = false;
+        for (const ActorInstance& body : scene.actors) {
+            if (nearly(body.instance.position.x, where.x) &&
+                nearly(body.instance.position.y, where.y) &&
+                nearly(body.instance.position.z, where.z)) {
+                found = true;
+                CHECK(body.rig == static_cast<std::uint8_t>(
+                                      render::figureForRole(actor.role(), actor.id())));
+                CHECK(body.clip == clipForActivity(actor.activity(), actor.npcSwingSeq()));
+                break;
+            }
+        }
+        CHECK(found);
+    }
+    CHECK(scene.actors.size() == expected);
+    CHECK(expected > 0);
+    CHECK(checked > 0);
+    MESSAGE("crowd at 08:00 from the spawn: " << scene.actors.size() << " bodies within 64 tiles");
+
+    // Now half a second into the next second: a body that stepped this
+    // tick is drawn HALF WAY between its two tiles -- the slide, not the
+    // sim -- and plays the walk. Run one second (so the ward ticks and
+    // some prevX != x) plus thirty steps.
+    sim::MoveInput hold;
+    session.stepMany(hold, sim::kStepsPerSecond + sim::kStepsPerSecond / 2);
+    REQUIRE(session.stepsThisSecond() == sim::kStepsPerSecond / 2);
+    const SceneDescription later = crowdScene(session);
+    const render::Camera eyeLater = session.camera();
+    std::size_t walkers = 0;
+    for (const sim::WardActor& actor : session.people().actors()) {
+        if (!actor.visible() || (actor.x == actor.prevX && actor.y == actor.prevY)) {
+            continue;
+        }
+        const float px = static_cast<float>(actor.prevX) +
+                         static_cast<float>(actor.x - actor.prevX) * 0.5F + 0.5F;
+        const float py = static_cast<float>(actor.prevY) +
+                         static_cast<float>(actor.y - actor.prevY) * 0.5F + 0.5F;
+        const float dx = px - eyeLater.x;
+        const float dy = py - eyeLater.y;
+        if (std::sqrt(dx * dx + dy * dy) > 64.0F) {
+            continue;
+        }
+        const Vec3 where = toScene(px, py, render::bandSurface(actor.band));
+        bool found = false;
+        for (const ActorInstance& body : later.actors) {
+            if (nearly(body.instance.position.x, where.x) &&
+                nearly(body.instance.position.z, where.z) &&
+                body.instance.meshId == actorRigMeshId(actorRigOf(actor.type))) {
+                found = true;
+                CHECK(body.clip == ActorClip::Walk);
+                break;
+            }
+        }
+        CHECK(found);
+        ++walkers;
+    }
+    MESSAGE("walkers mid-stride within 64 tiles: " << walkers);
+    // And the same session described twice is the same bytes.
+    CHECK(sceneHash(later) == sceneHash(crowdScene(session)));
+}
+
+TEST_CASE("the scene description twin-runs identical") {
+    // THE A LANE'S DETERMINISM CLAIM, in the 3D renderer's own currency: two
+    // sessions built from one config and driven by one script describe the
+    // same crowd -- every position, yaw, clip and frame -- byte for byte, so
+    // the digest is equal. And a third session driven differently does not,
+    // which is what makes the equality mean something.
+    const auto drive = [](render::Session& session) {
+        sim::MoveInput forward;
+        forward.forward = 1;
+        session.stepMany(forward, 40);
+        sim::MoveInput turn;
+        turn.forward = 1;
+        turn.turn = 1;
+        session.stepMany(turn, 20);
+        session.stepMany(forward, 25);
+    };
+    render::Session a(morningConfig());
+    render::Session b(morningConfig());
+    drive(a);
+    drive(b);
+    const SceneDescription sceneA = crowdScene(a);
+    const SceneDescription sceneB = crowdScene(b);
+    REQUIRE(sceneA.actors.size() == sceneB.actors.size());
+    CHECK(sceneA.actors.size() > 0);
+    CHECK(sceneHash(sceneA) == sceneHash(sceneB));
+    CHECK(a.stepsThisSecond() == b.stepsThisSecond());
+    CHECK(a.body().stepCount() == b.body().stepCount());
+
+    render::Session c(morningConfig());
+    sim::MoveInput forward;
+    forward.forward = 1;
+    c.stepMany(forward, 85);
+    CHECK(sceneHash(crowdScene(c)) != sceneHash(sceneA));
+}
+
+TEST_CASE("the clip table follows the activity and the rigs name the asset lane's files") {
+    // Walking walks; a brawl alternates hands on the swing sequence; a man
+    // on the floor recovers and a dead one dies; everything done standing
+    // still idles -- and nothing the sim has today reaches Block or Hit.
+    CHECK(clipForActivity(sim::Activity::Walking, 0) == ActorClip::Walk);
+    CHECK(clipForActivity(sim::Activity::Brawling, 0) == ActorClip::PunchRight);
+    CHECK(clipForActivity(sim::Activity::Brawling, 1) == ActorClip::PunchLeft);
+    CHECK(clipForActivity(sim::Activity::Ejecting, 2) == ActorClip::PunchRight);
+    CHECK(clipForActivity(sim::Activity::Downed, 0) == ActorClip::Recover);
+    CHECK(clipForActivity(sim::Activity::Dead, 0) == ActorClip::Death);
+    CHECK(clipForActivity(sim::Activity::Working, 0) == ActorClip::Idle);
+    CHECK(clipForActivity(sim::Activity::Drinking, 0) == ActorClip::Idle);
+    CHECK(clipForActivity(sim::Activity::Watching, 0) == ActorClip::Idle);
+    CHECK(clipForActivity(sim::Activity::Warning, 0) == ActorClip::Idle);
+    CHECK(wardClip(true) == ActorClip::Walk);
+    CHECK(wardClip(false) == ActorClip::Idle);
+    CHECK(actorClipOneShot(ActorClip::Death));
+    CHECK(actorClipOneShot(ActorClip::Recover));
+    CHECK(!actorClipOneShot(ActorClip::Walk));
+
+    // The clip index IS the glb animation index: the names, in order, are
+    // what the asset lane's job file writes at 0..7.
+    const char* const names[] = {"idle", "walk", "punch_l", "punch_r",
+                                 "block", "hit", "recover", "death"};
+    for (std::size_t i = 0; i < kActorClipCount; ++i) {
+        CHECK(std::string(actorClipName(static_cast<ActorClip>(i))) == names[i]);
+    }
+
+    // The three humanoid files, by kind; beasts have none and keep the box.
+    CHECK(actorRigFile(actorRigOf(sim::WardType::MilitiaWatch)) == "watchman.glb");
+    CHECK(actorRigFile(actorRigOf(sim::WardType::Sailor)) == "dockhand.glb");
+    CHECK(actorRigFile(actorRigOf(sim::WardType::Serf)) == "townsman.glb");
+    CHECK(actorRigFile(actorRigOf(sim::WardType::PriestOfTheFlame)) == "townsman.glb");
+    CHECK(actorRigFile(actorRigOf(sim::WardType::Dog)).empty());
+    CHECK(actorRigFile(actorRigOf(sim::WardType::Mouse)).empty());
+    CHECK(actorRigFile(200).empty());
+    // A frame moves with the step and is phase-shifted per body.
+    CHECK(actorClipFrame(10, 0) == 10);
+    CHECK(actorClipFrame(10, 1) != actorClipFrame(10, 2));
+    CHECK(actorClipFrame(11, 3) == actorClipFrame(10, 3) + 1);
 }

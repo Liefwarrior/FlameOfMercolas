@@ -143,6 +143,18 @@ struct SessionConfig {
 // a fresh Session of the same config reproduces the drive step for step, and
 // the frames a watcher spends BETWEEN entries cost the simulation nothing --
 // which is the whole determinism argument, and test_case_watch.cpp holds it.
+/// How tall a body of each kind stands, in tiles, and the width its drawing is
+/// scaled to at that height. Defined in session.cpp (the figure tables); public
+/// since the 3D build so the actor instancer sizes its rigs off the same rows.
+struct FigureScale {
+    float heightTiles;
+    float widthTiles;
+};
+[[nodiscard]] FigureScale figureScaleOf(sim::WardType type) noexcept;
+/// Which drawn figure a TAVERN role wears -- one look for a person in this
+/// game, whether they stand in the Gull or on the quay. Patrons split by id.
+[[nodiscard]] sim::WardType figureForRole(sim::ActorRole role, std::int32_t id) noexcept;
+
 enum class WatchOpKind : std::uint8_t {
     /// One Session::step. `move` is the input, `a` the body yaw the drive's
     /// walker had set before stepping (stepToward writes yaw outside step).
@@ -211,6 +223,13 @@ public:
     [[nodiscard]] const sim::TileQuery& tiles() const noexcept { return *tiles_; }
     [[nodiscard]] sim::PlayerBody& body() noexcept { return *body_; }
     [[nodiscard]] const sim::PlayerBody& body() const noexcept { return *body_; }
+    /// Movement steps into the current simulated second, 0..kStepsPerSecond-1.
+    /// THE RENDERER'S SLIDE: wardSprites() interpolates a ward body from
+    /// prevX to x by this over kStepsPerSecond, and the 3D actor instancer
+    /// (render3d/actor_instances.hpp) must use the identical fraction so a
+    /// body stands in the same place on both paths. Read-only; nothing here
+    /// is ever written back into the sim.
+    [[nodiscard]] std::int32_t stepsThisSecond() const noexcept { return stepsThisSecond_; }
     [[nodiscard]] const WorldRenderer& renderer() const noexcept { return *renderer_; }
     [[nodiscard]] const TileAtlas& atlas() const noexcept { return atlas_; }
     [[nodiscard]] std::size_t lampCount() const noexcept { return renderer_->lamps().size(); }

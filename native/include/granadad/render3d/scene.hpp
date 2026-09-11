@@ -49,6 +49,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <string_view>
 #include <vector>
 
 namespace granadad::render {
@@ -136,6 +137,51 @@ struct SceneCamera {
     float fovyDegrees = 60.0F;
 };
 
+/// Which clip a body plays, decided off sim state alone -- see
+/// actor_instances.hpp for the table (Activity / moved-this-tick -> clip).
+/// THE ORDER IS THE ASSET CONTRACT: content/art/lot-3d/characters/*.glb carry
+/// their animations at index 0..7 in exactly this order (idle, walk,
+/// punch_l, punch_r, block, hit, recover, death -- the asset lane's job
+/// file), so `static_cast<int>(clip)` is the animation index the adapter
+/// plays. Nothing may be inserted in the middle.
+enum class ActorClip : std::uint8_t { Idle, Walk, PunchLeft, PunchRight, Block, Hit, Recover, Death };
+inline constexpr std::size_t kActorClipCount = 8;
+
+/// ONE BODY, DRAWN. The A lane's unit: a placeholder-or-rig instance plus
+/// what it is doing. `instance.meshId` is always the rig's PLACEHOLDER mesh
+/// (actorRigMeshId(rig), which the core puts into the description), so a
+/// build without the licensed glb files -- every test, the docker gate --
+/// draws a box figure through the generic mesh path; the adapter swaps in
+/// the skinned model by the rig's file name when it has one.
+struct ActorInstance {
+    Instance instance;
+    /// The rig index: the sim's WardType value (0..15), one look per kind of
+    /// body. actorRigMeshId(rig) == instance.meshId; actorRigFile(rig) is
+    /// the glb the adapter looks for.
+    std::uint8_t rig = 0;
+    ActorClip clip = ActorClip::Idle;
+    /// Clip frame at 60 per second (one per movement step, which is what
+    /// the glb keyframes are baked at): body().stepCount() phase-shifted by
+    /// the actor id so a crowd does not march in step. Render-only, derived
+    /// from integers, and part of the hash.
+    std::uint32_t clipFrame = 0;
+    /// Inside the skin radius: the adapter animates the rig. Outside: a rest
+    /// pose, no per-body skinning -- the cheap far draw.
+    bool skinned = false;
+};
+
+/// The glb file (no directory) the adapter loads for this rig, or empty for
+/// a rig that only has its placeholder (every beast, today). The names are
+/// the asset lane's: content/art/lot-3d/characters/<name>.glb, one skin,
+/// animations 0..7 in ActorClip order. Defined in actor_instances.cpp.
+[[nodiscard]] std::string_view actorRigFile(std::uint8_t rig) noexcept;
+
+/// True for a clip that plays once and holds its last frame (a corpse stays
+/// down); false for one that loops.
+[[nodiscard]] constexpr bool actorClipOneShot(ActorClip clip) noexcept {
+    return clip == ActorClip::Death || clip == ActorClip::Recover || clip == ActorClip::Hit;
+}
+
 struct SceneDescription {
     SceneCamera camera;
     /// The sky -- what the frame is cleared to before anything draws.
@@ -143,6 +189,8 @@ struct SceneDescription {
     std::vector<MeshData> meshes;
     std::vector<TextureData> textures;
     std::vector<Instance> instances;
+    /// The people, after the world. Hashed like everything else here.
+    std::vector<ActorInstance> actors;
 
     [[nodiscard]] const MeshData* findMesh(std::uint32_t id) const noexcept;
     [[nodiscard]] MeshData* findMesh(std::uint32_t id) noexcept;

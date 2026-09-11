@@ -79,6 +79,12 @@ struct BackendConfig {
     /// launcher window; the OS still grants click-to-focus.
     bool unfocused = true;
     std::string title = "Granadad: The Darkstreets";
+    /// A LANE. Where the skinned actor rigs live: the directory holding
+    /// <actorRigFile(rig)> (content/art/lot-3d/characters on the client).
+    /// Empty -- every test, the docker gate -- means no file is ever looked
+    /// for and every body draws as its placeholder mesh. A named directory
+    /// with a file missing falls back the same way, silently, per rig.
+    std::string modelDir;
 };
 
 /// A key going down or up this frame. `hid` is the USB HID usage id (SDL's
@@ -140,6 +146,13 @@ struct SceneStats {
     std::size_t trianglesDrawn = 0;
     std::size_t meshesUploaded = 0;
     std::size_t texturesUploaded = 0;
+    /// A LANE. Bodies drawn this pass (each is one draw of a rig model or of
+    /// its placeholder), how many of them were skinned through a loaded glb
+    /// this pass, and how many rig files are loaded in the process (0 on
+    /// every build without content/art/lot-3d/).
+    std::size_t actorsDrawn = 0;
+    std::size_t actorsSkinned = 0;
+    std::size_t rigModelsLoaded = 0;
 };
 
 class Backend {
@@ -163,6 +176,11 @@ public:
     [[nodiscard]] int height() const noexcept;
 
     void beginFrame(const Rgba8& clear);
+    /// The 3D pass: scene.instances through the mesh cache, then
+    /// scene.actors -- each through its rig's glb model when
+    /// BackendConfig::modelDir holds one (animated by clip index when
+    /// `skinned`, rest pose otherwise), else through the placeholder mesh
+    /// the description carries under instance.meshId.
     SceneStats drawScene(const SceneDescription& scene);
     /// Draws `overlay` over the frame. Its pixels are render::Framebuffer's
     /// 0xAABBGGRR (R,G,B,A in memory), straight alpha.

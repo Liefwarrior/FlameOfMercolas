@@ -31,6 +31,18 @@
 //        DrawMesh sets is ignored by every mesh that carries colours -- all
 //        of ours. The tint is folded into the vertex colours per draw there,
 //        which is the arithmetic the GL 3.3 default shader does anyway.
+//
+//   3. (A LANE) HOW A BODY IS DRAWN. scene.actors carry a rig index and a
+//      clip; the adapter loads <modelDir>/<actorRigFile(rig)> ONCE per file
+//      through raylib's cgltf loader (LoadModel + LoadModelAnimations, the
+//      glb's animations at index == ActorClip), plays the clip with
+//      UpdateModelAnimation (CPU skinning at this pin, SUPPORT_GPU_SKINNING
+//      is 0; raylib 6.0's frame wraps by keyframeCount and the glb bakes
+//      60 keyframes a second, one per movement step) and draws it with
+//      DrawModelEx. No file -- every test, the docker gate -- and the
+//      body's placeholder mesh (in the description, under instance.meshId)
+//      goes through the same path as any instance. glTF's front is +Z and
+//      the scene's yaw 0 faces -Z, hence kGltfForwardYaw.
 
 #include "granadad/render3d/backend.hpp"
 
@@ -43,6 +55,9 @@
 #include <cstdlib>
 #include <cstring>
 #include <map>
+#include <memory>
+#include <string>
+#include <string_view>
 #include <vector>
 
 #include "granadad/render/framebuffer.hpp"
@@ -120,6 +135,25 @@ struct CachedTexture {
     Texture2D texture{};
 };
 
+/// A glb rig, loaded once per FILE (several WardTypes share a file) and
+/// animated in place: UpdateModelAnimation writes the pose into the model's
+/// own animVertices, so one model serves every body of its kind as long as
+/// update and draw stay paired per body, which they do below.
+struct RigModel {
+    Model model{};
+    ModelAnimation* clips = nullptr;
+    int clipCount = 0;
+    bool loaded = false;
+    /// True while the model holds a skinned pose: the rest pose is put back
+    /// once per pass before the unskinned bodies draw.
+    bool posed = false;
+};
+
+/// A glTF asset faces +Z (the spec's own convention, and the asset lane's
+/// export); the scene's yaw 0 faces -Z. Half a turn, applied to models only.
+constexpr float kGltfForwardYaw = 3.14159265358979323846F;
+constexpr float kRadToDeg = 180.0F / 3.14159265358979323846F;
+
 [[nodiscard]] Color colourOf(const Rgba8& c) noexcept { return Color{c.r, c.g, c.b, c.a}; }
 
 [[nodiscard]] Vector3 vec(const Vec3& v) noexcept { return Vector3{v.x, v.y, v.z}; }
@@ -182,6 +216,9 @@ struct Backend::Impl {
     BackendConfig config;
     std::map<std::uint32_t, CachedMesh> meshes;
     std::map<std::uint32_t, CachedTexture> textures;
+    /// Rig models by FILE NAME; a null entry is a file that was looked for
+    /// and not found (or empty modelDir), so it is never asked for again.
+    std::map<std::string, std::unique_ptr<RigModel>> rigs;
     Material material{};
     bool materialLoaded = false;
     Texture2D defaultTexture{};
@@ -232,7 +269,136 @@ struct Backend::Impl {
         return mesh;
     }
 
+    /// The model for a rig, loading it the first time it is asked for.
+    /// Null when there is none: the caller draws the placeholder.
+    RigModel* rigFor(std::uint8_t rig) {
+        const std::string_view file = actorRigFile(rig);
+        if (file.empty() || config.modelDir.empty()) {
+            return nullptr;
+        }
+        const std::string key(file);
+        auto found = rigs.find(key);
+        if (found != rigs.end()) {
+            return found->second.get();
+        }
+        std::unique_ptr<RigModel> loaded;
+        const std::string path = config.modelDir + "/" + key;
+        if (FileExists(path.c_str())) {
+            auto candidate = std::make_unique<RigModel>();
+            candidate->model = LoadModel(path.c_str());
+            if (candidate->model.meshCount > 0) {
+                candidate->clips = LoadModelAnimations(path.c_str(), &candidate->clipCount);
+                if (candidate->clips == nullptr) {
+                    candidate->clipCount = 0;
+                }
+                candidate->loaded = true;
+                std::printf("granadad: render3d: rig %s -- %d mesh(es), %d bone(s), %d clip(s)\n",
+                            key.c_str(), candidate->model.meshCount,
+                            candidate->model.skeleton.boneCount, candidate->clipCount);
+                loaded = std::move(candidate);
+            } else {
+                UnloadModel(candidate->model);
+                std::printf("granadad: render3d: rig %s did not load; placeholder stands\n",
+                            key.c_str());
+            }
+        }
+        RigModel* result = loaded.get();
+        rigs.emplace(key, std::move(loaded));
+        return result;
+    }
+
+    [[nodiscard]] std::size_t rigsLoaded() const noexcept {
+        std::size_t count = 0;
+        for (const auto& [name, rig] : rigs) {
+            (void)name;
+            if (rig != nullptr) {
+                ++count;
+            }
+        }
+        return count;
+    }
+
+    /// One placeholder-or-chunk instance through the mesh cache. False when
+    /// its mesh is not uploaded (nothing drawn).
+    bool drawInstance(const Instance& instance, SceneStats& stats) {
+        const auto mesh = meshes.find(instance.meshId);
+        if (mesh == meshes.end()) {
+            return false;
+        }
+        material.maps[MATERIAL_MAP_DIFFUSE].color = colourOf(instance.tint);
+        material.maps[MATERIAL_MAP_DIFFUSE].texture = defaultTexture;
+        if (instance.textureId != 0) {
+            const auto texture = textures.find(instance.textureId);
+            if (texture != textures.end()) {
+                material.maps[MATERIAL_MAP_DIFFUSE].texture = texture->second.texture;
+            }
+        }
+        // Scale, then yaw, then place. Yaw is clockwise-from-above in the
+        // description and raylib's Y rotation is counter-clockwise, hence
+        // the sign -- see scene.hpp on the frame.
+        const Matrix transform = MatrixMultiply(
+            MatrixMultiply(MatrixScale(instance.scale, instance.scale, instance.scale),
+                           MatrixRotateY(-instance.yaw)),
+            MatrixTranslate(instance.position.x, instance.position.y, instance.position.z));
+        DrawMesh(tinted(mesh->second.mesh, instance.tint), material, transform);
+        ++stats.instancesDrawn;
+        stats.trianglesDrawn += static_cast<std::size_t>(mesh->second.mesh.triangleCount);
+        return true;
+    }
+
+    /// One body: its rig model, animated when skinned, else its placeholder.
+    void drawActor(const ActorInstance& actor, SceneStats& stats) {
+        RigModel* rig = rigFor(actor.rig);
+        if (rig == nullptr || !rig->loaded) {
+            if (drawInstance(actor.instance, stats)) {
+                ++stats.actorsDrawn;
+            }
+            return;
+        }
+        const int clipIndex = static_cast<int>(actor.clip);
+        if (actor.skinned && clipIndex < rig->clipCount) {
+            const ModelAnimation& clip = rig->clips[clipIndex];
+            if (clip.keyframeCount > 0) {
+                // A looping clip wraps (raylib does the modulo); a one-shot
+                // holds its last keyframe -- a corpse stays down.
+                const auto length = static_cast<std::uint32_t>(clip.keyframeCount);
+                const std::uint32_t frame = actorClipOneShot(actor.clip)
+                                                ? std::min(actor.clipFrame, length - 1U)
+                                                : actor.clipFrame % length;
+                UpdateModelAnimation(rig->model, clip, static_cast<float>(frame));
+                rig->posed = true;
+                ++stats.actorsSkinned;
+            }
+        } else if (rig->posed && rig->clipCount > 0) {
+            // The far draw: the rest pose, put back once and shared by every
+            // unskinned body of this kind after it (they are drawn after the
+            // skinned ones -- see drawScene).
+            UpdateModelAnimation(rig->model, rig->clips[0], 0.0F);
+            rig->posed = false;
+        }
+        const Instance& instance = actor.instance;
+        DrawModelEx(rig->model, vec(instance.position), Vector3{0.0F, 1.0F, 0.0F},
+                    -(instance.yaw + kGltfForwardYaw) * kRadToDeg,
+                    Vector3{instance.scale, instance.scale, instance.scale},
+                    colourOf(instance.tint));
+        ++stats.actorsDrawn;
+        ++stats.instancesDrawn;
+        for (int i = 0; i < rig->model.meshCount; ++i) {
+            stats.trianglesDrawn += static_cast<std::size_t>(rig->model.meshes[i].triangleCount);
+        }
+    }
+
     void release() {
+        for (auto& [name, rig] : rigs) {
+            (void)name;
+            if (rig != nullptr && rig->loaded) {
+                if (rig->clips != nullptr) {
+                    UnloadModelAnimations(rig->clips, rig->clipCount);
+                }
+                UnloadModel(rig->model);
+            }
+        }
+        rigs.clear();
         if (materialLoaded) {
             // First, while its diffuse map is rlgl's own 1x1 (drawScene puts
             // it back after every pass): UnloadMaterial frees any map whose
@@ -381,30 +547,24 @@ SceneStats Backend::drawScene(const SceneDescription& scene) {
 
     BeginMode3D(camera);
     for (const Instance& instance : scene.instances) {
-        const auto mesh = impl.meshes.find(instance.meshId);
-        if (mesh == impl.meshes.end()) {
-            continue;
+        impl.drawInstance(instance, stats);
+    }
+    // The people, after the world: the skinned (near) bodies first so a
+    // rig's one shared model is posed per body and then put back to rest
+    // ONCE for every far body of its kind. Draw order within each set is
+    // the description's own -- the depth buffer sorts the picture.
+    for (const ActorInstance& actor : scene.actors) {
+        if (actor.skinned) {
+            impl.drawActor(actor, stats);
         }
-        impl.material.maps[MATERIAL_MAP_DIFFUSE].color = colourOf(instance.tint);
-        impl.material.maps[MATERIAL_MAP_DIFFUSE].texture = impl.defaultTexture;
-        if (instance.textureId != 0) {
-            const auto texture = impl.textures.find(instance.textureId);
-            if (texture != impl.textures.end()) {
-                impl.material.maps[MATERIAL_MAP_DIFFUSE].texture = texture->second.texture;
-            }
+    }
+    for (const ActorInstance& actor : scene.actors) {
+        if (!actor.skinned) {
+            impl.drawActor(actor, stats);
         }
-        // Scale, then yaw, then place. Yaw is clockwise-from-above in the
-        // description and raylib's Y rotation is counter-clockwise, hence
-        // the sign -- see scene.hpp on the frame.
-        const Matrix transform = MatrixMultiply(
-            MatrixMultiply(MatrixScale(instance.scale, instance.scale, instance.scale),
-                           MatrixRotateY(-instance.yaw)),
-            MatrixTranslate(instance.position.x, instance.position.y, instance.position.z));
-        DrawMesh(impl.tinted(mesh->second.mesh, instance.tint), impl.material, transform);
-        ++stats.instancesDrawn;
-        stats.trianglesDrawn += static_cast<std::size_t>(mesh->second.mesh.triangleCount);
     }
     EndMode3D();
+    stats.rigModelsLoaded = impl.rigsLoaded();
     // The material never keeps hold of a cached texture between passes:
     // UnloadMaterial would otherwise free it a second time at teardown.
     impl.material.maps[MATERIAL_MAP_DIFFUSE].texture = impl.defaultTexture;

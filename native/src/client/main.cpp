@@ -60,6 +60,7 @@
 #include "granadad/render/world_renderer.hpp"
 #include "granadad/render3d/backend.hpp"
 #include "granadad/render3d/scene.hpp"
+#include "granadad/render3d/actor_instances.hpp"
 #include "granadad/render3d/world_scene.hpp"
 #include "granadad/sim/angle.hpp"
 #include "granadad/sim/build_info.hpp"
@@ -3403,6 +3404,14 @@ struct VideoBridge {
 /// impulses included. The rig borrows the session's tiles, atlas and lamp
 /// field, so it must not outlive the session it was first refreshed with
 /// -- it never does: one rig per run_client / shutter.
+/// A LANE. Where the skinned rigs live when the licensed export has been
+/// run: content/art/lot-3d/characters (gitignored; absent on a fresh
+/// checkout and in the docker gate, and the adapter falls back to the
+/// placeholder figures per rig without a word).
+[[nodiscard]] std::string rig_model_dir() {
+    return (granadad::content::contentDir() / "art" / "lot-3d" / "characters").string();
+}
+
 struct SceneRig {
     render3d::SceneDescription scene;
     std::unique_ptr<render3d::WorldScene> world;
@@ -3416,6 +3425,11 @@ struct SceneRig {
         params.timeOfDaySeconds = session.timeOfDay();
         params.dynamicLamps = session.tavernLights();
         world->refresh(scene, session.camera(), aspect, params);
+        // A LANE: the people. Sixteen placeholder rigs put once (the adapter
+        // swaps in the glb by name where it has one), and the instances
+        // rewritten every frame off the roster with wardSprites' own slide.
+        render3d::putActorRigs(scene);
+        scene.actors = render3d::actorInstances(session, session.camera());
     }
 };
 
@@ -3455,6 +3469,7 @@ render3d::SceneStats present_frame(render3d::Backend& video, const Options& opti
     config.windowScale = options.smoke.captureScale;
     config.resizable = false;
     config.vsync = false;
+    config.modelDir = rig_model_dir();
     std::unique_ptr<render3d::Backend> video = render3d::Backend::open(config);
     if (video == nullptr) {
         std::printf("granadad: the 3D backend could not open for the shutter\n");
@@ -3475,9 +3490,11 @@ render3d::SceneStats present_frame(render3d::Backend& video, const Options& opti
     const render::Framebuffer output =
         needsUpscale ? render::upscaleNearest(shot, options.smoke.captureScale) : shot;
     const bool ok = render::writePng(output, options.smoke.screenshot);
-    std::printf("granadad: 3d shutter -- %s backend, %dx%d, %zu instance(s), %zu triangle(s)%s\n",
+    std::printf("granadad: 3d shutter -- %s backend, %dx%d, %zu instance(s), %zu triangle(s), "
+                "%zu bod%s (%zu skinned, %zu rig file(s))%s\n",
                 video->kind() == render3d::VideoKind::Software ? "rlsw" : "gpu", output.width(),
-                output.height(), stats.instancesDrawn, stats.trianglesDrawn,
+                output.height(), stats.instancesDrawn, stats.trianglesDrawn, stats.actorsDrawn,
+                stats.actorsDrawn == 1 ? "y" : "ies", stats.actorsSkinned, stats.rigModelsLoaded,
                 options.video3d ? " (the Docks in 3D under the HUD)"
                                 : " (software world in the overlay: --2d)");
     return ok;
@@ -5256,6 +5273,7 @@ int main(int argc, char** argv) {
             config.width = options.smoke.session.width;
             config.height = options.smoke.session.height;
             config.windowScale = options.windowScale;
+            config.modelDir = rig_model_dir();
             std::unique_ptr<render3d::Backend> video = render3d::Backend::open(config);
             if (video == nullptr) {
                 std::printf("granadad: could not open the window -- closing.\n");

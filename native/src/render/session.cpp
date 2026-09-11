@@ -60,6 +60,12 @@ struct WatchDepthGuard {
     return out;
 }
 
+}  // namespace
+
+// THE FIGURE TABLES ARE PUBLIC (3D BUILD, A lane): render3d's actor instancer
+// draws the same sixteen kinds of body out of the same two tables, so a
+// bouncer is the Watch's build in 3D exactly as he is on the sheet.
+
 /// How tall a body of each kind stands, in tiles, and the width its drawing is
 /// scaled to at that height.
 ///
@@ -75,12 +81,7 @@ struct WatchDepthGuard {
 /// that is a person a tile and a half across, standing in a collision square
 /// 0.7 of a tile wide. So the height is the truth and the width is scaled to
 /// put shoulders at about half a tile, which is a person shaped like a person.
-struct FigureScale {
-    float heightTiles;
-    float widthTiles;
-};
-
-[[nodiscard]] FigureScale figureScaleOf(sim::WardType type) noexcept {
+FigureScale figureScaleOf(sim::WardType type) noexcept {
     switch (type) {
         case sim::WardType::MilitiaWatch: return {1.95F, 0.86F};
         case sim::WardType::Urchin: return {1.30F, 0.58F};
@@ -94,6 +95,8 @@ struct FigureScale {
         default: return {1.875F, 0.80F};
     }
 }
+
+namespace {
 
 /// How much darker somebody with their back to you is.
 ///
@@ -126,7 +129,9 @@ constexpr float kBackShade = 0.55F;
 ///
 /// So the taproom's fourteen are drawn out of the same sheet the ward's six
 /// hundred are, and there is ONE look for a person in this game rather than two.
-[[nodiscard]] sim::WardType figureForRole(sim::ActorRole role, std::int32_t id) noexcept {
+}  // namespace
+
+sim::WardType figureForRole(sim::ActorRole role, std::int32_t id) noexcept {
     switch (role) {
         case sim::ActorRole::Bartender:
         case sim::ActorRole::Innkeeper:
@@ -153,6 +158,8 @@ constexpr float kBackShade = 0.55F;
             return (id & 1) == 0 ? sim::WardType::Shopkeeper : sim::WardType::Serf;
     }
 }
+
+namespace {
 
 
 /// TASK #82. "DAY 2 08:14" out of a Casebook::heardAt() value -- the

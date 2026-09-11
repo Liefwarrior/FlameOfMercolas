@@ -114,7 +114,7 @@ std::uint64_t sceneHash(const SceneDescription& scene) noexcept {
     Fnv1a64 h;
     // A format tag first, so a future field added to the byte image cannot
     // collide with an old image by accident.
-    h.mixU32(0x53434E31U);  // "SCN1"
+    h.mixU32(0x53434E32U);  // "SCN2" -- the actor list was appended by the A lane
 
     mixVec3(h, scene.camera.position);
     mixVec3(h, scene.camera.target);
@@ -156,14 +156,27 @@ std::uint64_t sceneHash(const SceneDescription& scene) noexcept {
         }
     }
 
-    h.mixU64(static_cast<std::uint64_t>(scene.instances.size()));
-    for (const Instance& instance : scene.instances) {
+    const auto mixInstance = [&h](const Instance& instance) {
         h.mixU32(instance.meshId);
         h.mixU32(instance.textureId);
         mixVec3(h, instance.position);
         h.mixF32(instance.yaw);
         h.mixF32(instance.scale);
         mixRgba(h, instance.tint);
+    };
+    h.mixU64(static_cast<std::uint64_t>(scene.instances.size()));
+    for (const Instance& instance : scene.instances) {
+        mixInstance(instance);
+    }
+    // The people: the placement AND what they are doing. A clip or a frame
+    // that moved is a different picture, so it is a different digest.
+    h.mixU64(static_cast<std::uint64_t>(scene.actors.size()));
+    for (const ActorInstance& actor : scene.actors) {
+        mixInstance(actor.instance);
+        h.mixU8(actor.rig);
+        h.mixU8(static_cast<std::uint8_t>(actor.clip));
+        h.mixU32(actor.clipFrame);
+        h.mixU8(static_cast<std::uint8_t>(actor.skinned ? 1 : 0));
     }
     return h.value();
 }

@@ -1138,6 +1138,27 @@ RUN --mount=type=cache,target=/deps,sharing=locked \
     done; \
     echo "ok: the 3D world lane's cases are all registered"; \
     \
+    # 3D BUILD, the actors lane. The people in the 3D pass: a body is
+    # instanced where the simulation says it stands (the ward's slide, the
+    # Gull's Q8, the facing, the clip off the Activity), two sessions driven
+    # by the same script describe the same crowd byte for byte (the scene
+    # hash now covers the actor list), and the ward's people render headless
+    # as figures in the frame -- through the placeholder rigs, since the
+    # licensed glb files are never in this container.
+    for case in \
+        "an actor is drawn where the simulation says the actor is" \
+        "the scene description twin-runs identical" \
+        "the ward's people render as figures in the 3D frame" \
+        ; do \
+        case "$ctest_list" in *"$case"*) ;; *) false;; esac \
+            || { echo "FATAL: the case \"$case\" is not registered."; \
+                 echo "       It is what the 3D actors lane is judged on: a"; \
+                 echo "       body where the sim put it, a crowd that twin-runs,"; \
+                 echo "       and people drawn headless in the 3D frame."; \
+                 exit 1; }; \
+    done; \
+    echo "ok: the 3D actors lane's cases are all registered"; \
+    \
     # ---------------------------------------------------------------------
     # AND THE SUITE RUNS IN PARALLEL, WHICH IS NOT A SUBSTITUTE FOR ANYTHING.
     # ---------------------------------------------------------------------
