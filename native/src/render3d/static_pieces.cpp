@@ -625,8 +625,11 @@ private:
             if (hi - lo < 0.05F) {
                 continue;
             }
+            // Plaster is cut every two tiles: no pattern to stretch, the
+            // light close to the chunk's own per-cell steps, and room for
+            // a window on each piece.
             const std::int32_t cells = std::max(1, static_cast<std::int32_t>(std::lround(r.a1 - r.a0)));
-            const int k = plasterFace ? cells
+            const int k = plasterFace ? (cells + 1) / 2
                                       : std::max(1, static_cast<int>(std::lround((hi - lo) / piece.width)));
             const float len = (hi - lo) / static_cast<float>(k);
             const bool windowOk = r.outdoor && r.cls == WallClass::Masonry;
@@ -639,10 +642,12 @@ private:
                 // off its middle one.
                 const std::int32_t along = std::clamp(
                     static_cast<std::int32_t>(std::floor(pa0 + 0.5F * len - r.a0)), 0, cells - 1);
+                // Lit over its own cells and one neighbour each way along
+                // the run, so the steps between pieces are half-steps.
                 const std::int32_t first = std::clamp(
-                    static_cast<std::int32_t>(std::floor(pa0 - r.a0 + 0.01F)), 0, cells - 1);
+                    static_cast<std::int32_t>(std::floor(pa0 - r.a0 + 0.01F)) - 1, 0, cells - 1);
                 const std::int32_t last = std::clamp(
-                    static_cast<std::int32_t>(std::floor(pa1 - r.a0 - 0.01F)), 0, cells - 1);
+                    static_cast<std::int32_t>(std::floor(pa1 - r.a0 - 0.01F)) + 1, 0, cells - 1);
                 const std::int32_t lx = r.firstX + dx * along;
                 const std::int32_t ly = r.firstY + dy * along;
                 PieceRole role = boards ? PieceRole::WallTimber : PieceRole::Wall;
@@ -656,7 +661,9 @@ private:
                         spec = window;
                     }
                 }
-                facePiece(r, role, *spec, pa0, pa1, brickOut,
+                // A board quad has one face and it looks out; the kit wall
+                // shows its brick or its plaster.
+                facePiece(r, role, *spec, pa0, pa1, boards || brickOut,
                           spec->standoffSet ? spec->standoff : spec->thickness * 0.5F,
                           render::bandSurface(r.z), r.firstX + dx * first, r.firstY + dy * first,
                           r.tint, r.firstX + dx * last, r.firstY + dy * last);
