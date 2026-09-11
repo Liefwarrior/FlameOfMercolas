@@ -228,6 +228,41 @@ public:
     [[nodiscard]] std::int32_t npcSwingSeq() const noexcept { return npcSwingSeq_; }
     void bumpNpcSwingSeq() noexcept { npcSwingSeq_ = wrap_add(npcSwingSeq_, 1); }
 
+    // --- the rhythm (WATCH & RHYTHM BUILD) ---------------------------------
+    //
+    // Oblivion's three asymmetric rules need per-actor clocks: a blow is
+    // TELEGRAPHED (npcWindup_ steps of wind-up between the timer expiring and
+    // the blow landing, during which a player hit pre-empts it), a hit man
+    // can be STAGGERED (npcStagger_ steps in which he neither closes nor
+    // swings), and his GUARD is either up or down between swings. The roll
+    // his swing will resolve on is DRAWN AT THE WIND-UP and kept
+    // (npcPendingRoll_): one draw per swing, exactly as before, and the guard
+    // band and the hard band are carved off THAT roll -- no new stream, the
+    // same-roll discipline every band in strike() already obeys. All of it is
+    // hashed (the second half of the ONE declared tavern/gate-workload
+    // baseline move), all on sim::Actor, which the population baseline never
+    // registers.
+    [[nodiscard]] std::int32_t npcWindup() const noexcept { return npcWindup_; }
+    void setNpcWindup(std::int32_t steps) noexcept { npcWindup_ = steps; }
+    [[nodiscard]] std::int32_t npcStagger() const noexcept { return npcStagger_; }
+    void setNpcStagger(std::int32_t steps) noexcept { npcStagger_ = steps; }
+    [[nodiscard]] bool npcGuard() const noexcept { return npcGuard_; }
+    void setNpcGuard(bool up) noexcept { npcGuard_ = up; }
+    [[nodiscard]] bool npcWindupHard() const noexcept { return npcWindupHard_; }
+    void setNpcWindupHard(bool hard) noexcept { npcWindupHard_ = hard; }
+    [[nodiscard]] std::uint64_t npcPendingRoll() const noexcept { return npcPendingRoll_; }
+    void setNpcPendingRoll(std::uint64_t roll) noexcept { npcPendingRoll_ = roll; }
+    /// Knocks him off his rhythm: the wind-up (if any) is lost with the roll
+    /// it drew, the guard drops, the swing timer re-arms to a full interval,
+    /// and he stands there for `steps`. What a pre-empting hit, a hard swing
+    /// or a broken guard does to a man.
+    void stagger(std::int32_t steps, std::int32_t rearmSteps) noexcept;
+    /// ROUT: a bloodied non-professional breaking off for the street under
+    /// lethal rules. Set by Tavern::stepBrawl, cleared when the fight is over;
+    /// the rota does not move a routing man (Tavern::applySchedules).
+    [[nodiscard]] bool routing() const noexcept { return routing_; }
+    void setRouting(bool routing) noexcept { routing_ = routing; }
+
     /// Coin, in the smallest unit there is. Bartenders take it; patrons run out.
     [[nodiscard]] std::int32_t coin() const noexcept { return coin_; }
     void setCoin(std::int32_t coin) noexcept { coin_ = coin; }
@@ -297,6 +332,14 @@ private:
     /// ACTION-COMBAT BUILD: the per-step swing cadence, see the accessors.
     std::int32_t npcSwingTimer_ = 0;
     std::int32_t npcSwingSeq_ = 0;
+    /// WATCH & RHYTHM BUILD: the telegraph, the stagger, the guard, the roll
+    /// the pending swing was drawn on, and the rout. See the accessors.
+    std::int32_t npcWindup_ = 0;
+    std::int32_t npcStagger_ = 0;
+    bool npcGuard_ = false;
+    bool npcWindupHard_ = false;
+    std::uint64_t npcPendingRoll_ = 0;
+    bool routing_ = false;
 };
 
 }  // namespace granadad::sim

@@ -261,6 +261,14 @@ struct HudState {
     /// so the two never contend for the band. Empty draws nothing, the usual
     /// state, so every hand-built HudState that predates it is pixel-identical.
     std::string_view chargeLabel;
+    /// STANCE & ROOM BUILD: "FISTS UP" / "CUDGEL UP" / "STEEL UP" exactly
+    /// while the room's own fighting-mode bit (Tavern::playerHandsUp) is true
+    /// -- the state the owner could not see. Bottom band, centred, right
+    /// behind the guard row: the two CAN share the band (a guard raises the
+    /// hands), and both read as one fact -- what the hands are doing. Empty
+    /// draws nothing, the usual state, so every hand-built HudState that
+    /// predates it is pixel-identical.
+    std::string_view handsLabel;
     /// SPELLS BUILD: the quick bar strip -- BOTTOM-CENTRE, which is this
     /// file's own header giving Barony's hotbar its place ("hotbar
     /// bottom-centre"). Ten cells out of the bottom band's slot grid, never
@@ -458,6 +466,9 @@ struct HudState {
     /// Session-side EasedToggle, the same no-op-by-default reasoning as every
     /// *Fade above: a HudState nobody eased draws exactly as it always has.
     float chargeFade = 1.0F;
+    /// STANCE & ROOM BUILD. The fighting-mode row's own ease, its own
+    /// Session-side EasedToggle, the same no-op-by-default reasoning.
+    float handsFade = 1.0F;
     /// INNOVATION SPRINT ITEM #3. 1 the instant a NEW bouncer's warning
     /// arrives, easing down to 0 over a handful of frames -- see
     /// render::ImpactPulse's own header and Session::alertPulse_'s. Unlike

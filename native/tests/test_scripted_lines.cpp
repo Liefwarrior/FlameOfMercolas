@@ -112,6 +112,64 @@ TEST_CASE("the nemesis arc lands all seven of its beats") {
     CHECK(played.summary.find("members, toll") != std::string::npos);
 }
 
+TEST_CASE("the Watch line lands all five of its beats: seen, steel, the halt on the row, the arrest, the street") {
+    // BARKS LANE (feel/build). --watch-halt, the whole arc.
+    render::SmokeRunConfig run;
+    run.watchHalt = true;
+    const render::SmokeRunResult played = play(run);
+    INFO(played.summary);
+    CHECK(played.ok);
+    CHECK_FALSE(played.scriptFellShort());
+    CHECK(played.watchHaltBeats == 5);
+    // The report names the cause; the stance itself is back to idle once the
+    // impound has turned you loose, which is the shipped reset.
+    CHECK(played.summary.find("arrest=violence") != std::string::npos);
+    CHECK(played.summary.find("row=\"Watchman Cull: ") != std::string::npos);
+}
+
+TEST_CASE("--watch-halt=halt stops on the halt itself, with Cull's own row on the alert row") {
+    render::SmokeRunConfig run;
+    run.watchHalt = true;
+    run.watchHaltEnd = "halt";
+    const render::SmokeRunResult played = play(run);
+    INFO(played.summary);
+    CHECK(played.ok);
+    CHECK_FALSE(played.scriptFellShort());
+    CHECK(played.watchHaltBeats == 3);
+    CHECK(played.summary.find("stance=closing") != std::string::npos);
+    CHECK(played.summary.find("cause=violence") != std::string::npos);
+    CHECK(played.summary.find("row=\"Watchman Cull: ") != std::string::npos);
+    CHECK(played.summary.find("arrest=no") != std::string::npos);
+}
+
+TEST_CASE("the nemesis arc lands all seven beats from the README's own spawn, whatever walk comes before it") {
+    // STANCE & ROOM BUILD. `granadad.exe --smoke=N --nemesis` is the README's
+    // shape of this line: the authored Tarwalk spawn, N steps of the smoke
+    // walk, then the arc -- and N picks the timeline every roll in the fights
+    // falls on. With the room's own blows now delivering every loss in the
+    // line (nothing is conceded to a seam any more), the line has to land on
+    // ANY of those timelines, and the first draft of this build did not: walks
+    // of 40, 50 and 120 steps fell to 4/7 because the drive re-engaged with
+    // connected taps and killed its own nemesis, and the fix's own first cut
+    // fell to 1/7 after 80 and 100 because its walk back into the house
+    // stalled at the threshold. Those five, and the spawn.
+    for (const int steps : {0, 40, 50, 80, 100, 120}) {
+        render::SmokeRunConfig run;
+        run.nemesis = true;
+        run.session.contentDir = content::contentDir();
+        run.session.timeOfDay = render::scriptedStartHour(run) * 3600;
+        run.steps = steps;
+        run.walk = true;
+        run.stamp = false;
+        const render::SmokeRunResult played = render::runSmoke(run);
+        INFO("after a smoke walk of ", steps, " steps: ", played.summary);
+        CHECK(played.ok);
+        CHECK_FALSE(played.scriptFellShort());
+        CHECK(played.nemesisBeats == 7);
+        CHECK(played.summary.find(" x3 ") != std::string::npos);
+    }
+}
+
 TEST_CASE("the eviction line lands both of its paths in full") {
     // EVICTION (lane: eviction). The advertised flag must land ALL its beats
     // on the path it names -- the participate path's nine, and the disrupt

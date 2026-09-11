@@ -84,6 +84,10 @@ TEST_CASE("a second bark file adds to the ward's voice and can never overwrite i
     CHECK(barks().has("personal.venn"));
     CHECK(barks().has("faction.temple.join"));
     CHECK(barks().has("quest.flame-disciple.oath.maell"));
+    // The Oblivion-feel rows the fight lanes keyed before they were authored.
+    CHECK(barks().has("watch.halt"));
+    CHECK(barks().has("brawl.join"));
+    CHECK(barks().has("crowd.flee"));
 }
 
 TEST_CASE("the owner's bark tables load, all of them") {
@@ -95,10 +99,12 @@ TEST_CASE("the owner's bark tables load, all of them") {
     // 8 in nemesis_barks.json (S8), the 25 in ward_barks.json (#79), the 4 in
     // tone_barks.json and the 26 in topic_barks.json (both #82), and the 16 in
     // contract_tone_barks.json (#81 -- the register reaching a radiant offer)
-    // beside it -- each sprint adds a SECOND file rather than editing 59KB of
-    // canon, and BarkTables::load reads the whole directory. Pinned: content
-    // added should be a visible change here, and content LOST should be red.
-    CHECK(barks().tableCount() == 374);
+    // and the 3 in combat_barks.json (feel/build, the Barks lane: watch.halt,
+    // brawl.join, crowd.flee) beside it -- each sprint adds a SECOND file
+    // rather than editing 59KB of canon, and BarkTables::load reads the whole
+    // directory. Pinned: content added should be a visible change here, and
+    // content LOST should be red.
+    CHECK(barks().tableCount() == 377);
     CHECK(barks().rowCount() > 500);
     // Sorted by key, which is what makes lookup a binary search rather than a
     // hash whose iteration order is the standard library's business.

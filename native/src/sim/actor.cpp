@@ -275,6 +275,27 @@ void Actor::hashInto(HashSink& sink) const {
     // population baseline (WardActor) never hashes a sim::Actor.
     sink.put_int(static_cast<std::uint32_t>(npcSwingTimer_));
     sink.put_int(static_cast<std::uint32_t>(npcSwingSeq_));
+    // WATCH & RHYTHM BUILD: the telegraph, the stagger, the guard, the pending
+    // roll and the rout. Every one of them decides what the next step's blow
+    // does -- or whether it is thrown at all -- so every one is state the
+    // twin-run gate compares. Appended: the second half of the ONE declared
+    // tavern/gate-workload baseline move (stance + room-fights-back +
+    // watch-violence + rhythm), re-blessed once at this lane's landing. The
+    // population baseline (WardActor) never hashes a sim::Actor.
+    sink.put_int(static_cast<std::uint32_t>(npcWindup_));
+    sink.put_int(static_cast<std::uint32_t>(npcStagger_));
+    sink.put_byte(npcGuard_ ? 1U : 0U);
+    sink.put_byte(npcWindupHard_ ? 1U : 0U);
+    sink.put_long(npcPendingRoll_);
+    sink.put_byte(routing_ ? 1U : 0U);
+}
+
+void Actor::stagger(std::int32_t steps, std::int32_t rearmSteps) noexcept {
+    npcStagger_ = steps;
+    npcWindup_ = 0;
+    npcWindupHard_ = false;
+    npcGuard_ = false;
+    npcSwingTimer_ = rearmSteps;
 }
 
 }  // namespace granadad::sim
