@@ -303,6 +303,11 @@ struct StaticPlacement {
     std::int32_t lightY2 = 0;
     std::int32_t lightZ = 0;
     float facing = 1.0F;
+    /// A run piece: lit at (lightX, lightY) on its a0 end and (lightX2,
+    /// lightY2) on its a1 end, blended between. `flipped` says the piece's
+    /// local X runs from the a1 end, so the two swap into tint / tint2.
+    bool gradient = false;
+    bool flipped = false;
 };
 
 struct StaticPlacementStats {

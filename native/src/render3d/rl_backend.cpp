@@ -209,6 +209,9 @@ struct DeferredMesh {
     int mesh = 0;
     Matrix transform{};
     Color tint{};
+    Color tint2{};
+    float gradientFrom = 0.0F;
+    float gradientTo = 0.0F;
     bool mirrored = false;
 };
 
@@ -230,6 +233,47 @@ constexpr double kViewmodelFar = 4.0;
 constexpr float kViewmodelDepthSpan = 0.2F;
 
 [[nodiscard]] Color colourOf(const Rgba8& c) noexcept { return Color{c.r, c.g, c.b, c.a}; }
+
+#if !defined(GRAPHICS_API_OPENGL_11)
+/// S LANE. The static pieces' own vertex shader: raylib's default with the
+/// tint blended along the piece's local X between two colours, so a wall
+/// segment reads the light of the cells it spans instead of one flat step.
+/// GL 3.3 only; the software rasterizer has no shaders and never has the
+/// licensed files to draw with it anyway.
+constexpr const char* kBlendVertexShader =
+    "#version 330\n"
+    "in vec3 vertexPosition;\n"
+    "in vec2 vertexTexCoord;\n"
+    "in vec4 vertexColor;\n"
+    "uniform mat4 mvp;\n"
+    "uniform vec4 tintA;\n"
+    "uniform vec4 tintB;\n"
+    "uniform vec2 tintSpan;\n"
+    "out vec2 fragTexCoord;\n"
+    "out vec4 fragColor;\n"
+    "void main() {\n"
+    "    float t = clamp((vertexPosition.x - tintSpan.x) * tintSpan.y, 0.0, 1.0);\n"
+    "    fragTexCoord = vertexTexCoord;\n"
+    "    fragColor = vertexColor * mix(tintA, tintB, t);\n"
+    "    gl_Position = mvp * vec4(vertexPosition, 1.0);\n"
+    "}\n";
+constexpr const char* kBlendFragmentShader =
+    "#version 330\n"
+    "in vec2 fragTexCoord;\n"
+    "in vec4 fragColor;\n"
+    "uniform sampler2D texture0;\n"
+    "uniform vec4 colDiffuse;\n"
+    "out vec4 finalColor;\n"
+    "void main() {\n"
+    "    vec4 texelColor = texture(texture0, fragTexCoord);\n"
+    "    finalColor = texelColor * colDiffuse * fragColor;\n"
+    "}\n";
+#endif
+
+[[nodiscard]] Color averageColour(const Color& a, const Color& b) noexcept {
+    return Color{static_cast<unsigned char>((a.r + b.r) / 2), static_cast<unsigned char>((a.g + b.g) / 2),
+                 static_cast<unsigned char>((a.b + b.b) / 2), static_cast<unsigned char>((a.a + b.a) / 2)};
+}
 
 [[nodiscard]] Vector3 vec(const Vec3& v) noexcept { return Vector3{v.x, v.y, v.z}; }
 
@@ -301,6 +345,30 @@ struct Backend::Impl {
     /// and not found, never asked for again.
     std::map<std::string, std::unique_ptr<StaticModel>> statics;
     std::vector<DeferredMesh> deferred;
+    /// The blend shader (GL 3.3) and its uniform slots; id 0 = not
+    /// available, and the pieces draw with the average of their two tints.
+    Shader blend{};
+    bool blendTried = false;
+    int blendTintA = -1;
+    int blendTintB = -1;
+    int blendSpan = -1;
+
+    void ensureBlendShader() {
+        if (blendTried) {
+            return;
+        }
+        blendTried = true;
+#if !defined(GRAPHICS_API_OPENGL_11)
+        blend = LoadShaderFromMemory(kBlendVertexShader, kBlendFragmentShader);
+        if (blend.id != 0 && blend.id != rlGetShaderIdDefault()) {
+            blendTintA = GetShaderLocation(blend, "tintA");
+            blendTintB = GetShaderLocation(blend, "tintB");
+            blendSpan = GetShaderLocation(blend, "tintSpan");
+        } else {
+            blend = Shader{};
+        }
+#endif
+    }
     Material material{};
     bool materialLoaded = false;
     Texture2D defaultTexture{};
@@ -484,23 +552,32 @@ struct Backend::Impl {
         // A mirrored piece (one negative scale axis: a ceiling quad laid as
         // a floor) has its winding reversed, so it is drawn both-sided.
         const bool mirrored = piece.scale.x * piece.scale.y * piece.scale.z < 0.0F;
+        const Color tint2 = colourOf(piece.tint2);
         for (int i = 0; i < model->model.meshCount; ++i) {
             if (model->translucent[static_cast<std::size_t>(i)]) {
-                deferred.push_back(DeferredMesh{model, i, full, tint, mirrored});
+                deferred.push_back(DeferredMesh{model, i, full, tint, tint2, piece.gradientFrom,
+                                                piece.gradientTo, mirrored});
                 continue;
             }
-            drawStaticMesh(*model, i, full, tint, mirrored, stats);
+            drawStaticMesh(*model, i, full, tint, tint2, piece.gradientFrom, piece.gradientTo,
+                           mirrored, stats);
         }
         ++stats.staticsDrawn;
         ++stats.instancesDrawn;
     }
 
-    void drawStaticMesh(StaticModel& model, int i, const Matrix& transform, const Color& tint,
-                        bool mirrored, SceneStats& stats) {
+    void drawStaticMesh(StaticModel& model, int i, const Matrix& transform, const Color& tintIn,
+                        const Color& tint2In, float gradientFrom, float gradientTo, bool mirrored,
+                        SceneStats& stats) {
         const int m = model.model.meshMaterial[i];
         if (m < 0 || m >= model.model.materialCount) {
             return;
         }
+        // The blend: two tints along the piece when the shader is there,
+        // their average when it is not (the software path).
+        const bool blended = blend.id != 0 && gradientTo > gradientFrom &&
+                             (tintIn.r != tint2In.r || tintIn.g != tint2In.g || tintIn.b != tint2In.b);
+        const Color tint = blended ? Color{255, 255, 255, tintIn.a} : averageColour(tintIn, tint2In);
         const Color base = model.baseColour[static_cast<std::size_t>(m)];
         const auto ch = [](unsigned char a, unsigned char b) {
             return static_cast<unsigned char>((static_cast<unsigned>(a) * static_cast<unsigned>(b) + 127U) /
@@ -518,7 +595,23 @@ struct Backend::Impl {
         if (mirrored) {
             rlDisableBackfaceCulling();
         }
-        DrawMesh(model.model.meshes[i], model.model.materials[m], transform);
+        Material& material = model.model.materials[m];
+        const Shader keep = material.shader;
+        if (blended) {
+            // The material's own colour factor stays in colDiffuse; the
+            // two lit tints go through the shader's own slots.
+            material.shader = blend;
+            const float a[4] = {static_cast<float>(tintIn.r) / 255.0F, static_cast<float>(tintIn.g) / 255.0F,
+                                static_cast<float>(tintIn.b) / 255.0F, 1.0F};
+            const float b[4] = {static_cast<float>(tint2In.r) / 255.0F, static_cast<float>(tint2In.g) / 255.0F,
+                                static_cast<float>(tint2In.b) / 255.0F, 1.0F};
+            const float span[2] = {gradientFrom, 1.0F / (gradientTo - gradientFrom)};
+            SetShaderValue(blend, blendTintA, a, SHADER_UNIFORM_VEC4);
+            SetShaderValue(blend, blendTintB, b, SHADER_UNIFORM_VEC4);
+            SetShaderValue(blend, blendSpan, span, SHADER_UNIFORM_VEC2);
+        }
+        DrawMesh(model.model.meshes[i], material, transform);
+        material.shader = keep;
         if (mirrored) {
             rlEnableBackfaceCulling();
         }
@@ -845,6 +938,10 @@ struct Backend::Impl {
         }
         statics.clear();
         deferred.clear();
+        if (blend.id != 0) {
+            UnloadShader(blend);
+            blend = Shader{};
+        }
         if (materialLoaded) {
             // First, while its diffuse map is rlgl's own 1x1 (drawScene puts
             // it back after every pass): UnloadMaterial frees any map whose
@@ -997,6 +1094,7 @@ SceneStats Backend::drawScene(const SceneDescription& scene) {
     }
     // The building pieces over the chunks, opaque now, glass and water held
     // back until the people are in.
+    impl.ensureBlendShader();
     impl.deferred.clear();
     for (const StaticInstance& piece : scene.statics) {
         impl.drawStatic(piece, scene, stats);
@@ -1016,7 +1114,8 @@ SceneStats Backend::drawScene(const SceneDescription& scene) {
         }
     }
     for (const DeferredMesh& late : impl.deferred) {
-        impl.drawStaticMesh(*late.model, late.mesh, late.transform, late.tint, late.mirrored, stats);
+        impl.drawStaticMesh(*late.model, late.mesh, late.transform, late.tint, late.tint2,
+                            late.gradientFrom, late.gradientTo, late.mirrored, stats);
     }
     impl.deferred.clear();
     EndMode3D();

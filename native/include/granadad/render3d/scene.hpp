@@ -280,7 +280,15 @@ struct StaticInstance {
     /// the yaw: what stands a flat plank quad up as a timber wall.
     float pitch = 0.0F;
     Vec3 scale{1.0F, 1.0F, 1.0F};
+    /// The light at the piece's local x = gradientFrom end...
     Rgba8 tint;
+    /// ...and at its local x = gradientTo end, blended across the piece so a
+    /// wall segment under a lamp is lit along its length the way the cells
+    /// it spans are, not as one flat step. Equal ends (or an empty span) are
+    /// a flat tint; the GPU adapter blends, the software one averages.
+    Rgba8 tint2;
+    float gradientFrom = 0.0F;
+    float gradientTo = 0.0F;
 };
 
 struct SceneDescription {

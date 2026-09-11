@@ -259,6 +259,11 @@ private:
     void emit(StaticPlacement placement) {
         ++out_.stats.byRole[static_cast<std::size_t>(placement.role)];
         placement.instance.role = static_cast<std::uint8_t>(placement.role);
+        if (!placement.gradient) {
+            placement.instance.tint2 = placement.instance.tint;
+            placement.instance.gradientFrom = 0.0F;
+            placement.instance.gradientTo = 0.0F;
+        }
         out_.placements.push_back(std::move(placement));
     }
 
@@ -275,6 +280,10 @@ private:
         p.role = role;
         p.lightX2 = lightX2 == INT32_MIN ? lightX : lightX2;
         p.lightY2 = lightY2 == INT32_MIN ? lightY : lightY2;
+        p.gradient = lightX2 != INT32_MIN;
+        p.flipped = flip;
+        p.instance.gradientFrom = spec.upright ? spec.minX : 0.0F;
+        p.instance.gradientTo = spec.upright ? spec.maxX : spec.width;
         p.instance.piece = static_cast<std::uint16_t>(catalogue_.pieceIndex(role));
         p.instance.position =
             Vec3{run.baseX + kTangentX[run.side] * aOrigin + kNormalX[run.side] * standoff,
@@ -293,6 +302,7 @@ private:
                                     heightScale(spec) * spec.scale, spec.scale};
         }
         p.instance.tint = mulTint(spec.tint, tint);
+        p.instance.tint2 = p.instance.tint;
         p.lightX = lightX;
         p.lightY = lightY;
         p.lightZ = run.z;
@@ -642,12 +652,11 @@ private:
                 // off its middle one.
                 const std::int32_t along = std::clamp(
                     static_cast<std::int32_t>(std::floor(pa0 + 0.5F * len - r.a0)), 0, cells - 1);
-                // Lit over its own cells and one neighbour each way along
-                // the run, so the steps between pieces are half-steps.
+                // Lit from its first cell to its last, blended between.
                 const std::int32_t first = std::clamp(
-                    static_cast<std::int32_t>(std::floor(pa0 - r.a0 + 0.01F)) - 1, 0, cells - 1);
+                    static_cast<std::int32_t>(std::floor(pa0 - r.a0 + 0.01F)), 0, cells - 1);
                 const std::int32_t last = std::clamp(
-                    static_cast<std::int32_t>(std::floor(pa1 - r.a0 - 0.01F)) + 1, 0, cells - 1);
+                    static_cast<std::int32_t>(std::floor(pa1 - r.a0 - 0.01F)), 0, cells - 1);
                 const std::int32_t lx = r.firstX + dx * along;
                 const std::int32_t ly = r.firstY + dy * along;
                 PieceRole role = boards ? PieceRole::WallTimber : PieceRole::Wall;

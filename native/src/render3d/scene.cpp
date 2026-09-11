@@ -217,6 +217,9 @@ std::uint64_t sceneHash(const SceneDescription& scene) noexcept {
         h.mixF32(piece.pitch);
         mixVec3(h, piece.scale);
         mixRgba(h, piece.tint);
+        mixRgba(h, piece.tint2);
+        h.mixF32(piece.gradientFrom);
+        h.mixF32(piece.gradientTo);
     }
     return h.value();
 }

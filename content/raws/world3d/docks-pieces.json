@@ -10,7 +10,7 @@
   ],
   "minBand": 18,
   "windowEvery": 3,
-  "props": { "every": 19, "barrel": 40, "crate": 35, "sack": 25 },
+  "props": { "every": 11, "barrel": 40, "crate": 35, "sack": 25 },
   "pieces": {
     "wall":        { "pack": "PolygonGeneric", "file": "SM_Bld_Base_Wall_01.gltf",             "width": 2.5, "height": 3.0057, "thickness": 0.225, "front": "-z" },
     "wall_corner": { "pack": "PolygonGeneric", "file": "SM_Bld_Base_Wall_Corner_01.gltf",      "width": 2.5, "height": 3.0057, "thickness": 0.225, "front": "-z" },
@@ -35,7 +35,7 @@
   "materials": {
     "brick":          { "wall": "masonry", "tint": [255, 255, 255], "insideTint": [232, 224, 208], "topTint": [132, 76, 62], "ceilingTint": [160, 128, 116], "floor": "floor_cobble", "fill": "floor_fill", "fillTint": [128, 128, 124] },
     "brick_facade":   { "wall": "masonry", "tint": [255, 255, 255], "insideTint": [232, 224, 208], "topTint": [132, 76, 62] },
-    "granite":        { "wall": "masonry", "finish": "plaster", "tint": [156, 160, 168], "insideTint": [232, 226, 214], "ceilingTint": [190, 190, 194], "floor": "floor_flag", "floorTint": [200, 205, 212], "fill": "floor_fill", "fillTint": [118, 122, 128] },
+    "granite":        { "wall": "masonry", "finish": "plaster", "tint": [156, 160, 168], "insideTint": [232, 226, 214], "ceilingTint": [190, 190, 194], "floor": "floor_cobble", "floorTint": [214, 220, 232], "fill": "floor_fill", "fillTint": [124, 128, 136] },
     "granite_facade": { "wall": "masonry", "finish": "plaster", "tint": [156, 160, 168], "insideTint": [232, 226, 214] },
     "reman_concrete": { "wall": "masonry", "finish": "plaster", "tint": [214, 204, 184], "insideTint": [236, 228, 214], "ceilingTint": [208, 200, 184], "floor": "floor_flag", "floorTint": [226, 216, 196], "fill": "floor_fill", "fillTint": [150, 144, 132] },
     "reman_facade":   { "wall": "masonry", "finish": "plaster", "tint": [214, 204, 184], "insideTint": [236, 228, 214] },
