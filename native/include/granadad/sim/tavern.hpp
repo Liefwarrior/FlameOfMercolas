@@ -1019,9 +1019,17 @@ public:
     /// What an arrest came to.
     struct ArrestReport {
         bool happened = false;
+        /// WHAT THE PAPER ASKS FOR: the shipped ladder's answer, the murder
+        /// override with it. JUSTICE BUILD: with paper (Held / Maimed /
+        /// Condemned) this is the Watch's petition and the bench's answer is
+        /// the hearing's (Tavern::hearing); only a paperless search (Fined)
+        /// is settled here at the door.
         Sentence sentence = Sentence::None;
         WatchCause cause = WatchCause::None;
         std::int32_t unitsSeized = 0;
+        /// The door's fine and the cell's hours. Written ONLY for the
+        /// paperless search: with paper both are the court's, nothing is
+        /// served at the arrest, and these read zero.
         std::int32_t fine = 0;
         std::int32_t heldHours = 0;
         /// Contracts that died with the goods.

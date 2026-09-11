@@ -2,6 +2,10 @@
 
 #include <algorithm>
 
+// The header cannot include crime.hpp (crime.hpp includes it); the rules can.
+// HEAT weighs what stands above the ledger's own warrant line, kWarrantAt.
+#include "granadad/sim/crime.hpp"
+
 namespace granadad::sim {
 
 std::string_view pleaName(Plea plea) noexcept {

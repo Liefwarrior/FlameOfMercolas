@@ -295,10 +295,15 @@ TEST_CASE("the status row says the tag: WANTED, WANTED FOR BLOOD, CONDEMNED, MAI
 
     // A murderer whose heat has cooled is not WANTED on the row -- the
     // paper lapsed -- and the row invents no word for the blood: heat stays
-    // a number, standing stays a phrase.
+    // a number, standing stays a phrase, and a ward that has heard nothing
+    // prints nothing, exactly as shipped. The blood is on the ledger for the
+    // next arrest to read, not on the HUD.
     crimes.cool(static_cast<std::int64_t>(kHeatCoolSeconds) * kHeatMax);
     CHECK(crimes.murderer());
-    CHECK(session.heatLine() == "HEAT 0");
+    CHECK(session.heatLine().empty());
+    // Warm again, and the phrase is back: the paper carries the corpse.
+    crimes.addHeat(kWarrantAt);
+    CHECK(session.heatLine() == "WANTED FOR BLOOD  HEAT " + std::to_string(kWarrantAt));
 
     // The rope passed and commuted: the shipped word with the court's
     // meaning, for the rest of the run, over kHeatAfterSentence.

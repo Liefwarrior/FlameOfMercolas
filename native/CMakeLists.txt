@@ -497,6 +497,19 @@ if(GRANADAD_BUILD_TESTS)
         # NPC's pending roll, stand-back, bouncers refusing steel, the rout,
         # and a scripted fight twin-run.
         tests/test_watch_rhythm.cpp
+        # JUSTICE BUILD (TAG & COURT) -- the criminal tag as a table (WANTED /
+        # WANTED FOR BLOOD / CONDEMNED / MAIMED, each cleared by its own road
+        # and the blood only by the bench), the charge sheet written draw-free
+        # off a seeded ledger, weighArraignment held to weighPetition's shape
+        # (the base, the caps, the band off the arrest's ONE draw, the lines),
+        # I DID IT identical under every draw, I DID NOT moving by exactly the
+        # band and doubled below it, a witnessed murder never SPARED, the rope
+        # tier only where ruled, the hand sparable at the fine's line, mercy
+        # once, the v5 codec round trip, an arrest with paper opening a
+        # hearing with NO clock jump while the door's search stays the shipped
+        # fast path, the plea as a stepped input, a scripted arrest-and-plea
+        # twin-run, and the two player-end paths asserted apart both ways.
+        tests/test_court.cpp
         tests/test_lamps.cpp
         tests/test_atlas.cpp
         tests/test_render.cpp

@@ -35,6 +35,7 @@
 #include "granadad/sim/docks.hpp"
 #include "granadad/sim/engine.hpp"
 #include "granadad/sim/faction.hpp"
+#include "granadad/sim/justice.hpp"
 #include "granadad/sim/notables.hpp"
 #include "granadad/sim/player.hpp"
 #include "granadad/sim/tavern.hpp"
@@ -903,12 +904,22 @@ TEST_CASE("a warrant alone is enough, given long enough in front of the wrong ma
     REQUIRE(arrest.happened);
     CHECK(arrest.cause == WatchCause::Warrant);
     CHECK(arrest.unitsSeized == 0);
-    // Not a Skyrunner, so the ordinary answer: a cell, and out.
+    // Not a Skyrunner, so the ordinary ASK: a cell. JUSTICE BUILD: the paper
+    // asks and the bench answers -- an arrest with paper opens a hearing at
+    // the Mission (Tavern::hearing) and serves nothing at the door: no
+    // nights yet, no prior yet, the paper still standing until the plea and
+    // the sentence. The nights are drawn here, off the arrest's one draw,
+    // and wait on the bench inside canon's range. See test_court.cpp.
     CHECK(arrest.sentence == Sentence::Held);
-    CHECK(arrest.heldHours >= kHeldHoursMin);
-    CHECK(arrest.heldHours <= kHeldHoursMax);
-    CHECK_FALSE(talk.crimes().warrant());
-    CHECK(talk.crimes().arrests() == 1);
+    CHECK(arrest.heldHours == 0);
+    REQUIRE(gull.hearingPending());
+    CHECK(gull.hearing().awaitingPlea());
+    CHECK(gull.hearing().sheet.tier == Sentence::Held);
+    CHECK(heldHours(gull.hearing().sheet.draw) >= kHeldHoursMin);
+    CHECK(heldHours(gull.hearing().sheet.draw) <= kHeldHoursMax);
+    CHECK(talk.crimes().warrant());
+    CHECK(talk.crimes().lastSentence() == Sentence::Held);
+    CHECK(talk.crimes().arrests() == 0);
     CHECK_FALSE(talk.crimes().maimed());
 }
 
@@ -1013,25 +1024,35 @@ TEST_CASE("caught: a load, a warrant, and a job that dies in the impound") {
     CHECK(arrest.cause != WatchCause::None);
     CHECK_FALSE(arrest.line.empty());
 
-    // A SKYRUNNER'S FIRST OFFENCE IS THE HAND. Canon, and it is the only
-    // lasting statistical penalty in this build.
+    // A SKYRUNNER'S FIRST OFFENCE IS THE HAND. Canon -- and JUSTICE BUILD:
+    // canon is what the PAPER ASKS FOR. The hand is the bench's to take or
+    // to spare (test_court.cpp: the hand is sparable at the fine's line), so
+    // the arrest opens a hearing on that ask and takes nothing at the door:
+    // no hand yet, no prior yet, no fine, no nights, the paper standing.
     CHECK(arrest.sentence == Sentence::Maimed);
-    CHECK(talk.crimes().maimed());
+    REQUIRE(gull.hearingPending());
+    CHECK(gull.hearing().awaitingPlea());
+    CHECK(gull.hearing().sheet.tier == Sentence::Maimed);
+    CHECK(gull.hearing().sheet.skyrunner);
+    CHECK(gull.hearing().officer == "Watchman Cull");
+    CHECK_FALSE(talk.crimes().maimed());
     CHECK_FALSE(talk.crimes().condemned());
-    CHECK(talk.crimes().takePercent() == kMaimedTakePercent);
-    CHECK(talk.crimes().arrests() == 1);
+    CHECK(talk.crimes().takePercent() == 100);
+    CHECK(talk.crimes().arrests() == 0);
+    CHECK(arrest.fine == 0);
+    CHECK(arrest.heldHours == 0);
+    CHECK(gull.playerCoin() == purse);
+    CHECK(talk.crimes().warrant());
 
-    // The goods went to the impound, the coin went to the ward, and the paper
-    // went with the sentence.
+    // The goods went to the impound REGARDLESS: seized cargo is Watchman
+    // Cull's job whatever the bench says, and the sheet carries the count.
     CHECK(arrest.unitsSeized == carried);
     CHECK(talk.crimes().stash().illicitUnits() == 0);
-    CHECK(gull.playerCoin() == purse - arrest.fine);
-    CHECK_FALSE(talk.crimes().warrant());
-    CHECK(talk.crimes().heat() <= kHeatAfterSentence);
-    CHECK(arrest.heldHours >= kHeldHoursMin);
+    CHECK(gull.hearing().sheet.unitsSeized == carried);
 
-    // AND THE JOB DIED WITH THEM. This is what makes an arrest cost more than a
-    // night: a contract whose goods are in the impound cannot be delivered.
+    // AND THE JOB DIED WITH THEM, at the arrest and not at the bench. This is
+    // what makes an arrest cost more than a night: a contract whose goods are
+    // in the impound cannot be delivered, whatever the priest says later.
     CHECK(arrest.contractsLost == doomed);
     for (const Contract& row : talk.contracts().contracts()) {
         if (row.id == job && !contrabandLegal(row.good) &&
@@ -1039,9 +1060,29 @@ TEST_CASE("caught: a load, a warrant, and a job that dies in the impound") {
             CHECK(row.state != ContractState::Taken);
         }
     }
-    // The body is turned loose, and whoever owns it is told exactly once.
+    // The body is somebody else's to move, and whoever owns it is told
+    // exactly once.
     CHECK(gull.takeArrestRelease());
     CHECK_FALSE(gull.takeArrestRelease());
+
+    // Then the bench. I DID IT on a hand-tier sheet is HELD (the priest
+    // overruling the sergeant) or THE HAND, and never the rope; the ledger's
+    // half of the sentence then writes what the shipped one-call arrest
+    // wrote -- the prior, the paper torn up, kHeatAfterSentence -- and the
+    // hand only if the bench said so. (What serving it does to the coin and
+    // the clock is the room's, the sentence step after this one.)
+    const Arraignment answer = gull.plead(Plea::Guilty);
+    REQUIRE(answer.heard);
+    CHECK((answer.judgment == Judgment::Held || answer.judgment == Judgment::TheHand));
+    talk.crimes().sentence(answer.judgment, 1);
+    CHECK_FALSE(gull.hearingPending());
+    CHECK(talk.crimes().arrests() == 1);
+    CHECK_FALSE(talk.crimes().warrant());
+    CHECK(talk.crimes().heat() <= kHeatAfterSentence);
+    CHECK(talk.crimes().maimed() == (answer.judgment == Judgment::TheHand));
+    CHECK(talk.crimes().takePercent() ==
+          (answer.judgment == Judgment::TheHand ? kMaimedTakePercent : 100));
+    CHECK_FALSE(talk.crimes().condemned());
 }
 
 // ===========================================================================

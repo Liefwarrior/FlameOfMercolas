@@ -370,6 +370,10 @@ void CrimeLedger::openHearing(const ChargeSheet& sheet, std::int32_t unitsSeized
     hearing_.sheet.unitsSeized = std::max(0, unitsSeized);
     hearing_.sheet.draw = draw;
     hearing_.officer = std::string(officer.substr(0, kOfficerNameMax));
+    // Sentence stays the Watch's ASK and lastSentence_ keeps recording it,
+    // exactly as the short-way arrest does: what the paper asked for is on
+    // the record from the moment it is laid, whatever the bench answers.
+    lastSentence_ = sheet.tier;
 }
 
 Arraignment CrimeLedger::plead(Plea plea) {
