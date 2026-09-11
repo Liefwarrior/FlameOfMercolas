@@ -1188,6 +1188,10 @@ void print_usage() {
             // VERIFICATION ONLY. See SmokeRunConfig::punch's own header.
             options.smoke.punch = true;
             options.wantsSmoke = true;
+        } else if (starts_with(arg, "--charge=", &value)) {
+            // VERIFICATION ONLY. See SmokeRunConfig::chargeSteps' own header.
+            options.smoke.chargeSteps = std::max(0, std::atoi(value));
+            options.wantsSmoke = true;
         } else if (std::strcmp(arg, "--block") == 0) {
             // VERIFICATION ONLY. See SmokeRunConfig::block's own header.
             options.smoke.block = true;

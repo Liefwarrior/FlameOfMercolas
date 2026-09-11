@@ -9335,6 +9335,14 @@ std::int32_t gNemesisBeatMask = 0;
     if (rematchLost && session.tavern().escalated() && !session.tavern().playerFloored()) {
         land(3);
     }
+    if (ending == "death") {
+        // 3D SLICE ONE (ship lane). STOP HERE, on the boards of beat 3, with
+        // the death ceremony settleDefeat has just armed still playing over
+        // the quay revive -- the one shutter that photographs the plate,
+        // because beat 4's walk back in steps it out. Nothing past this line
+        // is proved by this ending; the summary's beat mask says so.
+        return landed;
+    }
     session.skipToHour(20);
 
     // 4. AND THE THIRD LOSS IS FOUGHT AND LOST THE SAME WAY.
@@ -11324,6 +11332,24 @@ SmokeRunResult runSmoke(const SmokeRunConfig& config) {
         }
         result.scriptedWanted += 1;
         result.scriptedLanded += landed ? 1 : 0;
+    }
+
+    if (config.chargeSteps > 0) {
+        // VERIFICATION ONLY. See SmokeRunConfig::chargeSteps. The same
+        // walk-up and re-face --punch uses, then the Attack DOWN-EDGE a held
+        // left mouse button makes and NO release: the room's own hold clock
+        // (Tavern::playerAttackDown) measures the charge in steps, and the
+        // shutter goes with the key still down. Landed means the man was
+        // closed on and faced, so the wind-up is photographed over a person.
+        session.closeConversation();
+        bool faced = false;
+        if (const sim::Actor* mark = nearestMark(session)) {
+            faced = closeOnAndFace(session, mark->id());
+        }
+        session.attackDown();
+        session.stepMany(sim::MoveInput{}, config.chargeSteps);
+        result.scriptedWanted += 1;
+        result.scriptedLanded += faced ? 1 : 0;
     }
 
     if (config.block) {

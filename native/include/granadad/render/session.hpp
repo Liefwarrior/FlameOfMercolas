@@ -2908,6 +2908,18 @@ struct SmokeRunConfig {
     /// the Tarwalk spawn. It now drives the same walk-up / face / tap /
     /// recovery beat the nemesis and tenant lines throw.
     bool punch = false;
+    /// 3D SLICE ONE (ship lane). VERIFICATION ONLY, the identical reason
+    /// `punch` exists: the hard swing's WIND-UP -- the viewmodel's Charging
+    /// and ChargedHard states -- had no headless capture path, because every
+    /// scripted swing is a tap. Walks up to the nearest person and puts them
+    /// on the crosshair exactly as --punch does, then presses the Attack key
+    /// DOWN through Session::attackDown() -- the same call a held left mouse
+    /// button makes -- and holds it for this many steps WITHOUT releasing,
+    /// so the shutter photographs the charge: under sim::kHardSwingHoldSteps
+    /// the wind-up mid-scrub, at or past it the hard tier held with its
+    /// tremor. --settle-steps=0 keeps the count exact; the default settle
+    /// steps on with the key still down.
+    int chargeSteps = 0;
     /// FATIGUE BUILD. VERIFICATION ONLY, the identical reason every flag
     /// above states: the fatigue bar's mid and empty states, the winded
     /// sprint gate and its one refusal line had no headless capture path.
