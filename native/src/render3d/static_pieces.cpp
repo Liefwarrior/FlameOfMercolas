@@ -1311,6 +1311,7 @@ private:
                 p.instance.yaw = wrapYaw(yawOf(face) + (flip ? kPi : 0.0F) + wallLamp->yawOffset);
                 p.instance.scale = Vec3{wallLamp->scale, wallLamp->scale, wallLamp->scale};
                 p.instance.tint = wallLamp->tint;
+                p.selfLit = wallLamp->selfLit;
                 p.lightX = lamp.x;
                 p.lightY = lamp.y;
                 p.lightX2 = lamp.x;
@@ -1335,6 +1336,7 @@ private:
         p.instance.yaw = wrapYaw(yaw + spec.yawOffset);
         p.instance.scale = Vec3{spec.scale, spec.scale, spec.scale};
         p.instance.tint = spec.tint;
+        p.selfLit = spec.selfLit;
         p.lightX = x;
         p.lightY = y;
         p.lightX2 = x;
@@ -1447,6 +1449,7 @@ StaticCatalogue StaticCatalogue::fromJson(std::string_view json) {
             spec.maxBlock = intOf(row, "maxBlock", 3);
             spec.flipY = row.value("flipY", false);
             spec.upright = row.value("upright", false);
+            spec.selfLit = row.value("selfLit", false);
             spec.lift = floatOf(row, "lift", 0.0F);
             spec.yawOffset = floatOf(row, "yawOffsetDegrees", 0.0F) * (kPi / 180.0F);
             spec.scale = floatOf(row, "scale", 1.0F);
@@ -1576,6 +1579,7 @@ std::uint64_t StaticCatalogue::digest() const noexcept {
         h.mixI32(spec.maxBlock);
         h.mixU8(static_cast<std::uint8_t>(spec.flipY ? 1 : 0));
         h.mixU8(static_cast<std::uint8_t>(spec.upright ? 1 : 0));
+        h.mixU8(static_cast<std::uint8_t>(spec.selfLit ? 1 : 0));
         h.mixF32(spec.lift);
         h.mixF32(spec.yawOffset);
         h.mixF32(spec.scale);

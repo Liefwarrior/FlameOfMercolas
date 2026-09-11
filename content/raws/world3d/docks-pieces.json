@@ -10,7 +10,7 @@
   ],
   "minBand": 18,
   "windowEvery": 3,
-  "chimneyEvery": 17,
+  "chimneyEvery": 43,
   "props": { "every": 11, "barrel": 40, "crate": 35, "sack": 25 },
   "pieces": {
     "wall":        { "pack": "PolygonGeneric", "file": "SM_Bld_Base_Wall_01.gltf",             "width": 2.5, "height": 3.0057, "thickness": 0.225, "front": "-z" },
@@ -19,7 +19,7 @@
     "wall_window": { "pack": "PolygonGeneric", "file": "SM_Bld_Base_Wall_Window_01.gltf",      "width": 2.5, "height": 3.0057, "thickness": 0.225, "front": "-z" },
     "wall_door":   { "pack": "PolygonGeneric", "file": "SM_Bld_Base_Wall_Door_Double_01.gltf", "width": 2.5, "height": 3.0057, "thickness": 0.288, "front": "-z" },
     "roof_edge":   { "pack": "PolygonGeneric", "file": "SM_Bld_Base_Wall_Trim_01.gltf",        "width": 2.5, "height": 0.0, "standoff": 0.114, "lift": -0.2347, "front": "+z" },
-    "floor_plank": { "pack": "PolygonGeneric", "file": "SM_Bld_Base_Floor_01.gltf",       "extent": [0.0, 0.0, 2.5, 2.5],                "minBlock": 1, "maxBlock": 6,  "lift": 0.012 },
+    "floor_plank": { "pack": "PolygonGeneric", "file": "SM_Bld_Base_Floor_01.gltf",       "extent": [0.0, 0.0, 2.5, 2.5],                "minBlock": 1, "maxBlock": 4,  "lift": 0.012 },
     "floor_cobble":{ "pack": "PolygonKnights", "file": "SM_Env_Path_Cobble_01.gltf",      "extent": [-0.0071, -2.9878, 2.9993, -0.0195], "minBlock": 2, "maxBlock": 2,  "lift": 0.006 },
     "floor_flag":  { "pack": "PolygonKnights", "file": "SM_Env_Path_Stone_01.gltf",       "extent": [0.0495, -2.9646, 2.962, -0.0704],   "minBlock": 2, "maxBlock": 3,  "lift": 0.006 },
     "floor_fill":  { "pack": "PolygonGeneric", "file": "SM_Bld_Base_Ceiling_01.gltf",     "extent": [0.0, 0.0, 2.5, 2.5],                "minBlock": 1, "maxBlock": 16, "lift": 0.004, "flipY": true },
@@ -29,10 +29,10 @@
     "prop_barrel": { "pack": "PolygonGeneric", "file": "SM_Gen_Prop_Barrel_Wood_01.gltf", "lift": 0.04, "maxDistance": 40 },
     "prop_crate":  { "pack": "PolygonGeneric", "file": "SM_Gen_Prop_Crate_03.gltf",       "lift": 0.04, "maxDistance": 40 },
     "prop_sack":   { "pack": "PolygonGeneric", "file": "SM_Gen_Prop_Sack_Stack_01.gltf",  "lift": 0.04, "maxDistance": 40 },
-    "lamp_wall":   { "pack": "PolygonGeneric", "file": "SM_Gen_Prop_Light_Wall_01.gltf",  "front": "+z", "standoff": 0.323, "lift": 2.1, "maxDistance": 48 },
-    "lamp_post":   { "pack": "PolygonKnights", "file": "SM_Prop_Lampost_01.gltf",         "maxDistance": 64 },
-    "brazier":     { "pack": "PolygonKnights", "file": "SM_Prop_Brazier_01.gltf",         "maxDistance": 48 },
-    "chimney":     { "pack": "PolygonKnights", "file": "SM_Bld_House_Chimney_01.gltf",    "scale": 0.45, "tint": [200, 190, 180], "maxDistance": 80 }
+    "lamp_wall":   { "pack": "PolygonGeneric", "file": "SM_Gen_Prop_Light_Wall_01.gltf",  "front": "+z", "standoff": 0.323, "lift": 2.1, "selfLit": true, "maxDistance": 48 },
+    "lamp_post":   { "pack": "PolygonKnights", "file": "SM_Prop_Lampost_01.gltf",         "selfLit": true, "maxDistance": 64 },
+    "brazier":     { "pack": "PolygonKnights", "file": "SM_Prop_Brazier_01.gltf",         "selfLit": true, "maxDistance": 48 },
+    "chimney":     { "pack": "PolygonKnights", "file": "SM_Bld_House_Chimney_01.gltf",    "scale": 0.42, "tint": [150, 132, 122], "maxDistance": 80 }
   },
   "materials": {
     "brick":          { "wall": "masonry", "tint": [255, 255, 255], "insideTint": [232, 224, 208], "topTint": [132, 76, 62], "ceilingTint": [160, 128, 116], "floor": "floor_cobble", "fill": "floor_fill", "fillTint": [128, 128, 124] },
@@ -46,7 +46,7 @@
     "trudgeon_wood@getilia_soak": { "wall": "timber", "tint": [130, 120, 110], "topTint": [90, 80, 72], "ceilingTint": [96, 84, 72], "floor": "floor_plank", "floorTint": [140, 136, 132] },
     "cloth":          { "wall": "canvas", "tint": [204, 192, 160] },
     "leather":        { "wall": "canvas", "tint": [126, 96, 72] },
-    "thatch":         { "floor": "floor_plank", "floorTint": [186, 150, 96], "ceilingTint": [150, 128, 88] },
+    "thatch":         { "floor": "floor_plank", "floorTint": [176, 146, 100], "ceilingTint": [150, 128, 88] },
     "dirt":           { "fill": "floor_fill", "fillTint": [108, 88, 64], "ceilingTint": [120, 104, 84] },
     "ash":            { "fill": "floor_fill", "fillTint": [92, 90, 88], "ceilingTint": [110, 108, 106] }
   }

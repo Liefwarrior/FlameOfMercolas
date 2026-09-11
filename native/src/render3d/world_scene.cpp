@@ -215,6 +215,12 @@ void WorldScene::relightPieces(const ChunkLighting& lighting) {
             return Rgba8{ch(sky.ambient.r, glow.r, tint.r), ch(sky.ambient.g, glow.g, tint.g),
                          ch(sky.ambient.b, glow.b, tint.b), tint.a};
         };
+        if (p.selfLit) {
+            // A lamp is its own light.
+            litTints_[i * 2] = p.instance.tint;
+            litTints_[i * 2 + 1] = p.instance.tint;
+            continue;
+        }
         if (p.gradient) {
             // A run piece: lit at each end, blended across by the adapter.
             // The piece's local X runs from the a0 end unless it was turned

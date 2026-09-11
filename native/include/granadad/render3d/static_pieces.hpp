@@ -199,6 +199,9 @@ struct PieceSpec {
     /// A flat quad (extent in its local XZ) stood on edge as a wall: its
     /// local Z becomes the height, its +Y normal the outward finish.
     bool upright = false;
+    /// Drawn at its own colours whatever the light where it stands: a lamp
+    /// or a brazier is its own light and should not go black at night.
+    bool selfLit = false;
     /// Y offset above the surface it stands on.
     float lift = 0.0F;
     /// Radians added to the rule's yaw.
@@ -317,6 +320,8 @@ struct StaticPlacement {
     /// local X runs from the a1 end, so the two swap into tint / tint2.
     bool gradient = false;
     bool flipped = false;
+    /// The piece keeps its catalogue tint through the relight.
+    bool selfLit = false;
 };
 
 struct StaticPlacementStats {
