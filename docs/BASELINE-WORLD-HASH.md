@@ -503,3 +503,52 @@ The docks `WRLD` chunk hash in the world-hash report likewise still reads
 **A pass that draws something new and moves this number has done something it did not say it
 was doing.** This one did not, and the identical hash and the identical byte count are the
 proof rather than the claim.
+
+---
+
+## Oblivion feel — street panic: the ONE declared population move (2026-09-10)
+
+The Oblivion-feel program (`feel/build`, DECISIONS.md "Oblivion feel: street panic") is the
+first thing since the port to change a `WardActor`'s BEHAVIOUR off the player: `WardPopulation::
+alarm(x, y, band, radiusTiles, severity)` drives the Safety reserve of every person who can SEE
+the player's violence (same band, in range, line of sight) under `kNeedCritical`, and the
+dormant `WardPolicy::Flee` channel — built, hashed, and never once fired for a person — takes
+it from there. **By law that is a declared move of this number, whether or not the number
+moves, and so it is re-run and re-blessed here.**
+
+Why the number was expected to stand, stated before the run rather than after it: the gate's
+population workload has no player and calls nothing that alarms anybody, and the one arithmetic
+change in the needs loop — `kPanicRecoverPerTick` added to a PERSON's Safety recovery — is
+applied only while that person is under the FLEE gate, which only `alarm()` puts a person under
+(every authored row starts Safety at 9,000 or 10,000 with a decay of 0; beasts, whose mice ARE
+driven under the gate by the hunt, are excluded from the panic rate and keep the raws' own).
+`test_street_panic.cpp`'s "only the frightened pay the panic rate" is that argument in
+miniature: after an alarm, everybody the alarm did not reach carries Safety and its accumulator
+byte-for-byte as an un-alarmed twin does.
+
+```
+at branch feel/build (street panic),
+granadad-twin-gate --population --population-hour 16 --ticks 7200, 96 walkers
+COMBINED WORLD HASH: 0x2646C1AAA2BA38DF      <- unchanged; DECLARED and RE-BLESSED
+```
+
+Linux/GCC (the Docker gate's own host build, Debug): run A == run B == `0x2646C1AAA2BA38DF`,
+report text byte-identical at **18,772 bytes** both times — the same count Phase C and Phase D
+recorded.
+
+Recorded directly from `dist\granadad-twin-gate.exe --population --population-hour 16
+--ticks 7200` on Windows/mingw, **two invocations**, each `run A` == `run B` ==
+`0x2646C1AAA2BA38DF`, report text byte-identical at 18,772 bytes in all four runs — on the gate
+whose stamp names this tree (`native/` digest `82c4def57fd4a1e1673d4609ca2c15216d53f5d0bb426501843f7bea80d2ba92`,
+285 files, 88/88 ctest entries green, 1,134 doctest cases, `test_street_panic.cpp` among them;
+`verify-windows.ps1` PASS — 1,053 sim cases / 1,323,865 assertions and 71 content cases /
+902,135 assertions under mingw, content-fingerprint and world-hash reports byte-identical
+linux/gcc vs mingw/windows, the stamp checked against the working tree).
+The tavern/gate-workload twin on the same exe still reads the Oblivion-feel program's one
+declared tavern move, `0x86E05F527E54E795` (`--tavern --ticks 900`, run A == run B): every
+other baseline unmoved.
+
+**The population baseline is therefore re-blessed at `0x2646C1AAA2BA38DF` with one declared
+behaviour change behind it.** The next lane that touches a `WardActor` — the street Watch's
+`Respond` (9b, an appended `WardPolicy` and a per-actor alarm tick, both hashed) or the street
+combat sheets (9c) — moves this number for real, and declares it the same way.

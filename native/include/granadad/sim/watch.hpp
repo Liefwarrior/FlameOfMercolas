@@ -49,6 +49,15 @@ enum class WatchCause : std::uint8_t {
     Contraband = 2,
     /// Both, which is the difference between a fine and a cell.
     Both = 3,
+    /// WATCH & RHYTHM BUILD. He has seen VIOLENCE: a lethal-class fight with
+    /// the player in it, steel up in the player's hands, or the player's
+    /// hands up over a corpse -- inside his own sight, by the same
+    /// three-clause notice rule every crime reads. NEVER a bar fight: a
+    /// brawl-class fist fight is the house's law (COMBAT-ACTION-SPEC.md
+    /// section 6) and the Watch has no cause in it. What follows the halt is
+    /// exactly what follows a contraband notice today -- he closes, and
+    /// arrests at reach -- and the justice build owns what comes after.
+    Violence = 4,
 };
 
 [[nodiscard]] std::string_view watchCauseName(WatchCause cause) noexcept;

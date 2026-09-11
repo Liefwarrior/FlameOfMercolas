@@ -475,6 +475,20 @@ if(GRANADAD_BUILD_TESTS)
         # the corpse conventions, the murder hook, intent-by-verb, and the
         # Watch's deference to a presented Wielder.
         tests/test_combat_action.cpp
+        # STANCE & ROOM BUILD -- fighting mode as a table (every raise and
+        # lower rule), the one-press tap-from-hands-down, the 600-step lull at
+        # its exact edge, the LOWER HANDS slot of the interact walk proved
+        # against its own prompt, the FISTS UP row, and the twin-run of a
+        # scripted raise/lower/re-raise on the tavern hash.
+        tests/test_stance.cpp
+        # WATCH & RHYTHM BUILD -- WatchCause::Violence as a table (seen
+        # lethal fight -> Closing + halt + arrest; unseen -> nothing; a brawl
+        # -> nothing; a presented Wielder -> never), the blow on the closing
+        # watchman (Kill intent, murder), the wind-up / stagger / recoil /
+        # block-stagger timings, the guard and hard bands same-roll off the
+        # NPC's pending roll, stand-back, bouncers refusing steel, the rout,
+        # and a scripted fight twin-run.
+        tests/test_watch_rhythm.cpp
         tests/test_lamps.cpp
         tests/test_atlas.cpp
         tests/test_render.cpp
@@ -652,6 +666,15 @@ if(GRANADAD_BUILD_TESTS)
         # sprint arriving at, and a soak that watches the mouse count actually
         # fall and come back.
         tests/test_ward_hunt.cpp
+        # STREET PANIC BUILD (feel/build, 9a) -- AND WHETHER THE STREET RUNS
+        # FROM A KNIFE. The alarm against the three-clause witness rule,
+        # computed independently (same band, in range, line of sight); the
+        # walled, the other-band, the far and the Watch all untouched; the
+        # panic lasting as long as its severity says and no longer; the
+        # frightened alone paying the panic rate; and the population's
+        # twin-run byte-identical after an alarm -- the one declared
+        # population baseline move of the Oblivion-feel program.
+        tests/test_street_panic.cpp
         # #80 -- THE ORIGIN-SELECT AND CUSTOMIZE FLOW. Three cards, a name
         # field, and a real sim::Chargen sheet hosted rather than reinvented
         # -- see creation.hpp's own header on why this reuses

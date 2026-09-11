@@ -1,0 +1,36 @@
+{
+  "id": "combat_barks",
+  "notes": "OBLIVION-FEEL ADDITION (feel/build, the Barks lane), and it obeys the rule every other bark file does: NOTHING in the code writes a spoken line. The Watch & Rhythm lane keyed watch.halt from tickWatch and let it fall through to watch.demand until the row was on the sheet; the stance lane's standBack and joinBrawl had nobody saying anything. These are the three keys, in the ward's own register -- the impound keeper, the boards, the Flame, the Tarwalk -- and never a borrowed line from anybody else's game. watch.halt is what a watchman says the second he SEES steel or a corpse (WatchCause::Violence; he is Closing, the arrest follows at reach). brawl.join is a patron or a bouncer stepping into a fight the player started (joinBrawl; the Closing watchman keeps his own halt and a rat says nothing). crowd.flee is the panic line -- a patron sent back on the escalation edge, a bloodied man routing for the street, and the street itself through wardMoodKey while WardPolicy::Flee holds (mood.panicked, the owner's own, is the floor under it). Rows are severity-neutral on purpose: the same sheet serves a drawn blade and a killing, because neither speaker is told which. Rotation is the caller's index through BarkTables::line, so a night does not repeat itself. Plain ASCII only (Glyph8x8Font). Loaded after the owner's barks.json, so it can never take a key of his.",
+  "tables": [
+    {
+      "key": "watch.halt",
+      "rows": [
+        "Put it down. Put it down and stand where you are.",
+        "That is enough. I saw the whole of it and so did the room.",
+        "Steel in the Gull, in front of me. Stand still. Nobody walks out of this one.",
+        "Hold there. Whatever he did, the ward hangs you for that and not him.",
+        "Stand off him. I have seen it, and it is mine now."
+      ]
+    },
+    {
+      "key": "brawl.join",
+      "rows": [
+        "Right. Then it is me as well.",
+        "You swung in Venn's house. Now there are two of us.",
+        "Somebody hold my cup.",
+        "No. Not him. Me first.",
+        "In this room you fight everybody, friend."
+      ]
+    },
+    {
+      "key": "crowd.flee",
+      "rows": [
+        "Steel! Steel by the door!",
+        "Get back. Get back from him.",
+        "Flame keep us. Do not look at him. Walk.",
+        "Not tonight. Not for a stranger. Move!",
+        "Somebody fetch the Watch. Somebody who is not me."
+      ]
+    }
+  ]
+}

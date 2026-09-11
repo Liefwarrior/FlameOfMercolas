@@ -436,10 +436,12 @@ inline constexpr std::int32_t kVerminUntil = hourOfDay(11);
 ///
 /// Under LETHAL rules this floor is lifted -- the player can reach zero and
 /// die, routing through the same applyDefeat/nemesis/quay-revive the brawl KO
-/// uses (COMBAT-ACTION-SPEC.md section 4.5). The player-KILLS path lands in
-/// this build (Tavern::playerAttackUp); the NPC-KILLS-player path stays gated
-/// on the presentation lane's scripted-arc rewrite, so this floor still holds
-/// for the NPC brawl loop below.
+/// uses (COMBAT-ACTION-SPEC.md section 4.5). Both halves land now: the
+/// player-KILLS path (Tavern::playerAttackUp) and, STANCE & ROOM BUILD, the
+/// NPC-KILLS-player path -- stepBrawl resolves the room's blows under lethal
+/// rules with this floor lifted to zero, and a blow that empties the player
+/// routes applyDefeat exactly as a brawl KO does. Under BRAWL rules the floor
+/// is this constant, unchanged.
 inline constexpr std::int32_t kPlayerBrawlFloor = 1;
 
 // ---------------------------------------------------------------------------
@@ -472,6 +474,76 @@ inline constexpr std::int32_t kNpcSwingStaggerSteps = 30;
 /// The re-arm when the swing timer expires out of reach: 0.2 s re-check while
 /// the actor is still closing the gap.
 inline constexpr std::int32_t kNpcSwingRetrySteps = 12;
+
+/// FIGHTING MODE (STANCE & ROOM BUILD, oblivion-roadmap.md section 3.2). The
+/// lull that lowers the hands on its own: this many movement steps -- 10 s --
+/// in IDLE with no swing thrown or caught, the guard not held and nobody
+/// swinging at the player. Counted down in stepPlayerCombat; every raise
+/// (a down-edge, a swing thrown, a guard held, a blow caught) refills it. Six
+/// hundred and not three hundred, because a brawl's lull is longer than five
+/// seconds.
+inline constexpr std::int32_t kLowerHandsSteps = 600;
+
+// ---------------------------------------------------------------------------
+// WATCH & RHYTHM BUILD: the rhythm bundle (oblivion-gap-combat.json change 5)
+// ---------------------------------------------------------------------------
+//
+// Oblivion's learnable rhythm is three asymmetric rules on top of
+// attack/block/hold, and every one of them is a step count on the 60-step
+// spine, integer, hashed, drawing nothing. The two bands are carved off the
+// NPC's OWN swing roll (the one stepBrawl already draws), read off bits no
+// other band claims -- the fatigue build's same-roll discipline, fifth and
+// sixth carvings. "No NPC blocking, no NPC hard swings" was the v1 ceiling
+// (COMBAT-ACTION-SPEC.md section 10); this build lifts it for the tavern
+// roster only, by exactly these numbers.
+
+/// A standing brawler's TELEGRAPH: the steps between his swing timer expiring
+/// in reach and the blow landing. 0.3 s -- long enough to read and answer
+/// with a tap (which staggers him instead), short enough that a crowd still
+/// lands blows. The roll is drawn at the START of the wind-up and kept.
+inline constexpr std::int32_t kNpcWindupSteps = 18;
+/// And the HARD swing's longer tell: 0.5 s, the Oblivion power-attack
+/// pull-back. Long on purpose -- a doubled blow you could not see coming
+/// would be a random event, not a rule.
+inline constexpr std::int32_t kNpcHardWindupSteps = 30;
+static_assert(kNpcHardWindupSteps < kNpcSwingIntervalSteps &&
+                  kNpcWindupSteps < kNpcHardWindupSteps,
+              "the tell is the last stretch of the swing interval, not added to it: blow to "
+              "blow stays kNpcSwingIntervalSteps, and a hard tell is the longer one");
+/// Steps a man STAGGERED by a pre-empting hit or a hard swing loses: no
+/// closing, no swing, no guard. 0.4 s, enough for one free tap and not two.
+inline constexpr std::int32_t kStaggerSteps = 24;
+/// Steps the player's arm RECOILS for when a normal swing is caught by an
+/// NPC guard. A full second, longer than the swing's own 36-step recovery on
+/// purpose -- shorter and it would be no recoil at all -- so a tap into a
+/// raised guard costs more than the tap. The Oblivion asymmetry, half one.
+inline constexpr std::int32_t kRecoilSteps = 60;
+/// Steps a GUARD is broken for when it catches a HARD swing: the blocker --
+/// player or NPC -- is block-staggered, his guard is down and his attack is
+/// refused. 0.5 s, the other half of the asymmetry: a hard swing is the
+/// answer to a turtle, and a block is the answer to a tap.
+inline constexpr std::int32_t kBlockStaggerSteps = 30;
+/// The GUARD band, in 256ths of the NPC's own swing roll (bits 40-47): the
+/// share of a patron's swings that leave his hands up until his next one.
+/// About one in five, so a bar fight is mostly open and a caught tap is a
+/// surprise, not a wall.
+inline constexpr std::uint64_t kNpcGuardBand256 = 48;
+/// A PROFESSIONAL's guard (a bouncer, a watchman): half his swings. A man
+/// hired to stand in doorways keeps his hands up; that is the whole reason a
+/// hard swing exists.
+inline constexpr std::uint64_t kNpcProfessionalGuardBand256 = 128;
+/// The bits of the NPC's own roll the guard band reads, and the HARD band
+/// beside it (bits 48-55): the share of an NPC's swings thrown HARD
+/// (kHardSwingChargeQ8, the longer tell). About one in six.
+inline constexpr int kNpcGuardRollShift = 40;
+inline constexpr int kNpcHardRollShift = 48;
+inline constexpr std::uint64_t kNpcHardBand256 = 40;
+/// PATRONS STAND BACK: on the escalation edge every non-brawler within this
+/// many tiles of the player steps kStandBackTiles tiles directly away (the
+/// first standable tile inside the footprint on that line). Three, the reach
+/// of a thrown stool; two, so the far cells clear without emptying the room.
+inline constexpr std::int32_t kStandBackRadiusTiles = 3;
+inline constexpr std::int32_t kStandBackTiles = 2;
 
 /// The player's swing machine, sim-owned and hashed. SWING and HARD resolve
 /// instantly on release (we have no viewmodel to animate; recovery carries the
@@ -964,6 +1036,16 @@ public:
     [[nodiscard]] const Actor* respondingWatchman() const noexcept;
     /// What the last watchman to look at you said, or empty.
     [[nodiscard]] const std::string& lastDemand() const noexcept { return lastDemand_; }
+    /// BARKS LANE (feel/build). What the last man to step INTO a fight the
+    /// player started said as he did it -- `<name>: <brawl.join row>` -- or
+    /// empty. A rat says nothing; the Closing watchman keeps his own halt
+    /// (lastDemand). Presentation only: not hashed, never read by the sim.
+    [[nodiscard]] const std::string& lastJoin() const noexcept { return lastJoin_; }
+    /// BARKS LANE (feel/build). The last panic line the room threw --
+    /// `<name>: <crowd.flee row>` -- from the first patron sent back on the
+    /// escalation edge (standBack) or a bloodied man breaking for the street
+    /// (the rout), or empty. Presentation only, exactly like lastJoin.
+    [[nodiscard]] const std::string& lastFlee() const noexcept { return lastFlee_; }
     /// The last arrest, whether or not it has been read.
     [[nodiscard]] const ArrestReport& lastArrest() const noexcept { return lastArrest_; }
     /// True once, after an arrest, so whoever owns the body can put it on the
@@ -1225,6 +1307,12 @@ public:
         bool hard = false;
         bool refused = false;
         bool killed = false;
+        /// WATCH & RHYTHM BUILD: the target's guard caught it (blow.blocked),
+        /// and what that cost -- a normal swing recoiled the player's arm, a
+        /// hard swing broke the guard and staggered the man; a hit inside his
+        /// wind-up or any hard hit staggers him too.
+        bool recoiled = false;
+        bool staggered = false;
         FightClass fight = FightClass::Brawl;
         Blow blow;
         std::int32_t targetId = -1;
@@ -1309,12 +1397,79 @@ public:
     /// key changes, the same seam setPlayerMotion is. SIM STATE, hashed: a
     /// held guard changes what every landed blow in tickBrawl costs, so two
     /// runs that disagreed about it would be two different fights.
-    void setPlayerBlocking(bool blocking) noexcept { playerBlocking_ = blocking; }
+    /// STANCE & ROOM BUILD: a guard going down puts the hands UP (fists up
+    /// without violence -- rule 2 of the raise table); a guard coming back up
+    /// does NOT lower them (rule 4 of the lower table).
+    void setPlayerBlocking(bool blocking) noexcept {
+        playerBlocking_ = blocking;
+        if (blocking) {
+            raisePlayerHands();
+        }
+    }
     [[nodiscard]] bool playerBlocking() const noexcept { return playerBlocking_; }
     /// Every blow a guard has ever softened. MONOTONIC on purpose: the client
     /// pulses on the increase, so the sim never keeps read-and-clear feedback
     /// state the way takeDefeatRelease has to.
     [[nodiscard]] std::int32_t blowsBlocked() const noexcept { return blowsBlocked_; }
+
+    // --- the stance (FIGHTING MODE, STANCE & ROOM BUILD) --------------------
+    //
+    // The owner's sentence: "When I press LMB I want to enter fighting mode and
+    // hit whoever is in front of me." A SIM STATE, not a client flag
+    // (oblivion-roadmap.md section 3.2): hashed beside the swing machine, read
+    // by the HUD, by the reaction tiers and by the Watch, and by nothing that
+    // draws a roll. The stance and its timer draw nothing.
+    //
+    // HANDS COME UP when: (1) Attack goes down from IDLE -- the same press
+    // charges, so a tap raises and swings and a hold raises and swings hard,
+    // ONE press; (2) the guard goes down (setPlayerBlocking(true)); (3) an
+    // NPC blow lands on the player in stepBrawl -- without this a player being
+    // punched would have to press SWING before GUARD meant anything. Every one
+    // of those also refills the lull timer, as does a swing thrown.
+    //
+    // HANDS GO DOWN when: (1) USE with nothing in reach -- the client's LOWER
+    // HANDS slot of the interact walk calls lowerPlayerHands(); (2) the lull:
+    // kLowerHandsSteps in IDLE with the guard not held and brawlers_ empty;
+    // (3) the cancel list -- talking, picking, sleeping (any clock skip), an
+    // arrest, a defeat -- lowers them here in the sim, and the client lowers
+    // them for any page it opens; (4) a guard RELEASE does not lower them.
+
+    /// True while the hands are up -- fighting mode.
+    [[nodiscard]] bool playerHandsUp() const noexcept { return handsUp_; }
+    /// Steps of lull left before the hands come down on their own; 0 with the
+    /// hands down. Refilled to kLowerHandsSteps by every raise.
+    [[nodiscard]] std::int32_t playerLowerTimer() const noexcept { return lowerTimer_; }
+    /// Hands down, now. The LOWER HANDS verb, and the cancel list. Idempotent;
+    /// touches nothing else -- a live charge is cancelPlayerCharge's business.
+    void lowerPlayerHands() noexcept;
+
+    // --- the rhythm (WATCH & RHYTHM BUILD) ------------------------------------
+    //
+    // The player's two stagger clocks, hashed, integer, drawing nothing. While
+    // either runs an Attack down-edge is DROPPED (as in recovery); while the
+    // block-stagger runs the held guard is not honoured either -- the guard is
+    // broken, which is what a hard swing is for. See the kRecoilSteps and
+    // kBlockStaggerSteps headers for the asymmetry.
+    [[nodiscard]] std::int32_t playerRecoilSteps() const noexcept { return recoilSteps_; }
+    [[nodiscard]] std::int32_t playerBlockStaggerSteps() const noexcept {
+        return blockStaggerSteps_;
+    }
+    /// True while a lethal-class fight with the player in it is live: somebody
+    /// is on the brawl list and the classifier says Lethal. The one predicate
+    /// the bouncers (refuse steel), the rota (the room stands back), the rout
+    /// and the Watch's violence cause all read, so no caller re-derives it.
+    /// Draw-free.
+    [[nodiscard]] bool lethalFightLive() const noexcept;
+    /// What a watchman with sight would have cause to halt: a live lethal
+    /// fight, steel up in the player's hands, or the player's hands up over a
+    /// corpse within reach. NEVER a brawl-class fist fight, and never with the
+    /// hands down over a body somebody else left. Draw-free; the sight test is
+    /// the caller's (tickWatch asks canSeePlayer first).
+    [[nodiscard]] bool violenceInView() const noexcept;
+    /// Whether this actor is a professional the rhythm rules treat apart: a
+    /// bouncer, or a watchman by the derived faction. Professionals keep the
+    /// wider guard band, never stand back, and never rout.
+    [[nodiscard]] bool isProfessional(const Actor& actor) const noexcept;
 
     // --- the cast (Cast, one press) ------------------------------------------
 
@@ -1482,11 +1637,37 @@ private:
     /// moved out of tickBrawl's 1 Hz exchange: per brawler, count the swing
     /// timer down, close when out of reach, and on expiry within reach throw a
     /// blow re-keyed to the actor's own npcSwingSeq_. Applies the guard, the
-    /// caught-blow wind, and the brawl-floor defeat check. Driven from
-    /// stepMovement. Like the old loop, it does NOT resolve while the fight is
-    /// lethal -- the NPC-kills-player path waits on the presentation lane's
-    /// scripted-arc rewrite, so this preserves the shipped brawl behaviour.
+    /// caught-blow wind, and the defeat check. Driven from stepMovement.
+    /// STANCE & ROOM BUILD -- THE ROOM FIGHTS BACK: the blows resolve under
+    /// BOTH rule sets now. Under BRAWL the player floors at kPlayerBrawlFloor
+    /// exactly as shipped; under LETHAL the floor is lifted to zero and the
+    /// blow that empties the player routes applyDefeat (the death ceremony
+    /// hangs off escalated() client-side). A landed blow also raises the
+    /// player's hands.
     void stepBrawl() noexcept;
+    /// STANCE & ROOM BUILD. Hands up and the lull timer refilled -- the one
+    /// door into handsUp_ = true, so every raise rule refills the same clock.
+    void raisePlayerHands() noexcept;
+    /// WATCH & RHYTHM BUILD. Resolves one player blow against a roster actor:
+    /// strike() on the actor's sheet, then the NPC's side of the rhythm -- his
+    /// guard softens a landed blow (blockedDamage at level 0) and recoils the
+    /// player on a normal swing or breaks and staggers him on a hard one; a
+    /// hit inside his wind-up, or any hard hit, staggers him. Applies the
+    /// health and returns the blow; the caller sets the activity and the
+    /// deeds. `recoiled` / `staggered` report which rule fired.
+    Blow landPlayerBlow(Actor& target, bool hard, std::int32_t bonus, std::int32_t swingTerm,
+                        std::int32_t chargeQ8, bool& recoiled, bool& staggered);
+    /// PATRONS STAND BACK, fired once on the escalation edge (noteEscalation):
+    /// every present non-brawler who is not a professional and is within
+    /// kStandBackRadiusTiles of the player is sent kStandBackTiles tiles
+    /// directly away, to the first standable tile inside the footprint on
+    /// that line. Deterministic, draw-free; the rota holds them there while
+    /// lethalFightLive().
+    void standBack();
+    /// A brawler under lethal rules who is bloodied, not a professional and
+    /// does not mean Kill breaks off for the street (gull::kStreetX/Y). He
+    /// stops swinging at once and leaves brawlers_ on arrival.
+    [[nodiscard]] bool shouldRout(const Actor& actor) const noexcept;
     void tickPatrons();
     /// Advances every trickle still delivering. One second per call.
     void tickSpellwork();
@@ -1523,6 +1704,8 @@ private:
     /// its first swing (npcSwingTimer_ = id % kNpcSwingStaggerSteps) so a crowd
     /// joining at once never metronomes. The one door into brawlers_.
     void joinBrawl(Actor& actor);
+    /// BARKS LANE: `<name>: <crowd.flee row>` for whoever is running.
+    [[nodiscard]] std::string crowdFleeLine(const Actor& actor) const;
     /// ACTION-COMBAT BUILD. Kills a body: Activity::Dead (a Downed that never
     /// stands), the victim's Deed::Slew, the witness spread, and -- WITNESSED
     /// (the three-clause rule via witnessCount) -- the murder law's heat and
@@ -1612,6 +1795,21 @@ private:
     /// DEFERENCE: the player presents as a Wielder. Default false; no play path
     /// sets it yet (section 4.4). Hashed -- it changes the Watch.
     bool playerPresentsAsWielder_ = false;
+    /// STANCE & ROOM BUILD: fighting mode and its lull countdown. Both hashed
+    /// (part of the declared tavern/gate-workload baseline move this build
+    /// makes): the bit is what the room, the street and the Watch react to,
+    /// and the countdown decides the step it flips back, so two runs that
+    /// disagreed about either would be two different fights. See the public
+    /// stance block for the raise/lower table.
+    bool handsUp_ = false;
+    std::int32_t lowerTimer_ = 0;
+    /// WATCH & RHYTHM BUILD: the player's recoil (a normal swing caught by a
+    /// guard) and block-stagger (a hard swing caught by the player's guard)
+    /// clocks, in steps. Both hashed (the second half of the declared
+    /// tavern/gate-workload move): each decides whether the next press is
+    /// heard and whether the next blow is softened.
+    std::int32_t recoilSteps_ = 0;
+    std::int32_t blockStaggerSteps_ = 0;
     /// Empty means "nothing picked" and equippedSpell() defaults to the first
     /// known crafting. Kept as the ID rather than an index because the
     /// grimoire inserts in id order: learning a new crafting must never
@@ -1690,6 +1888,10 @@ private:
     std::int32_t watchmanId_ = -1;
     std::int64_t noticedAtTick_ = -1;
     std::string lastDemand_;
+    /// BARKS LANE: see lastJoin() / lastFlee(). Strings, unhashed, like
+    /// lastDemand_ and lastWarning_ -- what was SAID, never what happened.
+    std::string lastJoin_;
+    std::string lastFlee_;
     ArrestReport lastArrest_;
     bool arrestRelease_ = false;
     /// The second-of-day this room was constructed at, so dayNumber() can be
