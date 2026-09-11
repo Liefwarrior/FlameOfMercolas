@@ -82,6 +82,9 @@
 //                  of its coordinates (one in `every`), gets a barrel, a
 //                  crate or a sack pushed against that wall. Render-only:
 //                  the sim knows nothing of them and a body walks through.
+//   CHIMNEYS       one roof-plane edge cell in so many that stands over a
+//                  wall (by tile hash) carries a chimney stack, turned along
+//                  the wall beneath it -- the skyline's punctuation.
 //   LAMPS          every baked lamp: a fire is a brazier on its tile, a
 //                  lantern beside a wall is a wall lamp on that wall, a
 //                  lantern on a doorstep hangs on the jamb beside the door,
@@ -138,8 +141,11 @@ enum class PieceRole : std::uint8_t {
     /// A flat plank quad stood upright (`upright` in the catalogue): the
     /// timber walls -- hulls, sheds, the storey over a stone ground floor.
     WallTimber,
+    /// A chimney stack on a roof plane, over the wall line beneath it, one
+    /// in `chimneyEvery` of the roof's edge cells by tile hash.
+    Chimney,
 };
-inline constexpr std::size_t kPieceRoleCount = 20;
+inline constexpr std::size_t kPieceRoleCount = 21;
 
 /// The JSON key of a role ("wall", "wall_corner", ...), and back. None for
 /// an unknown key.
@@ -268,6 +274,8 @@ public:
     [[nodiscard]] std::int32_t propCratePercent() const noexcept { return propCrate_; }
     /// One outdoor wall piece in this many is the window wall; 0 = none.
     [[nodiscard]] std::int32_t windowEvery() const noexcept { return windowEvery_; }
+    /// One roof-edge cell over a wall in this many carries a chimney; 0 = none.
+    [[nodiscard]] std::int32_t chimneyEvery() const noexcept { return chimneyEvery_; }
 
     [[nodiscard]] const std::string& error() const noexcept { return error_; }
     [[nodiscard]] const std::vector<std::string>& warnings() const noexcept { return warnings_; }
@@ -283,6 +291,7 @@ private:
     std::int32_t propBarrel_ = 40;
     std::int32_t propCrate_ = 35;
     std::int32_t windowEvery_ = 0;
+    std::int32_t chimneyEvery_ = 0;
     std::string error_;
     std::vector<std::string> warnings_;
 };

@@ -424,7 +424,7 @@ TEST_CASE("the shipped piece catalogue loads and names a piece for every rule") 
                                  PieceRole::PropBarrel, PieceRole::PropCrate, PieceRole::PropSack,
                                  PieceRole::LampWall, PieceRole::LampPost, PieceRole::Brazier,
                                  PieceRole::FloorFill, PieceRole::WallCap, PieceRole::Ceiling,
-                                 PieceRole::WallTimber}) {
+                                 PieceRole::WallTimber, PieceRole::Chimney}) {
         const PieceSpec* spec = catalogue.piece(role);
         REQUIRE_MESSAGE(spec != nullptr, "no piece for role " << pieceRoleName(role));
         CHECK(spec->file.find(".gltf") != std::string::npos);
@@ -780,6 +780,7 @@ TEST_CASE("placement is a deterministic function of the tile map") {
     const StaticPlacementStats& stats = first.stats;
     CHECK(stats.byRole[static_cast<std::size_t>(PieceRole::Wall)] > 500);
     CHECK(stats.byRole[static_cast<std::size_t>(PieceRole::WallTimber)] > 100);
+    CHECK(stats.byRole[static_cast<std::size_t>(PieceRole::Chimney)] > 3);
     // Timber stands the plank quad on its edge: a quarter turn about X.
     for (const StaticPlacement& p : first.placements) {
         if (p.role == PieceRole::WallTimber) {

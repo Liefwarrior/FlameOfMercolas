@@ -6,10 +6,11 @@
     "width/height/thickness are the piece's own module in metres (1 m = 1 tile; a storey is 3). front is the local side that wears the outdoor finish (-z = the brick of the Generic walls; +z = a cornice or lamp that hangs on the outside). standoff is how far the piece's local z=0 sits proud of the face it dresses (walls: half their thickness).",
     "extent is a flat piece's local footprint [minX, minZ, maxX, maxZ], fitted to rectangles of whole tiles between minBlock and maxBlock on a side (a patterned piece wants 2..3 so its stones stay stones; a plank or a flat fill takes any rectangle). flipY mirrors a downward-facing quad upward (the plaster ceiling laid as a floor). lift is metres above the surface. tint multiplies the light (255 = the piece's own colours). maxDistance is the cheap cull in tiles.",
     "materials: a tile material id (content/raws/materials) -> wall class (masonry: brick out, plaster in; timber: the upright plank quad both sides; canvas: the kit wall's plaster both sides; none: chunk face), finish (brick, or plaster for a rendered stone building -- no brick corner piece on those), the outward tint, the indoor plaster tint (insideTint), the band below which its walls stay chunk, the floor piece its FLOOR cells wear (+ floorTint) and the flat fill (+ fillTint) laid over the cells the floor piece could not fit.",
-    "minBand: nothing is placed below this band (the harbour's substrate). windowEvery: one outdoor masonry wall piece in this many is the window wall (0 = none). props.every: one floor cell against exactly one wall in this many gets a prop, split barrel/crate/sack by percent."
+    "minBand: nothing is placed below this band (the harbour's substrate). windowEvery: one outdoor masonry wall piece in this many is the window wall (0 = none). chimneyEvery: one roof-edge cell over a wall in this many carries the chimney stack (0 = none). props.every: one floor cell against exactly one wall in this many gets a prop, split barrel/crate/sack by percent."
   ],
   "minBand": 18,
   "windowEvery": 3,
+  "chimneyEvery": 17,
   "props": { "every": 11, "barrel": 40, "crate": 35, "sack": 25 },
   "pieces": {
     "wall":        { "pack": "PolygonGeneric", "file": "SM_Bld_Base_Wall_01.gltf",             "width": 2.5, "height": 3.0057, "thickness": 0.225, "front": "-z" },
@@ -30,7 +31,8 @@
     "prop_sack":   { "pack": "PolygonGeneric", "file": "SM_Gen_Prop_Sack_Stack_01.gltf",  "lift": 0.04, "maxDistance": 40 },
     "lamp_wall":   { "pack": "PolygonGeneric", "file": "SM_Gen_Prop_Light_Wall_01.gltf",  "front": "+z", "standoff": 0.323, "lift": 2.1, "maxDistance": 48 },
     "lamp_post":   { "pack": "PolygonKnights", "file": "SM_Prop_Lampost_01.gltf",         "maxDistance": 64 },
-    "brazier":     { "pack": "PolygonKnights", "file": "SM_Prop_Brazier_01.gltf",         "maxDistance": 48 }
+    "brazier":     { "pack": "PolygonKnights", "file": "SM_Prop_Brazier_01.gltf",         "maxDistance": 48 },
+    "chimney":     { "pack": "PolygonKnights", "file": "SM_Bld_House_Chimney_01.gltf",    "scale": 0.45, "tint": [200, 190, 180], "maxDistance": 80 }
   },
   "materials": {
     "brick":          { "wall": "masonry", "tint": [255, 255, 255], "insideTint": [232, 224, 208], "topTint": [132, 76, 62], "ceilingTint": [160, 128, 116], "floor": "floor_cobble", "fill": "floor_fill", "fillTint": [128, 128, 124] },
@@ -44,7 +46,7 @@
     "trudgeon_wood@getilia_soak": { "wall": "timber", "tint": [130, 120, 110], "topTint": [90, 80, 72], "ceilingTint": [96, 84, 72], "floor": "floor_plank", "floorTint": [140, 136, 132] },
     "cloth":          { "wall": "canvas", "tint": [204, 192, 160] },
     "leather":        { "wall": "canvas", "tint": [126, 96, 72] },
-    "thatch":         { "fill": "floor_fill", "fillTint": [198, 166, 98], "ceilingTint": [150, 128, 88] },
+    "thatch":         { "floor": "floor_plank", "floorTint": [186, 150, 96], "ceilingTint": [150, 128, 88] },
     "dirt":           { "fill": "floor_fill", "fillTint": [108, 88, 64], "ceilingTint": [120, 104, 84] },
     "ash":            { "fill": "floor_fill", "fillTint": [92, 90, 88], "ceilingTint": [110, 108, 106] }
   }

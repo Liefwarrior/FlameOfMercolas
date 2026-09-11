@@ -27,7 +27,7 @@ constexpr std::string_view kRoleNames[kPieceRoleCount] = {
     "none",        "wall",        "wall_corner", "wall_window", "wall_door", "roof_edge",
     "floor_plank", "floor_cobble", "floor_flag", "water",       "prop_barrel", "prop_crate",
     "prop_sack",   "lamp_wall",   "lamp_post",   "brazier",     "floor_fill",  "wall_cap",
-    "ceiling",     "wall_timber",
+    "ceiling",     "wall_timber", "chimney",
 };
 
 // ---------------------------------------------------------------------------
@@ -218,6 +218,7 @@ public:
         ceilings();
         water();
         props();
+        chimneys();
         lampPieces();
         return std::move(out_);
     }
@@ -1189,6 +1190,49 @@ private:
         }
     }
 
+    // --- chimneys ---------------------------------------------------------
+
+    /// A roof-plane edge cell (a FLOOR with sky above and a non-floor
+    /// neighbour) standing over a WALL cell: one in `chimneyEvery` by hash
+    /// carries the stack, turned along the wall line beneath it.
+    void chimneys() {
+        const std::int32_t every = catalogue_.chimneyEvery();
+        const PieceSpec* stack = catalogue_.piece(PieceRole::Chimney);
+        if (every <= 0 || stack == nullptr) {
+            return;
+        }
+        const std::int32_t zLo = std::max(1, catalogue_.minBand());
+        for (std::int32_t z = zLo; z < tiles_.sizeZ(); ++z) {
+            for (std::int32_t y = 1; y + 1 < tiles_.sizeY(); ++y) {
+                for (std::int32_t x = 1; x + 1 < tiles_.sizeX(); ++x) {
+                    if (tiles_.form(x, y, z) != content::TileForm::Floor ||
+                        tiles_.form(x, y, z + 1) != content::TileForm::Open ||
+                        !isWall(tiles_, x, y, z - 1)) {
+                        continue;
+                    }
+                    bool edge = false;
+                    for (int s = 0; s < 4; ++s) {
+                        if (tiles_.form(x + kSideDx[s], y + kSideDy[s], z) != content::TileForm::Floor) {
+                            edge = true;
+                        }
+                    }
+                    if (!edge) {
+                        continue;
+                    }
+                    const std::uint32_t h = cellHash(x, y, z, 0x4348494DU);
+                    if (h % static_cast<std::uint32_t>(every) != 0U) {
+                        continue;
+                    }
+                    // Along the wall under it: east-west when the wall runs
+                    // that way, else north-south.
+                    const bool eastWest =
+                        isWall(tiles_, x - 1, y, z - 1) || isWall(tiles_, x + 1, y, z - 1);
+                    centrePiece(PieceRole::Chimney, *stack, x, y, z, eastWest ? 0.0F : kHalfPi);
+                }
+            }
+        }
+    }
+
     // --- lamps ------------------------------------------------------------
 
     void lampPieces() {
@@ -1352,6 +1396,7 @@ StaticCatalogue StaticCatalogue::fromJson(std::string_view json) {
     }
     out.minBand_ = intOf(parsed, "minBand", 0);
     out.windowEvery_ = intOf(parsed, "windowEvery", 0);
+    out.chimneyEvery_ = intOf(parsed, "chimneyEvery", 0);
     if (parsed.contains("props") && parsed["props"].is_object()) {
         const nlohmann::json& props = parsed["props"];
         out.propEvery_ = intOf(props, "every", 0);
@@ -1573,6 +1618,7 @@ std::uint64_t StaticCatalogue::digest() const noexcept {
     h.mixI32(propBarrel_);
     h.mixI32(propCrate_);
     h.mixI32(windowEvery_);
+    h.mixI32(chimneyEvery_);
     return h.value();
 }
 
