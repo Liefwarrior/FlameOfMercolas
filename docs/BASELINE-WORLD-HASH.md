@@ -610,3 +610,14 @@ entries green, 1,197 doctest cases (`2026-09-11T13:24:20Z`); `verify-windows.ps1
 content-fingerprint and world-hash reports byte-identical linux/gcc vs mingw/windows, the
 stamp naming this tree.
 
+### The fix pass (2026-09-11): nothing moved
+
+The critic's eleven defects (DECISIONS.md "Justice fix pass") were closed without a hashed
+field changing: the arrest beat and the taken plate are render state beside
+`deathCeremonySteps_`; the case-keyed bark tables are content; the whole-night rounding
+(`cellNights`) lives in `sentenceTerms`, a pure function of the record that the workload
+never calls (it never pleads or serves); the short-way `arrest()` now writes fewer bits on
+the Condemned rung, and the workload's arrests are paperless. Read again off the re-gated exe:
+`--tavern --ticks 900` `run A` == `run B` == `0x837E94019BC49C25` (3,153 bytes);
+`--population --population-hour 16 --ticks 7200` `run A` == `run B` == `0x2646C1AAA2BA38DF`
+(18,772 bytes). The gate stamp and the counts are in the commit that carries this note.

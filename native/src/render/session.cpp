@@ -4667,7 +4667,11 @@ Session::InteractTarget Session::resolveInteract() const {
     // own header in session.hpp for the verification gap (the bale, the rat and
     // buyPicks() are not previewed) and for why the order below has to track
     // interact()'s own order exactly.
-    if (talking() || picking() || pauseOpen() || menuOpen() || waitOpen()) {
+    if (talking() || picking() || pauseOpen() || menuOpen() || waitOpen() || inCustody()) {
+        // JUSTICE BUILD: in custody -- the officer's hand on you, the page,
+        // the plate -- Interact does nothing, so the crosshair promises
+        // nothing: "E - TALK" over the watchman who has just taken you would
+        // be a prompt for a verb that is refused.
         // The topic list / the tiled Menu's own rows already show what
         // Interact (or ENTER) does on this row -- menuOpen() covers the
         // tiled Menu, Keys AND Options, not only Options, which an earlier

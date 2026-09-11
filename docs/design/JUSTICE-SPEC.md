@@ -1,6 +1,6 @@
 # JUSTICE-SPEC — Daggerfall-inspired court, jail and the rope (v1)
 
-**Status:** BUILT on `justice/build` (2026-09-11; DECISIONS.md "Justice build landed"). The nine open rulings of section 9 were adopted as recommended under the owner's standing canon and are folded here by that row; three build-time deviations, all presentation: the check block's sum reads `MAKES` (the 4x6 font has no `=` and the font is not touched), the plea's own term prints on its own line under the record's sum, and the one row after the judgment is worded by the answer (`WALK OUT.` / `PAY IT.` / `SERVE IT.` / `THE DROP.`). The original draft read: DRAFT FOR VETO. Design only; nothing in this document is built. Read on `C:\repositories\fom-combat` @ a50fa23 (combat/build, a strict superset of wip 9fa5544). The build program commits this file as `docs/design/JUSTICE-SPEC.md` after the owner's veto pass, with the rulings folded in the way COMBAT-ACTION-SPEC.md folded its four.
+**Status:** BUILT on `justice/build` (2026-09-11; DECISIONS.md "Justice build landed"), and REVIEWED: the fix pass of 2026-09-11 (DECISIONS.md "Justice fix pass") closed the critic's eleven defects -- the arrest has its moment on screen before the page (section 2.2), the priest's openings are keyed by the case (section 6.5), every redlined row is rewritten, the check block is packed by whole terms, a night is a whole night the clock agrees with (section 4.2), the end rows arm before they take (section 5), and the `--court=` drive photographs every state a real verb sequence can reach (the rest are declared gaps in `docs/frames/justice/README.md`). The nine open rulings of section 9 were adopted as recommended under the owner's standing canon and are folded here by that row; three build-time deviations, all presentation: the check block's sum reads `MAKES` (the 4x6 font has no `=` and the font is not touched), the plea's own term prints on its own line under the record's sum, and the one row after the judgment is worded by the answer (`WALK OUT.` / `PAY IT.` / `SERVE IT.` / `THE DROP.`). The original draft read: DRAFT FOR VETO. Design only; nothing in this document is built. Read on `C:\repositories\fom-combat` @ a50fa23 (combat/build, a strict superset of wip 9fa5544). The build program commits this file as `docs/design/JUSTICE-SPEC.md` after the owner's veto pass, with the rulings folded in the way COMBAT-ACTION-SPEC.md folded its four.
 
 **Ruling (Eli, 2026-09-02, verbatim, binding):** *"If the player is tagged as a criminal it should be like Daggerfall where you can go to court and you can face jail or execution (game over)."* Sequenced as its own build strictly after combat (COMBAT-ACTION-SPEC §10, VETO 4). Combat landed the hook and stopped: crime, heat, arrest, `Sentence::Condemned`, no court.
 
@@ -65,7 +65,13 @@ The Mission (K17) is already a travel target with an arrival tile and already th
 
 ```
 CLOSING 12 s (shipped) → TAKEN at reach (shipped) → applyArrest: goods to the impound, the sheet written, the draw spent (§3.3)
-  → [NEW] placeBodyAt(Mission arrival tile) + dressInstantCut() + say "TAKEN TO THE MISSION. 23:40."
+  → [NEW, FIX PASS] THE ARREST'S OWN BEAT, before the bench does anything: the officer's line
+        (watch.held / maimed / condemned, "There is paper out on you and I am the man holding it.
+        Walk.") said on the alert row IN THE ROOM with his hand on you, held kTakenOfficerSteps
+        (150); then the cut -- black, one line in the rope plate's register, "TAKEN TO THE
+        MISSION. 23:40.", held kTakenPlateSteps (105); every key swallowed but Pause, the body
+        not yet moved. Pinned on the rendered frame (test_hearing_page.cpp, TAKEN).
+  → [NEW] placeBodyAt(Mission arrival tile) + dressInstantCut() + the page
   → [NEW] THE HEARING page opens (§6.1) — modal, un-backable
   → the plea → the weighing shown → the judgment (§4)
   → SPARED / FINED: released where you stand, the Mission door
@@ -200,7 +206,7 @@ BOUND is ACTORS-SPEC's unbuilt `PLEAD` verb made real ("culprit released to the 
 
 | Charge (what the paper asks) | Days | Doubled (failed denial) |
 |---|---:|---:|
-| PAPER, HELD band | 1–3 (24 + draw % 49 h) | 2–6 |
+| PAPER, HELD band | 1–3 nights: `24 + draw % 49` h off the draw, rounded ONCE to the nearest whole night (`cellNights`, one at least), so `TWO NIGHTS` is exactly 48 h on the clock and the release lands on the same clock face two days on (fix pass) | 2–6 |
 | PAPER, BOUND band | 5 | 10 |
 | Shortfall on a fine | 1 per 4 Royals, max 7 | (the fine itself doubled) |
 | THE HAND | 1–3 + the hand | 2–6 + the hand |
@@ -254,6 +260,8 @@ The death ceremony's primitives generalised, not copied: `armDeathCeremony`'s di
         2 - LEAVE
 ```
 
+The two rows ARM on the first press and take on the second (the QUIT pattern, and the plea rows' own): the armed row carries `-- SURE? <key>` on its tail, ESC/B or moving the cursor disarms it, and a leaned-on ENTER after the plate's hold cannot start a new man or leave the game (fix pass).
+
 Register rule for the plate: name the place (K21 is the ward's authored gibbet), name the ward as the killer, name the reason. It reads as the ward's roll, not the game's message. `PUT DOWN IN ... / BY <killer>. BY <weapon>.` is the revive's grammar; `HANGED AT ... / BY THE WARD. FOR <reason>.` is the end's. They cannot be confused on screen.
 
 **The machinery, costed off the seam scout:**
@@ -279,12 +287,12 @@ Register rule for the plate: name the place (K21 is the ward's authored gibbet),
 !THE PAPER ASKS FOR THE ROPE.                                                    |
 +~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-+
 ![1 - I DID IT.]           !A CONFESSION IS WEIGHED AS IT IS GIVEN. THE FLAME'S  !
-| 2 - I DID NOT.           |ANSWER IS FIXED BEFORE YOU SPEAK IT. NO ROPE FOR THE |
-! 3 - HEAR THE PAPER       !TONGUE, AND NO MERCY FROM IT EITHER.                 !
+| 2 - I DID NOT.           |ANSWER IS FIXED BEFORE YOU SPEAK IT. MERCY OR THE    |
+! 3 - HEAR THE PAPER       !ROPE, AND NOTHING ELSE.                              !
 +~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-+
 ```
 
-Detail for row 2: "A DENIAL IS WEIGHED WITH THE PRIEST'S OWN DOUBT IN IT. TEN POINTS EITHER WAY. DENIED AND DISBELIEVED, THE SENTENCE DOUBLES AND THE MISSION REMEMBERS THE LIE." Row 3 swaps the detail for the sheet (§3.2). The panes hold their height (UI-REFERENCE: nothing jumps as the cursor moves). The header band carries the bouncer-alert slot like every page ("the one line that outranks a menu"). Prose panel and verdict badge get their own `EasedToggle`; the badge lands with an `ImpactPulse` at the shipped restraint.
+Detail for row 2 on the rope tier: "A DENIAL IS WEIGHED WITH THE PRIEST'S OWN DOUBT IN IT. TEN POINTS EITHER WAY. MERCY OR THE ROPE, AND NEVER SPARED."; on a cell or hand charge: "... DENIED AND DISBELIEVED, THE SENTENCE DOUBLES AND THE MISSION REMEMBERS THE LIE.", and row 1 there ends "NEVER DOUBLED, AND NEVER SPARED." -- each tier's literal names only what is on its table (fix pass). Row 3 swaps the detail for the sheet (§3.2). The panes hold their height (UI-REFERENCE: nothing jumps as the cursor moves). The header band carries the bouncer-alert slot like every page ("the one line that outranks a menu"). Prose panel and verdict badge get their own `EasedToggle`; the badge lands with an `ImpactPulse` at the shipped restraint.
 
 **After the plea, the check block replaces the detail pane** (the four lines, stolen outright):
 
@@ -295,7 +303,7 @@ THE LINE: 24 MERCY
 [THE ROPE]
 ```
 
-PAPER tier prints the whole ladder on the line row: `THE LINES: 55 SPARED  38 FINED  14 HELD`. The badge is an inverted fill; `SPARED` is the longer badge on the larger margin, like `CRITICAL SUCCESS`. Then the consequence in prose from the bark table. The judgment's clock and coin are stated as numbers on the last row (`TWO NIGHTS. 17 ROYALS.`), the way `HELD HARD -- CUDGEL 14-18` states its span.
+PAPER tier prints the lines the score was read against and only those: `THE LINES: 55 SPARED  38 FINED  14 HELD` on a denial, `THE LINES: 38 FINED  14 HELD` on a confession (SPARED was never on its table, §3.5). The arithmetic is drawn as whole terms -- a row breaks only between terms, so `- 20 THE WARD` never parts from its sign at any width (`packTerms`). A hearing with no plea (mercy once) weighs nothing, prints nothing and wears no `[THE PRIEST WEIGHS]` badge: the verdict leads. The officer's walking-in line stands under the rows only until the answer; a judged page has nothing of his on it. The badge is an inverted fill; `SPARED` is the longer badge on the larger margin, like `CRITICAL SUCCESS`. Then the consequence in prose from the bark table. The judgment's clock and coin are stated as numbers on the last row (`TWO NIGHTS. 17 ROYALS.`), the way `HELD HARD -- CUDGEL 14-18` states its span.
 
 ### 6.2 Device-aware prompts
 
@@ -310,6 +318,8 @@ UI-EA law: the key that opened a page closes it; ESC backs out one layer. **The 
 `WANTED  HEAT n` (shipped) / `WANTED FOR BLOOD  HEAT n` (new) / `CONDEMNED  HEAT n` (shipped word, new meaning: rope passed and commuted) / `MAIMED` (shipped). `hud.cpp`'s promote rule extends to the new phrase. A bondsworn stretch prints nothing extra: the clock jump is the whole of it.
 
 ### 6.5 The priest's lines
+
+**FIX PASS (2026-09-11): the openings are CHOSEN BY THE CASE and rotated only within the case.** Sixteen tables: `court.paper` (a thief the Mission has never seen) and `court.paper.door` (THE DOOR above zero), `court.blood`, `court.roofs.hand` (the ask is the hand) and `court.roofs.rope` (the second rung), `court.nothing`, `court.plead`, `court.taken`, the seven judgments, `court.lie`. Every row of a table is true of every hearing that table can open: no row names a gift, a rope, a corpse or a night the sheet may not carry, and the lie rows never name the sentence's shape. The learned word is never said to a layman, not even nearly (ruling 8 below is superseded). The full row list is in `docs/frames/justice/README.md`.
 
 New bark tables keyed like the shipped `watch.*`: `court.paper`, `court.blood`, `court.roofs` (the reading), `court.spared`, `court.fined`, `court.held`, `court.bound`, `court.hand`, `court.commuted`, `court.rope`, `court.lie`, `court.nothing`. Three rows each, rotated on `hearings_`. **BUILT (BARKS & GATE lane, 2026-09-11): fourteen tables** -- the twelve above plus `court.taken` (the officer walking you in: his line under the rows, in the master pane, for the whole hearing) and `court.plead` (the priest pressing for the answer once a plea is armed, in place of his opening); three to four rows each, the two voices rotated together on `hearings_`. **This is a content append** (rows in `content/raws/barks/contract_barks.json` beside `watch.*`), and the combat build appending `watch.condemned` is the precedent; it is flagged for the owner (§9, ruling 9). Fallback if refused: code literals in the pause-row shape. The three shipped `watch.condemned` rows already read as the walk to the bench and stay as the officer's lines.
 
@@ -376,7 +386,7 @@ Three worktree lanes, disjoint footprints, SIM's headers first (they are the API
 5. **May the priest spare a Skyrunner's hand** (THE HAND tier at ≥ 38 → HELD)? A court that cannot overrule the sergeant is a formality. *Recommend: yes.* Alternative: the hand is canon and un-sparable, the plea only moves the nights.
 6. **Jail lengths.** 1–3 days as ruled, doubled on a failed denial; BOUND 5; COMMUTED 12; shortfall 1 day per 4 Royals to 7. *Recommend: as tabled.* The one number most worth a second look is COMMUTED's 12 (long enough to lose every open contract; the price of a life).
 7. **The Wielder at the bench.** Does the Flame's pierce acquit a disguised Wielder, or is the bench the one place shed immunity does not return? *Recommend: leave the seam, build neither* (§7.2).
-8. **"Bloodletter" at a murder hearing.** The diction rule allows the priest the word. *Recommend: one row of `court.blood` nearly says it* ("You took a life in the dark, the way the thing we do not name to laymen takes them.") and no common-folk line ever does.
+8. **"Bloodletter" at a murder hearing.** The diction rule allows the priest the word. *Recommend: one row of `court.blood` nearly says it* ("You took a life in the dark, the way the thing we do not name to laymen takes them.") and no common-folk line ever does. **Superseded by the fix pass:** the accused is a layman, so the priest says nothing of it, nearly or otherwise; the row was rewritten (§6.5).
 9. **Bark rows as a content append** (`court.*` in `contract_barks.json`, the `watch.condemned` precedent) versus code literals. *Recommend: the append.*
 10. **Hearing timing.** Heard at once, any hour (Daggerfall), versus a night in the K34 cell and the bench at 08:00. *Recommend: at once* for v1; the night is ceiling.
 11. **Does a served sentence clear heat?** Heat := 12 after the skip, paper off; COMMUTED clears `murderer_`; nothing clears `condemned_`. *Recommend: yes, as stated.* (This also makes `kHeatAfterSentence` live; today it is dead by ordering.)
@@ -387,7 +397,7 @@ Three worktree lanes, disjoint footprints, SIM's headers first (they are the API
 
 ## 10. Register literals (for the veto pass)
 
-`TAKEN TO THE MISSION. 23:40.` / `THE MISSION -- A HEARING` / `WATCHMAN CULL LAYS THE PAPER ON THE TABLE.` / `THE WARD SAYS YOU PUT CANNIC DOWN IN THE GILDED GULL. THREE SAW IT.` / `THE WARD HAS YOU FOR TWO LIFTS AND A CRACKED BOX.` / `THE ROOFS, A SECOND TIME.` / `THE PAPER ASKS FOR A CELL.` · `THE HAND.` · `THE ROPE.` / `1 - I DID IT.` `2 - I DID NOT.` `3 - HEAR THE PAPER` `0 - BACK` / `1 - I HAVE NOTHING TO SAY.` / `[THE PRIEST WEIGHS]` / `THE LINES: 55 SPARED  38 FINED  14 HELD` / `THE LINE: 24 MERCY` / `+ 6 CONFESSED` / `+ 4 THE PRIEST IS A MAN` / `[SPARED]` `[FINED]` `[HELD]` `[BOUND]` `[THE HAND]` `[COMMUTED]` `[THE ROPE]` / `TWO NIGHTS. 17 ROYALS.` / `BONDSWORN 5 DAYS.` / `TURNED LOOSE ON THE TARWALK. DAY 4. 23:40.` / `THE PRIEST IS WAITING.` / `WANTED FOR BLOOD` / the priest: `I have read what you gave at this door. It is the only reason we are talking.` · `You lied to the Flame's face. The Mission will remember which.` · `The Flame does not want you. The ward may have you.` / the plate: `HANGED AT THE SALTGATE POST.` · `BY THE WARD. FOR CANNIC.` · `BY THE WARD. FOR THE SECOND RUNG.` · `THE FOURTH DAY. 23:52.` / `1 - A NEW MAN` `2 - LEAVE`.
+`TAKEN TO THE MISSION. 23:40.` / `THE MISSION -- A HEARING` / `WATCHMAN CULL LAYS THE PAPER ON THE TABLE.` / `THE WARD SAYS YOU PUT CANNIC DOWN IN THE GILDED GULL. THREE SAW IT.` / `THE WARD HAS YOU FOR TWO LIFTS AND A CRACKED BOX.` / `THE ROOFS, A SECOND TIME.` / `THE PAPER ASKS FOR A CELL.` · `THE HAND.` · `THE ROPE.` / `1 - I DID IT.` `2 - I DID NOT.` `3 - HEAR THE PAPER` `0 - BACK` / `1 - I HAVE NOTHING TO SAY.` / `[THE PRIEST WEIGHS]` / `THE LINES: 55 SPARED  38 FINED  14 HELD` / `THE LINE: 24 MERCY` / `+ 6 CONFESSED` / `+ 4 THE PRIEST IS A MAN` / `[SPARED]` `[FINED]` `[HELD]` `[BOUND]` `[THE HAND]` `[COMMUTED]` `[THE ROPE]` / `TWO NIGHTS. 17 ROYALS.` / `BONDSWORN 5 DAYS.` / `TURNED LOOSE ON THE TARWALK. DAY 4. 23:40.` / `THE PRIEST IS WAITING.` / `WANTED FOR BLOOD` / the priest: `I have read what you gave at this door. It is the only reason we are talking.` (`court.paper.door`, only when THE DOOR is above zero) · `You lied to the Flame's face. The Mission will remember the lie longer than the sentence.` · `The Flame does not want you. The ward may have you.` / the arrest's beat: `Watchman Cull: There is paper out on you and I am the man holding it. Walk.` then `TAKEN TO THE MISSION. 23:40.` over black / the end rows armed: `1 - A NEW MAN -- SURE? <key>` / the plate: `HANGED AT THE SALTGATE POST.` · `BY THE WARD. FOR CANNIC.` · `BY THE WARD. FOR THE SECOND RUNG.` · `THE FOURTH DAY. 23:52.` / `1 - A NEW MAN` `2 - LEAVE`.
 
 ---
 
