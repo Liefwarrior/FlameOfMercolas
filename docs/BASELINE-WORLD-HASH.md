@@ -599,3 +599,14 @@ section since Phase C records. The court is a page over the Gull's own Watch; th
 **The tavern baseline is therefore re-blessed at `0x837E94019BC49C25` with one declared
 record change behind it** -- the court's own v5 fields on the ledger the tavern hashes.
 
+The BARKS & GATE lane (the build's last) added no hashed field -- two bark tables
+(`court.taken`, `court.plead`), a page field and the drive's endings are content and render --
+and read both numbers again off the final gated exe: `--tavern --ticks 900` `run A` == `run B`
+== `0x837E94019BC49C25` (3,153 bytes); `--population --population-hour 16 --ticks 7200` `run A`
+== `run B` == `0x2646C1AAA2BA38DF` (18,772 bytes). That gate's stamp: `native/` digest
+`4b790c199f96417cd33cc2530f545be84415d2fe4646903de6e79c9afff1b4f7`, 293 files, 90/90 ctest
+entries green, 1,197 doctest cases (`2026-09-11T13:24:20Z`); `verify-windows.ps1` PASS --
+1,116 sim cases / 1,363,521 assertions and 71 content cases / 902,135 assertions under mingw,
+content-fingerprint and world-hash reports byte-identical linux/gcc vs mingw/windows, the
+stamp naming this tree.
+
