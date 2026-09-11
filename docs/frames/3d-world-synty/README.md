@@ -1,7 +1,7 @@
 # 3D world, the Synty kit on the Docks, second pass
 
 Every frame here is `dist\granadad.exe` (the docker gate's mingw build, branch
-`3d/build`, commit `e48a77f4`) shot on the Windows host with a real GPU through
+`3d/build`, commit `6d4b8656`) shot on the Windows host with a real GPU through
 the shutter. 1280x720, the 640x360 render upscaled 2x, the terminal HUD on top.
 Nothing is staged. The placements are a pure function of the tile map and the
 catalogue (`content/raws/world3d/docks-pieces.json`), the people are where the
@@ -22,7 +22,7 @@ defects. This is where each one landed. Code lines are in
 | 1 | raw atlas showing through (the Gull's ceiling, the quay, the pier lip) | every dressed wall standing over an open cell gets the plaster quad under it, in the room's own ceiling tint (`ceilings()`, the second pass). Every floor slab edge that faces air gets a lip quad the slab's own height, planks on timber and tinted plaster on stone (`lips()`). Steel has a rule now, so the quay's odd patch is dressed. | 13, 14, 08, 17 |
 | 2 | brick facing into plastered rooms behind the door frame | the thin plaster quad stands behind the header and both jambs, cut round the opening, plus two returns over the frame's ends in the reveal planes (`doors()`). Plaster faces in general are the one-sided thin quad now (`WallPlaster`), so a corner has no brick back and no brick end. | 14, 23 |
 | 3 | lamps with no light in them, no lit windows | lanterns are `SM_Prop_Camp_Lantern_01` on a bracket arm with a warm translucent halo (two crossed quads, their own light, brighter after dark). Fires keep the brazier and get an ember tray in the cage and a flame over it. A window pane goes warm at night when the room behind it is lit by a lamp, or when the tile hash keeps a candle in a roofed room (two windows in three), so the ward is not dead after dark. | 10, 15, 16, 19 |
-| 4 | the Gull an empty box | joists across every room ceiling on the odd grid lines. Tables with benches and mugs on a lattice round the indoor lantern where a clear 3x3 of floor allows. Shelves with bottles on the indoor masonry faces. Barrel racks against walls. The free-standing two-cell masonry block is a hearth and wears the fireplace with a fire in it. The lone timber cells inside are square plastered pillars (`furniture()`, `posts()`). | 07, 21, 22 |
+| 4 | the Gull an empty box | joists across every room ceiling on the odd grid lines. Tables with benches and mugs on a lattice round the indoor lantern where a clear 3x3 of floor allows. Shelves with bottles on the indoor masonry faces. Barrel racks against walls. The free-standing two-cell masonry block is a hearth and wears the fireplace with a fire in it. The lone timber cells inside are square plastered pillars with a stool each side (`furniture()`, `posts()`). | 07, 21, 22 |
 | 5 | floorboard roofs, chimneys on fences | roof planes wear the flagstone piece as dark slates over a slate fill, loose tiles scattered by hash, an upstand along every edge cell (brick over masonry, boards over timber), chimneys one in twelve over masonry walls only in three variants, the odd crate or barrel at the edge (`roofs()`). Still flat, see below. | 05, 06, 19 |
 | 6 | hulls as sheds, 1x1 posts as boarded pillars | a timber wall with the harbour beside it is a hull. Its boards run across and lean outward nine degrees, tarred, with a gunwale beam along the open top and mooring lines down the side. Rowboats moor along quay edges one cell in seven, cranes stand one cell back from a pier head. A lone timber cell out of doors is a tarred core with a banded timber post at each corner. The chunk box is still a metre square, that is the sim's cell. | 08, 17, 18, 20 |
 | 7 | light steps at seams, lit patchwork on floors | each run piece is lit at the exact cut, blended between the two cell centres the cut falls between, so the neighbour piece gets the same value. Floors and ceilings are lit at their four corner points and blended bilinearly (a four-tint shader in `rl_backend.cpp`), and blocks are capped at 4x4 so a lamp pool resolves. | 07, 22 |
@@ -59,7 +59,7 @@ defects. This is where each one landed. Code lines are in
 | 19 | the overview at nine at night | `--spawn=153,72,21 --yaw=300 --pitch=-20 --hold --time=21 --screenshot=19.png` |
 | 20 | the 1x1 timber posts flanking the Gull's door | `--spawn=152,61,19 --yaw=180 --pitch=2 --fov=55 --hold --time=10 --screenshot=20.png` |
 | 21 | the Gull's hearth, head on | `--spawn=150,73,19 --yaw=180 --hold --time=20 --screenshot=21.png` |
-| 22 | the Gull's tables from the south-west corner | `--spawn=148,76,19 --yaw=50 --hold --time=20 --screenshot=22.png` |
+| 22 | the Gull's tables, pillars and bar from the snug end | `--spawn=156,67,19 --yaw=250 --pitch=-3 --hold --time=20 --screenshot=22.png` |
 | 23 | the doorway corner from inside the room | `--spawn=155,69,19 --yaw=325 --pitch=6 --fov=50 --hold --time=20 --screenshot=23.png` |
 
 ## What is placed
@@ -148,11 +148,11 @@ one line once the tiles say so.
 
 ## Numbers
 
-Gate stamp `e48a77f4`, native digest
-`144d50e5b218cad6262b392688efa94370647aec4345bb6b8acd5edf9c7a2fe0`, 1184
+Gate stamp `6d4b8656`, native digest
+`7c1b6522b35b425cf16b7077a5deb6e3dcbc969b90ca84c50577eada41072203`, 1184
 ctest cases, `verify-windows.ps1` PASS with both reports byte-identical.
 Tavern baseline `0x86E05F527E54E795` and population baseline
 `0x2646C1AAA2BA38DF`, both twice, unmoved. Scene hash on this build,
-`--smoke=40 --time=20` twice as separate processes, `0x89E862E5E5246D0C` both
-times with byte-identical PNGs. 19,115 pieces placed over the district, about
-3,600 described from the spawn.
+`--smoke=40 --time=20` twice as separate processes, `0x52F94078E844DB03` both
+times with byte-identical PNGs. 19,134 pieces placed over the district, about
+3,700 described from the spawn.
