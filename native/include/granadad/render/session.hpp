@@ -3117,6 +3117,17 @@ struct SmokeRunConfig {
     /// arc, the arrest line on the row).
     bool watchHalt = false;
     std::string watchHaltEnd = "street";
+    /// JUSTICE BUILD (HEARING PAGE LANE). Play the court: walk into the Gull
+    /// at Cull's hour, lift in his sight until the row reads WANTED, stand
+    /// still with steel up until he takes you at reach -- and the bench is
+    /// the next thing on screen: TAKEN TO THE MISSION, the page. WHERE is
+    /// "page" (the rows, the default), "paper" (HEAR THE PAPER open), "plea"
+    /// (I DID IT pleaded, the check block and the sentence row) or "rope"
+    /// (a killing at eight before the Watch drinks, the wait to ten, taken
+    /// to a rope hearing, THE ROPE, the drop, the plate with A NEW MAN /
+    /// LEAVE under it).
+    bool court = false;
+    std::string courtEnd = "page";
     /// S9. Play a burglary: crouch, cross a dark taproom unseen, lift a purse
     /// off somebody who does not feel it, up the stair, wire into a guest's
     /// strongbox, work the pins, and empty it. WHERE is "box" (standing over
@@ -3506,6 +3517,8 @@ struct SmokeRunResult {
     std::int32_t skyrunStages = 0;
     /// BARKS LANE: beats of the Watch-on-violence line (--watch-halt).
     std::int32_t watchHaltBeats = 0;
+    /// JUSTICE BUILD: beats of the court line (--court), by its ending.
+    std::int32_t courtBeats = 0;
     /// How many of the six beats of the bounty run landed.
     std::int32_t contractBeats = 0;
     /// How many of the seven beats of the nemesis arc landed.

@@ -127,6 +127,49 @@ TEST_CASE("the Watch line lands all five of its beats: seen, steel, the halt on 
     CHECK(played.summary.find("row=\"Watchman Cull: ") != std::string::npos);
 }
 
+TEST_CASE("--court lands its three beats: WANTED off real lifts, taken with paper, the bench up at the Mission") {
+    // JUSTICE BUILD (HEARING PAGE LANE). The court, through the real verbs.
+    render::SmokeRunConfig run;
+    run.court = true;
+    const render::SmokeRunResult played = play(run);
+    INFO(played.summary);
+    CHECK(played.ok);
+    CHECK_FALSE(played.scriptFellShort());
+    CHECK(played.courtBeats == 3);
+    CHECK(played.summary.find("page=up") != std::string::npos);
+    CHECK(played.summary.find("hearing=pending") != std::string::npos);
+    CHECK(played.summary.find("ask=held") != std::string::npos);
+    CHECK(played.summary.find("row=\"TAKEN TO THE MISSION. ") != std::string::npos);
+}
+
+TEST_CASE("--court=plea pleads I DID IT and holds on the check block with the sentence row offered") {
+    render::SmokeRunConfig run;
+    run.court = true;
+    run.courtEnd = "plea";
+    const render::SmokeRunResult played = play(run);
+    INFO(played.summary);
+    CHECK(played.ok);
+    CHECK_FALSE(played.scriptFellShort());
+    CHECK(played.courtBeats == 4);
+    CHECK(played.summary.find("page=up") != std::string::npos);
+    CHECK(played.summary.find("judgment=") != std::string::npos);
+    CHECK(played.summary.find("judgment=none") == std::string::npos);
+}
+
+TEST_CASE("--court=rope: a killing before the Watch drinks, taken to a rope hearing, THE ROPE, the plate with the end rows under it") {
+    render::SmokeRunConfig run;
+    run.court = true;
+    run.courtEnd = "rope";
+    const render::SmokeRunResult played = play(run);
+    INFO(played.summary);
+    CHECK(played.ok);
+    CHECK_FALSE(played.scriptFellShort());
+    CHECK(played.courtBeats == 5);
+    CHECK(played.summary.find("executed=yes") != std::string::npos);
+    CHECK(played.summary.find("rows=up") != std::string::npos);
+    CHECK(played.summary.find("judgment=the rope") != std::string::npos);
+}
+
 TEST_CASE("--watch-halt=halt stops on the halt itself, with Cull's own row on the alert row") {
     render::SmokeRunConfig run;
     run.watchHalt = true;

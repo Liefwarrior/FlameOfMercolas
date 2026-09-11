@@ -911,6 +911,8 @@ void print_usage() {
         "  --watch-halt[=WHERE] draw steel in the Gull in Watchman Cull's sight\n"
         "                       and stand there: the halt, the arrest at reach,\n"
         "                       the street. WHERE is halt or street\n"
+        "  --court[=WHERE]      lift in Cull's sight until WANTED, be taken to the\n"
+        "                       Mission's bench. WHERE is page, paper, plea or rope\n"
         "  --nemesis[=WHERE]    lose a fist fight to a named laborer three\n"
         "                       times and watch him rise: a rung, a guild\n"
         "                       with members in it, a permanent cut of the\n"
@@ -1318,6 +1320,12 @@ void print_usage() {
         } else if (starts_with(arg, "--watch-halt=", &value)) {
             options.smoke.watchHalt = true;
             options.smoke.watchHaltEnd = value;
+        } else if (std::strcmp(arg, "--court") == 0) {
+            // JUSTICE BUILD (HEARING PAGE LANE). See SmokeRunConfig::court.
+            options.smoke.court = true;
+        } else if (starts_with(arg, "--court=", &value)) {
+            options.smoke.court = true;
+            options.smoke.courtEnd = value;
             options.wantsSmoke = true;
         } else if (std::strcmp(arg, "--nemesis") == 0) {
             options.smoke.nemesis = true;

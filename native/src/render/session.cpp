@@ -6969,7 +6969,12 @@ HearingPageState Session::hearingPageState() const {
     out.armed = courtArmed_;
 
     // --- the detail pane ----------------------------------------------------
-    const std::int32_t rotation = crimes.hearings();
+    // ROTATED ON THE HEARINGS BEFORE THIS ONE: plead() counts the hearing
+    // the moment the plea lands, so the verdict's row reads the count back
+    // by one -- the opening and the verdict of one hearing rotate together,
+    // and the first hearing hears row zero of both.
+    const std::int32_t rotation =
+        hearing.judged() ? std::max<std::int32_t>(0, crimes.hearings() - 1) : crimes.hearings();
     const auto bark = [&barks, rotation](std::string_view key) {
         return std::string(barks.line(key, rotation));
     };
@@ -10770,6 +10775,296 @@ std::string gWatchHaltNote;
     return landed;
 }
 
+
+// ---------------------------------------------------------------------------
+// JUSTICE BUILD (HEARING PAGE LANE): the court, played
+// ---------------------------------------------------------------------------
+
+/// How many beats runCourtLine tries to land, by ending. THE PAGE (the
+/// default): Cull can SEE the player beside a patron; the paper -- lifts in
+/// his sight until the row reads WANTED; taken at reach with paper, the body
+/// at the Mission's door with TAKEN TO THE MISSION on the row and the page
+/// up. Three. "paper" adds HEAR THE PAPER open (four); "plea" adds I DID IT
+/// pleaded and the check block on the page (four); "rope" is its own line: a
+/// killing before the Watch drinks, the paper with blood on it, taken to a
+/// rope hearing, THE ROPE passed and the drop taken, the plate with the end
+/// rows under it (five).
+constexpr std::int32_t kCourtBeats = 3;
+constexpr std::int32_t kCourtPaperBeats = 4;
+constexpr std::int32_t kCourtPleaBeats = 4;
+constexpr std::int32_t kCourtRopeBeats = 5;
+
+[[nodiscard]] std::int32_t courtBeatsFor(const std::string& ending) {
+    if (ending == "paper") {
+        return kCourtPaperBeats;
+    }
+    if (ending == "plea") {
+        return kCourtPleaBeats;
+    }
+    if (ending == "rope") {
+        return kCourtRopeBeats;
+    }
+    return kCourtBeats;
+}
+
+/// What the court line found, for the summary -- the nemesis line's rule: a
+/// capture cannot quietly photograph the wrong thing.
+std::string gCourtNote;
+
+/// A patron Cull can SEE the player beside, and the body stood there:
+/// runWatchHaltLine's own search, nearest to Cull first. Returns the mark's
+/// id, or -1 with the note filled.
+[[nodiscard]] std::int32_t standBesidePatronInCullsSight(Session& session, std::int32_t cullId) {
+    const sim::Tavern& tavern = session.tavern();
+    const sim::Actor* cull = tavern.actorById(cullId);
+    if (cull == nullptr || !cull->present()) {
+        gCourtNote += " cull=absent";
+        return -1;
+    }
+    std::vector<std::pair<std::int32_t, std::int32_t>> candidates;
+    for (const sim::Actor& actor : tavern.actors()) {
+        if (!actor.present() || sim::isFloored(actor.activity()) ||
+            actor.role() != sim::ActorRole::Patron || tavern.isProfessional(actor) ||
+            actor.band() != session.body().band()) {
+            continue;
+        }
+        candidates.emplace_back(actor.distanceTo(cull->x(), cull->y()), actor.id());
+    }
+    std::sort(candidates.begin(), candidates.end());
+    for (const auto& [distance, id] : candidates) {
+        (void)distance;
+        const sim::Actor* patron = tavern.actorById(id);
+        if (patron == nullptr || !patron->present()) {
+            continue;
+        }
+        const std::int32_t sides[4][2] = {{0, -1}, {0, 1}, {-1, 0}, {1, 0}};
+        for (const auto& side : sides) {
+            const std::int32_t px = patron->tileX() + side[0];
+            const std::int32_t py = patron->tileY() + side[1];
+            if (!session.tiles().standable(px, py, patron->band())) {
+                continue;
+            }
+            walkToTile(session, px, py);
+            if (session.body().tileX() != px || session.body().tileY() != py) {
+                continue;
+            }
+            patron = tavern.actorById(id);
+            if (patron == nullptr) {
+                break;
+            }
+            facePlayerAndSync(session, patron->x(), patron->y());
+            session.stepMany(sim::MoveInput{}, sim::kStepsPerSecond);
+            cull = tavern.actorById(cullId);
+            if (cull != nullptr && cull->present() && tavern.noticeBy(*cull).seen) {
+                return id;
+            }
+            break;
+        }
+    }
+    gCourtNote += " mark=none-in-culls-sight candidates=" + std::to_string(candidates.size());
+    return -1;
+}
+
+/// Steel up in Cull's sight and stand still until he takes you at reach --
+/// the feel build's Closing on VIOLENCE, no glance gate, no die. True once
+/// the arrest has happened.
+[[nodiscard]] bool standUntilTakenBy(Session& session, std::int32_t cullId) {
+    sim::Tavern& tavern = session.tavern();
+    tavern.setPlayerCombat(sim::Weapon::Edged, sim::Intent::Subdue);
+    session.setBlocking(true);
+    session.stepMany(sim::MoveInput{}, 1);
+    session.setBlocking(false);
+    session.stepMany(sim::MoveInput{}, 1);
+    for (int second = 0; second < 90 && !tavern.lastArrest().happened; ++second) {
+        if (const sim::Actor* cull = tavern.actorById(cullId); cull != nullptr && cull->present()) {
+            // In his face: distance zero is inside reach whatever the room
+            // does with the line.
+            session.placeBodyAt(cull->tileX(), cull->tileY(), cull->band());
+            session.syncTavernToBody();
+        }
+        session.stepMany(sim::MoveInput{}, sim::kStepsPerSecond);
+    }
+    return tavern.lastArrest().happened;
+}
+
+/// Puts `markId` down for good through the Attack verbs -- hard swings until
+/// the roster says Dead. True on a corpse.
+[[nodiscard]] bool killWithHardSwings(Session& session, std::int32_t markId) {
+    sim::Tavern& tavern = session.tavern();
+    tavern.setPlayerCombat(sim::Weapon::Edged, sim::Intent::Kill);
+    for (int swings = 0; swings < 40; ++swings) {
+        const sim::Actor* mark = tavern.actorById(markId);
+        if (mark == nullptr) {
+            return false;
+        }
+        if (mark->activity() == sim::Activity::Dead) {
+            return true;
+        }
+        for (int i = 0; i < sim::kRecoilSteps + sim::kBlockStaggerSteps +
+                                sim::kHardSwingRecoverySteps + 8 &&
+                        (tavern.playerRecoilSteps() > 0 || tavern.playerBlockStaggerSteps() > 0 ||
+                         !tavern.playerCombatIdle());
+             ++i) {
+            session.stepMany(sim::MoveInput{}, 1);
+        }
+        if (!closeOnAndFace(session, markId)) {
+            return false;
+        }
+        session.attackDown();
+        session.stepMany(sim::MoveInput{}, sim::kHardSwingHoldSteps + 1);
+        session.attackUp();
+        session.stepMany(sim::MoveInput{}, 1);
+    }
+    return false;
+}
+
+[[nodiscard]] int runCourtLine(Session& session, const std::string& ending) {
+    int landed = 0;
+    gCourtNote.clear();
+    const sim::Tavern& tavern = session.tavern();
+    const sim::CrimeLedger& crimes = tavern.dialogue().crimes();
+    // In through the door to the bar, the smoke's own route-walk.
+    walkToTile(session, sim::gull::kBartenderX, sim::gull::kBartenderY + 1);
+    session.closeConversation();
+
+    if (ending == "rope") {
+        // THE KILLING, BEFORE THE WATCH DRINKS: the line starts at eight, the
+        // room full and Cull not yet on his stool, so the corpse is made in
+        // front of the room and not under a watchman's hand mid-swing. The
+        // mark is the upright patron with the most people close enough to
+        // see it done.
+        std::int32_t markId = -1;
+        int bestNear = -1;
+        for (const sim::Actor& actor : tavern.actors()) {
+            if (!actor.present() || sim::isFloored(actor.activity()) ||
+                actor.role() != sim::ActorRole::Patron || tavern.isProfessional(actor) ||
+                actor.band() != session.body().band()) {
+                continue;
+            }
+            int near = 0;
+            for (const sim::Actor& other : tavern.actors()) {
+                if (other.id() != actor.id() && other.present() &&
+                    !sim::isFloored(other.activity()) && other.role() != sim::ActorRole::Vermin &&
+                    other.band() == actor.band() &&
+                    std::max(std::abs(other.tileX() - actor.tileX()),
+                             std::abs(other.tileY() - actor.tileY())) <= 4) {
+                    ++near;
+                }
+            }
+            if (near > bestNear) {
+                bestNear = near;
+                markId = actor.id();
+            }
+        }
+        if (markId < 0 || !killWithHardSwings(session, markId) || !crimes.murderer()) {
+            gCourtNote += " kill=failed";
+            return landed;
+        }
+        gCourtNote += " slew=" + tavern.slainName() + " saw=" + std::to_string(crimes.slewWitnesses());
+        ++landed;  // 1: a corpse on the roster, the ward knows whose hand
+        // THE WAIT: the wait page's own jump to the hour the Watch drinks,
+        // the body out of the fight's reach first (skipToHour is refused
+        // with fists up) and the heat cooling honestly through the hours --
+        // a murder's sixty is still paper at ten.
+        session.tavern().lowerPlayerHands();
+        session.tavern().setPlayerCombat(sim::Weapon::Fists, sim::Intent::Subdue);
+        session.skipToHour(22);
+        session.stepMany(sim::MoveInput{}, sim::kStepsPerSecond);
+        if (!crimes.warrant()) {
+            gCourtNote += " paper=lapsed";
+            return landed;
+        }
+    }
+
+    const sim::Actor* cull = actorNamed(session, "Watchman Cull");
+    if (cull == nullptr || !cull->present()) {
+        gCourtNote += " cull=absent";
+        return landed;
+    }
+    const std::int32_t cullId = cull->id();
+    const std::int32_t markId = standBesidePatronInCullsSight(session, cullId);
+    if (markId < 0) {
+        return landed;
+    }
+
+    if (ending != "rope") {
+        // THE PAPER, THROUGH THE VERB: a hand in a coat in Cull's sight until
+        // the row reads WANTED. Eight heat a witnessed lift; a caught hand
+        // is witnessed too. The mark's purse runs out before the paper does,
+        // so the line moves to the next patron in Cull's sight when it must.
+        for (int lifts = 0; lifts < 40 && !crimes.warrant(); ++lifts) {
+            session.lift();
+            session.stepMany(sim::MoveInput{}, 4);
+            if (const sim::Actor* mark = tavern.actorById(markId);
+                mark == nullptr || mark->coin() <= 0) {
+                if (standBesidePatronInCullsSight(session, cullId) < 0) {
+                    break;
+                }
+            }
+        }
+        gCourtNote += " heat=" + std::to_string(crimes.heat());
+        if (!crimes.warrant() || session.heatLine().rfind("WANTED", 0) != 0) {
+            gCourtNote += " paper=none";
+            return landed;
+        }
+        ++landed;  // 1: WANTED on the row, off real lifts
+    }
+
+    // TAKEN AT REACH, WITH PAPER. The arrest opens the hearing; the step
+    // that reads the release puts the body at the Mission's door and the
+    // page up.
+    if (!standUntilTakenBy(session, cullId) || tavern.lastArrest().sentence == sim::Sentence::Fined) {
+        gCourtNote += " arrest=" + std::string(tavern.lastArrest().happened ? "paperless" : "none");
+        return landed;
+    }
+    ++landed;  // 2: taken with paper
+    session.stepMany(sim::MoveInput{}, 1);
+    gCourtNote += " ask=" + std::string(sim::sentenceName(tavern.lastArrest().sentence));
+    if (!session.courtOpen() || tavern.playerInside() ||
+        session.lastMessage().rfind("TAKEN TO THE MISSION. ", 0) != 0) {
+        gCourtNote += " page=no";
+        return landed;
+    }
+    ++landed;  // 3: TAKEN TO THE MISSION, the page up
+    // The page's own ease, fully open, so a capture photographs the bench.
+    session.stepMany(sim::MoveInput{}, 16);
+
+    if (ending == "paper") {
+        (void)session.routeCourtKey(Key::Num3);
+        if (session.courtPaperOpen()) {
+            ++landed;  // 4: HEAR THE PAPER
+        }
+        return landed;
+    }
+    if (ending == "plea" || ending == "rope") {
+        // I DID IT, armed and confirmed, then the judgment's own hold so the
+        // sentence row is on the list under the check block.
+        (void)session.routeCourtKey(Key::Num1);
+        (void)session.routeCourtKey(Key::Num1);
+        session.stepMany(sim::MoveInput{}, sim::kJudgmentHoldSteps + 1);
+        const sim::HearingState& hearing = tavern.hearing();
+        gCourtNote += " judgment=" + std::string(sim::judgmentName(hearing.judgment));
+        if (hearing.judged() && session.courtSentenceOffered()) {
+            ++landed;  // 4: pleaded, weighed, the row offered
+        }
+        if (ending == "plea") {
+            return landed;
+        }
+        if (hearing.judgment != sim::Judgment::TheRope) {
+            gCourtNote += " rope=no";
+            return landed;
+        }
+        // THE DROP, by the player's own hand: the dip, the held plate, then
+        // the rows under it -- the frame a capture of the end wants.
+        (void)session.routeCourtKey(Key::Num1);
+        session.stepMany(sim::MoveInput{}, kPageEaseSteps + sim::kDeathHoldSteps + 1);
+        if (tavern.executed() && session.ropeRowsUp()) {
+            ++landed;  // 5: hanged, the plate and the rows
+        }
+    }
+    return landed;
+}
+
 // ---------------------------------------------------------------------------
 // S9: the burglary, played
 // ---------------------------------------------------------------------------
@@ -12379,6 +12674,13 @@ int scriptedStartHour(const SmokeRunConfig& config) noexcept {
     if (config.watchHalt) {
         return 23;
     }
+    // JUSTICE BUILD. The court line wants Cull on his stool for the arrest
+    // (eleven, the Watch line's own hour) -- except the rope, whose killing
+    // is made at eight before he arrives and waits for him through the wait
+    // page's own jump.
+    if (config.court) {
+        return config.courtEnd == "rope" ? 20 : 23;
+    }
     // TWO IN THE MORNING, and the hour is the whole point of the line.
     //
     // The Gull shuts at two: the doors are barred, the lanterns and the table
@@ -12746,6 +13048,16 @@ SmokeRunResult runSmoke(const SmokeRunConfig& config) {
         result.watchHaltBeats = landed;
         // "halt" stops on the third beat by design; it owes three, not five.
         result.scriptedWanted += config.watchHaltEnd == "halt" ? kWatchHaltStopBeats : kWatchHaltBeats;
+        result.scriptedLanded += landed;
+    }
+
+    if (config.court) {
+        // JUSTICE BUILD (HEARING PAGE LANE). The bench, played through the
+        // real verbs -- see runCourtLine. Each ending owes its own count.
+        const std::int32_t landed =
+            static_cast<std::int32_t>(runCourtLine(session, config.courtEnd));
+        result.courtBeats = landed;
+        result.scriptedWanted += courtBeatsFor(config.courtEnd);
         result.scriptedLanded += landed;
     }
 
@@ -13384,6 +13696,14 @@ SmokeRunResult runSmoke(const SmokeRunConfig& config) {
                         ? sim::watchCauseName(session.tavern().lastArrest().cause)
                         : "no")
                 << gWatchHaltNote << " row=\"" << session.lastMessage() << '"';
+    }
+    if (config.court) {
+        summary << " | court beats=" << result.courtBeats << '/' << courtBeatsFor(config.courtEnd)
+                << " page=" << (session.courtOpen() ? "up" : "down")
+                << " hearing=" << (session.tavern().hearingPending() ? "pending" : "none")
+                << " executed=" << (session.tavern().executed() ? "yes" : "no")
+                << " rows=" << (session.ropeRowsUp() ? "up" : "down") << gCourtNote << " row=\""
+                << session.lastMessage() << '"';
     }
     if (config.nemesis) {
         const sim::Nemesis* worst = session.tavern().nemesis().worst();
