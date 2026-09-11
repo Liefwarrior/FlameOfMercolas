@@ -28,6 +28,7 @@
 #include "granadad/sim/engine.hpp"
 #include "granadad/sim/player.hpp"
 #include "granadad/sim/region_path.hpp"
+#include "granadad/sim/spellforge.hpp"
 #include "granadad/sim/tavern.hpp"
 
 using namespace granadad::sim;
@@ -115,6 +116,44 @@ public:
                 engine_->tick();
             }
         }
+    }
+
+    /// ACTION-COMBAT BUILD: the touch-cast bridges the first body on the
+    /// LOOK-RAY (VETO 1 -- one targeting rule for the swing and the link),
+    /// and the ray reads the facing the body pushes into the room. Puts the
+    /// player one tile off `mark` on a standable cardinal side, looking
+    /// straight at them, and pushes that facing -- the one place this harness
+    /// pushes a yaw at all, because playerYaw_ is hashed and every other case
+    /// here compares rooms that never turned. The same helper
+    /// test_combat_action's Room has. Returns the yaw chosen, or -1 if no side
+    /// of the mark is standable.
+    Angle standFacing(const Actor& mark) {
+        const std::int32_t ax = mark.tileX();
+        const std::int32_t ay = mark.tileY();
+        const std::int32_t band = mark.band();
+        struct Side {
+            std::int32_t dx;
+            std::int32_t dy;
+            Angle yaw;
+        };
+        const Side sides[] = {
+            {0, -1, kFacingSouth},  // north of the mark, look south
+            {0, 1, kFacingNorth},   // south of the mark, look north
+            {-1, 0, kFacingEast},   // west of the mark, look east
+            {1, 0, kFacingWest},    // east of the mark, look west
+        };
+        for (const Side& s : sides) {
+            const std::int32_t px = ax + s.dx;
+            const std::int32_t py = ay + s.dy;
+            if (tiles_->standable(px, py, band)) {
+                body_->placeAt(px, py, band);
+                body_->setYaw(s.yaw);
+                tavern_->setPlayer(body_->x(), body_->y(), body_->band());
+                tavern_->setPlayerYaw(body_->yaw());
+                return s.yaw;
+            }
+        }
+        return -1;
     }
 
 private:
@@ -1254,7 +1293,28 @@ std::unique_ptr<Room> roomWithFirstCast(std::string_view spellId, Tavern::CastRe
         REQUIRE(tavern.dialogue().grimoire().learn(*spell));
         // Linkcraft 10 puts every authored vitality row at the 95 ceiling.
         REQUIRE(tavern.dialogue().skills().setLevel(kCraftingSkill, 10));
-        result = tavern.playerCastEquipped();
+        if (targetShapeOf(spell->target) == TargetShape::Touch) {
+            // ACTION-COMBAT BUILD: a touch bridges the first body on the
+            // LOOK-RAY (VETO 1 -- the swing's own targeting rule), so the room
+            // has to be looking at somebody. One tile off the first person
+            // with a standable side, facing them: the placement
+            // test_combat_action's sightline cases use. The id comes back
+            // whether the link opens or slips (it is read before the draw),
+            // so the mark is asserted either way.
+            const Actor* mark = nullptr;
+            for (const Actor& actor : tavern.actors()) {
+                if (actor.present() && !isFloored(actor.activity()) &&
+                    actor.role() != ActorRole::Vermin && room->standFacing(actor) != -1) {
+                    mark = &actor;
+                    break;
+                }
+            }
+            REQUIRE(mark != nullptr);
+            result = tavern.playerCastEquipped();
+            REQUIRE(result.targetId == mark->id());
+        } else {
+            result = tavern.playerCastEquipped();
+        }
         if (result.cast) {
             return room;
         }

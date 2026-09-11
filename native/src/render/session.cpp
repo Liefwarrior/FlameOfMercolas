@@ -503,6 +503,13 @@ void Session::setAudio(audio::AudioEngine* engine) {
 
 void Session::syncTavernToBody() {
     tavern_->setPlayer(body_->x(), body_->y(), body_->band());
+    // ACTION-COMBAT BUILD. WHICH WAY THE BODY IS FACING, pushed beside the
+    // position the same step. The sightline raycast (VETO 1) casts down
+    // playerYaw_, so facing is authoritative exactly the way position is -- and
+    // without this every swing and touch-cast aims due-north (yaw 0), which is
+    // the SIM lane's one downstream requirement of this file. A room the client
+    // never syncs (a pre-combat capture, the workload) keeps its default facing.
+    tavern_->setPlayerYaw(body_->yaw());
 }
 
 // ---------------------------------------------------------------------------
@@ -3436,6 +3443,17 @@ void Session::settleDefeat() {
     // toll on every price and the name on the roll all survive this call. That
     // is the design.
     const sim::Rise& rise = tavern_->lastDefeat();
+    // ACTION-COMBAT BUILD (section 4.5). A DEFEAT UNDER LETHAL RULES (steel was
+    // out -- tavern_->escalated()) is not a plain brawl KO: it earns the
+    // OCCASION -- the dip, the epitaph naming killer, weapon and place, the held
+    // hush of kDeathHoldSteps, then the reveal of the quay the revive below puts
+    // you on. Armed HERE, from where the body fell, before reviveAfterDefeat and
+    // placeBodyAt move it; composeDeathCeremony() paces the veil over the frames
+    // that follow, render-only, while the sim revives underneath at once. A
+    // plain brawl defeat (never escalated) keeps the bare settle it always had.
+    if (tavern_->escalated()) {
+        armDeathCeremony();
+    }
     // AUDIO WIRING: the plan's "knockdown -> ThudHeavy" -- the one call every
     // path to the floor funnels through.
     if (audio_ != nullptr) {
@@ -3457,6 +3475,92 @@ void Session::settleDefeat() {
         say(rise.line);
     }
     syncWardToCalendar();
+}
+
+namespace {
+/// ACTION-COMBAT BUILD (section 4.5). The two eases that bracket the death
+/// ceremony's held epitaph: the frame dips to black over kDeathDipInSteps and
+/// eases back over kDeathFadeOutSteps, with the sim's kDeathHoldSteps hush
+/// between. The eases are one page-ease each; the HOLD is the sim's own number.
+constexpr std::int32_t kDeathDipInSteps = kPageEaseSteps;
+constexpr std::int32_t kDeathFadeOutSteps = kPageEaseSteps;
+}  // namespace
+
+void Session::armDeathCeremony() {
+    // From the last defeat, captured before the revive moves the body: the
+    // killer's name in the terminal register, a weapon word off his own hand,
+    // and the place it happened. Two lines, the veto-blessed epitaph grammar
+    // (section 5): "PUT DOWN IN THE GILDED GULL. / BY CANNIC. BY STEEL."
+    const sim::Rise& rise = tavern_->lastDefeat();
+    const std::string killer = rise.who.empty() ? std::string("THE DARK") : upperAscii(rise.who);
+    // The weapon word is honest to what put you down, read off the killer's
+    // rival record. A lethal fight is usually steel, but a bloodied man beaten
+    // to death by fists is lethal too (B3), so the word follows the hand.
+    std::string weaponWord = "STEEL";
+    if (const sim::Nemesis* rival = tavern_->nemesis().of(rise.actorId); rival != nullptr) {
+        switch (rival->weapon()) {
+            case sim::Weapon::Edged:
+                weaponWord = "STEEL";
+                break;
+            case sim::Weapon::Blunt:
+            case sim::Weapon::Evictor:
+                weaponWord = "THE CUDGEL";
+                break;
+            case sim::Weapon::Improvised:
+                weaponWord = "WHAT CAME TO HAND";
+                break;
+            case sim::Weapon::Fists:
+                weaponWord = "BARE HANDS";
+                break;
+        }
+    }
+    // Inside the house it is the Gull by name (the veto's own literal); on the
+    // street it is the ground placeLabel() answers for.
+    const std::string place =
+        tavern_->playerInside() ? std::string("THE GILDED GULL") : placeLabel();
+    deathEpitaphTop_ = "PUT DOWN IN " + place + ".";
+    deathEpitaphBottom_ = "BY " + killer + ". BY " + weaponWord + ".";
+    deathCeremonySteps_ = kDeathDipInSteps + sim::kDeathHoldSteps + kDeathFadeOutSteps;
+}
+
+void Session::composeDeathCeremony(Framebuffer& target) const {
+    if (deathCeremonySteps_ <= 0) {
+        return;
+    }
+    constexpr std::int32_t kTotal =
+        kDeathDipInSteps + sim::kDeathHoldSteps + kDeathFadeOutSteps;
+    const std::int32_t remaining = deathCeremonySteps_;
+    // The veil's strength across the three phases: ramp up as it comes down,
+    // full through the hush, ramp back as the quay comes up under it.
+    float dip = 1.0F;
+    if (remaining > sim::kDeathHoldSteps + kDeathFadeOutSteps) {
+        const std::int32_t elapsed = kTotal - remaining;  // 0 .. kDeathDipInSteps
+        dip = static_cast<float>(elapsed) / static_cast<float>(kDeathDipInSteps);
+    } else if (remaining <= kDeathFadeOutSteps) {
+        dip = static_cast<float>(remaining) / static_cast<float>(kDeathFadeOutSteps);
+    }
+    dip = dip < 0.0F ? 0.0F : (dip > 1.0F ? 1.0F : dip);
+    // The veil itself -- the same black-fill primitive dipTravelSeam draws with,
+    // over the whole finished frame (HUD included).
+    target.fillRect(0, 0, target.width(), target.height(), Rgb{0.0F, 0.0F, 0.0F}, dip);
+    // The epitaph, centred, in the plate's own bone register. The black field IS
+    // its backing, so it needs no plate of its own; the text alpha rides the dip
+    // so the words arrive as the room goes dark and leave as it comes back.
+    const int scale = hudScale(target.height());
+    const int glyphH = 6 * scale;  // the 4x6 font's own height, drawText's grid
+    const int lineStep = glyphH + 2 * scale;
+    const int cx = target.width() / 2;
+    const int topY = target.height() / 2 - lineStep;
+    const Rgb bone{0.86F, 0.82F, 0.72F};
+    const auto centre = [&](const std::string& line, int y) {
+        if (line.empty()) {
+            return;
+        }
+        const int w = textWidth(line, scale);
+        drawText(target, cx - w / 2, y, line, bone, dip, scale);
+    };
+    centre(deathEpitaphTop_, topY);
+    centre(deathEpitaphBottom_, topY + lineStep);
 }
 
 void Session::recordWatchOp(WatchOpKind kind, std::int32_t a, bool ok) {
@@ -3558,7 +3662,14 @@ void Session::step(const sim::MoveInput& input) {
     // derived here so a page opening mid-hold lowers the guard the same step
     // it takes the keyboard, and a page closing under a still-held key raises
     // it again -- no edge event exists for either of those moments.
-    tavern_->setPlayerBlocking(blockHeld_ && !talking() && !picking());
+    // ACTION-COMBAT BUILD (section 1.3): the guard holds only while the hand is
+    // FREE. A swing opens you -- the vulnerable window is the Oblivion rhythm --
+    // so the derived block state gains the combat-idle clause, and the GUARD UP
+    // row honestly vanishes for the ~15-step swing because the row reads this
+    // very state (blockLine -> playerBlocking). The caught-blow wind cost is
+    // the SIM's (kBlockCatchFatiguePoints, drained in stepBrawl), not ours.
+    tavern_->setPlayerBlocking(blockHeld_ && !talking() && !picking() &&
+                               tavern_->playerCombatIdle());
     body_->step(moved);
     syncTavernToBody();
 
@@ -3636,6 +3747,15 @@ void Session::step(const sim::MoveInput& input) {
         --messageSteps_;
     }
 
+    // ACTION-COMBAT BUILD (section 4.5). THE DEATH CEREMONY's own hold, spent
+    // once a step like every other countdown -- see composeDeathCeremony() for
+    // the dip, the epitaph hold and the reveal it paces. The sim already
+    // revived at the defeat (settleDefeat); this is only the veil over the top,
+    // so nothing here touches sim state and the player is free underneath it.
+    if (deathCeremonySteps_ > 0) {
+        --deathCeremonySteps_;
+    }
+
     // THE SPEECH REVEAL CLOCK. A courtesy for whoever is watching the screen
     // live, not a fact about the world -- see lastSpokenLine_'s own note. It
     // ticks only while a real conversation is open: the casebook, the keys
@@ -3679,6 +3799,8 @@ void Session::step(const sim::MoveInput& input) {
     // FIRST-PERSON COMBAT (S13). THE SAME PER-STEP ADVANCE.
     spellAnim_.advance();
     blockAnim_.advance();
+    // ACTION-COMBAT BUILD. THE SAME PER-STEP ADVANCE for the HELD HARD row.
+    chargeAnim_.advance();
     // HELD-EFFECTS BUILD. THE SAME PER-STEP ADVANCE, ONE PER SLOT.
     for (EasedToggle& anim : effectAnims_) {
         anim.advance();
@@ -3821,9 +3943,28 @@ void Session::step(const sim::MoveInput& input) {
     }
     lastPlayerHp_ = hpNow;
     lastBlowsBlocked_ = blockedNow;
+    // ACTION-COMBAT BUILD (section 4.1). THE STEEL-OUT FLIP, spoken ONCE on the
+    // rising edge of the fight crossing the brawl line -- whoever drew it (a
+    // player's hard swing on a bloodied man, an NPC drawing, a Kill-intent
+    // nemesis). This is the line and the sound that replace the dead refusal
+    // "BLADE OUT - THIS IS NOT A BRAWL.": there is no screen to route to, the
+    // fight keeps resolving in the world, so the flip is feedback, not a
+    // transition. Edge-latched off tavern_->escalated(); clearEscalation()
+    // drops the latch and lastEscalated_ follows it down, ready to fire again.
+    const bool escalatedNow = tavern_->escalated();
+    if (escalatedNow && !lastEscalated_) {
+        say("STEEL OUT. THE ROOM STANDS BACK.");
+        if (audio_ != nullptr) {
+            audio_->playOneShot(audio::SoundId::SwordDraw);
+        }
+    }
+    lastEscalated_ = escalatedNow;
     punchLandedPulse_.advance();
     punchTakenPulse_.advance();
     blockPulse_.advance();
+    // ACTION-COMBAT BUILD. The hard-release camera dip decays here beside its
+    // wash siblings; camera() reads its value() as a render-only pitch offset.
+    hardSwingDipPulse_.advance();
     alertPulse_.advance();
     // UI-EA-SPEC sec. 3 rule 5 (contract b). THE SAME PER-STEP ADVANCE: the
     // commit beat decays here beside its pulse siblings; the client arms it
@@ -3888,6 +4029,7 @@ void Session::step(const sim::MoveInput& input) {
     clearIfClosed(stashAnim_, stashCache_);
     clearIfClosed(spellAnim_, spellCache_);
     clearIfClosed(blockAnim_, blockCache_);
+    clearIfClosed(chargeAnim_, chargeCache_);
 
     // One engine tick a simulated second. clockScale > 1 makes the world's
     // clock run faster than the body's, which is how a capture reaches a named
@@ -5726,57 +5868,107 @@ CreationPage Session::stripCard() const {
     return out;
 }
 
-void Session::punch() {
+/// A landed blow of this many hit points or fewer is a GRAZE -- the light
+/// audio band. Fists tap for 3-5 at the base sheet, so this catches the
+/// glancing end of a bare-handed swing and lets a solid or hard blow land
+/// medium instead. Splits the plan's single PunchMedium by band (section 5,
+/// channel 4); presentation-only, no sim number depends on it.
+namespace {
+constexpr std::int32_t kGrazeDamageBand = 4;
+}  // namespace
+
+void Session::attackDown() {
+    // The down-edge. A Punch watch-op is recorded here (case_watch replays it
+    // as punch()); dismissOverlays and the sim's hold clock start exactly where
+    // the legacy punch() started them.
     recordWatchOp(WatchOpKind::Punch);
     const WatchDepthGuard watchGuard(watchDepth_);
     dismissOverlays();
-    const sim::Tavern::PunchResult result = tavern_->playerPunchNearest();
+    tavern_->playerAttackDown();
+}
+
+void Session::attackUp() {
+    const WatchDepthGuard watchGuard(watchDepth_);
+    const sim::Tavern::PlayerSwingResult result = tavern_->playerAttackUp();
+    if (result.refused) {
+        // A hard swing the wind would not buy. A winded TAP still swings (its
+        // fatigue whiff band is the penalty), so a refusal is only ever the
+        // hard tier saying so, once, on the alert row.
+        say("TOO WINDED TO SWING HARD.");
+        return;
+    }
     if (!result.swung) {
-        // A punch is thrown at a person, not at a thing.
+        // A release with no charge behind it -- an edge that arrived in
+        // recovery or idle. It throws nothing and says nothing.
+        return;
+    }
+    // A committed HARD swing dips the camera forward on release -- render-only,
+    // composed in camera() and never written to sim yaw.
+    if (result.hard) {
+        hardSwingDipPulse_.trigger();
+    }
+    if (result.targetId < 0) {
+        // Committed and paid, but the crosshair passed through nobody. The arm
+        // still swung, so the wind is spent and the swing gets its air.
         say("NOBODY IN REACH.");
+        if (audio_ != nullptr) {
+            audio_->playOneShot(audio::SoundId::Whoosh);
+        }
         return;
     }
-    if (!sim::resolvesInWorld(result.fight)) {
-        // The one transition this game has, and S2 does not have the screen it
-        // transitions to. Saying so out loud is better than resolving a knife
-        // fight with fist rules and hoping nobody notices.
-        say("BLADE OUT - THIS IS NOT A BRAWL.");
-        return;
-    }
-    if (result.blow.crowned) {
-        // THE EVICTOR'S OWN LINE. crowned is downed by construction (see
-        // Blow), so this reads before the plain fall -- the room saw WHERE
-        // the blow went, and only this weapon ever throws one. The --smoke
-        // punch probe counts "HIT "/" GOES DOWN." and never arms the player,
-        // so this line cannot reach it.
+    // SAY-ROW DIET (section 5, channel 3). The per-blow "HIT X FOR N."/"MISSED
+    // X." log is RETIRED -- a landed, taken or blocked blow speaks through the
+    // washes, the reticle and the audio below, not the alert row. The row keeps
+    // only EVENTS and REFUSALS: a kill, a crowning, a down. The steel-out flip
+    // and its SwordDraw are spoken once on the escalation EDGE in step(), not
+    // per swing, so a fight that stays lethal does not re-announce itself.
+    if (result.killed) {
+        // A killing blow under lethal rules -- the register literal, veto-blessed
+        // (section 5). Names the man the boards just took.
+        say(result.targetName + " DIES ON THE BOARDS.");
+    } else if (result.blow.crowned) {
+        // THE EVICTOR'S OWN LINE. crowned is downed by construction and never
+        // kills (it was forged to put a man OUT), so it reads before the plain
+        // fall and only this weapon ever throws one.
         say("CAUGHT " + result.targetName + " ACROSS THE CROWN. OUT COLD.");
     } else if (result.blow.downed) {
         say(result.targetName + " GOES DOWN.");
-    } else if (result.blow.landed) {
-        say("HIT " + result.targetName + " FOR " + std::to_string(result.blow.damage) + ".");
-    } else {
-        say("MISSED " + result.targetName + ".");
     }
-    // AUDIO WIRING: the plan's own three -- PunchMedium/PunchHeavy by blow
-    // weight (a blow that put them down is the heavy one), Whoosh for the
-    // swing that connects with nothing. One sound per swing, same as one
-    // wash per landed hit.
+    // AUDIO WIRING (section 5, channel 4). One sound per swing, by blow band:
+    // the helmet on a crowning, the heavy on a kill or a knockdown, the light
+    // graze on the low damage band and the medium above it (the plan's single
+    // PunchMedium split), and the whoosh for a swing that found a body but
+    // glanced off nothing worth a mark (a fully absorbed hit). SwordDraw is the
+    // Lethal FLIP, wired on the escalation edge in step(), not here.
     if (audio_ != nullptr) {
-        if (result.blow.downed) {
+        if (result.blow.crowned) {
+            audio_->playOneShot(audio::SoundId::HelmetHit);
+        } else if (result.killed || result.blow.downed) {
             audio_->playOneShot(audio::SoundId::PunchHeavy);
         } else if (result.blow.landed) {
-            audio_->playOneShot(audio::SoundId::PunchMedium);
+            audio_->playOneShot(result.blow.damage <= kGrazeDamageBand
+                                    ? audio::SoundId::GrazeLight
+                                    : audio::SoundId::PunchMedium);
         } else {
             audio_->playOneShot(audio::SoundId::Whoosh);
         }
     }
-    // INNOVATION SPRINT ITEM #3. A LANDED PUNCH FINALLY HAS SOME WEIGHT --
-    // downed is a landed blow that also put them on the floor, so it counts
-    // here too. A miss stays silent: this is punctuation for a connecting
-    // hit, not for the swing itself.
+    // A LANDED SWING FINALLY HAS SOME WEIGHT -- the connecting wash. A whiff on
+    // a body that was on the line stays silent on the wash, exactly as a miss
+    // always did: this is punctuation for a hit, not for the swing.
     if (result.blow.landed) {
         punchLandedPulse_.trigger();
     }
+}
+
+void Session::punch() {
+    // ACTION-COMBAT BUILD: a TAP of the new verbs -- down then immediately up
+    // with no movement step between, so the sim's charge counter never leaves
+    // zero and the swing is always the light (Subdue) tier. The six un-migrated
+    // call sites (the scripted drives, case_watch, the render suite) drive real
+    // sightline combat through this, the same path a mouse press will.
+    attackDown();
+    attackUp();
 }
 
 void Session::castEquipped() {
@@ -6096,7 +6288,27 @@ Camera Session::camera() const noexcept {
     // read it every frame or the slider is decoration; the constructor seeds
     // controls_.fovDegrees from config_ so --fov still works.
     const float half = static_cast<float>(controls_.fovDegrees) * 0.5F * kPi / 180.0F;
-    return Camera::fromBody(body_->x(), body_->y(), body_->eyeZ(), body_->yaw(), body_->pitch(),
+    // ACTION-COMBAT BUILD (section 5, channel 5). THE IMPACT IMPULSE, composed
+    // at the one Camera::fromBody site as a BAM offset on RENDER pitch and never
+    // on sim yaw -- a render-only courtesy the Camera contract permits here
+    // (the field is a float, the sim never reads it back). Peaks are capped in
+    // BAM well under the spec's angles: a hard-release forward dip ~2deg, a
+    // blow-taken jolt ~1.5deg, a caught-blow nudge ~1deg. Every pulse decays to
+    // zero within kPageEaseSteps, so the offset is exactly 0 at rest -- every
+    // settled capture is byte-identical and --settle-steps photographs no
+    // impulse. Pitch is radians, positive up: a hard release nods the eye DOWN,
+    // a blow taken kicks it up, a caught blow nudges it up a touch less.
+    constexpr std::int32_t kHardSwingDipBam = 364;  // ~2.0 deg
+    constexpr std::int32_t kTakenJoltBam = 273;     // ~1.5 deg
+    constexpr std::int32_t kBlockNudgeBam = 182;    // ~1.0 deg
+    const std::int32_t dip =
+        static_cast<std::int32_t>(std::lround(hardSwingDipPulse_.value() * kHardSwingDipBam));
+    const std::int32_t taken =
+        static_cast<std::int32_t>(std::lround(punchTakenPulse_.value() * kTakenJoltBam));
+    const std::int32_t nudge =
+        static_cast<std::int32_t>(std::lround(blockPulse_.value() * kBlockNudgeBam));
+    const std::int32_t pitchBam = body_->pitch() - dip + taken + nudge;
+    return Camera::fromBody(body_->x(), body_->y(), body_->eyeZ(), body_->yaw(), pitchBam,
                             std::tan(half));
 }
 
@@ -7001,6 +7213,11 @@ void Session::syncPanelAnim() noexcept {
     // a guard going up.
     sync(spellAnim_, spellCache_, spellLine());
     sync(blockAnim_, blockCache_, blockLine());
+    // ACTION-COMBAT BUILD. THE SAME sync() SHAPE for the HELD HARD charge row,
+    // on its own toggle: a swing charging hard has nothing to do with a guard
+    // going up, and the two are mutually exclusive anyway (the guard drops the
+    // instant the hand leaves Idle).
+    sync(chargeAnim_, chargeCache_, chargeLine());
     // HELD-EFFECTS BUILD. THE SAME sync() SHAPE, one per active-effect slot
     // -- each on its own EasedToggle per the pinned convention, because a
     // warmth lapsing in slot 0 has nothing to do with a tuning arriving in
@@ -7184,6 +7401,39 @@ std::string Session::blockLine() const {
     // tickBrawl actually reads, so this row can never say GUARD UP while a
     // menu has quietly lowered it -- see step()'s own derivation.
     return tavern_->playerBlocking() ? "GUARD UP" : std::string();
+}
+
+std::string Session::chargeLine() const {
+    // ACTION-COMBAT BUILD (section 5, channel 2). "HELD HARD -- CUDGEL 14-18"
+    // while the swing is charged past the hard threshold, and empty otherwise
+    // -- the hard tier made visible in the sheet's own NAME low-high grammar.
+    // The reticle carries the light charge; this row is only the committed hard
+    // one, so it never competes with the guard (the guard holds only in Idle).
+    if (!tavern_->playerChargeHard()) {
+        return {};
+    }
+    const sim::Weapon weapon = tavern_->playerHeldWeapon();
+    // THE HARD SPAN, which is the swing span through the hard tier: the same
+    // ((base + variance) * chargeQ8) >> 8 strike() applies, at kHardSwingChargeQ8
+    // -- so the numbers on the row are exactly the numbers a release will throw.
+    const std::int32_t base = sim::baseDamage(weapon);
+    const std::int32_t lo = (base * sim::kHardSwingChargeQ8) >> 8;
+    const std::int32_t hi =
+        ((base + sim::kStrikeVarianceMax) * sim::kHardSwingChargeQ8) >> 8;
+    // THE WEAPON NAME is weaponSheetLine's own casing (which is why this reads
+    // through it rather than keeping a second copy of the name table): take
+    // everything up to the sheet's own span, so "THE EVICTOR 7-9 IMPACT" yields
+    // "THE EVICTOR" and the numbers below are the doubled hard span, not its.
+    std::string sheet = sim::weaponSheetLine(weapon);
+    std::size_t span = 0;
+    while (span < sheet.size() && (sheet[span] < '0' || sheet[span] > '9')) {
+        ++span;
+    }
+    std::string name = sheet.substr(0, span);
+    while (!name.empty() && name.back() == ' ') {
+        name.pop_back();
+    }
+    return "HELD HARD -- " + name + " " + std::to_string(lo) + "-" + std::to_string(hi);
 }
 
 std::string Session::effectLine(std::size_t slot) const {
@@ -7543,6 +7793,10 @@ FrameStats Session::drawFrame(Framebuffer& target) const {
     hud.spellFade = spellAnim_.value();
     hud.blockLabel = std::string_view{blockCache_};
     hud.blockFade = blockAnim_.value();
+    // ACTION-COMBAT BUILD (section 5, channel 2). The HELD HARD charge row,
+    // its own cache and fade the identical shape the guard row just used.
+    hud.chargeLabel = std::string_view{chargeCache_};
+    hud.chargeFade = chargeAnim_.value();
     // HELD-EFFECTS BUILD. The live holds, each reading its own cache and
     // fading on its own toggle -- the identical shape every row above uses.
     for (std::size_t slot = 0; slot < kEffectRows; ++slot) {
@@ -7598,6 +7852,20 @@ FrameStats Session::drawFrame(Framebuffer& target) const {
     hud.aimNote = std::string_view{interactNoteCache_};
     hud.aimKind = static_cast<int>(interactKindCache_);
     hud.interactFade = interactAnim_.value();
+    // ACTION-COMBAT BUILD (section 5, channel 1). THE RETICLE'S CHARGE READOUT,
+    // read straight off the sim's own swing state and fed INDEPENDENT of the
+    // interact prompt above -- the reticle draws during a hold even when
+    // nothing is in reach (aimVerb empty), which drawAim's interact-only
+    // early-return could not do. The fraction is the hold's progress toward the
+    // hard threshold, the tier and the on-line flag are the sim's live reads.
+    {
+        float held = static_cast<float>(tavern_->playerChargeSteps()) /
+                     static_cast<float>(sim::kHardSwingHoldSteps);
+        held = held < 0.0F ? 0.0F : (held > 1.0F ? 1.0F : held);
+        hud.aimChargeFrac = held;
+        hud.aimChargeHard = tavern_->playerChargeHard();
+        hud.aimChargeOnLine = tavern_->playerSightlineTarget();
+    }
     // The rung, and what the line wants next. Bottom-left, over the health bar.
     hud.guildLabel = std::string_view{guildCache_};
     hud.guildFade = guildAnim_.value();
@@ -7726,6 +7994,7 @@ FrameStats Session::drawFrame(Framebuffer& target) const {
             drawDistrictMap(target, plan);
             drawHud(target, hud);
             dipTravelSeam(target, travelFadeAnim_.value());
+            composeDeathCeremony(target);
         }
         panelTailTiles_ = false;
         return stats;
@@ -7761,6 +8030,7 @@ FrameStats Session::drawFrame(Framebuffer& target) const {
             drawKeysPage(target, page);
             drawHud(target, hud);
             dipTravelSeam(target, travelFadeAnim_.value());
+            composeDeathCeremony(target);
         }
         panelTailTiles_ = false;
         return stats;
@@ -7812,6 +8082,7 @@ FrameStats Session::drawFrame(Framebuffer& target) const {
             drawCasebookPage(target, page);
             drawHud(target, hud);
             dipTravelSeam(target, travelFadeAnim_.value());
+            composeDeathCeremony(target);
         }
         panelTailTiles_ = false;
         return stats;
@@ -7856,6 +8127,7 @@ FrameStats Session::drawFrame(Framebuffer& target) const {
             drawMenuTiles(target, tiles);
             drawHud(target, hud);
             dipTravelSeam(target, travelFadeAnim_.value());
+            composeDeathCeremony(target);
         }
         // The memo: this frame's panel fade belonged to the tiles. Only the
         // LIVE menu re-arms it -- a tail frame keeps it as-is, so the tail
@@ -7884,6 +8156,7 @@ FrameStats Session::drawFrame(Framebuffer& target) const {
             drawCreationPage(target, card);
             drawHud(target, hud);
             dipTravelSeam(target, travelFadeAnim_.value());
+            composeDeathCeremony(target);
         }
         return stats;
     }
@@ -7920,6 +8193,7 @@ FrameStats Session::drawFrame(Framebuffer& target) const {
         drawDialogue(target, panel);
         drawHud(target, hud);
         dipTravelSeam(target, travelFadeAnim_.value());
+        composeDeathCeremony(target);
     }
     return stats;
 }
@@ -8089,6 +8363,30 @@ void walkToTile(Session& session, std::int32_t tileX, std::int32_t tileY) {
     walkStraightTo(session, tileX, tileY);
 }
 
+/// Turns the player's body to look STRAIGHT at a Q8 world point, then steps once
+/// so the room hears the new facing (setPlayerYaw runs in syncTavernToBody, which
+/// only a step calls). RENDER-SIDE, so the atan2 is legal here -- it never
+/// touches the sim's hashed yaw math, it only sets the body's own facing, which
+/// the sightline raycast (VETO 1) then reads. The scripted drives use this to
+/// put a body DEAD ON the crosshair before a swing: the old radial punch hit by
+/// proximity, but the action-combat swing hits the first body on the look-ray,
+/// so a man who is trading blows and shifting his feet has to be re-faced or the
+/// swing casts past him. One step of the target's own drift is far inside the
+/// beam's half-cell, so the aim holds.
+void facePlayerAndSync(Session& session, std::int32_t xQ8, std::int32_t yQ8) {
+    const std::int32_t dx = xQ8 - session.body().x();
+    const std::int32_t dy = yQ8 - session.body().y();
+    if (dx != 0 || dy != 0) {
+        // North is -Y and forward is (sin(yaw), -cos(yaw)), so the bearing to
+        // (dx, dy) is atan2(dx, -dy), turned from radians into the BAM turn.
+        constexpr double kTwoPi = 6.283185307179586;
+        const double ang = std::atan2(static_cast<double>(dx), static_cast<double>(-dy));
+        session.body().setYaw(static_cast<sim::Angle>(
+            std::lround(ang * static_cast<double>(sim::kTurnFull) / kTwoPi)));
+    }
+    session.stepMany(sim::MoveInput{}, 1);
+}
+
 /// The index of the first topic of this kind, or -1.
 [[nodiscard]] int topicOfKind(const Session& session, sim::TopicKind kind) {
     const std::vector<sim::Topic>& topics = session.tavern().dialogue().topics();
@@ -8108,6 +8406,92 @@ void walkToTile(Session& session, std::int32_t tileX, std::int32_t tileY) {
         }
     }
     return nullptr;
+}
+
+/// The nearest PERSON on the player's own band -- present, on their feet, not
+/// a rat -- or nullptr. What `--punch` and `--block` mean by "whoever is
+/// nearest": the pre-sightline radial punch picked by proximity, and the two
+/// flags keep that meaning, they just walk it over now. Same band, because the
+/// scripted walker routes on the body's band and a stool upstairs is nearer by
+/// a count that means nothing to a fist. Ties break on the lower id (roster
+/// order), so two runs cannot disagree about who got hit.
+[[nodiscard]] const sim::Actor* nearestMark(const Session& session) {
+    const sim::Actor* best = nullptr;
+    std::int32_t bestDistance = 0;
+    for (const sim::Actor& actor : session.tavern().actors()) {
+        if (!actor.present() || sim::isFloored(actor.activity()) ||
+            actor.role() == sim::ActorRole::Vermin ||
+            actor.band() != session.body().band()) {
+            continue;
+        }
+        const std::int32_t distance =
+            actor.distanceTo(session.body().x(), session.body().y());
+        if (best == nullptr || distance < bestDistance) {
+            best = &actor;
+            bestDistance = distance;
+        }
+    }
+    return best;
+}
+
+/// Walks up to a body, puts it DEAD ON the crosshair and taps -- the same
+/// walk-up / re-face / tap / step-past-recovery beat the tenant and rat drives
+/// throw -- until a blow CONNECTS or the tries run out. Connection is read
+/// from the body itself: its hit points moving, or it going to the floor,
+/// which is strike()'s own output and the one thing a whiffed roll never
+/// changes (the house minds a swing the moment the sightline finds a person,
+/// landed or not, so the player's standing is no proof of a blow). Between
+/// taps the man may shift his feet or trade back, so each tap re-closes if he
+/// left reach and re-faces him regardless; and the lockout is stepped through
+/// in full first, because a down-edge in recovery is dropped, not buffered.
+[[nodiscard]] bool tapUntilItConnects(Session& session, std::int32_t markId, int tries) {
+    for (int attempt = 0; attempt < tries; ++attempt) {
+        const sim::Actor* mark = session.tavern().actorById(markId);
+        if (mark == nullptr || !mark->present() || sim::isFloored(mark->activity())) {
+            return false;
+        }
+        if (mark->distanceTo(session.body().x(), session.body().y()) > sim::kMeleeReach) {
+            walkToTile(session, mark->tileX(), mark->tileY());
+            mark = session.tavern().actorById(markId);
+            if (mark == nullptr) {
+                return false;
+            }
+        }
+        if (mark->x() == session.body().x() && mark->y() == session.body().y()) {
+            // Standing IN him: `along` is zero and the ray finds nobody. One
+            // step of clear ground opens the gap the crosshair needs; tried
+            // in each direction until the body actually moved, since the
+            // first way may be a wall.
+            const std::int32_t beforeX = session.body().x();
+            const std::int32_t beforeY = session.body().y();
+            const std::int32_t nudges[4][2] = {{-1, 0}, {0, -1}, {0, 1}, {1, 0}};
+            for (const auto& nudge : nudges) {
+                sim::MoveInput back;
+                back.forward = nudge[0];
+                back.strafe = nudge[1];
+                back.autoTraverse = false;
+                back.snapVelocity = true;
+                session.step(back);
+                if (session.body().x() != beforeX || session.body().y() != beforeY) {
+                    break;
+                }
+            }
+            mark = session.tavern().actorById(markId);
+            if (mark == nullptr) {
+                return false;
+            }
+        }
+        facePlayerAndSync(session, mark->x(), mark->y());
+        const std::int32_t hpBefore = mark->hp();
+        session.punch();
+        const sim::Actor* struck = session.tavern().actorById(markId);
+        if (struck != nullptr &&
+            (struck->hp() < hpBefore || sim::isFloored(struck->activity()))) {
+            return true;
+        }
+        session.stepMany(sim::MoveInput{}, sim::kSwingRecoverySteps + 1);
+    }
+    return false;
 }
 
 /// Walks to a named person and opens a conversation with them.
@@ -8476,8 +8860,13 @@ void comeDownstairs(Session& session) {
             if (still == nullptr || still->activity() == sim::Activity::Downed) {
                 break;
             }
+            // ACTION-COMBAT BUILD: the swing is a sightline TAP with a recovery
+            // lockout now, so re-approach the rat each swing (re-facing the
+            // crosshair onto it, since it can scurry between blows) and let the
+            // lockout clear before the next lands.
+            walkToTile(session, still->tileX(), still->tileY());
             session.punch();
-            session.stepMany(sim::MoveInput{}, 2);
+            session.stepMany(sim::MoveInput{}, sim::kSwingRecoverySteps + 1);
         }
         const sim::Actor* down = session.tavern().actorById(ratId);
         if (down == nullptr || down->activity() != sim::Activity::Downed) {
@@ -8522,15 +8911,20 @@ constexpr std::int32_t kContractBeats = 6;
 constexpr std::int32_t kContractHeldBeats = 2;
 
 /// S8. THE NEMESIS ARC, PLAYED: pick a fight with a named labourer, lose it,
-/// wake up on the quay, walk back in the next evening and lose it twice more.
+/// wake up on the quay, walk back in the next evening and fight it twice more
+/// as it goes lethal in the world.
 ///
 /// EVERY BEAT IS A SESSION CALL A KEYPRESS MAKES. The walk is real movement
-/// through real collision, the fight is the punch key and then the room
-/// resolving a brawl a second at a time, and the respawn is the same
-/// settleDefeat() the client's own step loop reaches. Nothing here reaches into
-/// the simulation sideways -- Tavern::concedeTo exists and is deliberately NOT
-/// used, because a scripted proof that skipped the fight would be a proof about
-/// a function rather than about the game.
+/// through real collision, the fight is the Attack key (punch() is now a tap of
+/// the action-combat verbs) and then the room resolving the brawl and its flip
+/// to lethal a second at a time, and the respawn is the same settleDefeat() the
+/// client's own step loop reaches -- with the death ceremony over it once steel
+/// is out. ACTION-COMBAT BUILD: the two rise-defeats are fought in the world
+/// first and only THEN taken through Tavern::concedeTo, which no longer stands
+/// in for a combat screen (there is none) but IS the defeat seam lethal combat
+/// calls -- because under lethal rules the NPC loop deliberately will not floor
+/// the player itself (the VETO lane ordering), so the rise it cannot deliver by
+/// fists is recorded through that seam after the fight is real.
 [[nodiscard]] int runNemesisLine(Session& session, const std::string& ending) {
     // TARN WRENHALE, "Two-Loads": a docker on the evening shift, fists, no
     // rung, nobody's rival. Eli's own example is "killed by a laborer in a fist
@@ -8583,15 +8977,20 @@ constexpr std::int32_t kContractHeldBeats = 2;
     }
     session.skipToHour(20);
 
-    // 3. AND THE REMATCH IS NOT THE WORLD'S BUSINESS ANY MORE.
+    // 3. AND THE REMATCH IS FOUGHT IN THE WORLD -- IT NO LONGER REFUSES.
     //
-    //    THIS IS THE RULE WORKING, NOT A FAILURE, and it is the most
-    //    interesting thing the arc found. A nemesis MEANS IT from his first win
-    //    on (nemesisIntent), and brawl.hpp's third clause says beating a
-    //    BLOODIED man while meaning him Harm is not a bar fight whatever is in
-    //    your hands. So the rematch opens as a brawl, and the moment he has the
-    //    player under a quarter of their health it escalates and the room stops
-    //    resolving it -- exactly as it has since S2, out loud.
+    //    THE RULE STILL WORKS; what changed is that the flip is resolved rather
+    //    than parked. A nemesis MEANS IT from his first win on (nemesisIntent),
+    //    and brawl.hpp's third clause says beating a BLOODIED man while meaning
+    //    him Harm is not a bar fight. So the rematch opens as a brawl and flips
+    //    the instant the player is under a quarter -- but the action-combat
+    //    build keeps resolving it IN THE WORLD under lethal rules (the "STEEL
+    //    OUT. THE ROOM STANDS BACK." line and the SwordDraw fire on the edge in
+    //    step(), where the dead refusal used to sit). Escalated and still on his
+    //    feet in a lethal fight is the real, reachable outcome -- the player was
+    //    left standing in it, not walked off it. clearEscalation() first so the
+    //    flip is a fresh edge; it is deliberately NOT cleared again below, so it
+    //    stays latched through the two defeats and each plays the death ceremony.
     session.tavern().clearEscalation();
     (void)pickAFight();
     if (session.tavern().escalated() && !session.tavern().playerFloored()) {
@@ -8599,21 +8998,30 @@ constexpr std::int32_t kContractHeldBeats = 2;
     }
     session.skipToHour(20);
 
-    // 4/5. WHICH MEANS THE REST OF THE ARC BELONGS TO THE COMBAT SCREEN.
+    // 4/5. AND THE REST OF THE RISE IS FOUGHT, NOT CONCEDED TO A SCREEN.
     //
-    //      VERIFICATION GAP (S8): docs/design/COMBAT-SCREEN-SPEC.md's dedicated
-    //      first-person screen does not exist, so the two defeats that finish
-    //      the rise are taken through Tavern::concedeTo -- which is the seam
-    //      that screen will call when it has one, and which goes through
-    //      exactly the same applyDefeat every in-world beating does. It is
-    //      named here rather than hidden: beats 2 and 3 above are the game;
-    //      these two are the game's own admission that it is one screen short.
+    //      The two defeats that finish the rise are FOUGHT now -- real movement,
+    //      a real swing, the room resolving the brawl and its flip -- and only
+    //      THEN taken through Tavern::concedeTo. That seam SURVIVES (COMBAT-
+    //      ACTION-SPEC section 7) but its meaning changed: it is no longer the
+    //      stand-in for a combat screen that never shipped, it is the defeat
+    //      seam lethal combat calls -- because under lethal rules the NPC loop
+    //      deliberately will not floor the player itself (VETO lane ordering:
+    //      stepBrawl refuses the exchange while steel is out), so a rise the
+    //      room cannot deliver by fists is recorded here. Steel is still out
+    //      from beat 3, so each of these defeats plays the DEATH CEREMONY --
+    //      settleDefeat lays the dip and the epitaph over the quay revive.
     for (int more = 0; more < 2; ++more) {
         const sim::Actor* him = session.tavern().actorById(id);
         if (him == nullptr) {
             break;
         }
         walkToTile(session, him->tileX(), him->tileY());
+        session.closeConversation();
+        session.punch();
+        // Let the room resolve the exchange and its flip -- the rising rival
+        // means Harm, so the fight is lethal in the world before the loss lands.
+        session.stepMany(sim::MoveInput{}, 6 * sim::kStepsPerSecond);
         session.tavern().concedeTo(id);
         session.stepMany(sim::MoveInput{}, sim::kStepsPerSecond);
         session.skipToHour(20);
@@ -8656,8 +9064,9 @@ constexpr std::int32_t kContractHeldBeats = 2;
 }
 
 /// How many beats runNemesisLine tries to land: he was nobody, a fist fight
-/// lost in the world, a rematch the room refuses, two more defeats through the
-/// combat screen's seam, a house, and a charge on the roll.
+/// lost in the world, a rematch fought to the lethal flip in the world, two
+/// more defeats fought and taken through the lethal-defeat seam (each with the
+/// death ceremony over the revive), a house, and a charge on the roll.
 constexpr std::int32_t kNemesisBeats = 7;
 
 // ---------------------------------------------------------------------------
@@ -9345,9 +9754,29 @@ constexpr std::int32_t kCaseBeats = 8;
         }
     }
     if (tenant != nullptr) {
+        const std::int32_t tenantId = tenant->id();
         walkToTile(session, tenant->tileX(), tenant->tileY());
+        // ACTION-COMBAT BUILD: punch() is now a sightline TAP with a recovery
+        // lockout, so the old zero-step rapid punch is gone. This tenant FIGHTS
+        // BACK (unlike the rat, whom nobody defends and who does not swing), so
+        // chasing him between blows never lets a swing settle and drags the fight
+        // across the floor. Stand where the approach left us and face him HEAD-ON
+        // each swing (the crosshair dead on him, the door crossing in behind us
+        // rather than between), tapping with FISTS -- Subdue, so he goes DOWN and
+        // not dead -- until he is on the boards, re-closing only if he drifts out
+        // of reach. Six clean taps put a full man down well inside the door's
+        // cross-warn-grace, so the beat lands before the bouncer can.
         for (int guard = 0; guard < 40 && !session.tenantDown(); ++guard) {
+            const sim::Actor* mark = session.tavern().actorById(tenantId);
+            if (mark == nullptr || mark->activity() == sim::Activity::Downed) {
+                break;
+            }
+            if (mark->distanceTo(session.body().x(), session.body().y()) > sim::kMeleeReach) {
+                walkToTile(session, mark->tileX(), mark->tileY());
+            }
+            facePlayerAndSync(session, mark->x(), mark->y());
             session.punch();
+            session.stepMany(sim::MoveInput{}, sim::kSwingRecoverySteps);
         }
     }
     const bool down = session.tenantDown();
@@ -10373,18 +10802,22 @@ SmokeRunResult runSmoke(const SmokeRunConfig& config) {
 
     if (config.punch) {
         // VERIFICATION ONLY. See SmokeRunConfig::punch's own header. The
-        // SAME key F makes -- Session::punch() -- retried until it actually
-        // connects, since a swing that misses leaves nothing on screen for
-        // punchLandedPulse_ to draw.
+        // SAME key F makes -- Session::punch() -- thrown at whoever is
+        // nearest and retried until it actually connects, since a swing that
+        // misses leaves nothing on screen for punchLandedPulse_ to draw.
+        //
+        // ACTION-COMBAT BUILD: a swing hits the first body ON THE LOOK-RAY
+        // (Tavern::sightlineTarget), not the nearest body in reach, so a tap
+        // thrown from wherever the smoke walk left the body is a tap at air --
+        // this drive landed 0/1 at the Tarwalk spawn for exactly that reason.
+        // It now throws the beat the nemesis and tenant lines throw: walk up
+        // to the mark, put him dead on the crosshair, tap, step the recovery
+        // lockout through, re-face him (a man who is hit back shifts his
+        // feet), tap again. See tapUntilItConnects.
         session.closeConversation();
         bool landed = false;
-        for (int attempt = 0; attempt < 8 && !landed; ++attempt) {
-            session.punch();
-            const std::string& msg = session.lastMessage();
-            landed = msg.rfind("HIT ", 0) == 0 || msg.find(" GOES DOWN.") != std::string::npos;
-            if (!landed) {
-                session.stepMany(sim::MoveInput{}, 1);
-            }
+        if (const sim::Actor* mark = nearestMark(session)) {
+            landed = tapUntilItConnects(session, mark->id(), 16);
         }
         result.scriptedWanted += 1;
         result.scriptedLanded += landed ? 1 : 0;
@@ -10392,13 +10825,25 @@ SmokeRunResult runSmoke(const SmokeRunConfig& config) {
 
     if (config.block) {
         // VERIFICATION ONLY. See SmokeRunConfig::block's own header. The
-        // brawl starts the way --punch starts one, the guard goes up through
-        // the SAME Session::setBlocking() the right mouse button calls, and
-        // the wait is until the room itself says a blow was softened --
-        // blowsBlocked() moving -- because a run of whiffs leaves a GUARD UP
-        // row over a fight the guard never actually worked in.
+        // brawl starts the way --punch starts one -- walked up to, faced and
+        // tapped until the tap connects, so there is a man IN the fight to
+        // throw the blows the guard is meant to catch -- the guard goes up
+        // through the SAME Session::setBlocking() the right mouse button
+        // calls, and the wait is until the room itself says a blow was
+        // softened -- blowsBlocked() moving -- because a run of whiffs leaves
+        // a GUARD UP row over a fight the guard never actually worked in.
+        // The wait runs even if no tap connected: a sightline that found him
+        // put him in the brawl whether or not the roll landed, and his blows
+        // are what the beat is about.
         session.closeConversation();
-        session.punch();
+        if (const sim::Actor* mark = nearestMark(session)) {
+            (void)tapUntilItConnects(session, mark->id(), 16);
+        }
+        // ACTION-COMBAT BUILD: the swing dropped the guard clause to false for
+        // its recovery window (section 1.3), so let the hand return to idle
+        // before raising the guard -- otherwise the first steps of the wait
+        // below would be spent with the guard derived down.
+        session.stepMany(sim::MoveInput{}, sim::kSwingRecoverySteps + 1);
         session.setBlocking(true);
         const std::int32_t before = session.tavern().blowsBlocked();
         // Blows land once a simulated second; a dozen seconds of held guard

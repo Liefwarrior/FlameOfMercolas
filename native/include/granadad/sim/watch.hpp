@@ -152,8 +152,11 @@ enum class Sentence : std::uint8_t {
     /// implied: no death is simulated, the body is not removed, and play
     /// continues. What the sentence does is make the state permanent and
     /// visible -- the ward has condemned you, everyone knows it, and no favour
-    /// clears it. The day this build has a combat screen and a death, this is
-    /// the hook it hangs on.
+    /// clears it. The action-combat build hangs a real death on this hook: a
+    /// witnessed murder marks the killer (CrimeLedger::markMurderer) and the
+    /// next arrest condemns. What condemnation then MEANS -- the Daggerfall
+    /// court, jail, the rope as a true game over -- is the separate justice
+    /// build; combat v1 lands the hook and stops.
     ///
     /// WHAT IT DOES TO THE LAW, said out loud because S6's version of this
     /// comment did not and the omission WAS the bug. Condemnation does not
@@ -186,6 +189,18 @@ inline constexpr std::int32_t kHeldHoursMax = 72;
 /// What a maimed hand still manages, as a percentage of what two hands take.
 /// Permanent, and it is the only lasting statistical penalty in the game.
 inline constexpr std::int32_t kMaimedTakePercent = 50;
+
+/// ACTION-COMBAT BUILD. What a WITNESSED killing adds to the Watch's opinion of
+/// you. Sixty is not a coincidence: it is exactly kWarrantAt (crime.hpp), so a
+/// murder in front of a witness is instant paper -- the warrant threshold met
+/// in one act, no accumulation of small crimes needed. Unwitnessed, it raises
+/// nothing (heat is what the Watch HEARD). A murderer who is then taken is
+/// CONDEMNED, whatever the sentenceFor ladder would otherwise say -- see
+/// CrimeLedger::markMurderer / CrimeLedger::arrest. The COURT that decides what
+/// condemnation then means (the Daggerfall justice flow: jail, execution =
+/// game over) is a SEPARATE build after this one; combat v1 lands only this
+/// hook. See COMBAT-ACTION-SPEC.md sections 4.4 and 10.
+inline constexpr std::int32_t kMurderHeat = 60;
 
 /// VERIFICATION GAP (S6): THERE IS NO CELL. A sentence jumps the clock, empties
 /// the sack, takes the fine and puts the body back on the Tarwalk -- and

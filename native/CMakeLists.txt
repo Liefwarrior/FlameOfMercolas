@@ -470,6 +470,11 @@ if(GRANADAD_BUILD_TESTS)
         tests/test_player.cpp
         tests/test_fatigue.cpp
         tests/test_tavern.cpp
+        # ACTION-COMBAT BUILD -- the swing state machine as a table, the
+        # sightline raycast on-line table, the charge tiers, lethal death and
+        # the corpse conventions, the murder hook, intent-by-verb, and the
+        # Watch's deference to a presented Wielder.
+        tests/test_combat_action.cpp
         tests/test_lamps.cpp
         tests/test_atlas.cpp
         tests/test_render.cpp

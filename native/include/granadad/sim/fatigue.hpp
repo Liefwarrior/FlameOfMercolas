@@ -107,6 +107,19 @@ inline constexpr std::int32_t kLeapFatiguePoints = 8;
 inline constexpr std::int32_t kPunchFatiguePoints = 4;
 inline constexpr std::int32_t kCastFatiguePoints = 5;
 
+/// ACTION-COMBAT BUILD. A HARD swing is 2.5x a swing -- the reference's own
+/// heavy-attack cost, and the number that makes hold-to-swing-hard a decision
+/// rather than a default: a full base pool (160) carries sixteen of them. Paid
+/// on release, and REFUSED when winded (a winded tap still swings). See
+/// Tavern::playerAttackUp and COMBAT-ACTION-SPEC.md section 1.2/3.
+inline constexpr std::int32_t kHardSwingFatiguePoints = 10;
+
+/// And what CATCHING a blow on a raised guard costs the blocker, per softened
+/// blow. Small, but it means turtling under a rain of blows empties the pool
+/// that powers the counterattack -- the guard is not free forgiveness. Holding
+/// the guard itself stays free in v1. See Tavern::stepBrawl and section 1.3.
+inline constexpr std::int32_t kBlockCatchFatiguePoints = 2;
+
 /// Regen base, fine units per movement step. 8/256 of a point at 60 steps a
 /// second is 1.88 points a second before Vigor says anything -- the
 /// reference's 2.5 + 0.02*END/s restated so that VIG carries a visible share:

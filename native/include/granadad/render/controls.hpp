@@ -98,8 +98,13 @@ enum class Action : std::uint8_t {
     // --- the 12 core gameplay buttons (#85; Cast and Block sit appended at
     // the enum's END per the insert-only rule, but count among these) --------
 
-    /// CORE. Was Punch. One button swings whatever is in the hand -- a fist
-    /// today, a weapon once armed combat exists. See render::Session::punch().
+    /// CORE. Was Punch. One button swings whatever is in the hand -- a fist or
+    /// a weapon. It is a HELD button, not a one-shot: the down edge starts a
+    /// hold clock and the release edge resolves the swing, hard iff the hold
+    /// reached the tap/hold boundary (kHardSwingHoldSteps == HoldToggle::
+    /// kTapSteps). The client arms a self-guard on the world press so a
+    /// page-consumed press fires no swing on its release. See
+    /// render::Session::attackDown() / attackUp() (punch() is the legacy tap).
     Attack,
     /// CORE. Was Interact + Examine + Steal + Lift + Rest, and the lockpick
     /// verb Steal used to reach contextually. ONE button, resolved by stance

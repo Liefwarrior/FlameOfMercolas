@@ -556,12 +556,40 @@ TEST_CASE("the three verbs do what the keys say they do") {
         CHECK_FALSE(session.talking());
     }
     SUBCASE("F throws a punch and the house minds") {
+        // ACTION-COMBAT BUILD: punch() is now a TAP of the sightline swing, so
+        // it lands on the FIRST BODY ON THE LOOK-RAY (VETO 1) rather than the
+        // radial-nearest it used to. The roster spawns on the quay and walks in,
+        // so rather than guess who ends up within reach, stand the player one
+        // tile off a present body and face straight at it -- the deterministic
+        // way to put a body on the crosshair. reportOffence(Brawled) then takes
+        // Welcome to BeingWarned whoever it was and wherever they stand.
         Session session(insideTheGull(19, sim::gull::kBartenderX, sim::gull::kBarY - 1, 0));
         session.stepMany(sim::MoveInput{}, 2 * sim::kStepsPerSecond);
+        const sim::Actor* mark = nullptr;
+        for (std::int32_t id = 1; id <= 20 && mark == nullptr; ++id) {
+            const sim::Actor* who = session.tavern().actorById(id);
+            if (who != nullptr && who->present() && who->role() != sim::ActorRole::Vermin) {
+                mark = who;
+            }
+        }
+        REQUIRE(mark != nullptr);
+        // One tile NORTH of the body, facing SOUTH (180 degrees) straight down
+        // onto it -- placeAt is a teleport, so a wall between makes no odds to
+        // the raycast, which reads bodies and not tiles.
+        session.body().placeAt(mark->tileX(), mark->tileY() - 1, sim::gull::kGroundBand);
+        session.body().setYaw(sim::angle_from_degrees(180));
+        // One step pushes the new pose into the room (syncTavernToBody), so the
+        // sightline casts down the yaw just set rather than the spawn's.
+        session.stepMany(sim::MoveInput{}, 1);
         REQUIRE(session.tavern().playerStanding() == sim::Standing::Welcome);
+        REQUIRE(session.tavern().playerSightlineTarget());
         session.punch();
         CHECK(session.tavern().playerStanding() == sim::Standing::BeingWarned);
-        CHECK_FALSE(session.lastMessage().empty());
+        // THE SAY-ROW DIET: a connecting tap no longer logs "HIT X FOR N." --
+        // the wash, the reticle and the audio carry a landed blow now, so the
+        // house minding (BeingWarned) is the fact, not a per-blow line. The row
+        // stays quiet for a landed non-downing tap.
+        CHECK(session.lastMessage().find(" FOR ") == std::string::npos);
     }
     SUBCASE("R refuses when there is no room rented") {
         Session session(insideTheGull(21));
@@ -1328,6 +1356,47 @@ TEST_CASE("the guard row is the room's fact, and a conversation lowers it") {
     session.stepMany(sim::MoveInput{}, 2);
     CHECK(session.blockLine() == "GUARD UP");
 
+    session.setBlocking(false);
+    session.stepMany(sim::MoveInput{}, 2);
+    CHECK(session.blockLine().empty());
+}
+
+TEST_CASE("the swing charge shows on its row and drops the guard while the hand is busy") {
+    // ACTION-COMBAT BUILD (section 5, channels 1-2, and section 1.3). The HELD
+    // HARD row is the hard tier made visible, and a swing DROPS the guard: the
+    // derived block state gained the combat-idle clause, so the GUARD UP row
+    // honestly vanishes for the swing window. Both are the room's own state,
+    // read through the same accessors the reticle and tickBrawl read.
+    Session session(insideTheGull(11, sim::gull::kBartenderX, sim::gull::kBarY - 1, 180));
+    session.stepMany(sim::MoveInput{}, 2);
+
+    // A raised guard holds while the hand is idle.
+    session.setBlocking(true);
+    session.stepMany(sim::MoveInput{}, 2);
+    CHECK(session.blockLine() == "GUARD UP");
+    CHECK(session.chargeLine().empty());
+
+    // The instant a swing is charging the guard drops (the hand is no longer
+    // idle), and the HELD HARD row is still empty below the hard threshold.
+    session.attackDown();
+    session.stepMany(sim::MoveInput{}, 2);
+    CHECK_FALSE(session.tavern().playerCombatIdle());
+    CHECK(session.blockLine().empty());
+    CHECK(session.chargeLine().empty());
+
+    // Held past the hard threshold, the row names the held weapon in the
+    // sheet's own span grammar ("HELD HARD -- FISTS 6-10" at the base sheet).
+    session.stepMany(sim::MoveInput{}, sim::kHardSwingHoldSteps);
+    CHECK(session.tavern().playerChargeHard());
+    CHECK(session.chargeLine().rfind("HELD HARD --", 0) == 0);
+
+    // Released, the row is gone at once (recovery is not charging), and the
+    // guard returns the moment the hand is idle again.
+    session.attackUp();
+    CHECK(session.chargeLine().empty());
+    session.stepMany(sim::MoveInput{}, sim::kHardSwingRecoverySteps + 2);
+    CHECK(session.tavern().playerCombatIdle());
+    CHECK(session.blockLine() == "GUARD UP");
     session.setBlocking(false);
     session.stepMany(sim::MoveInput{}, 2);
     CHECK(session.blockLine().empty());

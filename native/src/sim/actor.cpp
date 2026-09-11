@@ -47,6 +47,8 @@ std::string_view activityName(Activity activity) noexcept {
             return "brawling";
         case Activity::Downed:
             return "downed";
+        case Activity::Dead:
+            return "dead";
     }
     return "?";
 }
@@ -267,6 +269,12 @@ void Actor::hashInto(HashSink& sink) const {
     sink.put_byte(static_cast<std::uint32_t>(weapon_));
     sink.put_byte(static_cast<std::uint32_t>(intent_));
     sink.put_int(static_cast<std::uint32_t>(coin_));
+    // ACTION-COMBAT BUILD: the per-step swing cadence. Appended, so a swing
+    // that timed differently between two runs is a difference the twin-run gate
+    // sees. This is part of the ONE declared tavern-baseline move; the
+    // population baseline (WardActor) never hashes a sim::Actor.
+    sink.put_int(static_cast<std::uint32_t>(npcSwingTimer_));
+    sink.put_int(static_cast<std::uint32_t>(npcSwingSeq_));
 }
 
 }  // namespace granadad::sim

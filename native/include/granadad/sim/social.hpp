@@ -82,9 +82,14 @@ enum class Deed : std::uint8_t {
     /// ceiling: a flat tongue can cost you standing you already had, the same
     /// as WalkedOut or Lowballed can -- see record()'s own note.
     SpokeBluntly = 12,
+    /// ACTION-COMBAT BUILD. Killed them. The heaviest deed there is, and the
+    /// one the murder law reads (kMurderHeat, three-clause witness) -- see
+    /// Tavern::playerAttackUp and COMBAT-ACTION-SPEC.md section 4.4. Appended,
+    /// so the ordinal every stored deed already carries is untouched.
+    Slew = 13,
 };
 
-inline constexpr std::size_t kDeedCount = 13;
+inline constexpr std::size_t kDeedCount = 14;
 
 [[nodiscard]] std::string_view deedName(Deed deed) noexcept;
 
