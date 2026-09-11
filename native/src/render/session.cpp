@@ -9371,52 +9371,105 @@ constexpr std::int32_t kNemesisBeats = 7;
 ///   5. Turned loose on the Tarwalk with the arrest line on the row.
 /// "halt" ends the drive at beat 3 so a capture holds the halt itself.
 constexpr std::int32_t kWatchHaltBeats = 5;
+/// What `--watch-halt=halt` owes: it stops the step he starts Closing.
+constexpr std::int32_t kWatchHaltStopBeats = 3;
+
+/// Who the Watch line swung at and what came of it, for the summary -- so a
+/// capture cannot quietly photograph the wrong man (the nemesis line's rule).
+std::string gWatchHaltNote;
 
 [[nodiscard]] int runWatchHaltLine(Session& session, const std::string& ending) {
     int landed = 0;
+    gWatchHaltNote.clear();
     const sim::Tavern& tavern = session.tavern();
-    // Beside the bar, the watch tests' own spot: two tiles from Cull's stool
-    // and in his line. The walk is the smoke's own route-walk, door and all.
+    // In through the door to the bar, the smoke's own route-walk.
     walkToTile(session, sim::gull::kBartenderX, sim::gull::kBartenderY + 1);
     session.closeConversation();
     const sim::Actor* cull = actorNamed(session, "Watchman Cull");
     if (cull == nullptr || !cull->present()) {
+        gWatchHaltNote = " cull=absent";
         return landed;
     }
-    // Let him look up once; the notice rule reads facing.
-    session.stepMany(sim::MoveInput{}, sim::kStepsPerSecond * 2);
-    cull = actorNamed(session, "Watchman Cull");
-    if (cull != nullptr && cull->present() && tavern.noticeBy(*cull).seen) {
-        ++landed;  // 1
-    }
+    const std::int32_t cullId = cull->id();
 
-    // THE MARK: the nearest upright patron who is not the Watch, not the
-    // house's own bouncer (he refuses steel and holds the door), not a rat --
-    // so the swing is thrown from where Cull can see it.
-    const sim::Actor* mark = nullptr;
-    std::int32_t best = 0;
+    // THE MARK, AND THE SPOT: exactly what test_watch_rhythm asks of the room
+    // -- an upright PATRON (not the Watch, not the house's bouncer who refuses
+    // steel, not the staff behind the bar, not a rat) the player can stand
+    // beside, facing him, with Cull able to SEE the player from there by the
+    // three-clause notice rule. Asked, not assumed: the first draft stood at
+    // the bar and swung, and Cull's line to the bar is a table. Nearest to
+    // Cull first, since that is where his line is shortest.
+    std::vector<std::pair<std::int32_t, std::int32_t>> candidates;  // distance-to-Cull, id
     for (const sim::Actor& actor : tavern.actors()) {
         if (!actor.present() || sim::isFloored(actor.activity()) ||
-            actor.role() == sim::ActorRole::Vermin || tavern.isProfessional(actor) ||
+            actor.role() != sim::ActorRole::Patron || tavern.isProfessional(actor) ||
             actor.band() != session.body().band()) {
             continue;
         }
-        const std::int32_t distance = actor.distanceTo(session.body().x(), session.body().y());
-        if (mark == nullptr || distance < best) {
-            mark = &actor;
-            best = distance;
+        candidates.emplace_back(actor.distanceTo(cull->x(), cull->y()), actor.id());
+    }
+    std::sort(candidates.begin(), candidates.end());
+    std::int32_t markId = -1;
+    for (const auto& [distance, id] : candidates) {
+        (void)distance;
+        const sim::Actor* patron = tavern.actorById(id);
+        if (patron == nullptr || !patron->present()) {
+            continue;
+        }
+        const std::int32_t sides[4][2] = {{0, -1}, {0, 1}, {-1, 0}, {1, 0}};
+        for (const auto& side : sides) {
+            const std::int32_t px = patron->tileX() + side[0];
+            const std::int32_t py = patron->tileY() + side[1];
+            if (!session.tiles().standable(px, py, patron->band())) {
+                continue;
+            }
+            walkToTile(session, px, py);
+            if (session.body().tileX() != px || session.body().tileY() != py) {
+                continue;
+            }
+            patron = tavern.actorById(id);
+            if (patron == nullptr) {
+                break;
+            }
+            facePlayerAndSync(session, patron->x(), patron->y());
+            // A second of standing still, so the walk's own noise is off the
+            // rule and he has looked up.
+            session.stepMany(sim::MoveInput{}, sim::kStepsPerSecond);
+            cull = tavern.actorById(cullId);
+            if (cull != nullptr && cull->present() && tavern.noticeBy(*cull).seen) {
+                markId = id;
+            }
+            break;
+        }
+        if (markId >= 0) {
+            break;
         }
     }
+    if (markId < 0) {
+        gWatchHaltNote = " mark=none-in-culls-sight candidates=" + std::to_string(candidates.size());
+        return landed;
+    }
+    ++landed;  // 1: Cull sees the player, standing beside a patron
+    const sim::Actor* mark = tavern.actorById(markId);
     if (mark == nullptr) {
         return landed;
     }
-    const std::int32_t markId = mark->id();
     // THE BLADE. Armed the way test_street_panic arms its client -- the sheet
     // that puts steel in a hand is the weapon lane's; the sim's own setter is
     // what it will call. Kill is what a drawn blade means (intent-by-verb
     // reads the weapon class: Edged is Lethal from the first exchange).
     session.tavern().setPlayerCombat(sim::Weapon::Edged, sim::Intent::Kill);
-    if (swingOnceAt(session, markId, 8) && tavern.lethalFightLive() && tavern.playerHandsUp() &&
+    const std::int32_t hpBefore = mark->hp();
+    const bool swung = swingOnceAt(session, markId, 8);
+    if (const sim::Actor* struck = tavern.actorById(markId); struck != nullptr) {
+        gWatchHaltNote = " mark=" + struck->name() + " hp=" + std::to_string(hpBefore) + "->" +
+                         std::to_string(struck->hp()) + (swung ? " swung" : " no-swing") +
+                         (tavern.lethalFightLive() ? " lethal" : " not-lethal") +
+                         (tavern.playerHandsUp() ? " hands-up" : " hands-down") +
+                         " brawlers=" + std::to_string(tavern.currentFight().size()) +
+                         " inside=" + (tavern.playerInside() ? "yes" : "no");
+    }
+    if (swung && tavern.lethalFightLive() && tavern.playerHandsUp() &&
         tavern.playerWeapon() == sim::Weapon::Edged) {
         ++landed;  // 2
     }
@@ -11432,7 +11485,8 @@ SmokeRunResult runSmoke(const SmokeRunConfig& config) {
         const std::int32_t landed =
             static_cast<std::int32_t>(runWatchHaltLine(session, config.watchHaltEnd));
         result.watchHaltBeats = landed;
-        result.scriptedWanted += kWatchHaltBeats;
+        // "halt" stops on the third beat by design; it owes three, not five.
+        result.scriptedWanted += config.watchHaltEnd == "halt" ? kWatchHaltStopBeats : kWatchHaltBeats;
         result.scriptedLanded += landed;
     }
 
@@ -12066,8 +12120,11 @@ SmokeRunResult runSmoke(const SmokeRunConfig& config) {
                         ? "closing"
                         : "idle")
                 << " cause=" << sim::watchCauseName(session.tavern().watchInterest())
-                << " arrest=" << (session.tavern().lastArrest().happened ? "yes" : "no")
-                << " row=\"" << session.lastMessage() << '"';
+                << " arrest="
+                << (session.tavern().lastArrest().happened
+                        ? sim::watchCauseName(session.tavern().lastArrest().cause)
+                        : "no")
+                << gWatchHaltNote << " row=\"" << session.lastMessage() << '"';
     }
     if (config.nemesis) {
         const sim::Nemesis* worst = session.tavern().nemesis().worst();

@@ -121,8 +121,10 @@ TEST_CASE("the Watch line lands all five of its beats: seen, steel, the halt on 
     CHECK(played.ok);
     CHECK_FALSE(played.scriptFellShort());
     CHECK(played.watchHaltBeats == 5);
-    CHECK(played.summary.find("cause=violence") != std::string::npos);
-    CHECK(played.summary.find("arrest=yes") != std::string::npos);
+    // The report names the cause; the stance itself is back to idle once the
+    // impound has turned you loose, which is the shipped reset.
+    CHECK(played.summary.find("arrest=violence") != std::string::npos);
+    CHECK(played.summary.find("row=\"Watchman Cull: ") != std::string::npos);
 }
 
 TEST_CASE("--watch-halt=halt stops on the halt itself, with Cull's own row on the alert row") {
@@ -132,8 +134,10 @@ TEST_CASE("--watch-halt=halt stops on the halt itself, with Cull's own row on th
     const render::SmokeRunResult played = play(run);
     INFO(played.summary);
     CHECK(played.ok);
+    CHECK_FALSE(played.scriptFellShort());
     CHECK(played.watchHaltBeats == 3);
     CHECK(played.summary.find("stance=closing") != std::string::npos);
+    CHECK(played.summary.find("cause=violence") != std::string::npos);
     CHECK(played.summary.find("row=\"Watchman Cull: ") != std::string::npos);
     CHECK(played.summary.find("arrest=no") != std::string::npos);
 }
