@@ -701,6 +701,10 @@ const Actor* Tavern::findRole(ActorRole role, bool presentOnly) const noexcept {
 }
 
 std::int32_t Tavern::speedFor(const Actor& actor) const noexcept {
+    if (actor.routing()) {
+        // A man breaking off for the street is not strolling.
+        return kActorPurposefulSpeed;
+    }
     switch (actor.activity()) {
         case Activity::Warning:
         case Activity::Ejecting:
@@ -904,6 +908,13 @@ void Tavern::drawBaleGoods() noexcept {
 }
 
 void Tavern::applySchedules() {
+    // WATCH & RHYTHM BUILD -- THE ROOM STANDS BACK, and stays back. The
+    // stand-back itself is one move on the escalation edge (standBack); what
+    // holds it is this: while a lethal fight is live nobody keeps the rota --
+    // nobody walks back to a stool three tiles from a drawn blade, nobody
+    // arrives, nobody clocks off through the middle of it. Computed once a
+    // second, draw-free.
+    const bool roomStandsBack = lethalFightLive();
     for (Actor& actor : actors_) {
         // Trouble outranks the rota. A bouncer mid-ejection does not clock off,
         // and somebody on the floor is not walking anywhere.
@@ -918,6 +929,12 @@ void Tavern::applySchedules() {
                 continue;
             default:
                 break;
+        }
+        // A routing man is walking OUT, and keeps walking out until the fight
+        // he ran from is over (tickBrawl clears the flag); and a room standing
+        // back holds where it stands.
+        if (actor.routing() || roomStandsBack) {
+            continue;
         }
 
         if (actor.role() == ActorRole::Vermin) {
@@ -1049,6 +1066,21 @@ void Tavern::tickBouncers() {
     if (responder == nullptr) {
         // Nobody on the door. The house minds, and can do nothing about it
         // until somebody comes on shift -- which is what a rota is for.
+        return;
+    }
+    // WATCH & RHYTHM BUILD -- BOUNCERS REFUSE STEEL (COMBAT-ACTION-SPEC.md
+    // section 6: "bouncers do not wade into steel"). The ejection ladder is
+    // a door policy for a bar fight; it does not walk a man with a cudgel
+    // into a lethal one. While the fight is lethal the responder holds the
+    // door -- the tile inside the threshold -- faces it, and the ladder
+    // stands where it stands until the fight is over. A bouncer who is
+    // ALREADY in it (the player swung at him) is a brawler and stepBrawl
+    // has him; the door is somebody else's.
+    if (lethalFightLive() &&
+        std::find(brawlers_.begin(), brawlers_.end(), responder->id()) == brawlers_.end()) {
+        responder->setActivity(Activity::Watching);
+        responder->setDestination(gull::kDoorX0, gull::kDoorY + 1, gull::kGroundBand);
+        responder->faceToward(playerX_, playerY_);
         return;
     }
 
@@ -1254,7 +1286,6 @@ Tavern::PunchResult Tavern::playerPunchNearest() {
         return result;
     }
 
-    Fighter victim = target->asFighter();
     // FATIGUE BUILD: identical to the vermin swing above -- term first, cost
     // paid, MGT on the damage. The classify above already ruled this the
     // room's fight, so the cost lands only on a swing that was thrown. The
@@ -1264,10 +1295,13 @@ Tavern::PunchResult Tavern::playerPunchNearest() {
     // a rat but not a man, which no doctrine anywhere argued for.
     const std::int32_t swingTerm = fatigue_.termQ8();
     fatigue_.drain(kPunchFatiguePoints * kFatiguePointFine);
-    result.blow = strike(playerWeapon_, victim, drawForPlayerAction(),
-                         meleeDamageBonus(effectiveAttributes().value(AttributeId::Might)),
-                         swingTerm);
-    target->setHealth(victim.hp, victim.hpMax);
+    // WATCH & RHYTHM BUILD: the same resolver the action swing uses, so the
+    // legacy tap meets a guard and a wind-up the same way (a tap, never hard).
+    bool recoiled = false;
+    bool staggered = false;
+    result.blow = landPlayerBlow(*target, /*hard=*/false,
+                                 meleeDamageBonus(effectiveAttributes().value(AttributeId::Might)),
+                                 swingTerm, kSwingChargeQ8, recoiled, staggered);
     target->setActivity(result.blow.downed ? Activity::Downed : Activity::Brawling);
     target->faceToward(playerX_, playerY_);
     if (result.blow.downed) {
@@ -1292,6 +1326,16 @@ void Tavern::joinBrawl(Actor& actor) {
     }
     brawlers_.push_back(actor.id());
     std::sort(brawlers_.begin(), brawlers_.end());
+    // WATCH & RHYTHM BUILD: a blow on the watchman CLOSING on you is not a
+    // bar fight. He is a brawler now with Intent::Kill -- Lethal by B2 from
+    // the first exchange, so his blows can kill (and rise a nemesis, the
+    // ruling's own composition) and the player's on him are murder through
+    // slayActor, never "resisting". The owner's resolved decision, verbatim
+    // in the lane brief. Deference is untouched: a presented Wielder is never
+    // closed on, so this line is never reached for one.
+    if (watchStance_ == WatchStance::Closing && actor.id() == watchmanId_) {
+        actor.setIntent(Intent::Kill);
+    }
     // Stagger the first swing (section 1.5): a fresh brawler waits actorId %
     // kNpcSwingStaggerSteps steps before it swings, so a crowd joining on the
     // same blow does not swing in lockstep.
@@ -1375,6 +1419,11 @@ void Tavern::playerAttackDown() noexcept {
     if (combatState_ != PlayerCombatState::Idle) {
         return;
     }
+    // WATCH & RHYTHM BUILD: a recoiling arm and a broken guard both refuse the
+    // press the same way recovery does -- dropped, not buffered.
+    if (recoilSteps_ > 0 || blockStaggerSteps_ > 0) {
+        return;
+    }
     combatState_ = PlayerCombatState::Charging;
     chargeSteps_ = 0;
     // STANCE (section 3.2, raise rule 1): the down-edge from IDLE puts the
@@ -1405,6 +1454,15 @@ void Tavern::lowerPlayerHands() noexcept {
 }
 
 void Tavern::stepPlayerCombat() noexcept {
+    // WATCH & RHYTHM BUILD: the recoil and the block-stagger run down every
+    // step whatever the machine is doing; both gate the next press, and the
+    // block-stagger gates the guard (stepBrawl).
+    if (recoilSteps_ > 0) {
+        --recoilSteps_;
+    }
+    if (blockStaggerSteps_ > 0) {
+        --blockStaggerSteps_;
+    }
     switch (combatState_) {
         case PlayerCombatState::Charging:
             // Holding is free and capped at the hard threshold: past it the tier
@@ -1523,9 +1581,11 @@ Tavern::PlayerSwingResult Tavern::playerAttackUp() {
         escalation_ = result.fight;
         noteEscalation(target->id());
     }
-    Fighter victim = target->asFighter();
-    result.blow = strike(playerWeapon_, victim, drawForPlayerAction(), bonus, swingTerm, chargeQ8);
-    target->setHealth(victim.hp, victim.hpMax);
+    // WATCH & RHYTHM BUILD: the blow meets his guard and his wind-up here --
+    // same draw, same order (one drawForPlayerAction inside), the rhythm
+    // argued about the roll afterwards.
+    result.blow = landPlayerBlow(*target, hard, bonus, swingTerm, chargeQ8, result.recoiled,
+                                 result.staggered);
     target->faceToward(playerX_, playerY_);
     if (result.blow.downed) {
         if (lethal && !result.blow.crowned) {
@@ -1584,12 +1644,110 @@ void Tavern::stepBrawl() noexcept {
     }
     const std::int32_t floor = lethal ? 0 : kPlayerBrawlFloor;
     const Fighter playerFighter = fighters.front();
+    // WATCH & RHYTHM BUILD: the guard is honoured only while it is not
+    // BROKEN -- a hard swing caught by it block-staggers the player for
+    // kBlockStaggerSteps, during which the next blow lands unsoftened.
+    const bool guardHeld = playerBlocking_ && blockStaggerSteps_ <= 0;
+    // Routers who reached the street this step, struck off the list below
+    // (not inside the loop that walks it).
+    std::vector<std::int32_t> arrived;
     for (const std::int32_t id : brawlers_) {
         Actor* actor = mutableActorById(id);
         if (actor == nullptr || !actor->present() || isFloored(actor->activity())) {
             continue;
         }
-        if (actor->distanceTo(playerX_, playerY_) > kMeleeReach) {
+        // ROUT. A bloodied non-professional under lethal rules has stopped
+        // swinging: he is walking out, purposefully, by the same route out the
+        // ejection shove uses (gull::kStreetX/Y), and he leaves the list the
+        // step he arrives. He stays a brawler until then -- a man with his
+        // back turned is still in the fight he is leaving.
+        if (actor->routing()) {
+            if (!gull::insideFootprint(actor->tileX(), actor->tileY()) && actor->atDestination()) {
+                arrived.push_back(id);
+            }
+            continue;
+        }
+        if (lethal && shouldRout(*actor)) {
+            actor->setRouting(true);
+            actor->setNpcWindup(0);
+            actor->setNpcWindupHard(false);
+            actor->setNpcGuard(false);
+            actor->setActivity(Activity::Walking);
+            actor->setDestination(gull::kStreetX, gull::kStreetY, gull::kGroundBand);
+            continue;
+        }
+        // STAGGER. A man knocked off his rhythm neither closes nor swings nor
+        // guards for kStaggerSteps / kBlockStaggerSteps; his timer waits too.
+        if (actor->npcStagger() > 0) {
+            actor->setNpcStagger(actor->npcStagger() - 1);
+            continue;
+        }
+        const bool inReach = actor->distanceTo(playerX_, playerY_) <= kMeleeReach;
+        if (actor->npcWindup() > 0) {
+            // THE TELEGRAPH runs down, and THE SWING IS COMMITTED: a man who
+            // has started his wind-up finishes it whether or not you are
+            // still in front of him (Oblivion's own rule -- you step back and
+            // the swing whiffs; it is not cancelled). He keeps closing while
+            // it runs. A player hit inside it staggers him instead
+            // (landPlayerBlow); left alone, the blow lands on the roll the
+            // wind-up drew, at the tier the roll's hard band chose -- IF he
+            // is in reach on the landing step. Out of reach it is a swing at
+            // air and the roll is spent, exactly as a whiff spends one.
+            const std::int32_t left = actor->npcWindup() - 1;
+            actor->setNpcWindup(left);
+            if (!inReach) {
+                actor->setDestination(q8_tile(playerX_), q8_tile(playerY_), playerBand_);
+                actor->setActivity(Activity::Brawling);
+            } else {
+                actor->faceToward(playerX_, playerY_);
+            }
+            if (left > 0) {
+                continue;
+            }
+            const bool hard = actor->npcWindupHard();
+            actor->setNpcWindupHard(false);
+            if (!inReach) {
+                continue;
+            }
+            Fighter blowTarget = playerFighter;
+            const Blow blow = strike(actor->weapon(), blowTarget, actor->npcPendingRoll(), 0,
+                                     kFatigueTermFullQ8,
+                                     hard ? kHardSwingChargeQ8 : kSwingChargeQ8);
+            if (!blow.landed) {
+                continue;
+            }
+            std::int32_t dmg = blow.damage;
+            if (guardHeld) {
+                // THE GUARD: blockedDamage argues what a landed blow is worth,
+                // never whether it landed -- no second roll. Every softened
+                // blow trains shieldwall and costs the blocker wind (turtling
+                // empties the pool that powers the counterattack). A HARD
+                // swing caught here BREAKS the guard: softened this once, and
+                // block-staggered for kBlockStaggerSteps -- the Oblivion
+                // asymmetry, from the other side.
+                dmg = blockedDamage(blow.damage, dialogue_.skills().level(kBlockSkill));
+                blowsBlocked_ = wrap_add(blowsBlocked_, 1);
+                dialogue_.skills().use(kBlockSkill);
+                fatigue_.drain(kBlockCatchFatiguePoints * kFatiguePointFine);
+                if (hard) {
+                    blockStaggerSteps_ = kBlockStaggerSteps;
+                }
+            }
+            playerHp_ = std::max(floor, playerHp_ - dmg);
+            lastBlowBy_ = id;
+            // STANCE (raise rule 3): a blow CAUGHT -- guarded or not -- puts
+            // the hands up, so a player being punched has GUARD without
+            // pressing SWING.
+            raisePlayerHands();
+            if (lethal && playerHp_ <= 0) {
+                // A KILLING BLOW. The man who threw it is the one the epitaph
+                // names (applyDefeat reads lastBlowBy_), so nobody else in the
+                // crowd swings at the body this step.
+                break;
+            }
+            continue;
+        }
+        if (!inReach) {
             // Out of reach: close via A*, and re-arm the timer for a quick
             // re-check while the gap closes rather than swinging at air.
             actor->setDestination(q8_tile(playerX_), q8_tile(playerY_), playerBand_);
@@ -1605,40 +1763,40 @@ void Tavern::stepBrawl() noexcept {
             actor->setNpcSwingTimer(timer - 1);
             continue;
         }
-        // The timer expired in reach: swing, re-keyed to this actor's own
-        // monotonic sequence (order-independent across the cadence change), and
-        // re-arm to the full interval.
+        // The timer expired in reach: THE WIND-UP BEGINS. The roll is drawn
+        // NOW, re-keyed to this actor's own monotonic sequence
+        // (order-independent across the cadence change), kept on him, and
+        // the blow lands on it kNpcWindupSteps later -- one draw per swing,
+        // exactly as before. Two more bands are carved off the same roll
+        // before it is put away: whether his GUARD is up until his next swing
+        // (professionals keep the wider band), and whether this swing is
+        // thrown HARD (the longer tell, double the rolled damage). No new
+        // draw exists anywhere in this. THE CADENCE HOLDS: the tell is the
+        // last stretch of the interval, not added to it -- blow to blow is
+        // still kNpcSwingIntervalSteps (spec 1.5's 1.1 s), so the timer
+        // re-arms to the interval less the tell.
         const std::uint64_t roll =
             rng_.draw(static_cast<std::uint64_t>(id), actor->npcSwingSeq());
         actor->bumpNpcSwingSeq();
-        actor->setNpcSwingTimer(kNpcSwingIntervalSteps);
-        Fighter blowTarget = playerFighter;
-        const Blow blow = strike(actor->weapon(), blowTarget, roll);
-        if (!blow.landed) {
-            continue;
-        }
-        std::int32_t dmg = blow.damage;
-        if (playerBlocking_) {
-            // THE GUARD: blockedDamage argues what a landed blow is worth, never
-            // whether it landed -- no second roll. Every softened blow trains
-            // shieldwall and, this build, costs the blocker wind (turtling
-            // empties the pool that powers the counterattack).
-            dmg = blockedDamage(blow.damage, dialogue_.skills().level(kBlockSkill));
-            blowsBlocked_ = wrap_add(blowsBlocked_, 1);
-            dialogue_.skills().use(kBlockSkill);
-            fatigue_.drain(kBlockCatchFatiguePoints * kFatiguePointFine);
-        }
-        playerHp_ = std::max(floor, playerHp_ - dmg);
-        lastBlowBy_ = id;
-        // STANCE (raise rule 3): a blow CAUGHT -- guarded or not -- puts the
-        // hands up, so a player being punched has GUARD without pressing SWING.
-        raisePlayerHands();
-        if (lethal && playerHp_ <= 0) {
-            // A KILLING BLOW. The man who threw it is the one the epitaph names
-            // (applyDefeat reads lastBlowBy_), so nobody else in the crowd
-            // swings at the body this step.
-            break;
-        }
+        actor->setNpcPendingRoll(roll);
+        const std::uint64_t guardBand =
+            isProfessional(*actor) ? kNpcProfessionalGuardBand256 : kNpcGuardBand256;
+        actor->setNpcGuard(((roll >> kNpcGuardRollShift) & 0xFFU) < guardBand);
+        const bool hard = ((roll >> kNpcHardRollShift) & 0xFFU) < kNpcHardBand256;
+        const std::int32_t tell = hard ? kNpcHardWindupSteps : kNpcWindupSteps;
+        actor->setNpcWindupHard(hard);
+        actor->setNpcWindup(tell);
+        actor->setNpcSwingTimer(kNpcSwingIntervalSteps - tell);
+    }
+    for (const std::int32_t id : arrived) {
+        // Off the list, on the street, and still routing until tickBrawl says
+        // the fight is over -- so the rota does not walk him straight back in.
+        brawlers_.erase(std::remove(brawlers_.begin(), brawlers_.end(), id), brawlers_.end());
+    }
+    if (!arrived.empty() && brawlers_.empty()) {
+        // The last man ran: the fight is over the way a disengage ends one,
+        // and the hand means Subdue again (intent-by-verb's own reset).
+        playerIntent_ = Intent::Subdue;
     }
     // Down. Under brawl the floor is the line, under lethal zero is; either way
     // the defeat seam takes it from here -- the same applyDefeat every in-world
@@ -1658,10 +1816,22 @@ void Tavern::noteEscalation(std::int32_t targetId) {
     }
     spreadWitness(targetId, Deed::DrewSteel);
     endConversation();
+    // WATCH & RHYTHM BUILD: and the room stands back -- the one move, on this
+    // edge, that the rota then holds (applySchedules) for as long as the
+    // fight is lethal.
+    standBack();
 }
 
 void Tavern::tickBrawl() {
     if (brawlers_.empty()) {
+        // WATCH & RHYTHM BUILD: the rout ends with the fight. A man who made
+        // the street keeps no rota until nobody is swinging; then he is
+        // somebody with a stool to get back to, and the schedule has him.
+        for (Actor& actor : actors_) {
+            if (actor.routing()) {
+                actor.setRouting(false);
+            }
+        }
         return;
     }
     // ACTION-COMBAT BUILD: the per-blow exchange moved to stepBrawl (per-step
@@ -1696,9 +1866,15 @@ void Tavern::tickBrawl() {
     }
     if (!anyoneUp || !playerInside()) {
         for (const std::int32_t id : brawlers_) {
-            if (Actor* actor = mutableActorById(id);
-                actor != nullptr && actor->activity() == Activity::Brawling) {
-                actor->setActivity(Activity::Walking);
+            if (Actor* actor = mutableActorById(id); actor != nullptr) {
+                if (actor->activity() == Activity::Brawling) {
+                    actor->setActivity(Activity::Walking);
+                }
+                // WATCH & RHYTHM BUILD: hands down, rhythm cleared. A man who
+                // walks away from a fight does not carry a wind-up into the
+                // next one.
+                actor->stagger(0, 0);
+                actor->setRouting(false);
             }
         }
         brawlers_.clear();
@@ -1706,6 +1882,151 @@ void Tavern::tickBrawl() {
         // Subdue again until the next hard swing says otherwise.
         playerIntent_ = Intent::Subdue;
     }
+}
+
+// ---------------------------------------------------------------------------
+// WATCH & RHYTHM BUILD -- the rhythm, the room and the cause
+// ---------------------------------------------------------------------------
+
+bool Tavern::isProfessional(const Actor& actor) const noexcept {
+    if (actor.role() == ActorRole::Bouncer) {
+        return true;
+    }
+    // A watchman by the derived faction, never by a second table.
+    const std::int32_t garrison = dialogue_.factions().indexOf("watch");
+    return garrison >= 0 && factionOf(actor) == garrison;
+}
+
+bool Tavern::lethalFightLive() const noexcept {
+    if (brawlers_.empty()) {
+        return false;
+    }
+    const std::vector<Fighter> fighters = currentFight();
+    return classifyFight(fighters) == FightClass::Lethal;
+}
+
+bool Tavern::violenceInView() const noexcept {
+    if (lethalFightLive()) {
+        return true;
+    }
+    if (!handsUp_) {
+        // Hands down over a body somebody else left is not a cause; the
+        // corpse never leaves the roster, and a Watch that closed on whoever
+        // stood nearest it would close on the bartender every night.
+        return false;
+    }
+    if (playerWeapon_ >= kFirstLethalWeapon) {
+        // STEEL UP. The stance bit is what the Watch reads (the whole reason
+        // the stance is sim state): a blade in a raised hand is cause on its
+        // own, before it is swung.
+        return true;
+    }
+    for (const Actor& actor : actors_) {
+        // HANDS UP OVER A CORPSE, within reach. Dead, not Downed: a man put
+        // on the floor of a bar fight is the house's business (B3 says a
+        // Subdue beating is still a brawl), and the Watch has no cause in it.
+        if (actor.present() && actor.role() != ActorRole::Vermin &&
+            actor.activity() == Activity::Dead &&
+            actor.distanceTo(playerX_, playerY_) <= kMeleeReach) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool Tavern::shouldRout(const Actor& actor) const noexcept {
+    return actor.role() != ActorRole::Vermin && !isProfessional(actor) &&
+           actor.intent() != Intent::Kill && isBloodied(actor.hp(), actor.hpMax());
+}
+
+void Tavern::standBack() {
+    if (!playerKnown_) {
+        return;
+    }
+    for (Actor& actor : actors_) {
+        if (!actor.present() || isFloored(actor.activity()) ||
+            actor.role() == ActorRole::Vermin || actor.routing() || isProfessional(actor) ||
+            actor.band() != playerBand_) {
+            continue;
+        }
+        if (std::find(brawlers_.begin(), brawlers_.end(), actor.id()) != brawlers_.end()) {
+            continue;
+        }
+        if (actor.distanceTo(playerX_, playerY_) > kStandBackRadiusTiles * kSubOne) {
+            continue;
+        }
+        // Directly away, by the sign of each axis -- integer, no bearing --
+        // and the first standable tile inside the footprint on that line, the
+        // far tile first. Somebody standing ON the player goes east, along
+        // the bar; nobody stands still and nobody goes through a wall.
+        const std::int32_t dx = actor.x() - playerX_;
+        const std::int32_t dy = actor.y() - playerY_;
+        std::int32_t sx = dx > 0 ? 1 : (dx < 0 ? -1 : 0);
+        const std::int32_t sy = dy > 0 ? 1 : (dy < 0 ? -1 : 0);
+        if (sx == 0 && sy == 0) {
+            sx = 1;
+        }
+        for (std::int32_t n = kStandBackTiles; n >= 1; --n) {
+            const std::int32_t tx = actor.tileX() + sx * n;
+            const std::int32_t ty = actor.tileY() + sy * n;
+            if (!gull::insideFootprint(tx, ty)) {
+                continue;
+            }
+            if (tiles_ != nullptr && !tiles_->standable(tx, ty, actor.band())) {
+                continue;
+            }
+            actor.setDestination(tx, ty, actor.band());
+            actor.setActivity(Activity::Walking);
+            break;
+        }
+    }
+}
+
+Blow Tavern::landPlayerBlow(Actor& target, bool hard, std::int32_t bonus, std::int32_t swingTerm,
+                            std::int32_t chargeQ8, bool& recoiled, bool& staggered) {
+    recoiled = false;
+    staggered = false;
+    Fighter victim = target.asFighter();
+    const Fighter before = victim;
+    // THE ONE DRAW this blow makes, in the order it always made it.
+    Blow blow = strike(playerWeapon_, victim, drawForPlayerAction(), bonus, swingTerm, chargeQ8);
+    if (!blow.landed) {
+        return blow;
+    }
+    if (target.npcGuard()) {
+        // HIS GUARD CAUGHT IT. blockedDamage at level zero -- the NPC keeps no
+        // shieldwall ledger (rosterSkillOf reads a roster entry, not a
+        // ledger; training it would be a second table, so it is not done) --
+        // argues what the landed blow is worth, never whether it landed: no
+        // second roll. The blow's own bloodied/downed reading is re-derived
+        // from the softened number; a crowned Evictor blow still crowns.
+        const std::int32_t kept = blockedDamage(blow.damage, 0);
+        victim.hp = blow.crowned ? 0 : std::max(0, before.hp - kept);
+        blow.damage = kept;
+        blow.blocked = true;
+        blow.bloodied = !isBloodied(before) && isBloodied(victim);
+        blow.downed = isDowned(victim.hp);
+        if (hard) {
+            // A HARD swing BREAKS a guard: he is block-staggered.
+            if (!blow.downed) {
+                target.stagger(kBlockStaggerSteps, kNpcSwingIntervalSteps);
+            }
+            staggered = true;
+        } else {
+            // A normal swing into a guard RECOILS the arm that threw it.
+            recoilSteps_ = kRecoilSteps;
+            recoiled = true;
+        }
+    } else if (hard || target.npcWindup() > 0) {
+        // Open, and hit inside his wind-up (the pre-empt: the blow he was
+        // winding up is lost with the roll it drew) or hit HARD: staggered.
+        if (!blow.downed) {
+            target.stagger(kStaggerSteps, kNpcSwingIntervalSteps);
+        }
+        staggered = true;
+    }
+    target.setHealth(victim.hp, victim.hpMax);
+    return blow;
 }
 
 // ---------------------------------------------------------------------------
@@ -1739,13 +2060,26 @@ void Tavern::applyDefeat(std::int32_t winnerId) {
         standing_ = Standing::BeingEjected;
     }
     for (const std::int32_t id : brawlers_) {
-        if (Actor* actor = mutableActorById(id);
-            actor != nullptr && actor->activity() == Activity::Brawling) {
-            actor->setActivity(Activity::Walking);
+        if (Actor* actor = mutableActorById(id); actor != nullptr) {
+            if (actor->activity() == Activity::Brawling) {
+                actor->setActivity(Activity::Walking);
+            }
+            // WATCH & RHYTHM BUILD: the fight is over; so is his rhythm.
+            actor->stagger(0, 0);
+            actor->setRouting(false);
         }
     }
     brawlers_.clear();
     lastBlowBy_ = -1;
+    // And the player's own clocks: a man on the floor is past recoiling.
+    recoilSteps_ = 0;
+    blockStaggerSteps_ = 0;
+    // INTENT-BY-VERB reset (VETO 3), the same one tickBrawl's disengage
+    // makes: the fight is over -- this way -- and the hand means Subdue again
+    // until the next hard swing says otherwise. Without it a man who died
+    // meaning Kill got up meaning Kill, and his next tap was a lethal fight
+    // from the first blow.
+    playerIntent_ = Intent::Subdue;
 
     const Actor* winner = actorById(winnerId);
     if (winner == nullptr || winner->role() == ActorRole::Vermin) {
@@ -2540,7 +2874,12 @@ Notice Tavern::noticeBy(const Actor& actor) const noexcept {
     // The three refusals that are not a matter of degree. A rat is not a
     // witness, a man on the floor is not a witness, and somebody who is not in
     // the room at all is not a witness.
-    if (!actor.present() || actor.activity() == Activity::Downed ||
+    // WATCH & RHYTHM BUILD: "on the floor" is isFloored -- Downed OR Dead.
+    // Until this build a corpse could witness (and, for the Watch, SEE) --
+    // slayActor skipped floored bystanders itself, but tickWatch's
+    // canSeePlayer came through here and a killed watchman would have gone
+    // on closing. A dead man is not a witness.
+    if (!actor.present() || isFloored(actor.activity()) ||
         actor.role() == ActorRole::Vermin) {
         in.oblivious = true;
         return noticeOf(in);
@@ -2595,7 +2934,7 @@ std::int32_t Tavern::watchersInReach() const noexcept {
         // Deliberately not factored into a shared helper: noticeBy returns a
         // Notice and this returns a count, and a helper that returned "is this
         // one oblivious" would be a third place the range could drift.
-        if (!actor.present() || actor.activity() == Activity::Downed ||
+        if (!actor.present() || isFloored(actor.activity()) ||
             actor.role() == ActorRole::Vermin || actor.band() != playerBand_) {
             continue;
         }
@@ -3273,6 +3612,16 @@ void Tavern::tickWatch() {
             officer->setActivity(Activity::Watching);
             return;
         }
+        // WATCH & RHYTHM BUILD: HE IS IN IT NOW. A player blow on the closing
+        // watchman put him on the brawl list with Intent::Kill (joinBrawl);
+        // stepBrawl has his blows and he is not arresting anybody while he is
+        // being swung at. The chase does not time out on a man fighting you;
+        // it ends the way every fight ends -- somebody down, or the door --
+        // and the stance then resets by the two rules above.
+        if (std::find(brawlers_.begin(), brawlers_.end(), officer->id()) != brawlers_.end()) {
+            noticedAtTick_ = tick_;
+            return;
+        }
         officer->setActivity(Activity::Warning);
         officer->faceToward(playerX_, playerY_);
         if (officer->distanceTo(playerX_, playerY_) > kMeleeReach) {
@@ -3281,6 +3630,34 @@ void Tavern::tickWatch() {
         }
         applyArrest(*officer);
         return;
+    }
+
+    // WATCH & RHYTHM BUILD -- VIOLENCE FIRST, every second, no glance gate
+    // and no notice die. A sack is a thing you have to look at twice; a man
+    // with a blade out in a taproom is not. The cause is violenceInView()
+    // (a live lethal fight, steel up, hands up over a corpse -- never a
+    // brawl-class fist fight, which is the house's law) SEEN by a watchman
+    // under the same three-clause notice rule every crime reads
+    // (watchmanWatchingPlayer -> canSeePlayer). What follows is exactly the
+    // contraband path: Closing, the halt bark, arrest at reach through
+    // applyArrest. The deference gate above is untouched and absolute.
+    if (violenceInView()) {
+        if (Actor* officer = watchmanWatchingPlayer(); officer != nullptr) {
+            watchStance_ = WatchStance::Closing;
+            watchmanId_ = officer->id();
+            watchCause_ = WatchCause::Violence;
+            noticedAtTick_ = tick_;
+            // THE HALT. watch.halt is the owner-canon row (the Barks lane
+            // authors it); until it is on the sheet the chain falls through
+            // to watch.demand, exactly as every bark chain in this file does.
+            lastDemand_ = officer->name() + ": " +
+                          std::string(dialogue_.barks().line(
+                              dialogue_.barks().resolve(
+                                  {std::string("watch.halt"), std::string("watch.demand")}),
+                              static_cast<std::int32_t>(tick_ / kWatchLookSeconds)));
+            officer->setActivity(Activity::Warning);
+            return;
+        }
     }
 
     // Idle. He glances up every few seconds; he is off shift with a drink in
@@ -4206,6 +4583,14 @@ void Tavern::hash_into(HashSink& sink) const {
     // never reaches this code.
     sink.put_byte(handsUp_ ? 1U : 0U);
     sink.put_int(static_cast<std::uint32_t>(lowerTimer_));
+    // WATCH & RHYTHM BUILD: the player's recoil and block-stagger clocks --
+    // each gates the next press and the next softening. The SECOND HALF of
+    // the one declared tavern/gate-workload baseline move (stance +
+    // room-fights-back + watch-violence + rhythm), re-blessed ONCE at this
+    // lane's landing; see DECISIONS.md. The population baseline never
+    // reaches this code.
+    sink.put_int(static_cast<std::uint32_t>(recoilSteps_));
+    sink.put_int(static_cast<std::uint32_t>(blockStaggerSteps_));
     sink.put_int(static_cast<std::uint32_t>(equippedSpellId_.size()));
     for (const char character : equippedSpellId_) {
         sink.put_byte(static_cast<std::uint32_t>(static_cast<unsigned char>(character)));

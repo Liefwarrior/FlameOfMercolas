@@ -368,6 +368,23 @@ rout under Lethal for a bloodied non-professional; bouncers do not wade into ste
 closes on cause (a Lethal fight or corpse inside a watchman's sight), deference-gated per §4.4.
 **No NPC blocking, no NPC hard swings, no NPC-vs-NPC lethality** — named ceiling, §10.
 
+**AMENDED by the Oblivion-feel program (feel/build, DECISIONS.md "Oblivion feel, the Gull",
+2026-09-10) — the tavern roster now has a RHYTHM, and the Watch has a cause.** Built, gated,
+one declared tavern-baseline move: every NPC blow is telegraphed (`kNpcWindupSteps` 18 /
+`kNpcHardWindupSteps` 30, inside the unchanged 66-step interval; the roll is drawn at the wind-up
+and kept; the swing is committed and whiffs, never cancels, if you step back); a hit inside the
+wind-up or any hard hit staggers him (`kStaggerSteps` 24); NPC GUARD and NPC HARD swings are two
+bands off the NPC's OWN swing roll (bits 40-47 / 48-55 — same-roll, one draw per swing), a tap
+into a guard is softened and recoils the player (`kRecoilSteps` 60), a hard swing breaks it
+(`kBlockStaggerSteps` 30), and the player's guard catching a hard NPC swing is softened once and
+broken for the same; patrons stand back on the escalation edge and the rota holds the room while
+the lethal fight is live; bouncers refuse steel and hold the door; a bloodied non-professional
+routs to the street; a defeat resets intent-by-verb. `WatchCause::Violence`: a watchman who can
+SEE a live lethal fight, steel up, or hands up over a corpse closes at once with `watch.halt`
+and arrests at reach through `applyArrest`; a blow on him makes him a Kill-intent brawler, and
+killing him is murder. Never for a brawl-class fist fight. Deference absolute. Constants and
+reasons: `tavern.hpp` (WATCH & RHYTHM BUILD block); tests: `test_watch_rhythm.cpp`.
+
 ---
 
 ## 7. The scrap list, confirmed
@@ -419,8 +436,10 @@ In priority order, none in v1: **the Daggerfall JUSTICE system — court / arrai
 sentence branch (fine, jail time-skip, execution = GAME OVER) — is its own scout+design+build
 chartered AFTER combat ships** (VETO 4; combat v1 lands only the crime + heat + arrest +
 `Sentence::Condemned` hook). Then: melee skill terms folded into the whiff/variance carving +
-use-XP on swings; COMBAT-SPEC §1–§6 armor/AC/location/wear; timed block/parry and shields; NPC
-blocking, hard swings, and NPC-vs-NPC lethality; aimed/ranged casting past the gift gate; loot on
+use-XP on swings; COMBAT-SPEC §1–§6 armor/AC/location/wear; timed block/parry and shields; ~~NPC
+blocking, hard swings~~ (LIFTED for the tavern roster by the Oblivion-feel program, see §6's
+amendment — banded off the NPC's own swing roll, no new draw) and NPC-vs-NPC lethality (still on
+the ceiling); aimed/ranged casting past the gift gate; loot on
 corpses; street-population (WardActor) combat sheets; pitch-biased hit location; hitstop; the real
 climax fight.
 

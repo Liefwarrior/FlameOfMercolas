@@ -481,6 +481,14 @@ if(GRANADAD_BUILD_TESTS)
         # against its own prompt, the FISTS UP row, and the twin-run of a
         # scripted raise/lower/re-raise on the tavern hash.
         tests/test_stance.cpp
+        # WATCH & RHYTHM BUILD -- WatchCause::Violence as a table (seen
+        # lethal fight -> Closing + halt + arrest; unseen -> nothing; a brawl
+        # -> nothing; a presented Wielder -> never), the blow on the closing
+        # watchman (Kill intent, murder), the wind-up / stagger / recoil /
+        # block-stagger timings, the guard and hard bands same-roll off the
+        # NPC's pending roll, stand-back, bouncers refusing steel, the rout,
+        # and a scripted fight twin-run.
+        tests/test_watch_rhythm.cpp
         tests/test_lamps.cpp
         tests/test_atlas.cpp
         tests/test_render.cpp
