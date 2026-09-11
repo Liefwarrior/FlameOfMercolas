@@ -785,20 +785,13 @@ void print_usage() {
         "                       person, put them on the crosshair and tap\n"
         "                       the punch key until one lands, before the\n"
         "                       shutter goes\n"
-        "  --charge=N           VERIFICATION ONLY: walk up to the nearest
-"
-        "                       person as --punch does, press the attack
-"
-        "                       key DOWN and hold it N steps without letting
-"
-        "                       go, so the hard swing's wind-up (under the
-"
-        "                       hold threshold) or the held hard tier (at or
-"
-        "                       past it) is on the frame. Pair with
-"
-        "                       --settle-steps=0 for an exact count
-"
+        "  --charge=N           VERIFICATION ONLY: walk up to the nearest\n"
+        "                       person as --punch does, press the attack\n"
+        "                       key DOWN and hold it N steps without letting\n"
+        "                       go, so the hard swing's wind-up (under the\n"
+        "                       hold threshold) or the held hard tier (at or\n"
+        "                       past it) is on the frame. Pair with\n"
+        "                       --settle-steps=0 for an exact count\n"
         "  --block              VERIFICATION ONLY: pick that same fight, raise\n"
         "                       the guard, hold it until a blow is softened\n"
         "  --cast               VERIFICATION ONLY: press the cast key once\n"
@@ -932,12 +925,9 @@ void print_usage() {
         "                       times and watch him rise: a rung, a guild\n"
         "                       with members in it, a permanent cut of the\n"
         "                       ward's prices and his name on the compound\n"
-        "                       roll as a Den Duke. WHERE is talk, away or
-"
-        "                       death (stop on the boards of the rematch, the
-"
-        "                       death ceremony still playing over the revive)
-"
+        "                       roll as a Den Duke. WHERE is talk, away or\n"
+        "                       death (stop on the boards of the rematch, the\n"
+        "                       death ceremony still playing over the revive)\n"
         "  --contract[=WHERE]   play the ward's own bounty -- take it off the\n"
         "                       Watch, get the Flame's mark, hunt the taproom\n"
         "                       and get paid. WHERE is talk, away or held\n"
