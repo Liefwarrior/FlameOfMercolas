@@ -552,3 +552,50 @@ other baseline unmoved.
 behaviour change behind it.** The next lane that touches a `WardActor` — the street Watch's
 `Respond` (9b, an appended `WardPolicy` and a per-actor alarm tick, both hashed) or the street
 combat sheets (9c) — moves this number for real, and declares it the same way.
+
+---
+
+## Justice build -- the ONE declared tavern move, re-blessed (2026-09-11)
+
+The justice build (`justice/build`, DECISIONS.md "Justice build landed") is the Daggerfall
+court: an arrest WITH PAPER no longer resolves to an inert sentence and a clock jump but opens
+a HEARING on the crime ledger -- the charge sheet, the officer, the arrest's one draw, then the
+plea, the priest's weighing and the judgment, all hashed and codec'd (`kCrimeVersion` 4 -> 5:
+`commuted_`, `executed_`, `lastPlea_`, `lastJudgment_`, `hearings_`, `daysServed_`,
+`slewWitnesses_`, `servedTallies_[6]`, the `HearingState` with its length-prefixed officer
+name). `CrimeLedger::hashInto` appends the same in the same order, and the ledger is hashed
+under the tavern through `DialogueDirector::hashInto` -- so the tavern/gate-workload twin
+moved, declared by the TAG & COURT lane and re-blessed ONCE here. The workload itself never
+arrests: the arrest keeps its one `drawForPlayerAction()` at the same stream position, the
+nights keep `draw % 49`, and the plea reads a declared band above them (`(draw >> 16) % 21`).
+The presentation lane (the hearing page, the rope ceremony, the end rows) added no hashed
+field: `courtOpen_` and its family are render state like `deathCeremonySteps_`.
+
+```
+at branch justice/build,
+granadad-twin-gate --tavern --ticks 900
+COMBINED WORLD HASH: 0x86E05F527E54E795 -> 0x837E94019BC49C25      <- DECLARED and RE-BLESSED
+```
+
+Recorded directly from `dist\granadad-twin-gate.exe --tavern --ticks 900` on Windows/mingw,
+two invocations, each `run A` == `run B` == `0x837E94019BC49C25`, report text byte-identical
+(3,153 bytes) -- on the gate whose stamp names this tree (`native/` digest
+`f5e16a5041b11b5844606837826b783e072fa998ecfa65d217c54f25ce411027`, 293 files, 90/90 ctest
+entries green, 1,192 doctest cases -- `test_court.cpp`, `test_hearing_page.cpp` and the
+`--court` lines in `test_scripted_lines.cpp` among them; `verify-windows.ps1` PASS -- 1,111 sim
+cases / 1,358,098 assertions and 71 content cases / 902,135 assertions under mingw,
+content-fingerprint and world-hash reports byte-identical linux/gcc vs mingw/windows).
+
+```
+at branch justice/build,
+granadad-twin-gate --population --population-hour 16 --ticks 7200, 96 walkers
+COMBINED WORLD HASH: 0x2646C1AAA2BA38DF      <- unchanged: no WardActor touched
+```
+
+`run A` == `run B`, report text byte-identical at **18,772 bytes** -- the same count every
+section since Phase C records. The court is a page over the Gull's own Watch; the street Watch
+(9b) is still the named ceiling and still the next declared population move.
+
+**The tavern baseline is therefore re-blessed at `0x837E94019BC49C25` with one declared
+record change behind it** -- the court's own v5 fields on the ledger the tavern hashes.
+
