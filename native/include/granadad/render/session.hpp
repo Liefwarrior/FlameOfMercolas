@@ -339,7 +339,12 @@ public:
     ///      its lock -- crackStrongbox() does not read stance, so "facing a
     ///      lock picks it, sneaking or not" is already true with no branch
     ///      here), the bale, the rat, the wire that buys more picks.
-    ///   5. NOTHING RESOLVED: the investigation look (examine()), which
+    ///   5. HANDS UP AND NOTHING IN REACH = LOWER HANDS (STANCE & ROOM
+    ///      BUILD, oblivion-roadmap.md 3.2 lower rule 1): after the person,
+    ///      the fixture and a lead the book has heard of, before the
+    ///      never-refusing look. Tavern::lowerPlayerHands(); the reticle says
+    ///      LOWER HANDS before the press through lowerHandsResolves().
+    ///   6. NOTHING RESOLVED: the investigation look (examine()), which
     ///      never refuses.
     ///
     /// interactPrompt() BELOW WALKS THE IDENTICAL ORDER on read-only queries,
@@ -417,6 +422,15 @@ public:
     /// for the ninth exit to forget it. Nothing outside interactTarget() has
     /// any business calling this.
     [[nodiscard]] InteractTarget resolveInteract() const;
+    /// STANCE & ROOM BUILD. THE LOWER HANDS SLOT'S ONE PREDICATE, shared by
+    /// the act walk (interact()) and the prompt walk (resolveInteract()) so
+    /// the reticle cannot say LOWER HANDS on a press that would LOOK, or the
+    /// reverse: true exactly when the hands are up and no lead the book has
+    /// heard of stands under the crosshair (a named lead is something in
+    /// reach, and the look outranks the lower). It is the SLOT'S predicate,
+    /// asked by both walks only after the person and the fixture slots ahead
+    /// of it have not resolved -- it does not re-ask those. Read-only.
+    [[nodiscard]] bool lowerHandsResolves() const;
     /// #85. Was Jump + Traverse + DropDown. ONE BUTTON, RESOLVED BY WHAT IS
     /// DIRECTLY AHEAD OR BELOW: climb (mantle, or the leap it falls back to)
     /// first, a drop if there is a ledge to step off, an ordinary standing
@@ -1559,6 +1573,12 @@ public:
     /// visible, the reticle carries the light one. PUBLIC so a case can pin
     /// what it says and that it stays on its edge, the same as blockLine.
     [[nodiscard]] std::string chargeLine() const;
+    /// STANCE & ROOM BUILD. "FISTS UP" / "CUDGEL UP" / "THE EVICTOR UP" /
+    /// "STEEL UP" exactly while the room's own playerHandsUp() is true, and
+    /// empty otherwise -- fighting mode made visible, the ONE presentation
+    /// touch the stance lane makes, on the blockLine pattern: the ROOM's fact,
+    /// never the keypress. PUBLIC for the identical reason blockLine is.
+    [[nodiscard]] std::string handsLine() const;
     /// HELD-EFFECTS BUILD. "STEADY THE HAND 842S" -- the slot-th live hold on
     /// the player, its name out of the grimoire and the seconds it has left,
     /// counting down continuously. Empty past the table's end, which is the
@@ -2219,6 +2239,11 @@ private:
     /// exclusive with a guard by construction (the guard only holds in Idle),
     /// so the two rows never both want the band at once.
     EasedToggle chargeAnim_;
+    /// STANCE & ROOM BUILD. The "<WEAPON> UP" fighting-mode row's own
+    /// EasedToggle, the per-row convention: hands coming up has nothing to do
+    /// with a guard going up (a guard RAISES the hands, but a swing raises
+    /// them too and the guard does not follow), so they do not share one.
+    EasedToggle handsAnim_;
     /// FATIGUE BUILD. The fatigue bar's own visibility ease -- its OWN
     /// EasedToggle per the pinned convention, mirroring the health bar's one
     /// visibility rule (down for the length of a conversation, up otherwise)
@@ -2381,6 +2406,9 @@ private:
     /// held hard and kept through the fade-out the identical way blockCache_ is
     /// -- an alpha cannot fade a string that is already gone.
     std::string chargeCache_;
+    /// STANCE & ROOM BUILD. The fighting-mode row's cache, kept through the
+    /// fade-out the identical way blockCache_ is.
+    std::string handsCache_;
     /// HELD-EFFECTS BUILD. One toggle and one cache PER ROW, the pinned
     /// convention: a warmth lapsing has nothing to do with a tuning arriving,
     /// so slot i eases on its own. Slots are table order (oldest hold first);

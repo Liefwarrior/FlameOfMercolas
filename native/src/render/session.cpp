@@ -3670,6 +3670,17 @@ void Session::step(const sim::MoveInput& input) {
     // the SIM's (kBlockCatchFatiguePoints, drained in stepBrawl), not ours.
     tavern_->setPlayerBlocking(blockHeld_ && !talking() && !picking() &&
                                tavern_->playerCombatIdle());
+    // STANCE & ROOM BUILD (oblivion-roadmap.md 3.2, the cancel list). A page
+    // owning the keyboard -- any page, a conversation, the wire in a lock --
+    // drops a live charge AND lowers the hands, pushed every step the identical
+    // way the guard above is derived: no edge event exists for a page opening
+    // mid-hold, so the room is told the fact rather than the keypress. The sim
+    // lowers them itself for talking, picking, sleeping, arrest and defeat;
+    // this is the one clause only the client can see (its own pages).
+    if (picking() || conversingNow()) {
+        tavern_->cancelPlayerCharge();
+        tavern_->lowerPlayerHands();
+    }
     body_->step(moved);
     syncTavernToBody();
 
@@ -3801,6 +3812,8 @@ void Session::step(const sim::MoveInput& input) {
     blockAnim_.advance();
     // ACTION-COMBAT BUILD. THE SAME PER-STEP ADVANCE for the HELD HARD row.
     chargeAnim_.advance();
+    // STANCE & ROOM BUILD. THE SAME PER-STEP ADVANCE for the FISTS UP row.
+    handsAnim_.advance();
     // HELD-EFFECTS BUILD. THE SAME PER-STEP ADVANCE, ONE PER SLOT.
     for (EasedToggle& anim : effectAnims_) {
         anim.advance();
@@ -4030,6 +4043,7 @@ void Session::step(const sim::MoveInput& input) {
     clearIfClosed(spellAnim_, spellCache_);
     clearIfClosed(blockAnim_, blockCache_);
     clearIfClosed(chargeAnim_, chargeCache_);
+    clearIfClosed(handsAnim_, handsCache_);
 
     // One engine tick a simulated second. clockScale > 1 makes the world's
     // clock run faster than the body's, which is how a capture reaches a named
@@ -4271,11 +4285,38 @@ void Session::interact() {
         return;
     }
 
-    // 4. NOTHING RESOLVED: the investigation look, which never refuses.
+    // 4. HANDS UP AND NOTHING IN REACH: LOWER HANDS (STANCE & ROOM BUILD,
+    // section 3.2 lower rule 1). After the person, the fixture and a lead the
+    // book has heard of -- lowerHandsResolves() is the ONE predicate the
+    // prompt walk answers LOWER HANDS with, so the reticle and the key agree
+    // by construction. No line: the FISTS UP row going down is the feedback.
+    if (lowerHandsResolves()) {
+        tavern_->lowerPlayerHands();
+        return;
+    }
+
+    // 5. NOTHING RESOLVED: the investigation look, which never refuses.
     // examine() re-checks talking()/picking()/casebookOpen_ on its own, all
     // of which dismissOverlays() above already settled, so this is safe to
     // call unconditionally.
     examine();
+}
+
+bool Session::lowerHandsResolves() const {
+    if (!tavern_->playerHandsUp()) {
+        return false;
+    }
+    // A LEAD THE CROSSHAIR WOULD NAME IS SOMETHING IN REACH, and the look
+    // outranks the lower -- the identical three-book walk, with the identical
+    // "an unheard lead is not named" line, that resolveInteract() names the
+    // subject with. Read-only: leadInLookReach() and its two siblings are
+    // walks over Lead::site, never Casebook::look().
+    const auto named = [](const sim::Casebook& book, int lead) {
+        return lead >= 0 && book.raws() != nullptr &&
+               book.state(static_cast<std::int32_t>(lead)) != sim::LeadState::Unheard;
+    };
+    return !named(casebook_, leadInLookReach()) && !named(sheetBook_, sheetLeadInLookReach()) &&
+           !named(evictBook_, evictLeadInLookReach());
 }
 
 std::string Session::interactPrompt() const {
@@ -4548,6 +4589,19 @@ Session::InteractTarget Session::resolveInteract() const {
                 return out;
             }
         }
+    }
+    // 5. LOWER HANDS (STANCE & ROOM BUILD): every lead block above returned
+    // when it named one, so reaching here with the hands up is exactly the
+    // press interact() lowers them on -- the same lowerHandsResolves() it
+    // reads. A verb with no subject: "nothing in reach" is the whole point,
+    // and a box note or a place name would be the HUD naming a thing the key
+    // is not about to touch.
+    if (lowerHandsResolves()) {
+        out.verb = "LOWER HANDS";
+        out.subject.clear();
+        out.note.clear();
+        out.kind = AimKind::Nothing;
+        return out;
     }
     if (out.subject.empty()) {
         // THE DOOR YOU ARE ACTUALLY FACING. The ward map pass built the
@@ -7218,6 +7272,9 @@ void Session::syncPanelAnim() noexcept {
     // going up, and the two are mutually exclusive anyway (the guard drops the
     // instant the hand leaves Idle).
     sync(chargeAnim_, chargeCache_, chargeLine());
+    // STANCE & ROOM BUILD. THE SAME sync() SHAPE for the FISTS UP row, on its
+    // own toggle: fighting mode outlives any one guard or swing.
+    sync(handsAnim_, handsCache_, handsLine());
     // HELD-EFFECTS BUILD. THE SAME sync() SHAPE, one per active-effect slot
     // -- each on its own EasedToggle per the pinned convention, because a
     // warmth lapsing in slot 0 has nothing to do with a tuning arriving in
@@ -7434,6 +7491,32 @@ std::string Session::chargeLine() const {
         name.pop_back();
     }
     return "HELD HARD -- " + name + " " + std::to_string(lo) + "-" + std::to_string(hi);
+}
+
+std::string Session::handsLine() const {
+    // STANCE & ROOM BUILD. THE ROOM'S OWN FACT, the blockLine shape:
+    // playerHandsUp() is the hashed bit the room, the street and the Watch
+    // react to, so this row can never say FISTS UP while the sim says down.
+    // Weapon-named off the sheet's own casing (the same table chargeLine
+    // reads through weaponSheetLine), with the register's own word for a
+    // blade -- STEEL, as the flip line and the epitaph already say it.
+    if (!tavern_->playerHandsUp()) {
+        return {};
+    }
+    const sim::Weapon weapon = tavern_->playerHeldWeapon();
+    if (weapon == sim::Weapon::Edged) {
+        return "STEEL UP";
+    }
+    std::string sheet = sim::weaponSheetLine(weapon);
+    std::size_t span = 0;
+    while (span < sheet.size() && (sheet[span] < '0' || sheet[span] > '9')) {
+        ++span;
+    }
+    std::string name = sheet.substr(0, span);
+    while (!name.empty() && name.back() == ' ') {
+        name.pop_back();
+    }
+    return name + " UP";
 }
 
 std::string Session::effectLine(std::size_t slot) const {
@@ -7797,6 +7880,9 @@ FrameStats Session::drawFrame(Framebuffer& target) const {
     // its own cache and fade the identical shape the guard row just used.
     hud.chargeLabel = std::string_view{chargeCache_};
     hud.chargeFade = chargeAnim_.value();
+    // STANCE & ROOM BUILD. The FISTS UP row, its own cache and fade.
+    hud.handsLabel = std::string_view{handsCache_};
+    hud.handsFade = handsAnim_.value();
     // HELD-EFFECTS BUILD. The live holds, each reading its own cache and
     // fading on its own toggle -- the identical shape every row above uses.
     for (std::size_t slot = 0; slot < kEffectRows; ++slot) {
@@ -8434,6 +8520,62 @@ void facePlayerAndSync(Session& session, std::int32_t xQ8, std::int32_t yQ8) {
     return best;
 }
 
+/// Whether this body is in the fight the room is resolving -- currentFight()
+/// is the player plus brawlers_, by actor id. The one honest reading of "the
+/// fight is on with HIM": the house minds a swing the instant the sightline
+/// finds a person (joinBrawl fires before the roll), landed or not.
+[[nodiscard]] bool inTheFight(const Session& session, std::int32_t markId) {
+    for (const sim::Fighter& fighter : session.tavern().currentFight()) {
+        if (fighter.actorId == markId) {
+            return true;
+        }
+    }
+    return false;
+}
+
+/// The first half of every scripted swing: walks up to a body if it is out of
+/// reach, steps out of its tile if the walk ended IN it, and puts it DEAD ON
+/// the crosshair. False when the mark is gone or on the floor.
+[[nodiscard]] bool closeOnAndFace(Session& session, std::int32_t markId) {
+    const sim::Actor* mark = session.tavern().actorById(markId);
+    if (mark == nullptr || !mark->present() || sim::isFloored(mark->activity())) {
+        return false;
+    }
+    if (mark->distanceTo(session.body().x(), session.body().y()) > sim::kMeleeReach) {
+        walkToTile(session, mark->tileX(), mark->tileY());
+        mark = session.tavern().actorById(markId);
+        if (mark == nullptr) {
+            return false;
+        }
+    }
+    if (mark->x() == session.body().x() && mark->y() == session.body().y()) {
+        // Standing IN him: `along` is zero and the ray finds nobody. One
+        // step of clear ground opens the gap the crosshair needs; tried
+        // in each direction until the body actually moved, since the
+        // first way may be a wall.
+        const std::int32_t beforeX = session.body().x();
+        const std::int32_t beforeY = session.body().y();
+        const std::int32_t nudges[4][2] = {{-1, 0}, {0, -1}, {0, 1}, {1, 0}};
+        for (const auto& nudge : nudges) {
+            sim::MoveInput back;
+            back.forward = nudge[0];
+            back.strafe = nudge[1];
+            back.autoTraverse = false;
+            back.snapVelocity = true;
+            session.step(back);
+            if (session.body().x() != beforeX || session.body().y() != beforeY) {
+                break;
+            }
+        }
+        mark = session.tavern().actorById(markId);
+        if (mark == nullptr) {
+            return false;
+        }
+    }
+    facePlayerAndSync(session, mark->x(), mark->y());
+    return true;
+}
+
 /// Walks up to a body, puts it DEAD ON the crosshair and taps -- the same
 /// walk-up / re-face / tap / step-past-recovery beat the tenant and rat drives
 /// throw -- until a blow CONNECTS or the tries run out. Connection is read
@@ -8446,42 +8588,13 @@ void facePlayerAndSync(Session& session, std::int32_t xQ8, std::int32_t yQ8) {
 /// in full first, because a down-edge in recovery is dropped, not buffered.
 [[nodiscard]] bool tapUntilItConnects(Session& session, std::int32_t markId, int tries) {
     for (int attempt = 0; attempt < tries; ++attempt) {
-        const sim::Actor* mark = session.tavern().actorById(markId);
-        if (mark == nullptr || !mark->present() || sim::isFloored(mark->activity())) {
+        if (!closeOnAndFace(session, markId)) {
             return false;
         }
-        if (mark->distanceTo(session.body().x(), session.body().y()) > sim::kMeleeReach) {
-            walkToTile(session, mark->tileX(), mark->tileY());
-            mark = session.tavern().actorById(markId);
-            if (mark == nullptr) {
-                return false;
-            }
+        const sim::Actor* mark = session.tavern().actorById(markId);
+        if (mark == nullptr) {
+            return false;
         }
-        if (mark->x() == session.body().x() && mark->y() == session.body().y()) {
-            // Standing IN him: `along` is zero and the ray finds nobody. One
-            // step of clear ground opens the gap the crosshair needs; tried
-            // in each direction until the body actually moved, since the
-            // first way may be a wall.
-            const std::int32_t beforeX = session.body().x();
-            const std::int32_t beforeY = session.body().y();
-            const std::int32_t nudges[4][2] = {{-1, 0}, {0, -1}, {0, 1}, {1, 0}};
-            for (const auto& nudge : nudges) {
-                sim::MoveInput back;
-                back.forward = nudge[0];
-                back.strafe = nudge[1];
-                back.autoTraverse = false;
-                back.snapVelocity = true;
-                session.step(back);
-                if (session.body().x() != beforeX || session.body().y() != beforeY) {
-                    break;
-                }
-            }
-            mark = session.tavern().actorById(markId);
-            if (mark == nullptr) {
-                return false;
-            }
-        }
-        facePlayerAndSync(session, mark->x(), mark->y());
         const std::int32_t hpBefore = mark->hp();
         session.punch();
         const sim::Actor* struck = session.tavern().actorById(markId);
@@ -8492,6 +8605,29 @@ void facePlayerAndSync(Session& session, std::int32_t xQ8, std::int32_t yQ8) {
         session.stepMany(sim::MoveInput{}, sim::kSwingRecoverySteps + 1);
     }
     return false;
+}
+
+/// Walks up to a body, puts it on the crosshair and swings ONCE -- the swing a
+/// fight needs and not one more. STANCE & ROOM BUILD: the nemesis line throws
+/// this and not tapUntilItConnects, because every CONNECTED tap is hit points
+/// off a man the line needs standing, and the fight does not need the blow to
+/// land: the house minds a swing the instant the sightline finds a person
+/// (joinBrawl fires before the roll), so one swing that found him has the room
+/// resolving the fight with him whether or not the roll did. Retried only
+/// while the ray found nobody, or somebody else (he shifted his feet), which
+/// costs him nothing; the lockout is stepped through between tries.
+[[nodiscard]] bool swingOnceAt(Session& session, std::int32_t markId, int tries) {
+    for (int attempt = 0; attempt < tries && !inTheFight(session, markId); ++attempt) {
+        if (!closeOnAndFace(session, markId)) {
+            return false;
+        }
+        session.punch();
+        if (inTheFight(session, markId)) {
+            return true;
+        }
+        session.stepMany(sim::MoveInput{}, sim::kSwingRecoverySteps + 1);
+    }
+    return inTheFight(session, markId);
 }
 
 /// Walks to a named person and opens a conversation with them.
@@ -8919,18 +9055,28 @@ constexpr std::int32_t kContractHeldBeats = 2;
 /// the action-combat verbs) and then the room resolving the brawl and its flip
 /// to lethal a second at a time, and the respawn is the same settleDefeat() the
 /// client's own step loop reaches -- with the death ceremony over it once steel
-/// is out. ACTION-COMBAT BUILD: the two rise-defeats are fought in the world
-/// first and only THEN taken through Tavern::concedeTo, which no longer stands
-/// in for a combat screen (there is none) but IS the defeat seam lethal combat
-/// calls -- because under lethal rules the NPC loop deliberately will not floor
-/// the player itself (the VETO lane ordering), so the rise it cannot deliver by
-/// fists is recorded through that seam after the fight is real.
+/// is out. STANCE & ROOM BUILD: every defeat in the arc is now DELIVERED BY
+/// THE ROOM. stepBrawl resolves the NPC's blows under lethal rules with the
+/// floor lifted to zero, so the rematch that flips lethal is fought to the
+/// boards by the man himself, and Tavern::concedeTo -- the scripted defeat
+/// seam -- is no longer used anywhere in this line. A beat that the room
+/// cannot finish does not land, which is the proof.
+/// STANCE & ROOM BUILD. The mask of which --nemesis beats landed, for the
+/// summary -- the eviction line's own gEvictBeatMask shape, so a build log says
+/// WHICH beat fell short rather than how many did.
+std::int32_t gNemesisBeatMask = 0;
+
 [[nodiscard]] int runNemesisLine(Session& session, const std::string& ending) {
     // TARN WRENHALE, "Two-Loads": a docker on the evening shift, fists, no
     // rung, nobody's rival. Eli's own example is "killed by a laborer in a fist
     // fight", and this is the labourer.
     constexpr std::string_view kMark = "Tarn Wrenhale";
     int landed = 0;
+    gNemesisBeatMask = 0;
+    const auto land = [&landed](int beat) {
+        gNemesisBeatMask |= 1 << (beat - 1);
+        ++landed;
+    };
 
     const sim::Actor* mark = actorNamed(session, kMark);
     if (mark == nullptr) {
@@ -8940,14 +9086,40 @@ constexpr std::int32_t kContractHeldBeats = 2;
 
     // 1. HE IS NOBODY. The proof is worth nothing without the before.
     if (session.tavern().nemesis().of(id) == nullptr && mark->weapon() == sim::Weapon::Fists) {
-        ++landed;
+        land(1);
     }
 
-    // A round of the real thing: walk up to him, swing, and let the room
-    // resolve it a second at a time. The loop waits for BOTH his win and the
-    // player being back on their feet -- Session::step() finds the release flag
-    // itself, so a loop that stopped at the win would walk into the next round
-    // with the player still on the boards.
+    // A round of the real thing: walk up to him, put him dead on the crosshair,
+    // swing ONCE (swingOnceAt -- past two wins he HUNTS, walking onto the
+    // player's own tile, so a blind swing from wherever the walk stopped casts
+    // past him), and let the room resolve it a second at a time. The loop waits
+    // for BOTH his win and the player being back on their feet --
+    // Session::step() finds the release flag itself, so a loop that stopped at
+    // the win would walk into the next round with the player still on the
+    // boards.
+    //
+    // AND IT PICKS THE FIGHT AGAIN WHEN THE ROOM ENDS IT WITHOUT HIM WINNING.
+    // STANCE & ROOM BUILD: now that every loss in this line is delivered by the
+    // room's own blows, the line lives or dies on the fight actually reaching
+    // its end WITH HIM -- and the house has honest ways of stopping it short.
+    // The door policy puts a brawler out (the ejection shove, and tickBouncers
+    // clears the brawl the moment the player is off the footprint), tickBrawl
+    // clears any fight the player is not in the house for, and a swing that
+    // found whoever else stood on the crosshair started a fight he is not in.
+    // Either way the drive does what a player who is about to lose does: walks
+    // back in, swings at HIM once more, and takes the beating.
+    //
+    // ONCE, AND ONLY AT A MAN WHO CAN STAND IT. The first draft of this build
+    // re-engaged with tapUntilItConnects, and in three of eleven smoke
+    // timelines it tapped its own nemesis to the boards: he got up at a
+    // quarter of his health (advanceSecond), bloodied, and the next tap on a
+    // bloodied man who means Harm is a lethal blow with the floors lifted
+    // (brawl.hpp B3) -- the drive killed him, and the third win never came.
+    // So: one swing per engagement (the sightline that found him put him in
+    // the brawl whether or not the roll landed), never a swing at a bloodied
+    // man, only inside the house (he only hunts indoors, and the room clears a
+    // fight the player is outside for), and a corpse ends the round -- nobody
+    // rises from one. Bounded twice: the seconds, and the re-engagements.
     const auto pickAFight = [&session, id]() {
         const sim::Actor* him = session.tavern().actorById(id);
         if (him == nullptr || !him->present()) {
@@ -8955,10 +9127,31 @@ constexpr std::int32_t kContractHeldBeats = 2;
         }
         const sim::Nemesis* before = session.tavern().nemesis().of(id);
         const std::int32_t had = before == nullptr ? 0 : before->wins;
-        walkToTile(session, him->tileX(), him->tileY());
         session.closeConversation();
-        session.punch();
+        constexpr int kReengagements = 4;
+        int engaged = 0;
         for (int second = 0; second < 300; ++second) {
+            him = session.tavern().actorById(id);
+            if (him == nullptr || !him->present() || him->activity() == sim::Activity::Dead) {
+                return false;
+            }
+            if (!session.tavern().playerFloored() && !inTheFight(session, id)) {
+                if (!session.tavern().playerInside()) {
+                    // Put out, or woken on the quay: back in through the door
+                    // first -- by walking up to HIM, no swing, which is the
+                    // one walk every spot the smoke leaves a body on has been
+                    // proved to route from (a walk to a fixed interior tile
+                    // stalled at the threshold from two of them). If he is
+                    // outside too, this follows him in.
+                    (void)closeOnAndFace(session, id);
+                } else if (!sim::isFloored(him->activity()) &&
+                           !sim::isBloodied(him->hp(), him->hpMax()) &&
+                           sim::gull::insideFootprint(him->tileX(), him->tileY()) &&
+                           engaged < kReengagements) {
+                    ++engaged;
+                    (void)swingOnceAt(session, id, 4);
+                }
+            }
             session.stepMany(sim::MoveInput{}, sim::kStepsPerSecond);
             const sim::Nemesis* now = session.tavern().nemesis().of(id);
             if (now != nullptr && now->wins > had && !session.tavern().playerFloored()) {
@@ -8973,72 +9166,77 @@ constexpr std::int32_t kContractHeldBeats = 2;
     //    punch key, and the beating is the ordinary brawl the door policy has
     //    been resolving since S2.
     if (pickAFight()) {
-        ++landed;
+        land(2);
     }
     session.skipToHour(20);
 
-    // 3. AND THE REMATCH IS FOUGHT IN THE WORLD -- IT NO LONGER REFUSES.
+    // 3. AND THE REMATCH IS FOUGHT IN THE WORLD, TO THE BOARDS.
     //
     //    THE RULE STILL WORKS; what changed is that the flip is resolved rather
     //    than parked. A nemesis MEANS IT from his first win on (nemesisIntent),
     //    and brawl.hpp's third clause says beating a BLOODIED man while meaning
     //    him Harm is not a bar fight. So the rematch opens as a brawl and flips
-    //    the instant the player is under a quarter -- but the action-combat
-    //    build keeps resolving it IN THE WORLD under lethal rules (the "STEEL
-    //    OUT. THE ROOM STANDS BACK." line and the SwordDraw fire on the edge in
-    //    step(), where the dead refusal used to sit). Escalated and still on his
-    //    feet in a lethal fight is the real, reachable outcome -- the player was
-    //    left standing in it, not walked off it. clearEscalation() first so the
-    //    flip is a fresh edge; it is deliberately NOT cleared again below, so it
-    //    stays latched through the two defeats and each plays the death ceremony.
+    //    the instant the player is under a quarter (the "STEEL OUT. THE ROOM
+    //    STANDS BACK." line and the SwordDraw fire on the edge in step()) --
+    //    and STANCE & ROOM BUILD, the room keeps swinging under lethal rules
+    //    with the floor lifted: he finishes the player himself, the death
+    //    ceremony plays over the quay revive, and his second win is the room's
+    //    own doing. The beat lands only when BOTH are true: the fight flipped
+    //    lethal, and he put the player down in it. clearEscalation() first so
+    //    the flip is a fresh edge; it is deliberately NOT cleared again below,
+    //    so it stays latched through the defeat that follows and that one
+    //    plays the death ceremony too.
     session.tavern().clearEscalation();
-    (void)pickAFight();
-    if (session.tavern().escalated() && !session.tavern().playerFloored()) {
-        ++landed;
+    const bool rematchLost = pickAFight();
+    if (rematchLost && session.tavern().escalated() && !session.tavern().playerFloored()) {
+        land(3);
     }
     session.skipToHour(20);
 
-    // 4/5. AND THE REST OF THE RISE IS FOUGHT, NOT CONCEDED TO A SCREEN.
+    // 4. AND THE THIRD LOSS IS FOUGHT AND LOST THE SAME WAY.
     //
-    //      The two defeats that finish the rise are FOUGHT now -- real movement,
-    //      a real swing, the room resolving the brawl and its flip -- and only
-    //      THEN taken through Tavern::concedeTo. That seam SURVIVES (COMBAT-
-    //      ACTION-SPEC section 7) but its meaning changed: it is no longer the
-    //      stand-in for a combat screen that never shipped, it is the defeat
-    //      seam lethal combat calls -- because under lethal rules the NPC loop
-    //      deliberately will not floor the player itself (VETO lane ordering:
-    //      stepBrawl refuses the exchange while steel is out), so a rise the
-    //      room cannot deliver by fists is recorded here. Steel is still out
-    //      from beat 3, so each of these defeats plays the DEATH CEREMONY --
-    //      settleDefeat lays the dip and the epitaph over the quay revive.
-    for (int more = 0; more < 2; ++more) {
-        const sim::Actor* him = session.tavern().actorById(id);
-        if (him == nullptr) {
-            break;
+    //    One more real fight -- real movement, a real swing, the room resolving
+    //    the brawl, its flip, and the killing -- with a cudgel in his hand now
+    //    (nemesisWeapon at two wins) and Harm behind it: a bar fight until the
+    //    player is bloodied, lethal after, and the room finishes it. Nothing is
+    //    conceded: Tavern::concedeTo SURVIVES as the defeat seam (COMBAT-
+    //    ACTION-SPEC section 7, and the gate workload still reports through
+    //    it) but this line has no use for it, because the room delivers the
+    //    rise by its own hand now. Steel is still out from beat 3, so this too
+    //    plays the DEATH CEREMONY -- settleDefeat lays the dip and the epitaph
+    //    over the quay revive. Three wins is the top of the ladder the arc
+    //    climbs (a rung, a house, a charge on the roll), which is why there is
+    //    exactly one more fight here and not two.
+    {
+        const sim::Nemesis* before = session.tavern().nemesis().of(id);
+        const std::int32_t had = before == nullptr ? 0 : before->wins;
+        if (pickAFight()) {
+            const sim::Nemesis* now = session.tavern().nemesis().of(id);
+            if (now != nullptr && now->wins == had + 1) {
+                land(4);
+            }
         }
-        walkToTile(session, him->tileX(), him->tileY());
-        session.closeConversation();
-        session.punch();
-        // Let the room resolve the exchange and its flip -- the rising rival
-        // means Harm, so the fight is lethal in the world before the loss lands.
-        session.stepMany(sim::MoveInput{}, 6 * sim::kStepsPerSecond);
-        session.tavern().concedeTo(id);
-        session.stepMany(sim::MoveInput{}, sim::kStepsPerSecond);
         session.skipToHour(20);
-        const sim::Nemesis* now = session.tavern().nemesis().of(id);
-        if (now != nullptr && now->wins == more + 2) {
-            ++landed;
-        }
+    }
+
+    // 5. AND HE COMES PREPARED. Three wins put a blade in his hand and Kill
+    //    behind it (nemesisWeapon/nemesisIntent) -- the next rematch is lethal
+    //    from its first blow, and beats 3 and 4 have just proved the room will
+    //    finish one. Read off the roster the way beat 1 read his fists.
+    if (const sim::Actor* armed = session.tavern().actorById(id);
+        armed != nullptr && armed->weapon() == sim::Weapon::Edged &&
+        armed->intent() == sim::Intent::Kill) {
+        land(5);
     }
 
     // 6. A house with members in it, and 7. ground on the ward's own roll --
     //    and none of it came off when the player got up.
     const sim::Nemesis* risen = session.tavern().nemesis().of(id);
     if (risen != nullptr && risen->foundedAHouse() && !risen->members.empty()) {
-        ++landed;
+        land(6);
     }
     if (risen != nullptr && risen->holdsGround()) {
-        ++landed;
+        land(7);
     }
 
     if (ending == "talk") {
@@ -9064,9 +9262,10 @@ constexpr std::int32_t kContractHeldBeats = 2;
 }
 
 /// How many beats runNemesisLine tries to land: he was nobody, a fist fight
-/// lost in the world, a rematch fought to the lethal flip in the world, two
-/// more defeats fought and taken through the lethal-defeat seam (each with the
-/// death ceremony over the revive), a house, and a charge on the roll.
+/// lost in the world, a rematch fought to the lethal flip AND lost to the
+/// room's own blows, a third loss fought and lost the same way with a cudgel
+/// in his hand (each with the death ceremony over the revive), the blade and
+/// the Kill three wins put in his hands, a house, and a charge on the roll.
 constexpr std::int32_t kNemesisBeats = 7;
 
 // ---------------------------------------------------------------------------
@@ -11658,7 +11857,8 @@ SmokeRunResult runSmoke(const SmokeRunConfig& config) {
     }
     if (config.nemesis) {
         const sim::Nemesis* worst = session.tavern().nemesis().worst();
-        summary << " | nemesis beats=" << result.nemesisBeats << '/' << kNemesisBeats;
+        summary << " | nemesis beats=" << result.nemesisBeats << '/' << kNemesisBeats
+                << " mask=" << gNemesisBeatMask;
         // WHO IS ON THE FRAME, named, so a capture cannot quietly photograph
         // the wrong docker. The first shipped attempt at the `talk` ending did
         // exactly that -- his stool and Wick Hempson's are one tile apart.

@@ -500,6 +500,10 @@ void Tavern::setTimeOfDay(std::int32_t secondOfDay) noexcept {
 // S3 note: what it deliberately does NOT touch is the social ledger. Sleeping
 // a night does not make anybody forget you robbed them.
 void Tavern::skipTo(std::int32_t secondOfDay) {
+    // STANCE (lower rule 3): sleeping -- and every other jump of the clock
+    // that passes through here: a wait, a travel, a night in the cell, the
+    // blackout after a defeat -- lowers the hands. Nobody sleeps fists up.
+    lowerPlayerHands();
     // How long the jump actually was, forward round the clock face. Heat cools
     // for every one of those seconds: a night asleep IS a night the ward had to
     // forget in, and that is the one thing skipTo has always been allowed to
@@ -1199,6 +1203,7 @@ Tavern::PunchResult Tavern::playerPunchNearest() {
             return result;
         }
         result.swung = true;
+        raisePlayerHands();  // STANCE: a swing thrown is a swing thrown
         result.targetId = rat->id();
         result.targetName = rat->name();
         Fighter prey = rat->asFighter();
@@ -1219,6 +1224,7 @@ Tavern::PunchResult Tavern::playerPunchNearest() {
         return result;
     }
     result.swung = true;
+    raisePlayerHands();  // STANCE: the legacy tap raises the hands like any swing
     result.targetId = target->id();
     result.targetName = target->name();
 
@@ -1371,6 +1377,12 @@ void Tavern::playerAttackDown() noexcept {
     }
     combatState_ = PlayerCombatState::Charging;
     chargeSteps_ = 0;
+    // STANCE (section 3.2, raise rule 1): the down-edge from IDLE puts the
+    // hands up, and the SAME press is the charge already started above -- a
+    // tap from hands-down raises and swings, a hold raises and swings hard.
+    // One press, the owner's sentence. With the hands already up this only
+    // refills the lull.
+    raisePlayerHands();
 }
 
 void Tavern::cancelPlayerCharge() noexcept {
@@ -1380,6 +1392,16 @@ void Tavern::cancelPlayerCharge() noexcept {
         combatState_ = PlayerCombatState::Idle;
         chargeSteps_ = 0;
     }
+}
+
+void Tavern::raisePlayerHands() noexcept {
+    handsUp_ = true;
+    lowerTimer_ = kLowerHandsSteps;
+}
+
+void Tavern::lowerPlayerHands() noexcept {
+    handsUp_ = false;
+    lowerTimer_ = 0;
 }
 
 void Tavern::stepPlayerCombat() noexcept {
@@ -1399,6 +1421,20 @@ void Tavern::stepPlayerCombat() noexcept {
             }
             break;
         case PlayerCombatState::Idle:
+            // STANCE (section 3.2, lower rule 2) -- THE LULL. The hands come
+            // down on their own after kLowerHandsSteps of IDLE with the guard
+            // not held and nobody swinging at the player; a step spent
+            // charging, recovering, guarding or in a live brawl does not count,
+            // and every raise refills the clock. Integer countdown, no draw:
+            // the 600th idle step lowers them and the 599th does not.
+            if (handsUp_ && !playerBlocking_ && brawlers_.empty()) {
+                if (lowerTimer_ > 0) {
+                    --lowerTimer_;
+                }
+                if (lowerTimer_ <= 0) {
+                    lowerPlayerHands();
+                }
+            }
             break;
     }
     // The live sightline flag, recomputed every step whatever the state -- the
@@ -1433,6 +1469,9 @@ Tavern::PlayerSwingResult Tavern::playerAttackUp() {
     recoverySteps_ = hard ? kHardSwingRecoverySteps : kSwingRecoverySteps;
     chargeSteps_ = 0;
     result.swung = true;
+    // STANCE: a swing THROWN refills the lull (the down-edge raised the hands;
+    // the release is the swing the lull rule counts from).
+    raisePlayerHands();
 
     const Actor* found = sightlineTarget();
     const std::int32_t swingTerm = fatigue_.termQ8();
@@ -1519,15 +1558,31 @@ void Tavern::stepBrawl() noexcept {
     if (brawlers_.empty() || playerFloored_) {
         return;
     }
-    // The class right now. NPC blows resolve only under BRAWL rules: under
-    // lethal the exchange is refused here exactly as the 1 Hz loop refused it
-    // before this build, so the shipped brawl behaviour and the scripted
-    // rematch arc are unchanged. tickBrawl latches the escalation; the
-    // NPC-kills-player path waits on the presentation lane's arc rewrite.
+    // THE CLASS RIGHT NOW picks the RULES, not whether the room swings.
+    //
+    // STANCE & ROOM BUILD -- THE ROOM FIGHTS BACK. Before this build every NPC
+    // blow was refused here unless the fight was a brawl, so a hard swing on a
+    // bloodied man, or steel out, made every body in the room stop swinging:
+    // the one fight the owner would test was a shooting gallery. Now the
+    // exchange resolves under BOTH rule sets. BRAWL: the player floors at
+    // kPlayerBrawlFloor exactly as shipped. LETHAL: the floor is lifted to
+    // zero and the blow that empties the player routes applyDefeat -- the
+    // same defeat the player's own lethal link backfire already routes
+    // (applySpellDose), and the death ceremony the client hangs off
+    // escalated(). Same-roll discipline untouched: the swing's draw is still
+    // the actor's own npcSwingSeq_, nothing new is drawn.
     const std::vector<Fighter> fighters = currentFight();
-    if (classifyFight(fighters) != FightClass::Brawl) {
-        return;
+    const FightClass fight = classifyFight(fighters);
+    const bool lethal = fight == FightClass::Lethal;
+    if (lethal && !escalationSeen_) {
+        // The flip's social latch fires BEFORE the first lethal blow lands (the
+        // Deed::DrewSteel spread, the STEEL OUT line the client speaks on this
+        // edge), at step rate now that the blows are at step rate; tickBrawl
+        // keeps the same latch at 1 Hz for a fight nobody is swinging in.
+        escalation_ = fight;
+        noteEscalation(brawlers_.front());
     }
+    const std::int32_t floor = lethal ? 0 : kPlayerBrawlFloor;
     const Fighter playerFighter = fighters.front();
     for (const std::int32_t id : brawlers_) {
         Actor* actor = mutableActorById(id);
@@ -1573,12 +1628,22 @@ void Tavern::stepBrawl() noexcept {
             dialogue_.skills().use(kBlockSkill);
             fatigue_.drain(kBlockCatchFatiguePoints * kFatiguePointFine);
         }
-        playerHp_ = std::max(kPlayerBrawlFloor, playerHp_ - dmg);
+        playerHp_ = std::max(floor, playerHp_ - dmg);
         lastBlowBy_ = id;
+        // STANCE (raise rule 3): a blow CAUGHT -- guarded or not -- puts the
+        // hands up, so a player being punched has GUARD without pressing SWING.
+        raisePlayerHands();
+        if (lethal && playerHp_ <= 0) {
+            // A KILLING BLOW. The man who threw it is the one the epitaph names
+            // (applyDefeat reads lastBlowBy_), so nobody else in the crowd
+            // swings at the body this step.
+            break;
+        }
     }
-    if (playerHp_ <= kPlayerBrawlFloor && !playerFloored_) {
-        // Down. A brawl stops at the floor and the defeat seam takes it from
-        // here -- the same applyDefeat every in-world beating routes through.
+    // Down. Under brawl the floor is the line, under lethal zero is; either way
+    // the defeat seam takes it from here -- the same applyDefeat every in-world
+    // beating routes through, and the same one the nemesis rise hangs off.
+    if (playerHp_ <= floor && !playerFloored_) {
         applyDefeat(lastBlowBy_);
     }
 }
@@ -1608,21 +1673,19 @@ void Tavern::tickBrawl() {
     // bloodied line.
     const std::vector<Fighter> fighters = currentFight();
     const FightClass fight = classifyFight(fighters);
-    if (fight == FightClass::Lethal) {
+    if (fight == FightClass::Lethal && !escalationSeen_) {
         // The flip's social consequence fires once (Deed::DrewSteel, the
-        // witness spread, the ejection ladder). The blow exchange itself is
-        // NOT resolved by the NPC loop while steel is out -- the shipped
-        // behaviour, and the pre-veto contract the scripted rematch arc still
-        // reads (escalated, player not floored). The player's own lethal blows
-        // resolve through playerAttackUp, not here. No disengage while lethal.
-        if (!escalationSeen_) {
-            escalation_ = fight;
-            noteEscalation(brawlers_.front());
-        }
-        return;
+        // witness spread, the ejection ladder). STANCE & ROOM BUILD: the blow
+        // exchange under lethal rules is stepBrawl's now (it latches this same
+        // edge at step rate before the first lethal blow); this 1 Hz latch
+        // stays for a fight nobody is swinging in, and the disengage below
+        // runs under lethal too -- a lethal fight ends when everybody is down
+        // or dead, or the player has left the house, exactly like a brawl.
+        escalation_ = fight;
+        noteEscalation(brawlers_.front());
     }
 
-    // A brawl nobody is left standing for is over. A corpse counts as down
+    // A fight nobody is left standing for is over. A corpse counts as down
     // (isFloored), so a fight that ends in a killing disengages honestly.
     bool anyoneUp = false;
     for (const std::int32_t id : brawlers_) {
@@ -1666,7 +1729,12 @@ RiseWorld Tavern::riseWorld() noexcept {
 
 void Tavern::applyDefeat(std::int32_t winnerId) {
     playerFloored_ = true;
-    playerHp_ = kPlayerBrawlFloor;
+    // The brawl floor for a brawl KO and a scripted concession, unchanged; a
+    // LETHAL defeat arrives here at zero and stays there -- the player is dead
+    // until reviveAfterDefeat says otherwise, and the bar says so.
+    playerHp_ = std::min(playerHp_, kPlayerBrawlFloor);
+    // STANCE (lower rule 3): a defeat lowers the hands.
+    lowerPlayerHands();
     if (standing_ != Standing::Barred) {
         standing_ = Standing::BeingEjected;
     }
@@ -2151,6 +2219,9 @@ bool Tavern::talkTo() {
         return false;
     }
     talkingToId_ = actor->id();
+    // STANCE (lower rule 3): a conversation opening lowers the hands -- the
+    // hand does one thing, and talking is not it.
+    lowerPlayerHands();
     if (Actor* turning = mutableActorById(actor->id()); turning != nullptr) {
         // They look at you while you talk to them. Cheap, and it is the whole
         // difference between a person and a prop.
@@ -2834,6 +2905,8 @@ Tavern::PickResult Tavern::beginPick() {
     }
     picking_.begin(strongboxLock(room), worldSeed_, dialogue_.skills().level(kThieverySkill));
     pickingRoom_ = room;
+    // STANCE (lower rule 3): the wire is in; the fists come down.
+    lowerPlayerHands();
     out.result = ServiceResult::Served;
     // picks_ is at least one here -- the arm above refuses an empty roll -- and
     // one is exactly the case a player hits on their last wire, which is when
@@ -3309,6 +3382,9 @@ void Tavern::applyArrest(Actor& officer) {
     // Whatever the house was minding is somebody else's problem now.
     standing_ = Standing::Welcome;
     brawlers_.clear();
+    // STANCE (lower rule 3): taken by the Watch, the hands come down --
+    // whether or not the sentence skipped the clock.
+    lowerPlayerHands();
     respondingBouncerId_ = -1;
     watchStance_ = WatchStance::Idle;
     watchmanId_ = -1;
@@ -4121,6 +4197,15 @@ void Tavern::hash_into(HashSink& sink) const {
     sink.put_int(static_cast<std::uint32_t>(recoverySteps_));
     sink.put_byte(sightlineFlag_ ? 1U : 0U);
     sink.put_byte(playerPresentsAsWielder_ ? 1U : 0U);
+    // STANCE & ROOM BUILD: fighting mode and its lull countdown, hashed the way
+    // stealth's stance_ is (stealth.cpp) and for the same reason -- the bit is
+    // what the room, the street and the Watch react to, and the countdown
+    // decides the step it flips back. DECLARED tavern/gate-workload baseline
+    // move (the first half of one move; the Watch & Rhythm lane lands the
+    // second half and re-blesses the number ONCE). The population baseline
+    // never reaches this code.
+    sink.put_byte(handsUp_ ? 1U : 0U);
+    sink.put_int(static_cast<std::uint32_t>(lowerTimer_));
     sink.put_int(static_cast<std::uint32_t>(equippedSpellId_.size()));
     for (const char character : equippedSpellId_) {
         sink.put_byte(static_cast<std::uint32_t>(static_cast<unsigned char>(character)));

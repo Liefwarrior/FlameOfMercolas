@@ -436,10 +436,12 @@ inline constexpr std::int32_t kVerminUntil = hourOfDay(11);
 ///
 /// Under LETHAL rules this floor is lifted -- the player can reach zero and
 /// die, routing through the same applyDefeat/nemesis/quay-revive the brawl KO
-/// uses (COMBAT-ACTION-SPEC.md section 4.5). The player-KILLS path lands in
-/// this build (Tavern::playerAttackUp); the NPC-KILLS-player path stays gated
-/// on the presentation lane's scripted-arc rewrite, so this floor still holds
-/// for the NPC brawl loop below.
+/// uses (COMBAT-ACTION-SPEC.md section 4.5). Both halves land now: the
+/// player-KILLS path (Tavern::playerAttackUp) and, STANCE & ROOM BUILD, the
+/// NPC-KILLS-player path -- stepBrawl resolves the room's blows under lethal
+/// rules with this floor lifted to zero, and a blow that empties the player
+/// routes applyDefeat exactly as a brawl KO does. Under BRAWL rules the floor
+/// is this constant, unchanged.
 inline constexpr std::int32_t kPlayerBrawlFloor = 1;
 
 // ---------------------------------------------------------------------------
@@ -472,6 +474,15 @@ inline constexpr std::int32_t kNpcSwingStaggerSteps = 30;
 /// The re-arm when the swing timer expires out of reach: 0.2 s re-check while
 /// the actor is still closing the gap.
 inline constexpr std::int32_t kNpcSwingRetrySteps = 12;
+
+/// FIGHTING MODE (STANCE & ROOM BUILD, oblivion-roadmap.md section 3.2). The
+/// lull that lowers the hands on its own: this many movement steps -- 10 s --
+/// in IDLE with no swing thrown or caught, the guard not held and nobody
+/// swinging at the player. Counted down in stepPlayerCombat; every raise
+/// (a down-edge, a swing thrown, a guard held, a blow caught) refills it. Six
+/// hundred and not three hundred, because a brawl's lull is longer than five
+/// seconds.
+inline constexpr std::int32_t kLowerHandsSteps = 600;
 
 /// The player's swing machine, sim-owned and hashed. SWING and HARD resolve
 /// instantly on release (we have no viewmodel to animate; recovery carries the
@@ -1309,12 +1320,51 @@ public:
     /// key changes, the same seam setPlayerMotion is. SIM STATE, hashed: a
     /// held guard changes what every landed blow in tickBrawl costs, so two
     /// runs that disagreed about it would be two different fights.
-    void setPlayerBlocking(bool blocking) noexcept { playerBlocking_ = blocking; }
+    /// STANCE & ROOM BUILD: a guard going down puts the hands UP (fists up
+    /// without violence -- rule 2 of the raise table); a guard coming back up
+    /// does NOT lower them (rule 4 of the lower table).
+    void setPlayerBlocking(bool blocking) noexcept {
+        playerBlocking_ = blocking;
+        if (blocking) {
+            raisePlayerHands();
+        }
+    }
     [[nodiscard]] bool playerBlocking() const noexcept { return playerBlocking_; }
     /// Every blow a guard has ever softened. MONOTONIC on purpose: the client
     /// pulses on the increase, so the sim never keeps read-and-clear feedback
     /// state the way takeDefeatRelease has to.
     [[nodiscard]] std::int32_t blowsBlocked() const noexcept { return blowsBlocked_; }
+
+    // --- the stance (FIGHTING MODE, STANCE & ROOM BUILD) --------------------
+    //
+    // The owner's sentence: "When I press LMB I want to enter fighting mode and
+    // hit whoever is in front of me." A SIM STATE, not a client flag
+    // (oblivion-roadmap.md section 3.2): hashed beside the swing machine, read
+    // by the HUD, by the reaction tiers and by the Watch, and by nothing that
+    // draws a roll. The stance and its timer draw nothing.
+    //
+    // HANDS COME UP when: (1) Attack goes down from IDLE -- the same press
+    // charges, so a tap raises and swings and a hold raises and swings hard,
+    // ONE press; (2) the guard goes down (setPlayerBlocking(true)); (3) an
+    // NPC blow lands on the player in stepBrawl -- without this a player being
+    // punched would have to press SWING before GUARD meant anything. Every one
+    // of those also refills the lull timer, as does a swing thrown.
+    //
+    // HANDS GO DOWN when: (1) USE with nothing in reach -- the client's LOWER
+    // HANDS slot of the interact walk calls lowerPlayerHands(); (2) the lull:
+    // kLowerHandsSteps in IDLE with the guard not held and brawlers_ empty;
+    // (3) the cancel list -- talking, picking, sleeping (any clock skip), an
+    // arrest, a defeat -- lowers them here in the sim, and the client lowers
+    // them for any page it opens; (4) a guard RELEASE does not lower them.
+
+    /// True while the hands are up -- fighting mode.
+    [[nodiscard]] bool playerHandsUp() const noexcept { return handsUp_; }
+    /// Steps of lull left before the hands come down on their own; 0 with the
+    /// hands down. Refilled to kLowerHandsSteps by every raise.
+    [[nodiscard]] std::int32_t playerLowerTimer() const noexcept { return lowerTimer_; }
+    /// Hands down, now. The LOWER HANDS verb, and the cancel list. Idempotent;
+    /// touches nothing else -- a live charge is cancelPlayerCharge's business.
+    void lowerPlayerHands() noexcept;
 
     // --- the cast (Cast, one press) ------------------------------------------
 
@@ -1482,11 +1532,17 @@ private:
     /// moved out of tickBrawl's 1 Hz exchange: per brawler, count the swing
     /// timer down, close when out of reach, and on expiry within reach throw a
     /// blow re-keyed to the actor's own npcSwingSeq_. Applies the guard, the
-    /// caught-blow wind, and the brawl-floor defeat check. Driven from
-    /// stepMovement. Like the old loop, it does NOT resolve while the fight is
-    /// lethal -- the NPC-kills-player path waits on the presentation lane's
-    /// scripted-arc rewrite, so this preserves the shipped brawl behaviour.
+    /// caught-blow wind, and the defeat check. Driven from stepMovement.
+    /// STANCE & ROOM BUILD -- THE ROOM FIGHTS BACK: the blows resolve under
+    /// BOTH rule sets now. Under BRAWL the player floors at kPlayerBrawlFloor
+    /// exactly as shipped; under LETHAL the floor is lifted to zero and the
+    /// blow that empties the player routes applyDefeat (the death ceremony
+    /// hangs off escalated() client-side). A landed blow also raises the
+    /// player's hands.
     void stepBrawl() noexcept;
+    /// STANCE & ROOM BUILD. Hands up and the lull timer refilled -- the one
+    /// door into handsUp_ = true, so every raise rule refills the same clock.
+    void raisePlayerHands() noexcept;
     void tickPatrons();
     /// Advances every trickle still delivering. One second per call.
     void tickSpellwork();
@@ -1612,6 +1668,14 @@ private:
     /// DEFERENCE: the player presents as a Wielder. Default false; no play path
     /// sets it yet (section 4.4). Hashed -- it changes the Watch.
     bool playerPresentsAsWielder_ = false;
+    /// STANCE & ROOM BUILD: fighting mode and its lull countdown. Both hashed
+    /// (part of the declared tavern/gate-workload baseline move this build
+    /// makes): the bit is what the room, the street and the Watch react to,
+    /// and the countdown decides the step it flips back, so two runs that
+    /// disagreed about either would be two different fights. See the public
+    /// stance block for the raise/lower table.
+    bool handsUp_ = false;
+    std::int32_t lowerTimer_ = 0;
     /// Empty means "nothing picked" and equippedSpell() defaults to the first
     /// known crafting. Kept as the ID rather than an index because the
     /// grimoire inserts in id order: learning a new crafting must never

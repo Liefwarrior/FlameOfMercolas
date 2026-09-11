@@ -475,6 +475,12 @@ if(GRANADAD_BUILD_TESTS)
         # the corpse conventions, the murder hook, intent-by-verb, and the
         # Watch's deference to a presented Wielder.
         tests/test_combat_action.cpp
+        # STANCE & ROOM BUILD -- fighting mode as a table (every raise and
+        # lower rule), the one-press tap-from-hands-down, the 600-step lull at
+        # its exact edge, the LOWER HANDS slot of the interact walk proved
+        # against its own prompt, the FISTS UP row, and the twin-run of a
+        # scripted raise/lower/re-raise on the tavern hash.
+        tests/test_stance.cpp
         tests/test_lamps.cpp
         tests/test_atlas.cpp
         tests/test_render.cpp

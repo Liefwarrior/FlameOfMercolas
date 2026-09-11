@@ -661,6 +661,9 @@ TEST_CASE("every HUD row lit at once still leaves the centre clear") {
     // S13: the two rows the Cast/Block task added, at their own longest.
     full.spellLabel = "CAST  SET THE SHOULDERS (599S)";
     full.blockLabel = "GUARD UP";
+    // STANCE & ROOM BUILD: the fighting-mode row at its longest, lit beside
+    // the guard it can share the band with.
+    full.handsLabel = "THE EVICTOR UP";
     // HELD-EFFECTS BUILD: all four live-hold rows at once, at their own
     // longest -- the fullest top-right stack this game can produce.
     full.effectLabels = {"SET THE SHOULDERS 899S", "STEADY THE HAND 899S",
