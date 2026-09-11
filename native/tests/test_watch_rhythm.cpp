@@ -1100,3 +1100,97 @@ TEST_CASE("the rhythm is hashed and a scripted fight twin-runs byte-identical") 
     CHECK(first == second);
     CHECK(std::get<3>(first) > 0);  // he swung
 }
+
+// ===========================================================================
+// BARKS LANE (feel/build) -- the rows the fight lanes keyed, now authored
+// ===========================================================================
+
+namespace {
+
+/// Whether `spoken` is `<name>: <row>` for some row of `key`'s own table --
+/// the table itself, not a fallback, so watch.halt falling through to
+/// watch.demand would be red here.
+bool saidFromTable(const Tavern& tavern, const std::string& spoken, std::string_view name,
+                   std::string_view key) {
+    const std::string prefix = std::string(name) + ": ";
+    if (spoken.rfind(prefix, 0) != 0) {
+        return false;
+    }
+    const std::vector<std::string>* rows = tavern.dialogue().barks().rows(key);
+    if (rows == nullptr) {
+        return false;
+    }
+    const std::string rest = spoken.substr(prefix.size());
+    return std::find(rows->begin(), rows->end(), rest) != rows->end();
+}
+
+}  // namespace
+
+TEST_CASE("the halt is watch.halt's own row, the man who steps in says brawl.join, the room says crowd.flee") {
+    Room room(hourOfDay(23), gull::kBartenderX, gull::kBartenderY + 1);
+    Tavern& tavern = room.tavern();
+    // The three sheets are on the roster, three to five rows each, ASCII.
+    for (std::string_view key : {"watch.halt", "brawl.join", "crowd.flee"}) {
+        const std::vector<std::string>* rows = tavern.dialogue().barks().rows(key);
+        INFO("key ", key);
+        REQUIRE(rows != nullptr);
+        CHECK(rows->size() >= 3);
+        CHECK(rows->size() <= 5);
+        for (const std::string& row : *rows) {
+            REQUIRE_FALSE(row.empty());
+            for (const char c : row) {
+                REQUIRE(static_cast<unsigned char>(c) < 128);
+            }
+        }
+    }
+    CHECK(tavern.lastJoin().empty());
+    CHECK(tavern.lastFlee().empty());
+    CHECK(tavern.lastDemand().empty());
+
+    room.run(2);
+    const Actor* cull = room.findByName("Watchman Cull");
+    REQUIRE(cull != nullptr);
+    const Actor* mark = room.standFacingPatronFor(*cull, /*seen=*/true);
+    REQUIRE(mark != nullptr);
+    const std::int32_t markId = mark->id();
+    const std::string markName = mark->name();
+    // Somebody besides the mark within the stand-back radius, so the edge has
+    // a patron to send back and a mouth to put the panic line in.
+    bool bystander = false;
+    for (const Actor& actor : tavern.actors()) {
+        if (actor.id() != markId && actor.present() && !isFloored(actor.activity()) &&
+            actor.role() != ActorRole::Vermin && !tavern.isProfessional(actor) &&
+            actor.distanceTo(room.px(), room.py()) <=
+                kStandBackRadiusTiles * kSubOne) {
+            bystander = true;
+        }
+    }
+
+    tavern.setPlayerCombat(Weapon::Edged, Intent::Kill);
+    const Tavern::PlayerSwingResult tap = tapAt(room, markId, false);
+    REQUIRE(tap.targetId == markId);
+    REQUIRE(tavern.lethalFightLive());
+    // BRAWL.JOIN: the man the sightline found is in the fight and said so, in
+    // his own name, off his own sheet.
+    REQUIRE_FALSE(tavern.lastJoin().empty());
+    CHECK(saidFromTable(tavern, tavern.lastJoin(), markName, "brawl.join"));
+    // CROWD.FLEE: the escalation edge sent a patron back, and he said why.
+    if (bystander) {
+        REQUIRE_FALSE(tavern.lastFlee().empty());
+        const std::string who = tavern.lastFlee().substr(0, tavern.lastFlee().find(": "));
+        CHECK(saidFromTable(tavern, tavern.lastFlee(), who, "crowd.flee"));
+        CHECK(who != "Watchman Cull");
+    }
+
+    // WATCH.HALT: Closing on Violence, and the halt is the halt -- not the
+    // contraband demand it fell through to before the row was authored.
+    bool closing = false;
+    for (int s = 0; s < 20 && !closing; ++s) {
+        room.run(1);
+        closing = tavern.watchStance() == Tavern::WatchStance::Closing;
+    }
+    REQUIRE(closing);
+    CHECK(tavern.watchInterest() == WatchCause::Violence);
+    CHECK(saidFromTable(tavern, tavern.lastDemand(), "Watchman Cull", "watch.halt"));
+    CHECK_FALSE(saidFromTable(tavern, tavern.lastDemand(), "Watchman Cull", "watch.demand"));
+}

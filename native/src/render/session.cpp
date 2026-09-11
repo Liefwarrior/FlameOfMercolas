@@ -9357,6 +9357,107 @@ std::int32_t gNemesisBeatMask = 0;
 /// the Kill three wins put in his hands, a house, and a charge on the roll.
 constexpr std::int32_t kNemesisBeats = 7;
 
+/// BARKS LANE (feel/build). THE WATCH ON SEEN VIOLENCE, played through the
+/// real verbs: the walk in, the blade, one swing at a man Cull can see, the
+/// halt on the alert row, the arrest at reach, the street. Five beats:
+///   1. Watchman Cull is in the house and can SEE the player where they stand
+///      (Tavern::noticeBy, the three-clause rule -- asked, not assumed).
+///   2. Steel drawn and a swing thrown at a patron: a LETHAL-class fight is
+///      live with the fists-up stance holding a blade.
+///   3. He goes Closing on VIOLENCE within seconds -- no glance gate, no die --
+///      and the halt is on the alert row in HIS name, out of watch.halt.
+///   4. The arrest at reach, the report's cause VIOLENCE (the contraband path,
+///      applyArrest), the sentence in the report.
+///   5. Turned loose on the Tarwalk with the arrest line on the row.
+/// "halt" ends the drive at beat 3 so a capture holds the halt itself.
+constexpr std::int32_t kWatchHaltBeats = 5;
+
+[[nodiscard]] int runWatchHaltLine(Session& session, const std::string& ending) {
+    int landed = 0;
+    const sim::Tavern& tavern = session.tavern();
+    // Beside the bar, the watch tests' own spot: two tiles from Cull's stool
+    // and in his line. The walk is the smoke's own route-walk, door and all.
+    walkToTile(session, sim::gull::kBartenderX, sim::gull::kBartenderY + 1);
+    session.closeConversation();
+    const sim::Actor* cull = actorNamed(session, "Watchman Cull");
+    if (cull == nullptr || !cull->present()) {
+        return landed;
+    }
+    // Let him look up once; the notice rule reads facing.
+    session.stepMany(sim::MoveInput{}, sim::kStepsPerSecond * 2);
+    cull = actorNamed(session, "Watchman Cull");
+    if (cull != nullptr && cull->present() && tavern.noticeBy(*cull).seen) {
+        ++landed;  // 1
+    }
+
+    // THE MARK: the nearest upright patron who is not the Watch, not the
+    // house's own bouncer (he refuses steel and holds the door), not a rat --
+    // so the swing is thrown from where Cull can see it.
+    const sim::Actor* mark = nullptr;
+    std::int32_t best = 0;
+    for (const sim::Actor& actor : tavern.actors()) {
+        if (!actor.present() || sim::isFloored(actor.activity()) ||
+            actor.role() == sim::ActorRole::Vermin || tavern.isProfessional(actor) ||
+            actor.band() != session.body().band()) {
+            continue;
+        }
+        const std::int32_t distance = actor.distanceTo(session.body().x(), session.body().y());
+        if (mark == nullptr || distance < best) {
+            mark = &actor;
+            best = distance;
+        }
+    }
+    if (mark == nullptr) {
+        return landed;
+    }
+    const std::int32_t markId = mark->id();
+    // THE BLADE. Armed the way test_street_panic arms its client -- the sheet
+    // that puts steel in a hand is the weapon lane's; the sim's own setter is
+    // what it will call. Kill is what a drawn blade means (intent-by-verb
+    // reads the weapon class: Edged is Lethal from the first exchange).
+    session.tavern().setPlayerCombat(sim::Weapon::Edged, sim::Intent::Kill);
+    if (swingOnceAt(session, markId, 8) && tavern.lethalFightLive() && tavern.playerHandsUp() &&
+        tavern.playerWeapon() == sim::Weapon::Edged) {
+        ++landed;  // 2
+    }
+
+    // THE HALT. Stand still. Within a few seconds he is Closing on Violence
+    // and the row reads what he said.
+    bool closing = false;
+    for (int second = 0; second < 20 && !closing; ++second) {
+        session.stepMany(sim::MoveInput{}, sim::kStepsPerSecond);
+        closing = tavern.watchStance() == sim::Tavern::WatchStance::Closing &&
+                  tavern.watchInterest() == sim::WatchCause::Violence;
+    }
+    if (closing && !tavern.lastDemand().empty() &&
+        tavern.lastDemand().rfind("Watchman Cull: ", 0) == 0 &&
+        session.lastMessage() == tavern.lastDemand()) {
+        ++landed;  // 3
+    }
+    if (ending == "halt") {
+        return landed;
+    }
+
+    // THE ARREST AT REACH -- step() itself consumes the release and says the
+    // arrest line, so the proof is the report: it happened, the cause is
+    // VIOLENCE and a sentence was passed.
+    bool arrested = false;
+    for (int second = 0; second < 60 && !arrested; ++second) {
+        session.stepMany(sim::MoveInput{}, sim::kStepsPerSecond);
+        arrested = tavern.lastArrest().happened &&
+                   tavern.lastArrest().cause == sim::WatchCause::Violence;
+    }
+    if (arrested && tavern.lastArrest().sentence != sim::Sentence::None) {
+        ++landed;  // 4
+    }
+    // AND THE STREET: turned loose outside the walls with his words on the row.
+    if (arrested && !tavern.playerInside() && !tavern.lastArrest().line.empty() &&
+        session.lastMessage() == tavern.lastArrest().line) {
+        ++landed;  // 5
+    }
+    return landed;
+}
+
 // ---------------------------------------------------------------------------
 // S9: the burglary, played
 // ---------------------------------------------------------------------------
@@ -10960,6 +11061,12 @@ int scriptedStartHour(const SmokeRunConfig& config) noexcept {
     if (config.nemesis) {
         return 20;
     }
+    // The Watch line wants the impound keeper in the room and the room full
+    // enough to swing at somebody in his sight: Watchman Cull keeps the Gull
+    // from nine until one. Eleven, the watch tests' own hour.
+    if (config.watchHalt) {
+        return 23;
+    }
     // TWO IN THE MORNING, and the hour is the whole point of the line.
     //
     // The Gull shuts at two: the doors are barred, the lanterns and the table
@@ -11319,6 +11426,14 @@ SmokeRunResult runSmoke(const SmokeRunConfig& config) {
         result.scriptedWanted += kNemesisBeats;
         result.scriptedLanded += landed;
         result.talking = session.talking();
+    }
+
+    if (config.watchHalt) {
+        const std::int32_t landed =
+            static_cast<std::int32_t>(runWatchHaltLine(session, config.watchHaltEnd));
+        result.watchHaltBeats = landed;
+        result.scriptedWanted += kWatchHaltBeats;
+        result.scriptedLanded += landed;
     }
 
     if (config.trail) {
@@ -11943,6 +12058,16 @@ SmokeRunResult runSmoke(const SmokeRunConfig& config) {
                 << " weapon="
                 << (session.tavern().playerWeapon() == sim::Weapon::Fists ? "fists" : "armed")
                 << " letters=" << session.unlockedLetters().size();
+    }
+    if (config.watchHalt) {
+        summary << " | watch-halt beats=" << result.watchHaltBeats << '/' << kWatchHaltBeats
+                << " stance="
+                << (session.tavern().watchStance() == sim::Tavern::WatchStance::Closing
+                        ? "closing"
+                        : "idle")
+                << " cause=" << sim::watchCauseName(session.tavern().watchInterest())
+                << " arrest=" << (session.tavern().lastArrest().happened ? "yes" : "no")
+                << " row=\"" << session.lastMessage() << '"';
     }
     if (config.nemesis) {
         const sim::Nemesis* worst = session.tavern().nemesis().worst();

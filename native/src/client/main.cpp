@@ -869,6 +869,9 @@ void print_usage() {
         "  --skyrun[=WHERE]     play the Skyrunner line -- sign on, two purses, a\n"
         "                       box, the roof, the alley, the fence, a lean and a\n"
         "                       bale past the Watch. WHERE is talk or away\n"
+        "  --watch-halt[=WHERE] draw steel in the Gull in Watchman Cull's sight\n"
+        "                       and stand there: the halt, the arrest at reach,\n"
+        "                       the street. WHERE is halt or street\n"
         "  --nemesis[=WHERE]    lose a fist fight to a named laborer three\n"
         "                       times and watch him rise: a rung, a guild\n"
         "                       with members in it, a permanent cut of the\n"
@@ -1264,6 +1267,14 @@ void print_usage() {
         } else if (starts_with(arg, "--roofs=", &value)) {
             options.smoke.roofs = true;
             options.smoke.roofsEnd = value;
+            options.wantsSmoke = true;
+        } else if (std::strcmp(arg, "--watch-halt") == 0) {
+            // BARKS LANE (feel/build). See SmokeRunConfig::watchHalt.
+            options.smoke.watchHalt = true;
+            options.wantsSmoke = true;
+        } else if (starts_with(arg, "--watch-halt=", &value)) {
+            options.smoke.watchHalt = true;
+            options.smoke.watchHaltEnd = value;
             options.wantsSmoke = true;
         } else if (std::strcmp(arg, "--nemesis") == 0) {
             options.smoke.nemesis = true;

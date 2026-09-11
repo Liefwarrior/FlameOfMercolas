@@ -112,6 +112,32 @@ TEST_CASE("the nemesis arc lands all seven of its beats") {
     CHECK(played.summary.find("members, toll") != std::string::npos);
 }
 
+TEST_CASE("the Watch line lands all five of its beats: seen, steel, the halt on the row, the arrest, the street") {
+    // BARKS LANE (feel/build). --watch-halt, the whole arc.
+    render::SmokeRunConfig run;
+    run.watchHalt = true;
+    const render::SmokeRunResult played = play(run);
+    INFO(played.summary);
+    CHECK(played.ok);
+    CHECK_FALSE(played.scriptFellShort());
+    CHECK(played.watchHaltBeats == 5);
+    CHECK(played.summary.find("cause=violence") != std::string::npos);
+    CHECK(played.summary.find("arrest=yes") != std::string::npos);
+}
+
+TEST_CASE("--watch-halt=halt stops on the halt itself, with Cull's own row on the alert row") {
+    render::SmokeRunConfig run;
+    run.watchHalt = true;
+    run.watchHaltEnd = "halt";
+    const render::SmokeRunResult played = play(run);
+    INFO(played.summary);
+    CHECK(played.ok);
+    CHECK(played.watchHaltBeats == 3);
+    CHECK(played.summary.find("stance=closing") != std::string::npos);
+    CHECK(played.summary.find("row=\"Watchman Cull: ") != std::string::npos);
+    CHECK(played.summary.find("arrest=no") != std::string::npos);
+}
+
 TEST_CASE("the nemesis arc lands all seven beats from the README's own spawn, whatever walk comes before it") {
     // STANCE & ROOM BUILD. `granadad.exe --smoke=N --nemesis` is the README's
     // shape of this line: the authored Tarwalk spawn, N steps of the smoke

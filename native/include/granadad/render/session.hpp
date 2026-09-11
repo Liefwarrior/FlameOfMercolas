@@ -2935,6 +2935,15 @@ struct SmokeRunConfig {
     /// "away" (closed, so the HUD's own RIVAL line is visible).
     bool nemesis = false;
     std::string nemesisEnd = "away";
+    /// BARKS LANE (feel/build). Play the Watch on seen violence: walk into
+    /// the Gull at Watchman Cull's hour, draw steel, swing at a patron he
+    /// can SEE, and stand there -- he closes with the halt (watch.halt) on
+    /// the alert row and takes you at reach, cause VIOLENCE, and the impound
+    /// turns you loose on the Tarwalk. WHERE is "halt" (stop the step he
+    /// starts Closing, so the frame holds the halt) or "street" (the whole
+    /// arc, the arrest line on the row).
+    bool watchHalt = false;
+    std::string watchHaltEnd = "street";
     /// S9. Play a burglary: crouch, cross a dark taproom unseen, lift a purse
     /// off somebody who does not feel it, up the stair, wire into a guest's
     /// strongbox, work the pins, and empty it. WHERE is "box" (standing over
@@ -3322,6 +3331,8 @@ struct SmokeRunResult {
     std::int32_t flameStages = 0;
     /// The same for the Skyrunner line.
     std::int32_t skyrunStages = 0;
+    /// BARKS LANE: beats of the Watch-on-violence line (--watch-halt).
+    std::int32_t watchHaltBeats = 0;
     /// How many of the six beats of the bounty run landed.
     std::int32_t contractBeats = 0;
     /// How many of the seven beats of the nemesis arc landed.

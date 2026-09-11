@@ -411,9 +411,12 @@ TEST_CASE("a starving body says so, and says it in its own trade's voice") {
     sim::WardActor both = starving;
     both.needs[static_cast<std::size_t>(sim::Need::Rest)] = sim::kNeedLow - 1;
     CHECK(sim::wardMoodKey(both, sim::JobFamily::Serf, barks) == "ward.starving");
-    // And running for your life outranks all of it.
+    // And running for your life outranks all of it. BARKS LANE (feel/build):
+    // only WardPopulation::alarm puts a person under the FLEE gate, so the
+    // sentence is crowd.flee (the street's panic sheet), with the owner's own
+    // mood.panicked still the floor under it if the sheet ever went missing.
     both.policy = sim::WardPolicy::Flee;
-    CHECK(sim::wardMoodKey(both, sim::JobFamily::Serf, barks) == "mood.panicked");
+    CHECK(sim::wardMoodKey(both, sim::JobFamily::Serf, barks) == "crowd.flee");
     // The dead do not greet anybody, and that table is the owner's own.
     both.dead = true;
     CHECK(sim::wardMoodKey(both, sim::JobFamily::Serf, barks) == "mood.dead");
