@@ -247,6 +247,14 @@ compile; the manifest line is one string and is undone on exit. Both packages re
 a ScriptedImporter for `.glb`; Unity rejects both for the package's own test file and
 logs it — harmless, nothing in LOT is a glTF.
 
+Every mode: the IDE integration regenerates LOT's solution when it sees the staged
+asmdef (a git-ignored `Granadad.LotPipeline.Editor.csproj` plus a line in the tracked
+`LordOfTrojia-MVP.slnx`); the runner snapshots the solution files before the run and
+puts them back, and deletes the csproj. One thing it does not undo: URP's material
+updater re-saves any material it loads that lacks a newer property (Synty's
+`Generic_Glass.mat` gained `_SrcBlendAlpha`/`_DstBlendAlpha` on 2026-09-11 — the
+owner's own editor session does the same; `git checkout -- <file>` in LOT if it matters).
+
 Outputs are licensed derivatives (Synty meshes/atlases, Malbers clip data inside
 the rigs): `content/art/lot-3d/` is gitignored here and in fom-3d; only these
 tools, the job files and the `docs/asset-manifest-lot.md` section are tracked.

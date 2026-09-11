@@ -118,6 +118,14 @@ $staged = @('LotSpriteRenderer.cs', 'Granadad.LotPipeline.Editor.asmdef')
 New-Item -ItemType Directory -Force $stage | Out-Null
 foreach ($f in $staged) { Copy-Item (Join-Path $here $f) (Join-Path $stage $f) -Force }
 
+# The IDE integration regenerates the solution when it sees a new asmdef: it adds a
+# Granadad.LotPipeline.Editor.csproj (git-ignored in LOT) and a line for it in the tracked
+# .slnx/.sln. Snapshot the solution files now and put them back afterwards.
+$solutionBackup = @{}
+foreach ($sln in Get-ChildItem $Lot -File -Include *.slnx, *.sln -Depth 0 -ErrorAction SilentlyContinue) {
+    $solutionBackup[$sln.FullName] = [IO.File]::ReadAllBytes($sln.FullName)
+}
+
 # ---- glb: UnityGLTF into LOT's manifest for the run, backed up so it can be put back exactly
 $manifestPath = Join-Path $Lot 'Packages\manifest.json'
 $lockPath = Join-Path $Lot 'Packages\packages-lock.json'
@@ -218,8 +226,21 @@ try {
             Remove-Item $stage -Force -ErrorAction SilentlyContinue
             Remove-Item "$stage.meta" -Force -ErrorAction SilentlyContinue
         }
+        Remove-Item (Join-Path $Lot 'Granadad.LotPipeline.Editor.csproj') -Force -ErrorAction SilentlyContinue
+        foreach ($kv in $solutionBackup.GetEnumerator()) {
+            if (-not (Test-Path $kv.Key)) { continue }
+            $now = [IO.File]::ReadAllBytes($kv.Key)
+            if ($now.Length -ne $kv.Value.Length -or [Convert]::ToBase64String($now) -ne [Convert]::ToBase64String($kv.Value)) {
+                [IO.File]::WriteAllBytes($kv.Key, $kv.Value)
+                Write-Host "Restored $($kv.Key) (the IDE integration had added the staged asmdef's project to it)."
+            }
+        }
     }
 }
+# Not undone here, said out loud: URP's material updater re-saves any material it finds
+# missing a newer property when the editor loads it (seen: Synty's Generic_Glass.mat
+# gained _SrcBlendAlpha/_DstBlendAlpha, 2026-09-11). The owner's own editor session does
+# the same; `git checkout -- <file>` in LOT puts it back if it matters.
 
 # ---- what came out
 $jobJson = Get-Content $Job -Raw | ConvertFrom-Json
