@@ -3122,10 +3122,14 @@ struct SmokeRunConfig {
     /// still with steel up until he takes you at reach -- and the bench is
     /// the next thing on screen: TAKEN TO THE MISSION, the page. WHERE is
     /// "page" (the rows, the default), "paper" (HEAR THE PAPER open), "plea"
-    /// (I DID IT pleaded, the check block and the sentence row) or "rope"
-    /// (a killing at eight before the Watch drinks, the wait to ten, taken
-    /// to a rope hearing, THE ROPE, the drop, the plate with A NEW MAN /
-    /// LEAVE under it).
+    /// (I DID IT pleaded, the check block and the sentence row), "deny" (I
+    /// DID NOT, the priest's doubt in the block), "serve" (I DID IT and the
+    /// sentence row taken: the coin, the clock, TURNED LOOSE with the day on
+    /// the row), "rope" (a killing at eight before the Watch drinks, the wait
+    /// to ten, taken to a rope hearing, THE ROPE, the drop, the plate with A
+    /// NEW MAN / LEAVE under it) or "newman" (the rope, then A NEW MAN taken
+    /// by its row -- the answer main() loops on). With `flame` set first the
+    /// court waits for Cull through the wait page and THE DOOR is weighed.
     bool court = false;
     std::string courtEnd = "page";
     /// S9. Play a burglary: crouch, cross a dark taproom unseen, lift a purse

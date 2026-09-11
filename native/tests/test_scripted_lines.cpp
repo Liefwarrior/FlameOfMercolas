@@ -170,6 +170,67 @@ TEST_CASE("--court=rope: a killing before the Watch drinks, taken to a rope hear
     CHECK(played.summary.find("judgment=the rope") != std::string::npos);
 }
 
+TEST_CASE("--court=deny pleads I DID NOT and the block carries the priest's doubt") {
+    // BARKS & GATE LANE. The other plea, through the same row grammar.
+    render::SmokeRunConfig run;
+    run.court = true;
+    run.courtEnd = "deny";
+    const render::SmokeRunResult played = play(run);
+    INFO(played.summary);
+    CHECK(played.ok);
+    CHECK_FALSE(played.scriptFellShort());
+    CHECK(played.courtBeats == 4);
+    CHECK(played.summary.find("plea=not guilty") != std::string::npos);
+    CHECK(played.summary.find("judgment=none") == std::string::npos);
+}
+
+TEST_CASE("--court=serve takes the sentence row: the record closed, the paper off, turned loose with the day on the row") {
+    render::SmokeRunConfig run;
+    run.court = true;
+    run.courtEnd = "serve";
+    const render::SmokeRunResult played = play(run);
+    INFO(played.summary);
+    CHECK(played.ok);
+    CHECK_FALSE(played.scriptFellShort());
+    CHECK(played.courtBeats == 5);
+    CHECK(played.summary.find("served=yes") != std::string::npos);
+    CHECK(played.summary.find("page=down") != std::string::npos);
+    CHECK(played.summary.find("hearing=none") != std::string::npos);
+    CHECK(played.summary.find("heat=12") != std::string::npos);  // kHeatAfterSentence, live
+    CHECK(played.summary.find("row=\"TURNED LOOSE ") != std::string::npos);
+}
+
+TEST_CASE("--flame --court=serve: what you gave at the Mission's door is weighed, and the court waits for Cull") {
+    // The flame line ends at eight with the temple standing earned through
+    // the questline; the court then waits to eleven through the wait page's
+    // own jump and THE DOOR sits in the block. The judgment is whatever the
+    // sheet earns -- the point is that the giving is read.
+    render::SmokeRunConfig run;
+    run.flame = true;
+    run.court = true;
+    run.courtEnd = "serve";
+    const render::SmokeRunResult played = play(run);
+    INFO(played.summary);
+    CHECK(played.ok);
+    CHECK_FALSE(played.scriptFellShort());
+    CHECK(played.courtBeats == 5);
+    CHECK(played.summary.find("waited=23") != std::string::npos);
+    CHECK(played.summary.find("served=yes") != std::string::npos);
+}
+
+TEST_CASE("--court=newman: hanged, and A NEW MAN asked for by the row -- the answer main() loops on, not a quit") {
+    render::SmokeRunConfig run;
+    run.court = true;
+    run.courtEnd = "newman";
+    const render::SmokeRunResult played = play(run);
+    INFO(played.summary);
+    CHECK(played.ok);
+    CHECK_FALSE(played.scriptFellShort());
+    CHECK(played.courtBeats == 6);
+    CHECK(played.summary.find("executed=yes") != std::string::npos);
+    CHECK(played.summary.find("end=new-man") != std::string::npos);
+}
+
 TEST_CASE("--watch-halt=halt stops on the halt itself, with Cull's own row on the alert row") {
     render::SmokeRunConfig run;
     run.watchHalt = true;

@@ -10813,26 +10813,51 @@ std::string gWatchHaltNote;
 /// his sight until the row reads WANTED; taken at reach with paper, the body
 /// at the Mission's door with TAKEN TO THE MISSION on the row and the page
 /// up. Three. "paper" adds HEAR THE PAPER open (four); "plea" adds I DID IT
-/// pleaded and the check block on the page (four); "rope" is its own line: a
-/// killing before the Watch drinks, the paper with blood on it, taken to a
-/// rope hearing, THE ROPE passed and the drop taken, the plate with the end
-/// rows under it (five).
+/// pleaded and the check block on the page (four); "deny" is the other plea,
+/// I DID NOT, weighed with THE PRIEST IS A MAN in the block (four); "serve"
+/// pleads I DID IT and TAKES the sentence row -- the coin paid, the nights
+/// or the days on the world clock, the record closed, TURNED LOOSE on the
+/// row with the day it ended on (five); "rope" is its own line: a killing
+/// before the Watch drinks, the paper with blood on it, taken to a rope
+/// hearing, THE ROPE passed and the drop taken, the plate with the end rows
+/// under it (five); "newman" takes the rope's own first row after the plate,
+/// the answer main() reads to open the creation window again (six).
+///
+/// BARKS & GATE LANE. A line before this one may leave the clock at eight
+/// (--flame, the Mission's own hour: what you gave at the door is the only
+/// coin the Flame reads, so the fine's tier is reached by GIVING first); the
+/// court then waits for Cull through the wait page's own jump, exactly as
+/// the rope line does after its killing.
 constexpr std::int32_t kCourtBeats = 3;
 constexpr std::int32_t kCourtPaperBeats = 4;
 constexpr std::int32_t kCourtPleaBeats = 4;
+constexpr std::int32_t kCourtServeBeats = 5;
 constexpr std::int32_t kCourtRopeBeats = 5;
+constexpr std::int32_t kCourtNewManBeats = 6;
 
 [[nodiscard]] std::int32_t courtBeatsFor(const std::string& ending) {
     if (ending == "paper") {
         return kCourtPaperBeats;
     }
-    if (ending == "plea") {
+    if (ending == "plea" || ending == "deny") {
         return kCourtPleaBeats;
+    }
+    if (ending == "serve") {
+        return kCourtServeBeats;
     }
     if (ending == "rope") {
         return kCourtRopeBeats;
     }
+    if (ending == "newman") {
+        return kCourtNewManBeats;
+    }
     return kCourtBeats;
+}
+
+/// The endings whose line is the killing's: the rope, and the new man after
+/// it.
+[[nodiscard]] bool courtEndingHangs(const std::string& ending) {
+    return ending == "rope" || ending == "newman";
 }
 
 /// What the court line found, for the summary -- the nemesis line's rule: a
@@ -10954,8 +10979,9 @@ std::string gCourtNote;
     // In through the door to the bar, the smoke's own route-walk.
     walkToTile(session, sim::gull::kBartenderX, sim::gull::kBartenderY + 1);
     session.closeConversation();
+    const bool hangs = courtEndingHangs(ending);
 
-    if (ending == "rope") {
+    if (hangs) {
         // THE KILLING, BEFORE THE WATCH DRINKS: the line starts at eight, the
         // room full and Cull not yet on his stool, so the corpse is made in
         // front of the room and not under a watchman's hand mid-swing. The
@@ -11005,6 +11031,18 @@ std::string gCourtNote;
     }
 
     const sim::Actor* cull = actorNamed(session, "Watchman Cull");
+    if ((cull == nullptr || !cull->present()) && !hangs) {
+        // THE WATCH IS NOT ON HIS STOOL YET -- a line before this one (the
+        // flame's, at eight) left the clock early. The wait page's own jump
+        // to the hour he keeps, hands down first as the rope line does.
+        session.tavern().lowerPlayerHands();
+        session.tavern().setPlayerCombat(sim::Weapon::Fists, sim::Intent::Subdue);
+        session.closeConversation();
+        session.skipToHour(23);
+        session.stepMany(sim::MoveInput{}, sim::kStepsPerSecond);
+        gCourtNote += " waited=23";
+        cull = actorNamed(session, "Watchman Cull");
+    }
     if (cull == nullptr || !cull->present()) {
         gCourtNote += " cull=absent";
         return landed;
@@ -11015,7 +11053,7 @@ std::string gCourtNote;
         return landed;
     }
 
-    if (ending != "rope") {
+    if (!hangs) {
         // THE PAPER, THROUGH THE VERB: a hand in a coat in Cull's sight until
         // the row reads WANTED. Eight heat a witnessed lift; a caught hand
         // is witnessed too. The mark's purse runs out before the paper does,
@@ -11064,18 +11102,50 @@ std::string gCourtNote;
         }
         return landed;
     }
-    if (ending == "plea" || ending == "rope") {
-        // I DID IT, armed and confirmed, then the judgment's own hold so the
-        // sentence row is on the list under the check block.
-        (void)session.routeCourtKey(Key::Num1);
-        (void)session.routeCourtKey(Key::Num1);
+    if (ending == "plea" || ending == "deny" || ending == "serve" || hangs) {
+        // THE PLEA, armed and confirmed -- I DID IT on every ending but the
+        // denial's -- then the judgment's own hold so the sentence row is on
+        // the list under the check block.
+        const Key pleaKey = ending == "deny" ? Key::Num2 : Key::Num1;
+        (void)session.routeCourtKey(pleaKey);
+        (void)session.routeCourtKey(pleaKey);
         session.stepMany(sim::MoveInput{}, sim::kJudgmentHoldSteps + 1);
         const sim::HearingState& hearing = tavern.hearing();
-        gCourtNote += " judgment=" + std::string(sim::judgmentName(hearing.judgment));
+        gCourtNote += " plea=" + std::string(sim::pleaName(hearing.plea)) +
+                      " judgment=" + std::string(sim::judgmentName(hearing.judgment)) +
+                      (hearing.doubled ? " doubled=yes" : "");
         if (hearing.judged() && session.courtSentenceOffered()) {
             ++landed;  // 4: pleaded, weighed, the row offered
         }
-        if (ending == "plea") {
+        if (ending == "plea" || ending == "deny") {
+            return landed;
+        }
+        if (ending == "serve") {
+            // THE SENTENCE TAKEN by the player's own row: the coin, the clock,
+            // the record closed, and the release -- at the Mission's door or
+            // on the Tarwalk -- with the day it ended on in the row.
+            if (hearing.judgment == sim::Judgment::TheRope) {
+                gCourtNote += " serve=rope";
+                return landed;
+            }
+            const std::int32_t coinBefore = tavern.playerCoin();
+            const std::int32_t dayBefore = tavern.dayNumber();
+            (void)session.routeCourtKey(Key::Num1);
+            session.stepMany(sim::MoveInput{}, 2);
+            const sim::Tavern::SentenceReport& served = tavern.lastServed();
+            gCourtNote += " served=" + std::string(served.served ? "yes" : "no") +
+                          " coin=" + std::to_string(coinBefore) + "->" +
+                          std::to_string(tavern.playerCoin()) + " day=" +
+                          std::to_string(dayBefore + 1) + "->" +
+                          std::to_string(tavern.dayNumber() + 1) +
+                          " heat=" + std::to_string(crimes.heat());
+            if (served.served && !session.courtOpen() && !tavern.hearingPending() &&
+                !crimes.warrant() && session.lastMessage().rfind("TURNED LOOSE ", 0) == 0) {
+                ++landed;  // 5: served, the paper off, turned loose with the day on the row
+            }
+            // The seam's own dip, spent, so a capture photographs the street
+            // or the door and not the cut.
+            session.stepMany(sim::MoveInput{}, kPageEaseSteps + 1);
             return landed;
         }
         if (hearing.judgment != sim::Judgment::TheRope) {
@@ -11088,6 +11158,21 @@ std::string gCourtNote;
         session.stepMany(sim::MoveInput{}, kPageEaseSteps + sim::kDeathHoldSteps + 1);
         if (tavern.executed() && session.ropeRowsUp()) {
             ++landed;  // 5: hanged, the plate and the rows
+        }
+        if (ending == "newman" && session.ropeRowsUp()) {
+            // A NEW MAN, by the row itself: the answer main() reads beside
+            // quitRequested to open the creation window again. Not a quit.
+            (void)session.routeCourtKey(Key::Num1);
+            session.stepMany(sim::MoveInput{}, 1);
+            const Session::RunEndChoice reason = session.runEndReason();
+            gCourtNote += std::string(" end=") +
+                          (reason == Session::RunEndChoice::NewMan  ? "new-man"
+                           : reason == Session::RunEndChoice::Leave ? "leave"
+                                                                    : "none");
+            if (session.runEnded() && reason == Session::RunEndChoice::NewMan &&
+                !session.quitRequested()) {
+                ++landed;  // 6: a new man asked for, the window's loop owed
+            }
         }
     }
     return landed;
@@ -12707,7 +12792,7 @@ int scriptedStartHour(const SmokeRunConfig& config) noexcept {
     // is made at eight before he arrives and waits for him through the wait
     // page's own jump.
     if (config.court) {
-        return config.courtEnd == "rope" ? 20 : 23;
+        return courtEndingHangs(config.courtEnd) ? 20 : 23;
     }
     // TWO IN THE MORNING, and the hour is the whole point of the line.
     //
