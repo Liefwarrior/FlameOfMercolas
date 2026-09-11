@@ -1036,6 +1036,16 @@ public:
     [[nodiscard]] const Actor* respondingWatchman() const noexcept;
     /// What the last watchman to look at you said, or empty.
     [[nodiscard]] const std::string& lastDemand() const noexcept { return lastDemand_; }
+    /// BARKS LANE (feel/build). What the last man to step INTO a fight the
+    /// player started said as he did it -- `<name>: <brawl.join row>` -- or
+    /// empty. A rat says nothing; the Closing watchman keeps his own halt
+    /// (lastDemand). Presentation only: not hashed, never read by the sim.
+    [[nodiscard]] const std::string& lastJoin() const noexcept { return lastJoin_; }
+    /// BARKS LANE (feel/build). The last panic line the room threw --
+    /// `<name>: <crowd.flee row>` -- from the first patron sent back on the
+    /// escalation edge (standBack) or a bloodied man breaking for the street
+    /// (the rout), or empty. Presentation only, exactly like lastJoin.
+    [[nodiscard]] const std::string& lastFlee() const noexcept { return lastFlee_; }
     /// The last arrest, whether or not it has been read.
     [[nodiscard]] const ArrestReport& lastArrest() const noexcept { return lastArrest_; }
     /// True once, after an arrest, so whoever owns the body can put it on the
@@ -1694,6 +1704,8 @@ private:
     /// its first swing (npcSwingTimer_ = id % kNpcSwingStaggerSteps) so a crowd
     /// joining at once never metronomes. The one door into brawlers_.
     void joinBrawl(Actor& actor);
+    /// BARKS LANE: `<name>: <crowd.flee row>` for whoever is running.
+    [[nodiscard]] std::string crowdFleeLine(const Actor& actor) const;
     /// ACTION-COMBAT BUILD. Kills a body: Activity::Dead (a Downed that never
     /// stands), the victim's Deed::Slew, the witness spread, and -- WITNESSED
     /// (the three-clause rule via witnessCount) -- the murder law's heat and
@@ -1876,6 +1888,10 @@ private:
     std::int32_t watchmanId_ = -1;
     std::int64_t noticedAtTick_ = -1;
     std::string lastDemand_;
+    /// BARKS LANE: see lastJoin() / lastFlee(). Strings, unhashed, like
+    /// lastDemand_ and lastWarning_ -- what was SAID, never what happened.
+    std::string lastJoin_;
+    std::string lastFlee_;
     ArrestReport lastArrest_;
     bool arrestRelease_ = false;
     /// The second-of-day this room was constructed at, so dayNumber() can be

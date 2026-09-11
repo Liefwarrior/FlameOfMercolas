@@ -1333,8 +1333,21 @@ void Tavern::joinBrawl(Actor& actor) {
     // slayActor, never "resisting". The owner's resolved decision, verbatim
     // in the lane brief. Deference is untouched: a presented Wielder is never
     // closed on, so this line is never reached for one.
-    if (watchStance_ == WatchStance::Closing && actor.id() == watchmanId_) {
+    const bool closingWatchman = watchStance_ == WatchStance::Closing && actor.id() == watchmanId_;
+    if (closingWatchman) {
         actor.setIntent(Intent::Kill);
+    }
+    // BARKS LANE (feel/build): the man stepping in SAYS SO -- brawl.join out
+    // of content/raws/barks/combat_barks.json, through the same selector the
+    // house's warning uses, rotated on the second and the man so a crowd
+    // joining on one blow does not chorus. A rat says nothing, and the
+    // Closing watchman already has the halt in his mouth (lastDemand_).
+    // Presentation only: a string, unhashed, read by the client's say row.
+    if (actor.role() != ActorRole::Vermin && !closingWatchman) {
+        lastJoin_ = actor.name() + ": " +
+                    std::string(dialogue_.barks().line(
+                        dialogue_.barks().resolve({std::string("brawl.join")}),
+                        static_cast<std::int32_t>(tick_ % 1024) + actor.id()));
     }
     // Stagger the first swing (section 1.5): a fresh brawler waits actorId %
     // kNpcSwingStaggerSteps steps before it swings, so a crowd joining on the
@@ -1669,6 +1682,8 @@ void Tavern::stepBrawl() noexcept {
         }
         if (lethal && shouldRout(*actor)) {
             actor->setRouting(true);
+            // BARKS LANE: a man breaking for the street says why.
+            lastFlee_ = crowdFleeLine(*actor);
             actor->setNpcWindup(0);
             actor->setNpcWindupHard(false);
             actor->setNpcGuard(false);
@@ -1943,6 +1958,10 @@ void Tavern::standBack() {
     if (!playerKnown_) {
         return;
     }
+    // BARKS LANE (feel/build): the first patron the edge sends back is the
+    // one who says it -- crowd.flee out of combat_barks.json, one line per
+    // edge, not a chorus. See lastFlee().
+    bool spoken = false;
     for (Actor& actor : actors_) {
         if (!actor.present() || isFloored(actor.activity()) ||
             actor.role() == ActorRole::Vermin || actor.routing() || isProfessional(actor) ||
@@ -1977,9 +1996,20 @@ void Tavern::standBack() {
             }
             actor.setDestination(tx, ty, actor.band());
             actor.setActivity(Activity::Walking);
+            if (!spoken) {
+                spoken = true;
+                lastFlee_ = crowdFleeLine(actor);
+            }
             break;
         }
     }
+}
+
+std::string Tavern::crowdFleeLine(const Actor& actor) const {
+    return actor.name() + ": " +
+           std::string(dialogue_.barks().line(
+               dialogue_.barks().resolve({std::string("crowd.flee")}),
+               static_cast<std::int32_t>(tick_ % 1024) + actor.id()));
 }
 
 Blow Tavern::landPlayerBlow(Actor& target, bool hard, std::int32_t bonus, std::int32_t swingTerm,

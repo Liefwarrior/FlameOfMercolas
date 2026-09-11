@@ -2495,6 +2495,12 @@ private:
     /// first step has read the room, so boot never reads as a blow.
     std::int32_t lastRoomHpForAlarm_ = -1;
     std::int32_t lastCorpsesForAlarm_ = -1;
+    /// BARKS LANE (feel/build). The last halt / join / panic line step() put
+    /// on the alert row, so a line the sim composed once is said once: the
+    /// same comparison-not-flag shape as the two latches above. Unhashed.
+    std::string lastDemandSpoken_;
+    std::string lastJoinSpoken_;
+    std::string lastFleeSpoken_;
     /// ACTION-COMBAT BUILD (section 5, channel 5). THE CAMERA IMPULSE, composed
     /// as a render-only BAM offset inside Session::camera() -- never written to
     /// sim yaw. Three events, three pulses: a HARD swing's own forward dip on

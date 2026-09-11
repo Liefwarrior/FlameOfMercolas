@@ -4116,6 +4116,26 @@ void Session::step(const sim::MoveInput& input) {
         lastRoomHpForAlarm_ = roomHp;
         lastCorpsesForAlarm_ = corpses;
     }
+    // BARKS LANE (feel/build). WHAT THE ROOM SAID THIS STEP, on the alert
+    // row: the watchman's halt (or his contraband demand -- lastDemand was
+    // composed by the sim since S6 and read by nobody but the tests), the man
+    // stepping into the fight (brawl.join), the panic line (crowd.flee). Each
+    // is a string the sim already owns; the client only notices it CHANGE --
+    // the comparison-not-flag shape lastPlayerHp_ keeps, three unhashed
+    // strings on this side and nothing new reaching into the simulation. The
+    // halt is spoken last so it wins the row when all three land on one step.
+    if (tavern_->lastJoin() != lastJoinSpoken_) {
+        lastJoinSpoken_ = tavern_->lastJoin();
+        say(lastJoinSpoken_);
+    }
+    if (tavern_->lastFlee() != lastFleeSpoken_) {
+        lastFleeSpoken_ = tavern_->lastFlee();
+        say(lastFleeSpoken_);
+    }
+    if (tavern_->lastDemand() != lastDemandSpoken_) {
+        lastDemandSpoken_ = tavern_->lastDemand();
+        say(lastDemandSpoken_);
+    }
     syncWardToCalendar();
     // COURIER CASE. Last, deliberately: the courier's countdown, the take
     // nudge and the scripted delivery all read the step the world just
@@ -5988,6 +6008,9 @@ CreationPage Session::stripCard() const {
 /// channel 4); presentation-only, no sim number depends on it.
 namespace {
 constexpr std::int32_t kGrazeDamageBand = 4;
+/// BARKS LANE: the gain of the graze that stands in for a found-body whiff
+/// (attackUp). Quieter than any landed blow, so the ear ranks it below one.
+constexpr float kFoundBodyWhiffGain = 0.35F;
 }  // namespace
 
 void Session::attackDown() {
@@ -6063,7 +6086,14 @@ void Session::attackUp() {
                                     ? audio::SoundId::GrazeLight
                                     : audio::SoundId::PunchMedium);
         } else {
-            audio_->playOneShot(audio::SoundId::Whoosh);
+            // BARKS LANE (feel/build) -- THE HONEST WHIFF. The reticle
+            // promised a body on the line and the die (1-in-8, plus the
+            // fatigue band -- kept, the owner's ruling) said the arm found
+            // nothing worth a mark. That is NOT the same sound as swinging at
+            // air (Whoosh, the targetId < 0 branch above): the fist brushed a
+            // coat. The light graze at a third of its gain and no wash --
+            // presentation only, zero law contact.
+            audio_->playOneShot(audio::SoundId::GrazeLight, kFoundBodyWhiffGain);
         }
     }
     // A LANDED SWING FINALLY HAS SOME WEIGHT -- the connecting wash. A whiff on
