@@ -10821,7 +10821,9 @@ std::string gWatchHaltNote;
 /// before the Watch drinks, the paper with blood on it, taken to a rope
 /// hearing, THE ROPE passed and the drop taken, the plate with the end rows
 /// under it (five); "newman" takes the rope's own first row after the plate,
-/// the answer main() reads to open the creation window again (six).
+/// the answer main() reads to open the creation window again (six). "wanted"
+/// stops on the first beat: the tag on the HUD, paper out, nobody's hand on
+/// you yet (one).
 ///
 /// BARKS & GATE LANE. A line before this one may leave the clock at eight
 /// (--flame, the Mission's own hour: what you gave at the door is the only
@@ -10836,6 +10838,9 @@ constexpr std::int32_t kCourtRopeBeats = 5;
 constexpr std::int32_t kCourtNewManBeats = 6;
 
 [[nodiscard]] std::int32_t courtBeatsFor(const std::string& ending) {
+    if (ending == "wanted") {
+        return 1;
+    }
     if (ending == "paper") {
         return kCourtPaperBeats;
     }
@@ -11074,6 +11079,10 @@ std::string gCourtNote;
             return landed;
         }
         ++landed;  // 1: WANTED on the row, off real lifts
+        if (ending == "wanted") {
+            // THE TAG, photographed: paper out, nobody's hand on you yet.
+            return landed;
+        }
     }
 
     // TAKEN AT REACH, WITH PAPER. The arrest opens the hearing; the step

@@ -3128,7 +3128,8 @@ struct SmokeRunConfig {
     /// the row), "rope" (a killing at eight before the Watch drinks, the wait
     /// to ten, taken to a rope hearing, THE ROPE, the drop, the plate with A
     /// NEW MAN / LEAVE under it) or "newman" (the rope, then A NEW MAN taken
-    /// by its row -- the answer main() loops on). With `flame` set first the
+    /// by its row -- the answer main() loops on) or "wanted" (the tag alone,
+    /// the first beat, nobody's hand on you). With `flame` set first the
     /// court waits for Cull through the wait page and THE DOOR is weighed.
     bool court = false;
     std::string courtEnd = "page";

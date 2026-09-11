@@ -170,6 +170,20 @@ TEST_CASE("--court=rope: a killing before the Watch drinks, taken to a rope hear
     CHECK(played.summary.find("judgment=the rope") != std::string::npos);
 }
 
+TEST_CASE("--court=wanted stops on the tag: paper out off real lifts, nobody's hand on you yet") {
+    render::SmokeRunConfig run;
+    run.court = true;
+    run.courtEnd = "wanted";
+    const render::SmokeRunResult played = play(run);
+    INFO(played.summary);
+    CHECK(played.ok);
+    CHECK_FALSE(played.scriptFellShort());
+    CHECK(played.courtBeats == 1);
+    CHECK(played.summary.find("page=down") != std::string::npos);
+    CHECK(played.summary.find("hearing=none") != std::string::npos);
+    CHECK(played.summary.find("heat=6") != std::string::npos);  // past kWarrantAt
+}
+
 TEST_CASE("--court=deny pleads I DID NOT and the block carries the priest's doubt") {
     // BARKS & GATE LANE. The other plea, through the same row grammar.
     render::SmokeRunConfig run;

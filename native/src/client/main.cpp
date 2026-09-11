@@ -912,7 +912,7 @@ void print_usage() {
         "                       and stand there: the halt, the arrest at reach,\n"
         "                       the street. WHERE is halt or street\n"
         "  --court[=WHERE]      lift in Cull's sight until WANTED, be taken to the\n"
-        "                       Mission's bench. WHERE is page, paper, plea, deny,\n"
+        "                       Mission's bench. WHERE is wanted, page, paper, plea, deny,\n"
         "                       serve, rope or newman (--flame first to have what\n"
         "                       you gave at the door weighed)\n"
         "  --nemesis[=WHERE]    lose a fist fight to a named laborer three\n"
