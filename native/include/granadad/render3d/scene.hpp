@@ -276,6 +276,9 @@ struct StaticInstance {
     Vec3 position;
     /// Radians, clockwise from above, 0 faces north (-Z) -- the Instance rule.
     float yaw = 0.0F;
+    /// Radians about the piece's own X, applied after the scale and before
+    /// the yaw: what stands a flat plank quad up as a timber wall.
+    float pitch = 0.0F;
     Vec3 scale{1.0F, 1.0F, 1.0F};
     Rgba8 tint;
 };

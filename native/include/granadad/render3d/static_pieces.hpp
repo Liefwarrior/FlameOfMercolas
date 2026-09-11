@@ -135,8 +135,11 @@ enum class PieceRole : std::uint8_t {
     /// The quad under every floor slab that has a room, a street or water
     /// beneath it: the ceilings, tinted per the floor's material.
     Ceiling,
+    /// A flat plank quad stood upright (`upright` in the catalogue): the
+    /// timber walls -- hulls, sheds, the storey over a stone ground floor.
+    WallTimber,
 };
-inline constexpr std::size_t kPieceRoleCount = 19;
+inline constexpr std::size_t kPieceRoleCount = 20;
 
 /// The JSON key of a role ("wall", "wall_corner", ...), and back. None for
 /// an unknown key.
@@ -149,8 +152,12 @@ enum class WallClass : std::uint8_t {
     None = 0,
     /// Brick out of doors, plaster indoors.
     Masonry,
-    /// Plaster both sides -- a lime-washed timber storey.
+    /// Boards both sides: the upright plank quad (or, without one in the
+    /// catalogue, the kit wall's plaster side).
     Timber,
+    /// The kit wall's plaster side both ways, tinted: a stall's canvas, a
+    /// leather awning.
+    Canvas,
 };
 
 /// One catalogue row.
@@ -183,6 +190,9 @@ struct PieceSpec {
     /// A downward-facing quad laid upward: the piece is mirrored in Y (the
     /// adapter draws a mirrored piece without back-face culling).
     bool flipY = false;
+    /// A flat quad (extent in its local XZ) stood on edge as a wall: its
+    /// local Z becomes the height, its +Y normal the outward finish.
+    bool upright = false;
     /// Y offset above the surface it stands on.
     float lift = 0.0F;
     /// Radians added to the rule's yaw.

@@ -473,8 +473,10 @@ struct Backend::Impl {
             ++stats.staticsMissing;
             return;
         }
+        // Scale, pitch about the piece's own X, yaw, place.
         const Matrix transform = MatrixMultiply(
-            MatrixMultiply(MatrixScale(piece.scale.x, piece.scale.y, piece.scale.z),
+            MatrixMultiply(MatrixMultiply(MatrixScale(piece.scale.x, piece.scale.y, piece.scale.z),
+                                          MatrixRotateX(piece.pitch)),
                            MatrixRotateY(-piece.yaw)),
             MatrixTranslate(piece.position.x, piece.position.y, piece.position.z));
         const Matrix full = MatrixMultiply(model->model.transform, transform);

@@ -27,7 +27,7 @@ constexpr std::string_view kRoleNames[kPieceRoleCount] = {
     "none",        "wall",        "wall_corner", "wall_window", "wall_door", "roof_edge",
     "floor_plank", "floor_cobble", "floor_flag", "water",       "prop_barrel", "prop_crate",
     "prop_sack",   "lamp_wall",   "lamp_post",   "brazier",     "floor_fill",  "wall_cap",
-    "ceiling",
+    "ceiling",     "wall_timber",
 };
 
 // ---------------------------------------------------------------------------
@@ -166,9 +166,15 @@ struct FaceRun {
     /// The kit's brick side faces out (outdoor masonry not rendered).
     bool brickOut = false;
     Rgba8 tint{255, 255, 255, 255};
-    /// The wall line ends there (a convex corner of the plan).
+    /// The wall line ends there (a convex corner of the plan) -- never at
+    /// a door gap, where the frame takes the corner.
     bool convexA0 = false;
     bool convexA1 = false;
+    /// The run faces into a door gap (a jamb's reveal); the street is at
+    /// the a0 or the a1 end.
+    bool reveal = false;
+    bool revealA0 = false;
+    bool revealA1 = false;
     /// The corner piece that takes over that end, or -1.
     int cornerA0 = -1;
     int cornerA1 = -1;
@@ -203,6 +209,7 @@ public:
         if (catalogue_.empty()) {
             return std::move(out_);
         }
+        findDoors();
         walls();
         roofEdges();
         doors();
@@ -274,8 +281,17 @@ private:
                  yBase + spec.lift,
                  run.baseZ + kTangentZ[run.side] * aOrigin + kNormalZ[run.side] * standoff};
         p.instance.yaw = wrapYaw(yawOf(run.side) + (flip ? kPi : 0.0F) + spec.yawOffset);
-        p.instance.scale = Vec3{(a1 - a0) / spec.width * spec.scale,
-                                heightScale(spec) * spec.scale, spec.scale};
+        if (spec.upright) {
+            // A flat quad on its edge: local Z up (a quarter turn about X
+            // brings +Y, its face, to -Z), so the storey is its Z scale.
+            p.instance.pitch = -kHalfPi;
+            const float depth = std::max(0.01F, spec.maxZ - spec.minZ);
+            p.instance.scale = Vec3{(a1 - a0) / std::max(0.01F, spec.maxX - spec.minX) * spec.scale,
+                                    spec.scale, (render::kBandHeight - 0.01F) / depth * spec.scale};
+        } else {
+            p.instance.scale = Vec3{(a1 - a0) / spec.width * spec.scale,
+                                    heightScale(spec) * spec.scale, spec.scale};
+        }
         p.instance.tint = mulTint(spec.tint, tint);
         p.lightX = lightX;
         p.lightY = lightY;
@@ -332,7 +348,165 @@ private:
         }
     }
 
+    // --- doors, found first ---------------------------------------------
+
+    /// One door gap: `w` walkable cells from (x, y) along X (or along Y),
+    /// in a wall line, with the street on `side`.
+    struct DoorGap {
+        std::int32_t x = 0, y = 0, z = 0, w = 0;
+        bool alongX = true;
+        int side = kNorth;
+    };
+
+    /// A walkable cell open to both north and south: a hole in an X-line.
+    [[nodiscard]] bool gapCellX(std::int32_t x, std::int32_t y, std::int32_t z) const noexcept {
+        return isWalkableForm(tiles_, x, y, z) && isOpenish(tiles_, x, y - 1, z) &&
+               isOpenish(tiles_, x, y + 1, z);
+    }
+
+    [[nodiscard]] bool gapCellY(std::int32_t x, std::int32_t y, std::int32_t z) const noexcept {
+        return isWalkableForm(tiles_, x, y, z) && isOpenish(tiles_, x - 1, y, z) &&
+               isOpenish(tiles_, x + 1, y, z);
+    }
+
+    /// The door rule, run before the walls so the wall runs can stop dead at
+    /// a jamb and the reveal pieces can start behind the frame.
+    void findDoors() {
+        const std::int32_t zLo = std::max(0, catalogue_.minBand());
+        for (std::int32_t z = zLo; z < tiles_.sizeZ(); ++z) {
+            for (std::int32_t y = 1; y + 1 < tiles_.sizeY(); ++y) {
+                std::int32_t x = 0;
+                while (x < tiles_.sizeX()) {
+                    if (!gapCellX(x, y, z)) {
+                        ++x;
+                        continue;
+                    }
+                    std::int32_t x1 = x;
+                    while (x1 + 1 < tiles_.sizeX() && gapCellX(x1 + 1, y, z)) {
+                        ++x1;
+                    }
+                    const std::int32_t w = x1 - x + 1;
+                    if (w >= 2 && w <= 3 && isWall(tiles_, x - 1, y, z) && isWall(tiles_, x1 + 1, y, z) &&
+                        isWall(tiles_, x - 2, y, z) && isWall(tiles_, x1 + 2, y, z) &&
+                        wallClassAt(x - 1, y, z) != WallClass::None) {
+                        const bool outN = !cellRoofed(tiles_, x, y - 1, z);
+                        const bool outS = !cellRoofed(tiles_, x, y + 1, z);
+                        if (outN != outS) {
+                            DoorGap gap;
+                            gap.x = x;
+                            gap.y = y;
+                            gap.z = z;
+                            gap.w = w;
+                            gap.alongX = true;
+                            gap.side = outN ? kNorth : kSouth;
+                            for (std::int32_t gx = x; gx <= x1; ++gx) {
+                                gapOf_.emplace(cellKey(z, 0, gx, y), doors_.size());
+                            }
+                            doors_.push_back(gap);
+                        }
+                    }
+                    x = x1 + 1;
+                }
+            }
+            for (std::int32_t x = 1; x + 1 < tiles_.sizeX(); ++x) {
+                std::int32_t y = 0;
+                while (y < tiles_.sizeY()) {
+                    if (!gapCellY(x, y, z)) {
+                        ++y;
+                        continue;
+                    }
+                    std::int32_t y1 = y;
+                    while (y1 + 1 < tiles_.sizeY() && gapCellY(x, y1 + 1, z)) {
+                        ++y1;
+                    }
+                    const std::int32_t w = y1 - y + 1;
+                    if (w >= 2 && w <= 3 && isWall(tiles_, x, y - 1, z) && isWall(tiles_, x, y1 + 1, z) &&
+                        isWall(tiles_, x, y - 2, z) && isWall(tiles_, x, y1 + 2, z) &&
+                        wallClassAt(x, y - 1, z) != WallClass::None) {
+                        const bool outW = !cellRoofed(tiles_, x - 1, y, z);
+                        const bool outE = !cellRoofed(tiles_, x + 1, y, z);
+                        if (outW != outE) {
+                            DoorGap gap;
+                            gap.x = x;
+                            gap.y = y;
+                            gap.z = z;
+                            gap.w = w;
+                            gap.alongX = false;
+                            gap.side = outE ? kEast : kWest;
+                            for (std::int32_t gy = y; gy <= y1; ++gy) {
+                                gapOf_.emplace(cellKey(z, 0, x, gy), doors_.size());
+                            }
+                            doors_.push_back(gap);
+                        }
+                    }
+                    y = y1 + 1;
+                }
+            }
+        }
+    }
+
+    /// The door gap a cell belongs to, or null.
+    [[nodiscard]] const DoorGap* gapAt(std::int32_t x, std::int32_t y, std::int32_t z) const {
+        const auto found = gapOf_.find(cellKey(z, 0, x, y));
+        return found == gapOf_.end() ? nullptr : &doors_[found->second];
+    }
+
+    /// The frames: one per gap, in the plane of the facade, the building's
+    /// own finish to the street.
+    void doors() {
+        const PieceSpec* door = catalogue_.piece(PieceRole::WallDoor);
+        const PieceSpec* wall = catalogue_.piece(PieceRole::Wall);
+        if (door == nullptr) {
+            return;
+        }
+        const float standoff = door->standoffSet ? door->standoff
+                               : wall != nullptr  ? wall->thickness * 0.5F
+                                                  : 0.0F;
+        for (const DoorGap& gap : doors_) {
+            FaceRun r;
+            r.z = gap.z;
+            r.side = gap.side;
+            float lo = 0.0F, hi = 0.0F, dummy = 0.0F;
+            std::int32_t jambX = gap.x, jambY = gap.y;
+            if (gap.alongX) {
+                // The facade plane: the gap row's north or south edge.
+                setBase(r, static_cast<float>(gap.side == kNorth ? gap.y : gap.y + 1));
+                const std::int32_t x1 = gap.x + gap.w - 1;
+                if (gap.side == kNorth) {
+                    cellInterval(kNorth, gap.x, gap.y, lo, dummy);
+                    cellInterval(kNorth, x1, gap.y, dummy, hi);
+                } else {
+                    cellInterval(kSouth, x1, gap.y, lo, dummy);
+                    cellInterval(kSouth, gap.x, gap.y, dummy, hi);
+                }
+                jambX = gap.x - 1;
+            } else {
+                setBase(r, static_cast<float>(gap.side == kWest ? gap.x : gap.x + 1));
+                const std::int32_t y1 = gap.y + gap.w - 1;
+                if (gap.side == kEast) {
+                    cellInterval(kEast, gap.x, gap.y, lo, dummy);
+                    cellInterval(kEast, gap.x, y1, dummy, hi);
+                } else {
+                    cellInterval(kWest, gap.x, y1, lo, dummy);
+                    cellInterval(kWest, gap.x, gap.y, dummy, hi);
+                }
+                jambY = gap.y - 1;
+            }
+            const MaterialRule* jamb = rule(jambX, jambY, gap.z);
+            const bool brickOut = jamb == nullptr || !jamb->plasterOut;
+            facePiece(r, PieceRole::WallDoor, *door, lo, hi, brickOut, standoff,
+                      render::bandSurface(gap.z), gap.x, gap.y,
+                      jamb != nullptr ? jamb->tint : Rgba8{}, gap.x + (gap.alongX ? gap.w - 1 : 0),
+                      gap.y + (gap.alongX ? 0 : gap.w - 1));
+            ++out_.stats.doorGaps;
+        }
+    }
+
     // --- walls ------------------------------------------------------------
+
+    /// How far a reveal (a jamb face inside a door gap) starts behind the
+    /// facade plane, so it clears the frame that stands in that plane.
+    static constexpr float kRevealInset = 0.05F;
 
     void walls() {
         const PieceSpec* wall = catalogue_.piece(PieceRole::Wall);
@@ -341,6 +515,7 @@ private:
         }
         const PieceSpec* window = catalogue_.piece(PieceRole::WallWindow);
         const PieceSpec* cornerSpec = catalogue_.piece(PieceRole::WallCorner);
+        const PieceSpec* timber = catalogue_.piece(PieceRole::WallTimber);
 
         std::vector<FaceRun> runs;
         std::map<std::uint64_t, std::size_t> runOf;
@@ -348,7 +523,7 @@ private:
         out_.stats.wallRuns = runs.size();
 
         // Corners: a cell with exactly two exposed adjacent sides, both out
-        // of doors, masonry, that ends a run on each.
+        // of doors, brick-finished masonry, that ends a run on each.
         std::vector<Corner> corners;
         if (cornerSpec != nullptr) {
             for (std::int32_t z = std::max(0, catalogue_.minBand()); z < tiles_.sizeZ(); ++z) {
@@ -380,6 +555,11 @@ private:
                         const auto a = runOf.find(cellKey(z, side, x, y));
                         const auto b = runOf.find(cellKey(z, (side + 1) & 3, x, y));
                         if (a == runOf.end() || b == runOf.end()) {
+                            continue;
+                        }
+                        // Both runs must end here as convex ends: a jamb is
+                        // not a corner.
+                        if (!runs[a->second].convexA1 || !runs[b->second].convexA0) {
                             continue;
                         }
                         Corner c;
@@ -414,7 +594,15 @@ private:
         }
 
         for (const FaceRun& r : runs) {
-            const float ext = wall->thickness;
+            // The piece this run wears: boards for timber, the kit wall
+            // otherwise -- and a plaster face is cut per tile, since plaster
+            // has no pattern to stretch and the light then reads per cell
+            // exactly as the chunk's own faces do.
+            const bool boards = r.cls == WallClass::Timber && timber != nullptr;
+            const PieceSpec& piece = boards ? *timber : *wall;
+            const bool brickOut = r.brickOut;
+            const bool plasterFace = !boards && !brickOut;
+            const float ext = piece.thickness;
             const float legLen = wall->width - wall->thickness * 0.5F;
             float lo = r.a0;
             float hi = r.a1;
@@ -428,21 +616,27 @@ private:
             } else if (r.convexA1) {
                 hi += ext;
             }
+            if (r.revealA0) {
+                lo = r.a0 + kRevealInset;
+            }
+            if (r.revealA1) {
+                hi = r.a1 - kRevealInset;
+            }
             if (hi - lo < 0.05F) {
                 continue;
             }
-            const int k = std::max(1, static_cast<int>(std::lround((hi - lo) / wall->width)));
-            const float len = (hi - lo) / static_cast<float>(k);
-            const bool brickOut = r.brickOut;
-            const bool windowOk = r.outdoor && r.cls == WallClass::Masonry;
             const std::int32_t cells = std::max(1, static_cast<std::int32_t>(std::lround(r.a1 - r.a0)));
+            const int k = plasterFace ? cells
+                                      : std::max(1, static_cast<int>(std::lround((hi - lo) / piece.width)));
+            const float len = (hi - lo) / static_cast<float>(k);
+            const bool windowOk = r.outdoor && r.cls == WallClass::Masonry;
             std::int32_t dx = 0, dy = 0;
             runStep(r.side, dx, dy);
             for (int i = 0; i < k; ++i) {
                 const float pa0 = lo + len * static_cast<float>(i);
                 const float pa1 = i + 1 == k ? hi : pa0 + len;
-                // The cell under the piece's middle: its light, and the
-                // window draw.
+                // The cells under the piece: its light, and the window draw
+                // off its middle one.
                 const std::int32_t along = std::clamp(
                     static_cast<std::int32_t>(std::floor(pa0 + 0.5F * len - r.a0)), 0, cells - 1);
                 const std::int32_t first = std::clamp(
@@ -451,8 +645,8 @@ private:
                     static_cast<std::int32_t>(std::floor(pa1 - r.a0 - 0.01F)), 0, cells - 1);
                 const std::int32_t lx = r.firstX + dx * along;
                 const std::int32_t ly = r.firstY + dy * along;
-                PieceRole role = PieceRole::Wall;
-                const PieceSpec* spec = wall;
+                PieceRole role = boards ? PieceRole::WallTimber : PieceRole::Wall;
+                const PieceSpec* spec = &piece;
                 if (windowOk && window != nullptr && catalogue_.windowEvery() > 0 &&
                     len >= 1.6F) {
                     const std::uint32_t h =
@@ -462,7 +656,6 @@ private:
                         spec = window;
                     }
                 }
-                // Lit over the cells it spans, first to last.
                 facePiece(r, role, *spec, pa0, pa1, brickOut,
                           spec->standoffSet ? spec->standoff : spec->thickness * 0.5F,
                           render::bandSurface(r.z), r.firstX + dx * first, r.firstY + dy * first,
@@ -505,7 +698,10 @@ private:
     }
 
     /// Every exposed, classed wall face grouped into runs. `roofEdge` asks
-    /// for the outdoor faces of top-storey walls instead (one run class).
+    /// for the outdoor faces of top-storey masonry instead (one run class).
+    /// A run stops dead at a door gap (no corner extension there), and a
+    /// run that faces INTO a gap -- the jamb's reveal -- is marked so its
+    /// street end starts behind the frame.
     void scanRuns(std::vector<FaceRun>& runs, std::map<std::uint64_t, std::size_t>& runOf,
                   bool roofEdge) {
         const std::int32_t zLo = std::max(0, catalogue_.minBand());
@@ -516,6 +712,12 @@ private:
                 const std::int32_t along = rows ? tiles_.sizeX() : tiles_.sizeY();
                 std::int32_t dx = 0, dy = 0;
                 runStep(side, dx, dy);
+                const auto close = [&](FaceRun& run) {
+                    const std::int32_t nx = run.lastX + dx;
+                    const std::int32_t ny = run.lastY + dy;
+                    run.convexA1 = !isWall(tiles_, nx, ny, z) && gapAt(nx, ny, z) == nullptr;
+                    runs.push_back(run);
+                };
                 for (std::int32_t line = 0; line < lines; ++line) {
                     bool open = false;
                     FaceRun current;
@@ -528,6 +730,7 @@ private:
                         WallClass cls = WallClass::None;
                         bool outdoor = false;
                         std::uint16_t material = 0;
+                        const DoorGap* facingGap = nullptr;
                         if (qualifies) {
                             cls = wallClassAt(x, y, z);
                             qualifies = cls != WallClass::None;
@@ -535,6 +738,7 @@ private:
                         if (qualifies) {
                             outdoor = faceOutdoor(x, y, z, side);
                             material = tiles_.material(x, y, z);
+                            facingGap = gapAt(x + kSideDx[side], y + kSideDy[side], z);
                             if (roofEdge) {
                                 // A cornice belongs to masonry: a hull or a
                                 // shed of timber has no roof line to trim.
@@ -543,12 +747,10 @@ private:
                             }
                         }
                         const bool joins = qualifies && open && current.material == material &&
-                                           current.outdoor == outdoor && current.cls == cls;
+                                           current.outdoor == outdoor && current.cls == cls &&
+                                           (facingGap != nullptr) == current.reveal;
                         if (open && !joins) {
-                            // Close: convex at the a1 end when the wall line
-                            // itself stops there.
-                            current.convexA1 = !isWall(tiles_, current.lastX + dx, current.lastY + dy, z);
-                            runs.push_back(current);
+                            close(current);
                             open = false;
                         }
                         if (!qualifies) {
@@ -578,7 +780,20 @@ private:
                             current.tint = r == nullptr ? Rgba8{} : (plaster ? r->insideTint : r->tint);
                             current.brickOut = outdoor && cls == WallClass::Masonry &&
                                                (r == nullptr || !r->plasterOut);
-                            current.convexA0 = !isWall(tiles_, x - dx, y - dy, z);
+                            const std::int32_t px = x - dx;
+                            const std::int32_t py = y - dy;
+                            current.convexA0 = !isWall(tiles_, px, py, z) && gapAt(px, py, z) == nullptr;
+                            current.reveal = facingGap != nullptr;
+                            if (current.reveal) {
+                                // The street is the way the gap's outdoor
+                                // side points; the run reads toward it or
+                                // away from it.
+                                const std::int32_t gx = kSideDx[facingGap->side];
+                                const std::int32_t gy = kSideDy[facingGap->side];
+                                const bool streetAtA0 = dx * gx + dy * gy < 0;
+                                current.revealA0 = streetAtA0;
+                                current.revealA1 = !streetAtA0;
+                            }
                             open = true;
                         }
                         current.a1 = a1;
@@ -587,8 +802,7 @@ private:
                         runOf.emplace(cellKey(z, side, x, y), runs.size());
                     }
                     if (open) {
-                        current.convexA1 = !isWall(tiles_, current.lastX + dx, current.lastY + dy, z);
-                        runs.push_back(current);
+                        close(current);
                     }
                 }
             }
@@ -620,113 +834,6 @@ private:
                           render::bandSurface(r.z + 1), r.firstX, r.firstY, r.tint);
             }
         }
-    }
-
-    // --- doors ------------------------------------------------------------
-
-    void doors() {
-        const PieceSpec* door = catalogue_.piece(PieceRole::WallDoor);
-        if (door == nullptr) {
-            return;
-        }
-        const std::int32_t zLo = std::max(0, catalogue_.minBand());
-        for (std::int32_t z = zLo; z < tiles_.sizeZ(); ++z) {
-            // Gaps in wall lines that run along X (a row of walls with a hole).
-            for (std::int32_t y = 1; y + 1 < tiles_.sizeY(); ++y) {
-                std::int32_t x = 0;
-                while (x < tiles_.sizeX()) {
-                    if (!gapCellX(x, y, z)) {
-                        ++x;
-                        continue;
-                    }
-                    std::int32_t x1 = x;
-                    while (x1 + 1 < tiles_.sizeX() && gapCellX(x1 + 1, y, z)) {
-                        ++x1;
-                    }
-                    const std::int32_t w = x1 - x + 1;
-                    if (w >= 2 && w <= 3 && isWall(tiles_, x - 1, y, z) && isWall(tiles_, x1 + 1, y, z) &&
-                        isWall(tiles_, x - 2, y, z) && isWall(tiles_, x1 + 2, y, z) &&
-                        wallClassAt(x - 1, y, z) != WallClass::None) {
-                        const bool outN = !cellRoofed(tiles_, x, y - 1, z);
-                        const bool outS = !cellRoofed(tiles_, x, y + 1, z);
-                        if (outN != outS) {
-                            FaceRun r;
-                            r.z = z;
-                            r.side = outN ? kNorth : kSouth;
-                            setBase(r, static_cast<float>(y) + 0.5F);
-                            float lo = 0.0F, hi = 0.0F, dummy = 0.0F;
-                            if (r.side == kNorth) {
-                                cellInterval(kNorth, x, y, lo, dummy);
-                                cellInterval(kNorth, x1, y, dummy, hi);
-                            } else {
-                                cellInterval(kSouth, x1, y, lo, dummy);
-                                cellInterval(kSouth, x, y, dummy, hi);
-                            }
-                            const MaterialRule* jamb = rule(x - 1, y, z);
-                            facePiece(r, PieceRole::WallDoor, *door, lo, hi, true,
-                                      door->standoffSet ? door->standoff : 0.0F,
-                                      render::bandSurface(z), x, y,
-                                      jamb != nullptr ? jamb->tint : Rgba8{});
-                            ++out_.stats.doorGaps;
-                        }
-                    }
-                    x = x1 + 1;
-                }
-            }
-            // Gaps in wall lines that run along Y.
-            for (std::int32_t x = 1; x + 1 < tiles_.sizeX(); ++x) {
-                std::int32_t y = 0;
-                while (y < tiles_.sizeY()) {
-                    if (!gapCellY(x, y, z)) {
-                        ++y;
-                        continue;
-                    }
-                    std::int32_t y1 = y;
-                    while (y1 + 1 < tiles_.sizeY() && gapCellY(x, y1 + 1, z)) {
-                        ++y1;
-                    }
-                    const std::int32_t w = y1 - y + 1;
-                    if (w >= 2 && w <= 3 && isWall(tiles_, x, y - 1, z) && isWall(tiles_, x, y1 + 1, z) &&
-                        isWall(tiles_, x, y - 2, z) && isWall(tiles_, x, y1 + 2, z) &&
-                        wallClassAt(x, y - 1, z) != WallClass::None) {
-                        const bool outW = !cellRoofed(tiles_, x - 1, y, z);
-                        const bool outE = !cellRoofed(tiles_, x + 1, y, z);
-                        if (outW != outE) {
-                            FaceRun r;
-                            r.z = z;
-                            r.side = outE ? kEast : kWest;
-                            setBase(r, static_cast<float>(x) + 0.5F);
-                            float lo = 0.0F, hi = 0.0F, dummy = 0.0F;
-                            if (r.side == kEast) {
-                                cellInterval(kEast, x, y, lo, dummy);
-                                cellInterval(kEast, x, y1, dummy, hi);
-                            } else {
-                                cellInterval(kWest, x, y1, lo, dummy);
-                                cellInterval(kWest, x, y, dummy, hi);
-                            }
-                            const MaterialRule* jamb = rule(x, y - 1, z);
-                            facePiece(r, PieceRole::WallDoor, *door, lo, hi, true,
-                                      door->standoffSet ? door->standoff : 0.0F,
-                                      render::bandSurface(z), x, y,
-                                      jamb != nullptr ? jamb->tint : Rgba8{});
-                            ++out_.stats.doorGaps;
-                        }
-                    }
-                    y = y1 + 1;
-                }
-            }
-        }
-    }
-
-    /// A walkable cell open to both north and south: a hole in an X-line.
-    [[nodiscard]] bool gapCellX(std::int32_t x, std::int32_t y, std::int32_t z) const noexcept {
-        return isWalkableForm(tiles_, x, y, z) && isOpenish(tiles_, x, y - 1, z) &&
-               isOpenish(tiles_, x, y + 1, z);
-    }
-
-    [[nodiscard]] bool gapCellY(std::int32_t x, std::int32_t y, std::int32_t z) const noexcept {
-        return isWalkableForm(tiles_, x, y, z) && isOpenish(tiles_, x - 1, y, z) &&
-               isOpenish(tiles_, x + 1, y, z);
     }
 
     // --- floors and water -------------------------------------------------
@@ -853,37 +960,32 @@ private:
     /// over whatever the first pass could not fit -- so no cell of a
     /// dressed material keeps the atlas tile unless the catalogue says so.
     void floors() {
-        ensureCover();
         const std::int32_t zLo = std::max(0, catalogue_.minBand());
         const std::span<const std::string_view> ids = render::materialIds();
-        for (std::int32_t z = zLo; z < tiles_.sizeZ(); ++z) {
-            for (std::size_t m = 0; m < ids.size(); ++m) {
-                const auto material = static_cast<std::uint16_t>(m);
-                const MaterialRule* r = catalogue_.material(material);
-                if (r == nullptr || (r->floorRole == PieceRole::None && r->fillRole == PieceRole::None)) {
-                    continue;
-                }
-                const auto same = [&](std::int32_t x, std::int32_t y) {
-                    return floorCell(x, y, z) && tiles_.material(x, y, z) == material;
-                };
-                const PieceSpec* spec =
-                    r->floorRole != PieceRole::None ? catalogue_.piece(r->floorRole) : nullptr;
-                if (spec != nullptr) {
-                    const PieceRole role = r->floorRole;
-                    const Rgba8 tint = r->floorTint;
+        // Pass one: the flat fill under EVERY cell of a material that has
+        // one (a patterned piece has gaps between its stones; the fill is
+        // what shows through them). Pass two: the patterned pieces over it.
+        for (int pass = 0; pass < 2; ++pass) {
+            resetCover();
+            for (std::int32_t z = zLo; z < tiles_.sizeZ(); ++z) {
+                for (std::size_t m = 0; m < ids.size(); ++m) {
+                    const auto material = static_cast<std::uint16_t>(m);
+                    const MaterialRule* r = catalogue_.material(material);
+                    if (r == nullptr) {
+                        continue;
+                    }
+                    const PieceRole role = pass == 0 ? r->fillRole : r->floorRole;
+                    const PieceSpec* spec = role != PieceRole::None ? catalogue_.piece(role) : nullptr;
+                    if (spec == nullptr) {
+                        continue;
+                    }
+                    const Rgba8 tint = pass == 0 ? r->fillTint : r->floorTint;
+                    const auto same = [&](std::int32_t x, std::int32_t y) {
+                        return floorCell(x, y, z) && tiles_.material(x, y, z) == material;
+                    };
                     mergeRectangles(z, std::max(1, spec->minBlock), std::max(1, spec->maxBlock), same,
                                     [&](std::int32_t x, std::int32_t y, std::int32_t w, std::int32_t h) {
                                         blockPiece(role, *spec, x, y, z, w, h, render::bandSurface(z), tint);
-                                    });
-                }
-                const PieceSpec* fill =
-                    r->fillRole != PieceRole::None ? catalogue_.piece(r->fillRole) : nullptr;
-                if (fill != nullptr) {
-                    const PieceRole role = r->fillRole;
-                    const Rgba8 tint = r->fillTint;
-                    mergeRectangles(z, 1, std::max(1, fill->maxBlock), same,
-                                    [&](std::int32_t x, std::int32_t y, std::int32_t w, std::int32_t h) {
-                                        blockPiece(role, *fill, x, y, z, w, h, render::bandSurface(z), tint);
                                     });
                 }
             }
@@ -1183,6 +1285,8 @@ private:
     const StaticCatalogue& catalogue_;
     const std::vector<render::Lamp>& lamps_;
     std::vector<std::uint8_t> covered_;
+    std::vector<DoorGap> doors_;
+    std::map<std::uint64_t, std::size_t> gapOf_;
     StaticPlacements out_;
 };
 
@@ -1278,6 +1382,7 @@ StaticCatalogue StaticCatalogue::fromJson(std::string_view json) {
             spec.minBlock = intOf(row, "minBlock", 1);
             spec.maxBlock = intOf(row, "maxBlock", 3);
             spec.flipY = row.value("flipY", false);
+            spec.upright = row.value("upright", false);
             spec.lift = floatOf(row, "lift", 0.0F);
             spec.yawOffset = floatOf(row, "yawOffsetDegrees", 0.0F) * (kPi / 180.0F);
             spec.scale = floatOf(row, "scale", 1.0F);
@@ -1303,6 +1408,7 @@ StaticCatalogue StaticCatalogue::fromJson(std::string_view json) {
             const std::string cls = row.value("wall", std::string("none"));
             rule.wallClass = cls == "masonry" ? WallClass::Masonry
                              : cls == "timber" ? WallClass::Timber
+                             : cls == "canvas" ? WallClass::Canvas
                                                : WallClass::None;
             rule.plasterOut = row.value("finish", std::string("brick")) == "plaster";
             rule.tint = tintFromJson(row.contains("tint") ? row["tint"] : nlohmann::json(), Rgba8{});
@@ -1405,6 +1511,7 @@ std::uint64_t StaticCatalogue::digest() const noexcept {
         h.mixI32(spec.minBlock);
         h.mixI32(spec.maxBlock);
         h.mixU8(static_cast<std::uint8_t>(spec.flipY ? 1 : 0));
+        h.mixU8(static_cast<std::uint8_t>(spec.upright ? 1 : 0));
         h.mixF32(spec.lift);
         h.mixF32(spec.yawOffset);
         h.mixF32(spec.scale);

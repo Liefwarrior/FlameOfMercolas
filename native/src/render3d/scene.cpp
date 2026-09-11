@@ -214,6 +214,7 @@ std::uint64_t sceneHash(const SceneDescription& scene) noexcept {
         h.mixU8(piece.role);
         mixVec3(h, piece.position);
         h.mixF32(piece.yaw);
+        h.mixF32(piece.pitch);
         mixVec3(h, piece.scale);
         mixRgba(h, piece.tint);
     }

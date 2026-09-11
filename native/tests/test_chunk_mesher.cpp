@@ -423,7 +423,8 @@ TEST_CASE("the shipped piece catalogue loads and names a piece for every rule") 
                                  PieceRole::FloorCobble, PieceRole::FloorFlag, PieceRole::Water,
                                  PieceRole::PropBarrel, PieceRole::PropCrate, PieceRole::PropSack,
                                  PieceRole::LampWall, PieceRole::LampPost, PieceRole::Brazier,
-                                 PieceRole::FloorFill, PieceRole::WallCap, PieceRole::Ceiling}) {
+                                 PieceRole::FloorFill, PieceRole::WallCap, PieceRole::Ceiling,
+                                 PieceRole::WallTimber}) {
         const PieceSpec* spec = catalogue.piece(role);
         REQUIRE_MESSAGE(spec != nullptr, "no piece for role " << pieceRoleName(role));
         CHECK(spec->file.find(".gltf") != std::string::npos);
@@ -664,11 +665,13 @@ TEST_CASE("a door tile places the door frame") {
         if (p.role != PieceRole::WallDoor) {
             continue;
         }
-        // Brick to the south (the street), so the piece is yawed to face
-        // south and its module runs west from the gap's east edge.
-        CHECK(p.instance.yaw == doctest::Approx(3.14159265F));
-        CHECK(p.instance.position.x == doctest::Approx(13.0F));
-        CHECK(p.instance.position.z == doctest::Approx(15.5F));
+        // The building is rendered stone, so the frame shows its plaster to
+        // the street: yawed to face south, then half a turn, its module
+        // running east from the gap's west edge, in the facade's own plane
+        // (the wall's half thickness proud of the south face at z = 16).
+        CHECK(p.instance.yaw == doctest::Approx(0.0F));
+        CHECK(p.instance.position.x == doctest::Approx(11.0F));
+        CHECK(p.instance.position.z == doctest::Approx(16.0F + 0.1125F));
         CHECK(p.instance.position.y == doctest::Approx(render::bandSurface(19)));
         // Fitted to the two-tile gap: 2 / 2.5.
         CHECK(p.instance.scale.x == doctest::Approx(0.8F));
@@ -776,6 +779,16 @@ TEST_CASE("placement is a deterministic function of the tile map") {
     }
     const StaticPlacementStats& stats = first.stats;
     CHECK(stats.byRole[static_cast<std::size_t>(PieceRole::Wall)] > 500);
+    CHECK(stats.byRole[static_cast<std::size_t>(PieceRole::WallTimber)] > 100);
+    // Timber stands the plank quad on its edge: a quarter turn about X.
+    for (const StaticPlacement& p : first.placements) {
+        if (p.role == PieceRole::WallTimber) {
+            CHECK(p.instance.pitch == doctest::Approx(-3.14159265F / 2.0F));
+            CHECK(p.instance.scale.z == doctest::Approx((render::kBandHeight - 0.01F) / 2.5F));
+        } else {
+            CHECK(p.instance.pitch == 0.0F);
+        }
+    }
     CHECK(stats.byRole[static_cast<std::size_t>(PieceRole::WallCorner)] >= 4);
     CHECK(stats.byRole[static_cast<std::size_t>(PieceRole::WallWindow)] > 20);
     CHECK(stats.byRole[static_cast<std::size_t>(PieceRole::WallDoor)] >= 2);
@@ -801,8 +814,10 @@ TEST_CASE("placement is a deterministic function of the tile map") {
     for (const StaticPlacement& p : first.placements) {
         if (p.role == PieceRole::WallDoor && p.lightX == 153 && p.lightY == 66 && p.lightZ == 19) {
             gullDoor = true;
-            CHECK(p.instance.yaw == doctest::Approx(0.0F));
-            CHECK(p.instance.position.z == doctest::Approx(66.5F));
+            // Granite: plaster to the street, so the north-facing frame is
+            // flipped, on the frontage plane, its half thickness proud.
+            CHECK(p.instance.yaw == doctest::Approx(3.14159265F));
+            CHECK(p.instance.position.z == doctest::Approx(66.0F - 0.1125F));
             CHECK(p.instance.scale.x == doctest::Approx(0.8F));
         }
     }
