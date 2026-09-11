@@ -70,11 +70,14 @@ Manifest row shape (`variants: N` expands `{n}` to `01..N`):
 for; empty means staged and held (listed as _unmapped_ in the manifest).
 `enabled: false` rows are listed but not converted.
 
-Ledger outputs (full runs only; `-Only` runs skip them):
+Ledger outputs (full runs only; `-Only` runs skip them), in the same two files
+and the same shape as the Python tools' `lotstage.py`:
 
-- `content/art/lot/staged.json` -- rows for this tool merged by `dst` with any other tool's rows.
-- `content/art/lot/MANIFEST.md` and `tools/lot-pipeline/MANIFEST.md` -- the same
-  text; the second is the tracked copy.
+- `content/art/lot/staged.json` -- `tools.lot-audio-import.rows` (pack, src, dst,
+  bytes, sha256, purpose, license, plus soundId / loop / seconds / peakDb /
+  samples / srcRate / srcChannels); other tools' entries are kept.
+- `docs/asset-manifest-lot.md` -- the tracked human ledger; this tool rewrites
+  only its own `lot-pipeline:begin/end lot-audio-import` section.
 
 Nothing here touches the game: ingestion (a second bank root, new ids, surfaces,
 the music director) is a later build lane, spec section 3.
