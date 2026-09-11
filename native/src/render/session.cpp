@@ -6281,6 +6281,23 @@ void Session::skipSeconds(int seconds) {
     syncClockAfterSkip();
 }
 
+const sim::Tavern::SentenceReport& Session::serveSentence() {
+    // JUSTICE BUILD (SENTENCES LANE). A sentence is a clock jump with a
+    // record behind it, and it rides the identical pair every other jump
+    // does: the room's own verb, then syncClockAfterSkip() -- the ward's
+    // roll to dayNumber() (a day in a cell is a day the land grows, the wage
+    // is paid and, on a quarter, the ground penny falls) and the people to
+    // the clock. The room fires the arrest's release for the body; step()
+    // reads it exactly as it reads the release after the arrest. THE ROPE
+    // jumps nothing and releases nothing, so nothing is synced: the clock is
+    // where it was, and the end is on tavern().runEnd().
+    const sim::Tavern::SentenceReport& served = tavern_->serveSentence();
+    if (served.served && !served.terms.rope) {
+        syncClockAfterSkip();
+    }
+    return served;
+}
+
 // ---------------------------------------------------------------------------
 // FAST TRAVEL: the cost of a walk, in the sim's own integers
 // ---------------------------------------------------------------------------

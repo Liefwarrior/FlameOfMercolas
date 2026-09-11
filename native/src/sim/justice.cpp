@@ -186,4 +186,121 @@ Arraignment weighArraignment(const ChargeSheet& sheet, Plea plea) {
     return out;
 }
 
+// ---------------------------------------------------------------------------
+// the sentence, in integers
+// ---------------------------------------------------------------------------
+
+SentenceTerms sentenceTerms(const HearingState& hearing, std::int32_t purse) noexcept {
+    SentenceTerms out;
+    if (!hearing.judged() || hearing.judgment == Judgment::None) {
+        return out;
+    }
+    out.served = true;
+    out.judgment = hearing.judgment;
+    out.band = hearing.band;
+    out.doubled = hearing.doubled;
+    const ChargeSheet& sheet = hearing.sheet;
+    const std::int32_t twice = out.doubled ? 2 : 1;
+
+    // WHAT THE SHAPE OF THE ANSWER IS. Four shapes under seven names: the
+    // fine (FINED), the cell (HELD), the yard (BOUND) and the rope; THE HAND
+    // is the cell or the yard with the hand taken beside it, by the PAPER
+    // band the score fell in, and COMMUTED is the yard at the price of a
+    // life. Section 4.1's table, one row each.
+    bool fined = false;
+    bool cell = false;
+    bool yard = false;
+    std::int32_t yardDays = 0;
+    switch (out.judgment) {
+        case Judgment::Spared:
+            // Walked out clean. Coin 0, clock 0, no prior.
+            out.releaseHere = true;
+            return out;
+        case Judgment::Fined:
+            fined = true;
+            out.releaseHere = true;
+            break;
+        case Judgment::Held:
+            fined = true;
+            cell = true;
+            break;
+        case Judgment::Bound:
+            yard = true;
+            yardDays = kBoundDays * twice;
+            break;
+        case Judgment::TheHand:
+            out.hand = true;
+            if (out.band == Judgment::Bound) {
+                // Under the last line: the hand, plus BOUND's five days.
+                yard = true;
+                yardDays = kBoundDays * twice;
+            } else {
+                // The hand, plus HELD's coin and nights.
+                fined = true;
+                cell = true;
+            }
+            break;
+        case Judgment::Commuted:
+            // The rope does not un-take the hand; twelve days bondsworn to
+            // the Mission; the fine forgiven. Never doubled.
+            out.hand = true;
+            yard = true;
+            yardDays = kCommutedDays;
+            break;
+        case Judgment::TheRope:
+            out.rope = true;
+            return out;
+        case Judgment::None:
+            break;
+    }
+
+    // COIN. The shipped fine, doubled if the plea failed, capped at the purse
+    // -- nobody is put in debt -- and the shortfall worked off, a day per
+    // four Royals, up to seven. The tenure ruling's own "payable in Royals
+    // or in yourself".
+    if (fined) {
+        out.fineAsked = fineFor(sheet.heatAtArrest, sheet.unitsSeized) * twice;
+        out.finePaid = std::min(std::max(0, purse), out.fineAsked);
+        out.shortfall = out.fineAsked - out.finePaid;
+        out.shortfallDays =
+            std::min(kShortfallDaysMax,
+                     (out.shortfall + kShortfallRoyalsPerDay - 1) / kShortfallRoyalsPerDay);
+    }
+    // THE CELL. The shipped one-to-three nights off the arrest's own draw,
+    // exactly where they always were, and twice that for a lie.
+    if (cell) {
+        out.cellHours = heldHours(sheet.draw) * twice;
+    }
+    // THE YARD. BOUND's days, COMMUTED's days, and the fine's shortfall --
+    // all bondsworn to the Mission.
+    out.bondDays = yardDays + out.shortfallDays;
+    out.hours = out.cellHours + out.bondDays * 24;
+    out.days = out.hours / 24;
+    out.mends = out.days >= 1;
+    if (!fined) {
+        // The yard's answers forgive the fine outright; nothing is asked.
+        out.fineAsked = 0;
+        out.finePaid = 0;
+        out.shortfall = 0;
+    }
+
+    // STANDING. A conviction is a justice event: the roofs warm to whoever
+    // the Watch corrects and the mirror halves it onto the Watch -- but not
+    // for a fine, which is a charge and not a correction. The Flame
+    // remembers a lie, blesses the yard's work, and remembers mercy.
+    if (out.judgment != Judgment::Fined) {
+        out.roofsDelta = kConvictionRoofsGain;
+    }
+    if (out.doubled) {
+        out.templeDelta -= kLieTempleCost;
+    }
+    if (yard && out.judgment != Judgment::Commuted) {
+        out.templeDelta += kBoundTempleGain;
+    }
+    if (out.judgment == Judgment::Commuted) {
+        out.templeDelta += kCommutedTempleGain;
+    }
+    return out;
+}
+
 }  // namespace granadad::sim

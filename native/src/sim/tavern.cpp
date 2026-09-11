@@ -1434,6 +1434,12 @@ void Tavern::playerAttackDown() noexcept {
     if (combatState_ != PlayerCombatState::Idle) {
         return;
     }
+    // SENTENCES LANE: a hanged man arms no swing. The one world verb the
+    // room owns outright refuses here; the rest are refused where the body
+    // and the pages are, by whoever owns them.
+    if (dialogue_.crimes().executed()) {
+        return;
+    }
     // WATCH & RHYTHM BUILD: a recoiling arm and a broken guard both refuse the
     // press the same way recovery does -- dropped, not buffered.
     if (recoilSteps_ > 0 || blockStaggerSteps_ > 0) {
@@ -2081,6 +2087,12 @@ RiseWorld Tavern::riseWorld() noexcept {
 }
 
 void Tavern::applyDefeat(std::int32_t winnerId) {
+    // SENTENCES LANE -- THE TWO PLAYER-END PATHS NEVER MEET. A hanged man is
+    // not put on the floor: no defeat, no rise, no release for the quay. The
+    // rope is not a beating, and nothing on this path reads it.
+    if (dialogue_.crimes().executed()) {
+        return;
+    }
     playerFloored_ = true;
     // The brawl floor for a brawl KO and a scripted concession, unchanged; a
     // LETHAL defeat arrives here at zero and stays there -- the player is dead
@@ -2214,6 +2226,12 @@ bool Tavern::takeDefeatRelease() noexcept {
 }
 
 void Tavern::reviveAfterDefeat() {
+    // SENTENCES LANE -- THE ROPE DOES NOT REVIVE. The quay is the nemesis
+    // ruling's and only the nemesis ruling's; a run the bench ended is not
+    // woken on it. Refused outright, clock and body untouched.
+    if (dialogue_.crimes().executed()) {
+        return;
+    }
     // The hours are gone and so is a quarter of the purse. NOTHING the rival
     // gained comes back: he is still on the rung, his house is still founded,
     // its toll is still on the price of a mug and the roll still says who holds
@@ -3009,7 +3027,8 @@ Notice Tavern::worstNotice() const noexcept {
 }
 
 void Tavern::injurePlayer(std::int32_t amount) {
-    if (amount <= 0) {
+    // SENTENCES LANE: the bit is the corpse. No blow lands on a hanged man.
+    if (amount <= 0 || dialogue_.crimes().executed()) {
         return;
     }
     playerHp_ = std::max(kPlayerBrawlFloor, playerHp_ - amount);
@@ -3588,6 +3607,11 @@ Actor* Tavern::watchmanWatchingPlayer() noexcept {
 
 void Tavern::tickWatch() {
     CrimeLedger& crimes = dialogue_.crimes();
+    // SENTENCES LANE: the Watch has nobody to take. The rope closed the last
+    // file the ward had on this man.
+    if (crimes.executed()) {
+        return;
+    }
     // DEFERENCE IS CANON AND ABSOLUTE (VETO / COMBAT-ACTION-SPEC.md section
     // 4.4): the Watch never goes hostile to a PRESENTED WIELDER. No arrest, no
     // closing on cause; a stance already closing is dropped and the officer
@@ -3855,6 +3879,107 @@ Arraignment Tavern::plead(Plea plea) {
 
 bool Tavern::executed() const noexcept {
     return dialogue_.crimes().executed();
+}
+
+const Tavern::SentenceReport& Tavern::serveSentence() {
+    CrimeLedger& crimes = dialogue_.crimes();
+    if (!crimes.hearing().judged() || crimes.executed()) {
+        // Nothing judged, or a man already hanged: refused, and the last
+        // report stands as it was.
+        return lastServed_;
+    }
+    const HearingState& hearing = crimes.hearing();
+    lastServed_ = SentenceReport{};
+    lastServed_.terms = sentenceTerms(hearing, playerCoin_);
+    lastServed_.coinBefore = playerCoin_;
+    const SentenceTerms& terms = lastServed_.terms;
+    if (!terms.served) {
+        return lastServed_;
+    }
+    lastServed_.served = true;
+
+    if (terms.rope) {
+        // THE ROPE. THE ONE TRUE GAME OVER, and none of it is a defeat: no
+        // blow landed, no rise, no quay, no clock, no coin. The end is written
+        // from what is already on the record -- the place the ward hangs a
+        // man, the corpse the sheet was for or the ladder's own rope, and the
+        // clock face at the drop -- and then the bit is set. The drop itself
+        // is silent and the plate is presentation's; the room refuses the
+        // world from here on (see the executed() gates).
+        runEnd_ = RunEnd{};
+        runEnd_.ended = true;
+        runEnd_.place = std::string(kRopePlace);
+        runEnd_.blood = hearing.sheet.blood;
+        runEnd_.day = dayNumber();
+        runEnd_.secondOfDay = timeOfDay_;
+        if (hearing.sheet.blood) {
+            // The corpse is on the roster (Activity::Dead, never removed) and
+            // the social ledger remembers who it was: the last man in roster
+            // order the player put down. Roster order is id order, which is
+            // deterministic and never reordered.
+            for (const Actor& actor : actors_) {
+                const Memory* memory = dialogue_.ledger().memoryOf(actor.id());
+                if (memory != nullptr && memory->lastDeed == Deed::Slew) {
+                    runEnd_.reason = actor.name();
+                }
+            }
+        }
+        if (runEnd_.reason.empty()) {
+            runEnd_.reason = std::string(kRopeForSecondRung);
+        }
+        lowerPlayerHands();
+        crimes.sentence(Judgment::TheRope, 0);
+        lastServed_.coinAfter = playerCoin_;
+        lastServed_.dayReleased = dayNumber();
+        lastServed_.timeReleased = timeOfDay_;
+        return lastServed_;
+    }
+
+    // COIN. The fine out of the purse, never more than was in it; the
+    // shortfall is already days in the terms.
+    playerCoin_ = std::max(0, playerCoin_ - terms.finePaid);
+    dialogue_.setPlayerCoin(playerCoin_);
+    // THE CLOCK. The shipped jump a sentence has always been -- whole days
+    // and the remainder -- with everything skipTo does on it: the heat cools
+    // through every second, the cellar restocks, the room re-seats, the
+    // holds run out. What the days do to the board, the roll and the
+    // calendar follows from dayNumber() moving: the next tick's refresh
+    // expires every taken job past its night, and whoever owns the ward's
+    // calendar runs it forward exactly as after a night in a rented bed.
+    if (terms.hours > 0) {
+        skipHours(terms.hours);
+    }
+    // STANDING. A conviction is a justice event: the roofs warm to whoever
+    // the Watch corrects, and the mirror the ladders declare halves it onto
+    // the Watch. The Flame remembers a lie, blesses the yard's work and
+    // remembers its mercy. The social ledger is untouched: sleeping a
+    // sentence off does not make anybody forget you robbed them.
+    const std::int32_t roofs = dialogue_.factions().indexOf("skyrunners");
+    const std::int32_t temple = dialogue_.factions().indexOf("temple");
+    if (terms.roofsDelta != 0 && roofs >= 0) {
+        dialogue_.standings().addStanding(roofs, terms.roofsDelta);
+    }
+    if (terms.templeDelta != 0 && temple >= 0) {
+        dialogue_.standings().addStanding(temple, terms.templeDelta);
+    }
+    // THE BODY. Hit points to max on any judgment that cost a day or more --
+    // the days did it, reviveAfterDefeat's own shape. A fine heals nothing.
+    if (terms.mends) {
+        playerHp_ = playerHpMax_;
+        playerFloored_ = false;
+    }
+    // THE RECORD, AFTER THE SKIP: the prior, the hand, the blood served or
+    // the face remembered, and the heat the ward keeps -- kHeatAfterSentence,
+    // live now because nothing cools it afterwards.
+    crimes.sentence(terms.judgment, terms.days);
+    lastServed_.coinAfter = playerCoin_;
+    lastServed_.dayReleased = dayNumber();
+    lastServed_.timeReleased = timeOfDay_;
+    // Turned loose. The body is somebody else's to move -- the Mission's door
+    // or the Tarwalk, by terms.releaseHere -- through the same release the
+    // arrest fired.
+    arrestRelease_ = true;
+    return lastServed_;
 }
 
 const Actor* Tavern::respondingWatchman() const noexcept {

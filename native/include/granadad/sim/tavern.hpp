@@ -1089,10 +1089,64 @@ public:
     /// trains streetwise, win or lose. Refused -- `heard` false, nothing
     /// changed -- when no hearing awaits one.
     Arraignment plead(Plea plea);
-    /// THE ROPE was passed and carried out. The one true game over; what the
-    /// room refuses and the screen shows while it is set is the rope's own
-    /// step, after this build's.
+    /// THE ROPE was passed and carried out. The one true game over. While it
+    /// is set the room refuses what a corpse cannot do: no swing is armed, no
+    /// blow lands on the body, no defeat is applied and nothing revives
+    /// (SENTENCES LANE -- the gates on playerAttackDown, injurePlayer,
+    /// applyDefeat, reviveAfterDefeat and tickWatch). The plate over it is
+    /// presentation's.
     [[nodiscard]] bool executed() const noexcept;
+
+    // --- SENTENCES LANE: what a judgment does ------------------------------
+    //
+    // THE SENTENCE IS THE ROOM'S TO SERVE, because the room owns the purse,
+    // the clock, the standings and the body; the record is the ledger's
+    // (CrimeLedger::sentence), written AFTER the skip so the heat it leaves is
+    // not cooled to nothing. Jail is the shipped skipHours widened through
+    // systems that exist -- see justice.hpp's sentence section. Turned loose,
+    // the body is somebody else's to move: the SAME takeArrestRelease() the
+    // arrest fires, fired again -- to the Mission's door for SPARED and FINED
+    // (SentenceTerms::releaseHere), the shipped Tarwalk for everything that
+    // cost a cell. THE ROPE fires no release at all: executed() is read
+    // beside the two release flags, and shares a line with neither.
+
+    /// What serving the judgment did. `served` is false until there has been
+    /// one; a refused call (no judged hearing, or the rope already passed)
+    /// leaves it false too.
+    struct SentenceReport {
+        bool served = false;
+        /// The integers, exactly as sentenceTerms() computed them off the
+        /// hearing and the purse it was paid from.
+        SentenceTerms terms;
+        /// The day and the clock face the sentence ended on. The Tarwalk's
+        /// line prints them: "TURNED LOOSE ON THE TARWALK. DAY 4. 23:40."
+        std::int32_t dayReleased = 0;
+        std::int32_t timeReleased = 0;
+        /// The purse before and after.
+        std::int32_t coinBefore = 0;
+        std::int32_t coinAfter = 0;
+    };
+
+    /// THE SENTENCE. Serves the judged hearing: the fine out of the purse, the
+    /// clock forward by the cell and the yard (skipHours, the shipped jump --
+    /// heat cools through it, every taken job past its night dies at the next
+    /// refresh, the days count), the roofs' and the Flame's regard moved, the
+    /// body mended over a day or more, then the ledger's own half
+    /// (CrimeLedger::sentence) and the release. THE ROPE: no clock, no coin,
+    /// no release -- executed_ is set, the run's end is written (runEnd) and
+    /// the room refuses the world from then on. A stepped input: refused --
+    /// `served` false, nothing changed -- when no hearing has been judged or
+    /// the rope has already passed. Whoever owns the ward's calendar runs it
+    /// to dayNumber() afterwards, exactly as after any other skip.
+    const SentenceReport& serveSentence();
+    /// The last sentence served, whether or not it has been read.
+    [[nodiscard]] const SentenceReport& lastServed() const noexcept { return lastServed_; }
+    /// The end of the run, once THE ROPE has been served: the place, the
+    /// reason and the dateline the plate reads. `ended` is false while the
+    /// player lives. runEnded() is executed() by another name, for the seam
+    /// beside quitRequested_ to read.
+    [[nodiscard]] const RunEnd& runEnd() const noexcept { return runEnd_; }
+    [[nodiscard]] bool runEnded() const noexcept { return executed(); }
 
     /// Which day of the world this is. Monotonic across midnight and across a
     /// night in a cell, because a deadline that wrapped with the wall clock
@@ -1936,6 +1990,14 @@ private:
     std::string lastFlee_;
     ArrestReport lastArrest_;
     bool arrestRelease_ = false;
+    /// SENTENCES LANE. Reports, like lastArrest_ and lastDefeat_: what the
+    /// last served judgment did, and the end of the run once the rope has
+    /// passed. Neither hashed nor codec'd, and neither needs to be -- every
+    /// fact in them is derived at the moment of serving from state that is
+    /// (the ledger's record, the purse, the clock, the standings), and the
+    /// end's own bit is CrimeLedger::executed_.
+    SentenceReport lastServed_;
+    RunEnd runEnd_;
     /// The second-of-day this room was constructed at, so dayNumber() can be
     /// monotonic without the wall clock's midnight in it.
     std::int32_t startedAt_ = 0;

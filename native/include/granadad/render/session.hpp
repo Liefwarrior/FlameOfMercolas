@@ -303,6 +303,17 @@ public:
     /// to the top of an hour because its page prints hours; a walk is minutes,
     /// so this twin takes the seconds whole. Zero or less does nothing.
     void skipSeconds(int seconds);
+    /// JUSTICE BUILD (SENTENCES LANE). Serves the judged hearing's sentence
+    /// THROUGH THE SAME WAIT MACHINERY: Tavern::serveSentence (the coin, the
+    /// cell and the yard as skipHours, the mirror, the temple, the body, then
+    /// the ledger's record after the skip) plus syncClockAfterSkip(), so the
+    /// ward's roll runs every day the sentence cost (Ward::advanceToDay --
+    /// the ground penny falls due inside a sentence like inside a rented bed)
+    /// and the district's people follow the clock. One time system, never
+    /// two. The release that follows is the arrest's own (takeArrestRelease,
+    /// read in step()); THE ROPE fires none and sets tavern().runEnd(). The
+    /// page that calls this and stages what it returns is presentation's.
+    const sim::Tavern::SentenceReport& serveSentence();
 
     /// The camera the body is currently looking through.
     [[nodiscard]] Camera camera() const noexcept;

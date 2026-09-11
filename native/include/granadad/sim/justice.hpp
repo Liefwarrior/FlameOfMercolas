@@ -303,4 +303,152 @@ struct HearingState {
     [[nodiscard]] bool judged() const noexcept { return stage == HearingStage::Judged; }
 };
 
+// ---------------------------------------------------------------------------
+// the sentence, in integers
+// ---------------------------------------------------------------------------
+//
+// SENTENCES LANE. What a judgment COSTS, before anything is applied: the
+// coin, the clock, the hand, the standing. Rules only, weighArraignment's
+// own shape -- a pure function of the hearing and the purse, so the page can
+// print "TWO NIGHTS. 17 ROYALS." before the room moves a thing, and a test
+// can prove every branch's integers without a room around them. What
+// applying it does is Tavern::serveSentence (the coin, skipHours, the
+// mirror, the temple, the body) and CrimeLedger::sentence (the record),
+// called AFTER the skip so the heat it leaves is not cooled to nothing.
+//
+// JAIL IS THE SHIPPED skipHours, WIDENED THROUGH SYSTEMS THAT EXIST. The
+// days pass on the world clock: heat cools through them and is then set to
+// kHeatAfterSentence; every taken job past its due night fails at the next
+// doors-open refresh (ContractBoard::expireStale); the ward's roll runs its
+// days (Ward::advanceToDay off Tavern::dayNumber, the Session's own tail),
+// so a quarter-day that falls inside a sentence charges the ground penny
+// like any other; the roofs warm to a conviction and the S4 mirror halves
+// it onto the Watch; the temple remembers a lie and blesses the yard's
+// work; the body mends over a day or more. THE NEMESIS DOES NOT RISE: the
+// man who had you taken gained nothing -- losing to the law is not losing a
+// fight, and the two ledgers stay apart, which is the canon's whole point.
+//
+// THE BOND, MIRRORED AND NOT REUSED. The tenure ruling's own instrument
+// (compound.hpp: Household::bondholder, Ward::goBondsworn) is a debt
+// relation between a household ON THE ROLL and the Den Duke of its plot,
+// worked off against arrears in the Duke's yard; the Mission's ground is the
+// glebe, "never let to anyone", the player has no household on the roll
+// until they buy a house, and a court's bond is owed to the Flame and not to
+// a Duke. So BOUND is that instrument's honest mirror: days of labour on the
+// world clock, no fine, the Flame's regard for the work -- and it prints
+// nothing extra, the clock jump is the whole of it (section 6.4).
+
+/// BOUND: days of labour in the Mission's yard. Doubled on a disbelieved
+/// denial. The slot Daggerfall's banishment would have taken.
+inline constexpr std::int32_t kBoundDays = 5;
+/// COMMUTED: the rope passed, and the price of a life in days. Long enough
+/// to lose every open contract, on purpose. Never doubled -- the rope tier
+/// has nothing under it to double.
+inline constexpr std::int32_t kCommutedDays = 12;
+/// A fine the purse cannot pay is worked off: one day bondsworn per this
+/// many Royals of shortfall, rounded UP the way the tenure ruling's bond
+/// works arrears off (nobody owes a fraction of a day), and no more than
+/// kShortfallDaysMax however short the purse. "Payable in Royals or in
+/// yourself." Nobody is put in debt: the remainder past the cap is forgiven.
+inline constexpr std::int32_t kShortfallRoyalsPerDay = 4;
+inline constexpr std::int32_t kShortfallDaysMax = 7;
+/// What the Flame does with your standing at its door. "You lied to the
+/// Flame's face. The Mission will remember which."
+inline constexpr std::int32_t kLieTempleCost = 8;
+/// BOUND's work was the Flame's.
+inline constexpr std::int32_t kBoundTempleGain = 4;
+/// And a life spared is the Flame's mercy, remembered.
+inline constexpr std::int32_t kCommutedTempleGain = 8;
+/// A conviction is a justice event: the roofs warm to whoever the Watch
+/// corrects, and the mirror the ladders declare halves it onto the Watch
+/// (factions.json's own note). SPARED and FINED move nothing.
+inline constexpr std::int32_t kConvictionRoofsGain = 4;
+
+/// What a judgment costs. Every field an integer, every one printable.
+struct SentenceTerms {
+    /// False when there is nothing to serve: no judgment on the hearing.
+    bool served = false;
+    Judgment judgment = Judgment::None;
+    /// The PAPER ladder's band under a HAND-tier answer, which decides
+    /// whether THE HAND comes with HELD's nights or BOUND's days.
+    Judgment band = Judgment::None;
+    /// A denial disbelieved: the nights, the fine and the bond days double.
+    bool doubled = false;
+    /// COIN. fineFor(heatAtArrest, unitsSeized), doubled if the plea failed;
+    /// what the purse could pay; the rest, and the days it is worked off in.
+    /// Forgiven outright (all zero) on SPARED, BOUND, COMMUTED and the hand
+    /// at BOUND's band.
+    std::int32_t fineAsked = 0;
+    std::int32_t finePaid = 0;
+    std::int32_t shortfall = 0;
+    std::int32_t shortfallDays = 0;
+    /// THE CELL: heldHours off the arrest's own draw (24..72, the shipped
+    /// one-to-three nights), doubled if the plea failed. HELD, and THE HAND
+    /// at HELD's band.
+    std::int32_t cellHours = 0;
+    /// BONDSWORN: BOUND's five (doubled), COMMUTED's twelve, and the
+    /// shortfall's days -- all of them labour in the Mission's yard, all of
+    /// them the Flame's.
+    std::int32_t bondDays = 0;
+    /// The whole of the clock, cell and bond together, and the days in it.
+    std::int32_t hours = 0;
+    std::int32_t days = 0;
+    /// The hand comes off: THE HAND and COMMUTED ("the rope does not un-take
+    /// the hand").
+    bool hand = false;
+    /// THE ROPE. Nothing above applies; the run ends.
+    bool rope = false;
+    /// Where the body is turned loose: SPARED and FINED walk out of the
+    /// Mission's door where they stand (a fine's shortfall is worked in the
+    /// Mission's own yard and ends at the same door); everything that cost a
+    /// cell ends on the shipped Tarwalk.
+    bool releaseHere = false;
+    /// What the Flame and the roofs make of it.
+    std::int32_t templeDelta = 0;
+    std::int32_t roofsDelta = 0;
+    /// The body mends over any sentence that cost a day or more -- the days
+    /// did it, reviveAfterDefeat's own shape. A fine heals nothing.
+    bool mends = false;
+};
+
+/// THE SENTENCE BRANCH, IN INTEGERS (section 4). Reads the judged hearing
+/// and the purse it will be paid from; returns what it would cost. Rules
+/// only: it changes nothing at all. `served` is false on a hearing with no
+/// judgment on it.
+[[nodiscard]] SentenceTerms sentenceTerms(const HearingState& hearing,
+                                          std::int32_t purse) noexcept;
+
+// ---------------------------------------------------------------------------
+// the end of the run
+// ---------------------------------------------------------------------------
+
+/// Where the ward hangs a man: K21, the Saltgate watch-post and its gibbet,
+/// DOCKS-GAZETTEER's own authored law texture. The plate names it.
+inline constexpr std::string_view kRopePlace = "THE SALTGATE POST";
+/// And what it hangs him FOR when there is no corpse to name: the ladder's
+/// own rope, a Skyrunner's second arrest with paper.
+inline constexpr std::string_view kRopeForSecondRung = "THE SECOND RUNG";
+
+/// THE GAME'S ONLY END. Not a defeat: applyDefeat is never called, nothing
+/// revives, there is no quay. The bit itself is CrimeLedger::executed()
+/// (hashed, codec'd); this is the cause the plate reads -- the place, the
+/// ward as the killer, the reason, the dateline -- written once at the drop
+/// by the room, from state that is all hashed already, and reported the
+/// way Tavern::lastDefeat() reports a rise. Afterwards A NEW MAN is a fresh
+/// run through the boot path and LEAVE is the quit; there is no save, so
+/// there is nothing to load and the run is genuinely over.
+struct RunEnd {
+    bool ended = false;
+    /// HANGED AT <place>.
+    std::string place;
+    /// BY THE WARD. FOR <reason>. -- the victim's name for a witnessed
+    /// murder, THE SECOND RUNG for the roofs' second.
+    std::string reason;
+    bool blood = false;
+    /// THE FOURTH DAY. 23:52. -- Tavern::dayNumber() and the clock face at
+    /// the drop.
+    std::int32_t day = 0;
+    std::int32_t secondOfDay = 0;
+};
+
 }  // namespace granadad::sim
