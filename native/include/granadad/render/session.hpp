@@ -378,6 +378,10 @@ public:
     /// "TAKEN TO THE MISSION. 23:00." -- what the plate reads, empty until it
     /// is up.
     [[nodiscard]] const std::string& takenPlate() const noexcept { return takenPlate_; }
+    /// What the pause menu's WAIT row reads, and says when pressed, while in
+    /// custody: "THE PRIEST IS WAITING." at the bench, "THE WATCH HAS YOU."
+    /// under the officer's hand before it. Empty means nobody has you.
+    [[nodiscard]] std::string custodyWaitLine() const;
     /// The plate over the finished frame: the black and the line, at full
     /// alpha for the whole hold. A no-op while it is not up. Public, like
     /// composeRopeCeremony, so a case can compose the expected frame itself

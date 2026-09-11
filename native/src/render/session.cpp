@@ -1844,6 +1844,20 @@ void Session::togglePause() {
     syncPanelAnim();
 }
 
+std::string Session::custodyWaitLine() const {
+    // THE WAIT ROW'S OWN REFUSAL, by who has you: the priest at the bench,
+    // the officer under the arrest beat before it. The rope's plate and the
+    // end rows refuse the pause menu outright (togglePause), so no line is
+    // needed there; the priest's stands for any custody the two above miss.
+    if (courtOpen_) {
+        return "THE PRIEST IS WAITING.";
+    }
+    if (takenHold_ > 0) {
+        return "THE WATCH HAS YOU.";
+    }
+    return "THE PRIEST IS WAITING.";
+}
+
 std::vector<std::string> Session::pauseRows() const {
     // MORROWIND ROUND: CONTROLS IS NEW. The tiled Menu's four tiles have no
     // room for a long, read-top-to-bottom reference list (session.hpp's own
@@ -1862,7 +1876,7 @@ std::vector<std::string> Session::pauseRows() const {
     // place so CONTROLS, SETTINGS and QUIT keep their digits.
     return {
         "RESUME",
-        courtOpen_ ? "THE PRIEST IS WAITING." : "WAIT",
+        inCustody() ? custodyWaitLine() : std::string("WAIT"),
         "CONTROLS",
         "SETTINGS",
         // SHIP NOTE MOVE 3: the armed row names the device's own confirm.
@@ -1918,10 +1932,11 @@ void Session::choosePause() {
             // shape the two rows below have. Wait mode, never sleep: the
             // healing door is the bed's Interact press and only that -- the
             // owner's ruling, enforced by which door you walked through.
-            // JUSTICE BUILD: refused out loud at the bench, the page staying
-            // up -- the row already reads the refusal.
-            if (courtOpen_) {
-                say("THE PRIEST IS WAITING.");
+            // JUSTICE BUILD: refused out loud in custody -- at the bench, and
+            // under the officer's hand before it -- the page staying up; the
+            // row already reads the refusal.
+            if (inCustody()) {
+                say(custodyWaitLine());
                 return;
             }
             openWait(false);
@@ -6655,7 +6670,10 @@ enum class CourtRowKind : std::uint8_t { Guilty, NotGuilty, Paper, Back, NoPlea,
         case sim::Judgment::Commuted:
             return "THE HAND. " + daysWord(terms.bondDays);
         case sim::Judgment::TheRope:
-            return "THE ROPE.";
+            // Nothing in numbers here: the rope's row is the post and the
+            // hour, which the page composes off the clock (hearingPageState)
+            // -- the badge already says THE ROPE and the row does not echo it.
+            return {};
         case sim::Judgment::None:
             return {};
     }
@@ -7129,17 +7147,29 @@ HearingPageState Session::hearingPageState() const {
             if (sheet.tier == sim::Sentence::Condemned) {
                 out.lines = "THE LINE: " + std::to_string(sim::kMercyLine) + " MERCY";
             } else {
+                // Each tier's own ladder (justice.cpp's substitution): on the
+                // PAPER tier 38 buys the fine and 14 the cell; on THE HAND
+                // tier 38 buys HELD with the hand spared and 14 THE HAND
+                // with nights -- there is no FINED on it, so the row does
+                // not print one.
+                const bool handTier = sheet.tier == sim::Sentence::Maimed;
                 out.lines = "THE LINES: ";
                 if (answer.plea == sim::Plea::NotGuilty) {
                     out.lines += std::to_string(sim::kSparedLine) + " SPARED  ";
                 }
-                out.lines += std::to_string(sim::kFinedLine) + " FINED  " +
-                             std::to_string(sim::kHeldLine) + " HELD";
+                out.lines += std::to_string(sim::kFinedLine) + (handTier ? " HELD  " : " FINED  ") +
+                             std::to_string(sim::kHeldLine) + (handTier ? " THE HAND" : " HELD");
             }
         }
         out.verdict = judgmentWord(hearing.judgment);
         out.verdictAccent = judgmentAccent(hearing.judgment);
         out.sentence = sentenceLine(sim::sentenceTerms(hearing, tavern_->playerCoin()));
+        if (hearing.judgment == sim::Judgment::TheRope) {
+            // THE ROPE'S ROW: where and when, the plate's own two facts --
+            // the post the ward hangs a man at and the hour on the clock --
+            // in the place the other judgments state their nights and coin.
+            out.sentence = std::string(sim::kRopePlace) + ". " + travelClockText(timeOfDay_) + ".";
+        }
         out.priest = hearing.doubled ? bark("court.lie") : bark(judgmentTable(hearing.judgment));
         out.backVerb.clear();
         return out;

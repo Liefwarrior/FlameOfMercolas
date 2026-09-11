@@ -3,14 +3,16 @@
 Every frame in here is the real `dist\granadad.exe` playing the court through the real verbs
 on the gated Windows build. Nothing is staged and nothing is a harness. Each run prints a
 summary line beside the picture (`court beats=n/N ... judgment=... row="..."`), and the exact
-line that shot every frame is in `shoot-court.log`. A frame that fell short can't pass as one
-that did.
+line that shot every frame is the one in the table below, run by `scripts/shoot-court.ps1`. A
+frame that fell short can't pass as one that did (the script counts them).
 
 Eli, 2026-09-02. *"If the player is tagged as a criminal it should be like Daggerfall where
 you can go to court and you can face jail or execution (game over)."*
 
 Shoot the whole set again with `powershell -ExecutionPolicy Bypass -File .\scripts\shoot-court.ps1`.
-Every line below is `granadad.exe --smoke=0 --hold --width=960 --height=540 --scale=1 <the line> --screenshot=...`.
+Every line below is `granadad.exe --smoke=0 --hold --width=960 --height=540 --scale=1 <the line> --screenshot=docs\frames\justice\<frame>`.
+The script prints each run's summary line and writes the same to `shoot-court.log` beside the
+frames (ignored by git, so read it on the machine that shot them).
 
 ## The frames
 
@@ -24,13 +26,13 @@ Every line below is `granadad.exe --smoke=0 --hold --width=960 --height=540 --sc
 | `court-armed-960x540.png` | `--court=armed` | I DID IT pressed once. The row lit with `-- SURE?` and the confirm key on its tail, `ESC` live in the nav band, the priest pressing for the answer in place of his opening (`court.plead`). |
 | `court-plea-960x540.png` | `--court=plea` | I DID IT weighed. `24 THE FLAME - 20 THE WARD - 1 HEAT MAKES 3`, `+ 6 CONFESSED MAKES 9`, `THE LINES: 38 FINED  14 HELD` (no SPARED on a confession, it was never on the table), BOUND, `BONDSWORN 5 DAYS.`, the priest's word (`court.bound`), the one row `SERVE IT.` The officer's line is gone from a judged page. |
 | `court-deny-960x540.png` | `--court=deny` | I DID NOT weighed. `- 2 THE PRIEST IS A MAN MAKES 1`, the lines with SPARED on them, BOUND doubled, `BONDSWORN 10 DAYS.`, the lie in the priest's mouth (`court.lie`). |
-| `court-hand-960x540.png` | `--court=hand` | THE HAND. The Skyrunners' oath off Finch first, then the same eight lifts, so the paper asks for the hand. `- 12 THE ROOFS`, `[THE HAND]` in the tag's red, `THE HAND. BONDSWORN 5 DAYS.`, `court.hand`. Real play, no ledger poked. |
+| `court-hand-960x540.png` | `--court=hand` | THE HAND. The Skyrunners' oath off Finch first, then the same eight lifts, so the paper asks for the hand. `- 12 THE ROOFS`, the hand tier's own lines (`THE LINES: 38 HELD  14 THE HAND`, no FINED on this tier), `[THE HAND]` in the tag's red, `THE HAND. BONDSWORN 5 DAYS.`, `court.hand`. Real play, no ledger poked. |
 | `court-flame-plea-960x540.png` | `--flame --court=plea` | What you gave at the door is the only coin the Flame reads. The flame line first (temple standing 100), the court waits for Cull through the wait page, `+ 24 THE DOOR` in the block, HELD, `TWO NIGHTS. 16 ROYALS.` Every term whole on its row. |
 | `court-flame-deny-960x540.png` | `--flame --court=deny` | The same sheet denied and disbelieved. `- 9 THE PRIEST IS A MAN MAKES 18`, HELD doubled, `FOUR NIGHTS. 32 ROYALS.`, `court.lie`. |
 | `court-serve-960x540.png` | `--court=serve --settle-steps=30` | JAIL SERVED, THE WORLD MOVED. BOUND taken by its row. `TURNED LOOSE ON THE TARWALK. DAY 6. 23:00.` Five days on the world clock from day 1, the fine forgiven (40 -> 40 Royals), the paper off, `HEAT 12` and no tag on the HUD. |
 | `court-flame-serve-960x540.png` | `--flame --court=serve --settle-steps=30` | HELD served. The fine paid (34 -> 18 Royals), two nights on the clock, `TURNED LOOSE ON THE TARWALK. DAY 3. 23:00.` Two nights promised, two days on the calendar, the same clock face. |
 | `court-bloodtag-960x540.png` | `--court=bloodtag` | WANTED FOR BLOOD. A killing at eight before the Watch drinks (Tarn Wrenhale, two saw it), the tag on the HUD in the tag's red. Nobody's hand on you yet. |
-| `court-ropepage-960x540.png` | `--court=ropepage` | THE ROPE HEARING. The blood reading (`THE WARD SAYS YOU PUT TARN WRENHALE DOWN IN THE GILDED GULL. TWO SAW IT.`, `THE PAPER ASKS FOR THE ROPE.`), `- 30 BLOOD - 8 TWO SAW IT`, `THE LINE: 24 MERCY`, `[THE ROPE]` in the tag's red, `THE ROPE.`, `court.rope`, the one row `1 THE DROP.` offered and not taken. |
+| `court-ropepage-960x540.png` | `--court=ropepage` | THE ROPE HEARING. The blood reading (`THE WARD SAYS YOU PUT TARN WRENHALE DOWN IN THE GILDED GULL. TWO SAW IT.`, `THE PAPER ASKS FOR THE ROPE.`), `- 30 BLOOD - 8 TWO SAW IT`, `THE LINE: 24 MERCY`, `[THE ROPE]` in the tag's red, the post and the hour on the sentence row (`THE SALTGATE POST. 22:00.`, no echo of the badge), `court.rope`, the one row `1 THE DROP.` offered and not taken. |
 | `court-rope-960x540.png` | `--court=rope` | EXECUTED. The drop taken by the player's own row. `HANGED AT THE SALTGATE POST. / BY THE WARD. FOR TARN WRENHALE. / THE FIRST DAY. 22:00.` with `1 - A NEW MAN / 2 - LEAVE` under the plate. No save row, no save exists. |
 | `court-newman-960x540.png` | `--court=newman` | A NEW MAN armed by its row, `1 - A NEW MAN -- SURE?` with the confirm key on its tail, then taken. `armed=new-man end=new-man` in the summary. `runEnded()` with `RunEndChoice::NewMan` and no quit, the answer `main()` loops on. The row stays lit once taken, so this frame is not the rope plate. |
 | `court-newman-creation-960x540.png` | `--creation` | The creation window `main()` opens next. `run_creation_window` and this capture draw the same `CreationFlow` on its origin step. A fresh run starts with a clean ledger (asserted in `test_hearing_page.cpp`). |
@@ -88,10 +90,10 @@ The learned word is never said to a layman, not even nearly.
 **court.paper.door** (a thief who has given at the door, THE DOOR above zero)
 - I have read what you gave at this door. It is the only reason we are talking.
 - I know your face from the alms bowl. I did not think I would see it across this table. Speak.
-- You have given at this door. The Flame weighs that; the Watch does not. Tell me what you did.
+- You have given at this door and I have not forgotten it. Sit down and tell me what you did.
 
 **court.blood** (a killing)
-- A dead man on the roster and your name beside his. The Flame hands no man to the post unheard. Speak.
+- A dead man on the ward's roll and your name beside his. The Flame hands no man to the post unheard. Speak.
 - A man on the Gull's floor will not get up. The Watch wants your neck for it. I want the truth first.
 - The lamp does not go out because you put a man under it. It goes out when I stop asking. Speak.
 
@@ -139,7 +141,7 @@ The learned word is never said to a layman, not even nearly.
 **court.hand**
 - The hand. The rule is the hand, and I will not pretend the sergeant is wrong. It is done quickly.
 - A Skyrunner's first. The ward takes the hand so it need not take the rest. Hold it out.
-- I would spare it if the weighing let me. It does not, and the scale is not mine to bend.
+- I would spare it if I could look the sergeant in the eye afterward. I cannot. It comes off.
 
 **court.commuted**
 - The rope does not un-take the hand. The hand, twelve days in my yard, and your life. Remember it.

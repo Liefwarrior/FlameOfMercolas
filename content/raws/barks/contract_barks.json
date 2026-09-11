@@ -167,13 +167,13 @@
       "rows": [
         "I have read what you gave at this door. It is the only reason we are talking.",
         "I know your face from the alms bowl. I did not think I would see it across this table. Speak.",
-        "You have given at this door. The Flame weighs that; the Watch does not. Tell me what you did."
+        "You have given at this door and I have not forgotten it. Sit down and tell me what you did."
       ]
     },
     {
       "key": "court.blood",
       "rows": [
-        "A dead man on the roster and your name beside his. The Flame hands no man to the post unheard. Speak.",
+        "A dead man on the ward's roll and your name beside his. The Flame hands no man to the post unheard. Speak.",
         "A man on the Gull's floor will not get up. The Watch wants your neck for it. I want the truth first.",
         "The lamp does not go out because you put a man under it. It goes out when I stop asking. Speak."
       ]
@@ -248,7 +248,7 @@
       "rows": [
         "The hand. The rule is the hand, and I will not pretend the sergeant is wrong. It is done quickly.",
         "A Skyrunner's first. The ward takes the hand so it need not take the rest. Hold it out.",
-        "I would spare it if the weighing let me. It does not, and the scale is not mine to bend."
+        "I would spare it if I could look the sergeant in the eye afterward. I cannot. It comes off."
       ]
     },
     {

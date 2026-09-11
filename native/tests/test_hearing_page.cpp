@@ -358,6 +358,22 @@ TEST_CASE("TAKEN: an arrest with paper puts the body at the Mission's door, says
         CHECK_FALSE(press(session, Key::Escape));  // Pause falls through, as from the page
         session.toggleCasebook();
         CHECK_FALSE(session.casebookOpen());
+        // PAUSE opens over the beat (a player can always quit the game), and
+        // its WAIT row is the refusal itself, in the officer's own words --
+        // read on the row and said when pressed, the beat still running.
+        session.togglePause();
+        REQUIRE(session.pauseOpen());
+        const std::vector<std::string> rows = session.pauseRows();
+        REQUIRE(rows.size() == 5);
+        CHECK(rows[1] == "THE WATCH HAS YOU.");
+        session.movePauseCursor(1);
+        session.choosePause();
+        CHECK(session.pauseOpen());
+        CHECK_FALSE(session.waitOpen());
+        CHECK(session.lastMessage() == "THE WATCH HAS YOU.");
+        session.closeConversation();
+        CHECK_FALSE(session.pauseOpen());
+        CHECK(session.takenBeatUp());
     }
     // BEAT TWO, THE PLATE: the beat spent to the cut, and the cut is an
     // instant black with the one line the spec promised on it, said (the
@@ -1144,7 +1160,8 @@ TEST_CASE("mercy is given once on the page: a commuted man before a rope bench g
     CHECK(page.pleaTerm.empty());
     CHECK(page.lines.empty());
     CHECK(page.verdict == "THE ROPE");
-    CHECK(page.sentence == "THE ROPE.");
+    CHECK(page.sentence.rfind("THE SALTGATE POST. ", 0) == 0);
+    CHECK(page.sentence.find("ROPE") == std::string::npos);
     CHECK(page.priest == std::string(barks.line("court.rope", 0)));  // the first hearing pleaded
     // NO BADGE OVER NOTHING: the page with its weighs badge and the page
     // with the badge blanked draw the same pixels -- [THE PRIEST WEIGHS] is
@@ -1194,7 +1211,12 @@ TEST_CASE("THE ROPE staged: the drop, the held black dip, the plate that never f
     REQUIRE(gull.hearing().judgment == Judgment::TheRope);
     page = session.hearingPageState();
     CHECK(page.verdict == "THE ROPE");
-    CHECK(page.sentence == "THE ROPE.");
+    // THE ROPE'S ROW is the post and the hour, never an echo of the badge.
+    CHECK(page.sentence.rfind("THE SALTGATE POST. ", 0) == 0);
+    CHECK(page.sentence.size() == std::string_view("THE SALTGATE POST. 22:00.").size());
+    CHECK(page.sentence.back() == '.');
+    CHECK(page.sentence[page.sentence.size() - 4] == ':');
+    CHECK(page.sentence.find("ROPE") == std::string::npos);
     CHECK(page.arithmetic.find("- 24 THE SECOND RUNG") != std::string::npos);
     session.stepMany(MoveInput{}, kJudgmentHoldSteps);
     page = session.hearingPageState();
@@ -1565,6 +1587,32 @@ TEST_CASE("each tier's consequence says only what is on the table: no rope on a 
     CHECK(page.consequence.find("ROPE") == std::string::npos);
     CHECK(page.consequence.find("NEVER DOUBLED, AND NEVER SPARED.") != std::string::npos);
     mustRead("consequence", page.consequence);
+    // THE HAND TIER'S OWN LINES in the block: 38 buys HELD with the hand
+    // spared and 14 THE HAND with nights; there is no FINED on this tier and
+    // the row does not print one. A confession's row has no SPARED either.
+    REQUIRE(press(roofs, Key::Num1));
+    REQUIRE(press(roofs, Key::Num1));
+    REQUIRE(roofs.tavern().hearing().judged());
+    page = roofs.hearingPageState();
+    CHECK(page.lines == "THE LINES: 38 HELD  14 THE HAND");
+    CHECK(page.lines.find("FINED") == std::string::npos);
+    mustRead("lines", page.lines);
+    Session denied(docksAt(20));
+    thiefLedger(denied);
+    seedHearing(denied, drawOf(0, 5), 12, 0, -15, true);
+    REQUIRE(press(denied, Key::Num2));
+    REQUIRE(press(denied, Key::Num2));
+    REQUIRE(denied.tavern().hearing().judged());
+    page = denied.hearingPageState();
+    CHECK(page.lines == "THE LINES: 55 SPARED  38 HELD  14 THE HAND");
+    // And the paper tier's row still names the fine and the cell.
+    Session paper(docksAt(20));
+    thiefLedger(paper);
+    seedHearing(paper, drawOf(0, 5), 12, 0, -15);
+    REQUIRE(press(paper, Key::Num2));
+    REQUIRE(press(paper, Key::Num2));
+    page = paper.hearingPageState();
+    CHECK(page.lines == "THE LINES: 55 SPARED  38 FINED  14 HELD");
 }
 
 TEST_CASE("the priest's openings are chosen by the case, and every row of the chosen table is true of the sheet") {
