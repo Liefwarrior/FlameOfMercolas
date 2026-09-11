@@ -334,6 +334,12 @@ add_library(granadad-render STATIC
     # Task #83 -- the steps-based ease every panel's open/close and the HUD's
     # own alert row now animate through, instead of popping. See the header.
     src/render/anim.cpp
+    # 3D BUILD, V LANE -- the viewmodel machine: what the player's own hands
+    # are doing, stepped by Session once per movement step off the combat
+    # sim's getters. Lives here (not in render3d) so a --screenshot after a
+    # scripted punch photographs the same frame of the swing everywhere;
+    # render3d/viewmodel.hpp draws it. See the header.
+    src/render/viewmodel_machine.cpp
     # #78 -- the people, as pixels the owner drew. content/art/sprites is
     # twenty-five 16x16 actor figures in the MERCOLAS-24 palette with a tag
     # vocabulary already authored against the Java actor types; this reads the
@@ -794,6 +800,15 @@ if(GRANADAD_BUILD_TESTS)
         # world scene instances only the chunks near the eye. Procedural
         # atlas: no art tree required.
         tests/test_chunk_mesher.cpp
+        # 3D BUILD -- THE VIEWMODEL + HUD LANE. The player's own hands follow
+        # the combat sim's state through Session (charge, hard hold, the
+        # swing at the resolved tier, the guard, the cast, the flinch), the
+        # posed parts are described and hashed, the terminal HUD composites
+        # over the 3D frame BYTE-IDENTICALLY where it is opaque (rlsw), the
+        # raised fists draw over the Docks and in front of a wall the body
+        # stands against, and the washes are overlay pixels. Placeholder
+        # arms: no licensed glb required.
+        tests/test_viewmodel.cpp
     )
 
     add_executable(granadad-tests tests/test_main.cpp ${GRANADAD_TEST_SOURCES})

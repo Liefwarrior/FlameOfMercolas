@@ -1159,6 +1159,28 @@ RUN --mount=type=cache,target=/deps,sharing=locked \
     done; \
     echo "ok: the 3D actors lane's cases are all registered"; \
     \
+    # 3D BUILD, the viewmodel + HUD lane. The player's own hands follow the
+    # combat state machine off the sim's public getters (idle, the charge
+    # scrubbed by the hold, the hard tier, the swing at the tier the room
+    # resolved, the guard, the cast, the flinch) and are described and
+    # hashed; the terminal HUD composites over the 3D frame byte for byte
+    # where it is opaque -- the eighteen pixel-exact HUD/page files keep
+    # their bytes AND the composite keeps them; and the raised fists render
+    # headless over the Docks, in front of a wall the body stands against.
+    for case in \
+        "the viewmodel clip follows the combat state machine" \
+        "the HUD overlay composites byte-identically over a 3D frame" \
+        "the raised fists render over the Docks and in front of the nearest wall" \
+        ; do \
+        case "$ctest_list" in *"$case"*) ;; *) false;; esac \
+            || { echo "FATAL: the case \"$case\" is not registered."; \
+                 echo "       It is what the 3D viewmodel lane is judged on:"; \
+                 echo "       hands that follow the fight, a HUD composited"; \
+                 echo "       byte for byte, and fists drawn headless over it."; \
+                 exit 1; }; \
+    done; \
+    echo "ok: the 3D viewmodel lane's cases are all registered"; \
+    \
     # ---------------------------------------------------------------------
     # AND THE SUITE RUNS IN PARALLEL, WHICH IS NOT A SUBSTITUTE FOR ANYTHING.
     # ---------------------------------------------------------------------

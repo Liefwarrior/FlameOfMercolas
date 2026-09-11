@@ -43,6 +43,24 @@
 //      body's placeholder mesh (in the description, under instance.meshId)
 //      goes through the same path as any instance. glTF's front is +Z and
 //      the scene's yaw 0 faces -Z, hence kGltfForwardYaw.
+//
+//   4. (V LANE) HOW THE PLAYER'S OWN HANDS ARE DRAWN. A second BeginMode3D
+//      after the world's, with a camera at the origin looking down -Z (the
+//      parts are described in view space), and its projection REPLACED by
+//      one whose z row is squeezed into the front fifth of the depth range
+//      (kViewmodelDepthSpan): every fragment of the hands lands in front of
+//      every fragment of the world, whatever wall the body stands against,
+//      while the hands still depth-test among themselves. That is the
+//      classic glDepthRange trick done in the matrix, because rlgl exposes
+//      no depth range, no depth-only clear and (on rlsw) no framebuffer
+//      object -- and a matrix is the one thing both rlgl paths take
+//      verbatim: rlLoadIdentity + rlMultMatrixf is RLGL.State.projection on
+//      GL 3.3 and glLoadIdentity + glMultMatrixf on the GL 1.1 shim, in
+//      the same column-major layout BeginMode3D's own view matrix uses.
+//      The placeholder parts draw through the mesh path with a full
+//      view-space transform; a licensed arms glb (viewmodel_*.glb, clips at
+//      index == ViewmodelState) is played by phase and drawn at the rig
+//      offset, with the static weapon .gltf hung on its Hand_R bone.
 
 #include "granadad/render3d/backend.hpp"
 
@@ -147,12 +165,33 @@ struct RigModel {
     /// True while the model holds a skinned pose: the rest pose is put back
     /// once per pass before the unskinned bodies draw.
     bool posed = false;
+    /// V LANE. The Hand_R bone's index when the rig has one (the viewmodel
+    /// hangs a weapon on it), else -1.
+    int handBone = -1;
+};
+
+/// V LANE. A static weapon model (the mace, the dagger) loaded once per file.
+struct WeaponModel {
+    Model model{};
+    bool loaded = false;
 };
 
 /// A glTF asset faces +Z (the spec's own convention, and the asset lane's
 /// export); the scene's yaw 0 faces -Z. Half a turn, applied to models only.
 constexpr float kGltfForwardYaw = 3.14159265358979323846F;
 constexpr float kRadToDeg = 180.0F / 3.14159265358979323846F;
+constexpr float kDegToRad = 3.14159265358979323846F / 180.0F;
+
+/// V LANE. The viewmodel pass's own clip planes: the fists sit 0.5..1.3
+/// tiles out and nothing of the hands is ever four tiles away.
+constexpr double kViewmodelNear = 0.05;
+constexpr double kViewmodelFar = 4.0;
+/// The depth squeeze: NDC z' = kViewmodelDepthSpan * z - (1 -
+/// kViewmodelDepthSpan), so the hands occupy depth [0, 0.2] and the world --
+/// whose nearest surface is the body's own radius (90/256 of a tile) from
+/// the eye, well past the 0.125 tiles where the world's own projection
+/// crosses NDC -0.6 -- always sits behind them.
+constexpr float kViewmodelDepthSpan = 0.2F;
 
 [[nodiscard]] Color colourOf(const Rgba8& c) noexcept { return Color{c.r, c.g, c.b, c.a}; }
 
@@ -219,6 +258,9 @@ struct Backend::Impl {
     /// Rig models by FILE NAME; a null entry is a file that was looked for
     /// and not found (or empty modelDir), so it is never asked for again.
     std::map<std::string, std::unique_ptr<RigModel>> rigs;
+    /// V LANE. The arms rigs and the static weapons, the same way.
+    std::map<std::string, std::unique_ptr<RigModel>> handRigs;
+    std::map<std::string, std::unique_ptr<WeaponModel>> weapons;
     Material material{};
     bool materialLoaded = false;
     Texture2D defaultTexture{};
@@ -318,21 +360,32 @@ struct Backend::Impl {
         return count;
     }
 
-    /// One placeholder-or-chunk instance through the mesh cache. False when
-    /// its mesh is not uploaded (nothing drawn).
-    bool drawInstance(const Instance& instance, SceneStats& stats) {
-        const auto mesh = meshes.find(instance.meshId);
+    /// One cached mesh through the default material with a tint, a texture
+    /// and a full transform. False when the mesh is not uploaded (nothing
+    /// drawn). The instances and the viewmodel parts both end here.
+    bool drawMeshWith(std::uint32_t meshId, std::uint32_t textureId, const Rgba8& tint,
+                      const Matrix& transform, SceneStats& stats) {
+        const auto mesh = meshes.find(meshId);
         if (mesh == meshes.end()) {
             return false;
         }
-        material.maps[MATERIAL_MAP_DIFFUSE].color = colourOf(instance.tint);
+        material.maps[MATERIAL_MAP_DIFFUSE].color = colourOf(tint);
         material.maps[MATERIAL_MAP_DIFFUSE].texture = defaultTexture;
-        if (instance.textureId != 0) {
-            const auto texture = textures.find(instance.textureId);
+        if (textureId != 0) {
+            const auto texture = textures.find(textureId);
             if (texture != textures.end()) {
                 material.maps[MATERIAL_MAP_DIFFUSE].texture = texture->second.texture;
             }
         }
+        DrawMesh(tinted(mesh->second.mesh, tint), material, transform);
+        ++stats.instancesDrawn;
+        stats.trianglesDrawn += static_cast<std::size_t>(mesh->second.mesh.triangleCount);
+        return true;
+    }
+
+    /// One placeholder-or-chunk instance through the mesh cache. False when
+    /// its mesh is not uploaded (nothing drawn).
+    bool drawInstance(const Instance& instance, SceneStats& stats) {
         // Scale, then yaw, then place. Yaw is clockwise-from-above in the
         // description and raylib's Y rotation is counter-clockwise, hence
         // the sign -- see scene.hpp on the frame.
@@ -340,10 +393,208 @@ struct Backend::Impl {
             MatrixMultiply(MatrixScale(instance.scale, instance.scale, instance.scale),
                            MatrixRotateY(-instance.yaw)),
             MatrixTranslate(instance.position.x, instance.position.y, instance.position.z));
-        DrawMesh(tinted(mesh->second.mesh, instance.tint), material, transform);
-        ++stats.instancesDrawn;
-        stats.trianglesDrawn += static_cast<std::size_t>(mesh->second.mesh.triangleCount);
-        return true;
+        return drawMeshWith(instance.meshId, instance.textureId, instance.tint, transform, stats);
+    }
+
+    /// V LANE. A viewmodel part's transform: scale, roll (Z), pitch (X), yaw
+    /// (Y) -- right-handed about the view axes, as scene.hpp states -- then
+    /// its view-space place.
+    [[nodiscard]] static Matrix partTransform(const ViewmodelPart& part) noexcept {
+        return MatrixMultiply(
+            MatrixMultiply(
+                MatrixMultiply(MatrixMultiply(MatrixScale(part.scale, part.scale, part.scale),
+                                              MatrixRotateZ(part.rotation.z)),
+                               MatrixRotateX(part.rotation.x)),
+                MatrixRotateY(part.rotation.y)),
+            MatrixTranslate(part.position.x, part.position.y, part.position.z));
+    }
+
+    /// V LANE. The arms rig for a hand kind, loaded the first time it is
+    /// asked for from <modelDir>/<viewmodelRigFileOf(kind)>; null when
+    /// there is none (the placeholder parts draw).
+    RigModel* handRigFor(std::uint8_t kind) {
+        const std::string_view file = viewmodelRigFileOf(kind);
+        if (file.empty() || config.modelDir.empty()) {
+            return nullptr;
+        }
+        const std::string key(file);
+        auto found = handRigs.find(key);
+        if (found != handRigs.end()) {
+            return found->second.get();
+        }
+        std::unique_ptr<RigModel> loaded;
+        const std::string path = config.modelDir + "/" + key;
+        if (FileExists(path.c_str())) {
+            auto candidate = std::make_unique<RigModel>();
+            candidate->model = LoadModel(path.c_str());
+            if (candidate->model.meshCount > 0) {
+                candidate->clips = LoadModelAnimations(path.c_str(), &candidate->clipCount);
+                if (candidate->clips == nullptr) {
+                    candidate->clipCount = 0;
+                }
+                for (int b = 0; b < candidate->model.skeleton.boneCount; ++b) {
+                    if (std::strcmp(candidate->model.skeleton.bones[b].name, "Hand_R") == 0) {
+                        candidate->handBone = b;
+                        break;
+                    }
+                }
+                candidate->loaded = true;
+                std::printf("granadad: render3d: hands %s -- %d mesh(es), %d bone(s), %d clip(s), "
+                            "Hand_R %s\n",
+                            key.c_str(), candidate->model.meshCount,
+                            candidate->model.skeleton.boneCount, candidate->clipCount,
+                            candidate->handBone >= 0 ? "found" : "absent");
+                loaded = std::move(candidate);
+            } else {
+                UnloadModel(candidate->model);
+                std::printf("granadad: render3d: hands %s did not load; placeholder stands\n",
+                            key.c_str());
+            }
+        }
+        RigModel* result = loaded.get();
+        handRigs.emplace(key, std::move(loaded));
+        return result;
+    }
+
+    /// V LANE. The static weapon for a hand kind from
+    /// <weaponDir>/<viewmodelWeaponFileOf(kind)>, once per file; null when
+    /// there is none or nothing hangs on this kind.
+    WeaponModel* weaponFor(std::uint8_t kind) {
+        const std::string_view file = viewmodelWeaponFileOf(kind);
+        if (file.empty() || config.weaponDir.empty()) {
+            return nullptr;
+        }
+        const std::string key(file);
+        auto found = weapons.find(key);
+        if (found != weapons.end()) {
+            return found->second.get();
+        }
+        std::unique_ptr<WeaponModel> loaded;
+        const std::string path = config.weaponDir + "/" + key;
+        if (FileExists(path.c_str())) {
+            auto candidate = std::make_unique<WeaponModel>();
+            candidate->model = LoadModel(path.c_str());
+            if (candidate->model.meshCount > 0) {
+                candidate->loaded = true;
+                std::printf("granadad: render3d: weapon %s -- %d mesh(es)\n", key.c_str(),
+                            candidate->model.meshCount);
+                loaded = std::move(candidate);
+            } else {
+                UnloadModel(candidate->model);
+                std::printf("granadad: render3d: weapon %s did not load; placeholder stands\n",
+                            key.c_str());
+            }
+        }
+        WeaponModel* result = loaded.get();
+        weapons.emplace(key, std::move(loaded));
+        return result;
+    }
+
+    /// V LANE. THE HANDS, in their own pass -- see the file header, item 4.
+    void drawViewmodel(const ViewmodelInstance& hands, SceneStats& stats) {
+        if (!hands.visible) {
+            return;
+        }
+        Camera3D eye{};
+        eye.position = Vector3{0.0F, 0.0F, 0.0F};
+        eye.target = Vector3{0.0F, 0.0F, -1.0F};
+        eye.up = Vector3{0.0F, 1.0F, 0.0F};
+        eye.fovy = hands.fovyDegrees;
+        eye.projection = CAMERA_PERSPECTIVE;
+        BeginMode3D(eye);
+        // The projection BeginMode3D just built (the world's clip planes)
+        // is replaced by the hands' own with its z row squeezed: row 2 of
+        // the matrix becomes span*row2 + shift*row3, and row 3 of a
+        // perspective matrix is (0, 0, -1, 0), so only m10 and m14 move.
+        const float aspect = static_cast<float>(std::max(1, GetRenderWidth())) /
+                             static_cast<float>(std::max(1, GetRenderHeight()));
+        Matrix proj = MatrixPerspective(static_cast<double>(hands.fovyDegrees * kDegToRad),
+                                        static_cast<double>(aspect), kViewmodelNear,
+                                        kViewmodelFar);
+        const float shift = -(1.0F - kViewmodelDepthSpan);
+        proj.m10 = kViewmodelDepthSpan * proj.m10 + shift * proj.m11;
+        proj.m14 = kViewmodelDepthSpan * proj.m14 + shift * proj.m15;
+        rlMatrixMode(RL_PROJECTION);
+        rlLoadIdentity();
+        rlMultMatrixf(MatrixToFloat(proj));
+        rlMatrixMode(RL_MODELVIEW);
+
+        RigModel* rig = handRigFor(hands.kind);
+        if (rig != nullptr && rig->loaded) {
+            const int clipIndex = static_cast<int>(hands.state);
+            int frame = 0;
+            bool played = false;
+            if (clipIndex < rig->clipCount && rig->clips[clipIndex].keyframeCount > 0) {
+                const ModelAnimation& clip = rig->clips[clipIndex];
+                const int last = clip.keyframeCount - 1;
+                if (render::viewmodelStateOneShot(hands.state) ||
+                    hands.state == render::ViewmodelState::Charging ||
+                    hands.state == render::ViewmodelState::ChargedHard) {
+                    // Scrubbed: the whole clip over the machine's window, or
+                    // over the charge fraction.
+                    frame = static_cast<int>(hands.phase * static_cast<float>(last) + 0.5F);
+                } else {
+                    // A loop, one keyframe per step.
+                    frame = hands.stateSteps % clip.keyframeCount;
+                }
+                frame = std::clamp(frame, 0, last);
+                UpdateModelAnimation(rig->model, clip, static_cast<float>(frame));
+                rig->posed = true;
+                played = true;
+            }
+            const Matrix rigWorld = MatrixMultiply(
+                MatrixMultiply(MatrixScale(hands.rigScale, hands.rigScale, hands.rigScale),
+                               MatrixRotateY(-hands.rigYaw)),
+                MatrixTranslate(hands.rigOffset.x, hands.rigOffset.y, hands.rigOffset.z));
+            DrawModelEx(rig->model, vec(hands.rigOffset), Vector3{0.0F, 1.0F, 0.0F},
+                        -hands.rigYaw * kRadToDeg,
+                        Vector3{hands.rigScale, hands.rigScale, hands.rigScale},
+                        colourOf(hands.tint));
+            ++stats.instancesDrawn;
+            for (int i = 0; i < rig->model.meshCount; ++i) {
+                stats.trianglesDrawn += static_cast<std::size_t>(rig->model.meshes[i].triangleCount);
+            }
+            stats.viewmodelSkinned = true;
+            // The weapon on the hand: the bone's model-space pose (raylib
+            // composes glTF joints to model space when it loads them) under
+            // the rig's own placement.
+            WeaponModel* weapon = weaponFor(hands.kind);
+            if (weapon != nullptr && weapon->loaded && rig->handBone >= 0 &&
+                rig->model.skeleton.bindPose != nullptr) {
+                Transform bone = rig->model.skeleton.bindPose[rig->handBone];
+                if (played) {
+                    const ModelAnimation& clip = rig->clips[static_cast<int>(hands.state)];
+                    if (rig->handBone < clip.boneCount && clip.keyframePoses != nullptr) {
+                        bone = clip.keyframePoses[frame][rig->handBone];
+                    }
+                }
+                const Matrix boneWorld = MatrixMultiply(
+                    MatrixMultiply(
+                        MatrixMultiply(MatrixScale(bone.scale.x, bone.scale.y, bone.scale.z),
+                                       QuaternionToMatrix(bone.rotation)),
+                        MatrixTranslate(bone.translation.x, bone.translation.y,
+                                        bone.translation.z)),
+                    rigWorld);
+                for (int i = 0; i < weapon->model.meshCount; ++i) {
+                    const int m = weapon->model.meshMaterial[i];
+                    weapon->model.materials[m].maps[MATERIAL_MAP_DIFFUSE].color =
+                        colourOf(hands.tint);
+                    DrawMesh(weapon->model.meshes[i], weapon->model.materials[m],
+                             MatrixMultiply(weapon->model.transform, boneWorld));
+                    stats.trianglesDrawn +=
+                        static_cast<std::size_t>(weapon->model.meshes[i].triangleCount);
+                }
+                ++stats.instancesDrawn;
+                stats.viewmodelWeaponLoaded = true;
+            }
+        } else {
+            for (const ViewmodelPart& part : hands.parts) {
+                if (drawMeshWith(part.meshId, 0, part.tint, partTransform(part), stats)) {
+                    ++stats.viewmodelPartsDrawn;
+                }
+            }
+        }
+        EndMode3D();
     }
 
     /// One body: its rig model, animated when skinned, else its placeholder.
@@ -389,16 +640,27 @@ struct Backend::Impl {
     }
 
     void release() {
-        for (auto& [name, rig] : rigs) {
-            (void)name;
-            if (rig != nullptr && rig->loaded) {
-                if (rig->clips != nullptr) {
-                    UnloadModelAnimations(rig->clips, rig->clipCount);
+        const auto unloadRigs = [](std::map<std::string, std::unique_ptr<RigModel>>& set) {
+            for (auto& [name, rig] : set) {
+                (void)name;
+                if (rig != nullptr && rig->loaded) {
+                    if (rig->clips != nullptr) {
+                        UnloadModelAnimations(rig->clips, rig->clipCount);
+                    }
+                    UnloadModel(rig->model);
                 }
-                UnloadModel(rig->model);
+            }
+            set.clear();
+        };
+        unloadRigs(rigs);
+        unloadRigs(handRigs);
+        for (auto& [name, weapon] : weapons) {
+            (void)name;
+            if (weapon != nullptr && weapon->loaded) {
+                UnloadModel(weapon->model);
             }
         }
-        rigs.clear();
+        weapons.clear();
         if (materialLoaded) {
             // First, while its diffuse map is rlgl's own 1x1 (drawScene puts
             // it back after every pass): UnloadMaterial frees any map whose
@@ -564,6 +826,8 @@ SceneStats Backend::drawScene(const SceneDescription& scene) {
         }
     }
     EndMode3D();
+    // The hands, last, in their own pass over everything.
+    impl.drawViewmodel(scene.viewmodel, stats);
     stats.rigModelsLoaded = impl.rigsLoaded();
     // The material never keeps hold of a cached texture between passes:
     // UnloadMaterial would otherwise free it a second time at teardown.

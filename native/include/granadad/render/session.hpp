@@ -41,6 +41,7 @@
 #include "granadad/render/lamps.hpp"
 #include "granadad/render/map_view.hpp"
 #include "granadad/render/menu_view.hpp"
+#include "granadad/render/viewmodel_machine.hpp"
 #include "granadad/render/world_renderer.hpp"
 #include "granadad/sim/casebook.hpp"
 #include "granadad/sim/compound.hpp"
@@ -230,6 +231,14 @@ public:
     /// body stands in the same place on both paths. Read-only; nothing here
     /// is ever written back into the sim.
     [[nodiscard]] std::int32_t stepsThisSecond() const noexcept { return stepsThisSecond_; }
+    /// 3D BUILD, V LANE. What the player's own hands are doing -- the
+    /// viewmodel machine's pose, stepped once per movement step in step()
+    /// off the combat sim's public getters and the three edges this session
+    /// already sees (a swing released in attackUp, a cast thrown in
+    /// castEquipped, a blow taken off the hp comparison). Render-only, never
+    /// hashed, never written back; render3d/viewmodel.hpp turns it into the
+    /// posed hands the 3D pass draws. See viewmodel_machine.hpp.
+    [[nodiscard]] const ViewmodelPose& viewmodel() const noexcept { return viewmodel_.pose(); }
     [[nodiscard]] const WorldRenderer& renderer() const noexcept { return *renderer_; }
     [[nodiscard]] const TileAtlas& atlas() const noexcept { return atlas_; }
     [[nodiscard]] std::size_t lampCount() const noexcept { return renderer_->lamps().size(); }
@@ -2497,6 +2506,18 @@ private:
     /// its peak angle is capped in camera() well under the spec's <=2deg. Not
     /// hashed -- a camera impulse is a courtesy to the eye, like the washes.
     ImpactPulse hardSwingDipPulse_;
+    /// 3D BUILD, V LANE. THE HANDS. The machine is stepped in step() beside
+    /// the pulses above, fed the room's charge/guard getters plus the two
+    /// edges below, which attackUp() and castEquipped() latch for the very
+    /// next step (the edges arrive between steps, from input; the machine
+    /// only moves on a step). Not hashed, same reason as its siblings: what
+    /// the hands look like is a courtesy to the eye. See viewmodel().
+    ViewmodelMachine viewmodel_;
+    /// 0 = no swing released since the last step, 1 = light, 2 = hard.
+    std::uint8_t viewmodelSwingPending_ = 0;
+    /// A cast was ATTEMPTED since the last step (a fizzle counts, a refusal
+    /// does not -- the hand only moves when the room let it try).
+    bool viewmodelCastPending_ = false;
     /// Whether the Block key is physically down, straight off the client's
     /// edge events. Render-side bookkeeping, NOT the fact the sim hashes --
     /// step() derives that (held AND not talking/picking) and pushes it into

@@ -52,6 +52,8 @@
 #include <string_view>
 #include <vector>
 
+#include "granadad/render/viewmodel_machine.hpp"
+
 namespace granadad::render {
 struct Camera;
 }
@@ -182,6 +184,64 @@ struct ActorInstance {
     return clip == ActorClip::Death || clip == ActorClip::Recover || clip == ActorClip::Hit;
 }
 
+/// V LANE. The arms glb (under BackendConfig::modelDir) and the static
+/// weapon .gltf (under BackendConfig::weaponDir, empty when nothing hangs
+/// on the hand) for a ViewmodelInstance::kind byte -- declared here, keyed
+/// by the byte, so the one raylib TU never includes the sim's weapon
+/// header. Defined in viewmodel.cpp beside their typed twins.
+[[nodiscard]] std::string_view viewmodelRigFileOf(std::uint8_t kind) noexcept;
+[[nodiscard]] std::string_view viewmodelWeaponFileOf(std::uint8_t kind) noexcept;
+
+/// V LANE. ONE PART OF THE PLAYER'S OWN HANDS, IN VIEW SPACE: +X right, +Y
+/// up, -Z forward, the eye at the origin -- the frame the adapter's second
+/// 3D pass draws in (a camera at the origin looking down -Z), so the arms
+/// ride the camera wherever it points and jolt WITH it, the way a body's
+/// own hands do. Rotation is applied roll (about Z), then pitch (about X),
+/// then yaw (about Y), then the part is placed; scale first of all. The
+/// angles are plain right-handed radians about the VIEW axes -- not the
+/// scene's clockwise yaw: positive pitch lifts a part's -Z front upwards,
+/// positive yaw turns it towards -X (the left of the frame).
+struct ViewmodelPart {
+    std::uint32_t meshId = 0;
+    Vec3 position;
+    /// Radians: x = pitch, y = yaw, z = roll -- see the order above.
+    Vec3 rotation;
+    float scale = 1.0F;
+    /// Multiplies the vertex colours, the Instance rule.
+    Rgba8 tint;
+};
+
+/// V LANE. THE VIEWMODEL, DRAWN: the placeholder parts (always, in every
+/// build) plus what a licensed rig would need instead of them. The adapter
+/// draws the parts through the generic mesh path when it has no
+/// viewmodel glb for `kind`, and the skinned arms (clip == state, scrubbed
+/// or played by `phase`/`stateSteps`) when it does. Hashed whole.
+struct ViewmodelInstance {
+    /// False leaves the second pass out entirely (a --2d frame, a test that
+    /// wants the world alone).
+    bool visible = false;
+    /// render3d::ViewmodelKind as a byte: which hand model (fists, club,
+    /// dagger, sword) -- picks the placeholder set and the glb.
+    std::uint8_t kind = 0;
+    render::ViewmodelState state = render::ViewmodelState::Idle;
+    /// Steps into the state (the machine's own counter).
+    std::int32_t stateSteps = 0;
+    /// Where in the clip, 0..1: the charge fraction while Charging, the
+    /// one-shot's progress while a swing/cast/hit plays, 0 for a loop.
+    float phase = 0.0F;
+    /// Vertical field of view of the second pass, degrees. Fixed, so the
+    /// hands frame the same whatever the world's FOV slider says.
+    float fovyDegrees = 55.0F;
+    /// Where a rig's origin (its feet) sits in view space, its yaw about +Y
+    /// (radians, scene convention) and its scale -- the glb path's placement.
+    Vec3 rigOffset;
+    float rigYaw = 0.0F;
+    float rigScale = 1.0F;
+    /// The light where the body stands, as a tint over every part.
+    Rgba8 tint;
+    std::vector<ViewmodelPart> parts;
+};
+
 struct SceneDescription {
     SceneCamera camera;
     /// The sky -- what the frame is cleared to before anything draws.
@@ -191,6 +251,8 @@ struct SceneDescription {
     std::vector<Instance> instances;
     /// The people, after the world. Hashed like everything else here.
     std::vector<ActorInstance> actors;
+    /// The player's own hands, after the people, in their own pass.
+    ViewmodelInstance viewmodel;
 
     [[nodiscard]] const MeshData* findMesh(std::uint32_t id) const noexcept;
     [[nodiscard]] MeshData* findMesh(std::uint32_t id) noexcept;

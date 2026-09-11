@@ -114,7 +114,7 @@ std::uint64_t sceneHash(const SceneDescription& scene) noexcept {
     Fnv1a64 h;
     // A format tag first, so a future field added to the byte image cannot
     // collide with an old image by accident.
-    h.mixU32(0x53434E32U);  // "SCN2" -- the actor list was appended by the A lane
+    h.mixU32(0x53434E33U);  // "SCN3" -- the viewmodel was appended by the V lane
 
     mixVec3(h, scene.camera.position);
     mixVec3(h, scene.camera.target);
@@ -177,6 +177,27 @@ std::uint64_t sceneHash(const SceneDescription& scene) noexcept {
         h.mixU8(static_cast<std::uint8_t>(actor.clip));
         h.mixU32(actor.clipFrame);
         h.mixU8(static_cast<std::uint8_t>(actor.skinned ? 1 : 0));
+    }
+    // The hands: the machine's state and every part's placement. A frame of
+    // a swing that moved is a different picture, so it is a different digest.
+    const ViewmodelInstance& hands = scene.viewmodel;
+    h.mixU8(static_cast<std::uint8_t>(hands.visible ? 1 : 0));
+    h.mixU8(hands.kind);
+    h.mixU8(static_cast<std::uint8_t>(hands.state));
+    h.mixI32(hands.stateSteps);
+    h.mixF32(hands.phase);
+    h.mixF32(hands.fovyDegrees);
+    mixVec3(h, hands.rigOffset);
+    h.mixF32(hands.rigYaw);
+    h.mixF32(hands.rigScale);
+    mixRgba(h, hands.tint);
+    h.mixU64(static_cast<std::uint64_t>(hands.parts.size()));
+    for (const ViewmodelPart& part : hands.parts) {
+        h.mixU32(part.meshId);
+        mixVec3(h, part.position);
+        mixVec3(h, part.rotation);
+        h.mixF32(part.scale);
+        mixRgba(h, part.tint);
     }
     return h.value();
 }

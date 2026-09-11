@@ -3948,6 +3948,25 @@ void Session::step(const sim::MoveInput& input) {
             }
         }
     }
+    // 3D BUILD, V LANE. THE HANDS, STEPPED HERE AND NOWHERE ELSE: once per
+    // movement step, off the room's own charge and guard state plus the
+    // edges latched since the last step. A blow the guard caught keeps the
+    // guard up (the block nudge already says it landed); an unguarded blow
+    // is the flinch, over everything. The latches clear whether or not the
+    // machine took them -- an edge is a fact about THIS step.
+    {
+        ViewmodelInputs hands;
+        hands.chargeSteps = tavern_->playerChargeSteps();
+        hands.chargeHard = tavern_->playerChargeHard();
+        hands.blocking = tavern_->playerBlocking();
+        hands.releasedLight = viewmodelSwingPending_ == 1;
+        hands.releasedHard = viewmodelSwingPending_ == 2;
+        hands.cast = viewmodelCastPending_;
+        hands.hit = hpNow < lastPlayerHp_ && blockedNow <= lastBlowsBlocked_;
+        (void)viewmodel_.step(hands);
+        viewmodelSwingPending_ = 0;
+        viewmodelCastPending_ = false;
+    }
     lastPlayerHp_ = hpNow;
     lastBlowsBlocked_ = blockedNow;
     // ACTION-COMBAT BUILD (section 4.1). THE STEEL-OUT FLIP, spoken ONCE on the
@@ -5914,6 +5933,9 @@ void Session::attackUp() {
     if (result.hard) {
         hardSwingDipPulse_.trigger();
     }
+    // 3D BUILD, V LANE. The hands throw the swing the room just resolved,
+    // on the next step, at the tier the room read off the hold.
+    viewmodelSwingPending_ = static_cast<std::uint8_t>(result.hard ? 2 : 1);
     if (result.targetId < 0) {
         // Committed and paid, but the crosshair passed through nobody. The arm
         // still swung, so the wind is spent and the swing gets its air.
@@ -5989,8 +6011,16 @@ void Session::castEquipped() {
     // The room resolves the whole of it -- every refusal included -- and
     // always answers with a line, so the key can never silently do nothing.
     // See sim::Tavern::playerCastEquipped()'s own header.
+    const std::int64_t coolingBefore = tavern_->castCooldownLeft();
     const sim::Tavern::CastResult result = tavern_->playerCastEquipped();
     say(result.line);
+    // 3D BUILD, V LANE. The hand reaches out when the room let it TRY: a
+    // link that opened, or one that slipped (a fizzle still starts the
+    // recovery clock -- the comparison-not-flag shape lastPlayerHp_ uses,
+    // so no sim field is added for a gesture). A refusal moves nothing.
+    if (result.cast || tavern_->castCooldownLeft() > coolingBefore) {
+        viewmodelCastPending_ = true;
+    }
     // NO NEW PULSE, DELIBERATELY. The restraint note in drawFrame() stands:
     // two real moments got a flash and a cast is not being bolted on as a
     // third -- a landed harmful cast already reads on the target and the

@@ -61,6 +61,7 @@
 #include "granadad/render3d/backend.hpp"
 #include "granadad/render3d/scene.hpp"
 #include "granadad/render3d/actor_instances.hpp"
+#include "granadad/render3d/viewmodel.hpp"
 #include "granadad/render3d/world_scene.hpp"
 #include "granadad/sim/angle.hpp"
 #include "granadad/sim/build_info.hpp"
@@ -3412,6 +3413,13 @@ struct VideoBridge {
     return (granadad::content::contentDir() / "art" / "lot-3d" / "characters").string();
 }
 
+/// V LANE. Where the static weapon exports live (the mace and the dagger
+/// hung on the viewmodel's Hand_R when they exist): content/art/lot-3d/
+/// static, same licence, same gitignore, same silent fallback.
+[[nodiscard]] std::string weapon_model_dir() {
+    return (granadad::content::contentDir() / "art" / "lot-3d" / "static").string();
+}
+
 struct SceneRig {
     render3d::SceneDescription scene;
     std::unique_ptr<render3d::WorldScene> world;
@@ -3430,6 +3438,13 @@ struct SceneRig {
         // rewritten every frame off the roster with wardSprites' own slide.
         render3d::putActorRigs(scene);
         scene.actors = render3d::actorInstances(session, session.camera());
+        // V LANE: the player's own hands. The placeholder parts put once
+        // (the adapter swaps in the arms glb by name where it has one), the
+        // pose rewritten every frame off Session::viewmodel() -- the machine
+        // step() runs beside the sim, so a scripted swing photographs the
+        // same frame on every machine.
+        render3d::putViewmodelMeshes(scene);
+        scene.viewmodel = render3d::viewmodelInstance(session);
     }
 };
 
@@ -3470,6 +3485,7 @@ render3d::SceneStats present_frame(render3d::Backend& video, const Options& opti
     config.resizable = false;
     config.vsync = false;
     config.modelDir = rig_model_dir();
+    config.weaponDir = weapon_model_dir();
     std::unique_ptr<render3d::Backend> video = render3d::Backend::open(config);
     if (video == nullptr) {
         std::printf("granadad: the 3D backend could not open for the shutter\n");
@@ -3491,10 +3507,16 @@ render3d::SceneStats present_frame(render3d::Backend& video, const Options& opti
         needsUpscale ? render::upscaleNearest(shot, options.smoke.captureScale) : shot;
     const bool ok = render::writePng(output, options.smoke.screenshot);
     std::printf("granadad: 3d shutter -- %s backend, %dx%d, %zu instance(s), %zu triangle(s), "
-                "%zu bod%s (%zu skinned, %zu rig file(s))%s\n",
+                "%zu bod%s (%zu skinned, %zu rig file(s)), hands %s/%s %zu part(s)%s%s%s\n",
                 video->kind() == render3d::VideoKind::Software ? "rlsw" : "gpu", output.width(),
                 output.height(), stats.instancesDrawn, stats.trianglesDrawn, stats.actorsDrawn,
                 stats.actorsDrawn == 1 ? "y" : "ies", stats.actorsSkinned, stats.rigModelsLoaded,
+                render3d::viewmodelKindName(
+                    static_cast<render3d::ViewmodelKind>(rig.scene.viewmodel.kind))
+                    .data(),
+                render::viewmodelStateName(rig.scene.viewmodel.state).data(),
+                stats.viewmodelPartsDrawn, stats.viewmodelSkinned ? " (skinned glb)" : "",
+                stats.viewmodelWeaponLoaded ? " (weapon file)" : "",
                 options.video3d ? " (the Docks in 3D under the HUD)"
                                 : " (software world in the overlay: --2d)");
     return ok;
@@ -5274,6 +5296,7 @@ int main(int argc, char** argv) {
             config.height = options.smoke.session.height;
             config.windowScale = options.windowScale;
             config.modelDir = rig_model_dir();
+            config.weaponDir = weapon_model_dir();
             std::unique_ptr<render3d::Backend> video = render3d::Backend::open(config);
             if (video == nullptr) {
                 std::printf("granadad: could not open the window -- closing.\n");

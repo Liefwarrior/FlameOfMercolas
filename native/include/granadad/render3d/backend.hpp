@@ -85,6 +85,11 @@ struct BackendConfig {
     /// for and every body draws as its placeholder mesh. A named directory
     /// with a file missing falls back the same way, silently, per rig.
     std::string modelDir;
+    /// V LANE. Where the static weapon exports live: the directory holding
+    /// <viewmodelWeaponFile(kind)> (content/art/lot-3d/static on the
+    /// client). Empty means no weapon file is ever looked for; the
+    /// placeholder weapon part draws instead.
+    std::string weaponDir;
 };
 
 /// A key going down or up this frame. `hid` is the USB HID usage id (SDL's
@@ -153,6 +158,13 @@ struct SceneStats {
     std::size_t actorsDrawn = 0;
     std::size_t actorsSkinned = 0;
     std::size_t rigModelsLoaded = 0;
+    /// V LANE. Placeholder parts drawn in the viewmodel pass (0 when the
+    /// pass drew a loaded rig instead, or the description had no hands);
+    /// whether that pass drew the skinned arms glb; and whether a static
+    /// weapon file was hung on it.
+    std::size_t viewmodelPartsDrawn = 0;
+    bool viewmodelSkinned = false;
+    bool viewmodelWeaponLoaded = false;
 };
 
 class Backend {
@@ -180,7 +192,13 @@ public:
     /// scene.actors -- each through its rig's glb model when
     /// BackendConfig::modelDir holds one (animated by clip index when
     /// `skinned`, rest pose otherwise), else through the placeholder mesh
-    /// the description carries under instance.meshId.
+    /// the description carries under instance.meshId. Then, when
+    /// scene.viewmodel.visible, A SECOND 3D PASS for the hands: a camera at
+    /// the origin looking down -Z (the parts are in view space), its
+    /// projection's depth squeezed into the front of the range so the arms
+    /// win the depth test against every wall and still occlude each other
+    /// -- the same picture on rlsw and GL 3.3, no depth clear, no
+    /// framebuffer object (rlsw has none).
     SceneStats drawScene(const SceneDescription& scene);
     /// Draws `overlay` over the frame. Its pixels are render::Framebuffer's
     /// 0xAABBGGRR (R,G,B,A in memory), straight alpha.
