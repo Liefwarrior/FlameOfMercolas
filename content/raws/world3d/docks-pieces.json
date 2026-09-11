@@ -55,6 +55,7 @@
     "barrel_rack": { "pack": "PolygonDungeonRealms", "file": "SM_Prop_Barrel_Shelf_Large_01.gltf", "thickness": 0.36, "scale": 0.85, "lift": 0.02, "maxDistance": 40 },
     "table":       { "pack": "PolygonGeneric", "file": "SM_Gen_Prop_Table_01.gltf",       "height": 0.75, "scale": 0.9, "maxDistance": 40 },
     "bench":       { "pack": "PolygonDungeonRealms", "file": "SM_Prop_Dwarf_Chair_Bench_01.gltf", "scale": 0.9, "maxDistance": 40 },
+    "stool":       { "pack": "PolygonDungeonRealms", "file": "SM_Prop_Dwarf_Chair_Stool_01.gltf", "thickness": 0.22, "maxDistance": 32 },
     "mug":         { "pack": "PolygonGeneric", "file": "SM_Gen_Prop_Mug_01.gltf",         "maxDistance": 24 },
     "bottle":      { "pack": "PolygonGeneric", "file": "SM_Gen_Prop_Bottle_01.gltf",      "maxDistance": 24 },
     "shelf":       { "pack": "PolygonGeneric", "file": "SM_Gen_Prop_Shelf_01.gltf",       "extent": [-0.8032, 0.0, 0.8003, 0.4375], "scale": 0.6, "maxDistance": 32 },

@@ -232,8 +232,11 @@ enum class PieceRole : std::uint8_t {
     /// extends past shows no brick back and no brick end (the kit wall is
     /// brick on its other side and its ends).
     WallPlaster,
+    /// A stool beside an indoor pillar (the sim's own table): somewhere to
+    /// sit at it.
+    Stool,
 };
-inline constexpr std::size_t kPieceRoleCount = 49;
+inline constexpr std::size_t kPieceRoleCount = 50;
 
 /// The JSON key of a role ("wall", "wall_corner", ...), and back. None for
 /// an unknown key.

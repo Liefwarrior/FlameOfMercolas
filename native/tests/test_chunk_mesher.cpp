@@ -1312,6 +1312,15 @@ TEST_CASE("a lantern's room gets tables and a hearth") {
             CHECK(p.instance.position.y == doctest::Approx(render::bandSurface(19)));
         }
     }
+    // Stools stand at the indoor pillar (the sim's own table), never at
+    // the post on the street.
+    CHECK(countRole(placed.placements, PieceRole::Stool) >= 1);
+    for (const StaticPlacement& p : placed.placements) {
+        if (p.role == PieceRole::Stool) {
+            CHECK(std::fabs(p.instance.position.x - 13.5F) < 1.6F);
+            CHECK(std::fabs(p.instance.position.z - 12.5F) < 1.6F);
+        }
+    }
     // The hearth: the free-standing pair at (10..11, 10) wears the
     // fireplace on its south face, where the room is (one row of floor
     // and then the wall to its north), with a fire in it. The block is the

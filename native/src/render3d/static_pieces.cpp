@@ -33,7 +33,7 @@ constexpr std::string_view kRoleNames[kPieceRoleCount] = {
     "joist",       "table",        "bench",       "mug",          "bottle",      "shelf",
     "barrel_rack", "fireplace",    "pillar",      "post",         "parapet",     "roof_tile",
     "rowboat",     "crane",        "gunwale",     "window_timber", "rope",
-    "hull",        "wall_plaster",
+    "hull",        "wall_plaster", "stool",
 };
 
 // ---------------------------------------------------------------------------
@@ -68,6 +68,7 @@ constexpr std::uint32_t kSaltBoat = 0x424F4154U;      // "BOAT"
 constexpr std::uint32_t kSaltCrane = 0x4352414EU;     // "CRAN"
 constexpr std::uint32_t kSaltRope = 0x524F5045U;      // "ROPE"
 constexpr std::uint32_t kSaltPane = 0x50414E45U;      // "PANE"
+constexpr std::uint32_t kSaltStool = 0x53544F4CU;     // "STOL"
 /// One window in this many is dark at night whatever the room (a bed made,
 /// a candle out).
 constexpr std::uint32_t kPaneDarkEvery = 3U;
@@ -122,6 +123,9 @@ constexpr float kBoatOffshore = 1.45F;
 /// How many tiles of clear water a boat wants, across and along.
 constexpr std::int32_t kBoatAcross = 3;
 constexpr std::int32_t kBoatAlong = 4;
+/// A fireplace's depth as a fraction of its own: a relief on the hearth
+/// block, not a hood the bodies at the fire stand inside.
+constexpr float kFireplaceDepth = 0.5F;
 /// The furniture rule's reach round an indoor lantern, in tiles.
 constexpr std::int32_t kFurnitureReach = 7;
 
@@ -2241,8 +2245,12 @@ private:
                             ++wallCount;
                         }
                     }
-                    if (wallCount != 1 ||
-                        wallClassAt(x + kSideDx[wallSide], y + kSideDy[wallSide], z) != WallClass::Masonry) {
+                    // On a masonry face of a real wall, never on a free-standing
+                    // block (a hearth wears its fireplace, not a shelf).
+                    const std::int32_t wx = x + kSideDx[wallSide];
+                    const std::int32_t wy = y + kSideDy[wallSide];
+                    if (wallCount != 1 || wallClassAt(wx, wy, z) != WallClass::Masonry ||
+                        wallNeighbours(wx, wy, z) < 2) {
                         continue;
                     }
                     const std::uint32_t h = cellHash(x, y, z, kSaltShelf);
@@ -2255,6 +2263,42 @@ private:
             }
         }
         fireplaces();
+        stools();
+    }
+
+    /// Stools round the indoor pillars: the free floor cell east and west of
+    /// a lone indoor timber cell gets a stool pushed up to the pillar,
+    /// turned a little by hash. The pillar is the sim's own table (a candle
+    /// stands on it), so this is where the room sits.
+    void stools() {
+        const PieceSpec* stool = catalogue_.piece(PieceRole::Stool);
+        const PieceSpec* pillar = catalogue_.piece(PieceRole::Pillar);
+        if (stool == nullptr || pillar == nullptr) {
+            return;
+        }
+        const std::int32_t zLo = std::max(0, catalogue_.minBand());
+        for (std::int32_t z = zLo; z < tiles_.sizeZ(); ++z) {
+            for (std::int32_t y = 1; y + 1 < tiles_.sizeY(); ++y) {
+                for (std::int32_t x = 1; x + 1 < tiles_.sizeX(); ++x) {
+                    if (!lonePost(x, y, z) || !cellRoofed(tiles_, x, y, z)) {
+                        continue;
+                    }
+                    for (int s = kEast; s <= kWest; s += 2) {
+                        const std::int32_t nx = x + kSideDx[s];
+                        const std::int32_t ny = y + kSideDy[s];
+                        if (!floorCell(nx, ny, z) || covered(nx, ny, z) || gapAt(nx, ny, z) != nullptr) {
+                            continue;
+                        }
+                        const std::uint32_t h = cellHash(nx, ny, z, kSaltStool);
+                        // Against the pillar's face (the cell's edge plus the
+                        // pillar's own bulge), the stool's own radius back.
+                        const float push = 0.5F - pillar->thickness - stool->thickness;
+                        propAt(PieceRole::Stool, *stool, nx, ny, z, opposite(s), h, push);
+                        markCovered(nx, ny, z, 1, 1);
+                    }
+                }
+            }
+        }
     }
 
     /// A table on a cell, turned by hash, a bench each side, a mug or three.
@@ -2365,19 +2409,24 @@ private:
                         // opening to the room: the piece's own footprint
                         // centre (its extent) is put on the point, turned
                         // with the piece.
+                        // Its depth is halved: the hood stands as a relief
+                        // against the block, not a metre into the room where
+                        // the bodies warm themselves.
                         const float cx = 0.5F * static_cast<float>(x + px) + 0.5F;
                         const float cz = 0.5F * static_cast<float>(y + py) + 0.5F;
-                        const float push = 0.5F + fireplace->standoff;
+                        const float depthScale = fireplace->scale * kFireplaceDepth;
+                        const float half = 0.5F * (fireplace->maxZ - fireplace->minZ) * depthScale;
+                        const float push = 0.5F + half + 0.01F;
                         const int turns = (side + static_cast<int>(std::lround(fireplace->yawOffset / kHalfPi))) & 3;
                         const Vec2 off = turn(Vec2{0.5F * (fireplace->minX + fireplace->maxX) * fireplace->scale,
-                                                   0.5F * (fireplace->minZ + fireplace->maxZ) * fireplace->scale},
+                                                   0.5F * (fireplace->minZ + fireplace->maxZ) * depthScale},
                                               turns);
                         const Vec3 at{cx + kNormalX[side] * push - off.x, render::bandSurface(z),
                                       cz + kNormalZ[side] * push - off.z};
                         pointPiece(PieceRole::Fireplace, *fireplace, at, yawOf(side), x + kSideDx[side],
-                                   y + kSideDy[side], z, Rgba8{}, Vec3{1.0F, 1.0F, 1.0F}, false, 3.0F);
-                        flameAt(Vec3{at.x + kNormalX[side] * fireplace->thickness, at.y + 0.35F,
-                                     at.z + kNormalZ[side] * fireplace->thickness},
+                                   y + kSideDy[side], z, Rgba8{}, Vec3{1.0F, 1.0F, kFireplaceDepth}, false, 3.0F);
+                        flameAt(Vec3{cx + kNormalX[side] * (0.5F + half * 0.6F), at.y + 0.35F,
+                                     cz + kNormalZ[side] * (0.5F + half * 0.6F)},
                                 kFireFlameWidth, kFireFlameHeight, catalogue_.knobs().fireFlame,
                                 x + kSideDx[side], y + kSideDy[side], z);
                     }
