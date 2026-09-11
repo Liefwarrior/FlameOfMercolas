@@ -394,12 +394,16 @@ add_library(granadad-audio STATIC
     src/audio/mixer.cpp
     src/audio/decode_vorbis.cpp
     src/audio/sound_bank.cpp
+    src/audio/music_director.cpp
     src/audio/audio_engine.cpp
     src/audio/backend_null.cpp
 )
 target_include_directories(granadad-audio PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
 # GRANADAD_CONTENT_DIR_DEFAULT arrives through granadad-content.
-target_link_libraries(granadad-audio PUBLIC granadad-content stb::stb)
+# Threads: the MusicDirector decodes a two-minute loop off the game thread
+# (std::async); the mixer's mutex already wanted pthread on older glibc.
+find_package(Threads REQUIRED)
+target_link_libraries(granadad-audio PUBLIC granadad-content stb::stb Threads::Threads)
 granadad_apply_determinism(granadad-audio)
 
 # The audio smoke probe — bake_lamps' pattern: a dev tool, run by hand.

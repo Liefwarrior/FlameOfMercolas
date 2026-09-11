@@ -2607,6 +2607,20 @@ private:
     /// settled, a pocket picked, rent paid -- is one CoinHandle, caught by
     /// comparison exactly the way lastPlayerHp_ catches a blow.
     std::int32_t lastCoinForAudio_ = 0;
+    /// THE LOT PASS. The STANCE as of the last step, so step() can catch BOTH
+    /// edges of tavern_->playerHandsUp(): rising = hands up (SwordDraw, the
+    /// Malbers draw), falling = hands down (Sheathe, the Malbers store) --
+    /// however they came down: the lull, LOWER HANDS, the cancel list. The
+    /// same remember-the-edge shape lastEscalated_ uses.
+    bool lastHandsUp_ = false;
+    /// THE LOT PASS. How many of the three casebooks (the Hold, the sheet,
+    /// the eviction) read closed() as of the last step, so a case closing --
+    /// whichever book, whatever lead closed it -- is one CaseClosed sting,
+    /// caught by comparison exactly the way the purse is.
+    std::int32_t lastClosedBooks_ = 0;
+
+    /// The count behind lastClosedBooks_.
+    [[nodiscard]] std::int32_t closedBookCount() const noexcept;
 };
 
 // ---------------------------------------------------------------------------

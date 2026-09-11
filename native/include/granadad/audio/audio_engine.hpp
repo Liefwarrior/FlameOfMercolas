@@ -71,6 +71,7 @@
 
 #include "granadad/audio/backend.hpp"
 #include "granadad/audio/mixer.hpp"
+#include "granadad/audio/music_director.hpp"
 #include "granadad/audio/sound_bank.hpp"
 #include "granadad/audio/sound_ids.hpp"
 
@@ -93,6 +94,13 @@ struct MaterialSurfaceRow {
 
 /// The footstep one-shot for a surface.
 [[nodiscard]] SoundId footstepSoundFor(Surface surface) noexcept;
+
+/// THE LOT PASS: the loop-file layer a bed runs under its procedural layers
+/// (SoundId::AmbienceCoastal for the Harbour, AmbienceStone for the
+/// Interior). None for BedId::None. Exposed so the test suite can pin which
+/// bed reads which loop.
+[[nodiscard]] SoundId bedLoopSound(BedId bed) noexcept;
+[[nodiscard]] bool bedHasLoop(BedId bed) noexcept;
 
 /// 0 at night, 1 in full day, smooth ramps over dawn (05:00-07:00) and dusk
 /// (19:00-21:00). Drives per-layer bed gains; exposed for tests.
@@ -122,10 +130,21 @@ public:
     AudioEngine& operator=(const AudioEngine&) = delete;
 
     /// Fire-and-forget one-shot on its default bus (busFor). Silent no-op for
-    /// an id with no loaded variants. Variants round-robin: never the same
-    /// variant twice in a row when more than one exists.
+    /// an id with no loaded variants. Variants are drawn at random, never the
+    /// same variant twice in a row when more than one exists.
     void playOneShot(SoundId id, float gain = 1.0F, float pan = 0.0F,
                      float pitch = 1.0F);
+
+    /// THE LOT PASS: the same, with the variants taken in STRICT ROUND-ROBIN
+    /// order (0, 1, 2, ... wrapping) rather than at random — the owner's own
+    /// hurt vox is four takes meant to be heard in turn.
+    void playOneShotRoundRobin(SoundId id, float gain = 1.0F, float pan = 0.0F,
+                               float pitch = 1.0F);
+
+    /// The variant `id` last played through this engine, or -1 if never.
+    /// Observable so a test can prove the round-robin and the session edges
+    /// without ears.
+    [[nodiscard]] int lastVariant(SoundId id) const noexcept;
 
     /// A movement step: picks the surface set from the material registry id,
     /// rate-limits to a walk/run cadence, jitters pitch, layers a WadeSplash
@@ -162,6 +181,11 @@ public:
     [[nodiscard]] const SoundBank& bank() const noexcept { return bank_; }
     [[nodiscard]] Mixer& mixer() noexcept { return mixer_; }
 
+    /// THE LOT PASS: the music director (music_director.hpp). The client
+    /// factories give it the file loader over contentDir(); the test factory
+    /// gives it none, so a test engine is music-silent until it sets one.
+    [[nodiscard]] MusicDirector& music() noexcept { return music_; }
+
 private:
     AudioEngine(SoundBank bank, std::unique_ptr<Backend> backend,
                 std::uint64_t rngSeed);
@@ -187,6 +211,7 @@ private:
     Mixer mixer_;  ///< declared BEFORE backend_: the backend pulls it, so it
                    ///< must outlive the backend on destruction.
     std::unique_ptr<Backend> backend_;
+    MusicDirector music_;  ///< after mixer_ (holds Mixer&; dies before it)
     bool deviceOpen_ = false;
     std::uint64_t rng_ = 0;
     int timeOfDay_ = 12 * 3600;

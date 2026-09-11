@@ -20,7 +20,7 @@ constexpr MaterialSurfaceRow kMaterialSurfaces[] = {
     {"brick", Surface::Stone},
     {"brick_facade", Surface::Stone},
     {"chromatis", Surface::Stone},
-    {"chromatis_melt", Surface::Stone},
+    {"chromatis_melt", Surface::Mud},   // THE LOT PASS: the melt is a mud set now
     {"cloth", Surface::Cloth},
     {"dirt", Surface::Earth},
     {"glowstone", Surface::Stone},
@@ -29,13 +29,13 @@ constexpr MaterialSurfaceRow kMaterialSurfaces[] = {
     {"ice", Surface::Ice},
     {"leather", Surface::Cloth},
     {"lightstone", Surface::Stone},
-    {"lightstone_shards", Surface::Stone},
+    {"lightstone_shards", Surface::Gravel},  // THE LOT PASS: loose shards, the gravel set
     {"oak", Surface::Wood},
     {"phorys", Surface::Earth},       // the reef-growth reads organic underfoot
     {"reman_concrete", Surface::Stone},
     {"reman_facade", Surface::Stone},
-    {"steel", Surface::Stone},        // no metal footstep set vendored; stone
-                                      // rings closer than wood
+    {"steel", Surface::Metal},        // THE LOT PASS: the Footsteps Pack metal
+                                      // set; Kenney concrete stands in without it
     {"thatch", Surface::Earth},
     {"trudgeon_wood", Surface::Wood},
     {"trudgeon_wood@getilia_soak", Surface::Wood},
@@ -47,8 +47,10 @@ constexpr std::size_t kMaterialSurfaceCount =
 // ---------------------------------------------------------------------------
 // Bed definitions. Day/night gains are interpolated by dayness(); the
 // procedural layers are the v1 harbour bed (the vendored set has no ambience
-// recordings — see sound_ids.hpp). When real CC0 harbour loops arrive they
-// are added as BedLoop rows and nothing else changes.
+// recordings — see sound_ids.hpp). THE LOT PASS added the loop rows: the
+// owner's own 6 s Trojia3D beds (ambience_coastal under the Harbour,
+// ambience_stone under the Interior), quiet, under the procedural layers —
+// absent from the docker gate, where the row simply starts no voice.
 // ---------------------------------------------------------------------------
 struct BedProc {
     ProcLayer layer;
@@ -89,19 +91,26 @@ constexpr BedSparse kHarbourSparses[] = {
     {SoundId::HarbourBell, 50.0F, 140.0F, 0.10F, 0.05F, 0.4F},
 };
 
+constexpr BedLoop kHarbourLoops[] = {
+    {SoundId::AmbienceCoastal, 0.10F, 0.14F},
+};
+
 constexpr BedProc kInteriorProcs[] = {
     {ProcLayer::Wind, 0.05F, 0.09F},  // wind heard THROUGH the walls
 };
 constexpr BedSparse kInteriorSparses[] = {
     {SoundId::Creak, 9.0F, 25.0F, 0.28F, 0.35F, 0.6F},
 };
+constexpr BedLoop kInteriorLoops[] = {
+    {SoundId::AmbienceStone, 0.06F, 0.08F},
+};
 
 [[nodiscard]] BedDef bedDef(BedId bed) noexcept {
     switch (bed) {
         case BedId::Harbour:
-            return {kHarbourProcs, kHarbourSparses, {}};
+            return {kHarbourProcs, kHarbourSparses, kHarbourLoops};
         case BedId::Interior:
-            return {kInteriorProcs, kInteriorSparses, {}};
+            return {kInteriorProcs, kInteriorSparses, kInteriorLoops};
         case BedId::None:
             break;
     }
@@ -132,8 +141,20 @@ SoundId footstepSoundFor(Surface surface) noexcept {
         case Surface::Earth: return SoundId::FootstepEarth;
         case Surface::Cloth: return SoundId::FootstepCloth;
         case Surface::Ice: return SoundId::FootstepIce;
+        case Surface::Metal: return SoundId::FootstepMetal;
+        case Surface::Gravel: return SoundId::FootstepGravel;
+        case Surface::Mud: return SoundId::FootstepMud;
     }
     return SoundId::FootstepStone;
+}
+
+SoundId bedLoopSound(BedId bed) noexcept {
+    const BedDef def = bedDef(bed);
+    return def.loops.empty() ? SoundId::AmbienceOrganic : def.loops[0].id;
+}
+
+bool bedHasLoop(BedId bed) noexcept {
+    return !bedDef(bed).loops.empty();
 }
 
 float dayness(int secondsSinceMidnight) noexcept {
@@ -172,10 +193,18 @@ std::unique_ptr<AudioEngine> AudioEngine::create(SoundBank bank,
 
 AudioEngine::AudioEngine(SoundBank bank, std::unique_ptr<Backend> backend,
                          std::uint64_t rngSeed)
-    : bank_(std::move(bank)), backend_(std::move(backend)), rng_(rngSeed) {
+    : bank_(std::move(bank)),
+      backend_(std::move(backend)),
+      music_(mixer_),
+      rng_(rngSeed) {
     lastVariant_.fill(0xFF);
     mixer_.setNoiseSeed(static_cast<std::uint32_t>(rngSeed ^ (rngSeed >> 32)) |
                         1U);
+    // THE LOT PASS: the Malbers impacts are hot masters (several peak above
+    // 0 dBFS before their per-row trim), so the Combat bus rests a little
+    // below unity. A settings slider moves it later; this is the resting
+    // point, not a ceiling.
+    mixer_.setBusGain(Bus::Combat, 0.85F);
     deviceOpen_ = backend_ ? backend_->start(mixer_) : false;
 }
 
@@ -214,6 +243,26 @@ void AudioEngine::playOn(Bus bus, SoundId id, float gain, float pan,
 
 void AudioEngine::playOneShot(SoundId id, float gain, float pan, float pitch) {
     playOn(busFor(id), id, gain, pan, pitch);
+}
+
+void AudioEngine::playOneShotRoundRobin(SoundId id, float gain, float pan,
+                                        float pitch) {
+    const std::size_t count = bank_.variantCount(id);
+    if (count == 0) {
+        return;  // silence, never a crash — the missing-content contract
+    }
+    const std::size_t idx = soundIndex(id);
+    const std::size_t variant =
+        lastVariant_[idx] == 0xFF
+            ? 0
+            : (static_cast<std::size_t>(lastVariant_[idx]) + 1) % count;
+    lastVariant_[idx] = static_cast<std::uint8_t>(variant);
+    mixer_.play(bank_.sample(id, variant), busFor(id), gain, pan, pitch, false);
+}
+
+int AudioEngine::lastVariant(SoundId id) const noexcept {
+    const std::uint8_t v = lastVariant_[soundIndex(id)];
+    return v == 0xFF ? -1 : static_cast<int>(v);
 }
 
 bool AudioEngine::footstep(std::uint16_t materialId, bool running,
@@ -371,6 +420,7 @@ void AudioEngine::update(float dtSec) {
     const float day = dayness(timeOfDay_);
     advanceSlot(active_, dt, day);
     advanceSlot(fading_, dt, day);
+    music_.update();
 
     // Procedural layer targets: both slots contribute, so a Harbour->Interior
     // crossfade is the water fading under the rising creaks, not a cut.

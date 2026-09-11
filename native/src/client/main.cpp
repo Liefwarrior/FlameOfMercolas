@@ -14,6 +14,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <thread>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -282,6 +283,40 @@ int run_audio_selftest() {
     }
     std::printf("audio-selftest: bed=%d footstep_sounded=%d\n",
                 static_cast<int>(audio->currentBed()), stepped ? 1 : 0);
+    // THE LOT PASS: the music director, driven the way run_client() drives
+    // it -- the zone set, update() per frame -- until its exploration loop
+    // actually starts, so "the real exe on this machine decoded the owner's
+    // loop and put a stereo voice on Bus::Music" is a stdout fact. Bounded:
+    // a checkout without content/art/lot/audio has no track to start and
+    // says so, which is a fact about the checkout, not a failure.
+    std::printf("audio-selftest: %s\n", audio->music().describe().c_str());
+    std::printf("audio-selftest: bank LOT files=%zu (missing %zu), Kenney missing=%zu\n",
+                audio->bank().lotFiles(), audio->bank().lotMissingFiles(),
+                audio->bank().missingFiles());
+    audio->music().setZone(granadad::audio::MusicZone::Docks);
+    const auto t0 = std::chrono::steady_clock::now();
+    int waitedMs = 0;
+    while (audio->music().playing() == granadad::audio::TrackId::None &&
+           waitedMs < 15000) {
+        audio->update(1.0F / 60.0F);
+        std::this_thread::sleep_for(std::chrono::milliseconds(16));
+        waitedMs = static_cast<int>(
+            std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::steady_clock::now() - t0)
+                .count());
+    }
+    const granadad::audio::TrackId playing = audio->music().playing();
+    if (playing != granadad::audio::TrackId::None) {
+        std::printf("audio-selftest: music exploration loop started: %s after %d ms "
+                    "(voice %u on Bus::Music, tracks held=%d)\n",
+                    std::string(granadad::audio::trackName(playing)).c_str(),
+                    waitedMs, static_cast<unsigned>(audio->music().voice()),
+                    audio->music().loadedTracks());
+    } else {
+        std::printf("audio-selftest: music: no track started in %d ms "
+                    "(LOT audio absent, or the loader found no file)\n",
+                    waitedMs);
+    }
     return 0;
 }
 
@@ -293,6 +328,10 @@ struct Options {
     render::SmokeRunConfig smoke;
     bool wantsSmoke = false;
     int windowScale = 2;
+    /// THE LOT PASS: --music-off. The MusicDirector loads and plays nothing;
+    /// every other sound stays. Audio-side only, never in the settings file
+    /// (a launch flag, like --nohud).
+    bool musicOff = false;
     /// Mouse look sensitivity, BAM per mouse count. Only used when NAMED: the
     /// settings file is the source of truth, and a command line that always
     /// overrode it would silently undo the options page on every launch.
@@ -941,6 +980,8 @@ void print_usage() {
         "                       prints the count (0 included) and every name,\n"
         "                       so a controller's presence can be proved from\n"
         "                       a script without a human pressing a button\n"
+        "  --music-off          no music: the director loads and plays no\n"
+        "                       track; footsteps, beds and combat stay\n"
         "  --audio-selftest     open the real SDL audio engine, no window --\n"
         "                       prints whether a device opened (no device is\n"
         "                       a fact, not a failure: the game runs silent)\n"
@@ -1060,6 +1101,8 @@ void print_usage() {
             options.smoke.session.clockScale = std::clamp(std::atoi(value), 1, 3600);
         } else if (std::strcmp(arg, "--hold") == 0) {
             options.smoke.walk = false;
+        } else if (std::strcmp(arg, "--music-off") == 0) {
+            options.musicOff = true;
         } else if (std::strcmp(arg, "--nohud") == 0) {
             options.smoke.session.hud = false;
             options.smoke.stamp = false;
@@ -3870,6 +3913,13 @@ int run_client(const Options& options, const render::CreationResult& chosen) {
         std::printf("granadad: audio %s\n",
                     audio->deviceOpen() ? "device open (48kHz float stereo)"
                                         : "no output device -- running silent");
+        // THE LOT PASS: the director's one start line -- which pairs, which
+        // layout -- so a verifier reading stdout can know what the music is
+        // doing without ears, the same reasoning the device line states.
+        if (options.musicOff) {
+            audio->music().setEnabled(false);
+        }
+        std::printf("granadad: %s\n", audio->music().describe().c_str());
         session.setAudio(audio.get());
     } else {
         std::printf("granadad: audio engine unavailable -- running silent\n");

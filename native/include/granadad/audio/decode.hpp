@@ -21,4 +21,15 @@ namespace granadad::audio {
 [[nodiscard]] std::optional<Sample> decodeOggToMono(const unsigned char* bytes,
                                                     std::size_t size);
 
+/// THE LOT PASS: the same decode with the channels KEPT when the file is
+/// stereo (Sample::stereo, interleaved) — for the music loops, which are
+/// authored stereo. A mono file still lands in Sample::mono. Same contract
+/// on malformed input.
+[[nodiscard]] std::optional<Sample> decodeOgg(const unsigned char* bytes,
+                                              std::size_t size, bool keepStereo);
+
+/// Scales a decoded sample by `gainDb` in place (the manifest's per-row trim,
+/// baked once at load so the mixer never carries a per-variant gain).
+void applyGainDb(Sample& sample, float gainDb) noexcept;
+
 }  // namespace granadad::audio

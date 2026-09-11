@@ -4,8 +4,11 @@
 // card). This file also owns the createNull factories so audio_engine.cpp
 // stays backend-agnostic.
 
+#include <filesystem>
+
 #include "granadad/audio/audio_engine.hpp"
 #include "granadad/audio/backend.hpp"
+#include "granadad/audio/sound_bank.hpp"
 #include "granadad/content/content_dir.hpp"
 
 namespace granadad::audio {
@@ -26,8 +29,14 @@ public:
 }  // namespace
 
 std::unique_ptr<AudioEngine> AudioEngine::createNull(std::uint64_t rngSeed) {
-    return create(SoundBank::load(content::contentDir()),
-                  std::make_unique<NullBackend>(), rngSeed);
+    const std::filesystem::path dir = content::contentDir();
+    std::unique_ptr<AudioEngine> engine =
+        create(SoundBank::load(dir), std::make_unique<NullBackend>(), rngSeed);
+    // The real bank gets the real track loader too (the LOT root); a
+    // checkout without the music simply never starts a music voice.
+    engine->music().setTrackLoader(
+        [dir](TrackId id) { return loadTrack(dir, id); });
+    return engine;
 }
 
 std::unique_ptr<AudioEngine> AudioEngine::createNull(std::uint64_t rngSeed,

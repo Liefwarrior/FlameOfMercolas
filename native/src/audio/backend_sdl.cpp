@@ -5,9 +5,11 @@
 #include <SDL3/SDL.h>
 
 #include <chrono>
+#include <filesystem>
 
 #include "granadad/audio/backend.hpp"
 #include "granadad/audio/mixer.hpp"
+#include "granadad/audio/sound_bank.hpp"
 #include "granadad/content/content_dir.hpp"
 
 namespace granadad::audio {
@@ -82,8 +84,15 @@ std::unique_ptr<AudioEngine> createSdlAudioEngine() {
     const auto now = std::chrono::steady_clock::now().time_since_epoch();
     const std::uint64_t seed = static_cast<std::uint64_t>(
         std::chrono::duration_cast<std::chrono::nanoseconds>(now).count());
-    return AudioEngine::create(SoundBank::load(content::contentDir()),
-                               std::make_unique<SdlBackend>(), seed | 1ULL);
+    const std::filesystem::path dir = content::contentDir();
+    std::unique_ptr<AudioEngine> engine = AudioEngine::create(
+        SoundBank::load(dir), std::make_unique<SdlBackend>(), seed | 1ULL);
+    // THE LOT PASS: the music director's loader, over the LOT root. Decodes
+    // run off the game thread inside the director; a missing loop is a
+    // silent cue, never a wait.
+    engine->music().setTrackLoader(
+        [dir](TrackId id) { return loadTrack(dir, id); });
+    return engine;
 }
 
 }  // namespace granadad::audio

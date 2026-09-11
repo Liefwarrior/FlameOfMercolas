@@ -492,13 +492,23 @@ void Session::setAudio(audio::AudioEngine* engine) {
     // was listening is replayed as if it just happened.
     lastCoinForAudio_ = tavern_->playerCoin();
     audioPanelWasMenu_ = casebookOpen_;
+    lastHandsUp_ = tavern_->playerHandsUp();
+    lastClosedBooks_ = closedBookCount();
     // And the bed starts the moment there are ears: the same
     // playerInside()-keyed choice step() re-asserts every step (re-asserting
     // the current bed is a documented no-op), so a body standing still on the
     // quay hears the harbour without having to move first.
     audio_->startBed(tavern_->playerInside() ? audio::BedId::Interior
                                              : audio::BedId::Harbour);
+    // THE LOT PASS: and the music's zone, on the same signal.
+    audio_->music().setZone(tavern_->playerInside() ? audio::MusicZone::Interior
+                                                    : audio::MusicZone::Docks);
     audio_->setTimeOfDay(timeOfDay_);
+}
+
+std::int32_t Session::closedBookCount() const noexcept {
+    return (casebook_.closed() ? 1 : 0) + (sheetBook_.closed() ? 1 : 0) +
+           (evictBook_.closed() ? 1 : 0);
 }
 
 void Session::syncTavernToBody() {
@@ -3455,9 +3465,15 @@ void Session::settleDefeat() {
         armDeathCeremony();
     }
     // AUDIO WIRING: the plan's "knockdown -> ThudHeavy" -- the one call every
-    // path to the floor funnels through.
+    // path to the floor funnels through. THE LOT PASS: fall_land is what
+    // ThudHeavy resolves to now, and the DEATH CEREMONY (an escalated
+    // defeat, the occasion armed just above) gets the owner's own death vox
+    // over it; a plain brawl KO keeps the bare thud.
     if (audio_ != nullptr) {
         audio_->playOneShot(audio::SoundId::ThudHeavy);
+        if (tavern_->escalated()) {
+            audio_->playOneShot(audio::SoundId::PlayerDown);
+        }
     }
     tavern_->reviveAfterDefeat();
     // Through placeBodyAt: waking on the quay apron is a relocation like any
@@ -3948,10 +3964,18 @@ void Session::step(const sim::MoveInput& input) {
             }
         } else {
             punchTakenPulse_.trigger();
-            // AUDIO WIRING: the taken hit, beside its blooded wash.
+            // AUDIO WIRING: the taken hit, beside its blooded wash -- and THE
+            // LOT PASS lays the owner's own hurt vox over it, the four takes
+            // in strict turn.
             if (audio_ != nullptr) {
                 audio_->playOneShot(audio::SoundId::ThudMedium);
+                audio_->playOneShotRoundRobin(audio::SoundId::PlayerHurt);
             }
+        }
+        // THE LOT PASS: a blow TAKEN, blocked or not, is a fight the music
+        // has to know about.
+        if (audio_ != nullptr) {
+            audio_->music().noteCombat();
         }
     }
     lastPlayerHp_ = hpNow;
@@ -3969,9 +3993,36 @@ void Session::step(const sim::MoveInput& input) {
         say("STEEL OUT. THE ROOM STANDS BACK.");
         if (audio_ != nullptr) {
             audio_->playOneShot(audio::SoundId::SwordDraw);
+            // THE LOT PASS: steel out IS the combat edge for the music.
+            audio_->music().noteCombat();
         }
     }
     lastEscalated_ = escalatedNow;
+    // THE LOT PASS: THE STANCE, BOTH EDGES. tavern_->playerHandsUp() is the
+    // one hashed bit the room reads for "fighting mode"; it rises on the
+    // first swing raised and falls on the lull (kLowerHandsSteps), on LOWER
+    // HANDS, and on every cancel-list clause (a page, a conversation, a
+    // pick, sleep, arrest, defeat). Rising = the Malbers draw (SwordDraw --
+    // the same id the escalation edge speaks, so a fight that draws steel
+    // may say it twice, once for the hands and once for the blade); falling
+    // = the Malbers store (Sheathe). Latched here regardless of audio_, so an
+    // engine attached mid-stance does not replay the edge.
+    const bool handsUpNow = tavern_->playerHandsUp();
+    if (audio_ != nullptr) {
+        if (handsUpNow && !lastHandsUp_) {
+            audio_->playOneShot(audio::SoundId::SwordDraw);
+        } else if (!handsUpNow && lastHandsUp_) {
+            audio_->playOneShot(audio::SoundId::Sheathe);
+        }
+    }
+    lastHandsUp_ = handsUpNow;
+    // THE LOT PASS: A CASE CLOSING, caught by comparison across all three
+    // books -- the sting is the owner's own victory cue, spoken once.
+    const std::int32_t closedBooksNow = closedBookCount();
+    if (audio_ != nullptr && closedBooksNow > lastClosedBooks_) {
+        audio_->playOneShot(audio::SoundId::CaseClosed);
+    }
+    lastClosedBooks_ = closedBooksNow;
     punchLandedPulse_.advance();
     punchTakenPulse_.advance();
     blockPulse_.advance();
@@ -3999,6 +4050,15 @@ void Session::step(const sim::MoveInput& input) {
         lastCoinForAudio_ = coinNow;
         audio_->startBed(tavern_->playerInside() ? audio::BedId::Interior
                                                  : audio::BedId::Harbour);
+        // THE LOT PASS: the music's zone off the identical signal (re-
+        // asserting is a no-op there too), and its calm clock, which counts
+        // SIM steps -- brawlers standing keep it at zero; ten seconds of
+        // nobody swinging and nobody standing is the way back to exploration.
+        // Audio-side state only; the sim never reads any of it.
+        audio_->music().setZone(tavern_->playerInside()
+                                    ? audio::MusicZone::Interior
+                                    : audio::MusicZone::Docks);
+        audio_->music().step(tavern_->playerInBrawl());
     }
     // NOW the string can go. messageSteps_ reaching zero is what stopped
     // WANTING the alert on screen -- see the note above and syncPanelAnim's
@@ -6043,12 +6103,23 @@ void Session::attackUp() {
     if (result.hard) {
         hardSwingDipPulse_.trigger();
     }
+    // THE LOT PASS: the HARD release has its own air (whoosh_strong / swing
+    // sword) under whatever it finds -- a body or nothing; a tap at nothing
+    // is the plain whoosh set. Spoken before the band below, so the ear gets
+    // swing-then-impact in that order on a hard hit.
+    if (audio_ != nullptr && result.hard) {
+        audio_->playOneShot(audio::SoundId::WhooshHard);
+    }
     if (result.targetId < 0) {
         // Committed and paid, but the crosshair passed through nobody. The arm
         // still swung, so the wind is spent and the swing gets its air.
         say("NOBODY IN REACH.");
         if (audio_ != nullptr) {
-            audio_->playOneShot(audio::SoundId::Whoosh);
+            if (!result.hard) {
+                audio_->playOneShot(audio::SoundId::Whoosh);
+            }
+            // A blow thrown keeps the combat music alive; it starts nothing.
+            audio_->music().noteSwing();
         }
         return;
     }
@@ -6077,10 +6148,17 @@ void Session::attackUp() {
     // glanced off nothing worth a mark (a fully absorbed hit). SwordDraw is the
     // Lethal FLIP, wired on the escalation edge in step(), not here.
     if (audio_ != nullptr) {
-        if (result.blow.crowned) {
-            audio_->playOneShot(audio::SoundId::HelmetHit);
-        } else if (result.killed || result.blow.downed) {
+        // THE LOT PASS re-cut the bands over the Malbers set: hit_grave for
+        // the blow that ends a man (a crowning or a kill), the heavy band
+        // plus fall_land (ThudHeavy) for a body going down, the clash for a
+        // guard that caught it, the medium band for a blow that landed.
+        if (result.blow.crowned || result.killed) {
+            audio_->playOneShot(audio::SoundId::HitGrave);
+        } else if (result.blow.downed) {
             audio_->playOneShot(audio::SoundId::PunchHeavy);
+            audio_->playOneShot(audio::SoundId::ThudHeavy);
+        } else if (result.blow.blocked) {
+            audio_->playOneShot(audio::SoundId::SwordClash);
         } else if (result.blow.landed) {
             audio_->playOneShot(result.blow.damage <= kGrazeDamageBand
                                     ? audio::SoundId::GrazeLight
@@ -6094,6 +6172,13 @@ void Session::attackUp() {
             // coat. The light graze at a third of its gain and no wash --
             // presentation only, zero law contact.
             audio_->playOneShot(audio::SoundId::GrazeLight, kFoundBodyWhiffGain);
+        }
+        // THE LOT PASS: a blow LANDED is the fight's first edge for the
+        // music; a whiff on a body only keeps a running fight alive.
+        if (result.blow.landed) {
+            audio_->music().noteCombat();
+        } else {
+            audio_->music().noteSwing();
         }
     }
     // A LANDED SWING FINALLY HAS SOME WEIGHT -- the connecting wash. A whiff on
