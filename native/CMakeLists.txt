@@ -142,6 +142,10 @@ add_library(granadad-sim STATIC
     # that is the reason to be carrying them in the first place.
     src/sim/contraband.cpp
     src/sim/watch.cpp
+    # JUSTICE BUILD -- the court: the plea, the priest's weighing and the
+    # judgment, rules only, beside watch.cpp (what the paper asks for) and
+    # read by crime.cpp (what the record keeps).
+    src/sim/justice.cpp
     src/sim/contract.cpp
     # S9 -- being unseen, and the lock. stealth.cpp is the first integer light
     # model on this side of the line; lockpick.cpp is a lock whose pins are a
@@ -355,6 +359,12 @@ add_library(granadad-render STATIC
     # This is the surface the owner's playthrough stalled on: three leads opened
     # at the Weighhouse and nothing on the screen said so. See the header.
     src/render/casebook_page.cpp
+    # JUSTICE BUILD (HEARING PAGE LANE) -- the Flame's bench as a page: the
+    # paper laid, the charge off the ledger, the three rows, the priest's
+    # weighing in the reference's own four-line check block, the judgment
+    # badge, the sentence in numbers. Draws into the Framebuffer like every
+    # other page, so the 3D overlay composites it unchanged. See the header.
+    src/render/hearing_page.cpp
 )
 target_include_directories(granadad-render PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
 # GRANADAD_CONTENT_DIR_DEFAULT arrives through granadad-content.
@@ -563,6 +573,23 @@ if(GRANADAD_BUILD_TESTS)
         # NPC's pending roll, stand-back, bouncers refusing steel, the rout,
         # and a scripted fight twin-run.
         tests/test_watch_rhythm.cpp
+        # JUSTICE BUILD (TAG & COURT) -- the criminal tag as a table (WANTED /
+        # WANTED FOR BLOOD / CONDEMNED / MAIMED, each cleared by its own road
+        # and the blood only by the bench), the charge sheet written draw-free
+        # off a seeded ledger, weighArraignment held to weighPetition's shape
+        # (the base, the caps, the band off the arrest's ONE draw, the lines),
+        # I DID IT identical under every draw, I DID NOT moving by exactly the
+        # band and doubled below it, a witnessed murder never SPARED, the rope
+        # tier only where ruled, the hand sparable at the fine's line, mercy
+        # once, the v5 codec round trip, an arrest with paper opening a
+        # hearing with NO clock jump while the door's search stays the shipped
+        # fast path, the plea as a stepped input, a scripted arrest-and-plea
+        # twin-run, and the two player-end paths asserted apart both ways.
+        tests/test_court.cpp
+        # JUSTICE BUILD (HEARING PAGE LANE): the hearing page pixel-exact and
+        # word-exact, the register grammar on keyboard and pad, the rope's
+        # plate and the end rows, A NEW MAN reaching the creation screen.
+        tests/test_hearing_page.cpp
         tests/test_lamps.cpp
         tests/test_atlas.cpp
         tests/test_render.cpp

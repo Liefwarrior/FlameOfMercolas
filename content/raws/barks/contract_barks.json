@@ -1,6 +1,6 @@
 {
   "id": "contract_barks",
-  "notes": "S6 ADDITION, and it obeys the same rule every other bark file does: NOTHING in the code writes a spoken line. The contract board composes a BRIEF from the notables' own file, which is menu furniture and a journal entry; what a broker actually SAYS when he hands you work, and what a watchman says when he puts his hand on your shoulder, is here. Keys resolve through the same fallback chain barks.json uses - the specific key first, then the generic - so a broker with no table of his own still speaks.",
+  "notes": "S6 ADDITION, and it obeys the same rule every other bark file does: NOTHING in the code writes a spoken line. JUSTICE BUILD (2026-09-11) APPENDS THE BENCH: the sixteen court.* tables are the bench at the Mission hearing the Watch's paper -- court.taken is the WATCHMAN walking you in (said as he lays the paper, under the rows), the priest's openings are chosen BY THE CASE and rotated only within the case (court.paper for a thief the Mission does not know, court.paper.door for one who has given at its door, court.blood for a killing, court.roofs.hand for a Skyrunner's first, court.roofs.rope for the second rung, court.nothing for a commuted man back for the rope), court.plead is the priest pressing for the answer once a plea is armed, court.spared .. court.rope are his word on each of the seven judgments, court.lie is a denial disbelieved; three rows each, rotated on the count of hearings, the watch.condemned precedent. EVERY ROW IN A TABLE IS TRUE OF EVERY HEARING THAT TABLE CAN OPEN: no row names a gift, a rope, a corpse or a night the sheet may not carry -- a row that depends on the sheet lives in a table keyed by that case. The learned word is never said to a layman, not even nearly. Listed for the owner's redline. The contract board composes a BRIEF from the notables' own file, which is menu furniture and a journal entry; what a broker actually SAYS when he hands you work, and what a watchman says when he puts his hand on your shoulder, is here. Keys resolve through the same fallback chain barks.json uses - the specific key first, then the generic - so a broker with no table of his own still speaks.",
   "tables": [
     {
       "key": "contract.none",
@@ -143,6 +143,136 @@
         "Twice. There is no third and you have always known there was no third.",
         "The rope, then. It was never anything else once you took the first rung.",
         "You will be held until they build the thing they hold you for."
+      ]
+    },
+    {
+      "key": "court.taken",
+      "rows": [
+        "Through the door and sit where he points. The priest asks the questions in here. I only carry the paper.",
+        "Mind the step. Men have gone down it in irons and come out with a fine; men have gone down it free and come out for the post.",
+        "I lay it on the table and I stand by the wall. What he does with it is between you and the lamp.",
+        "You will call him Father and you will not lie to him. The second one is not my rule, but I have watched it enforced."
+      ]
+    },
+    {
+      "key": "court.paper",
+      "rows": [
+        "The Watch brings me paper and asks for a cell. I ask the man. Speak.",
+        "Sit. The Flame has heard worse than a thief tonight and will hear worse tomorrow.",
+        "I have never seen your face at this door. The paper is all I have of you. Give me more."
+      ]
+    },
+    {
+      "key": "court.paper.door",
+      "rows": [
+        "I have read what you gave at this door. It is the only reason we are talking.",
+        "I know your face from the alms bowl. I did not think I would see it across this table. Speak.",
+        "You have given at this door and I have not forgotten it. Sit down and tell me what you did."
+      ]
+    },
+    {
+      "key": "court.blood",
+      "rows": [
+        "A dead man on the ward's roll and your name beside his. The Flame hands no man to the post unheard. Speak.",
+        "A man on the Gull's floor will not get up. The Watch wants your neck for it. I want the truth first.",
+        "The lamp does not go out because you put a man under it. It goes out when I stop asking. Speak."
+      ]
+    },
+    {
+      "key": "court.roofs.hand",
+      "rows": [
+        "The roofs, and the Watch wants the hand. I have overruled a sergeant before. Give me a reason.",
+        "You climbed. Half this quay has climbed. The half that was not caught is not sitting here. Speak.",
+        "A first time on the roofs and the sergeant wants a hand for it. Whether he gets it is mine to say."
+      ]
+    },
+    {
+      "key": "court.roofs.rope",
+      "rows": [
+        "The rope is for the second rung and you are standing on it. I will hear you anyway.",
+        "Twice on the roofs with paper out. The ward has one answer for twice. I am the last man who can give another.",
+        "The sergeant wants the post and the rule is on his side. Speak well. There is nothing else on yours."
+      ]
+    },
+    {
+      "key": "court.nothing",
+      "rows": [
+        "I gave you mercy once and told you it was once. I do not have a second.",
+        "You will say nothing, because there is nothing left to say. The ward may have you.",
+        "Mercy was a bargain and the Flame kept its side. You were told what a second time costs. It costs this."
+      ]
+    },
+    {
+      "key": "court.plead",
+      "rows": [
+        "Well? The lamp is lit and I am an old man. Did you, or did you not?",
+        "Say it plainly. The Flame has no ear for a long story and neither have I, at this hour.",
+        "That is your answer, then. Give it to me once, out loud, and it is yours for good.",
+        "I will not ask twice. The Watch would; the Watch is paid by the hour."
+      ]
+    },
+    {
+      "key": "court.spared",
+      "rows": [
+        "Go. The paper is torn and the ward will not remember why. I will.",
+        "I believe you, which the Watch does not. Walk out of my door before the sergeant finds his tongue.",
+        "Spared. Do not thank me; I did not do it for you. Go, and keep out of the sergeant's way."
+      ]
+    },
+    {
+      "key": "court.fined",
+      "rows": [
+        "You will pay the ward for its evening and you will pay me nothing. Go.",
+        "A fine, and no cell. The Flame does not want your nights; the ward wants your coin.",
+        "Pay it and be gone. If the purse is short, the yard will take the rest in days."
+      ]
+    },
+    {
+      "key": "court.held",
+      "rows": [
+        "A cell, and the nights the ward asks for. Sleep in it. Most men do.",
+        "The Watch has its cell. I have your name, and I will keep it longer than they keep you.",
+        "Held. When you come out the paper will be gone and the heat will not. That is the ward, not me."
+      ]
+    },
+    {
+      "key": "court.bound",
+      "rows": [
+        "No fine. The Flame has better use for you than a purse. Five days in my yard, carrying the pot.",
+        "Bondsworn to this Mission. You will be fed, preached at, and worked. Two of those are a kindness.",
+        "The yard. Nobody has ever died of it, though several have asked to."
+      ]
+    },
+    {
+      "key": "court.hand",
+      "rows": [
+        "The hand. The rule is the hand, and I will not pretend the sergeant is wrong. It is done quickly.",
+        "A Skyrunner's first. The ward takes the hand so it need not take the rest. Hold it out.",
+        "I would spare it if I could look the sergeant in the eye afterward. I cannot. It comes off."
+      ]
+    },
+    {
+      "key": "court.commuted",
+      "rows": [
+        "The rope does not un-take the hand. The hand, twelve days in my yard, and your life. Remember it.",
+        "The Flame does not want you dead. The ward may still. Twelve days, and you walk out of here marked.",
+        "Commuted. Once. There is no word in this Mission for twice."
+      ]
+    },
+    {
+      "key": "court.rope",
+      "rows": [
+        "The Flame does not want you. The ward may have you.",
+        "I have nothing to weigh you against. Go with the sergeant.",
+        "It is the rope. I will say the words at the post; I will not say them here."
+      ]
+    },
+    {
+      "key": "court.lie",
+      "rows": [
+        "You lied to the Flame's face. The Mission will remember the lie longer than the sentence.",
+        "Denied, and disbelieved. The sentence doubles and so does the memory of it.",
+        "You told me you did not, and the lamp went dim as you said it. Twice what it would have been."
       ]
     }
   ]

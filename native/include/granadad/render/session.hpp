@@ -36,6 +36,7 @@
 #include "granadad/render/creation_page.hpp"
 #include "granadad/render/dialogue_view.hpp"
 #include "granadad/render/framebuffer.hpp"
+#include "granadad/render/hearing_page.hpp"
 #include "granadad/render/hud.hpp"
 #include "granadad/render/keys_page.hpp"
 #include "granadad/render/lamps.hpp"
@@ -193,6 +194,16 @@ struct WatchOp {
     [[nodiscard]] bool operator==(const WatchOp&) const = default;
 };
 
+/// THE ARREST BEAT'S TWO HOLDS, in movement steps (sixty a second). The
+/// officer's line is a sentence and a half on the alert row: two and a half
+/// seconds, the message row's own four-second hold not yet run out when the
+/// cut takes it. The plate is one line over black: a second and three
+/// quarters, the rope plate's register at a fraction of its hold. Both are
+/// presentation's numbers, read by the suite and the drive; the sim never
+/// waits on either.
+inline constexpr std::int32_t kTakenOfficerSteps = 150;
+inline constexpr std::int32_t kTakenPlateSteps = 105;
+
 /// A loaded, standing, drawable session.
 class Session {
 public:
@@ -332,6 +343,148 @@ public:
     /// to the top of an hour because its page prints hours; a walk is minutes,
     /// so this twin takes the seconds whole. Zero or less does nothing.
     void skipSeconds(int seconds);
+    /// JUSTICE BUILD (SENTENCES LANE). Serves the judged hearing's sentence
+    /// THROUGH THE SAME WAIT MACHINERY: Tavern::serveSentence (the coin, the
+    /// cell and the yard as skipHours, the mirror, the temple, the body, then
+    /// the ledger's record after the skip) plus syncClockAfterSkip(), so the
+    /// ward's roll runs every day the sentence cost (Ward::advanceToDay --
+    /// the ground penny falls due inside a sentence like inside a rented bed)
+    /// and the district's people follow the clock. One time system, never
+    /// two. The release that follows is the arrest's own (takeArrestRelease,
+    /// read in step()); THE ROPE fires none and sets tavern().runEnd(). The
+    /// page that calls this and stages what it returns is presentation's.
+    const sim::Tavern::SentenceReport& serveSentence();
+
+    // --- JUSTICE BUILD (HEARING PAGE LANE): the court, the rope, the end ----
+    //
+    // THE HEARING IS A PAGE, drawn into the Framebuffer like every other page
+    // (render/hearing_page.hpp) over the hashed HearingState the crime ledger
+    // keeps. TAKEN: the step that reads the arrest's release with a hearing
+    // pending puts the body on the Mission's own arrival tile (the walk
+    // elided, dressInstantCut's dip), says "TAKEN TO THE MISSION. HH:MM." and
+    // opens the page -- modal, un-backable: the player cannot walk out of
+    // custody (PLAY-MODE-SPEC's own rule; step() drops the movement input and
+    // every world verb and page toggle is refused while inCustody()). The
+    // plea is a stepped input through the page's own rows (armed on the
+    // first press, confirmed on the second -- the QUIT pattern), the
+    // weighing is shown in the check block, and the sentence row appears
+    // after sim::kJudgmentHoldSteps. Serving it is Session::serveSentence
+    // and the release that follows closes the page at the Mission's door
+    // (SPARED, FINED) or on the Tarwalk. THE ROPE arms the rope ceremony:
+    // the held black dip, the plate that never fades, then the end rows.
+    //
+    // ALL OF IT ON SESSION AND NOT IN THE CLIENT, for the reason the six
+    // verbs are: the suite drives exactly the code a keypress drives
+    // (routeCourtKey is the whole grammar, and main.cpp calls it first).
+
+    /// The hearing page is up: taken with paper, not yet released.
+    [[nodiscard]] bool courtOpen() const noexcept { return courtOpen_; }
+    /// The officer's hand is on you, the page, the rope ceremony or the end
+    /// rows own the frame: the body is the ward's, not the player's.
+    [[nodiscard]] bool inCustody() const noexcept {
+        return takenHold_ > 0 || courtOpen_ || ropeCeremonySteps_ > 0 || ropeRowsUp_;
+    }
+
+    /// THE ARREST, ON SCREEN (JUSTICE-SPEC 2.2, the two beats before the
+    /// page). Taken at reach with paper, the player SEES it before the bench
+    /// does anything: first the officer's own line -- watch.held / maimed /
+    /// condemned, "There is paper out on you and I am the man holding it.
+    /// Walk." -- said on the alert row IN THE ROOM, over the world, with his
+    /// hand on you, held for kTakenOfficerSteps; then the cut, an instant
+    /// black with one line on it in the rope plate's own register, "TAKEN TO
+    /// THE MISSION. 23:00.", held for kTakenPlateSteps; and only then the
+    /// body at the Mission's door and the page. Nothing is drawn under a page
+    /// that hides the alert row: the line the spec promised is on the frame
+    /// for as long as it takes to read. A record reopened between the arrest
+    /// and the plea (a hearing pending with no release fired) skips both
+    /// beats and opens the page at once.
+    /// The officer's beat: his line on the row, the room still around you.
+    [[nodiscard]] bool takenBeatUp() const noexcept { return takenHold_ > kTakenPlateSteps; }
+    /// The plate: black, the one line, before the page.
+    [[nodiscard]] bool takenPlateUp() const noexcept {
+        return takenHold_ > 0 && takenHold_ <= kTakenPlateSteps;
+    }
+    /// "TAKEN TO THE MISSION. 23:00." -- what the plate reads, empty until it
+    /// is up.
+    [[nodiscard]] const std::string& takenPlate() const noexcept { return takenPlate_; }
+    /// What the pause menu's WAIT row reads, and says when pressed, while in
+    /// custody: "THE PRIEST IS WAITING." at the bench, "THE WATCH HAS YOU."
+    /// under the officer's hand before it. Empty means nobody has you.
+    [[nodiscard]] std::string custodyWaitLine() const;
+    /// The plate over the finished frame: the black and the line, at full
+    /// alpha for the whole hold. A no-op while it is not up. Public, like
+    /// composeRopeCeremony, so a case can compose the expected frame itself
+    /// and pin the rendered one against it.
+    void composeTakenPlate(Framebuffer& target) const;
+    /// Everything the page draws, off the ledger's record. Built here so a
+    /// case can assert what the page SAYS without a framebuffer.
+    [[nodiscard]] HearingPageState hearingPageState() const;
+    [[nodiscard]] int courtCursor() const noexcept { return courtCursor_; }
+    /// HEAR THE PAPER is open in the detail pane; 0 - BACK returns.
+    [[nodiscard]] bool courtPaperOpen() const noexcept { return courtPaperOpen_; }
+    /// A plea row was pressed once and waits for its second press.
+    [[nodiscard]] bool courtPleaArmed() const noexcept { return courtArmed_ >= 0; }
+    /// The judgment has landed and the hold has run: the one row that serves
+    /// the sentence (or takes the drop) is on the list.
+    [[nodiscard]] bool courtSentenceOffered() const noexcept;
+    /// The rows as printed, "1 - I DID IT." first. Exposed for the suite.
+    [[nodiscard]] std::vector<std::string> courtRows() const;
+    void moveCourtCursor(int delta);
+    /// ENTER / A: arms a plea, confirms an armed one, opens the paper, backs
+    /// out of it, serves the sentence, takes the drop, picks an end row.
+    void chooseCourtRow();
+    /// The printed digit picks the row it prints. 0 is BACK while the paper
+    /// is open (the digit it prints) and nothing otherwise.
+    void chooseCourtVisibleRow(int slot);
+    /// ESC / B: closes the paper, disarms an armed plea, and does NOTHING
+    /// else -- the grammar exception (JUSTICE-SPEC 6.3): the hearing has no
+    /// opener and no back.
+    void courtBack();
+    /// THE WHOLE PAGE GRAMMAR, keyboard and pad: arrows and the D-pad move,
+    /// digits pick, ENTER/A confirm, ESC/B back (PadEast arrives already
+    /// remapped to Escape by the client's pageBackRemap, and is also read
+    /// raw here so a test can press it). Returns true when the page took the
+    /// key -- and while in custody it takes EVERY key but Pause, so no world
+    /// verb can reach the body from the bench.
+    bool routeCourtKey(Key key);
+
+    /// THE ROPE, STAGED: true from the drop until the run ends -- the dip,
+    /// the held plate, then the end rows.
+    [[nodiscard]] bool ropeCeremonyUp() const noexcept {
+        return ropeCeremonySteps_ > 0 || ropeRowsUp_;
+    }
+    /// The plate's hold has run and the two rows are live under it.
+    [[nodiscard]] bool ropeRowsUp() const noexcept { return ropeRowsUp_; }
+    [[nodiscard]] int ropeCursor() const noexcept { return ropeCursor_; }
+    /// The end row pressed once and waiting for its second press, or -1.
+    /// THE QUIT PATTERN on the two rows that end a run: a leaned-on ENTER
+    /// after the plate's hold cannot start a new man or leave the game; the
+    /// armed row carries "-- SURE? <key>" on its tail (the pause card's own
+    /// QUIT row), and ESC/B or moving the cursor disarms it. The armed row is
+    /// the one state of the plate a player sees that is not the plate.
+    [[nodiscard]] int ropeRowArmed() const noexcept { return ropeArmed_; }
+    /// "1 - A NEW MAN", "2 - LEAVE" -- the armed one with its SURE tail. No
+    /// save row: no save exists.
+    [[nodiscard]] std::vector<std::string> ropeRows() const;
+    /// The plate's three lines: "HANGED AT THE SALTGATE POST." / "BY THE
+    /// WARD. FOR CANNIC." / "THE FOURTH DAY. 23:52."
+    [[nodiscard]] const std::string& ropePlateTop() const noexcept { return ropePlateTop_; }
+    [[nodiscard]] const std::string& ropePlateMid() const noexcept { return ropePlateMid_; }
+    [[nodiscard]] const std::string& ropePlateFoot() const noexcept { return ropePlateFoot_; }
+    /// The veil, the plate and (after the hold) the rows, over the finished
+    /// frame -- composeDeathCeremony's primitives with the fade-out removed.
+    /// The veil holds. A no-op while nothing is armed.
+    void composeRopeCeremony(Framebuffer& target) const;
+    void moveRopeCursor(int delta);
+    void chooseRopeRow();
+    void chooseRopeVisibleRow(int slot);
+
+    /// THE END, CHOSEN. A NEW MAN routes to the creation window for a fresh
+    /// run (main.cpp's loop reads this beside quitRequested); LEAVE is the
+    /// shipped quit. Never set by anything but the end rows.
+    enum class RunEndChoice : std::uint8_t { None = 0, NewMan = 1, Leave = 2 };
+    [[nodiscard]] bool runEnded() const noexcept { return runEnded_; }
+    [[nodiscard]] RunEndChoice runEndReason() const noexcept { return runEndReason_; }
 
     /// The camera the body is currently looking through.
     [[nodiscard]] Camera camera() const noexcept;
@@ -1879,7 +2032,14 @@ private:
     /// points and the roof-run tally, in the one place a landing is resolved.
     void settleLanding(const sim::RoofResult& move);
     /// "WANTED  HEAT 62  LOOT 3", or empty when the ward has heard nothing.
+    /// JUSTICE BUILD: "WANTED FOR BLOOD  HEAT 60" while the paper has a
+    /// corpse behind it, "CONDEMNED  HEAT 12" after a commutation. This row
+    /// is the criminal tag's one presentation, so it is reachable to be
+    /// proved (test_court.cpp) the way unlockedLetters() is.
+public:
     [[nodiscard]] std::string heatLine() const;
+
+private:
     /// "THE GULL  14 IN  BUSY", or empty when the player is not inside.
     /// Pulled out of drawFrame() into its own Line() method, the same shape
     /// every other bottom-band row already had, so syncPanelAnim() can call
@@ -2496,6 +2656,10 @@ private:
     /// cannot desynchronize anything; a run's frame sequence is a pure
     /// function of its steps and draws exactly as before. Never hashed.
     mutable bool panelTailTiles_ = false;
+    /// JUSTICE BUILD: the same memo for the hearing page's close tail, so
+    /// the bench fades as the bench (UI-EA-SPEC sec. 3 rule 4) rather than
+    /// as the empty single panel the dialogue path would otherwise draw.
+    mutable bool panelTailCourt_ = false;
 
     // --- INNOVATION SPRINT ITEM #3: some impact, tastefully -----------------
     //
@@ -2642,6 +2806,59 @@ private:
     std::int32_t deathCeremonySteps_ = 0;
     std::string deathEpitaphTop_;
     std::string deathEpitaphBottom_;
+
+    // --- JUSTICE BUILD (HEARING PAGE LANE) --------------------------------
+    /// The page is up. NOT in dismissOverlays(): the ten world verbs cannot
+    /// put a hearing down. Render-side state over the ledger's hashed
+    /// HearingState; a hearing pending with no page up opens one on the next
+    /// step, so a run reopened between the arrest and the plea reopens at
+    /// the bench.
+    bool courtOpen_ = false;
+    int courtCursor_ = 0;
+    bool courtPaperOpen_ = false;
+    /// The armed plea row, or -1. The QUIT pattern: one press arms, the next
+    /// confirms; moving the cursor or ESC disarms.
+    int courtArmed_ = -1;
+    /// Steps before the sentence row is offered after the judgment lands
+    /// (sim::kJudgmentHoldSteps): the badge is held first, so a leaned-on
+    /// ENTER cannot plead and serve in one breath.
+    std::int32_t courtJudgmentHold_ = 0;
+    /// The page served the sentence and waits for the release step() reads
+    /// to close it -- at the Mission's door or on the Tarwalk.
+    bool courtServing_ = false;
+    TutorBand courtTutor_;
+    bool courtTutorWasOpen_ = false;
+    /// THE ROPE. The dip and the held plate, counted down once a step like
+    /// the death ceremony's; then the rows. Never fades back: the veil holds.
+    std::int32_t ropeCeremonySteps_ = 0;
+    bool ropeRowsUp_ = false;
+    int ropeCursor_ = 0;
+    int ropeArmed_ = -1;
+    std::string ropePlateTop_;
+    std::string ropePlateMid_;
+    std::string ropePlateFoot_;
+    bool runEnded_ = false;
+    RunEndChoice runEndReason_ = RunEndChoice::None;
+    /// THE ARREST BEAT, counted down once a step like the ceremonies: the
+    /// officer's line in the room while it is above kTakenPlateSteps, the
+    /// plate while it is at or below, the page when it reaches zero. Zero
+    /// while nobody's hand is on you. Render-only, never hashed: the sim's
+    /// hearing is already open on the ledger.
+    std::int32_t takenHold_ = 0;
+    std::string takenPlate_;
+    /// TAKEN: the arrest's release read with a hearing pending. Puts the
+    /// body on the Mission's arrival tile, dips, says the line, opens the
+    /// page over everything.
+    void openCourt();
+    /// The page down, the body where the sentence left it, the line said.
+    void closeCourt();
+    void armRopeCeremony();
+    /// The Mission's own arrival tile: the sign's aim point snapped to
+    /// standable ground, the travel verb's own landing rule.
+    [[nodiscard]] bool missionArrivalTile(std::int32_t& outX, std::int32_t& outY,
+                                          std::int32_t& outBand) const;
+    /// A world verb or a page toggle asked from the bench: refused, quietly.
+    [[nodiscard]] bool refusedInCustody() const noexcept { return inCustody(); }
 
     // --- the audio wiring pass ----------------------------------------------
     //
@@ -3029,6 +3246,28 @@ struct SmokeRunConfig {
     /// arc, the arrest line on the row).
     bool watchHalt = false;
     std::string watchHaltEnd = "street";
+    /// JUSTICE BUILD (HEARING PAGE LANE). Play the court: walk into the Gull
+    /// at Cull's hour, lift in his sight until the row reads WANTED, stand
+    /// still with steel up until he takes you at reach -- his own line on
+    /// the row with his hand on you, the plate (TAKEN TO THE MISSION over
+    /// black), and then the page. WHERE is "page" (the rows, the default),
+    /// "cull" (the arrest's first beat, his line in the room), "taken" (the
+    /// plate), "paper" (HEAR THE PAPER open), "armed" (I DID IT pressed
+    /// once: SURE on its tail, the priest pressing), "plea" (I DID IT
+    /// pleaded, the check block and the sentence row), "deny" (I DID NOT,
+    /// the priest's doubt in the block), "hand" (the Skyrunners' oath off
+    /// Finch first, so the paper asks for the hand and I DID IT lands THE
+    /// HAND), "serve" (I DID IT and the sentence row taken: the coin, the
+    /// clock, TURNED LOOSE with the day on the row), "bloodtag" (a killing
+    /// at eight, WANTED FOR BLOOD on the row), "ropepage" (the killing, the
+    /// wait to ten, taken to a rope hearing, THE ROPE passed and THE DROP
+    /// offered), "rope" (the drop taken: the plate with A NEW MAN / LEAVE
+    /// under it), "newman" (the rope, then A NEW MAN armed by its row and
+    /// taken -- the answer main() loops on) or "wanted" (the tag alone, the
+    /// first beat, nobody's hand on you). With `flame` set first the court
+    /// waits for Cull through the wait page and THE DOOR is weighed.
+    bool court = false;
+    std::string courtEnd = "page";
     /// S9. Play a burglary: crouch, cross a dark taproom unseen, lift a purse
     /// off somebody who does not feel it, up the stair, wire into a guest's
     /// strongbox, work the pins, and empty it. WHERE is "box" (standing over
@@ -3418,6 +3657,8 @@ struct SmokeRunResult {
     std::int32_t skyrunStages = 0;
     /// BARKS LANE: beats of the Watch-on-violence line (--watch-halt).
     std::int32_t watchHaltBeats = 0;
+    /// JUSTICE BUILD: beats of the court line (--court), by its ending.
+    std::int32_t courtBeats = 0;
     /// How many of the six beats of the bounty run landed.
     std::int32_t contractBeats = 0;
     /// How many of the seven beats of the nemesis arc landed.

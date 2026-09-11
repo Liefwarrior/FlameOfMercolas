@@ -23,7 +23,15 @@ constexpr std::uint8_t kCrimeMagic1 = 'C';
 /// 3 (S6): the sack has contents and the ward has a record of what it did back.
 /// 4 (action-combat): a witnessed killing stands on the record -- one appended
 /// byte, so a v3 blob is refused by version rather than silently misread.
-constexpr std::uint8_t kCrimeVersion = 4;
+/// 5 (justice): the court's record -- mercy given, the rope, the last plea and
+/// judgment, hearings and days served, who saw the killing, the tallies the
+/// last sentence covered, and the hearing itself between the arrest and the
+/// sentence, so a run saved at the bench reopens at the bench. All appended.
+constexpr std::uint8_t kCrimeVersion = 5;
+
+/// The officer's name on a hearing is written length-prefixed in one byte.
+/// A roster name is a dozen characters; this is a guard, not a budget.
+constexpr std::size_t kOfficerNameMax = 255;
 
 void putI32(std::vector<std::uint8_t>& out, std::int32_t value) {
     const std::uint32_t bits = static_cast<std::uint32_t>(value);
@@ -71,6 +79,47 @@ void putI64(std::vector<std::uint8_t>& out, std::int64_t value) {
 
 [[nodiscard]] constexpr bool inRange(Crime crime) noexcept {
     return static_cast<std::size_t>(crime) < kCrimeCount;
+}
+
+void putByte(std::vector<std::uint8_t>& out, std::uint8_t value) {
+    out.push_back(value);
+}
+
+[[nodiscard]] bool takeByte(const std::vector<std::uint8_t>& bytes, std::size_t& cursor,
+                            std::uint8_t& out) {
+    if (cursor >= bytes.size()) {
+        return false;
+    }
+    out = bytes[cursor];
+    ++cursor;
+    return true;
+}
+
+/// A byte that must be at most `ceiling` -- an enum ordinal, a flag.
+[[nodiscard]] bool takeByteAtMost(const std::vector<std::uint8_t>& bytes, std::size_t& cursor,
+                                  std::uint8_t ceiling, std::uint8_t& out) {
+    return takeByte(bytes, cursor, out) && out <= ceiling;
+}
+
+/// The ladder's own answer, served the short way: what combat/build's
+/// one-call arrest wrote on the record, said as the court's type. The
+/// Condemned rung has NO judgment of its own here: combat's inert status
+/// (condemned_ and the hand, nothing else) is neither COMMUTED (which also
+/// spends mercy and serves the blood) nor THE ROPE, so arrest() writes those
+/// two bits itself beside HELD's record rather than borrowing a judgment
+/// that would write more.
+[[nodiscard]] Judgment ladderJudgment(Sentence tier) noexcept {
+    switch (tier) {
+        case Sentence::Held:
+        case Sentence::Condemned:
+            return Judgment::Held;
+        case Sentence::Maimed:
+            return Judgment::TheHand;
+        case Sentence::Fined:
+        case Sentence::None:
+            break;
+    }
+    return Judgment::None;
 }
 
 }  // namespace
@@ -238,36 +287,186 @@ std::int32_t CrimeLedger::deliverBale(bool ownBuyer) {
     return 0;
 }
 
-void CrimeLedger::markMurderer() noexcept {
+void CrimeLedger::markMurderer(std::int32_t witnesses) noexcept {
     // ACTION-COMBAT BUILD. A witnessed killing: the record stands, and the heat
     // jumps to exactly the warrant line in one act (kMurderHeat == kWarrantAt),
     // so addHeat also raises the paper. Idempotent on the flag -- a second
     // murder does not un-mark the first -- but the heat is charged each time,
     // the same as any witnessed crime.
+    //
+    // JUSTICE BUILD: and who saw it is kept, because the rope tier weighs it
+    // (N SAW IT). A witnessed killing had at least one witness by definition;
+    // the most recent one is what the sheet names.
     murderer_ = true;
+    slewWitnesses_ = std::max(1, witnesses);
     addHeat(kMurderHeat);
+}
+
+// ---------------------------------------------------------------------------
+// the arrest, split: the charge, the impound, the hearing, the sentence
+// ---------------------------------------------------------------------------
+
+ChargeSheet CrimeLedger::charge(bool skyrunner, std::int32_t streetwise,
+                                std::int32_t templeStanding,
+                                std::int32_t reputation) const {
+    ChargeSheet sheet;
+    sheet.written = true;
+    // WHAT THE PAPER ASKS FOR is the shipped ladder, unchanged: Eli's
+    // 2026-07-14 sentence survives verbatim as the Watch's petition. The
+    // murder override with it -- the rope is for the blade, not the purse,
+    // and a murderer is tried for the rope whatever he was stopped for,
+    // because the corpse is on the roster whether or not the paper is.
+    sheet.tier = sentenceFor(skyrunner, warrant_, arrests_);
+    if (murderer_) {
+        sheet.tier = Sentence::Condemned;
+    }
+    sheet.blood = murderer_;
+    sheet.skyrunner = skyrunner;
+    // The ladder's own rope needs paper and a prior. It weighs beside the
+    // blood, not instead of it.
+    sheet.secondRung = skyrunner && warrant_ && arrests_ > 0;
+    // The one line the sheet names: the highest-heat act with a count since
+    // the bench last heard you. No ties -- the six heats are distinct.
+    std::int32_t worstHeat = 0;
+    for (std::size_t i = 0; i < kCrimeCount; ++i) {
+        const std::int32_t since = std::max(0, tallies_[i] - servedTallies_[i]);
+        sheet.since[i] = since;
+        const Crime act = static_cast<Crime>(i);
+        if (since > 0 && crimeHeat(act) > worstHeat) {
+            worstHeat = crimeHeat(act);
+            sheet.hasWorst = true;
+            sheet.worst = act;
+        }
+    }
+    sheet.heatAtArrest = heat_;
+    sheet.witnesses = slewWitnesses_;
+    sheet.priors = arrests_;
+    sheet.condemnedBefore = condemned_;
+    sheet.commutedBefore = commuted_;
+    sheet.streetwise = streetwise;
+    sheet.templeStanding = templeStanding;
+    sheet.reputation = reputation;
+    return sheet;
+}
+
+std::int32_t CrimeLedger::seizeAtArrest() {
+    // The impound: Watchman Cull's whole job is seized cargo, and it is the
+    // one part of an arrest that happens whether or not there was paper.
+    const std::int32_t units = stash_.seizeIllicit();
+    // A bale on your shoulder goes with the rest of it.
+    bale_ = false;
+    baleUnits_ = 0;
+    return units;
+}
+
+void CrimeLedger::openHearing(const ChargeSheet& sheet, std::int32_t unitsSeized,
+                              std::uint64_t draw, std::string_view officer) {
+    if (!sheet.written || sheet.tier == Sentence::None || sheet.tier == Sentence::Fined) {
+        // No paper, so no bench. The door's fine is the whole of a search.
+        return;
+    }
+    hearing_ = HearingState{};
+    hearing_.stage = HearingStage::Arraigned;
+    hearing_.sheet = sheet;
+    hearing_.sheet.unitsSeized = std::max(0, unitsSeized);
+    hearing_.sheet.draw = draw;
+    hearing_.officer = std::string(officer.substr(0, kOfficerNameMax));
+    // Sentence stays the Watch's ASK and lastSentence_ keeps recording it,
+    // exactly as the short-way arrest does: what the paper asked for is on
+    // the record from the moment it is laid, whatever the bench answers.
+    lastSentence_ = sheet.tier;
+}
+
+Arraignment CrimeLedger::plead(Plea plea) {
+    if (!hearing_.awaitingPlea()) {
+        return Arraignment{};
+    }
+    const Arraignment answer = weighArraignment(hearing_.sheet, plea);
+    if (!answer.heard) {
+        return answer;
+    }
+    hearing_.stage = HearingStage::Judged;
+    hearing_.plea = answer.plea;
+    hearing_.judgment = answer.judgment;
+    hearing_.band = answer.band;
+    hearing_.weight = answer.weight;
+    hearing_.scored = answer.scored;
+    hearing_.doubled = answer.doubled;
+    lastPlea_ = answer.plea;
+    lastJudgment_ = answer.judgment;
+    ++hearings_;
+    return answer;
+}
+
+void CrimeLedger::sentence(Judgment judgment, std::int32_t daysServed) {
+    if (judgment == Judgment::None) {
+        return;
+    }
+    lastJudgment_ = judgment;
+    // A conviction is a prior. SPARED is the one answer that is not one:
+    // "hearings_++; no prior."
+    if (judgment != Judgment::Spared) {
+        ++arrests_;
+    }
+    switch (judgment) {
+        case Judgment::TheHand:
+            maimed_ = true;
+            break;
+        case Judgment::Commuted:
+            // The rope does not un-take the hand. The ward is told the face
+            // for the rest of the run, mercy is spent, and the blood is
+            // SERVED: the next arrest on any paper is an ordinary hearing
+            // with THE ROPE ONCE weighed against him, not a rope hearing.
+            maimed_ = true;
+            condemned_ = true;
+            commuted_ = true;
+            murderer_ = false;
+            break;
+        case Judgment::TheRope:
+            executed_ = true;
+            break;
+        case Judgment::None:
+        case Judgment::Spared:
+        case Judgment::Fined:
+        case Judgment::Held:
+        case Judgment::Bound:
+            break;
+    }
+    // Served. The paper goes and the ward keeps a little of its memory --
+    // see kHeatAfterSentence on why this is not zero. Written AFTER the
+    // room's clock jump by the room's own ordering, so the skip's cooling
+    // does not take it back to nothing.
+    heat_ = kHeatAfterSentence;
+    warrant_ = false;
+    for (std::size_t i = 0; i < kCrimeCount; ++i) {
+        servedTallies_[i] = tallies_[i];
+    }
+    daysServed_ += std::max(0, daysServed);
+    hearing_ = HearingState{};
+}
+
+std::int32_t CrimeLedger::servedTally(Crime crime) const noexcept {
+    return inRange(crime) ? servedTallies_[static_cast<std::size_t>(crime)] : 0;
 }
 
 CrimeLedger::ArrestOutcome CrimeLedger::arrest(bool skyrunner, std::int32_t purse,
                                                std::uint64_t draw) {
+    // THE SHORT WAY: charge, seize, and serve the ladder's own answer at once.
+    // Combat/build's one call, kept bit-for-bit in what it writes on the
+    // record's shipped fields (a prior, the heat after a sentence, the paper
+    // torn up, the hand, the condemned status) so the ladder's tests and the
+    // murder hook read as they did: the Condemned rung sets condemned_ and
+    // maimed_ and NOTHING ELSE -- not commuted_ (mercy is the bench's to
+    // spend) and not murderer_ (only the bench serves the blood). What the
+    // court added to the record (lastJudgment_, servedTallies_) is written as
+    // HELD's; combat had neither field. The room's arrest with paper does not
+    // come through here any more: it opens a hearing and the sentence waits
+    // on the plea.
     ArrestOutcome out;
-    out.sentence = sentenceFor(skyrunner, warrant_, arrests_);
-    // ACTION-COMBAT BUILD: a murderer is CONDEMNED whatever the theft ladder
-    // said -- the rope is for the blade, not the purse. A witnessed murder
-    // always left a warrant (kMurderHeat == kWarrantAt), so there is a cause to
-    // close on; this only decides what the sentence IS once he is taken. What
-    // condemnation then means beyond the status bit -- the court, jail, the
-    // rope as a true game over -- is the justice build, not this one.
-    if (murderer_) {
-        out.sentence = Sentence::Condemned;
-    }
-    // The impound first: Watchman Cull's whole job is seized cargo, and it is
-    // the one part of an arrest that happens whether or not there was paper.
-    out.unitsSeized = stash_.seizeIllicit();
+    const ChargeSheet sheet = charge(skyrunner, 0, 0, 0);
+    out.sentence = sheet.tier;
+    out.unitsSeized = seizeAtArrest();
     out.fine = std::min(std::max(0, purse), fineFor(heat_, out.unitsSeized));
-    // A bale on your shoulder goes with the rest of it.
-    bale_ = false;
-    baleUnits_ = 0;
 
     switch (out.sentence) {
         case Sentence::Fined:
@@ -279,15 +478,9 @@ CrimeLedger::ArrestOutcome CrimeLedger::arrest(bool skyrunner, std::int32_t purs
         case Sentence::Held:
         case Sentence::Maimed:
         case Sentence::Condemned:
-            ++arrests_;
             out.heldHours = heldHours(draw);
-            // Served. The paper goes and the ward keeps a little of its memory
-            // -- see kHeatAfterSentence on why this is not zero.
-            heat_ = kHeatAfterSentence;
-            warrant_ = false;
-            if (out.sentence == Sentence::Maimed) {
-                maimed_ = true;
-            } else if (out.sentence == Sentence::Condemned) {
+            sentence(ladderJudgment(out.sentence), out.heldHours / 24);
+            if (out.sentence == Sentence::Condemned) {
                 condemned_ = true;
                 // The rope does not un-take the hand.
                 maimed_ = true;
@@ -374,6 +567,52 @@ std::vector<std::uint8_t> CrimeLedger::encode() const {
     out.push_back(condemned_ ? 1U : 0U);
     // v4, appended: the murder record.
     out.push_back(murderer_ ? 1U : 0U);
+    // v5, appended: the court's record, then the hearing itself. Appended and
+    // never inserted, which is the same rule the draw schedule follows and for
+    // the same reason.
+    putByte(out, commuted_ ? 1U : 0U);
+    putByte(out, executed_ ? 1U : 0U);
+    putByte(out, static_cast<std::uint8_t>(lastPlea_));
+    putByte(out, static_cast<std::uint8_t>(lastJudgment_));
+    putI32(out, hearings_);
+    putI32(out, daysServed_);
+    putI32(out, slewWitnesses_);
+    for (std::size_t i = 0; i < kCrimeCount; ++i) {
+        putI32(out, servedTallies_[i]);
+    }
+    const HearingState& h = hearing_;
+    putByte(out, static_cast<std::uint8_t>(h.stage));
+    putByte(out, h.sheet.written ? 1U : 0U);
+    putByte(out, static_cast<std::uint8_t>(h.sheet.tier));
+    putByte(out, h.sheet.blood ? 1U : 0U);
+    putByte(out, h.sheet.hasWorst ? 1U : 0U);
+    putByte(out, static_cast<std::uint8_t>(h.sheet.worst));
+    for (std::size_t i = 0; i < kSheetCrimes; ++i) {
+        putI32(out, h.sheet.since[i]);
+    }
+    putI32(out, h.sheet.heatAtArrest);
+    putI32(out, h.sheet.unitsSeized);
+    putI32(out, h.sheet.witnesses);
+    putI32(out, h.sheet.priors);
+    putByte(out, h.sheet.skyrunner ? 1U : 0U);
+    putByte(out, h.sheet.secondRung ? 1U : 0U);
+    putByte(out, h.sheet.condemnedBefore ? 1U : 0U);
+    putByte(out, h.sheet.commutedBefore ? 1U : 0U);
+    putI32(out, h.sheet.streetwise);
+    putI32(out, h.sheet.templeStanding);
+    putI32(out, h.sheet.reputation);
+    putI64(out, static_cast<std::int64_t>(h.sheet.draw));
+    putByte(out, static_cast<std::uint8_t>(h.plea));
+    putByte(out, static_cast<std::uint8_t>(h.judgment));
+    putByte(out, static_cast<std::uint8_t>(h.band));
+    putI32(out, h.weight);
+    putI32(out, h.scored);
+    putByte(out, h.doubled ? 1U : 0U);
+    const std::size_t nameLength = std::min(h.officer.size(), kOfficerNameMax);
+    putByte(out, static_cast<std::uint8_t>(nameLength));
+    for (std::size_t i = 0; i < nameLength; ++i) {
+        putByte(out, static_cast<std::uint8_t>(static_cast<unsigned char>(h.officer[i])));
+    }
     return out;
 }
 
@@ -427,6 +666,120 @@ bool CrimeLedger::decode(const std::vector<std::uint8_t>& bytes, CrimeLedger& ou
     parsed.maimed_ = bytes[cursor + 1] != 0;
     parsed.condemned_ = bytes[cursor + 2] != 0;
     parsed.murderer_ = bytes[cursor + 3] != 0;
+    cursor += 4;
+
+    // v5: the court's record. Every ordinal is guarded against its own
+    // ceiling, so a blob from a build with an eighth judgment is refused
+    // rather than read as something this one has a name for.
+    std::uint8_t flag = 0;
+    if (!takeByte(bytes, cursor, flag)) {
+        return false;
+    }
+    parsed.commuted_ = flag != 0;
+    if (!takeByte(bytes, cursor, flag)) {
+        return false;
+    }
+    parsed.executed_ = flag != 0;
+    if (!takeByteAtMost(bytes, cursor, static_cast<std::uint8_t>(Plea::NoPlea), flag)) {
+        return false;
+    }
+    parsed.lastPlea_ = static_cast<Plea>(flag);
+    if (!takeByteAtMost(bytes, cursor, static_cast<std::uint8_t>(Judgment::TheRope), flag)) {
+        return false;
+    }
+    parsed.lastJudgment_ = static_cast<Judgment>(flag);
+    if (!takeI32(bytes, cursor, parsed.hearings_) || !takeI32(bytes, cursor, parsed.daysServed_) ||
+        !takeI32(bytes, cursor, parsed.slewWitnesses_)) {
+        return false;
+    }
+    for (std::size_t i = 0; i < kCrimeCount; ++i) {
+        if (!takeI32(bytes, cursor, parsed.servedTallies_[i])) {
+            return false;
+        }
+    }
+    HearingState& h = parsed.hearing_;
+    if (!takeByteAtMost(bytes, cursor, static_cast<std::uint8_t>(HearingStage::Judged), flag)) {
+        return false;
+    }
+    h.stage = static_cast<HearingStage>(flag);
+    if (!takeByte(bytes, cursor, flag)) {
+        return false;
+    }
+    h.sheet.written = flag != 0;
+    if (!takeByteAtMost(bytes, cursor, static_cast<std::uint8_t>(Sentence::Condemned), flag)) {
+        return false;
+    }
+    h.sheet.tier = static_cast<Sentence>(flag);
+    if (!takeByte(bytes, cursor, flag)) {
+        return false;
+    }
+    h.sheet.blood = flag != 0;
+    if (!takeByte(bytes, cursor, flag)) {
+        return false;
+    }
+    h.sheet.hasWorst = flag != 0;
+    if (!takeByteAtMost(bytes, cursor, static_cast<std::uint8_t>(kCrimeCount - 1), flag)) {
+        return false;
+    }
+    h.sheet.worst = static_cast<Crime>(flag);
+    for (std::size_t i = 0; i < kSheetCrimes; ++i) {
+        if (!takeI32(bytes, cursor, h.sheet.since[i])) {
+            return false;
+        }
+    }
+    if (!takeI32(bytes, cursor, h.sheet.heatAtArrest) ||
+        !takeI32(bytes, cursor, h.sheet.unitsSeized) ||
+        !takeI32(bytes, cursor, h.sheet.witnesses) || !takeI32(bytes, cursor, h.sheet.priors)) {
+        return false;
+    }
+    if (!takeByte(bytes, cursor, flag)) {
+        return false;
+    }
+    h.sheet.skyrunner = flag != 0;
+    if (!takeByte(bytes, cursor, flag)) {
+        return false;
+    }
+    h.sheet.secondRung = flag != 0;
+    if (!takeByte(bytes, cursor, flag)) {
+        return false;
+    }
+    h.sheet.condemnedBefore = flag != 0;
+    if (!takeByte(bytes, cursor, flag)) {
+        return false;
+    }
+    h.sheet.commutedBefore = flag != 0;
+    std::int64_t draw = 0;
+    if (!takeI32(bytes, cursor, h.sheet.streetwise) ||
+        !takeI32(bytes, cursor, h.sheet.templeStanding) ||
+        !takeI32(bytes, cursor, h.sheet.reputation) || !takeI64(bytes, cursor, draw)) {
+        return false;
+    }
+    h.sheet.draw = static_cast<std::uint64_t>(draw);
+    if (!takeByteAtMost(bytes, cursor, static_cast<std::uint8_t>(Plea::NoPlea), flag)) {
+        return false;
+    }
+    h.plea = static_cast<Plea>(flag);
+    if (!takeByteAtMost(bytes, cursor, static_cast<std::uint8_t>(Judgment::TheRope), flag)) {
+        return false;
+    }
+    h.judgment = static_cast<Judgment>(flag);
+    if (!takeByteAtMost(bytes, cursor, static_cast<std::uint8_t>(Judgment::TheRope), flag)) {
+        return false;
+    }
+    h.band = static_cast<Judgment>(flag);
+    if (!takeI32(bytes, cursor, h.weight) || !takeI32(bytes, cursor, h.scored)) {
+        return false;
+    }
+    if (!takeByte(bytes, cursor, flag)) {
+        return false;
+    }
+    h.doubled = flag != 0;
+    std::uint8_t nameLength = 0;
+    if (!takeByte(bytes, cursor, nameLength) || cursor + nameLength > bytes.size()) {
+        return false;
+    }
+    h.officer.assign(reinterpret_cast<const char*>(bytes.data() + cursor), nameLength);
+    cursor += nameLength;
     out = parsed;
     return true;
 }
@@ -454,6 +807,54 @@ void CrimeLedger::hashInto(HashSink& sink) const {
     sink.put_byte(maimed_ ? 1U : 0U);
     sink.put_byte(condemned_ ? 1U : 0U);
     sink.put_byte(murderer_ ? 1U : 0U);
+    // JUSTICE BUILD, appended in the same order the codec writes them: the
+    // court's record and the open hearing. Every byte of it decides what the
+    // next arrest resolves to, so all of it is state the twin-run gate
+    // compares. THE ONE DECLARED tavern/gate-workload baseline move of the
+    // justice build (the ledger is hashed under the tavern through the
+    // dialogue director); the population baseline never reaches this code.
+    sink.put_byte(commuted_ ? 1U : 0U);
+    sink.put_byte(executed_ ? 1U : 0U);
+    sink.put_byte(static_cast<std::uint32_t>(lastPlea_));
+    sink.put_byte(static_cast<std::uint32_t>(lastJudgment_));
+    sink.put_int(static_cast<std::uint32_t>(hearings_));
+    sink.put_int(static_cast<std::uint32_t>(daysServed_));
+    sink.put_int(static_cast<std::uint32_t>(slewWitnesses_));
+    for (std::size_t i = 0; i < kCrimeCount; ++i) {
+        sink.put_int(static_cast<std::uint32_t>(servedTallies_[i]));
+    }
+    const HearingState& h = hearing_;
+    sink.put_byte(static_cast<std::uint32_t>(h.stage));
+    sink.put_byte(h.sheet.written ? 1U : 0U);
+    sink.put_byte(static_cast<std::uint32_t>(h.sheet.tier));
+    sink.put_byte(h.sheet.blood ? 1U : 0U);
+    sink.put_byte(h.sheet.hasWorst ? 1U : 0U);
+    sink.put_byte(static_cast<std::uint32_t>(h.sheet.worst));
+    for (std::size_t i = 0; i < kSheetCrimes; ++i) {
+        sink.put_int(static_cast<std::uint32_t>(h.sheet.since[i]));
+    }
+    sink.put_int(static_cast<std::uint32_t>(h.sheet.heatAtArrest));
+    sink.put_int(static_cast<std::uint32_t>(h.sheet.unitsSeized));
+    sink.put_int(static_cast<std::uint32_t>(h.sheet.witnesses));
+    sink.put_int(static_cast<std::uint32_t>(h.sheet.priors));
+    sink.put_byte(h.sheet.skyrunner ? 1U : 0U);
+    sink.put_byte(h.sheet.secondRung ? 1U : 0U);
+    sink.put_byte(h.sheet.condemnedBefore ? 1U : 0U);
+    sink.put_byte(h.sheet.commutedBefore ? 1U : 0U);
+    sink.put_int(static_cast<std::uint32_t>(h.sheet.streetwise));
+    sink.put_int(static_cast<std::uint32_t>(h.sheet.templeStanding));
+    sink.put_int(static_cast<std::uint32_t>(h.sheet.reputation));
+    sink.put_long(h.sheet.draw);
+    sink.put_byte(static_cast<std::uint32_t>(h.plea));
+    sink.put_byte(static_cast<std::uint32_t>(h.judgment));
+    sink.put_byte(static_cast<std::uint32_t>(h.band));
+    sink.put_int(static_cast<std::uint32_t>(h.weight));
+    sink.put_int(static_cast<std::uint32_t>(h.scored));
+    sink.put_byte(h.doubled ? 1U : 0U);
+    sink.put_int(static_cast<std::uint32_t>(h.officer.size()));
+    for (const char character : h.officer) {
+        sink.put_byte(static_cast<std::uint32_t>(static_cast<unsigned char>(character)));
+    }
 }
 
 // ---------------------------------------------------------------------------

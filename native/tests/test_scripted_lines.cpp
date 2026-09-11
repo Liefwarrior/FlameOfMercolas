@@ -127,6 +127,210 @@ TEST_CASE("the Watch line lands all five of its beats: seen, steel, the halt on 
     CHECK(played.summary.find("row=\"Watchman Cull: ") != std::string::npos);
 }
 
+TEST_CASE("--court lands its three beats: WANTED off real lifts, taken with paper and the arrest's own beat, the bench up at the Mission") {
+    // JUSTICE BUILD (HEARING PAGE LANE). The court, through the real verbs.
+    render::SmokeRunConfig run;
+    run.court = true;
+    const render::SmokeRunResult played = play(run);
+    INFO(played.summary);
+    CHECK(played.ok);
+    CHECK_FALSE(played.scriptFellShort());
+    CHECK(played.courtBeats == 3);
+    CHECK(played.summary.find("page=up") != std::string::npos);
+    CHECK(played.summary.find("hearing=pending") != std::string::npos);
+    CHECK(played.summary.find("ask=held") != std::string::npos);
+    CHECK(played.summary.find("row=\"TAKEN TO THE MISSION. ") != std::string::npos);
+}
+
+TEST_CASE("--court=cull stops on the arrest's first beat: Cull's own line on the row, his hand on you, the page not yet up") {
+    render::SmokeRunConfig run;
+    run.court = true;
+    run.courtEnd = "cull";
+    run.settleSteps = 0;  // the beat is timed: the rest steps would walk it through to the page
+    const render::SmokeRunResult played = play(run);
+    INFO(played.summary);
+    CHECK(played.ok);
+    CHECK_FALSE(played.scriptFellShort());
+    CHECK(played.courtBeats == 2);
+    CHECK(played.summary.find("page=down") != std::string::npos);
+    CHECK(played.summary.find("hearing=pending") != std::string::npos);
+    CHECK(played.summary.find("row=\"Watchman Cull: ") != std::string::npos);
+}
+
+TEST_CASE("--court=taken stops on the plate: TAKEN TO THE MISSION over black, before the page") {
+    render::SmokeRunConfig run;
+    run.court = true;
+    run.courtEnd = "taken";
+    run.settleSteps = 0;  // the plate is timed: the rest steps would open the page over it
+    const render::SmokeRunResult played = play(run);
+    INFO(played.summary);
+    CHECK(played.ok);
+    CHECK_FALSE(played.scriptFellShort());
+    CHECK(played.courtBeats == 3);
+    CHECK(played.summary.find("page=down") != std::string::npos);
+    CHECK(played.summary.find("plate=up") != std::string::npos);
+    CHECK(played.summary.find("row=\"TAKEN TO THE MISSION. ") != std::string::npos);
+}
+
+TEST_CASE("--court=armed presses I DID IT once: the row armed with SURE on its tail, the priest pressing for the answer") {
+    render::SmokeRunConfig run;
+    run.court = true;
+    run.courtEnd = "armed";
+    const render::SmokeRunResult played = play(run);
+    INFO(played.summary);
+    CHECK(played.ok);
+    CHECK_FALSE(played.scriptFellShort());
+    CHECK(played.courtBeats == 4);
+    CHECK(played.summary.find("page=up") != std::string::npos);
+    CHECK(played.summary.find("armed=yes") != std::string::npos);
+}
+
+TEST_CASE("--court=hand takes the Skyrunners' oath first, so the paper asks for the hand and I DID IT lands THE HAND") {
+    render::SmokeRunConfig run;
+    run.court = true;
+    run.courtEnd = "hand";
+    const render::SmokeRunResult played = play(run);
+    INFO(played.summary);
+    CHECK(played.ok);
+    CHECK_FALSE(played.scriptFellShort());
+    CHECK(played.courtBeats == 4);
+    CHECK(played.summary.find("oath=sworn") != std::string::npos);
+    CHECK(played.summary.find("ask=maimed") != std::string::npos);
+    CHECK(played.summary.find("judgment=the hand") != std::string::npos);
+}
+
+TEST_CASE("--court=bloodtag stops on the corpse: WANTED FOR BLOOD on the row, nobody's hand on you yet") {
+    render::SmokeRunConfig run;
+    run.court = true;
+    run.courtEnd = "bloodtag";
+    const render::SmokeRunResult played = play(run);
+    INFO(played.summary);
+    CHECK(played.ok);
+    CHECK_FALSE(played.scriptFellShort());
+    CHECK(played.courtBeats == 1);
+    CHECK(played.summary.find("slew=") != std::string::npos);
+    CHECK(played.summary.find("page=down") != std::string::npos);
+    CHECK(played.summary.find("tag=none") == std::string::npos);
+}
+
+TEST_CASE("--court=ropepage holds on the rope hearing page: THE ROPE passed, THE DROP offered and not taken") {
+    render::SmokeRunConfig run;
+    run.court = true;
+    run.courtEnd = "ropepage";
+    const render::SmokeRunResult played = play(run);
+    INFO(played.summary);
+    CHECK(played.ok);
+    CHECK_FALSE(played.scriptFellShort());
+    CHECK(played.courtBeats == 4);
+    CHECK(played.summary.find("page=up") != std::string::npos);
+    CHECK(played.summary.find("judgment=the rope") != std::string::npos);
+    CHECK(played.summary.find("executed=no") != std::string::npos);
+}
+
+TEST_CASE("--court=plea pleads I DID IT and holds on the check block with the sentence row offered") {
+    render::SmokeRunConfig run;
+    run.court = true;
+    run.courtEnd = "plea";
+    const render::SmokeRunResult played = play(run);
+    INFO(played.summary);
+    CHECK(played.ok);
+    CHECK_FALSE(played.scriptFellShort());
+    CHECK(played.courtBeats == 4);
+    CHECK(played.summary.find("page=up") != std::string::npos);
+    CHECK(played.summary.find("judgment=") != std::string::npos);
+    CHECK(played.summary.find("judgment=none") == std::string::npos);
+}
+
+TEST_CASE("--court=rope: a killing before the Watch drinks, taken to a rope hearing, THE ROPE, the plate with the end rows under it") {
+    render::SmokeRunConfig run;
+    run.court = true;
+    run.courtEnd = "rope";
+    const render::SmokeRunResult played = play(run);
+    INFO(played.summary);
+    CHECK(played.ok);
+    CHECK_FALSE(played.scriptFellShort());
+    CHECK(played.courtBeats == 5);
+    CHECK(played.summary.find("executed=yes") != std::string::npos);
+    CHECK(played.summary.find("rows=up") != std::string::npos);
+    CHECK(played.summary.find("judgment=the rope") != std::string::npos);
+}
+
+TEST_CASE("--court=wanted stops on the tag: paper out off real lifts, nobody's hand on you yet") {
+    render::SmokeRunConfig run;
+    run.court = true;
+    run.courtEnd = "wanted";
+    const render::SmokeRunResult played = play(run);
+    INFO(played.summary);
+    CHECK(played.ok);
+    CHECK_FALSE(played.scriptFellShort());
+    CHECK(played.courtBeats == 1);
+    CHECK(played.summary.find("page=down") != std::string::npos);
+    CHECK(played.summary.find("hearing=none") != std::string::npos);
+    CHECK(played.summary.find("heat=6") != std::string::npos);  // past kWarrantAt
+}
+
+TEST_CASE("--court=deny pleads I DID NOT and the block carries the priest's doubt") {
+    // BARKS & GATE LANE. The other plea, through the same row grammar.
+    render::SmokeRunConfig run;
+    run.court = true;
+    run.courtEnd = "deny";
+    const render::SmokeRunResult played = play(run);
+    INFO(played.summary);
+    CHECK(played.ok);
+    CHECK_FALSE(played.scriptFellShort());
+    CHECK(played.courtBeats == 4);
+    CHECK(played.summary.find("plea=not guilty") != std::string::npos);
+    CHECK(played.summary.find("judgment=none") == std::string::npos);
+}
+
+TEST_CASE("--court=serve takes the sentence row: the record closed, the paper off, turned loose with the day on the row") {
+    render::SmokeRunConfig run;
+    run.court = true;
+    run.courtEnd = "serve";
+    const render::SmokeRunResult played = play(run);
+    INFO(played.summary);
+    CHECK(played.ok);
+    CHECK_FALSE(played.scriptFellShort());
+    CHECK(played.courtBeats == 5);
+    CHECK(played.summary.find("served=yes") != std::string::npos);
+    CHECK(played.summary.find("page=down") != std::string::npos);
+    CHECK(played.summary.find("hearing=none") != std::string::npos);
+    CHECK(played.summary.find("heat=12") != std::string::npos);  // kHeatAfterSentence, live
+    CHECK(played.summary.find("row=\"TURNED LOOSE ") != std::string::npos);
+}
+
+TEST_CASE("--flame --court=serve: what you gave at the Mission's door is weighed, and the court waits for Cull") {
+    // The flame line ends at eight with the temple standing earned through
+    // the questline; the court then waits to eleven through the wait page's
+    // own jump and THE DOOR sits in the block. The judgment is whatever the
+    // sheet earns -- the point is that the giving is read.
+    render::SmokeRunConfig run;
+    run.flame = true;
+    run.court = true;
+    run.courtEnd = "serve";
+    const render::SmokeRunResult played = play(run);
+    INFO(played.summary);
+    CHECK(played.ok);
+    CHECK_FALSE(played.scriptFellShort());
+    CHECK(played.courtBeats == 5);
+    CHECK(played.summary.find("waited=23") != std::string::npos);
+    CHECK(played.summary.find("served=yes") != std::string::npos);
+}
+
+TEST_CASE("--court=newman: hanged, A NEW MAN armed by its row and taken -- the answer main() loops on, not a quit") {
+    render::SmokeRunConfig run;
+    run.court = true;
+    run.courtEnd = "newman";
+    const render::SmokeRunResult played = play(run);
+    INFO(played.summary);
+    CHECK(played.ok);
+    CHECK_FALSE(played.scriptFellShort());
+    CHECK(played.courtBeats == 7);
+    CHECK(played.summary.find("executed=yes") != std::string::npos);
+    CHECK(played.summary.find("armed=new-man") != std::string::npos);
+    CHECK(played.summary.find("end=new-man") != std::string::npos);
+}
+
 TEST_CASE("--watch-halt=halt stops on the halt itself, with Cull's own row on the alert row") {
     render::SmokeRunConfig run;
     run.watchHalt = true;

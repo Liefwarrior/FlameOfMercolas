@@ -1403,14 +1403,16 @@ void Tavern::slayActor(Actor& target) {
     // and nothing rises. Routed beside noteCrime's six: no faction-mirror bump
     // in v1 (murder is not guild work). The COURT that decides what
     // condemnation means is the separate justice build.
-    bool witnessed = false;
+    // JUSTICE BUILD: COUNTED, not just found. Who saw it is the rope tier's
+    // own term at the bench (N SAW IT), so the loop runs the room rather than
+    // stopping at the first face. Same rule, same answer to "witnessed".
+    std::int32_t witnesses = 0;
     for (const Actor& bystander : actors_) {
         if (bystander.id() == target.id() || isFloored(bystander.activity())) {
             continue;
         }
         if (noticeBy(bystander).seen) {
-            witnessed = true;
-            break;
+            ++witnesses;
         }
     }
     // A corpse is a Downed that never stands (Activity::Dead) -- advanceSecond
@@ -1420,8 +1422,8 @@ void Tavern::slayActor(Actor& target) {
     target.setActivity(Activity::Dead);
     dialogue_.ledger().record(target.id(), Deed::Slew);
     spreadWitness(target.id(), Deed::Slew);
-    if (witnessed) {
-        dialogue_.crimes().markMurderer();
+    if (witnesses > 0) {
+        dialogue_.crimes().markMurderer(witnesses);
     }
 }
 
@@ -1430,6 +1432,12 @@ void Tavern::playerAttackDown() noexcept {
     // no-op (already holding); during RECOVERY it is dropped, not buffered --
     // no queue-fed instant hard swing off the tail of the last one.
     if (combatState_ != PlayerCombatState::Idle) {
+        return;
+    }
+    // SENTENCES LANE: a hanged man arms no swing. The one world verb the
+    // room owns outright refuses here; the rest are refused where the body
+    // and the pages are, by whoever owns them.
+    if (dialogue_.crimes().executed()) {
         return;
     }
     // WATCH & RHYTHM BUILD: a recoiling arm and a broken guard both refuse the
@@ -2079,6 +2087,12 @@ RiseWorld Tavern::riseWorld() noexcept {
 }
 
 void Tavern::applyDefeat(std::int32_t winnerId) {
+    // SENTENCES LANE -- THE TWO PLAYER-END PATHS NEVER MEET. A hanged man is
+    // not put on the floor: no defeat, no rise, no release for the quay. The
+    // rope is not a beating, and nothing on this path reads it.
+    if (dialogue_.crimes().executed()) {
+        return;
+    }
     playerFloored_ = true;
     // The brawl floor for a brawl KO and a scripted concession, unchanged; a
     // LETHAL defeat arrives here at zero and stays there -- the player is dead
@@ -2212,6 +2226,12 @@ bool Tavern::takeDefeatRelease() noexcept {
 }
 
 void Tavern::reviveAfterDefeat() {
+    // SENTENCES LANE -- THE ROPE DOES NOT REVIVE. The quay is the nemesis
+    // ruling's and only the nemesis ruling's; a run the bench ended is not
+    // woken on it. Refused outright, clock and body untouched.
+    if (dialogue_.crimes().executed()) {
+        return;
+    }
     // The hours are gone and so is a quarter of the purse. NOTHING the rival
     // gained comes back: he is still on the rung, his house is still founded,
     // its toll is still on the price of a mug and the roll still says who holds
@@ -3007,7 +3027,8 @@ Notice Tavern::worstNotice() const noexcept {
 }
 
 void Tavern::injurePlayer(std::int32_t amount) {
-    if (amount <= 0) {
+    // SENTENCES LANE: the bit is the corpse. No blow lands on a hanged man.
+    if (amount <= 0 || dialogue_.crimes().executed()) {
         return;
     }
     playerHp_ = std::max(kPlayerBrawlFloor, playerHp_ - amount);
@@ -3586,6 +3607,11 @@ Actor* Tavern::watchmanWatchingPlayer() noexcept {
 
 void Tavern::tickWatch() {
     CrimeLedger& crimes = dialogue_.crimes();
+    // SENTENCES LANE: the Watch has nobody to take. The rope closed the last
+    // file the ward had on this man.
+    if (crimes.executed()) {
+        return;
+    }
     // DEFERENCE IS CANON AND ABSOLUTE (VETO / COMBAT-ACTION-SPEC.md section
     // 4.4): the Watch never goes hostile to a PRESENTED WIELDER. No arrest, no
     // closing on cause; a stance already closing is dropped and the officer
@@ -3744,62 +3770,229 @@ void Tavern::applyArrest(Actor& officer) {
     const std::int32_t roofs = dialogue_.factions().indexOf("skyrunners");
     const bool skyrunner = dialogue_.standings().isMember(roofs);
 
-    const CrimeLedger::ArrestOutcome outcome =
-        crimes.arrest(skyrunner, playerCoin_, drawForPlayerAction());
-    playerCoin_ = std::max(0, playerCoin_ - outcome.fine);
-    dialogue_.setPlayerCoin(playerCoin_);
-    // A job whose goods are in the impound is a job you have lost. THIS is what
-    // makes an arrest cost more than a night: the coin was never the point.
-    const std::int32_t lost = dialogue_.contracts().seizeFor(before);
+    // JUSTICE BUILD. THE CHARGE SHEET FIRST, draw-free, off the ledger: what
+    // the paper asks for (the shipped ladder, the murder override with it),
+    // the worst line since the bench last heard you, and the three plea
+    // inputs the priest reads -- the tongue, what you gave at the Mission's
+    // door, and what the ward thinks of you -- captured now, because nothing
+    // between the arrest and the plea changes the charge.
+    const std::int32_t temple = dialogue_.factions().indexOf("temple");
+    const ChargeSheet sheet =
+        crimes.charge(skyrunner, dialogue_.skills().level(kHaggleSkill),
+                      temple >= 0 ? dialogue_.standings().standing(temple) : 0,
+                      dialogue_.ledger().reputation());
+    // THE ONE DRAW, spent here at the same stream position it always was.
+    // The nights read its low residue (heldHours); a denial at the bench
+    // reads a declared band above them (justice.hpp). No new draw, no new
+    // stream, whichever way the arrest resolves.
+    const std::uint64_t draw = drawForPlayerAction();
 
     lastArrest_ = ArrestReport{};
     lastArrest_.happened = true;
-    lastArrest_.sentence = outcome.sentence;
+    lastArrest_.sentence = sheet.tier;
     lastArrest_.cause = watchCause_;
-    lastArrest_.unitsSeized = outcome.unitsSeized;
-    lastArrest_.fine = outcome.fine;
-    lastArrest_.heldHours = outcome.heldHours;
-    lastArrest_.contractsLost = lost;
     lastArrest_.officer = officer.name();
 
     const char* table = "watch.fined";
-    switch (outcome.sentence) {
-        case Sentence::Held:
-            table = "watch.held";
-            break;
-        case Sentence::Maimed:
-            table = "watch.maimed";
-            break;
-        case Sentence::Condemned:
-            table = "watch.condemned";
-            break;
-        default:
-            break;
+    if (sheet.tier == Sentence::Fined) {
+        // NO PAPER, SO NO CELL FOR YOU. Cull's search at the door is the
+        // pre-court fast path exactly as shipped: the jars to the impound, a
+        // charge for his evening, the heat untouched, and out.
+        const CrimeLedger::ArrestOutcome outcome = crimes.arrest(skyrunner, playerCoin_, draw);
+        playerCoin_ = std::max(0, playerCoin_ - outcome.fine);
+        dialogue_.setPlayerCoin(playerCoin_);
+        lastArrest_.unitsSeized = outcome.unitsSeized;
+        lastArrest_.fine = outcome.fine;
+        lastArrest_.heldHours = outcome.heldHours;
+    } else {
+        // WITH PAPER: the impound, and then the Mission. The sack is emptied
+        // here because seized cargo is Cull's job whatever the bench says; the
+        // fine, the nights and the record are the court's now, so none of
+        // them is written yet and the clock does not jump. The hearing opens
+        // on the ledger with the sheet, the seizure, the draw and the man who
+        // laid the paper; the plea is a stepped input and the sentence waits
+        // on it.
+        lastArrest_.unitsSeized = crimes.seizeAtArrest();
+        crimes.openHearing(sheet, lastArrest_.unitsSeized, draw, officer.name());
+        switch (sheet.tier) {
+            case Sentence::Held:
+                table = "watch.held";
+                break;
+            case Sentence::Maimed:
+                table = "watch.maimed";
+                break;
+            case Sentence::Condemned:
+                table = "watch.condemned";
+                break;
+            default:
+                break;
+        }
     }
+    // A job whose goods are in the impound is a job you have lost. THIS is what
+    // makes an arrest cost more than a night: the coin was never the point.
+    lastArrest_.contractsLost = dialogue_.contracts().seizeFor(before);
+    // The officer's own line: the door's for a search, the walk to the bench
+    // for paper (the shipped watch.held/maimed/condemned rows already read as
+    // exactly that).
     lastArrest_.line = officer.name() + ": " +
                        std::string(dialogue_.barks().line(
                            dialogue_.barks().resolve({std::string(table)}),
-                           crimes.arrests() + outcome.unitsSeized));
+                           crimes.arrests() + lastArrest_.unitsSeized));
 
-    if (outcome.heldHours > 0) {
-        // The night goes by in the cell and nothing in it is simulated -- the
-        // same honest jump sleeping in a rented bed already makes.
-        skipHours(outcome.heldHours);
-    }
     // Whatever the house was minding is somebody else's problem now.
     standing_ = Standing::Welcome;
     brawlers_.clear();
-    // STANCE (lower rule 3): taken by the Watch, the hands come down --
-    // whether or not the sentence skipped the clock.
+    // STANCE (lower rule 3): taken by the Watch, the hands come down.
     lowerPlayerHands();
     respondingBouncerId_ = -1;
     watchStance_ = WatchStance::Idle;
     watchmanId_ = -1;
     watchCause_ = WatchCause::None;
     officer.setActivity(Activity::Watching);
-    // And the body is turned loose on the Tarwalk. The room does not own it, so
+    // And the body is somebody else's to move: to the Tarwalk after a search,
+    // to the Mission's door with a hearing open. The room does not own it, so
     // it asks -- see takeArrestRelease.
     arrestRelease_ = true;
+}
+
+bool Tavern::hearingPending() const noexcept {
+    return dialogue_.crimes().hearingPending();
+}
+
+const HearingState& Tavern::hearing() const noexcept {
+    return dialogue_.crimes().hearing();
+}
+
+Arraignment Tavern::plead(Plea plea) {
+    CrimeLedger& crimes = dialogue_.crimes();
+    if (!crimes.hearing().awaitingPlea()) {
+        return Arraignment{};
+    }
+    const Arraignment answer = crimes.plead(plea);
+    if (answer.heard && answer.plea != Plea::NoPlea) {
+        // A plea is a haggle with your neck on the table. Daggerfall's
+        // Streetwise trains on the plea, win or lose; so does the ward's.
+        (void)dialogue_.skills().use(kHaggleSkill);
+    }
+    return answer;
+}
+
+bool Tavern::executed() const noexcept {
+    return dialogue_.crimes().executed();
+}
+
+const Tavern::SentenceReport& Tavern::serveSentence() {
+    CrimeLedger& crimes = dialogue_.crimes();
+    lastServed_ = SentenceReport{};
+    if (!crimes.hearing().judged() || crimes.executed()) {
+        // Nothing judged, or a man already hanged: refused, and the report
+        // says so (`served` false).
+        return lastServed_;
+    }
+    const HearingState& hearing = crimes.hearing();
+    lastServed_.terms = sentenceTerms(hearing, playerCoin_);
+    lastServed_.coinBefore = playerCoin_;
+    const SentenceTerms& terms = lastServed_.terms;
+    if (!terms.served) {
+        return lastServed_;
+    }
+    lastServed_.served = true;
+
+    if (terms.rope) {
+        // THE ROPE. THE ONE TRUE GAME OVER, and none of it is a defeat: no
+        // blow landed, no rise, no quay, no clock, no coin. The end is written
+        // from what is already on the record -- the place the ward hangs a
+        // man, the corpse the sheet was for or the ladder's own rope, and the
+        // clock face at the drop -- and then the bit is set. The drop itself
+        // is silent and the plate is presentation's; the room refuses the
+        // world from here on (see the executed() gates).
+        runEnd_ = RunEnd{};
+        runEnd_.ended = true;
+        runEnd_.place = std::string(kRopePlace);
+        runEnd_.blood = hearing.sheet.blood;
+        runEnd_.day = dayNumber();
+        runEnd_.secondOfDay = timeOfDay_;
+        if (hearing.sheet.blood) {
+            // The corpse is on the roster and the social ledger remembers who
+            // it was -- slainName(), the one rule the hearing page's reading
+            // of the charge shares with this plate.
+            runEnd_.reason = slainName();
+        }
+        if (runEnd_.reason.empty()) {
+            runEnd_.reason = std::string(kRopeForSecondRung);
+        }
+        lowerPlayerHands();
+        crimes.sentence(Judgment::TheRope, 0);
+        lastServed_.coinAfter = playerCoin_;
+        lastServed_.dayReleased = dayNumber();
+        lastServed_.timeReleased = timeOfDay_;
+        return lastServed_;
+    }
+
+    // COIN. The fine out of the purse, never more than was in it; the
+    // shortfall is already days in the terms.
+    playerCoin_ = std::max(0, playerCoin_ - terms.finePaid);
+    dialogue_.setPlayerCoin(playerCoin_);
+    // THE CLOCK. The shipped jump a sentence has always been -- whole days
+    // and the remainder -- with everything skipTo does on it: the heat cools
+    // through every second, the cellar restocks, the room re-seats, the
+    // holds run out. What the days do to the board, the roll and the
+    // calendar follows from dayNumber() moving: the next tick's refresh
+    // expires every taken job past its night, and whoever owns the ward's
+    // calendar runs it forward exactly as after a night in a rented bed.
+    if (terms.hours > 0) {
+        skipHours(terms.hours);
+    }
+    // STANDING. A conviction is a justice event: the roofs warm to whoever
+    // the Watch corrects, and the mirror the ladders declare halves it onto
+    // the Watch. The Flame remembers a lie, blesses the yard's work and
+    // remembers its mercy. The social ledger is untouched: sleeping a
+    // sentence off does not make anybody forget you robbed them.
+    const std::int32_t roofs = dialogue_.factions().indexOf("skyrunners");
+    const std::int32_t temple = dialogue_.factions().indexOf("temple");
+    if (terms.roofsDelta != 0 && roofs >= 0) {
+        dialogue_.standings().addStanding(roofs, terms.roofsDelta);
+    }
+    if (terms.templeDelta != 0 && temple >= 0) {
+        dialogue_.standings().addStanding(temple, terms.templeDelta);
+    }
+    // THE BODY. Hit points to max on any judgment that cost a day or more --
+    // the days did it, reviveAfterDefeat's own shape. A fine heals nothing.
+    if (terms.mends) {
+        playerHp_ = playerHpMax_;
+        playerFloored_ = false;
+    }
+    // THE RECORD, AFTER THE SKIP: the prior, the hand, the blood served or
+    // the face remembered, and the heat the ward keeps -- kHeatAfterSentence,
+    // live now because nothing cools it afterwards.
+    crimes.sentence(terms.judgment, terms.days);
+    lastServed_.coinAfter = playerCoin_;
+    lastServed_.dayReleased = dayNumber();
+    lastServed_.timeReleased = timeOfDay_;
+    // Turned loose. The body is somebody else's to move -- the Mission's door
+    // or the Tarwalk, by terms.releaseHere -- through the same release the
+    // arrest fired.
+    arrestRelease_ = true;
+    return lastServed_;
+}
+
+std::string Tavern::slainName() const {
+    // The corpse is on the roster (Activity::Dead, never removed) and the
+    // social ledger remembers who it was: the last man in roster order the
+    // player put down. BOTH clauses -- a witness to the killing carries
+    // Deed::Slew on his memory too (spreadWitness), and he is alive. Roster
+    // order is id order, deterministic and never reordered.
+    std::string name;
+    for (const Actor& actor : actors_) {
+        if (actor.activity() != Activity::Dead) {
+            continue;
+        }
+        const Memory* memory = dialogue_.ledger().memoryOf(actor.id());
+        if (memory != nullptr && memory->lastDeed == Deed::Slew) {
+            name = actor.name();
+        }
+    }
+    return name;
 }
 
 const Actor* Tavern::respondingWatchman() const noexcept {
