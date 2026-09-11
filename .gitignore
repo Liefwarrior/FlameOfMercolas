@@ -48,3 +48,12 @@ replay_pid*
 # not the repo's: rebinding a key must not show up as a working-tree change.
 granadad-controls.cfg
 granadad-screenshot.png
+
+# Lord of Trojia derived assets (Synty/Malbers/Artsystack/Piloto/audio packs are
+# purchased asset-store licenses: fine inside a built game, not as raw files in a
+# public repo). tools/lot-pipeline/ stages here; only the tools and MANIFEST.md are tracked.
+/content/art/lot/
+# (Its 3D twin, /content/art/lot-3d/ -- render-lot.ps1 -Mode gltf|glb -- is ignored above.)
+
+# Python bytecode from tools/
+__pycache__/

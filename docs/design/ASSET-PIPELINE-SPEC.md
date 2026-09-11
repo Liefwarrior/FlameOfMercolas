@@ -1,0 +1,256 @@
+# ASSET-PIPELINE-SPEC — Lord of Trojia assets into Granadad
+
+**Status:** proposed 2026-09-10, asset pipeline lead. Lands at `docs/design/ASSET-PIPELINE-SPEC.md` on `C:\repositories\fom-assets` (branch `assets/lot-import`, HEAD `1e626a5`, forked from wip at `65f93e7`).
+**Owner ruling this stands on (Eli, 2026-09-10):** NO-NEW-ART is relaxed for assets pulled from LOT; feel over fidelity; "hard to tell without a model with raised fists."
+**Laws still standing:** no font change; the terminal register governs UI; the sim and the gate never link anything here; world hash `0x2646C1AAA2BA38DF` cannot move; every script is a committed re-runnable tool; in-game text is salted city-folk, tool docs are plain technical.
+**Scope:** presentation only. `native/src/audio/`, `native/src/render/` and `content/art/` — nothing under `native/src/sim/` or the gate targets.
+
+---
+
+## 0. What was verified before writing (read-only over fom-combat `5d8e639` and LOT)
+
+| Seam | Where | Fact that shapes the spec |
+|---|---|---|
+| One-shot vocabulary | `sound_ids.hpp` | `SoundId` = 42, `Bus` = 6 (no Music), `BedId` = 3, `Surface` = 5 |
+| Bank root | `sound_bank.hpp:35` | `kAudioRootRel = "art/kenney-all-in-1/Audio"`; every manifest row is relative to it; missing files = one stderr line, never fatal (`sound_bank.cpp:382-410`) |
+| Footstep table | `audio_engine.cpp:18-45` | 22 rows; `steel -> Stone` with the "no metal footstep set vendored" comment; pinned row-for-row against `render::materialIds()` by `test_audio_engine.cpp:100-131` |
+| Bed loops | `audio_engine.cpp:68-108` | `BedLoop{SoundId, dayGain, nightGain}` rows exist, both bed tables pass `{}`; loop voices already play at `:266` |
+| Mixer | `mixer.hpp:50-74` | float32 48 kHz, `kMaxVoices 48`, `play(loop)` fades in from 0, `stop(fade)`, `setVoiceGain(ramp)`; `setBusGain` snaps (no ramp); mutex-guarded, SDL3 stream backend |
+| Decoder | `decode.hpp:21`, `decode_vorbis.cpp:59-95` | `decodeOggToMono` only; downmix + linear resample to 48k; `Sample{std::vector<float> mono}` |
+| Combat audio call sites | `session.cpp:3928-3941` (hp-drop: SwordClash / ThudMedium), `:3954-3961` (escalation edge: SwordDraw), `:3457-3461` (knockdown: ThudHeavy), `:5943-5956` (blow bands: HelmetHit / PunchHeavy / GrazeLight / PunchMedium / Whoosh) | manifest swaps change zero call sites |
+| Impact feedback | `session.cpp:7677-7717` | three full-frame `fillRect` washes: landed 0.16 × (0.92,0.86,0.70), taken 0.18 × (0.58,0.10,0.08), blocked 0.12 × (0.52,0.60,0.70); `ImpactPulse` decay 8 steps (`anim.hpp:148`); DECISIONS rule (3) caps peak "well under a fifth" |
+| Frame order | `session.cpp:7543-7717, 7995` | `lampSprites` → `renderFrame` (world + sprites, writes depth) → `drawSignage` (7673) → washes (7677) → `HudState` fill → `drawHud` (7995) → dialogue |
+| Sim state a viewmodel can read | `tavern.hpp:1259-1272, 1313, 581`; `brawl.hpp:63` | `playerCombatIdle()`, `playerChargeSteps()`, `playerChargeHard()` (≥ `kHardSwingHoldSteps` 15), `playerSightlineTarget()`, `playerBlocking()`, `playerWeapon()` (Fists/Improvised/Blunt/Evictor/Edged); `PlayerCombatState` Idle/Charging/Recovery; recovery 36 / 54 steps |
+| Release seams | `session.cpp:5880 attackDown, :5890 attackUp, :5974 castEquipped, :6302-6309` | the hard/soft result is known at `attackUp()`; jolt constants 273/182 bam |
+| Textured blit | `world_renderer.hpp:109-170`, `.cpp:774` | `SpriteInstance{art, artSize, artU0..V1, colour, glow, softness}`; textured path = hard cutout at alpha ≥ 128, lit solid, writes depth, ignores `glow` |
+| Screen space | `framebuffer.hpp:85-88` | `blend()` and `fillRect()` only — no textured screen-space blit exists |
+| Register metrics | `hud.cpp:111-113`, `panel.cpp:180` | `hudScale = h/180`, `minor = max(1, hudScale-1)`; panel cell = 5×minor by 7×minor; default frame 640×360 (`session.hpp:81`) → minor 1 |
+| Motif channel | `panel.cpp:65-140` | sentinels 0x01-0x06 → 4×6 motifs via `blitMotif` / `blitMotifInk`; `content/art/kenney-input-prompts` (CC0) already in git |
+| What combat/build is live in | `git diff --stat 1e626a5 combat/build` | 36 files: `session.cpp` (+518/-73), `hud.cpp`, `main.cpp`, `tavern.hpp/.cpp`, `sim/*`, 8 tests. **NOT** touched: `audio/*`, `world_renderer.*`, `framebuffer.*`, `panel.*`, `dialogue_view.*`, `anim.hpp`, `test_audio_engine.cpp`, `test_render.cpp` |
+| Toolchain | this machine | ffmpeg/ffprobe 8.1.2 gyan full (`libvorbis`, `libsoxr` confirmed); Python 3.12.10 + Pillow 12.3.0 (what `tools/scripts/gen_*.py` already run on); Unity 6000.3.6f1 (LOT's pinned version) and 6000.3.19f1 installed; no Blender (not needed) |
+| Already committed | fom-assets `1e626a5` | `tools/lot-pipeline/unity/{LotSpriteRenderer.cs, render-lot.ps1, README.md, jobs/×3}`; `.gitignore:48 = /content/art/lot/` |
+
+---
+
+## 1. Where staged assets live
+
+### 1.1 The tree (all of it gitignored by `.gitignore:48`)
+
+```
+content/art/lot/
+  staged.json                      generated by every tool: {tool, rows:[{dst, bytes, sha256}]} — the fetch/verify ledger
+  audio/
+    music/      7 .ogg   stereo 48k q5   ~2.5 MB each  ~17.5 MB   13_whispers_of_the_abyss_loop.ogg ...
+    footsteps/  84 .ogg  mono 48k q4     ~6 KB each    ~0.6 MB    concrete/concrete_01..12.ogg, earthground/, iceandsnow/, water/, metal/, gravel/, mud/
+    sfx/        38 .ogg  mono 48k q4                   ~0.9 MB    malbers/ (26)  trojia3d/ (12)
+  icons/        icons-white.png (1024×320 = 16 cols × 5 rows of 64 px) + icons-white.json   ~0.2 MB   80 named cells
+  vfx/          vfx.png (32 px grid) + vfx.json                                              ~0.1 MB   16 cells
+  unity-renders/<job>/<state>_<n>.png + frames.json    raw Unity output (per the committed README)      ~12 × 512×384 per job
+  viewmodel/    <weapon>.png (768×432 = 4×3 grid of 192×144) + <weapon>.json     ~120 KB each   fists, edged, blunt, evictor
+  portraits/    synty-heroes.png (128×160 cells, 4 views × N) + .json            only after ruling 6.3
+```
+Staged total for everything in this spec: **~22 MB** on disk. Decoded RAM at runtime: footsteps 84 × ~86 KB = 7 MB, sfx ~4 MB, music **49 MB** for the active pair (24.6 MB per 128 s mono loop), never all seven (172 MB).
+
+### 1.2 Git discipline (licence guard)
+
+- **Tracked:** `tools/lot-pipeline/**` (scripts, per-tool JSON manifests, README, `MANIFEST.md`), the C++ that consumes staged files, this spec. Nothing else.
+- **Untracked, ever:** every byte under `content/art/lot/`. The one exception class is Trojia3D owner-authored bakes and Kenney CC0 — redistributable, but they still stage under `lot/` so the rule has no exceptions to remember.
+- `docs/asset-manifest-lot.md` is **generated** (each tool rewrites its own `lot-pipeline:begin/end <tool>` section; `lotstage.py` is the shared writer for the Python tools and `lot-audio-import.ps1` mirrors it), one row per staged file: pack · source path · staged path · bytes · sha256[:12] · purpose (SoundId / cell / state) · licence class. It is the only record of what the staged tree should contain, and `staged.json` (`{"tools": {"<tool>": {"generated", "rows"}}}`) is its machine twin. Licence classes: `asset-store-eula`, `cc0`, `owner`.
+- Gate line (1 line in `scripts/verify-windows.ps1`): `git ls-files content/art/lot` must be empty — a licensed file committed by mistake turns the gate red.
+- Every loader in section 3 is missing-tolerant (one stderr line, the atlas's own convention) so the docker/GCC half of the gate, which excludes `content/art`, stays green with an empty `lot/`.
+
+### 1.3 Distribution — the owner rules; the recommendation
+
+| Option | Mechanics | Cost / risk | Verdict |
+|---|---|---|---|
+| **(a) Private asset remote** | a second private git repo (e.g. `Liefwarrior/granadad-lot-assets`, ~22 MB now, < 200 MB if all 50 loops ever stage) cloned into `content/art/lot/` by `tools/lot-pipeline/lot-fetch.ps1`; `staged.json` hashes verified on fetch | zero licensed bytes ever touch the public repo; plain git at this size; one extra clone step per machine | **Recommended** |
+| (b) Git LFS on a private mirror | LFS pointers for `lot/` in a private fork of the main repo | mixes public and private history in one lineage; GitHub LFS free tier is 1 GB storage / 1 GB bandwidth per month; a pointer in the public tree leaks file names | Not recommended |
+| (c) Build-time fetch from object storage | S3/R2 bucket + signed URL in the same fetch script | needs a bucket and key management for one owner; sensible only when a second machine or a CI build needs the assets | Later, if a team |
+| **(d) Ship only in dist** | `scripts/package-standalone.ps1` already packs `content\` whole (`granadad-pack-content.exe`); `lot/` rides along when staged | already true; needs a 1-line check that the packer's walk includes `content/art/lot/` and a `staged.json` row count printed in the package log | **Recommended, with (a)** |
+
+Recommendation: **(a) + (d)**. The private remote is the source of truth for staged files, the packer ships them inside the build, the public repo carries tools and manifests only.
+
+---
+
+## 2. The tools — `tools/lot-pipeline/`
+
+Common rules: every tool is idempotent (byte-identical re-run, skips up-to-date outputs unless `-Force`), reads LOT read-only from `-LotRoot` (default `C:\repositories\LordOfTrojia-MVP\Assets`), writes only under `content/art/lot/`, appends its rows to `staged.json`, exits non-zero on any assertion, and has a `-DryRun`. PowerShell 7 where ffmpeg is the codec; Python 3 + Pillow where pixels are cut (the runtime `gen_actor_sprites.py` already needs).
+
+### 2.1 `lot-audio-import.ps1` + `audio-manifest.json` (129 rows + 12 disabled Grass rows)
+
+Row: `{ "pack": "footsteps", "src": "Footsteps Pack Expanded/SingleSteps/ConcreteSteps/ConcreteSingelSteps01.wav", "dst": "audio/footsteps/concrete/concrete_01.ogg", "mono": true, "loop": false, "q": 4, "gainDb": 0, "soundId": "FootstepStone", "purpose": "stone footstep, variant 1 of 12", "license": "asset-store-eula", "enabled": true }`
+
+Exact conversions (48 kHz offline through soxr so `decode_vorbis.cpp:78`'s linear resampler is bypassed):
+
+```
+one-shots (mono=true):
+  ffmpeg -y -hide_banner -loglevel error -i "<src>" -ac 1 -ar 48000 ^
+    -af "aresample=resampler=soxr:precision=28,volume=<gainDb>dB" -c:a libvorbis -q:a 4 "<dst>"
+music + bed loops (mono=false, loop=true; stereo kept so a later stereo voice path costs no re-encode):
+  ffmpeg -y -hide_banner -loglevel error -i "<src>" -ar 48000 ^
+    -af "aresample=resampler=soxr:precision=28,volume=<gainDb>dB" -c:a libvorbis -q:a 5 "<dst>"
+```
+
+Assertions per output (ffprobe/ffmpeg, all recorded into `MANIFEST.md`):
+1. `ffprobe -v error -select_streams a:0 -show_entries stream=codec_name,sample_rate,channels -of csv=p=0` == `vorbis,48000,<1|2>`.
+2. Loop seam guard (`loop: true` rows only): the decoded sample count (a raw f32 decode; byte length / 4 / channels — `astats` in ffmpeg 8.1 does not print `Number_of_samples`) must equal `round(src_samples × 48000 / src_rate)` ± 1, where `src_samples` = `ffprobe -show_entries stream=duration_ts` on the WAV. A mismatch means Vorbis priming/padding survived into the loop and there will be a click on the seam.
+3. Peak dBFS from the same decode pass (`astats=measure_perchannel=Peak_level`), so gain decisions are numbers, not ears.
+
+Loudness: **no `loudnorm`**, no limiter. Sources are mastered packs; `gainDb` (default 0) is the only knob and the measured peak column is how it gets set. The Trojia3D bakes are the likely candidates for a +dB row after the first listen.
+
+Counts: music 7 · footsteps 84 (7 sets × 12; the 12 Grass rows stage with `enabled: false` until a material wants them) · Malbers 26 · Trojia3D 12. Runtime on this machine: ~129 ffmpeg invocations, under 2 minutes.
+
+### 2.2 `lot-icons.py` + `icons-manifest.json` (80 rows)
+
+Source: `Artsystack - Fantasy RPG GUI/ResourcesData/Sprites/flaticon/white/64/` only (400 PNGs; textured/btn_/100-512 px never staged). Row: `{ "id": "weapon_fists", "src": "fist_64.png", "purpose": "Weapon::Fists sheet row" }`.
+Output: `icons/icons-white.png` (16 × 5 grid of 64 px, no scaling — the loader box-filters to the row height at runtime) + `icons/icons-white.json` `{ "cell": 64, "columns": 16, "icons": { "weapon_fists": 0, ... } }`.
+Assertions: each source is RGBA; where alpha > 0 the RGB is white within 8/255 (a true 1-colour mask, so tinting by the row's ink is lossless); no two ids share a source. `--preview` writes a contact sheet at 14 / 21 / 35 px to the scratchpad for eyeballing (a feature, not a harness).
+
+### 2.3 `lot-vfx-cut.py` + `vfx-manifest.json` (16 cells)
+
+Row: `{ "id": "glint_block", "src": "Piloto Studio/Textures/Glints_Pickbook_4x4.png", "grid": [4,4], "cell": 5, "mode": "rgba", "out": [32,32] }`. Modes:
+- `rgba` — crop the grid cell, `Image.BOX` downsample (= ffmpeg `flags=area`).
+- `luma` — rgb24-on-black sources (`Hit_Punch`, `Star_Moon_4x4_Pixel`): luma becomes alpha, colour becomes white.
+- `packed:r|g|b` — channel-packed masks (`AnimeImpacts_Packed`, `Packed_HolyDust`): one plane becomes alpha, colour white.
+Output: `vfx/vfx.png` on a 32 px grid + `vfx/vfx.json` `{ "cells": { "glint_block": {"x":0,"y":0,"w":32,"h":32}, "puff": {"frames":[...]} } }`. No tint baked; colour comes from `SpriteInstance.colour`. Assertion: after the cutout threshold (alpha ≥ 128, the sampler's rule) a cell must keep ≥ 4 % of its texels — a soft source that cuts to nothing fails loudly instead of drawing nothing.
+
+The 16 cells: `glint_block` (Glints_Pickbook cell 5), `fleck_landed` (Hit_Punch cell 0, luma), `splat_kill` (Water_splash_1 cell 4), `puff_0..3` (ToonSmokePuff_3x3_Contrasted cells 0-3), `flame_0..7` (FireFlip_4x3_Fireball cells 0-7, 32×24), `slash_hard` (AnimeSlash_HalfRing).
+
+### 2.4 Unity render (committed) + `lot-viewmodel-pack.py`
+
+`tools/lot-pipeline/unity/` is already in git at `1e626a5` (Editor script, runner, 3 jobs, README). Run: `pwsh tools/lot-pipeline/unity/render-lot.ps1 -Job tools/lot-pipeline/unity/jobs/viewmodel-fists.json` with LOT closed; 1-3 min per job on the warm Library. Unexecuted so far: budget **one fix round** (two blank clip names, zero grip offsets, URP alpha readback).
+Jobs to add (copies of `viewmodel-sword.json` with prefab + clip paths changed): `viewmodel-blunt.json` (Synty `SM_Wep_Mace_01`, Axe_2Hand/OneHand swing clips), `viewmodel-evictor.json` (the larger DungeonRealms mace). Improvised (a bottle) has no verified prefab — it draws the fists sheet until one is picked.
+`lot-viewmodel-pack.py`: reads `unity-renders/<job>/frames.json`, keeps the camera-fixed 512×384 framing, BOX-downsamples to **192×144** (exact ×0.375), hard-cuts alpha at 128, packs the 12 states into `viewmodel/<weapon>.png` (4×3 grid) + `<weapon>.json` `{ "cell": [192,144], "states": { "idle": [0], "charge": [1], "swing": [2,3,4], "hard_swing": [5,6,7,8], "block": [9], "cast": [10], "hit": [11] } }`. Portraits mode packs 128×160 views the same way. Optional `--posterize N` for a later register-matching pass (off by default).
+
+### 2.5 `lot-manifest.ps1` and `lot-fetch.ps1`
+
+`lot-manifest.ps1` regenerates `tools/lot-pipeline/MANIFEST.md` from the four JSON manifests plus the staged tree (bytes, sha256) and rewrites `content/art/lot/staged.json`. `lot-fetch.ps1` clones/pulls the private remote (ruling 6.1) into `content/art/lot/` and verifies every `staged.json` hash; it is what a fresh machine or the packager runs first.
+
+---
+
+## 3. Ingestion — how each staged asset enters the game
+
+### 3.1 Audio one-shots: a second root, a fallback rule, 12 new ids, 3 new surfaces
+
+- `sound_bank.hpp`: add `kLotRootRel = "art/lot/audio"` and `lotSoundPaths(SoundId)` (a second constexpr table, ~90 rows). `SoundBank::load` per id: decode LOT rows; if ≥ 1 decoded use them, else the Kenney rows (**~15 lines** at `sound_bank.cpp:382`). Do **not** retarget `kAudioRootRel` and prefix 100 Kenney lines.
+- **Manifest swaps, zero call-site moves:** FootstepStone ← Concrete (5 → 12 variants), FootstepEarth ← EarthGround, FootstepIce ← IceAndSnow, WadeSplash ← Water, Whoosh ← Whoosh1-4, PunchMedium ← Flesh Hit / Flesh Hit2 / Hit2, PunchHeavy ← Hit1 / Hit3 / Hit Grave, ThudHeavy ← FallLand, SwordClash ← Sword Clash 1-3, SwordDraw ← Default Draw. Wood, Cloth, doors, UI stay Kenney (LOT has no wood/plank set and no door audio).
+- **New ids (12), `kSoundIdCount` 42 → 54:** `FootstepMetal`, `FootstepGravel`, `FootstepMud` (Footsteps bus); `PlayerHurt` (hurt_eric_0-3, round-robin), `PlayerDown` (hurt_eric_death), `WhooshHard` (Whoosh_Strong + Swing Sword), `SwordSheath` (Default Store) on Combat; `GuardWhistle` (Whistle ×3), `Sting` (victory_sting, 2.4 s) on World; `BigSplash` (Splash) on Ambient; `AmbienceCoastal`, `AmbienceStone` (6 s loops) on Ambient as `BedLoop` rows: `kHarbourLoops = {{AmbienceCoastal, 0.10, 0.14}}`, `kInteriorLoops = {{AmbienceStone, 0.06, 0.08}}` — under the procedural water/wind, not replacing them; `audio_engine.cpp:102/104` pass the spans instead of `{}` and, as the comment at `:51` promised, nothing else changes.
+- **Surfaces 5 → 8:** `Metal`, `Gravel`, `Mud`. `kMaterialSurfaces` remap (row count stays 22): `steel → Metal` (drop the apology comment), `lightstone_shards → Gravel`, `chromatis_melt → Mud`, `phorys → Mud`. `footstepSoundFor` gains 3 cases. Kenney fallbacks for the new footstep ids: Metal → the Kenney stone set (today's behaviour), Gravel and Mud → the Kenney earth set; so a checkout without `lot/` sounds exactly as it does now.
+- **Tests (`test_audio_engine.cpp`):** the "every id has manifest paths" case becomes `!soundPaths(id).empty() || !lotSoundPaths(id).empty()` (five ids are LOT-only: PlayerHurt, PlayerDown, GuardWhistle, Sting, BigSplash, plus the two beds); a new existence half for LOT rows runs only when `contentDir/art/lot/audio` is a directory; the 22-row pin is updated for the four remapped rows and goes red until it is — the design working.
+- **Wiring notes for combat's `session.cpp` (7 lines, not landed here):** PlayerHurt beside `punchTakenPulse_.trigger()` (`:3937`); WhooshHard in the whiff branch when `result.hard` (`:5954`); SwordSheath on `lastEscalated_` high→low (`:3961`); Sting on case-closed/quest-complete; GuardWhistle from the justice build's alarm (not yet wired); PlayerDown in `armDeathCeremony()`'s path (`:3455`).
+
+### 3.2 Music — the honest cost of playing music at all
+
+Granadad cannot play music today: no Music bus, no track vocabulary, no bank that can hold a 128 s loop (the one-shot bank decodes every variant eagerly at boot). The loop/crossfade/fade primitives all exist in `Mixer`. The build:
+
+| Piece | File | Lines | What |
+|---|---|---|---|
+| Bus | `sound_ids.hpp` | +2 | `Bus::Music`, `kBusCount` 6 → 7 (`test_audio_engine` iterates buses — +1 there) |
+| Vocabulary | `sound_ids.hpp` | +12 | `enum class TrackId : uint8_t { None, DocksExplore, DocksCalm, DocksCombat, DocksCombatAlt, Interior, InteriorCombat, Climax }`, `kTrackCount = 8` |
+| MusicBank | new `music_bank.{hpp,cpp}` | ~130 | `track(TrackId)` decodes on first request on a `std::thread` (~0.4 s for 128 s of Vorbis), LRU of 4 decoded tracks (98 MB ceiling, 49 MB typical), `prefetch()`, missing file → `nullptr`, silent; table maps TrackId → `art/lot/audio/music/<file>.ogg` |
+| MusicDirector | new `music_director.{hpp,cpp}` | ~160 | states Silent / Explore / Combat; `setScene(explore, combat)`; `noteBlow()`; `setEscalated(bool)`; `duck(gain, rampSec)`; `update(dtSec)`. Two loop voices. **Enter Combat:** any `noteBlow()` or escalated rising edge → combat voice `play(loop=true)` ramped to 1.0 over **0.8 s**, explore voice ramped to 0 over **1.2 s** but kept alive (resumes in place, no bar-one restart). **Exit:** **480 steps (8.0 s)** since the last `noteBlow()` AND `!escalated` → explore back up 1.2 s, combat `stop(1.2)`. **Duck:** applied on the two voice gains, "deepest duck wins" (LOT's own `MusicBus.cs` contract, owner-approved) |
+| Engine | `audio_engine.{hpp,cpp}` | ~40 | owns bank + director; `music()` accessor; `update(dt)` advances it; `setBed(Harbour)` → scene (DocksExplore, DocksCombat), `setBed(Interior)` → (Interior, InteriorCombat); `setBusGain(Bus::Music, ...)` for the slider |
+| Mixer | `mixer.{hpp,cpp}` | ~15 | optional `setBusGain(bus, gain, rampSec)` — not required if ducking stays on voices |
+| Tests | new `test_music_director.cpp` | ~120 | synthetic tracks (`constantSample`): enter-ramp monotone and arrives; exit at 480 steps; deepest duck wins; missing track → no voice, no crash. CI needs no LOT files |
+| Wiring (combat's `session.cpp`) | note, not landed | ~14 | `noteBlow()` at `:3928` (hp drop) and `:5960` (landed); `setEscalated(true/false)` at `:3955` / `clearEscalation()`; `duck(0.4, 0.3)` while `conversing` or a menu tile owns the screen |
+
+Total **~480 lines + 14 in session.cpp: one focused day.** Ships **mono** (the decoder downmixes; constant-power centre); a stereo path later is `Sample` + optional `right`, `decodeOggStereo` (~40 lines), a stereo branch in `Mixer::render` (~25 lines) — contained, not a blocker, and the staged files are already stereo.
+Track picks are the owner's own from LOT `BiomeMusicManifest.cs`: DocksExplore = 13. Whispers of the Abyss, DocksCalm = 11. The Cursed Grove, DocksCombat = 14. Chains of the Damned, DocksCombatAlt = 1. Ashes of the Forgotten, Interior = 35. Tomb of Echoes, InteriorCombat = 22. The Forgotten Cathedral, Climax = 15. The Final Eclipse (held). `Loops/` only; `Tracks/` reserved for a title screen.
+
+### 3.3 Icons — an icon column beside register text, never an icon grid
+
+- New `render/icon_sheet.{hpp,cpp}` (~90 lines) + `icon_ids.hpp` (80-entry enum; a test pins enum names == `icons-white.json` keys when the sheet is staged). Loads through the same `stb_image` path as `actor_sheet.cpp:244`; keeps each 64 px alpha; caches box-filtered copies at the sizes actually drawn.
+- Draw: `panel.cpp`'s row drawer takes an optional `IconId` per row and draws it in a **2-cell column** (10 × minor px) before the text at **icon side = cellH = 7 × minor px**, tinted the row's own ink (yellow verb / green number / bone), knocked out on an inverted row exactly like `blitMotifInk`. Sizes: minor 2 (h 540) → 14 px in a 20 px column; minor 3 (720) → 21/30; minor 5 (1080) → 35/50. **minor 1 (the 640×360 default) draws no icon** — 7 px is not a glyph — and the text is unchanged. Missing sheet → same.
+- Vocabulary (80 of 400): fist / bottle / hammer / dagger for the five `Weapon`s, shield / armor_1 / Ring for the sheet slots, coin / money_bag for Royals and the sack, vial / can / leaf_1 / skull / gemstone for the five contraband kinds, potion_1 / flame / snowflake / energy / wind_spell for the crafting axes, Heart / broken_heart, book_open, mail closed / open, document / paper / check for leads, map / compass / pin_1, user_1 / friend, siren / lock_1 / foot_print / eye_show, clock / sand_glass_1, store_1, key — the full map is `icons-manifest.json`.
+- Not staged, ever: textured set, btn_ plates, the 132 chrome components, the beige keycaps (the motif channel + `kenney-input-prompts` already own prompts), Kurale/MedievalSharp (no font change).
+
+### 3.4 Hit VFX — through `drawSprite`, in the world, on the pulse
+
+- New `render/vfx_sheet.{hpp,cpp}` (~70 lines): cells as `std::vector<std::uint32_t>` RGBA, handed to `SpriteInstance.art` with `artSize = 32` (the sampler reads `artSize`; nothing assumes 16).
+- One `EffectSprite { SpriteInstance sprite; int stepsLeft; frames }` list in `Session`, appended to the `sprites` vector before `renderFrame` (`:7547-7607`), advanced beside the pulses at `:3962`. Five spawns, each at most one per event:
+
+| Event | Edge (combat's `session.cpp`) | Cell | Where | Colour × value | Steps | halfWidth |
+|---|---|---|---|---|---|---|
+| Guard catches it | `blockPulse_.trigger()` `:3930` | `glint_block` | chest of the striker on the look-ray | (0.52,0.60,0.70) × blockPulse | 8 | 0.12 tile (~16 px at reach) |
+| Landed punch | `punchLandedPulse_.trigger()` `:5960` | `fleck_landed` | struck body, z chest | (0.92,0.86,0.70) × landed | 8 | 0.12 |
+| Kill / hard hit | `result.killed` / `result.blow.damage` top band `:5947` | `splat_kill` | struck body | (0.58,0.10,0.08) × light | 12 | 0.16 |
+| Body goes down | `result.blow.downed` `:5935` | `puff_0..3` | its feet, z 0.05 | ground light, grey | 12 (3 per frame) | 0.20 |
+| The Flame cast | `castEquipped()` `:5974` | `flame_0..7` | one tile ahead on the look-ray | white (baked) | 16 (2 per frame) | 0.25, capped so ≤ 48 px on screen |
+
+`slash_hard` (the hard-swing crescent) is cut first if it reads loud. Nothing screen-space, no KO stars, no continuous ambient, peak under a fifth of full strength — DECISIONS rule (3) is the ceiling.
+- Glow seam: honour `sprite.glow` in the **textured** branch of `drawSprite` (`world_renderer.cpp:774`: additive `blend`, no depth write, alpha × pulse) — ~20 lines. `world_renderer.cpp` is not in combat/build's diff, so this is in the VFX lane's scope, not a request. Without it the hard-edged picks above still work today.
+
+### 3.5 The viewmodel — a screen-space layer with its own place in the frame
+
+**Frame order:** `renderFrame` → `drawSignage` (7673) → **viewmodel** → washes (7677) → `drawHud` (7995). Under the washes so the wince tints the hands too; under the HUD so the bottom band and `drawAim` stay on top, as Oblivion's do.
+**Blit:** `Framebuffer::blitCutout(int x, int y, int w, int h, const std::uint32_t* rgba, int scale)` (~30 lines): nearest × `scale`, alpha ≥ 128 cutout (the world's own rule), no depth write.
+**Placement:** `k = max(1, height / 360)`; cell 192×144 drawn at 192k × 144k, anchored bottom-centre `x = (w - 192k)/2, y = h - 144k`: 30 % × 40 % of the frame at every size (192×144 at 360, 384×288 at 720, 576×432 at 1080). Both hands in frame (the Malbers punch clips alternate).
+**State → frame** (`render/viewmodel.{hpp,cpp}`, ~150 lines, render-side and unhashed, tests ~60 lines):
+
+```
+if  tavern_->playerBlocking()                                  -> block
+elif swingClock_ > 0                                           -> swing[f] / hard_swing[f]   (render clock started at attackUp(), result.hard)
+                                                                   3 frames over kSwingRecoverySteps 36 (12 each); 4 over 54 (13,13,14,14)
+elif !playerCombatIdle() && playerChargeSteps() > 0             -> charge; settles 2k px lower once playerChargeHard() (the 15-step tap/hold line)
+elif castClock_ > 0                                            -> cast (over the cast's own duration)
+else                                                           -> idle
+overlay: punchTakenPulse_.value() > 0.5 (first 4 of 8 steps)  -> hit
+offset:  x += round(punchTakenPulse_ × 6k), block nudge 4k     (the same edges as kTakenJoltBam / kBlockNudgeBam at :6302)
+sheet:   by tavern_->playerWeapon(): Fists, Edged, Blunt, Evictor; Improvised -> Fists
+```
+**Wiring (combat's `session.cpp`, ~20 lines):** `advance()` at `:3962`; `startSwing(result.hard)` in `attackUp()` `:5890`; `startCast()` in `castEquipped()` `:5974`; the blit between `:7673` and `:7677`.
+**Fallback that ships in the same code:** if the weapon's sheet is missing, `ViewmodelAnim` draws two-tone silhouettes with `fillRect` from the same state table — feel without fidelity, zero licence. The Synty render replaces the silhouettes the moment the job has run.
+
+### 3.6 Portraits
+
+`dialogue_view.cpp` (not combat-live) can draw a 128×160 view beside the conversation surface keyed by the actor's archetype in `face-archetypes.json`; four views (front, ¾ left, ¾ right, down) = looks, not expressions (Synty heads have no blendshapes). This **collides with FACES-SPEC** ("ORIGINAL pixel art, MERCOLAS-24, zero copied pixels") and does not build until ruling 6.3.
+
+---
+
+## 4. Build lanes for the Oblivion program
+
+Shared merge rule: fom-assets lanes may edit `native/src/audio/*`, `native/include/granadad/audio/*`, `world_renderer.*`, `framebuffer.*`, `panel.*`, `dialogue_view.*`, new files, and `test_audio_engine.cpp` / `test_render.cpp` / `test_hud_diet.cpp`. They **never** edit `session.cpp`, `hud.cpp`, `main.cpp`, `tavern.*` or `sim/*` (combat/build is live there: 36 files, `session.cpp` +518/-73); those lines go to the combat session as a WIRING NOTE, the pattern `audio_engine.hpp`'s WIRING PLAN already uses. Inside `sound_ids.hpp`, lane 1 owns the `Bus`/`TrackId` hunks and lane 2 owns the `SoundId`/`Surface` hunks; inside `audio_engine.cpp`, lane 1 owns `AudioEngine` members and lane 2 owns the tables — distinct hunks, and lane 2 (the smaller) lands first.
+
+| # | Lane (value order) | Assets | Footprint in fom-assets | Wiring note to combat | New lines | Days | Gates that stay green |
+|---|---|---|---|---|---|---|---|
+| 1 | **Music + transitions** | 7 loops (17.5 MB) | `sound_ids.hpp` (Bus, TrackId), new `music_bank.*`, `music_director.*`, `audio_engine.*`, `mixer.*`, new `test_music_director.cpp` | 14 lines: `noteBlow` ×2, `setEscalated`, `duck` | ~480 | 1.0 | `test_music_director` on synthetic tracks; `test_audio_engine` bus loop +1; world hash unchanged (audio unlinked from sim/gate) |
+| 2 | **Footsteps by surface + one-shot swaps** | 84 + 26 + 12 files | `audio-manifest.json`, `lot-audio-import.ps1`, `sound_ids.hpp` (12 ids, 3 surfaces), `sound_bank.*` (second root, rows, fallback), `audio_engine.cpp` (remap, bed loops), `test_audio_engine.cpp` | 7 lines (3.1) | ~260 | 0.5 | 22-row pin updated (goes red until it is — by design); LOT existence half skips when `lot/` absent; docker half green |
+| 3 | **Hit VFX** | 16 cells | `vfx-manifest.json`, `lot-vfx-cut.py`, new `vfx_sheet.*`, `world_renderer.*` (glow seam), `test_render.cpp` | ~40 lines: 5 spawns + advance + append to `sprites` | ~180 | 1.0 | `test_render` sprite-pixel cases unchanged; rule (3) numbers in the table |
+| 4 | **Viewmodel** | 4 sheets × 12 frames | Unity jobs ×4 run + fix round, `lot-viewmodel-pack.py`, `framebuffer.*` (`blitCutout`), new `viewmodel.*`, new `test_viewmodel.cpp` | ~20 lines: advance, `startSwing`, `startCast`, the blit | ~260 | 1.5 | silhouette fallback proves the layer with no sheet; `test_hud_diet` untouched (drawn under the HUD) |
+| 5 | **Portraits** | 12 heads × 4 views | after ruling 6.3: `dialogue_view.*`, portrait loader | none | ~120 | 0.5 | `test_dialogue` (combat-live — coordinate) |
+| 6 | **Icons in the sheet** | 80 cells | `icons-manifest.json`, `lot-icons.py`, new `icon_sheet.*`, `icon_ids.hpp`, `panel.*` (icon column) | rows in the menu views pass an `IconId` (UI-EA's files — coordinate with the finishing UI-EA lane) | ~220 | 1.0 | minor-1 frames byte-identical (no icon drawn); `test_hud_diet` real-estate ruler unchanged |
+| 0 | *Tools + staging + ledger* (before all) | — | `lot-manifest.ps1`, `lot-fetch.ps1`, `MANIFEST.md`, the `git ls-files` guard in `verify-windows.ps1`, packer walk check | none | ~200 | 0.5 | gate red on any committed `lot/` file |
+
+Fan-out: lane 0 then lane 2 serial (1 day), lanes 1 / 3 / 4 / 6 in parallel (1.5 days wall), lane 5 on ruling. **~2.5 days wall, ~6 focused days total.** The gate (`scripts/verify-windows.ps1`, ~165 s) runs at every lane's end; `0x2646C1AAA2BA38DF` is confirmed at each, as the law requires, and nothing in these lanes is in reach of it.
+
+---
+
+## 5. Licensing summary
+
+| Pack (LOT path) | Terms found | Public repo | Ship in build | Where it stages |
+|---|---|---|---|---|
+| Dark Fantasy RPG Music pack (100 WAV; `Resources/Music` 15 dupes) | no LICENSE/EULA; publisher unidentifiable; treat as Unity Asset Store EULA (+ possible no-streaming/Content-ID clause) | **no** | yes | `lot/audio/music` |
+| Footsteps Pack Expanded (3,011 WAV) | no LICENSE; Asset Store EULA assumed | **no** | yes | `lot/audio/footsteps` |
+| Malbers Animations — Common/Audio (65), Common/Particles, Human Anims, Steve rig | Asset Store purchase confirmed (local cache); Asset Store EULA; renders of clips/rig are derivatives | **no** | yes | `lot/audio/sfx/malbers`, `lot/vfx`, `lot/unity-renders` |
+| Artsystack — Fantasy RPG GUI (icons, chrome, keycaps) | README PDF "Copyrights (c) Artsystack", invoice-gated support = Asset Store EULA | **no** | yes | `lot/icons` |
+| Artsystack fonts Kurale / MedievalSharp | SIL OFL 1.1 | yes | yes | **not staged** (no font change) |
+| Piloto Studio (Textures, Models, Shaders_Reforged) | README PDF has no licence text; Asset Store EULA; `Textures/Chinese/*`, `MMR_-_*` of unknown provenance — excluded | **no** | yes | `lot/vfx` |
+| Synty POLYGON (FantasyHero, DungeonRealms, Knights, Generic, Nature) | no LICENSE file; Synty/Asset Store EULA; pre-rendered 2D output is a derivative | **no** | yes | `lot/vfx`, `lot/unity-renders`, `lot/viewmodel`, `lot/portraits` |
+| FANTASY WEAPON SETS / MedievalWeaponSet_A1; PolysplitGames | no licence files; Asset Store EULA assumed | **no** | yes | `lot/unity-renders` |
+| Trojia3D/Resources (38 WAV, owner's procedural bakes) | owner-authored (LOT root LICENSE "All Rights Reserved" is his own) | yes (his call) | yes | `lot/audio/sfx/trojia3d` (kept under `lot/` so the rule has no exceptions) |
+| Assets/Audio/UI/Kenney (51 OGG) | CC0 1.0 | yes | yes | **not staged** (Interface Sounds already vendored) |
+
+Three of the five audio sources and every image/3D source are paid Asset-Store-style licences: fine inside a built game, not as raw files in `github.com/Liefwarrior/FlameOfMercolas`. `content/art/lot/` stays gitignored; the owner picks the channel (6.1).
+
+---
+
+## 6. Open rulings for Eli
+
+1. **Distribution channel.** Recommendation: (a) private asset remote + (d) packed into dist by the existing packer. Alternatives costed in 1.3.
+2. **Music ships mono first** (decoder downmixes; ~65 lines later for stereo). And the scene map: Harbour → 13. Whispers of the Abyss / 14. Chains of the Damned; Interior → 35. Tomb of Echoes / 22. The Forgotten Cathedral; 11. The Cursed Grove and 1. Ashes of the Forgotten held as the calm pair; 15. The Final Eclipse held for a climax. Confirm or swap.
+3. **Portraits vs FACES-SPEC.** Rendered Synty heads overturn "zero copied pixels." Options: keep the procedural faces (recommended until the viewmodel has landed and been played), or run `portraits-synty-heroes.json` and judge 12 heads on screen before deciding.
+4. **Surface remap:** `steel → Metal`, `lightstone_shards → Gravel`, `chromatis_melt → Mud`, `phorys → Mud`; the 12 Grass steps stay disabled (no grass material; `thatch` could take them). Yes/no.
+5. **Viewmodel body:** Synty preset arms (job as committed) vs Malbers' own Steve (no retarget, `keepRenderers = []`). Recommendation: Synty first, Steve if the blocky arms read wrong. Also: `--posterize` to the register's palette, or leave the flat-shaded render as is.
+6. **Combat call-site lines** in `session.cpp` (3.1, 3.2, 3.4, 3.5 — ~80 lines total) land through the combat session as wiring notes, or after combat/build merges. Your call on sequencing.
+7. **Not recommended, say so if wanted:** Kenney UI switch set (relay-click register under `UiToggle`); Artsystack painted `colored_icon` renders in the Character hero panel (fidelity, and the reference wants ASCII art there); Trojia3D `hit_heavy` / `swing_crush` chiptune layer (staged, unmapped); `slash_hard` (first VFX to cut); ember/dust ambient particles; rain (no texture in LOT — code-drawn if ever).
+8. **Loudness:** `gainDb` per row + measured peak in `MANIFEST.md`, no normaliser. Confirm "keep simple."
