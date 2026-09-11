@@ -28,13 +28,15 @@ blocky rigs, box fists. That is the feel pass, not the fidelity pass.
 
 | frame | drive | what it proves |
 |---|---|---|
-| 01, 08, 09 | `--smoke=40/41/42 --time=8` | the same crowd one step apart: the walkers' legs and positions move between frames |
+| 01, 08, 09 | `--smoke=40/41/42 --time=8` | the same street one step apart: the bodies stand where the sim has them and move through it as the sim moves them |
 | 07, 11, 20 | Gull frames | bodies inside the Gull where the sim has them (Tarn Wrenhale, the bouncer, patrons) |
 
-Bodies: 208-301 per frame, 0 skinned, 0 rig files (placeholders). The Walk /
-PunchLeft / PunchRight / Recover / Death clips exist in the adapter
-(`actor_instances.cpp`) but with no glb rig on disk the placeholder plays them
-as its own two-frame pose swap.
+Bodies: 208-301 per frame, 0 skinned, 0 rig files (placeholders). NOT
+ANIMATED: the Walk / PunchLeft / PunchRight / Recover / Death clips are chosen
+per body in the adapter (`actor_instances.cpp`) and `drawActor` plays them
+only on a loaded glb rig; with none on disk the placeholder is a rigid mesh
+(`drawInstance`) that translates and turns and does nothing else -- no
+stride, no swing, no falling down. A downed man is a standing box.
 
 ## The hands (criterion 3)
 
