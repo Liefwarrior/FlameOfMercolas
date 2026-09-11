@@ -24,7 +24,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import os
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -101,7 +100,7 @@ def write_ledger(root: Path, tool: str, rows: list[dict], dry_run: bool = False)
     }
     if not dry_run:
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+        path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8", newline="\n")
     return path
 
 
@@ -148,8 +147,7 @@ def write_manifest_section(root: Path, tool: str, title: str, intro: str, rows: 
         text = text.rstrip("\n") + "\n\n" + section
     if not dry_run:
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(text, encoding="utf-8", newline="
-")
+        path.write_text(text, encoding="utf-8", newline="\n")
     return path
 
 
