@@ -60,7 +60,7 @@
 #include "granadad/render/world_renderer.hpp"
 #include "granadad/render3d/backend.hpp"
 #include "granadad/render3d/scene.hpp"
-#include "granadad/render3d/starter_scene.hpp"
+#include "granadad/render3d/world_scene.hpp"
 #include "granadad/sim/angle.hpp"
 #include "granadad/sim/build_info.hpp"
 #include "granadad/sim/docks.hpp"
@@ -317,13 +317,14 @@ struct Options {
     render::SmokeRunConfig smoke;
     bool wantsSmoke = false;
     int windowScale = 2;
-    /// 3D BUILD. `--3d`: the world is drawn by the raylib backend (for now
-    /// the starter scene -- a lit plane and a cube -- until the chunk mesher
-    /// lands) and the software frame is drawn WITHOUT its world pass, as a
-    /// transparent overlay over it. Off, the software world rides inside the
-    /// overlay and the picture is the one this build has always shown; the
-    /// window, the composite and the capture go through raylib either way.
-    bool video3d = false;
+    /// 3D BUILD. THE DEFAULT NOW: the world is drawn by the raylib backend
+    /// -- the Docks as chunk meshes (render3d/world_scene.hpp) -- and the
+    /// software frame is drawn WITHOUT its world pass, as a transparent
+    /// overlay over it. `--2d` turns it off: the software world rides inside
+    /// the overlay and the picture is the one this build showed before the
+    /// 3D programme; the window, the composite and the capture go through
+    /// raylib either way. `--3d` is still accepted and means the default.
+    bool video3d = true;
     /// Mouse look sensitivity, BAM per mouse count. Only used when NAMED: the
     /// settings file is the source of truth, and a command line that always
     /// overrode it would silently undo the options page on every launch.
@@ -690,9 +691,11 @@ void print_usage() {
         "                       through the 3D backend: the shipped build opens\n"
         "                       a window for the shutter and closes it; the\n"
         "                       headless (rlsw) build opens none\n"
-        "  --3d                 draw the world through the 3D backend, with the\n"
-        "                       terminal HUD composited over it (the starter\n"
-        "                       scene until the chunk mesher lands)\n"
+        "  --2d                 draw the world with the software raycaster inside\n"
+        "                       the overlay instead of the 3D chunk meshes (the\n"
+        "                       picture this build showed before the 3D programme)\n"
+        "  --3d                 the default: the Docks as 3D geometry through the\n"
+        "                       raylib backend, the terminal HUD composited over it\n"
         "  --width=N            internal render width  (default 640)\n"
         "  --height=N           internal render height (default 360)\n"
         "  --scale=N            window / capture upscale, nearest neighbor (default 2)\n"
@@ -1090,6 +1093,8 @@ void print_usage() {
             options.invertY = true;
         } else if (std::strcmp(arg, "--3d") == 0) {
             options.video3d = true;
+        } else if (std::strcmp(arg, "--2d") == 0) {
+            options.video3d = false;
         } else if (starts_with(arg, "--controls=", &value)) {
             options.controlsFile = value;
         } else if (starts_with(arg, "--clock=", &value)) {
@@ -3390,34 +3395,27 @@ struct VideoBridge {
     }
 };
 
-/// 3D BUILD. THE STARTER SCENE, PLACED FOR A SESSION: the ground under the
-/// band the body stands on, the cube four tiles ahead of where the body was
-/// looking when the scene was first placed, the light from the session's
-/// own clock, the camera from the session's own Camera. Until the chunk
-/// mesher lands this IS the 3D world;
-/// after it, the W lane replaces buildStarterScene with the chunk meshes and
-/// nothing here about the camera or the composite changes.
+/// 3D BUILD. THE DOCKS, PLACED FOR A SESSION: the session's own tiles meshed
+/// by chunk (built once, on the first frame), lit from its own clock, its
+/// baked lamps and the Gull's own hearth and candles, the sky dome on the
+/// eye, and the camera from the session's own Camera -- Session::camera(),
+/// the body's Q8 position and BAM facing through Camera::fromBody, combat
+/// impulses included. The rig borrows the session's tiles, atlas and lamp
+/// field, so it must not outlive the session it was first refreshed with
+/// -- it never does: one rig per run_client / shutter.
 struct SceneRig {
     render3d::SceneDescription scene;
-    render3d::StarterSceneParams params;
-    bool placed = false;
+    std::unique_ptr<render3d::WorldScene> world;
 
     void refresh(const render::Session& session, float aspect) {
-        const render::Camera view = session.camera();
-        if (!placed) {
-            params.centre = render3d::toScene(view.x, view.y, 0.0F);
-            // Four tiles AHEAD of where the body is looking, so the first
-            // frame -- and every capture -- has the cube in view. World x is
-            // east and y is south; yaw 0 faces north (-y) and turns clockwise,
-            // render::Camera's own convention.
-            params.cube = render3d::toScene(view.x + 4.0F * std::sin(view.yaw),
-                                            view.y - 4.0F * std::cos(view.yaw), 0.0F);
-            placed = true;
+        if (world == nullptr) {
+            world = std::make_unique<render3d::WorldScene>(session.tiles(), session.atlas(),
+                                                           &session.renderer().glow());
         }
-        params.groundY = render::bandSurface(session.body().band());
+        render3d::WorldSceneParams params;
         params.timeOfDaySeconds = session.timeOfDay();
-        render3d::buildStarterScene(scene, params);
-        scene.camera = render3d::cameraFrom(view, aspect);
+        params.dynamicLamps = session.tavernLights();
+        world->refresh(scene, session.camera(), aspect, params);
     }
 };
 
@@ -3480,7 +3478,8 @@ render3d::SceneStats present_frame(render3d::Backend& video, const Options& opti
     std::printf("granadad: 3d shutter -- %s backend, %dx%d, %zu instance(s), %zu triangle(s)%s\n",
                 video->kind() == render3d::VideoKind::Software ? "rlsw" : "gpu", output.width(),
                 output.height(), stats.instancesDrawn, stats.trianglesDrawn,
-                options.video3d ? "" : " (software world in the overlay; --3d for the scene)");
+                options.video3d ? " (the Docks in 3D under the HUD)"
+                                : " (software world in the overlay: --2d)");
     return ok;
 }
 
@@ -4074,7 +4073,7 @@ int run_client(const Options& options, const render::CreationResult& chosen,
     SceneRig rig;
     std::printf("granadad: video %s backend, %dx%d window%s\n",
                 video.kind() == render3d::VideoKind::Software ? "rlsw" : "gpu", video.width(),
-                video.height(), options.video3d ? ", --3d" : "");
+                video.height(), options.video3d ? ", 3D world" : ", --2d software world");
 
     render::Framebuffer frame(options.smoke.session.width, options.smoke.session.height);
 
@@ -5083,7 +5082,10 @@ int run_client(const Options& options, const render::CreationResult& chosen,
             // CaseWatchDirector::composeView.
             watch->composeView(session);
         }
-        session.drawFrame(frame);
+        // 3D BUILD: with the world in the backend's own 3D pass, this frame
+        // is the OVERLAY -- drawn without the software world pass, on a
+        // transparent ground; --2d keeps the raycaster's world in it.
+        session.drawFrame(frame, render::Session::FramePasses{.world = !options.video3d});
         // THE CARD AND THE CAPTION GO ON LAST, over the finished frame, and
         // the shutter goes after them -- so what a capture holds is exactly
         // what the window presented, furniture included.

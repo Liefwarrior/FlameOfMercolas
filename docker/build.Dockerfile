@@ -1119,6 +1119,25 @@ RUN --mount=type=cache,target=/deps,sharing=locked \
     done; \
     echo "ok: the 3D toolchain's cases are all registered"; \
     \
+    # 3D BUILD, the world lane. The Docks as geometry: the chunk mesh is a
+    # deterministic function of the tile bytes (built twice, same bytes,
+    # same scene hash), a WALL emits wall quads and a FLOOR in a street does
+    # not (the wall-vs-floor fact the 2D/3D agreement rests on), and the real
+    # district renders headless through rlsw to a frame with a world in it.
+    for case in \
+        "the Docks mesh is a deterministic function of the tile map" \
+        "a wall tile produces wall quads and a floor tile does not" \
+        "the Docks render to a 3D frame with a world in it" \
+        ; do \
+        case "$ctest_list" in *"$case"*) ;; *) false;; esac \
+            || { echo "FATAL: the case \"$case\" is not registered."; \
+                 echo "       It is what the 3D world lane is judged on: the"; \
+                 echo "       tile map meshed deterministically, walls that are"; \
+                 echo "       walls, and the Docks drawn headless in 3D."; \
+                 exit 1; }; \
+    done; \
+    echo "ok: the 3D world lane's cases are all registered"; \
+    \
     # ---------------------------------------------------------------------
     # AND THE SUITE RUNS IN PARALLEL, WHICH IS NOT A SUBSTITUTE FOR ANYTHING.
     # ---------------------------------------------------------------------

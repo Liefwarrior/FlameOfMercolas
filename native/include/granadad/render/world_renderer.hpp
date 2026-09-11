@@ -40,6 +40,8 @@
 #include "granadad/render/framebuffer.hpp"
 #include "granadad/render/lamps.hpp"
 #include "granadad/render/lighting.hpp"
+#include "granadad/render/vertical.hpp"
+#include "granadad/render/voxel_classify.hpp"
 #include "granadad/sim/tile_query.hpp"
 #include "granadad/sim/vertical_scale.hpp"
 
@@ -49,26 +51,11 @@ namespace granadad::render {
 // the vertical scale
 // ---------------------------------------------------------------------------
 //
-// EVERY HEIGHT IN THE RENDERER COMES THROUGH HERE. It is public, and in the
-// header rather than tucked in a .cpp, because three translation units place
-// things in the air — the world pass, the lamp billboards and the actor
-// billboards in session.cpp — and the moment two of them disagree about how
-// tall a level is, people stand on ceilings.
-//
-// It used to be an implied 1.0: a level was drawn exactly as tall as a tile is
-// wide, which made every building in the Docks one tile high and is the defect
-// this constant was extracted to kill. sim/vertical_scale.hpp carries the
-// argument for the number.
-
-/// Tile-widths of vertical height in one z-level.
-inline constexpr float kBandHeight = static_cast<float>(sim::kTilesPerBand);
-
-/// The height of level `z`'s own walking surface, in tiles. A FLOOR at z is
-/// walked on at exactly this height and a WALL at z rises from here to the
-/// surface of z + 1, which is what makes the two stack.
-[[nodiscard]] constexpr float bandSurface(std::int32_t z) noexcept {
-    return static_cast<float>(z) * kBandHeight;
-}
+// kBandHeight and bandSurface() live in render/vertical.hpp now, and the
+// cell classification (Voxel, classifyVoxel) in render/voxel_classify.hpp,
+// because the 3D chunk mesher draws from the SAME classification this pass
+// does and the two must not be allowed to drift. Both are included here so
+// every existing caller keeps its names.
 
 /// Where the eye is and where it points. Derived from the body's integers at
 /// draw time; never the other way round.
@@ -234,17 +221,6 @@ public:
     [[nodiscard]] std::vector<SpriteInstance> lampSprites(float phase) const;
 
 private:
-    struct Voxel {
-        float bottom = 0.0F;
-        float top = 0.0F;
-        FaceKind topFace = FaceKind::BlockTop;
-        std::uint16_t material = 0;
-        /// FLUID-lane depth at this cell, 0..7. Tints the top face.
-        int wetness = 0;
-        bool water = false;
-        bool hasSides = true;
-    };
-
     [[nodiscard]] bool voxelAt(std::int32_t x, std::int32_t y, std::int32_t z,
                                Voxel& out) const noexcept;
 

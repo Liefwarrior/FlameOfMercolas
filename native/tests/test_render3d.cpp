@@ -19,11 +19,20 @@
 #include <cstdlib>
 #include <set>
 
+#include "granadad/content/content_dir.hpp"
+#include "granadad/content/world_reader.hpp"
+#include "granadad/render/atlas.hpp"
 #include "granadad/render/framebuffer.hpp"
+#include "granadad/render/lamps.hpp"
+#include "granadad/render/lighting.hpp"
 #include "granadad/render/world_renderer.hpp"
 #include "granadad/render3d/backend.hpp"
 #include "granadad/render3d/scene.hpp"
 #include "granadad/render3d/starter_scene.hpp"
+#include "granadad/render3d/world_scene.hpp"
+#include "granadad/sim/docks.hpp"
+#include "granadad/sim/tile_query.hpp"
+#include "granadad/sim/vertical_scale.hpp"
 
 using namespace granadad::render3d;
 namespace render = granadad::render;
@@ -286,4 +295,85 @@ TEST_CASE("blend over a transparent pixel accumulates coverage") {
     CHECK((pixelAt(frame, 2, 0) >> 24) == 0xFFU);
     CHECK(render::packRgba(render::Rgb{1.0F, 1.0F, 1.0F}, 1.0F) == 0xFFFFFFFFU);
     CHECK(render::packRgba(render::Rgb{1.0F, 1.0F, 1.0F}, 0.0F) == 0x00FFFFFFU);
+}
+
+TEST_CASE("the Docks render to a 3D frame with a world in it") {
+    // THE WORLD LANE'S FRAME: the real district, meshed by chunk from its
+    // baked tiles, lit by its own lamps and the noon curve, seen from the
+    // authored spawn on the quayside looking west down the Tarwalk with the
+    // Gilded Gull on the left -- drawn headless through rlsw. What is
+    // asserted is that a WORLD is in the picture: thousands of pixels that
+    // the sky alone would not have put there, many colours, and the same
+    // bytes when drawn again.
+    if (!Backend::headlessCapable()) {
+        MESSAGE("skipped: this build renders through a GPU window, not rlsw");
+        return;
+    }
+    namespace content = granadad::content;
+    namespace sim = granadad::sim;
+    const content::World world =
+        content::loadWorldFile(content::bakedMap(sim::docks::kWorldName));
+    const sim::TileQuery tiles(world);
+    // The real pack when the checkout has it, the procedural one when it
+    // does not: the assertions hold on either, which is the point of them.
+    const render::TileAtlas atlas = render::TileAtlas::load(content::contentDir());
+    const std::vector<render::Lamp> lamps =
+        render::loadLamps(content::contentDir(), sim::docks::kWorldName);
+    const render::LampGlow glow = render::LampGlow::build(tiles, lamps);
+
+    render::Camera eye;
+    eye.x = static_cast<float>(sim::docks::kSpawnTileX) + 0.5F;
+    eye.y = static_cast<float>(sim::docks::kSpawnTileY) + 0.5F;
+    eye.z = render::bandSurface(sim::docks::kSpawnBand) +
+            static_cast<float>(sim::kEyeHeightTilesQ8) / 256.0F;
+    eye.yaw = 265.0F * 3.14159265358979323846F / 180.0F;
+    eye.pitch = 0.0F;
+    eye.hfovTan = 1.0F;
+
+    WorldSceneParams params;
+    params.timeOfDaySeconds = 12 * 3600;
+    WorldScene docks(tiles, atlas, &glow);
+    SceneDescription scene;
+    docks.refresh(scene, eye, static_cast<float>(kWidth) / static_cast<float>(kHeight), params);
+    REQUIRE(scene.instances.size() >= 2);
+    REQUIRE(scene.instances[0].meshId == kSkyMeshId);
+
+    std::unique_ptr<Backend> video = Backend::open(headlessConfig());
+    REQUIRE(video != nullptr);
+    SceneStats stats;
+    const render::Framebuffer frame = drawOnce(*video, scene, nullptr, &stats);
+    REQUIRE(frame.width() == kWidth);
+    REQUIRE(frame.height() == kHeight);
+    CHECK(stats.instancesDrawn == scene.instances.size());
+    CHECK(stats.texturesUploaded == 1);
+    CHECK(stats.trianglesDrawn > 10000);
+
+    // The sky alone, for the difference: everything the world put there.
+    SceneDescription skyOnly = scene;
+    skyOnly.instances.resize(1);
+    const render::Framebuffer skyFrame = drawOnce(*video, skyOnly, nullptr, nullptr);
+    std::size_t worldPixels = 0;
+    for (std::size_t i = 0; i < frame.pixels().size(); ++i) {
+        if (frame.pixels()[i] != skyFrame.pixels()[i]) {
+            ++worldPixels;
+        }
+    }
+    CHECK(worldPixels > 8000);
+    std::set<std::uint32_t> distinct;
+    for (const std::uint32_t pixel : frame.pixels()) {
+        distinct.insert(pixel);
+    }
+    CHECK(distinct.size() >= 16);
+    // And some sky is left: the Gull's two storeys reach the top-left of
+    // the frame from here, but the district does not fill the whole sky.
+    CHECK(worldPixels < frame.pixels().size());
+    // Ground under the eye: the quayside is not sky.
+    CHECK(pixelAt(frame, kWidth / 2, kHeight - 2) != pixelAt(skyFrame, kWidth / 2, kHeight - 2));
+    MESSAGE("Docks frame: " << worldPixels << " world pixels, " << distinct.size()
+                            << " colours, " << stats.instancesDrawn << " instances, "
+                            << stats.trianglesDrawn << " triangles");
+
+    // And again, byte for byte -- the frame is a function of the description.
+    const render::Framebuffer second = drawOnce(*video, scene, nullptr, nullptr);
+    CHECK(frame.pixels() == second.pixels());
 }

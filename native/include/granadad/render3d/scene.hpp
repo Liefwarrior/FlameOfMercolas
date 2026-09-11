@@ -38,7 +38,8 @@
 // different shape (the adapter caches uploads by id and re-uploads only when
 // `version` moves):
 //
-//     1 .. 999          starter / debug meshes (this header)
+//     1 .. 999          starter / debug meshes (this header); 900 is the
+//                       sky dome -- world_scene.hpp
 //     1000 .. 99999     chunk meshes  -- chunk_mesher.hpp
 //     100000 .. 199999  actor rigs    -- actor_instances.hpp
 //     200000 .. 209999  viewmodel     -- viewmodel.hpp

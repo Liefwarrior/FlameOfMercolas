@@ -16,37 +16,10 @@ namespace {
 
 constexpr float kPi = 3.14159265358979323846F;
 
-// kBandHeight and bandSurface() are in world_renderer.hpp: session.cpp places
-// billboards against the same scale and there must be exactly one of it.
-
-/// How far a FLOOR / RAMP / STAIR slab hangs below the level it is the surface
-/// of. The walking surface is exactly at the level's own height, so the slab
-/// has to be underneath it — which is also why a pier deck is visibly a plank
-/// with air under it when you stand at the water's edge.
-///
-/// ABSOLUTE TILE THICKNESSES, not fractions of a storey, and that distinction
-/// is the reason they did not change when the storey tripled. A deck plank is
-/// 0.22 of a tile — call it 0.20 m — of timber whether the room under it is one
-/// tile high or three. Scaling these with the band would have given the Long
-/// Quay a 0.60 m slab of decking, which is a bridge, not a pier.
-constexpr float kFloorSlab = 0.22F;
-constexpr float kRampSlab = 0.30F;
-constexpr float kStairSlab = 0.36F;
-
-/// Water surface height above its level's own floor, in tiles, from FLUID-lane
-/// depth 1..7. A FRACTION OF THE BAND: a cell filled to the brim holds a band's
-/// worth of water, so this one scales where the slabs above do not.
-///
-/// Depth 7 comes out at 0.70 of a band rather than 1.0, deliberately. The
-/// harbour fills z=17 and z=18 at full depth and the quay deck's slab hangs
-/// from 57.0 down to 56.78; a surface at the full 57.0 would z-fight the deck
-/// along the entire waterfront. At 0.70 the waterline stands at 56.10, which is
-/// 0.90 of a tile — about 0.8 m — below the deck: artifact-free, and now an
-/// actual tidal drop you can see from the quay edge rather than the 0.3 of a
-/// tile it used to be.
-[[nodiscard]] float waterSurface(int depth) noexcept {
-    return static_cast<float>(depth) * 0.10F * kBandHeight;
-}
+// kBandHeight, bandSurface(), the slab thicknesses, waterSurface() and the
+// classifier itself are in render/vertical.hpp and render/voxel_classify.hpp:
+// the 3D chunk mesher draws from the same numbers and there must be exactly
+// one set of them.
 
 /// Screen-row conversion that cannot hand an out-of-range or NaN float to a
 /// cast. A voxel directly under the eye projects to a row at plus infinity, and
@@ -231,78 +204,9 @@ std::uint32_t WorldRenderer::columnMask(std::int32_t x, std::int32_t y) const no
 
 bool WorldRenderer::voxelAt(std::int32_t x, std::int32_t y, std::int32_t z,
                             Voxel& out) const noexcept {
-    const content::TileForm form = tiles_->form(x, y, z);
-    const int depth = tiles_->fluidDepth(x, y, z);
-
-    // OPEN air holding water is the harbour: draw a surface on the TOPMOST wet
-    // cell of the column and nothing below it, because seven-deep water is
-    // opaque and there is nothing down there to see.
-    //
-    // Water sitting on AUTHORED GROUND is a puddle or a flooded cellar. That
-    // cell keeps its own geometry and the wetness only tints its top face —
-    // replacing a floor with a water plane would delete the floor the player is
-    // standing on and leave them apparently walking on the sea.
-    if (form == content::TileForm::Open || form == content::TileForm::Void) {
-        if (depth > 0 && tiles_->fluidDepth(x, y, z + 1) == 0) {
-            out.bottom = bandSurface(z);
-            out.top = bandSurface(z) + waterSurface(depth);
-            out.topFace = FaceKind::Water;
-            out.material = 0;
-            out.wetness = depth;
-            out.water = true;
-            out.hasSides = false;
-            return true;
-        }
-        return false;
-    }
-
-    switch (form) {
-        // THE WALL IS THE STOREY. It rises from its own level's walking surface
-        // to the next one's, so its side face is kBandHeight tiles tall — three
-        // now, one before, and that single line is the whole of what Eli was
-        // looking at when he said every building appears to be one tile high.
-        case content::TileForm::Wall:
-            out.bottom = bandSurface(z);
-            out.top = bandSurface(z) + kBandHeight;
-            out.topFace = FaceKind::BlockTop;
-            break;
-        case content::TileForm::Floor:
-            out.bottom = bandSurface(z) - kFloorSlab;
-            out.top = bandSurface(z);
-            out.topFace = FaceKind::FloorTop;
-            break;
-        // VERIFICATION GAP (S2, and WORSE after polish-1): a RAMP is drawn as a
-        // thinner flat slab, not as a slope. The movement rule is right
-        // (stepBand authorises the climb); it is the picture that is wrong, and
-        // nothing tests the picture.
-        //
-        // Tripling the storey made this gap bigger rather than smaller. Walking
-        // a ramp used to look like stepping onto a low kerb; it now lifts the
-        // body a full 2.7 m up a slab drawn 0.30 of a tile thick, so the eye
-        // rises past a face that is not there. kEyeEaseRate was halved to make
-        // the rise read as a climb (sim/player.hpp), which buys time but does
-        // not draw the slope. Drawing the actual wedge is the fix and it is not
-        // in this change.
-        case content::TileForm::Ramp:
-            out.bottom = bandSurface(z) - kRampSlab;
-            out.top = bandSurface(z);
-            out.topFace = FaceKind::RampTop;
-            break;
-        case content::TileForm::Stair:
-            out.bottom = bandSurface(z) - kStairSlab;
-            out.top = bandSurface(z);
-            out.topFace = FaceKind::StairTop;
-            break;
-        case content::TileForm::Void:
-        case content::TileForm::Open:
-        default:
-            return false;
-    }
-    out.material = tiles_->material(x, y, z);
-    out.wetness = depth;
-    out.water = false;
-    out.hasSides = true;
-    return true;
+    // The one classification, shared with the chunk mesher -- see
+    // voxel_classify.hpp for the rules and for why they live there.
+    return classifyVoxel(*tiles_, x, y, z, out);
 }
 
 std::vector<SpriteInstance> WorldRenderer::lampSprites(float phase) const {
@@ -539,10 +443,7 @@ FrameStats WorldRenderer::renderFrame(Framebuffer& target, const Camera& camera,
                         const int rowTo = std::min(height - 1, rowAtMost(yBottom));
                         if (rowTo >= rowFrom && yBottom > yTop) {
                             const std::size_t tile = atlas_->tileFor(
-                                voxel.material, FaceKind::Side,
-                                hash32(static_cast<std::uint32_t>(mapX) * 73856093U ^
-                                       static_cast<std::uint32_t>(mapY) * 19349663U ^
-                                       static_cast<std::uint32_t>(z) * 83492791U));
+                                voxel.material, FaceKind::Side, sideVariantKey(mapX, mapY, z));
                             const float along = enterAxis == 0 ? fractional(entryY)
                                                                : fractional(entryX);
                             const int u = std::clamp(
@@ -551,7 +452,7 @@ FrameStats WorldRenderer::renderFrame(Framebuffer& target, const Camera& camera,
                             // Sides that face away from the light read darker.
                             // Two constants, one per axis: the cheapest form of
                             // directional shading and the one Barony uses.
-                            const float facing = enterAxis == 0 ? 0.78F : 0.94F;
+                            const float facing = enterAxis == 0 ? kFacingX : kFacingY;
                             const float span = yBottom - yTop;
                             const float fog =
                                 1.0F - std::exp(-safeEnter / sky.fogDistance);
@@ -608,10 +509,7 @@ FrameStats WorldRenderer::renderFrame(Framebuffer& target, const Camera& camera,
                         }
                         const FaceKind face = isTop ? voxel.topFace : FaceKind::Side;
                         const std::size_t tile = atlas_->tileFor(
-                            voxel.material, face,
-                            hash32(static_cast<std::uint32_t>(mapX) * 6971U ^
-                                   static_cast<std::uint32_t>(mapY) * 40483U ^
-                                   static_cast<std::uint32_t>(z) * 1572869U));
+                            voxel.material, face, flatVariantKey(mapX, mapY, z));
                         const float rise = height3d - camera.z;
                         // Bounded minification blend: when this face's screen footprint
                         // covers meaningfully more than one atlas texel per row (a
@@ -679,9 +577,9 @@ FrameStats WorldRenderer::renderFrame(Framebuffer& target, const Camera& camera,
                                     static_cast<std::size_t>(std::clamp(voxel.wetness, 0, 7));
                                 const float alpha =
                                     static_cast<float>(atlas_->waterDepthAlphaQ8()[slot]) / 256.0F;
-                                colour = lerp(colour, Rgb{0.020F, 0.043F, 0.055F}, alpha);
+                                colour = lerp(colour, kDeepWaterTone, alpha);
                             }
-                            const float lift = isTop ? 1.0F : 0.62F;
+                            const float lift = isTop ? 1.0F : kUndersideLift;
                             colour = Rgb{colour.r * surfaceLight.r * lift,
                                          colour.g * surfaceLight.g * lift,
                                          colour.b * surfaceLight.b * lift};

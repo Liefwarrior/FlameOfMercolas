@@ -461,6 +461,10 @@ add_library(granadad-render3d-core STATIC
     # against them in parallel: chunk meshes (W), actor instances (A), the
     # viewmodel machine (V).
     src/render3d/chunk_mesher.cpp
+    # The world lane: the Docks as a scene -- chunk geometries built once,
+    # recoloured on the minute, instanced near the eye, the sky dome, the
+    # camera from the body.
+    src/render3d/world_scene.cpp
     src/render3d/actor_instances.cpp
     src/render3d/viewmodel.cpp
 )
@@ -782,6 +786,14 @@ if(GRANADAD_BUILD_TESTS)
         # Under a GPU build (the .exe's own test binary) the frame cases skip
         # rather than open a window; the overlay-alpha cases run everywhere.
         tests/test_render3d.cpp
+        # 3D BUILD -- THE WORLD LANE. The chunk mesher over the real Docks:
+        # the mesh is a deterministic function of the tile map (built twice,
+        # same bytes, same scene hash), a wall cell emits its four sides and
+        # a floor in a street emits none, shared faces between neighbours
+        # are dropped, the light recolours without moving a vertex, and the
+        # world scene instances only the chunks near the eye. Procedural
+        # atlas: no art tree required.
+        tests/test_chunk_mesher.cpp
     )
 
     add_executable(granadad-tests tests/test_main.cpp ${GRANADAD_TEST_SOURCES})
