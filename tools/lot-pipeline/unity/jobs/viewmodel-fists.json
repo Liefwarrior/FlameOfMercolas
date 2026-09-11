@@ -13,7 +13,7 @@
     { "name": "swing",      "clip": "Assets/Malbers Animations/Common/Human Anims/Attacks/H_Punching Right.fbx",     "clipName": "H_Punching Right",  "times": [0.35, 0.5, 0.65] },
     { "name": "hard_swing", "clip": "Assets/Malbers Animations/Common/Human Anims/Attacks/H_Punching Left.fbx",      "clipName": "H_Punching Left",   "times": [0.15, 0.35, 0.5, 0.7] },
     { "name": "block",      "clip": "Assets/Malbers Animations/Common/Human Anims/Block/H_Block_Unharmed.fbx",       "clipName": "H_Block_Disarmed",  "times": [0.6] },
-    { "name": "cast",       "clip": "Assets/Malbers Animations/Common/Human Anims/Weapons/Spell_1H/H_1HSpell_Blast_Loop.fbx", "clipName": "", "times": [0.5] },
+    { "name": "cast",       "clip": "Assets/Malbers Animations/Common/Human Anims/Weapons/Spell_1H/H_1HSpell_Blast_Loop.fbx", "clipName": "H_1HSpell_Blast_Loop", "times": [0.5] },
     { "name": "hit",        "clip": "Assets/Malbers Animations/Common/Human Anims/Hit/H_Hit_Front.fbx",              "clipName": "H_Hit_Front",       "times": [0.5] }
   ]
 }

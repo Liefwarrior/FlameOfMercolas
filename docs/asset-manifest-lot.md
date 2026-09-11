@@ -289,3 +289,16 @@ Staged: 129 files, 18.2 MB -- footsteps 84 (0.7 MB), malbers 26 (0.2 MB), music 
 
 129 files, 19,045,336 bytes.
 <!-- lot-pipeline:end lot-audio-import -->
+
+<!-- lot-pipeline:begin lot-viewmodel-silhouette -->
+## Viewmodel -- code-drawn silhouette fallback (lot-viewmodel-silhouette.py)
+
+Same schema, cell size and cell order as the Synty sheets, drawn from code in MERCOLAS-24: no LOT pixels, redistributable (licence `original`). Written as `<weapon>-silhouette.*` beside the LOT sheets so the two never collide; staged under `lot/` for now -- the owner may move the pair into git if a clean checkout should carry a fallback sheet.
+
+| pack | source | staged | bytes | sha256 | purpose | licence |
+|---|---|---|---|---|---|---|
+| (none: code-drawn) | `tools/lot-pipeline/lot-viewmodel-silhouette.py` | `viewmodel/fists-silhouette.json` | 3005 | `903c71c60808` | cell index for fists-silhouette.png (state -> cell indices) | original |
+| (none: code-drawn) | `tools/lot-pipeline/lot-viewmodel-silhouette.py` | `viewmodel/fists-silhouette.png` | 14657 | `d677f7993f6e` | first-person viewmodel sheet 'fists', code-drawn silhouette fallback: 12 cells, states idle/charge/swing/hard_swing/block/cast/hit | original |
+
+2 files, 17,662 bytes.
+<!-- lot-pipeline:end lot-viewmodel-silhouette -->

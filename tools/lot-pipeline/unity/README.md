@@ -16,8 +16,10 @@ go to git.
 |---|---|
 | `LotSpriteRenderer.cs` | Unity Editor script. `RenderFromCommandLine` (batch) or `Tools/Granadad/*` menu items. |
 | `render-lot.ps1` | Runner. Copies the .cs into `<LOT>/Assets/Editor/LotPipeline/`, runs Unity `-batchmode`, removes the .cs again. |
-| `jobs/viewmodel-fists.json` | Bare-hand viewmodel: idle / charge / swing×3 / hard_swing×4 / block / cast / hit. |
-| `jobs/viewmodel-sword.json` | Same states with `SM_Wep_Sword_01` in the right hand and the one-hand-sword clips. |
+| `jobs/viewmodel-fists.json` | Bare-hand viewmodel: idle / charge / swing×3 / hard_swing×4 / block / cast / hit (`Weapon::Fists`, and `Improvised` until a bottle prefab is picked). |
+| `jobs/viewmodel-sword.json` | Same states with `SM_Wep_Sword_01` in the right hand and the one-hand-sword clips (`Weapon::Edged`). |
+| `jobs/viewmodel-blunt.json` | `SM_Wep_Mace_01` (Synty FantasyHero) with the one-hand-sword clips — a one-handed mace swings like a one-handed sword (`Weapon::Blunt`). |
+| `jobs/viewmodel-evictor.json` | `SM_Wep_Mace_Large_01` (Synty DungeonRealms) with the two-hand-axe clips: idle, Swing_Right for charge/swing, Swing_Ground for the hard swing (`Weapon::Evictor`). |
 | `jobs/portraits-synty-heroes.json` | First 12 `Chr_FantasyHero_Preset_*` heads, four views each, 128×160. |
 
 ## Prerequisites (this machine, verified 2026-09-10)
@@ -27,7 +29,24 @@ go to git.
 - LOT at `C:\repositories\LordOfTrojia-MVP` with its `Library/` already imported
   (it is — a cold import would add ~10–20 min to the first run).
 - The LOT project must be **closed** in the editor for a batch run (Unity holds
-  `Temp/UnityLockfile`). The runner refuses to start otherwise.
+  `Temp/UnityLockfile`). The runner refuses to start if a Unity process has LOT
+  open; a lockfile with no such process (a crash, a licence refusal) is stale
+  and the runner removes it.
+- **A valid Unity licence.** The first run (2026-09-10) died on this: the Unity
+  Personal entitlement cached in `%LOCALAPPDATA%\Unity\licenses\UnityEntitlementLicense.xml`
+  has an offline validity window that expired on 2026-08-14 (Hub log: "Entitlement
+  group offline validity period is expired"), and the Hub had no signed-in session
+  to renew it. Exit code 198, "No valid Unity Editor license found". **Fix: open
+  Unity Hub, sign in once, let it refresh the licence** (Personal renews itself
+  from the account), then rerun. Nothing in this repo can do that step.
+- `-batchmode` additionally needs the `com.unity.editor.headless` entitlement,
+  which the Hub named-user licence carries. If a future licence lacks it, the
+  runner falls back to a windowed editor (`-executeMethod -quit` without
+  `-batchmode`) by itself, or pass `-Windowed`. With no entitlement at all it
+  stops and says so instead (a windowed editor would only sit on the sign-in
+  dialog). Either mode is killed after `-TimeoutMinutes` (20) — a warm render is
+  1–3 min, anything longer is a dialog. The script exits the editor itself in
+  both modes and puts the editor back on the scene it had open.
 - Blender is **not** installed and is not needed.
 
 ## Run
@@ -97,11 +116,15 @@ runner without `-KeepScript`).
   FBX path and `keepRenderers` to `[]` if the Synty arms read wrong. Its punch
   clips were authored on it, so there is no retarget.
 
-## Downstream (Granadad side, not this tool)
+## Downstream
 
-- `content/art/lot/` is gitignored; the pipeline stages there. Quantise/scale for
-  the terminal register with ffmpeg if wanted:
-  `ffmpeg -i swing_1.png -vf "scale=160:120:flags=neighbor" swing_1@160.png`
-- Pack `frames.json` + PNGs into a sheet + index in the `sprite-index.json` schema
-  and hang it on `WorldRenderer::drawSprite` / `hud.cpp` (screen-space plate, not
-  world-space) — that is the viewmodel feature, a separate lane.
+- `content/art/lot/` is gitignored; the pipeline stages there.
+- `python tools/lot-pipeline/lot-viewmodel-pack.py --proof proof.png` packs every
+  `unity-renders/viewmodel-*/frames.json` into `content/art/lot/viewmodel/<weapon>.png`
+  (4 × 3 grid of 192×144 cells, alpha cut at 128) + `<weapon>.json` (state → cell
+  indices) and writes the ledgers. Until the render has run,
+  `lot-viewmodel-silhouette.py` produces `<weapon>-silhouette.*` in the same
+  schema from code (no LOT pixels). See `../README.md`.
+- Drawing the sheet is the viewmodel feature (ASSET-PIPELINE-SPEC 3.5): a
+  screen-space cutout blit between `drawSignage` and the impact washes, under
+  the HUD — a separate lane, not this tool.

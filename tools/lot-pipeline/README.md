@@ -13,10 +13,11 @@ is its machine twin (dst, bytes, sha256) for a fetch/verify step.
 | tool | manifest | stages | status |
 |---|---|---|---|
 | `lot-audio-import.ps1` | `audio-manifest.json` | `audio/{music,footsteps,sfx}/` as Ogg Vorbis 48 kHz | done, run 2026-09-10 |
-| `unity/render-lot.ps1` | `unity/jobs/*.json` | `unity-renders/<job>/` alpha PNGs from Synty/Malbers rigs | committed, first run pending |
+| `unity/render-lot.ps1` | `unity/jobs/*.json` (fists, sword, blunt, evictor, portraits) | `unity-renders/<job>/` alpha PNGs from Synty/Malbers rigs | ran 2026-09-10: blocked on the Unity licence (Personal entitlement expired 2026-08-14; one Hub sign-in fixes it) -- see `unity/README.md` |
 | `select-icons.py` | `icons-manifest.json` | `icons/64/<id>.png` (92) + `icons/icons-white.png` + json | done, run 2026-09-10 |
 | `pack-vfx.py` | `vfx-manifest.json` | `vfx/cells/<id>.png` (16) + `vfx/vfx.png` + json | done, run 2026-09-10 |
-| `lot-viewmodel-pack.py` | -- | `viewmodel/<weapon>.png` + json | spec 2.4, not written |
+| `lot-viewmodel-pack.py` | `unity-renders/<job>/frames.json` | `viewmodel/<weapon>.png` + json (192x144 cells) | written, verified on synthetic 512x384 frames; waits on the first render |
+| `lot-viewmodel-silhouette.py` | -- (poses in the script) | `viewmodel/<weapon>-silhouette.png` + json, same schema, code-drawn | done, run 2026-09-10 (the stand-in until the render lands) |
 | `lot-manifest.ps1` / `lot-fetch.ps1` | all of the above | regenerates the combined ledger / pulls the private remote | spec 2.5, not written |
 
 ## lot-audio-import.ps1
@@ -125,3 +126,53 @@ code and nothing is wired.
 Ledgers (both tools): `content/art/lot/staged.json` under `tools.<tool>.rows`,
 and the tracked `docs/asset-manifest-lot.md`, one section per tool between
 `lot-pipeline:begin/end <tool>` markers (a rerun replaces its own section only).
+
+## lot-viewmodel-pack.py and lot-viewmodel-silhouette.py (Python 3 + Pillow)
+
+The first-person viewmodel: one sheet per `sim::Weapon` (fists, edged, blunt,
+evictor), twelve cells of **192x144** in a 4-column grid (768x432), hard alpha at
+128, plus a `.json` mapping state -> cell indices. Both tools share `lotstage.py`
+(ledgers, the `.gitignore` guard) and write byte-identical output on rerun.
+
+```powershell
+pwsh   tools/lot-pipeline/unity/render-lot.ps1 -Job tools/lot-pipeline/unity/jobs/viewmodel-fists.json
+python tools/lot-pipeline/lot-viewmodel-pack.py --proof viewmodel-proof.png     # every viewmodel-* job
+python tools/lot-pipeline/lot-viewmodel-pack.py --job viewmodel-fists --dry-run
+python tools/lot-pipeline/lot-viewmodel-silhouette.py --proof viewmodel-proof.png
+```
+
+**lot-viewmodel-pack.py** reads `unity-renders/<job>/frames.json`, keeps the
+camera-fixed 512x384 framing and BOX-downsamples each frame to 192x144 (an exact
+x0.375, premultiplied so the cutout edge has no dark fringe), cuts alpha at 128
+(the rule `WorldRenderer::drawSprite` applies to every textured sprite), and
+packs the cells in a fixed order -- `idle, charge, swing[0..], hard_swing[0..],
+block, cast, hit`, unknown states after -- into `viewmodel/<weapon>.png` +
+`<weapon>.json`:
+
+```json
+{ "cell": [192, 144], "columns": 4, "alphaCutoff": 128,
+  "states": { "idle": [0], "charge": [1], "swing": [2, 3, 4], "hard_swing": [5, 6, 7, 8],
+              "block": [9], "cast": [10], "hit": [11] },
+  "cells": [ { "index": 0, "state": "idle", "frame": 0, "x": 0, "y": 0, "clip": "Idle_Combat", "coverage": 0.31 }, ... ],
+  "source": { "job": "viewmodel-fists", "unity": "6000.3.6f1", "rig": "...", "weaponPrefab": "", "clips": [...] } }
+```
+
+Asserted: the five required states are present (cast and hit may be missing),
+every frame has the cell's 4:3 aspect, and every cell keeps >= 3 % opaque texels
+after the cut (`--min-coverage`; a blank or out-of-frame render fails here rather
+than shipping an empty cell). `--posterize N` is off by default (a later
+register-matching pass). `--proof <png>` writes every cell labelled on a checker
+plus the cell in a mock 640x360 frame at the renderer's anchor (bottom-centre,
+`x = (w - 192k) / 2`, `y = h - 144k`, `k = max(1, h / 360)`) so state and scale
+are judged together.
+
+**lot-viewmodel-silhouette.py** draws the same twelve cells from code -- two-tone
+arms and fists in MERCOLAS-24 (pale skin E4/B1/B2, coat cuff G2/G3, N0 outline
+by 4-adjacent expansion, the actor sprites' own rules) -- as
+`viewmodel/<weapon>-silhouette.png` + `.json` in the identical schema. No LOT
+pixels (licence `original`), so it is the zero-licence stand-in the renderer can
+draw through the same code path until the Synty sheet is staged. Poses are
+numbers at the top of the script (fist centre, scale, kind): a fist punching
+away from the eye shrinks toward the centre, a wind-up grows and drops, the
+guard crosses both forearms, the cast opens the right hand, the hit jolts both
+hands down-right.

@@ -136,8 +136,12 @@ namespace Granadad.LotPipeline {
             RenderPortraits(job, outDir);
         }
 
-        // Batch entry. Exit code 0 on success, 2 on any failure (render-lot.ps1 reads it).
+        // Command-line entry. Exit code 0 on success, 2 on any failure (render-lot.ps1
+        // reads it). Exits the editor itself, batch or windowed: the runner launches a
+        // windowed editor when the licence has no headless entitlement, and -quit alone
+        // would still route through the editor's own shutdown prompts.
         public static void RenderFromCommandLine() {
+            int code = 0;
             try {
                 var mode = Arg("-lotMode", "viewmodel");
                 var job = Arg("-lotJob", null);
@@ -146,12 +150,11 @@ namespace Granadad.LotPipeline {
                     throw new ArgumentException("need -lotJob <job.json> and -lotOut <dir>");
                 int n = mode == "portraits" ? RenderPortraits(job, outDir) : RenderViewmodel(job, outDir);
                 Debug.Log($"[LotSpriteRenderer] wrote {n} PNGs to {outDir}");
-                if (Application.isBatchMode) EditorApplication.Exit(0);
             } catch (Exception e) {
                 Debug.LogError("[LotSpriteRenderer] FAILED: " + e);
-                if (Application.isBatchMode) EditorApplication.Exit(2);
-                throw;
+                code = 2;
             }
+            EditorApplication.Exit(code);
         }
 
         static string Arg(string key, string fallback) {
@@ -315,10 +318,12 @@ namespace Granadad.LotPipeline {
     public class RenderScene : IDisposable {
         readonly Camera cam;
         readonly Light sun;
+        readonly string previousScenePath;   // what the editor had open; restored on Dispose
         RenderTexture rt;
         Texture2D readback;
 
         public RenderScene(CameraSpec cs, LightSpec ls) {
+            previousScenePath = UnityEngine.SceneManagement.SceneManager.GetActiveScene().path;
             EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
             RenderSettings.ambientMode = AmbientMode.Flat;
             RenderSettings.ambientLight = new Color(ls.color[0], ls.color[1], ls.color[2]) * ls.ambient;
@@ -467,8 +472,12 @@ namespace Granadad.LotPipeline {
             if (sun != null) Object.DestroyImmediate(sun.gameObject);
             if (rt != null) { rt.Release(); Object.DestroyImmediate(rt); rt = null; }
             if (readback != null) { Object.DestroyImmediate(readback); readback = null; }
-            // Leave the editor on a fresh empty scene; never save anything into LOT.
+            // Never save anything into LOT. Drop the render scene and put the editor
+            // back on the scene it had open (a windowed run remembers its last scene),
+            // or on a fresh empty one when it had none.
             EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
+            if (!string.IsNullOrEmpty(previousScenePath) && File.Exists(previousScenePath))
+                EditorSceneManager.OpenScene(previousScenePath, OpenSceneMode.Single);
         }
     }
 

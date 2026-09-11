@@ -1,10 +1,10 @@
 {
-  "jobName": "viewmodel-sword",
+  "jobName": "viewmodel-blunt",
   "rigPrefab": "Assets/Synty/PolygonFantasyHeroCharacters/Prefabs/Characters_Presets/Chr_FantasyHero_Preset_1.prefab",
   "avatarModel": "Assets/Synty/PolygonFantasyHeroCharacters/Models/FixedScale/ModularCharacters.fbx",
   "keepRenderers": ["ArmUpper", "ArmLower", "Hand", "ShoulderAttach", "ElbowAttach"],
   "weapon": {
-    "prefab": "Assets/Synty/PolygonFantasyHeroCharacters/Prefabs/Weapons/SM_Wep_Sword_01.prefab",
+    "prefab": "Assets/Synty/PolygonFantasyHeroCharacters/Prefabs/Weapons/SM_Wep_Mace_01.prefab",
     "bone": "RightHand",
     "boneNameFallback": "Hand_R",
     "localPos": [0, 0, 0],
