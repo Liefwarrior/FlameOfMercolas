@@ -124,6 +124,11 @@ $lockPath = Join-Path $Lot 'Packages\packages-lock.json'
 $backupDir = Join-Path ([IO.Path]::GetTempPath()) 'lot-pipeline-packages-backup'
 $restorePackages = $false
 $hadLock = Test-Path $lockPath
+# UnityGLTF lazily writes Assets/Resources/UnityGLTFSettings.asset into whatever project
+# it runs in (its importer touches it while importing the package's own test .glb).
+# Remembered here so the run can take it out again.
+$gltfSettingsAsset = Join-Path $Lot 'Assets\Resources\UnityGLTFSettings.asset'
+$hadGltfSettings = Test-Path $gltfSettingsAsset
 if ($Mode -eq 'glb') {
     $manifestText = [IO.File]::ReadAllText($manifestPath)
     if ($manifestText -match '"org\.khronos\.unitygltf"') {
@@ -198,6 +203,11 @@ try {
         if ($hadLock) { Copy-Item (Join-Path $backupDir 'packages-lock.json') $lockPath -Force }
         elseif (Test-Path $lockPath) { Remove-Item $lockPath -Force }
         Write-Host "Restored $manifestPath and packages-lock.json from $backupDir."
+    }
+    if ($Mode -eq 'glb' -and -not $hadGltfSettings -and -not $KeepPackage -and (Test-Path $gltfSettingsAsset)) {
+        Remove-Item $gltfSettingsAsset -Force -ErrorAction SilentlyContinue
+        Remove-Item "$gltfSettingsAsset.meta" -Force -ErrorAction SilentlyContinue
+        Write-Host "Removed $gltfSettingsAsset (UnityGLTF wrote it during the run)."
     }
     if (-not $KeepScript) {
         foreach ($f in $staged) {

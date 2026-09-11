@@ -40,9 +40,16 @@
 //   <out>/<subdir>/contact-sheet.png (+ .json)     row-major thumbnails, names in the json
 //
 // Coordinate note for the C++ side: glTF is right-handed, Unity left-handed; both
-// exporters mirror X. 1 Unity unit = 1 m = 1 tile. Bone names survive (Root, Hips,
-// Spine_01.., Hand_R ...) so sockets can be found by name. Clip order in a .glb is
-// the job's clip order (index = the C++ enum), and the names are the job's names.
+// exporters mirror X (verified on the output: a wall spanning x -2.5..0 in Unity
+// spans 0..2.5 in the .gltf; Hand_R sits at -x, so a body faces +Z). 1 Unity unit =
+// 1 m = 1 tile. Bone names survive (Root, Hips, Spine_01.., Hand_R ...) so sockets
+// can be found by name. Clip order in a .glb is the job's clip order (index = the
+// C++ enum), and the names are the job's names. The skin is laid out for what the
+// pinned raylib does with it (see SkinCombiner): joint 0 = the skeleton root, parents
+// before children, vertices in root space at the rest pose, rest == bind.
+//
+// First real run 2026-09-11 (Unity 6000.3.6f1, glTFast 6.14.1, UnityGLTF 2.21.0):
+// every "found by the first run" comment below is a bug that run hit.
 #if UNITY_EDITOR
 using System;
 using System.Collections.Generic;
@@ -518,12 +525,13 @@ namespace Granadad.LotPipeline {
                     if (rig.animator.avatar == null || !rig.animator.avatar.isValid || !rig.animator.avatar.isHuman)
                         throw new InvalidOperationException("rig " + spec.name + ": no valid Humanoid avatar -- humanoid clips cannot be baked (set avatarModel)");
                     var weaponInfo = "";
+                    GameObject weaponGo = null;
                     if (spec.weapon != null && !string.IsNullOrEmpty(spec.weapon.prefab)) {
-                        scene.AttachWeapon(rig, spec.weapon);
+                        weaponGo = scene.AttachWeapon(rig, spec.weapon);
                         weaponInfo = spec.weapon.prefab;
                     }
                     flattener.Flatten(rig.root);
-                    var skin = SkinCombiner.Combine(rig.root);
+                    var skin = SkinCombiner.Combine(rig.root, weaponGo != null ? weaponGo.transform : null);
 
                     // One in-memory controller, one state per clip, in job order; the exporter
                     // puts the default state first and takes the rest in controller order.
@@ -543,6 +551,14 @@ namespace Granadad.LotPipeline {
                     var controller = BuildController(spec.name, clips);
                     rig.animator.runtimeAnimatorController = controller;
                     rig.animator.enabled = true;
+                    // UnityGLTF samples each humanoid clip inside an Undo group and then
+                    // PerformUndo()s it to put the rig back. AnimatorStateMachine.AddState
+                    // registers its states with Undo too, and with no group boundary between
+                    // the two the first clip's undo took the states with it (the second clip
+                    // found a destroyed AnimatorState -- first run, 2026-09-11). Drop our
+                    // records and start a fresh group so the exporter only undoes its own.
+                    Undo.ClearAll();
+                    Undo.IncrementCurrentGroup();
 
                     var settings = ScriptableObject.CreateInstance<GLTFSettings>();
                     settings.ExportAnimations = true;
@@ -763,7 +779,7 @@ namespace Granadad.LotPipeline {
             return rig;
         }
 
-        public void AttachWeapon(Rig rig, WeaponSpec w) {
+        public GameObject AttachWeapon(Rig rig, WeaponSpec w) {
             var prefab = AssetDatabase.LoadAssetAtPath<GameObject>(w.prefab);
             if (prefab == null) throw new FileNotFoundException("weapon prefab: " + w.prefab);
             var bone = (HumanBodyBones)Enum.Parse(typeof(HumanBodyBones), w.bone);
@@ -776,6 +792,7 @@ namespace Granadad.LotPipeline {
             wep.transform.localPosition = new Vector3(w.localPos[0], w.localPos[1], w.localPos[2]);
             wep.transform.localRotation = Quaternion.Euler(w.localEuler[0], w.localEuler[1], w.localEuler[2]);
             wep.transform.localScale = Vector3.one * w.localScale;
+            return wep;
         }
 
         // Two passes: a script guarded by [RequireComponent] refuses to go before its
@@ -966,12 +983,28 @@ namespace Granadad.LotPipeline {
     // raylib loads ONE skin per model (skins[0]) and reads every primitive's JOINTS_0
     // against it, so a rig must leave here as a single SkinnedMeshRenderer over one
     // bone list. Synty presets are dozens of SkinnedMeshRenderers (the modular parts,
-    // all skinned to the same skeleton in the same bind space) plus rigid MeshRenderers
-    // parented to bones (sword holder, pouch, the viewmodel weapon). Everything active
-    // is merged: skinned parts keep their weights (remapped to the union bone list),
-    // rigid parts are re-expressed in their bone's bind space and weighted 100% to it.
-    // Submeshes are grouped by material; the source renderers (and any hidden ones)
-    // are removed so the glb carries only the skeleton and the body.
+    // all skinned to the same skeleton) plus rigid MeshRenderers parented to bones
+    // (sword holder, pouch, the viewmodel weapon). Everything active is merged.
+    //
+    // What the raylib pin (6.0, rmodels.c LoadGLTF/LoadModelAnimationsGLTF) actually
+    // does with a skin, verified 2026-09-11, and what this therefore guarantees:
+    //   - it never reads inverseBindMatrices: a vertex is skinned with
+    //     inverse(joint world at REST) * joint world ANIMATED, after the mesh node's
+    //     own world matrix. So the body's vertices are rebased here into ROOT space
+    //     at the rig's current (rest = bind) pose, and every bind pose is written as
+    //     bone.worldToLocal * root.localToWorld -- rest == bind for any loader. (The
+    //     FantasyHero rigs keep their vertices in centimetres under a Root scaled
+    //     0.01; left alone they load 100x too big.)
+    //   - joints[0] is THE root: only it receives its ancestors' static transform,
+    //     every other joint composes from its PARENT JOINT and a joint whose parent
+    //     is not a joint hangs at the origin. Bones are composed in index order, a
+    //     parent after its child is skipped. So the joint list is the WHOLE skeleton
+    //     subtree (Root, Hips, Spine..., fingertips, attachment points) in depth-first
+    //     order: parents first, the skeleton root at index 0, nothing missing between.
+    // Skinned parts keep their weights (remapped to that list); rigid parts are
+    // weighted 100% to their nearest joint ancestor. Submeshes are grouped by
+    // material; the source renderers (and any hidden ones) are removed so the glb
+    // carries only the skeleton and the body.
     public class CombinedSkin {
         public int bones;
         public int vertices;
@@ -982,7 +1015,7 @@ namespace Granadad.LotPipeline {
     }
 
     public static class SkinCombiner {
-        public static CombinedSkin Combine(GameObject root) {
+        public static CombinedSkin Combine(GameObject root, params Transform[] attachments) {
             var smrs = root.GetComponentsInChildren<SkinnedMeshRenderer>(true)
                 .Where(r => r.enabled && r.gameObject.activeInHierarchy && r.sharedMesh != null && r.bones != null && r.bones.Length > 0)
                 .ToList();
@@ -992,25 +1025,30 @@ namespace Granadad.LotPipeline {
                 .ToList();
             if (smrs.Count == 0) throw new InvalidOperationException("no active SkinnedMeshRenderer under " + root.name + " -- check keepRenderers");
 
+            // The skeleton: the top-level ancestor (below the rig root) of the first
+            // weighted bone, and every transform under it, depth-first.
+            var firstBone = smrs[0].bones.FirstOrDefault(b => b != null);
+            if (firstBone == null) throw new InvalidOperationException("first SkinnedMeshRenderer has no bones: " + smrs[0].name);
+            var skeletonRoot = firstBone;
+            while (skeletonRoot.parent != null && skeletonRoot.parent != root.transform) skeletonRoot = skeletonRoot.parent;
             var bones = new List<Transform>();
-            var boneIndex = new Dictionary<Transform, int>();
-            var bind = new List<Matrix4x4>();
-            foreach (var smr in smrs) {
-                var bp = smr.sharedMesh.bindposes;
-                for (int i = 0; i < smr.bones.Length; i++) {
-                    var b = smr.bones[i];
-                    if (b == null) continue;
-                    var pose = i < bp.Length ? bp[i] : b.worldToLocalMatrix * root.transform.localToWorldMatrix;
-                    if (boneIndex.TryGetValue(b, out var idx)) {
-                        if (!Approximately(pose, bind[idx]))
-                            Debug.LogWarning($"[LotSpriteRenderer] bind pose of {b.name} differs between {smr.name} and an earlier part; keeping the first");
-                        continue;
-                    }
-                    boneIndex[b] = bones.Count;
-                    bones.Add(b);
-                    bind.Add(pose);
-                }
+            var skip = new HashSet<Transform>(attachments.Where(a => a != null));   // the weapon: merged as a rigid part, never a joint
+            var inactive = new List<Transform>();
+            // Inactive subtrees (a soldier's alternate helmet, a sheathed extra) are not
+            // exported by UnityGLTF, and a skin with a missing bone node is dropped whole
+            // (watchman.glb came out with 0 skins, run 3). They are not joints, and go.
+            void Walk(Transform t) {
+                if (skip.Contains(t)) return;
+                if (!t.gameObject.activeSelf) { inactive.Add(t); return; }
+                bones.Add(t);
+                for (int i = 0; i < t.childCount; i++) Walk(t.GetChild(i));
             }
+            Walk(skeletonRoot);
+            var boneIndex = new Dictionary<Transform, int>();
+            for (int i = 0; i < bones.Count; i++) boneIndex[bones[i]] = i;
+            var rootL2W = root.transform.localToWorldMatrix;
+            var rootW2L = root.transform.worldToLocalMatrix;
+            var bind = bones.Select(b => b.worldToLocalMatrix * rootL2W).ToList();
 
             var verts = new List<Vector3>();
             var norms = new List<Vector3>();
@@ -1023,20 +1061,43 @@ namespace Granadad.LotPipeline {
                 foreach (var i in t) l.Add(i + baseIndex);
             }
             Material MatAt(Material[] mats, int sub) => mats.Length > 0 ? mats[Mathf.Min(sub, mats.Length - 1)] : null;
+            int skinnedOutside = 0;
 
             foreach (var smr in smrs) {
                 var mesh = smr.sharedMesh;
                 int baseIndex = verts.Count;
-                var v = mesh.vertices; var n = mesh.normals; var uv = mesh.uv; var bw = mesh.boneWeights;
-                var map = smr.bones.Select(b => b != null && boneIndex.TryGetValue(b, out var k) ? k : 0).ToArray();
-                verts.AddRange(v);
-                norms.AddRange(n.Length == v.Length ? n : Enumerable.Repeat(Vector3.up, v.Length));
-                uvs.AddRange(uv.Length == v.Length ? uv : Enumerable.Repeat(Vector2.zero, v.Length));
-                if (bw.Length == v.Length) foreach (var w in bw) weights.Add(Remap(w, map));
-                else for (int i = 0; i < v.Length; i++) weights.Add(new BoneWeight { boneIndex0 = map.Length > 0 ? map[0] : 0, weight0 = 1f });
+                var v = mesh.vertices; var n = mesh.normals; var uv = mesh.uv; var bw = mesh.boneWeights; var bp = mesh.bindposes;
+                // Per source bone: mesh-local -> root space through the bone's CURRENT
+                // pose (bone.localToWorld * bindpose == smr.localToWorld when the rig is
+                // in its bind pose, which a fresh prefab instance is).
+                var toRoot = new Matrix4x4[smr.bones.Length];
+                var map = new int[smr.bones.Length];
+                var fallback = rootW2L * smr.transform.localToWorldMatrix;
+                for (int k = 0; k < smr.bones.Length; k++) {
+                    var b = smr.bones[k];
+                    bool known = b != null && boneIndex.TryGetValue(b, out map[k]);
+                    if (!known) { map[k] = 0; skinnedOutside++; }
+                    toRoot[k] = known && k < bp.Length ? rootW2L * b.localToWorldMatrix * bp[k] : fallback;
+                }
+                bool weighted = bw.Length == v.Length && toRoot.Length > 0;
+                for (int i = 0; i < v.Length; i++) {
+                    Matrix4x4 m;
+                    if (weighted) {
+                        var w = bw[i];
+                        m = Blend(toRoot, w);
+                        weights.Add(Remap(w, map));
+                    } else {
+                        m = fallback;
+                        weights.Add(new BoneWeight { boneIndex0 = map.Length > 0 ? map[0] : 0, weight0 = 1f });
+                    }
+                    verts.Add(m.MultiplyPoint3x4(v[i]));
+                    norms.Add(i < n.Length ? m.MultiplyVector(n[i]).normalized : Vector3.up);
+                    uvs.Add(i < uv.Length ? uv[i] : Vector2.zero);
+                }
                 var mats = smr.sharedMaterials;
                 for (int s = 0; s < mesh.subMeshCount; s++) AddTris(MatAt(mats, s), mesh.GetTriangles(s), baseIndex);
             }
+            if (skinnedOutside > 0) Debug.LogWarning($"[LotSpriteRenderer] {skinnedOutside} bone slot(s) outside the skeleton subtree of {skeletonRoot.name}; weighted to joint 0");
             foreach (var mr in mrs) {
                 var mesh = mr.GetComponent<MeshFilter>().sharedMesh;
                 var bone = mr.transform;
@@ -1044,7 +1105,7 @@ namespace Granadad.LotPipeline {
                 if (bone == null) { Debug.LogWarning("[LotSpriteRenderer] rigid mesh not under a bone, skipped: " + mr.name); continue; }
                 int bi = boneIndex[bone];
                 int baseIndex = verts.Count;
-                var m = bind[bi].inverse * bone.worldToLocalMatrix * mr.transform.localToWorldMatrix;
+                var m = rootW2L * mr.transform.localToWorldMatrix;   // rest pose, root space; rides its bone from there
                 var v = mesh.vertices; var n = mesh.normals; var uv = mesh.uv;
                 for (int i = 0; i < v.Length; i++) {
                     verts.Add(m.MultiplyPoint3x4(v[i]));
@@ -1069,9 +1130,7 @@ namespace Granadad.LotPipeline {
 
             // Drop every source renderer (active or hidden) and then every empty leaf
             // outside the skeleton, so the glb is skeleton + Body and nothing else. The
-            // skeleton subtree (the top-level ancestor of the first bone, e.g. "Root") is
-            // never pruned: the Humanoid avatar maps bones the parts may not weight
-            // (toes, finger tips) and the retarget needs every one of them present.
+            // skeleton subtree is never pruned: every transform in it is a joint now.
             foreach (var r in root.GetComponentsInChildren<Renderer>(true).ToList()) {
                 if (r == null) continue;
                 var go = r.gameObject;
@@ -1079,8 +1138,8 @@ namespace Granadad.LotPipeline {
                 Object.DestroyImmediate(r);
                 if (mf != null) Object.DestroyImmediate(mf);
             }
-            var skeletonRoot = bones[0];
-            while (skeletonRoot.parent != null && skeletonRoot.parent != root.transform) skeletonRoot = skeletonRoot.parent;
+            foreach (var a in skip) if (a != null) Object.DestroyImmediate(a.gameObject);   // its mesh is in the body now
+            foreach (var t in inactive) if (t != null) Object.DestroyImmediate(t.gameObject);
             PruneEmpty(root.transform, skeletonRoot);
 
             var bodyGo = new GameObject("Body");
@@ -1098,6 +1157,21 @@ namespace Granadad.LotPipeline {
             };
         }
 
+        // The linear-blend matrix of up to four bone matrices; the rest-pose skin of one vertex.
+        static Matrix4x4 Blend(Matrix4x4[] m, BoneWeight w) {
+            var r = Matrix4x4.zero;
+            void Acc(int idx, float wt) {
+                if (wt <= 0f || idx < 0 || idx >= m.Length) return;
+                var a = m[idx];
+                for (int i = 0; i < 16; i++) r[i] += a[i] * wt;
+            }
+            Acc(w.boneIndex0, w.weight0); Acc(w.boneIndex1, w.weight1); Acc(w.boneIndex2, w.weight2); Acc(w.boneIndex3, w.weight3);
+            float sum = w.weight0 + w.weight1 + w.weight2 + w.weight3;
+            if (sum <= 0f) return m.Length > 0 ? m[0] : Matrix4x4.identity;
+            if (Mathf.Abs(sum - 1f) > 1e-4f) for (int i = 0; i < 16; i++) r[i] /= sum;
+            return r;
+        }
+
         static BoneWeight Remap(BoneWeight w, int[] map) {
             int M(int i) => i >= 0 && i < map.Length ? map[i] : 0;
             return new BoneWeight {
@@ -1106,11 +1180,6 @@ namespace Granadad.LotPipeline {
                 boneIndex2 = M(w.boneIndex2), weight2 = w.weight2,
                 boneIndex3 = M(w.boneIndex3), weight3 = w.weight3,
             };
-        }
-
-        static bool Approximately(Matrix4x4 a, Matrix4x4 b) {
-            for (int i = 0; i < 16; i++) if (Mathf.Abs(a[i] - b[i]) > 1e-4f) return false;
-            return true;
         }
 
         // Bottom-up: a transform with no other components and no children goes, unless it

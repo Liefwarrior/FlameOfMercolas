@@ -45,7 +45,13 @@ go to git.
   group offline validity period is expired"), and the Hub had no signed-in session
   to renew it. Exit code 198, "No valid Unity Editor license found". **Fix: open
   Unity Hub, sign in once, let it refresh the licence** (Personal renews itself
-  from the account), then rerun. Nothing in this repo can do that step.
+  from the account), then rerun. Nothing in this repo can do that step. Done
+  2026-09-11 06:58; `-batchmode` then ran with the headless entitlement present.
+- **LOT must compile.** `-batchmode` aborts before `-executeMethod` on any C# error in
+  the project. On 2026-09-11 one uncommitted LOT edit did not
+  (`Assets/Trojia3D/Scripts/Editor/TourneyValeBuilder.cs:586`, `Object.` → `UnityEngine.Object.`,
+  an ambiguity between `UnityEngine.Object` and `System.Object`); that one token was
+  changed in the owner's working copy so the export could run.
 - `-batchmode` additionally needs the `com.unity.editor.headless` entitlement,
   which the Hub named-user licence carries. If a future licence lacks it, the
   runner falls back to a windowed editor (`-executeMethod -quit` without
@@ -67,7 +73,9 @@ pwsh tools/lot-pipeline/unity/render-lot.ps1 -Job tools/lot-pipeline/unity/jobs/
 
 Output: `content/art/lot/unity-renders/<jobName>/<state>_<n>.png` + `frames.json`
 (one record per PNG: state, clip asset, clip name, sampled time, size, rig, weapon).
-Expect 1–3 min per job on a warm Library; the Unity log is written beside the output.
+Expect 1–3 min per job on a warm Library (the editor's cold start is ~2 min of that;
+the work itself is seconds); the Unity log is written beside the output. The sprite
+jobs have not been run yet — the 3D modes below have (2026-09-11).
 
 Interactive tuning (grip offsets, camera, light): run with `-KeepScript`, open LOT
 in the editor, use `Tools/Granadad/Render Viewmodel Job...`, edit the job JSON,
@@ -145,15 +153,37 @@ pwsh tools/lot-pipeline/unity/render-lot.ps1 -Job tools/lot-pipeline/unity/jobs/
 python tools/lot-pipeline/lot3d-manifest.py --out C:/repositories/fom-3d/content/art/lot-3d   # the runner does this itself
 ```
 
-**gltf** (glTFast 6.14.1, already resolved in LOT): every prefab named in the job is
-instantiated, unpacked, stripped of behaviours and LOD1+, its materials swapped for
-URP/Lit clones carrying the pack atlas in `_BaseMap` (Synty's own shader graphs use
-`_Albedo_Map` / `_Texture_Map`, which no exporter reads — without the swap every mesh
-comes out untextured), then written as `static/<pack>/<prefab>.gltf` + `.bin` with the
-atlas PNG copied once per pack folder (`.glb` would embed the 1–4 MB atlas in every
-file). Meshes only — no lights, no cameras. `manifest.json` records source prefab,
-role (world/prop/weapon), tris, bounds in Unity and glTF space, materials/textures;
-`contact-sheet.png` (+ `.json` cell names) is the proof.
+**gltf** (glTFast 6.14.1, already resolved in LOT as a dependency of `com.unity.ai.assistant`):
+every prefab named in the job is instantiated, unpacked, stripped of behaviours and
+LOD1+, its materials swapped for URP/Lit clones carrying the pack atlas in `_BaseMap`
+(Synty's own shader graphs use `_Albedo_Map` / `_Texture_Map`, which no exporter reads —
+without the swap every mesh comes out untextured), then written as
+`static/<pack>/<prefab>.gltf` + `.bin` with the atlas PNG copied once per pack folder
+(`.glb` would embed the 1–4 MB atlas in every file). Meshes only — no lights, no
+cameras. `manifest.json` records source prefab, role (world/prop/weapon), tris, bounds
+in Unity and glTF space, materials/textures; `contact-sheet.png` (+ `.json` cell names)
+is the proof. 154 prefabs take ~3 s once the editor is up (first real run 2026-09-11:
+66 PolygonGeneric, 61 PolygonKnights, 22 PolygonDungeonRealms, 5 PolygonFantasyHeroCharacters,
+10 atlas PNGs, 12 MB).
+
+Three things the tool does that glTFast's own menu entry does not, each found by the
+first run hanging or dying (all in `LotSpriteRenderer.cs`, look for the date):
+
+- **It pumps the job system.** glTFast's export is `async` and spins on `JobHandle.IsCompleted`;
+  a job scheduled from the main thread never starts until `JobHandle.ScheduleBatchedJobs()`
+  or the end of a player-loop frame — and a blocking `-executeMethod` never ends a frame.
+  The exclusive `SynchronizationContext` that drains the export's continuations kicks
+  the batched jobs on every pass.
+- **It hands glTFast readable mesh copies.** Synty imports every mesh with Read/Write
+  off; for those glTFast reads the vertex buffers back through `AsyncGPUReadback`, an
+  engine `Awaitable` that only completes from the player loop. The Editor can read
+  the source data regardless of the flag (only a Player enforces it), so a script-made
+  copy of each mesh goes to the exporter instead.
+- **It writes its own material.** `FlatMaterialExport`/`AtlasImageExport`: the glTF
+  material is exactly baseColorTexture = the atlas + baseColorFactor, metallic 0,
+  roughness 1, BLEND for the water/glass clones; the atlas PNG is *copied from disk*
+  once per pack folder. glTFast's default picks JPEG q60 for any texture imported
+  without alpha (most Synty atlases) and re-encodes it for every prefab.
 
 **glb** (UnityGLTF 2.21.0): the rig is spawned exactly as for the viewmodel sprites
 (prefab's Humanoid avatar or `avatarModel`, `keepRenderers`, optional weapon on
@@ -163,23 +193,59 @@ bone list** — raylib reads `skins[0]` only and indexes every primitive's joint
 against it, so the 700-part Synty presets and the Knights' item meshes must arrive
 as a single skin. Clips are cloned from the Malbers FBX, renamed to the job's names
 and put on an in-memory AnimatorController in job order; UnityGLTF samples each
-humanoid clip on the rig's own bones at 30 fps (LINEAR node TRS; the root stays at
-the origin — the sim owns position) and writes `characters/<name>.glb` with textures
-embedded. **Animation index = job order = the C++ enum** (`ActorClip` for actors,
-`ViewmodelState` for the arms); names match too, so either works from raylib.
-FantasyHero presets lose their per-preset tint colours (masks are not baked; the
-plain atlas colours ship).
+humanoid clip on the rig's own bones at 30 fps (LINEAR node TRS; raylib resamples to
+its own 60 keyframes/s on load, which is the rate the C++ side counts in; the scene
+root stays at the origin — the sim owns position) and writes `characters/<name>.glb`
+with the atlas embedded. **Animation index = job order = the C++ enum** (`ActorClip`
+for actors, `ViewmodelState` for the arms); names match too, so either works from
+raylib. FantasyHero presets lose their per-preset tint colours (masks are not baked;
+the plain atlas colours ship). A run is ~35 s of editor time on a warm Library.
+
+The single skin is shaped for what the pinned raylib (6.0, `rmodels.c`) actually does,
+verified against the source 2026-09-11 — not for the glTF spec in general:
+
+- raylib **never reads `inverseBindMatrices`**: it skins with
+  `inverse(joint world at rest) × joint world animated` after the mesh node's own
+  world matrix. So the combiner rebases every vertex into the rig root's space at the
+  rig's current (rest = bind) pose and writes each bind pose as
+  `bone.worldToLocal × root.localToWorld`, so rest == bind for every loader. Without
+  this the FantasyHero rigs (vertices in centimetres under a `Root` scaled 0.01,
+  spec-legal) load 100× too big.
+- raylib composes joints **in index order from their parent joint**: `joints[0]` is the
+  only one that gets its ancestors' static transform, a joint whose parent is not a
+  joint hangs at the origin, and a parent listed after its child is skipped. So the
+  joint list is the whole skeleton subtree in depth-first order — `Root` at index 0
+  (it carries the 0.01), `Hips`, spine, every fingertip and attachment point — 52
+  joints for the Generic peasant, 63 for FantasyHero, 51 for the Knights soldier,
+  all under the 128-bone GPU cap. Inactive subtrees (a soldier's alternate helmet)
+  are removed rather than listed: UnityGLTF does not export inactive nodes and drops
+  a skin whose bone node is missing. The weapon is merged as a rigid part weighted
+  100% to `Hand_R` and its own transform is not a joint.
+- UnityGLTF samples humanoid clips inside an Undo group it then `PerformUndo()`s;
+  `AnimatorStateMachine.AddState` registers the controller's states with Undo as well,
+  so the tool clears and closes the group before exporting (the second clip used to
+  find a destroyed `AnimatorState`).
+
+Grip offsets for the sword viewmodel (`weapon.localPos/localEuler`) ship as zero and
+have not been eyeballed: the blade is fused into `viewmodel_sword.glb` at whatever
+angle `Hand_R`'s local Y gives it. Tune once in the editor, write the numbers into the
+job, rerun.
 
 UnityGLTF is not part of LOT. For a glb run the runner backs up
 `<LOT>/Packages/manifest.json` + `packages-lock.json`, adds
 `"org.khronos.unitygltf": "https://github.com/KhronosGroup/UnityGLTF.git#release/2.21.0"`,
-lets Unity fetch and compile it (git on PATH; first run adds a few minutes), and
-copies both files back afterwards — LOT's tree is byte-identical at the end
-(`-KeepPackage` leaves the package in for interactive work). This was chosen over a
-sibling exporter project with directory junctions: the junction project would need
-its own cold import of Synty + Malbers (10–30 min), its own URP setup, and would
-break on any Synty/Malbers editor script the trimmed project cannot compile; the
-manifest line is one string and is undone on exit.
+lets Unity fetch and compile it (git on PATH; the fetch is cached by UPM after the
+first run, and 2.21.0 compiles clean against 6000.3.6f1 / URP 17.3 / VisualScripting
+1.9.9), and copies both files back afterwards; it also removes the
+`Assets/Resources/UnityGLTFSettings.asset` the package writes into whatever project
+it lands in — LOT's tree is byte-identical at the end, `git status` shows nothing new
+(`-KeepPackage` leaves the package and the settings asset in for interactive work).
+This was chosen over a sibling exporter project with directory junctions: the junction
+project would need its own cold import of Synty + Malbers (10–30 min), its own URP
+setup, and would break on any Synty/Malbers editor script the trimmed project cannot
+compile; the manifest line is one string and is undone on exit. Both packages register
+a ScriptedImporter for `.glb`; Unity rejects both for the package's own test file and
+logs it — harmless, nothing in LOT is a glTF.
 
 Outputs are licensed derivatives (Synty meshes/atlases, Malbers clip data inside
 the rigs): `content/art/lot-3d/` is gitignored here and in fom-3d; only these
