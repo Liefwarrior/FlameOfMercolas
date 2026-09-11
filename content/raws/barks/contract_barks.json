@@ -156,15 +156,15 @@
     {
       "key": "court.blood",
       "rows": [
-        "You took a life in the dark, the way the thing we do not name to laymen takes them. Tell me why I should not let the ward have you.",
-        "There is a man on the Gull's floor who will not get up. The Watch wants your neck for it. I want the truth first.",
+        "You took a life in the dark, the way the thing we do not name to laymen takes them. Speak.",
+        "A man on the Gull's floor will not get up. The Watch wants your neck for it. I want the truth first.",
         "The lamp does not go out because you put a man under it. It goes out when I stop asking. Speak."
       ]
     },
     {
       "key": "court.roofs",
       "rows": [
-        "The roofs, and the Watch wants the hand for it. I have overruled a sergeant before. Give me a reason.",
+        "The roofs, and the Watch wants the hand. I have overruled a sergeant before. Give me a reason.",
         "You climbed. Everyone on this quay has climbed. Most of them were not caught with a bale.",
         "The rope is for the second rung and you are standing on it. I will hear you anyway."
       ]
@@ -204,15 +204,15 @@
     {
       "key": "court.bound",
       "rows": [
-        "No fine. The Flame has better use for you than a purse. Five days in my yard, and you will carry the pot.",
-        "Bondsworn to this Mission. You will be fed, and preached at, and worked. Two of those are a kindness.",
+        "No fine. The Flame has better use for you than a purse. Five days in my yard, carrying the pot.",
+        "Bondsworn to this Mission. You will be fed, preached at, and worked. Two of those are a kindness.",
         "The yard. Nobody has ever died of it, though several have asked to."
       ]
     },
     {
       "key": "court.hand",
       "rows": [
-        "The hand. Canon is the hand and I am not going to pretend the sergeant is wrong. It is done quickly.",
+        "The hand. Canon is the hand, and I will not pretend the sergeant is wrong. It is done quickly.",
         "A Skyrunner's first. The ward takes the hand so it need not take the rest. Hold it out.",
         "I would spare it if you had given me anything to spare it with. You did not."
       ]
@@ -220,7 +220,7 @@
     {
       "key": "court.commuted",
       "rows": [
-        "The rope does not un-take the hand. The hand, and twelve days in my yard, and your life. Remember who gave it.",
+        "The rope does not un-take the hand. The hand, twelve days in my yard, and your life. Remember it.",
         "The Flame does not want you dead. The ward may still. Twelve days, and you walk out of here marked.",
         "Commuted. Once. There is no word in this Mission for twice."
       ]

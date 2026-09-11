@@ -6886,18 +6886,15 @@ HearingPageState Session::hearingPageState() const {
             out.charge += " " + countWord(sheet.witnesses) + " SAW IT.";
         }
     } else {
-        // The worst line first, then the rest of what is new since the bench
-        // last heard you, in the ledger's own order.
+        // Everything new since the bench last heard you, in the ledger's own
+        // order -- "TWO LIFTS AND A CRACKED BOX" reads the way the sheet is
+        // written; the worst line is what the paper ASKS off, not a sorting.
         std::vector<std::string> parts;
-        if (sheet.hasWorst && sheet.since[static_cast<std::size_t>(sheet.worst)] > 0) {
-            parts.push_back(crimePhrase(sheet.worst, sheet.since[static_cast<std::size_t>(sheet.worst)]));
-        }
         for (std::size_t c = 0; c < sim::kSheetCrimes; ++c) {
-            const auto crime = static_cast<sim::Crime>(c);
-            if (sheet.since[c] <= 0 || (sheet.hasWorst && crime == sheet.worst)) {
+            if (sheet.since[c] <= 0) {
                 continue;
             }
-            parts.push_back(crimePhrase(crime, sheet.since[c]));
+            parts.push_back(crimePhrase(static_cast<sim::Crime>(c), sheet.since[c]));
         }
         if (parts.empty()) {
             out.charge = sheet.secondRung ? std::string("THE WARD HAS YOU FOR THE ROOFS, A SECOND TIME.")
@@ -7003,9 +7000,18 @@ HearingPageState Session::hearingPageState() const {
         // a pure function of the sheet and the plea (weighArraignment), so
         // the page prints the same lines the sim scored, whenever it is
         // drawn, without the sim keeping a term list.
+        // THE SUM READS "MAKES" -- the 4x6 font carries no `=` and the font
+        // is not touched (the brief's own line); the ward's arithmetic is
+        // spoken, not typeset. The plea's own term (CONFESSED / THE PRIEST IS
+        // A MAN) rides the terms list the sim returns and is printed on its
+        // OWN line under the record's sum, the reference's threshold-then-
+        // verdict order.
         const sim::Arraignment answer = sim::weighArraignment(sheet, hearing.plea);
         std::string arithmetic;
         for (const sim::ArraignmentTerm& term : answer.terms) {
+            if (term.name == sim::kTermConfessed || term.name == sim::kTermPriestIsAMan) {
+                continue;
+            }
             const std::string name = term.name == sim::kTermSawIt
                                          ? countWord(term.count) + " " + std::string(term.name)
                                          : std::string(term.name);
@@ -7017,18 +7023,19 @@ HearingPageState Session::hearingPageState() const {
             }
         }
         if (!arithmetic.empty()) {
-            arithmetic += " = " + std::to_string(answer.weight);
+            arithmetic += " MAKES " + std::to_string(answer.weight);
         }
         out.arithmetic = arithmetic;
         switch (answer.plea) {
             case sim::Plea::Guilty:
                 out.pleaTerm = "+ " + std::to_string(answer.pleaTerm) + " " +
-                               std::string(sim::kTermConfessed) + " = " + std::to_string(answer.scored);
+                               std::string(sim::kTermConfessed) + " MAKES " +
+                               std::to_string(answer.scored);
                 break;
             case sim::Plea::NotGuilty:
                 out.pleaTerm = std::string(answer.pleaTerm >= 0 ? "+ " : "- ") +
                                std::to_string(std::abs(answer.pleaTerm)) + " " +
-                               std::string(sim::kTermPriestIsAMan) + " = " +
+                               std::string(sim::kTermPriestIsAMan) + " MAKES " +
                                std::to_string(answer.scored);
                 break;
             default:

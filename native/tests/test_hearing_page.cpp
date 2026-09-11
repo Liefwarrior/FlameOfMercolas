@@ -595,9 +595,10 @@ TEST_CASE("the page holds its geometry at every window the game runs at, and cli
         CHECK(before.readingRowsWanted <= before.readingRows);
         CHECK(after.readingRowsWanted <= after.readingRows);
         CHECK(after.detailRowsWanted <= after.bodyRows);
-        // The rows are whole: the widest row fits the master pane with its
-        // key and the armed tail.
-        CHECK(before.masterCells >= static_cast<int>(std::string_view("2 - I DID NOT. -- SURE? ENTER").size()));
+        // The rows are whole: the widest row -- the armed denial with the
+        // one-cell confirm on its tail -- fits the master pane.
+        CHECK(before.masterCells >= static_cast<int>(std::string_view("2 - I DID NOT. -- SURE? A").size()));
+        CHECK(before.detailCells >= 26);
         // And the frame draws at this size without complaint.
         render::Framebuffer frame(window.width, window.height);
         render::drawHearingPage(frame, judged);
@@ -624,8 +625,8 @@ TEST_CASE("the check block shows the weighing: the arithmetic, + 6 CONFESSED, th
     render::HearingPageState page = session.hearingPageState();
     CHECK(page.view == render::HearingView::Judged);
     CHECK(page.weighsBadge == "THE PRIEST WEIGHS");
-    CHECK(page.arithmetic == "24 THE FLAME + 6 TONGUE + 10 THE DOOR - 3 THE WARD - 2 HEAT = 35");
-    CHECK(page.pleaTerm == "+ 6 CONFESSED = 41");
+    CHECK(page.arithmetic == "24 THE FLAME + 6 TONGUE + 10 THE DOOR - 3 THE WARD - 2 HEAT MAKES 35");
+    CHECK(page.pleaTerm == "+ 6 CONFESSED MAKES 41");
     CHECK(page.lines == "THE LINES: 55 SPARED  38 FINED  14 HELD");
     CHECK(page.verdict == "FINED");
     const SentenceTerms terms = sentenceTerms(hearing, session.tavern().playerCoin());
@@ -685,7 +686,7 @@ TEST_CASE("a disbelieved denial doubles on the page: THE PRIEST IS A MAN in the 
     CHECK(hearing.judgment == Judgment::Held);
     CHECK(hearing.doubled);
     render::HearingPageState page = session.hearingPageState();
-    CHECK(page.pleaTerm == "- 10 THE PRIEST IS A MAN = 25");
+    CHECK(page.pleaTerm == "- 10 THE PRIEST IS A MAN MAKES 25");
     CHECK(page.verdict == "HELD");
     const SentenceTerms terms = sentenceTerms(hearing, session.tavern().playerCoin());
     CHECK(terms.cellHours == 2 * (24 + 30));

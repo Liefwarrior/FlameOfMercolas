@@ -11,14 +11,17 @@ namespace granadad::render {
 
 namespace {
 
-/// The master's share of the body, out of 100. The rows are short ("3 - HEAR
-/// THE PAPER" is the widest, eighteen cells with its key) and the detail pane
-/// is where the words are -- the consequence, the sheet, the check block --
-/// so the split leans right. Held whole at the narrowest window: 320x180
-/// has 62 interior cells, and thirty-six per cent of that is twenty-two,
-/// which holds every row this list can build with room to spare.
-inline constexpr int kMasterShare = 36;
+/// The master's share of the body, out of 100. The widest row this list can
+/// build is the ARMED plea with the device's confirm on its tail -- "2 - I
+/// DID NOT. -- SURE? A" (the keyboard's return motif is one cell too),
+/// twenty-five cells -- and it has to stay whole at the narrowest window:
+/// 320x180 has 62 interior cells, and forty-six per cent of that is
+/// twenty-eight. The detail pane keeps what is left, which at every size is
+/// above kMinDetailCells and wraps the check block inside kHearingBodyRows.
+inline constexpr int kMasterShare = 46;
 inline constexpr int kMinMasterCells = 20;
+/// The widest row, as measured: the armed denial with a one-cell confirm.
+inline constexpr std::string_view kWidestRow = "2 - I DID NOT. -- SURE? A";
 /// The check block's arithmetic line wraps; twenty-six cells is creation's
 /// "a wrapped sentence that still reads", and under it the split collapses to
 /// the one-pane fallback rather than two slots.
@@ -177,12 +180,21 @@ struct Composition {
     return lines;
 }
 
+/// The Plea view's pane: the priest's opening in prose ink, then the
+/// consequence of the hovered row in number ink -- flavour, then the
+/// mechanical consequence, colour-sorted (the reference's own order).
 [[nodiscard]] std::vector<PanelLine> consequenceLines(const HearingPageState& state) {
     std::vector<PanelLine> lines;
+    if (!state.priest.empty()) {
+        PanelLine line;
+        line.body = state.priest;
+        line.bodyInk = InkRole::Prose;
+        lines.push_back(std::move(line));
+    }
     if (!state.consequence.empty()) {
         PanelLine line;
         line.body = state.consequence;
-        line.bodyInk = InkRole::Prose;
+        line.bodyInk = InkRole::Number;
         lines.push_back(std::move(line));
     }
     return lines;
@@ -244,11 +256,11 @@ struct Composition {
         const OptionListPlan plan = planOptionList(optionsFor(state), roomy, metric, listStyle());
         master = std::max(master, optionListNaturalCells(plan, listStyle().gutterCells));
     }
-    // THE ARMED ROW'S TAIL is the widest a row gets ("2 - I DID NOT. -- SURE?
-    // ENTER"), and the measure holds it whether or not a row is armed right
-    // now, so arming one moves no border. ENTER literally: the widest fixed
-    // device wording, never the live one.
-    master = std::max(master, static_cast<int>(std::string_view("2 - I DID NOT. -- SURE? ENTER").size()));
+    // THE ARMED ROW'S TAIL is the widest a row gets, and the measure holds it
+    // whether or not a row is armed right now, so arming one moves no
+    // border. The fixed variant, never the live key: both devices' confirms
+    // are one cell here (the return motif, "A").
+    master = std::max(master, static_cast<int>(kWidestRow.size()));
     int detail = std::max(kMinDetailCells, panelHeldDetailCells(kMasterShare, kMinMasterCells));
     detail = std::max(detail, kPanelProseMeasureCells);
     for (const std::string& fact : state.paper) {
