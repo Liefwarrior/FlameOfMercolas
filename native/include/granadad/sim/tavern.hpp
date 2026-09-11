@@ -1110,9 +1110,9 @@ public:
     // cost a cell. THE ROPE fires no release at all: executed() is read
     // beside the two release flags, and shares a line with neither.
 
-    /// What serving the judgment did. `served` is false until there has been
-    /// one; a refused call (no judged hearing, or the rope already passed)
-    /// leaves it false too.
+    /// What the last serveSentence() call did. `served` is false until there
+    /// has been one, and false again after a refused call (no judged hearing,
+    /// or the rope already passed): the report is the last call's answer.
     struct SentenceReport {
         bool served = false;
         /// The integers, exactly as sentenceTerms() computed them off the
@@ -1139,7 +1139,7 @@ public:
     /// the rope has already passed. Whoever owns the ward's calendar runs it
     /// to dayNumber() afterwards, exactly as after any other skip.
     const SentenceReport& serveSentence();
-    /// The last sentence served, whether or not it has been read.
+    /// The last serveSentence() call's answer, whether or not it has been read.
     [[nodiscard]] const SentenceReport& lastServed() const noexcept { return lastServed_; }
     /// The end of the run, once THE ROPE has been served: the place, the
     /// reason and the dateline the plate reads. `ended` is false while the

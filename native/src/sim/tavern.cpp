@@ -3883,13 +3883,13 @@ bool Tavern::executed() const noexcept {
 
 const Tavern::SentenceReport& Tavern::serveSentence() {
     CrimeLedger& crimes = dialogue_.crimes();
+    lastServed_ = SentenceReport{};
     if (!crimes.hearing().judged() || crimes.executed()) {
-        // Nothing judged, or a man already hanged: refused, and the last
-        // report stands as it was.
+        // Nothing judged, or a man already hanged: refused, and the report
+        // says so (`served` false).
         return lastServed_;
     }
     const HearingState& hearing = crimes.hearing();
-    lastServed_ = SentenceReport{};
     lastServed_.terms = sentenceTerms(hearing, playerCoin_);
     lastServed_.coinBefore = playerCoin_;
     const SentenceTerms& terms = lastServed_.terms;

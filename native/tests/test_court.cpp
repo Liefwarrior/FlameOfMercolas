@@ -26,6 +26,18 @@
 //   TWO PATHS  combat defeat never sets the rope's bit, and the court never
 //           calls the quay: the canon's two player-end paths, kept apart in
 //           code and asserted in both directions.
+//   SENTENCES (the sentences lane) every branch's integers off a judged
+//           hearing -- the fine and its shortfall days, the nights by charge
+//           and doubled, BOUND's five, COMMUTED's twelve, the hand; the room
+//           serving them (the purse, the world clock, the mirror, the Flame,
+//           the body, the record AFTER the skip, the release); the world
+//           moving while you are held through the shipped systems (the
+//           ward's roll runs the days and the ground penny falls due, a taken
+//           job dies at its night, the nemesis does NOT rise); COMMUTED
+//           clearing the blood and never the condemned bit, mercy once; THE
+//           ROPE as the run's end that revives nothing and refuses the world;
+//           a Violence arrest flowing to the same bench; the sentence
+//           twin-running byte-identical.
 
 #include <doctest/doctest.h>
 
@@ -42,7 +54,9 @@
 #include "granadad/sim/actor.hpp"
 #include "granadad/sim/angle.hpp"
 #include "granadad/sim/brawl.hpp"
+#include "granadad/sim/compound.hpp"
 #include "granadad/sim/contraband.hpp"
+#include "granadad/sim/contract.hpp"
 #include "granadad/sim/crime.hpp"
 #include "granadad/sim/docks.hpp"
 #include "granadad/sim/engine.hpp"
@@ -133,6 +147,67 @@ public:
         return nullptr;
     }
 
+    [[nodiscard]] const Actor* findByName(std::string_view name) const {
+        for (const Actor& actor : tavern_->actors()) {
+            if (actor.name() == name) {
+                return &actor;
+            }
+        }
+        return nullptr;
+    }
+
+    [[nodiscard]] const Actor* byId(std::int32_t id) const { return tavern_->actorById(id); }
+
+    /// The first present, upright PATRON (not a professional) the player can
+    /// stand facing AND whom `watcher` can then SEE the player from -- the
+    /// three-clause notice rule asked of the room itself, test_watch_rhythm's
+    /// own helper. nullptr when the room offers none.
+    const Actor* standFacingPatronFor(const Actor& watcher) {
+        for (const Actor& actor : tavern_->actors()) {
+            if (!actor.present() || isFloored(actor.activity()) ||
+                actor.role() != ActorRole::Patron || tavern_->isProfessional(actor) ||
+                actor.id() == watcher.id()) {
+                continue;
+            }
+            if (standFacing(actor) == -1) {
+                continue;
+            }
+            if (tavern_->noticeBy(watcher).seen) {
+                return &actor;
+            }
+        }
+        return nullptr;
+    }
+
+    /// The first present, non-floored body on the look-ray, from the
+    /// projection VETO 1 specifies. Returns the actor id, or -1.
+    [[nodiscard]] std::int32_t expectedSightlineId() const {
+        const std::int64_t fx = forward_x_q16(yaw_);
+        const std::int64_t fy = forward_y_q16(yaw_);
+        std::int32_t best = -1;
+        std::int64_t bestAlong = static_cast<std::int64_t>(kMeleeReach) + 1;
+        for (const Actor& actor : tavern_->actors()) {
+            if (!actor.present() || isFloored(actor.activity())) {
+                continue;
+            }
+            const std::int64_t dx = static_cast<std::int64_t>(actor.x()) - body_->x();
+            const std::int64_t dy = static_cast<std::int64_t>(actor.y()) - body_->y();
+            const std::int64_t along = (fx * dx + fy * dy) >> 16;
+            if (along <= 0 || along > kMeleeReach) {
+                continue;
+            }
+            const std::int64_t perp = (-fy * dx + fx * dy) >> 16;
+            if (perp > kBodyHalfWidth || perp < -kBodyHalfWidth) {
+                continue;
+            }
+            if (along < bestAlong) {
+                bestAlong = along;
+                best = actor.id();
+            }
+        }
+        return best;
+    }
+
     /// One tile off `mark` on a standable cardinal side, facing it, so the
     /// sightline runs through it. Returns the yaw chosen, or -1.
     Angle standFacing(const Actor& mark) {
@@ -180,6 +255,42 @@ private:
         room.run(1);
     }
     return room.tavern().lastArrest().happened;
+}
+
+/// Puts `markId` down for good under lethal rules, in as many hard swings as
+/// it takes: re-stands on him each time (a staggered man moves), waits out
+/// the player's own recoil and block-stagger clocks so the press is heard,
+/// and waits for the line to clear rather than swing at whoever stepped in.
+[[nodiscard]] bool killInSight(Room& room, std::int32_t markId) {
+    Tavern& tavern = room.tavern();
+    tavern.setPlayerCombat(Weapon::Edged, Intent::Kill);
+    for (int swings = 0; swings < 40; ++swings) {
+        const Actor* mark = room.byId(markId);
+        if (mark == nullptr) {
+            return false;
+        }
+        if (mark->activity() == Activity::Dead) {
+            return true;
+        }
+        for (int i = 0; i < kRecoilSteps + kBlockStaggerSteps + 4 &&
+                        (tavern.playerRecoilSteps() > 0 || tavern.playerBlockStaggerSteps() > 0);
+             ++i) {
+            room.stepOnce();
+        }
+        if (room.standFacing(*mark) == -1) {
+            return false;
+        }
+        for (int i = 0; i < 30 && room.expectedSightlineId() != markId; ++i) {
+            room.stepOnce();
+            if (room.standFacing(*mark) == -1) {
+                return false;
+            }
+        }
+        if (room.swing(true).killed) {
+            return true;
+        }
+    }
+    return false;
 }
 
 /// A sheet written by hand, so the weighing can be driven as the pure
@@ -1201,4 +1312,841 @@ TEST_CASE("the two player-end paths never meet: a defeat sets no rope, and the c
         CHECK_FALSE(gull.playerFloored());
         CHECK(gull.playerHp() == hpBefore);  // the rope is not a beating
     }
+}
+
+// ===========================================================================
+// SENTENCES -- the branch, in integers
+// ===========================================================================
+
+namespace {
+
+/// A judged hearing written by hand, so the sentence can be driven as the
+/// pure function it is. The sheet's heat and seizure are what the fine reads;
+/// the draw's low residue is what the nights read.
+[[nodiscard]] HearingState judgedOf(Judgment judgment, Judgment band, bool doubled,
+                                    std::int32_t heat = 68, std::int32_t units = 2,
+                                    std::uint64_t draw = 10) {
+    HearingState hearing;
+    hearing.stage = HearingStage::Judged;
+    hearing.sheet = sheetOf(Sentence::Held);
+    hearing.sheet.heatAtArrest = heat;
+    hearing.sheet.unitsSeized = units;
+    hearing.sheet.draw = draw;
+    hearing.judgment = judgment;
+    hearing.band = band;
+    hearing.doubled = doubled;
+    return hearing;
+}
+
+}  // namespace
+
+TEST_CASE("every branch's integers: the fine and its shortfall days, the nights by charge and doubled, BOUND five, COMMUTED twelve, the hand") {
+    // The spec's own thief: heat 68 and two jars -> fineFor = 17 + 6 = 23.
+    CHECK(fineFor(68, 2) == 23);
+    // Nothing judged is nothing served.
+    HearingState open = judgedOf(Judgment::Held, Judgment::Held, false);
+    open.stage = HearingStage::Arraigned;
+    CHECK_FALSE(sentenceTerms(open, 100).served);
+    CHECK_FALSE(sentenceTerms(judgedOf(Judgment::None, Judgment::None, false), 100).served);
+
+    // SPARED: walked out clean. Coin 0, clock 0, the Mission's door.
+    const SentenceTerms spared =
+        sentenceTerms(judgedOf(Judgment::Spared, Judgment::Spared, false), 100);
+    REQUIRE(spared.served);
+    CHECK(spared.fineAsked == 0);
+    CHECK(spared.hours == 0);
+    CHECK(spared.days == 0);
+    CHECK(spared.releaseHere);
+    CHECK_FALSE(spared.hand);
+    CHECK_FALSE(spared.mends);
+    CHECK(spared.roofsDelta == 0);
+    CHECK(spared.templeDelta == 0);
+
+    // FINED: the shipped fine, out of a purse that can pay it; no cell, no
+    // day, nothing mended, nothing moved on the ladders. The Mission's door.
+    const SentenceTerms fined =
+        sentenceTerms(judgedOf(Judgment::Fined, Judgment::Fined, false), 100);
+    REQUIRE(fined.served);
+    CHECK(fined.fineAsked == 23);
+    CHECK(fined.finePaid == 23);
+    CHECK(fined.shortfall == 0);
+    CHECK(fined.shortfallDays == 0);
+    CHECK(fined.cellHours == 0);
+    CHECK(fined.bondDays == 0);
+    CHECK(fined.hours == 0);
+    CHECK(fined.releaseHere);
+    CHECK_FALSE(fined.mends);
+    CHECK(fined.roofsDelta == 0);
+    CHECK(fined.templeDelta == 0);
+    // Doubled on a disbelieved denial, and the Flame remembers the lie.
+    const SentenceTerms lied = sentenceTerms(judgedOf(Judgment::Fined, Judgment::Fined, true), 100);
+    CHECK(lied.fineAsked == 46);
+    CHECK(lied.finePaid == 46);
+    CHECK(lied.templeDelta == -kLieTempleCost);
+    CHECK(lied.roofsDelta == 0);
+    // THE SHORTFALL is worked off: a day per four Royals, rounded up, capped
+    // at seven, and the purse is never put in debt. "Payable in Royals or in
+    // yourself." A fine's yard days still end at the Mission's door.
+    const SentenceTerms shortPurse =
+        sentenceTerms(judgedOf(Judgment::Fined, Judgment::Fined, false), 5);
+    CHECK(shortPurse.finePaid == 5);
+    CHECK(shortPurse.shortfall == 18);
+    CHECK(shortPurse.shortfallDays == 5);  // 18 / 4 rounded up
+    CHECK(shortPurse.bondDays == 5);
+    CHECK(shortPurse.hours == 120);
+    CHECK(shortPurse.days == 5);
+    CHECK(shortPurse.mends);
+    CHECK(shortPurse.releaseHere);
+    const SentenceTerms oneRoyalShort =
+        sentenceTerms(judgedOf(Judgment::Fined, Judgment::Fined, false), 22);
+    CHECK(oneRoyalShort.shortfall == 1);
+    CHECK(oneRoyalShort.shortfallDays == 1);
+    const SentenceTerms emptyPurse =
+        sentenceTerms(judgedOf(Judgment::Fined, Judgment::Fined, true), 0);
+    CHECK(emptyPurse.finePaid == 0);
+    CHECK(emptyPurse.shortfall == 46);
+    CHECK(emptyPurse.shortfallDays == kShortfallDaysMax);  // 46 / 4 -> 12, capped at 7
+    CHECK(emptyPurse.days == kShortfallDaysMax);
+    const SentenceTerms owed = sentenceTerms(judgedOf(Judgment::Fined, Judgment::Fined, false), -4);
+    CHECK(owed.finePaid == 0);  // a purse below zero pays nothing and owes nothing more
+
+    // HELD: the fine AND the cell -- the shipped one-to-three nights off the
+    // arrest's own draw, exactly where they were. A conviction: the roofs
+    // warm, the Tarwalk at the end of it, the body mended by the days.
+    const SentenceTerms held = sentenceTerms(judgedOf(Judgment::Held, Judgment::Held, false), 100);
+    REQUIRE(held.served);
+    CHECK(held.fineAsked == 23);
+    CHECK(held.cellHours == heldHours(10));
+    CHECK(held.cellHours == kHeldHoursMin + 10);
+    CHECK(held.bondDays == 0);
+    CHECK(held.hours == 34);
+    CHECK(held.days == 1);
+    CHECK(held.mends);
+    CHECK_FALSE(held.releaseHere);
+    CHECK_FALSE(held.hand);
+    CHECK(held.roofsDelta == kConvictionRoofsGain);
+    CHECK(held.templeDelta == 0);
+    // THE NIGHTS BY CHARGE, over every residue the draw can give: one to
+    // three days, and two to six doubled. The nights are the draw's low
+    // residue; the band above them (the plea) never touches them.
+    for (std::uint64_t residue = 0; residue < 49; ++residue) {
+        const std::uint64_t draw = residue | (static_cast<std::uint64_t>(7) << kPriestBandShift);
+        const SentenceTerms once =
+            sentenceTerms(judgedOf(Judgment::Held, Judgment::Held, false, 68, 0, draw), 100);
+        const SentenceTerms twice =
+            sentenceTerms(judgedOf(Judgment::Held, Judgment::Held, true, 68, 0, draw), 100);
+        CHECK(once.cellHours == heldHours(draw));
+        CHECK(once.cellHours >= kHeldHoursMin);
+        CHECK(once.cellHours <= kHeldHoursMax);
+        CHECK(once.days >= 1);
+        CHECK(once.days <= 3);
+        CHECK(twice.cellHours == 2 * once.cellHours);
+        CHECK(twice.days >= 2);
+        CHECK(twice.days <= 6);
+        CHECK(twice.fineAsked == 2 * once.fineAsked);
+        CHECK(twice.templeDelta == -kLieTempleCost);
+    }
+    // A cell plus a short purse: the shortfall's days on top of the nights.
+    const SentenceTerms heldShort =
+        sentenceTerms(judgedOf(Judgment::Held, Judgment::Held, false), 3);
+    CHECK(heldShort.finePaid == 3);
+    CHECK(heldShort.shortfallDays == 5);  // 20 / 4
+    CHECK(heldShort.hours == 34 + 120);
+    CHECK(heldShort.days == 6);
+
+    // BOUND: the fine forgiven, five days in the Mission's yard, ten for a
+    // lie; the work was the Flame's (+4), and the lie is remembered (-8).
+    const SentenceTerms bound =
+        sentenceTerms(judgedOf(Judgment::Bound, Judgment::Bound, false), 100);
+    REQUIRE(bound.served);
+    CHECK(bound.fineAsked == 0);
+    CHECK(bound.finePaid == 0);
+    CHECK(bound.cellHours == 0);
+    CHECK(bound.bondDays == kBoundDays);
+    CHECK(bound.hours == 120);
+    CHECK(bound.days == 5);
+    CHECK(bound.mends);
+    CHECK_FALSE(bound.releaseHere);
+    CHECK(bound.templeDelta == kBoundTempleGain);
+    CHECK(bound.roofsDelta == kConvictionRoofsGain);
+    const SentenceTerms boundTwice =
+        sentenceTerms(judgedOf(Judgment::Bound, Judgment::Bound, true), 0);
+    CHECK(boundTwice.bondDays == 2 * kBoundDays);
+    CHECK(boundTwice.days == 10);
+    CHECK(boundTwice.fineAsked == 0);  // an empty purse changes nothing: no fine to fall short on
+    CHECK(boundTwice.templeDelta == kBoundTempleGain - kLieTempleCost);
+
+    // THE HAND: the hand, plus HELD's coin and nights at HELD's band, plus
+    // BOUND's days (and BOUND's forgiven fine, and the Flame's regard for
+    // the yard) under the last line. At the fine's line the judgment is HELD
+    // itself -- the priest overruled the sergeant -- and no hand comes off.
+    const SentenceTerms hand = sentenceTerms(judgedOf(Judgment::TheHand, Judgment::Held, false), 100);
+    REQUIRE(hand.served);
+    CHECK(hand.hand);
+    CHECK(hand.fineAsked == 23);
+    CHECK(hand.cellHours == heldHours(10));
+    CHECK(hand.bondDays == 0);
+    CHECK(hand.days == 1);
+    CHECK(hand.roofsDelta == kConvictionRoofsGain);
+    CHECK(hand.templeDelta == 0);
+    CHECK_FALSE(hand.releaseHere);
+    const SentenceTerms handBound =
+        sentenceTerms(judgedOf(Judgment::TheHand, Judgment::Bound, true), 100);
+    CHECK(handBound.hand);
+    CHECK(handBound.fineAsked == 0);
+    CHECK(handBound.cellHours == 0);
+    CHECK(handBound.bondDays == 2 * kBoundDays);
+    CHECK(handBound.days == 10);
+    CHECK(handBound.templeDelta == kBoundTempleGain - kLieTempleCost);
+    const SentenceTerms handSpared =
+        sentenceTerms(judgedOf(Judgment::Held, Judgment::Fined, false), 100);
+    CHECK_FALSE(handSpared.hand);
+    CHECK(handSpared.cellHours == heldHours(10));
+
+    // COMMUTED: the hand ("the rope does not un-take the hand"), twelve days
+    // bondsworn, the fine forgiven, the Flame's mercy remembered. Never
+    // doubled -- the rope tier has nothing under it to double.
+    const SentenceTerms commuted =
+        sentenceTerms(judgedOf(Judgment::Commuted, Judgment::None, false), 100);
+    REQUIRE(commuted.served);
+    CHECK(commuted.hand);
+    CHECK(commuted.fineAsked == 0);
+    CHECK(commuted.cellHours == 0);
+    CHECK(commuted.bondDays == kCommutedDays);
+    CHECK(commuted.hours == 288);
+    CHECK(commuted.days == 12);
+    CHECK(commuted.mends);
+    CHECK_FALSE(commuted.releaseHere);
+    CHECK_FALSE(commuted.rope);
+    CHECK(commuted.templeDelta == kCommutedTempleGain);
+    CHECK(commuted.roofsDelta == kConvictionRoofsGain);
+
+    // THE ROPE: the run. Nothing else applies.
+    const SentenceTerms rope =
+        sentenceTerms(judgedOf(Judgment::TheRope, Judgment::None, false), 100);
+    REQUIRE(rope.served);
+    CHECK(rope.rope);
+    CHECK(rope.hours == 0);
+    CHECK(rope.fineAsked == 0);
+    CHECK_FALSE(rope.hand);
+    CHECK_FALSE(rope.releaseHere);
+    CHECK_FALSE(rope.mends);
+    CHECK(rope.templeDelta == 0);
+    CHECK(rope.roofsDelta == 0);
+
+    // The lines the page prints, as the header fixes them.
+    CHECK(kBoundDays == 5);
+    CHECK(kCommutedDays == 12);
+    CHECK(kShortfallRoyalsPerDay == 4);
+    CHECK(kShortfallDaysMax == 7);
+}
+
+TEST_CASE("HELD is served in the room: the fine, the nights on the world clock, the mirror, the body, the record after the skip, the Tarwalk") {
+    Room room(hourOfDay(23), gull::kBartenderX, gull::kBartenderY + 1);
+    Tavern& gull = room.tavern();
+    DialogueDirector& talk = gull.dialogue();
+    CrimeLedger& crimes = talk.crimes();
+    crimes.commit(Crime::Lift, true);
+    crimes.addHeat(kWarrantAt + 2);  // 70: paper, and HELD to a confession (24 - 2 + 6 = 28)
+    REQUIRE(crimes.warrant());
+    gull.injurePlayer(3);
+    REQUIRE(gull.playerHp() < gull.playerHpMax());
+    REQUIRE(standUntilTaken(room));
+    REQUIRE(gull.takeArrestRelease());  // the walk to the Mission's door
+    // Nothing to serve before the plea.
+    CHECK_FALSE(gull.serveSentence().served);
+    const Arraignment answer = gull.plead(Plea::Guilty);
+    REQUIRE(answer.heard);
+    REQUIRE(answer.judgment == Judgment::Held);
+    // The hearing, copied: serving it closes the record's copy.
+    const HearingState hearing = gull.hearing();
+    const std::int32_t purse = gull.playerCoin();
+    const SentenceTerms expected = sentenceTerms(hearing, purse);
+    REQUIRE(expected.served);
+    REQUIRE(expected.days >= 1);
+    const std::int32_t roofs = talk.factions().indexOf("skyrunners");
+    const std::int32_t watch = talk.factions().indexOf("watch");
+    const std::int32_t temple = talk.factions().indexOf("temple");
+    REQUIRE(roofs >= 0);
+    REQUIRE(watch >= 0);
+    REQUIRE(temple >= 0);
+    const std::int32_t roofsBefore = talk.standings().standing(roofs);
+    const std::int32_t watchBefore = talk.standings().standing(watch);
+    const std::int32_t templeBefore = talk.standings().standing(temple);
+    const std::int32_t reputationBefore = talk.ledger().reputation();
+    const std::int32_t dayBefore = gull.dayNumber();
+    const std::int32_t clockBefore = gull.timeOfDay();
+    const std::int32_t defeatsBefore = gull.nemesis().defeats();
+
+    const Tavern::SentenceReport& served = gull.serveSentence();
+    REQUIRE(served.served);
+    CHECK(served.terms.judgment == Judgment::Held);
+    CHECK_FALSE(served.terms.doubled);
+    // THE INTEGERS are the pure function's, to the Royal and the hour.
+    CHECK(served.terms.fineAsked ==
+          fineFor(hearing.sheet.heatAtArrest, hearing.sheet.unitsSeized));
+    CHECK(served.terms.finePaid == expected.finePaid);
+    CHECK(served.terms.shortfallDays == expected.shortfallDays);
+    CHECK(served.terms.cellHours == heldHours(hearing.sheet.draw));
+    CHECK(served.terms.hours == expected.hours);
+    CHECK(served.terms.days == expected.days);
+    CHECK(served.coinBefore == purse);
+    CHECK(served.coinAfter == purse - expected.finePaid);
+    // THE COIN left the purse, and never more than was in it.
+    CHECK(gull.playerCoin() == purse - expected.finePaid);
+    CHECK(gull.playerCoin() >= 0);
+    // THE CLOCK moved by exactly the hours, on the world's own calendar: the
+    // day count moved by the days (one more where the remainder crossed
+    // midnight), and the clock face is where a skip of that length lands.
+    CHECK(gull.timeOfDay() == (clockBefore + expected.hours * 3600) % kSecondsPerDay);
+    CHECK(gull.dayNumber() - dayBefore >= expected.days);
+    CHECK(gull.dayNumber() - dayBefore <= expected.days + 1);
+    CHECK(served.dayReleased == gull.dayNumber());
+    CHECK(served.timeReleased == gull.timeOfDay());
+    // THE RECORD, written after the skip: the heat the ward keeps is live
+    // (not cooled to nothing by the nights), the paper is gone, the prior is
+    // on it, the days are counted, the hearing is closed.
+    CHECK(crimes.heat() == kHeatAfterSentence);
+    CHECK_FALSE(crimes.warrant());
+    CHECK(crimes.arrests() == 1);
+    CHECK(crimes.daysServed() == expected.days);
+    CHECK(crimes.lastJudgment() == Judgment::Held);
+    CHECK_FALSE(gull.hearingPending());
+    CHECK_FALSE(crimes.maimed());
+    CHECK_FALSE(gull.executed());
+    // THE MIRROR: the roofs warm to whoever the Watch corrects, and the Watch
+    // cools by half. The Flame is untouched by a confession served; the
+    // social ledger is untouched by any sentence.
+    CHECK(talk.standings().standing(roofs) == roofsBefore + kConvictionRoofsGain);
+    CHECK(talk.standings().standing(watch) == watchBefore - kConvictionRoofsGain / 2);
+    CHECK(talk.standings().standing(temple) == templeBefore);
+    CHECK(talk.ledger().reputation() == reputationBefore);
+    // THE BODY mended: the days did it.
+    CHECK(gull.playerHp() == gull.playerHpMax());
+    CHECK_FALSE(gull.playerFloored());
+    // THE NEMESIS DID NOT RISE: losing to the law is not losing a fight.
+    CHECK(gull.nemesis().defeats() == defeatsBefore);
+    CHECK_FALSE(gull.takeDefeatRelease());
+    // TURNED LOOSE ON THE TARWALK, through the same release the arrest fired.
+    CHECK_FALSE(served.terms.releaseHere);
+    CHECK(gull.takeArrestRelease());
+    CHECK_FALSE(gull.takeArrestRelease());
+    // And nothing is served twice.
+    CHECK_FALSE(gull.serveSentence().served);
+    CHECK(crimes.arrests() == 1);
+}
+
+TEST_CASE("FINED and SPARED walk out of the Mission's door: coin only, no clock, nothing mended, nothing mirrored") {
+    // A tongue and a door: 24 + 10 TONGUE + 10 THE DOOR - 2 HEAT = 42; a
+    // confession is 48, FINED. The sheet is the ledger's, opened by its own
+    // verb in the arrest's shape (the Gull's arrest proves that path); the
+    // bench is the same whoever walked you in.
+    Room room(hourOfDay(23), gull::kBartenderX, gull::kBartenderY + 1);
+    Tavern& gull = room.tavern();
+    DialogueDirector& talk = gull.dialogue();
+    CrimeLedger& crimes = talk.crimes();
+    crimes.commit(Crime::Lift, true);
+    crimes.addHeat(kWarrantAt + 2);
+    const ChargeSheet sheet = crimes.charge(false, 20, 30, 0);
+    crimes.openHearing(sheet, 0, 0x2Bull, "Watchman Cull");
+    REQUIRE(gull.plead(Plea::Guilty).judgment == Judgment::Fined);
+    gull.injurePlayer(2);
+    const std::int32_t hpBefore = gull.playerHp();
+    const std::int32_t purse = gull.playerCoin();
+    const std::int32_t fine = fineFor(sheet.heatAtArrest, 0);
+    REQUIRE(fine > 0);
+    REQUIRE(purse >= fine);
+    const std::int32_t dayBefore = gull.dayNumber();
+    const std::int32_t clockBefore = gull.timeOfDay();
+    const std::int32_t roofs = talk.factions().indexOf("skyrunners");
+    const std::int32_t roofsBefore = talk.standings().standing(roofs);
+
+    const Tavern::SentenceReport& served = gull.serveSentence();
+    REQUIRE(served.served);
+    CHECK(served.terms.judgment == Judgment::Fined);
+    CHECK(served.terms.finePaid == fine);
+    CHECK(served.terms.hours == 0);
+    CHECK(gull.playerCoin() == purse - fine);
+    CHECK(gull.dayNumber() == dayBefore);
+    CHECK(gull.timeOfDay() == clockBefore);
+    CHECK(gull.playerHp() == hpBefore);                      // a fine heals nothing
+    CHECK(talk.standings().standing(roofs) == roofsBefore);  // a charge, not a correction
+    CHECK(crimes.arrests() == 1);                            // but a conviction
+    CHECK(crimes.heat() == kHeatAfterSentence);
+    CHECK_FALSE(crimes.warrant());
+    CHECK(served.terms.releaseHere);  // the Mission's door
+    CHECK(gull.takeArrestRelease());
+
+    // SPARED: a denial at the top of the band. No prior, nothing paid, the
+    // paper torn up all the same, and the door.
+    crimes.commit(Crime::Lift, true);
+    crimes.addHeat(kWarrantAt);
+    // 24 + 20 + 24 + 4 - 10 TAKEN BEFORE - 5 HEAT = 57; the band at its top, 67.
+    ChargeSheet clean = crimes.charge(false, 40, 84, 20);
+    clean.draw = drawWithBand(kPriestBand);
+    crimes.openHearing(clean, 0, clean.draw, "Watchman Cull");
+    const Arraignment walked = gull.plead(Plea::NotGuilty);
+    REQUIRE(walked.judgment == Judgment::Spared);
+    const std::int32_t purseBefore = gull.playerCoin();
+    const Tavern::SentenceReport& sparedServed = gull.serveSentence();
+    REQUIRE(sparedServed.served);
+    CHECK(sparedServed.terms.judgment == Judgment::Spared);
+    CHECK(gull.playerCoin() == purseBefore);
+    CHECK(gull.dayNumber() == dayBefore);
+    CHECK(crimes.arrests() == 1);  // no prior for a man the bench spared
+    CHECK(crimes.hearings() == 2);
+    CHECK(crimes.heat() == kHeatAfterSentence);
+    CHECK_FALSE(crimes.warrant());
+    CHECK(sparedServed.terms.releaseHere);
+    CHECK(gull.takeArrestRelease());
+}
+
+TEST_CASE("the world moves while you are held: the ward runs the days and the penny falls due, a taken job dies at its night, the nemesis does not rise") {
+    using granadad::render::Session;
+    Session session(quietDocks(20));
+    Tavern& gull = session.tavern();
+    DialogueDirector& talk = gull.dialogue();
+    CrimeLedger& crimes = talk.crimes();
+    Ward& ward = session.ward();
+    REQUIRE(ward.loaded());
+    // Eighty-eight days on, through the sentence's own verb and the wait
+    // machinery's own sync, so that the ninetieth day -- a quarter-day on
+    // the roll -- falls INSIDE the sentence to come.
+    gull.skipHours(24 * 88);
+    session.skipSeconds(60);
+    REQUIRE(gull.dayNumber() == 88);
+    REQUIRE(ward.day() == 88);
+    // A roof of your own on the Quayward: a house-owner owes the plot's Den
+    // Duke a ground penny every quarter, and nobody finds it from a cell.
+    ward.setPlayerCoin(kHousePriceMansion);
+    REQUIRE(ward.buyHouse(0) == TenureResult::Done);
+    REQUIRE(ward.playerHousehold() >= 0);
+    REQUIRE(ward.households()[static_cast<std::size_t>(ward.playerHousehold())].arrears == 0);
+    // Tonight's board, and a job taken off it with a night or three on it.
+    session.stepMany(MoveInput{}, kStepsPerSecond);
+    ContractBoard& board = talk.contracts();
+    std::int32_t jobId = -1;
+    for (const Contract& row : board.contracts()) {
+        if (row.state == ContractState::Offered) {
+            jobId = row.id;
+            break;
+        }
+    }
+    REQUIRE(jobId >= 0);
+    REQUIRE(board.take(jobId) == TakeResult::Taken);
+    REQUIRE(board.find(jobId) != nullptr);
+    REQUIRE(board.find(jobId)->dueOnDay < 88 + kCommutedDays);
+    const std::int32_t failedBefore = board.failedCount();
+
+    // A witnessed killing by the Mission's own Shepherd, and the bench's own
+    // answer to a confession: COMMUTED, twelve days. Opened by the ledger's
+    // verbs in the arrest's shape; the Gull's arrest proves that path.
+    crimes.markMurderer(2);
+    const ChargeSheet sheet = crimes.charge(false, 30, 84, 20);
+    crimes.openHearing(sheet, 0, 0x5EEDull, "Watchman Cull");
+    REQUIRE(gull.plead(Plea::Guilty).judgment == Judgment::Commuted);
+    const std::int32_t roofs = talk.factions().indexOf("skyrunners");
+    const std::int32_t watch = talk.factions().indexOf("watch");
+    const std::int32_t temple = talk.factions().indexOf("temple");
+    const std::int32_t roofsBefore = talk.standings().standing(roofs);
+    const std::int32_t watchBefore = talk.standings().standing(watch);
+    const std::int32_t templeBefore = talk.standings().standing(temple);
+    const std::int64_t wardDaysBefore = ward.stats().days;
+    const std::int64_t quartersBefore = ward.stats().quarters;
+    const std::int64_t penniesShortBefore = ward.stats().penniesShort;
+    const std::int64_t petitionsBefore = ward.stats().petitions;
+    REQUIRE(ward.households()[static_cast<std::size_t>(ward.playerHousehold())].groundPenny > 0);
+    const std::int32_t defeatsBefore = gull.nemesis().defeats();
+    const std::size_t rivalsBefore = gull.nemesis().rivals().size();
+    const std::int32_t purse = gull.playerCoin();
+    gull.injurePlayer(2);
+    REQUIRE(gull.playerHp() < gull.playerHpMax());
+
+    const Tavern::SentenceReport& served = session.serveSentence();
+    REQUIRE(served.served);
+    CHECK(served.terms.judgment == Judgment::Commuted);
+    CHECK(served.terms.days == kCommutedDays);
+    CHECK(served.terms.hours == kCommutedDays * 24);
+    CHECK(served.terms.finePaid == 0);
+    CHECK(served.terms.hand);
+    CHECK(gull.playerCoin() == purse);  // the fine forgiven
+    // THE CLOCK, and the ward's roll behind it: twelve days ran on the land,
+    // the wage and the meal, and the quarter-day that fell inside them
+    // charged the ground penny -- unpaid, because nobody in a cell finds it,
+    // so the house-owner is in arrears and a quarter behind. The two courts
+    // touch here, and that is the design.
+    CHECK(gull.dayNumber() == 100);
+    CHECK(session.timeOfDay() == gull.timeOfDay());
+    CHECK(ward.day() == 100);
+    CHECK(ward.stats().days == wardDaysBefore + kCommutedDays);
+    CHECK(ward.stats().quarters == quartersBefore + 1);
+    const Household& home = ward.households()[static_cast<std::size_t>(ward.playerHousehold())];
+    CHECK(home.quartersKept == 1);
+    CHECK(ward.stats().penniesShort >= penniesShortBefore + home.groundPenny);
+    // ...and the Duke brought his petition to the same Mission that quarter
+    // (the player's household is the last on the roll, so it is the last
+    // heard): the convict is the tenant in the OTHER hearing. Allowed, not
+    // prevented -- the two courts touching is the design.
+    CHECK(ward.stats().petitions >= petitionsBefore + 1);
+    CHECK(ward.lastHearing().heard);
+    CHECK(ward.lastHearing().household == ward.playerHousehold());
+    // A JOB PAST ITS NIGHT DIES at the next doors-open refresh, exactly as
+    // shipped: one tick of the world, and the board no longer has it.
+    session.stepMany(MoveInput{}, kStepsPerSecond);
+    CHECK(board.failedCount() == failedBefore + 1);
+    CHECK(board.find(jobId) == nullptr);
+    // STANDING: the roofs warm, the Watch cools by half, the Flame remembers
+    // its mercy.
+    CHECK(talk.standings().standing(roofs) == roofsBefore + kConvictionRoofsGain);
+    CHECK(talk.standings().standing(watch) == watchBefore - kConvictionRoofsGain / 2);
+    CHECK(talk.standings().standing(temple) == templeBefore + kCommutedTempleGain);
+    // THE RECORD: the blood served and the face remembered, the hand taken,
+    // mercy spent, the heat live at twelve and the paper gone.
+    CHECK_FALSE(crimes.murderer());
+    CHECK(crimes.condemned());
+    CHECK(crimes.commuted());
+    CHECK(crimes.maimed());
+    CHECK(crimes.heat() == kHeatAfterSentence);
+    CHECK_FALSE(crimes.warrant());
+    CHECK(crimes.arrests() == 1);
+    CHECK(crimes.daysServed() == kCommutedDays);
+    CHECK_FALSE(gull.hearingPending());
+    CHECK_FALSE(gull.executed());
+    // THE BODY mended. THE NEMESIS DID NOT RISE: no defeat, no rival, no
+    // release for the quay.
+    CHECK(gull.playerHp() == gull.playerHpMax());
+    CHECK(gull.nemesis().defeats() == defeatsBefore);
+    CHECK(gull.nemesis().rivals().size() == rivalsBefore);
+    CHECK_FALSE(gull.takeDefeatRelease());
+    // Turned loose on the Tarwalk (the release was consumed by the world's
+    // own step above, exactly as the arrest's is).
+    CHECK_FALSE(served.terms.releaseHere);
+}
+
+TEST_CASE("COMMUTED clears the blood and never the condemned bit, and a condemned murderer's rope hearing cannot commute") {
+    Room room(hourOfDay(23), gull::kBartenderX, gull::kBartenderY + 1);
+    Tavern& gull = room.tavern();
+    CrimeLedger& crimes = gull.dialogue().crimes();
+    // The Shepherd's killing, commuted.
+    crimes.markMurderer(2);
+    crimes.openHearing(crimes.charge(false, 30, 84, 20), 0, 0x5EEDull, "Watchman Cull");
+    REQUIRE(gull.plead(Plea::Guilty).judgment == Judgment::Commuted);
+    const std::int32_t dayBefore = gull.dayNumber();
+    REQUIRE(gull.serveSentence().served);
+    CHECK(gull.dayNumber() - dayBefore >= kCommutedDays);
+    CHECK_FALSE(crimes.murderer());
+    CHECK(crimes.condemned());
+    CHECK(crimes.commuted());
+    CHECK(crimes.maimed());
+    CHECK(crimes.takePercent() == kMaimedTakePercent);
+    CHECK_FALSE(gull.executed());
+    CHECK(gull.takeArrestRelease());
+    // Nothing clears the condemned bit: not a served cell afterwards, not
+    // cooling, not the roost, not a lost file.
+    crimes.commit(Crime::Lift, true);
+    crimes.addHeat(kWarrantAt);
+    crimes.openHearing(crimes.charge(false, 30, 84, 20), 0, 0x5EEDull, "Watchman Cull");
+    const Arraignment lift = gull.plead(Plea::Guilty);
+    REQUIRE(lift.heard);
+    CHECK(lift.judgment != Judgment::TheRope);
+    CHECK(lift.judgment != Judgment::Commuted);
+    REQUIRE(gull.serveSentence().served);
+    crimes.cool(static_cast<std::int64_t>(kHeatCoolSeconds) * kHeatMax);
+    crimes.lieLow();
+    crimes.quashWarrant();
+    CHECK(crimes.condemned());
+    CHECK(crimes.commuted());
+    CHECK(gull.takeArrestRelease());
+    // A second killing, the same Shepherd's record: the rope bench has no
+    // plea for him. Mercy was given once; the answer is the rope, and the
+    // sentence serves it -- no clock, no coin, the run.
+    crimes.markMurderer(1);
+    crimes.openHearing(crimes.charge(false, 30, 84, 20), 0, 0x5EEDull, "Watchman Cull");
+    const Arraignment silence = gull.plead(Plea::Guilty);
+    REQUIRE(silence.heard);
+    CHECK(silence.plea == Plea::NoPlea);
+    CHECK(silence.judgment == Judgment::TheRope);
+    const std::int32_t dayOfTheDrop = gull.dayNumber();
+    const Tavern::SentenceReport& served = gull.serveSentence();
+    REQUIRE(served.served);
+    CHECK(served.terms.rope);
+    CHECK(gull.executed());
+    CHECK(gull.runEnded());
+    CHECK(gull.runEnd().ended);
+    CHECK(gull.runEnd().blood);
+    CHECK(gull.dayNumber() == dayOfTheDrop);
+    CHECK_FALSE(gull.takeArrestRelease());
+}
+
+TEST_CASE("THE ROPE ends the run: the end is written off the record, nothing revives, and the room refuses the world") {
+    // Hour 23, Watchman Cull at his drink. A patron put down in his sight --
+    // a REAL corpse on the roster, so the end can name him -- and the Watch
+    // closing on what it saw.
+    Room room(hourOfDay(23), gull::kBartenderX, gull::kBartenderY + 1);
+    Tavern& gull = room.tavern();
+    CrimeLedger& crimes = gull.dialogue().crimes();
+    room.run(2);
+    const Actor* cull = room.findByName("Watchman Cull");
+    REQUIRE(cull != nullptr);
+    REQUIRE(cull->present());
+    const std::int32_t cullId = cull->id();
+    const Actor* mark = room.standFacingPatronFor(*cull);
+    REQUIRE(mark != nullptr);
+    const std::int32_t markId = mark->id();
+    const std::string victim = mark->name();
+    REQUIRE(killInSight(room, markId));
+    REQUIRE(room.byId(markId)->activity() == Activity::Dead);
+    REQUIRE(crimes.murderer());
+    REQUIRE(crimes.slewWitnesses() >= 1);
+
+    // Taken: on the violence he saw, or on the paper the killing wrote --
+    // either is the same bench. The sheet is the rope's.
+    REQUIRE(standUntilTaken(room));
+    const Tavern::ArrestReport& arrest = gull.lastArrest();
+    CHECK((arrest.cause == WatchCause::Violence || arrest.cause == WatchCause::Warrant));
+    REQUIRE(gull.hearingPending());
+    REQUIRE(gull.hearing().sheet.tier == Sentence::Condemned);
+    CHECK(gull.hearing().sheet.blood);
+    REQUIRE(gull.takeArrestRelease());  // to the Mission's door
+    // A nobody hangs: 24 - 30 BLOOD - N SAW IT (+ 6 CONFESSED) is under the
+    // mercy line whatever the tongue.
+    const Arraignment answer = gull.plead(Plea::Guilty);
+    REQUIRE(answer.heard);
+    REQUIRE(answer.judgment == Judgment::TheRope);
+
+    const std::int32_t dayBefore = gull.dayNumber();
+    const std::int32_t clockBefore = gull.timeOfDay();
+    const std::int32_t purse = gull.playerCoin();
+    const std::int32_t hpBefore = gull.playerHp();
+    const std::int32_t defeatsBefore = gull.nemesis().defeats();
+    const Tavern::SentenceReport& served = gull.serveSentence();
+    REQUIRE(served.served);
+    CHECK(served.terms.rope);
+    CHECK(served.terms.hours == 0);
+    CHECK(served.terms.finePaid == 0);
+    // THE END, off the record: the place the ward hangs a man, the corpse's
+    // own name, the clock at the drop. The plate composes the lines.
+    CHECK(gull.executed());
+    CHECK(gull.runEnded());
+    const RunEnd& end = gull.runEnd();
+    CHECK(end.ended);
+    CHECK(end.place == std::string(kRopePlace));
+    CHECK(end.reason == victim);
+    CHECK(end.blood);
+    CHECK(end.day == dayBefore);
+    CHECK(end.secondOfDay == clockBefore);
+    CHECK(crimes.lastJudgment() == Judgment::TheRope);
+    CHECK_FALSE(gull.hearingPending());
+    // NOT A DEFEAT: no clock jump, no coin, no blow, no release of either
+    // kind, no rise.
+    CHECK(gull.dayNumber() == dayBefore);
+    CHECK(gull.timeOfDay() == clockBefore);
+    CHECK(gull.playerCoin() == purse);
+    CHECK(gull.playerHp() == hpBefore);
+    CHECK_FALSE(gull.playerFloored());
+    CHECK_FALSE(gull.takeArrestRelease());
+    CHECK_FALSE(gull.takeDefeatRelease());
+    CHECK(gull.nemesis().defeats() == defeatsBefore);
+
+    // NOTHING REVIVES. The quay is the nemesis ruling's and only its: the
+    // revive is refused outright, clock and body untouched.
+    gull.reviveAfterDefeat();
+    CHECK(gull.executed());
+    CHECK(gull.dayNumber() == dayBefore);
+    CHECK(gull.timeOfDay() == clockBefore);
+    CHECK(gull.playerHp() == hpBefore);
+    // THE ROOM REFUSES THE WORLD: no blow lands on the body, no defeat is
+    // applied and no rival rises, no swing is armed, the Watch takes nobody,
+    // nothing is pleaded and nothing is served twice.
+    gull.injurePlayer(5);
+    CHECK(gull.playerHp() == hpBefore);
+    gull.concedeTo(cullId);
+    CHECK_FALSE(gull.playerFloored());
+    CHECK_FALSE(gull.takeDefeatRelease());
+    CHECK(gull.nemesis().defeats() == defeatsBefore);
+    gull.playerAttackDown();
+    CHECK(gull.playerCombatIdle());
+    CHECK_FALSE(gull.playerHandsUp());
+    crimes.addHeat(kHeatMax);
+    for (int second = 0; second < 120; ++second) {
+        (void)room.standBy("Watchman Cull");
+        room.run(1);
+    }
+    CHECK_FALSE(gull.hearingPending());
+    CHECK_FALSE(gull.takeArrestRelease());
+    CHECK(gull.watchStance() == Tavern::WatchStance::Idle);
+    CHECK_FALSE(gull.plead(Plea::Guilty).heard);
+    CHECK_FALSE(gull.serveSentence().served);
+    CHECK(gull.executed());
+}
+
+TEST_CASE("a Skyrunner's second is hanged FOR THE SECOND RUNG, and only the rope ends the run") {
+    // The roofs' rope with no corpse behind it: the end names the rung.
+    Room room(hourOfDay(23), gull::kBartenderX, gull::kBartenderY + 1);
+    Tavern& gull = room.tavern();
+    CrimeLedger& crimes = gull.dialogue().crimes();
+    crimes.addHeat(kWarrantAt);
+    crimes.sentence(Judgment::TheHand, 1);  // the first: the hand, served
+    crimes.addHeat(kWarrantAt);
+    const ChargeSheet second = crimes.charge(true, 0, 0, 0);
+    REQUIRE(second.tier == Sentence::Condemned);
+    REQUIRE(second.secondRung);
+    REQUIRE_FALSE(second.blood);
+    crimes.openHearing(second, 0, 0x5EEDull, "Watchman Cull");
+    // 24 - 10 TAKEN BEFORE - 3 HEAT - 24 THE SECOND RUNG + 6 CONFESSED = -7.
+    REQUIRE(gull.plead(Plea::Guilty).judgment == Judgment::TheRope);
+    REQUIRE(gull.serveSentence().served);
+    CHECK(gull.executed());
+    CHECK(gull.runEnd().reason == std::string(kRopeForSecondRung));
+    CHECK_FALSE(gull.runEnd().blood);
+    CHECK(gull.runEnd().place == std::string(kRopePlace));
+
+    // AND ONLY THE ROPE. Every other judgment served leaves the run alive:
+    // the bench's six mercies, each on its own record, its terms never the
+    // rope's and its bit never set.
+    for (const Judgment mercy : {Judgment::Spared, Judgment::Fined, Judgment::Held,
+                                 Judgment::Bound, Judgment::TheHand, Judgment::Commuted}) {
+        CrimeLedger record;
+        record.addHeat(kWarrantAt);
+        record.openHearing(record.charge(false, 0, 0, 0), 0, 0, "Watchman Cull");
+        // Any plea the bench takes, then the judgment set by hand on the
+        // hearing's own shape: the terms serve what was judged.
+        REQUIRE(record.plead(Plea::Guilty).heard);
+        HearingState judged = record.hearing();
+        judged.judgment = mercy;
+        judged.band = mercy == Judgment::TheHand ? Judgment::Held : mercy;
+        const SentenceTerms terms = sentenceTerms(judged, 100);
+        REQUIRE(terms.served);
+        CHECK_FALSE(terms.rope);
+        record.sentence(mercy, terms.days);
+        CHECK_FALSE(record.executed());
+        CHECK(record.heat() == kHeatAfterSentence);
+    }
+}
+
+TEST_CASE("a combat defeat still revives after a served sentence; the two paths never share a line") {
+    // HELD served, then put on the floor: the quay, exactly as before the
+    // bench ever heard you. The rope's bit is not set by a beating, and the
+    // court's release was never the quay's.
+    Room room(hourOfDay(23), gull::kBartenderX, gull::kBartenderY + 1);
+    Tavern& gull = room.tavern();
+    CrimeLedger& crimes = gull.dialogue().crimes();
+    crimes.commit(Crime::Lift, true);
+    crimes.addHeat(kWarrantAt + 2);
+    REQUIRE(standUntilTaken(room));
+    REQUIRE(gull.takeArrestRelease());
+    REQUIRE(gull.plead(Plea::Guilty).judgment == Judgment::Held);
+    REQUIRE(gull.serveSentence().served);
+    REQUIRE(gull.takeArrestRelease());
+    CHECK_FALSE(gull.executed());
+    // Back to a full taproom (the shipped wait), and a man to lose to.
+    gull.skipTo(hourOfDay(23));
+    room.run(2);
+    const Actor* rival = room.findRole(ActorRole::Patron);
+    REQUIRE(rival != nullptr);
+    const std::int32_t dayBefore = gull.dayNumber();
+    const std::int32_t defeatsBefore = gull.nemesis().defeats();
+    gull.concedeTo(rival->id());
+    CHECK(gull.playerFloored());
+    CHECK(gull.nemesis().defeats() == defeatsBefore + 1);  // he rose: a fight lost is his
+    CHECK(gull.takeDefeatRelease());
+    CHECK_FALSE(gull.takeArrestRelease());
+    gull.reviveAfterDefeat();
+    CHECK(gull.playerHp() == gull.playerHpMax());
+    CHECK_FALSE(gull.playerFloored());
+    CHECK(gull.dayNumber() >= dayBefore);
+    CHECK_FALSE(gull.executed());
+    CHECK_FALSE(gull.runEnd().ended);
+    CHECK(crimes.lastJudgment() == Judgment::Held);
+}
+
+TEST_CASE("a Violence arrest with paper flows to the same bench and the same sentence") {
+    // The combat-feel path: a blade drawn on a patron in the watchman's
+    // sight closes him on VIOLENCE (test_watch_rhythm's own case). With paper
+    // already out, the arrest opens the hearing like any other, and the
+    // sentence serves it like any other.
+    Room room(hourOfDay(23), gull::kBartenderX, gull::kBartenderY + 1);
+    Tavern& gull = room.tavern();
+    CrimeLedger& crimes = gull.dialogue().crimes();
+    crimes.commit(Crime::Lift, true);
+    crimes.addHeat(kWarrantAt + 2);
+    REQUIRE(crimes.warrant());
+    room.run(2);
+    const Actor* cull = room.findByName("Watchman Cull");
+    REQUIRE(cull != nullptr);
+    const Actor* mark = room.standFacingPatronFor(*cull);
+    REQUIRE(mark != nullptr);
+    const std::int32_t markId = mark->id();
+    gull.setPlayerCombat(Weapon::Edged, Intent::Kill);
+    for (int i = 0; i < 30 && room.expectedSightlineId() != markId; ++i) {
+        room.stepOnce();
+        REQUIRE(room.standFacing(*mark) != -1);
+    }
+    const Tavern::PlayerSwingResult tap = room.swing(false);
+    REQUIRE(tap.targetId == markId);
+    REQUIRE(tap.fight == FightClass::Lethal);
+    bool closing = false;
+    for (int s = 0; s < 20 && !closing; ++s) {
+        room.run(1);
+        closing = gull.watchStance() == Tavern::WatchStance::Closing;
+    }
+    REQUIRE(closing);
+    REQUIRE(gull.watchInterest() == WatchCause::Violence);
+    bool taken = false;
+    for (int s = 0; s < 60 && !taken; ++s) {
+        room.run(1);
+        taken = gull.takeArrestRelease();
+    }
+    REQUIRE(taken);
+    CHECK(gull.lastArrest().cause == WatchCause::Violence);
+    // THE SAME BENCH: a hearing open on the paper, nothing served at the
+    // door, the room let go of the fight.
+    REQUIRE(gull.hearingPending());
+    CHECK(gull.hearing().awaitingPlea());
+    CHECK(gull.hearing().sheet.tier != Sentence::Fined);
+    CHECK(gull.lastArrest().fine == 0);
+    CHECK(gull.lastArrest().heldHours == 0);
+    CHECK(crimes.arrests() == 0);
+    CHECK_FALSE(gull.playerInBrawl());
+    // THE SAME SENTENCE.
+    const Arraignment answer = gull.plead(Plea::Guilty);
+    REQUIRE(answer.heard);
+    CHECK(answer.judgment != Judgment::Spared);
+    const Tavern::SentenceReport& served = gull.serveSentence();
+    REQUIRE(served.served);
+    CHECK(served.terms.judgment == answer.judgment);
+    CHECK(crimes.heat() == kHeatAfterSentence);
+    CHECK_FALSE(crimes.warrant());
+    CHECK_FALSE(gull.hearingPending());
+    CHECK(gull.takeArrestRelease());
+}
+
+TEST_CASE("a scripted arrest, plea and sentence twin-runs byte-identical, and the other plea's sentence diverges") {
+    const auto script = [](Room& room, Plea plea) {
+        Tavern& gull = room.tavern();
+        gull.dialogue().crimes().commit(Crime::Lift, true);
+        gull.dialogue().crimes().addHeat(kWarrantAt + 2);
+        REQUIRE(standUntilTaken(room));
+        REQUIRE(gull.takeArrestRelease());
+        const Arraignment answer = gull.plead(plea);
+        REQUIRE(answer.heard);
+        const Tavern::SentenceReport& served = gull.serveSentence();
+        REQUIRE(served.served);
+        REQUIRE(gull.takeArrestRelease());
+        room.run(3);
+        return std::tuple{room.hash(),           served.terms.judgment, served.terms.hours,
+                          served.terms.finePaid, gull.dayNumber(),      gull.playerCoin()};
+    };
+    Room one(hourOfDay(23), gull::kBartenderX, gull::kBartenderY + 1);
+    Room two(hourOfDay(23), gull::kBartenderX, gull::kBartenderY + 1);
+    const auto first = script(one, Plea::Guilty);
+    const auto second = script(two, Plea::Guilty);
+    CHECK(first == second);
+    // The same seed denying: the same arrest and the same draw, a doubled
+    // sentence or a spared one, and a different world at the end of it.
+    Room three(hourOfDay(23), gull::kBartenderX, gull::kBartenderY + 1);
+    const auto other = script(three, Plea::NotGuilty);
+    CHECK(std::get<0>(other) != std::get<0>(first));
+    CHECK(three.tavern().lastServed().terms.doubled ==
+          (three.tavern().dialogue().crimes().lastJudgment() != Judgment::Spared));
 }
