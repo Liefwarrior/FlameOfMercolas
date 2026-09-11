@@ -612,7 +612,10 @@ private:
             const PieceSpec& piece = boards ? *timber : *wall;
             const bool brickOut = r.brickOut;
             const bool plasterFace = !boards && !brickOut;
-            const float ext = piece.thickness;
+            // A convex end extends by the piece's thickness less a hair, so
+            // the end cap sits INSIDE the perpendicular piece's body rather
+            // than on its surface plane, where the two would fight.
+            const float ext = std::max(0.0F, piece.thickness - 0.01F);
             const float legLen = wall->width - wall->thickness * 0.5F;
             float lo = r.a0;
             float hi = r.a1;
