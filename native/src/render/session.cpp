@@ -9419,6 +9419,10 @@ std::int32_t gNemesisBeatMask = 0;
 /// in his hand (each with the death ceremony over the revive), the blade and
 /// the Kill three wins put in his hands, a house, and a charge on the roll.
 constexpr std::int32_t kNemesisBeats = 7;
+/// 3D SLICE ONE (ship lane). What `--nemesis=death` owes: it stops ON PURPOSE
+/// on the boards of the rematch (beats 1-3), the death ceremony still
+/// playing, so three is the whole of what that ending can land.
+constexpr std::int32_t kNemesisDeathBeats = 3;
 
 /// BARKS LANE (feel/build). THE WATCH ON SEEN VIOLENCE, played through the
 /// real verbs: the walk in, the blade, one swing at a man Cull can see, the
@@ -11557,7 +11561,8 @@ SmokeRunResult runSmoke(const SmokeRunConfig& config) {
         const std::int32_t landed =
             static_cast<std::int32_t>(runNemesisLine(session, config.nemesisEnd));
         result.nemesisBeats = landed;
-        result.scriptedWanted += kNemesisBeats;
+        result.scriptedWanted +=
+            config.nemesisEnd == "death" ? kNemesisDeathBeats : kNemesisBeats;
         result.scriptedLanded += landed;
         result.talking = session.talking();
     }
@@ -12209,7 +12214,8 @@ SmokeRunResult runSmoke(const SmokeRunConfig& config) {
     }
     if (config.nemesis) {
         const sim::Nemesis* worst = session.tavern().nemesis().worst();
-        summary << " | nemesis beats=" << result.nemesisBeats << '/' << kNemesisBeats
+        summary << " | nemesis beats=" << result.nemesisBeats << '/'
+                << (config.nemesisEnd == "death" ? kNemesisDeathBeats : kNemesisBeats)
                 << " mask=" << gNemesisBeatMask;
         // WHO IS ON THE FRAME, named, so a capture cannot quietly photograph
         // the wrong docker. The first shipped attempt at the `talk` ending did
