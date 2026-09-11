@@ -89,7 +89,7 @@
     "trudgeon_wood@getilia_soak": { "wall": "timber", "tint": [130, 120, 110], "topTint": [90, 80, 72], "ceilingTint": [96, 84, 72], "floor": "floor_plank", "floorTint": [140, 136, 132], "lip": "lip_plank", "lipTint": [120, 114, 108] },
     "cloth":          { "wall": "canvas", "tint": [204, 192, 160] },
     "leather":        { "wall": "canvas", "tint": [126, 96, 72] },
-    "thatch":         { "roof": true, "fill": "floor_fill", "fillTint": [130, 126, 120], "ceilingTint": [150, 128, 88], "lip": "lip_stone", "lipTint": [110, 106, 100] },
+    "thatch":         { "roof": true, "floor": "floor_flag", "floorTint": [108, 112, 122], "fill": "floor_fill", "fillTint": [92, 96, 104], "ceilingTint": [150, 128, 88], "lip": "lip_stone", "lipTint": [110, 106, 100] },
     "dirt":           { "fill": "floor_fill", "fillTint": [108, 88, 64], "ceilingTint": [120, 104, 84] },
     "ash":            { "fill": "floor_fill", "fillTint": [92, 90, 88], "ceilingTint": [110, 108, 106] }
   }

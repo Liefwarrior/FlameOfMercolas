@@ -485,7 +485,9 @@ TEST_CASE("the shipped piece catalogue loads and names a piece for every rule") 
     CHECK(catalogue.materialByName("granite")->lipRole == PieceRole::LipStone);
     CHECK(catalogue.materialByName("thatch")->roof);
     CHECK_FALSE(catalogue.materialByName("granite")->roof);
-    CHECK(catalogue.materialByName("thatch")->floorRole == PieceRole::None);
+    // A roof plane wears the flagstone piece as slates over a dark fill,
+    // never floorboards.
+    CHECK(catalogue.materialByName("thatch")->floorRole == PieceRole::FloorFlag);
     CHECK(catalogue.materialByName("thatch")->fillRole == PieceRole::FloorFill);
     CHECK(catalogue.piece(PieceRole::FloorFill)->flipY);
     CHECK(catalogue.piece(PieceRole::FloorCobble)->minBlock == 2);
