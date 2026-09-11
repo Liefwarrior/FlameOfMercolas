@@ -41,6 +41,7 @@
 #include <vector>
 
 #include "granadad/sim/contraband.hpp"
+#include "granadad/sim/justice.hpp"
 #include "granadad/sim/watch.hpp"
 #include "granadad/sim/world_hash.hpp"
 
@@ -61,6 +62,9 @@ enum class Crime : std::uint8_t {
 };
 
 inline constexpr std::size_t kCrimeCount = 6;
+/// The charge sheet counts the six by this same number. justice.hpp cannot
+/// include this header, so it names the count itself and this is the check.
+static_assert(kCrimeCount == kSheetCrimes, "the charge sheet counts the six acts");
 
 [[nodiscard]] std::string_view crimeName(Crime crime) noexcept;
 
@@ -189,36 +193,111 @@ public:
         std::int32_t heldHours = 0;
     };
 
-    /// THE WATCH TAKES YOU. The one call site an arrest goes through, for
-    /// exactly the reason noteCrime is the one an act goes through: a seizure
-    /// that emptied the sack and left the paper standing, or a sentence that
-    /// was passed and never recorded, is the bug this shape exists to prevent.
+    /// THE WATCH TAKES YOU, THE SHORT WAY. The shipped one-call arrest: the
+    /// charge, the seizure, and the ladder's own answer served at once with no
+    /// bench between them -- exactly what combat/build shipped, kept so every
+    /// test of the ladder and the murder hook reads as it did. IT IS NOT THE
+    /// ROOM'S PATH ANY MORE for an arrest with paper: Tavern::applyArrest goes
+    /// charge() -> seizeAtArrest() -> openHearing(), and the sentence waits on
+    /// the plea. The paperless search (Sentence::Fined) still goes through
+    /// here, untouched, because it never reaches the bench.
     ///
     /// `purse` is what the player has on them, so the fine can be capped at it;
     /// `draw` is the roll behind the length of a sentence. Everything else is
     /// the ledger's own state.
     ArrestOutcome arrest(bool skyrunner, std::int32_t purse, std::uint64_t draw);
 
+    // --- JUSTICE BUILD: the court ---------------------------------------------
+    //
+    // An arrest with paper is SPLIT where combat/build's arrest() was one
+    // call: charge() is the ladder half (const, draw-free -- what the paper
+    // asks for and the sheet that says why), seizeAtArrest() is the impound
+    // half (Watchman Cull's whole job, and the one part of an arrest that
+    // happens whether or not there was paper), openHearing() carries the
+    // sheet, the officer and the arrest's one draw to the bench, plead()
+    // weighs, and sentence() is the mutation half -- now parameterised by the
+    // court's answer rather than the sergeant's. See justice.hpp.
+
+    /// THE CHARGE SHEET. Draw-free and const: the shipped ladder (sentenceFor
+    /// + the murder override) decides the tier, the tallies since the last
+    /// sentence name the worst line, and the three plea inputs the priest
+    /// reads are captured now so the weighing is a pure function of the
+    /// sheet. `unitsSeized` and `draw` are the arrest's to fill.
+    [[nodiscard]] ChargeSheet charge(bool skyrunner, std::int32_t streetwise,
+                                     std::int32_t templeStanding,
+                                     std::int32_t reputation) const;
+    /// THE IMPOUND. Seizes the illicit half of the sack and the bale on the
+    /// shoulder. Returns the units taken. No fine, no record: the fine is the
+    /// court's now, and the record is the sentence's.
+    std::int32_t seizeAtArrest();
+    /// TAKEN TO THE MISSION. Opens the hearing on this sheet: stage Arraigned,
+    /// the seizure and the draw written onto it, the officer named. A hearing
+    /// already open is replaced -- the ward tries the arrest it made.
+    void openHearing(const ChargeSheet& sheet, std::int32_t unitsSeized, std::uint64_t draw,
+                     std::string_view officer);
+    /// THE PLEA. Weighs the open hearing's sheet (justice.hpp) and records
+    /// the answer: stage Judged, the plea, the judgment, the band, the sum.
+    /// Counts the hearing. Refused -- nothing recorded, `heard` false -- when
+    /// no hearing is awaiting a plea or the plea is not one the bench takes.
+    Arraignment plead(Plea plea);
+    /// THE SENTENCE, the ledger's half of it: what a served judgment writes
+    /// on the record. A conviction (anything but SPARED) is a prior; every
+    /// answer tears up the paper and leaves kHeatAfterSentence; THE HAND and
+    /// COMMUTED take the hand; COMMUTED condemns for the rest of the run and
+    /// SERVES the blood (murderer_ clears; mercy once); THE ROPE sets
+    /// executed_. The tallies served reset the sheet's "since". Closes the
+    /// hearing. Coin, the clock and the mirror are the room's, and the room
+    /// calls this AFTER the skip so the heat it leaves is not cooled to
+    /// nothing by it (kHeatAfterSentence was dead by ordering before).
+    void sentence(Judgment judgment, std::int32_t daysServed);
+
+    [[nodiscard]] bool hearingPending() const noexcept { return hearing_.pending(); }
+    [[nodiscard]] const HearingState& hearing() const noexcept { return hearing_; }
+
     /// ACTION-COMBAT BUILD. A WITNESSED killing was done. Raises kMurderHeat
     /// (watch.hpp) -- exactly the warrant threshold, so one witnessed murder is
     /// instant paper -- and marks the player a murderer, which makes the next
-    /// arrest a Condemned one whatever the ordinary sentence ladder would say.
+    /// arrest a rope hearing whatever the ordinary sentence ladder would say.
     /// The caller gates on the three-clause witness rule; an unwitnessed kill
     /// calls nothing, because heat is what the Watch heard. See
     /// COMBAT-ACTION-SPEC.md section 4.4.
-    void markMurderer() noexcept;
-    /// Whether a witnessed murder stands on the record. Read by arrest() to
-    /// route to Sentence::Condemned. Permanent within a run (the court that
-    /// would clear or execute it is the justice build, section 10).
+    ///
+    /// JUSTICE BUILD: the overload takes the witness COUNT, which is the rope
+    /// tier's own term (N SAW IT). The no-argument form delegates with one, so
+    /// combat's call sites are bit-identical until repointed.
+    void markMurderer() noexcept { markMurderer(1); }
+    void markMurderer(std::int32_t witnesses) noexcept;
+    /// Whether a witnessed murder stands on the record. Read by charge() to
+    /// route to the rope tier. Cleared ONLY by the bench: COMMUTED serves it;
+    /// cooling clears the paper but never the blood.
     [[nodiscard]] bool murderer() const noexcept { return murderer_; }
+    /// Who saw the worst killing on the record. The most recent witnessed
+    /// kill's count; the rope tier's N SAW IT.
+    [[nodiscard]] std::int32_t slewWitnesses() const noexcept { return slewWitnesses_; }
 
     [[nodiscard]] std::int32_t arrests() const noexcept { return arrests_; }
     [[nodiscard]] Sentence lastSentence() const noexcept { return lastSentence_; }
     /// A hand the ward has taken. Permanent.
     [[nodiscard]] bool maimed() const noexcept { return maimed_; }
-    /// Sentenced to the rope. See Sentence::Condemned on what this build does
-    /// and does not simulate.
+    /// THE ROPE PASSED AND COMMUTED: the bench spared the rope once, and the
+    /// ward was told the face. Recognised at kCondemnedRecognisePermille for
+    /// the rest of the run. NOTHING clears it.
     [[nodiscard]] bool condemned() const noexcept { return condemned_; }
+    /// Mercy was given. A rope hearing after this has no plea and one answer.
+    [[nodiscard]] bool commuted() const noexcept { return commuted_; }
+    /// THE ROPE. The one true game over; the bit is the corpse. What the room
+    /// and the screen do with it is the rope's own step, after this build's.
+    [[nodiscard]] bool executed() const noexcept { return executed_; }
+    [[nodiscard]] Plea lastPlea() const noexcept { return lastPlea_; }
+    [[nodiscard]] Judgment lastJudgment() const noexcept { return lastJudgment_; }
+    /// Hearings heard (a plea taken), convictions or not. Rotates the priest's
+    /// rows.
+    [[nodiscard]] std::int32_t hearings() const noexcept { return hearings_; }
+    /// Days the ward has had of you, summed over every served sentence.
+    [[nodiscard]] std::int32_t daysServed() const noexcept { return daysServed_; }
+    /// The tally of this act the last sentence was served for; the sheet's
+    /// "since" is tally() less this.
+    [[nodiscard]] std::int32_t servedTally(Crime crime) const noexcept;
     /// What the hands still manage, as a percentage of what two of them take.
     [[nodiscard]] std::int32_t takePercent() const noexcept {
         return maimed_ ? kMaimedTakePercent : 100;
@@ -280,6 +359,25 @@ private:
     /// ACTION-COMBAT BUILD: a witnessed killing stands on the record, so the
     /// next arrest condemns. See markMurderer / arrest.
     bool murderer_ = false;
+
+    // --- JUSTICE BUILD (codec v5, appended) -----------------------------------
+    /// Mercy given once: the rope passed and commuted.
+    bool commuted_ = false;
+    /// The rope. The bit is the corpse.
+    bool executed_ = false;
+    Plea lastPlea_ = Plea::None;
+    Judgment lastJudgment_ = Judgment::None;
+    std::int32_t hearings_ = 0;
+    std::int32_t daysServed_ = 0;
+    /// Who saw the most recent witnessed killing.
+    std::int32_t slewWitnesses_ = 0;
+    /// tallies_ as they stood when the last sentence was served, per act, so
+    /// the sheet names what is new since the bench last heard you.
+    std::int32_t servedTallies_[kCrimeCount] = {};
+    /// The hearing between the arrest and the sentence. Hashed and codec'd
+    /// HERE, on the ledger, and never as a bare Tavern field: the per-run hole
+    /// playerWeapon_ left is the one this build does not repeat.
+    HearingState hearing_;
 };
 
 /// What a fence pays this player, as a percentage of kLootValue a piece.

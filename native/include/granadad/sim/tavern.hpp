@@ -1048,9 +1048,43 @@ public:
     [[nodiscard]] const std::string& lastFlee() const noexcept { return lastFlee_; }
     /// The last arrest, whether or not it has been read.
     [[nodiscard]] const ArrestReport& lastArrest() const noexcept { return lastArrest_; }
-    /// True once, after an arrest, so whoever owns the body can put it on the
-    /// street where the impound turns people loose. Read and CLEARED.
+    /// True once, after an arrest, so whoever owns the body can move it: to
+    /// the street where the impound turns people loose after a paperless
+    /// search, or -- JUSTICE BUILD -- to the Mission's door when the arrest
+    /// left a hearing open (hearingPending()), where the bench is waiting.
+    /// Read and CLEARED.
     [[nodiscard]] bool takeArrestRelease() noexcept;
+
+    // --- JUSTICE BUILD: the court ---------------------------------------------
+    //
+    // An arrest WITH PAPER no longer resolves to an inert sentence and a clock
+    // jump. The officer takes you to the Mission: applyArrest writes the
+    // charge sheet off the ledger (draw-free), empties the sack into the
+    // impound, spends its one draw where it always did, and opens a HEARING
+    // on the ledger (CrimeLedger::hearing, hashed and codec'd). The page that
+    // attends it is presentation's; the plea is a stepped input here; what a
+    // judgment then DOES (coin, clock, ledger, the rope) is the sentence's own
+    // step after this one. A paperless search (Sentence::Fined) is the shipped
+    // fast path at the door, untouched, and never reaches the bench.
+
+    /// A hearing is open: taken with paper and not yet sentenced. See
+    /// HearingState::stage for whether it awaits the plea or the sentence.
+    [[nodiscard]] bool hearingPending() const noexcept;
+    /// The hearing: the sheet, the officer who laid it, the arrest's draw,
+    /// and -- once pleaded -- the plea, the sum and the judgment.
+    [[nodiscard]] const HearingState& hearing() const noexcept;
+    /// THE PLEA. I DID IT (draw-free, never doubled, never spared) or I DID
+    /// NOT (the arrest draw's band, spared at the top, doubled below); a
+    /// commuted man before a rope bench gets only I HAVE NOTHING TO SAY. The
+    /// priest's weighing comes back line by line (justice.hpp) and is written
+    /// on the hearing. A plea is a haggle with your neck on the table: it
+    /// trains streetwise, win or lose. Refused -- `heard` false, nothing
+    /// changed -- when no hearing awaits one.
+    Arraignment plead(Plea plea);
+    /// THE ROPE was passed and carried out. The one true game over; what the
+    /// room refuses and the screen shows while it is set is the rope's own
+    /// step, after this build's.
+    [[nodiscard]] bool executed() const noexcept;
 
     /// Which day of the world this is. Monotonic across midnight and across a
     /// night in a cell, because a deadline that wrapped with the wall clock

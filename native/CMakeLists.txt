@@ -142,6 +142,10 @@ add_library(granadad-sim STATIC
     # that is the reason to be carrying them in the first place.
     src/sim/contraband.cpp
     src/sim/watch.cpp
+    # JUSTICE BUILD -- the court: the plea, the priest's weighing and the
+    # judgment, rules only, beside watch.cpp (what the paper asks for) and
+    # read by crime.cpp (what the record keeps).
+    src/sim/justice.cpp
     src/sim/contract.cpp
     # S9 -- being unseen, and the lock. stealth.cpp is the first integer light
     # model on this side of the line; lockpick.cpp is a lock whose pins are a

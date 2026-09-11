@@ -1403,14 +1403,16 @@ void Tavern::slayActor(Actor& target) {
     // and nothing rises. Routed beside noteCrime's six: no faction-mirror bump
     // in v1 (murder is not guild work). The COURT that decides what
     // condemnation means is the separate justice build.
-    bool witnessed = false;
+    // JUSTICE BUILD: COUNTED, not just found. Who saw it is the rope tier's
+    // own term at the bench (N SAW IT), so the loop runs the room rather than
+    // stopping at the first face. Same rule, same answer to "witnessed".
+    std::int32_t witnesses = 0;
     for (const Actor& bystander : actors_) {
         if (bystander.id() == target.id() || isFloored(bystander.activity())) {
             continue;
         }
         if (noticeBy(bystander).seen) {
-            witnessed = true;
-            break;
+            ++witnesses;
         }
     }
     // A corpse is a Downed that never stands (Activity::Dead) -- advanceSecond
@@ -1420,8 +1422,8 @@ void Tavern::slayActor(Actor& target) {
     target.setActivity(Activity::Dead);
     dialogue_.ledger().record(target.id(), Deed::Slew);
     spreadWitness(target.id(), Deed::Slew);
-    if (witnessed) {
-        dialogue_.crimes().markMurderer();
+    if (witnesses > 0) {
+        dialogue_.crimes().markMurderer(witnesses);
     }
 }
 
@@ -3744,62 +3746,115 @@ void Tavern::applyArrest(Actor& officer) {
     const std::int32_t roofs = dialogue_.factions().indexOf("skyrunners");
     const bool skyrunner = dialogue_.standings().isMember(roofs);
 
-    const CrimeLedger::ArrestOutcome outcome =
-        crimes.arrest(skyrunner, playerCoin_, drawForPlayerAction());
-    playerCoin_ = std::max(0, playerCoin_ - outcome.fine);
-    dialogue_.setPlayerCoin(playerCoin_);
-    // A job whose goods are in the impound is a job you have lost. THIS is what
-    // makes an arrest cost more than a night: the coin was never the point.
-    const std::int32_t lost = dialogue_.contracts().seizeFor(before);
+    // JUSTICE BUILD. THE CHARGE SHEET FIRST, draw-free, off the ledger: what
+    // the paper asks for (the shipped ladder, the murder override with it),
+    // the worst line since the bench last heard you, and the three plea
+    // inputs the priest reads -- the tongue, what you gave at the Mission's
+    // door, and what the ward thinks of you -- captured now, because nothing
+    // between the arrest and the plea changes the charge.
+    const std::int32_t temple = dialogue_.factions().indexOf("temple");
+    const ChargeSheet sheet =
+        crimes.charge(skyrunner, dialogue_.skills().level(kHaggleSkill),
+                      temple >= 0 ? dialogue_.standings().standing(temple) : 0,
+                      dialogue_.ledger().reputation());
+    // THE ONE DRAW, spent here at the same stream position it always was.
+    // The nights read its low residue (heldHours); a denial at the bench
+    // reads a declared band above them (justice.hpp). No new draw, no new
+    // stream, whichever way the arrest resolves.
+    const std::uint64_t draw = drawForPlayerAction();
 
     lastArrest_ = ArrestReport{};
     lastArrest_.happened = true;
-    lastArrest_.sentence = outcome.sentence;
+    lastArrest_.sentence = sheet.tier;
     lastArrest_.cause = watchCause_;
-    lastArrest_.unitsSeized = outcome.unitsSeized;
-    lastArrest_.fine = outcome.fine;
-    lastArrest_.heldHours = outcome.heldHours;
-    lastArrest_.contractsLost = lost;
     lastArrest_.officer = officer.name();
 
     const char* table = "watch.fined";
-    switch (outcome.sentence) {
-        case Sentence::Held:
-            table = "watch.held";
-            break;
-        case Sentence::Maimed:
-            table = "watch.maimed";
-            break;
-        case Sentence::Condemned:
-            table = "watch.condemned";
-            break;
-        default:
-            break;
+    if (sheet.tier == Sentence::Fined) {
+        // NO PAPER, SO NO CELL FOR YOU. Cull's search at the door is the
+        // pre-court fast path exactly as shipped: the jars to the impound, a
+        // charge for his evening, the heat untouched, and out.
+        const CrimeLedger::ArrestOutcome outcome = crimes.arrest(skyrunner, playerCoin_, draw);
+        playerCoin_ = std::max(0, playerCoin_ - outcome.fine);
+        dialogue_.setPlayerCoin(playerCoin_);
+        lastArrest_.unitsSeized = outcome.unitsSeized;
+        lastArrest_.fine = outcome.fine;
+        lastArrest_.heldHours = outcome.heldHours;
+    } else {
+        // WITH PAPER: the impound, and then the Mission. The sack is emptied
+        // here because seized cargo is Cull's job whatever the bench says; the
+        // fine, the nights and the record are the court's now, so none of
+        // them is written yet and the clock does not jump. The hearing opens
+        // on the ledger with the sheet, the seizure, the draw and the man who
+        // laid the paper; the plea is a stepped input and the sentence waits
+        // on it.
+        lastArrest_.unitsSeized = crimes.seizeAtArrest();
+        crimes.openHearing(sheet, lastArrest_.unitsSeized, draw, officer.name());
+        switch (sheet.tier) {
+            case Sentence::Held:
+                table = "watch.held";
+                break;
+            case Sentence::Maimed:
+                table = "watch.maimed";
+                break;
+            case Sentence::Condemned:
+                table = "watch.condemned";
+                break;
+            default:
+                break;
+        }
     }
+    // A job whose goods are in the impound is a job you have lost. THIS is what
+    // makes an arrest cost more than a night: the coin was never the point.
+    lastArrest_.contractsLost = dialogue_.contracts().seizeFor(before);
+    // The officer's own line: the door's for a search, the walk to the bench
+    // for paper (the shipped watch.held/maimed/condemned rows already read as
+    // exactly that).
     lastArrest_.line = officer.name() + ": " +
                        std::string(dialogue_.barks().line(
                            dialogue_.barks().resolve({std::string(table)}),
-                           crimes.arrests() + outcome.unitsSeized));
+                           crimes.arrests() + lastArrest_.unitsSeized));
 
-    if (outcome.heldHours > 0) {
-        // The night goes by in the cell and nothing in it is simulated -- the
-        // same honest jump sleeping in a rented bed already makes.
-        skipHours(outcome.heldHours);
-    }
     // Whatever the house was minding is somebody else's problem now.
     standing_ = Standing::Welcome;
     brawlers_.clear();
-    // STANCE (lower rule 3): taken by the Watch, the hands come down --
-    // whether or not the sentence skipped the clock.
+    // STANCE (lower rule 3): taken by the Watch, the hands come down.
     lowerPlayerHands();
     respondingBouncerId_ = -1;
     watchStance_ = WatchStance::Idle;
     watchmanId_ = -1;
     watchCause_ = WatchCause::None;
     officer.setActivity(Activity::Watching);
-    // And the body is turned loose on the Tarwalk. The room does not own it, so
+    // And the body is somebody else's to move: to the Tarwalk after a search,
+    // to the Mission's door with a hearing open. The room does not own it, so
     // it asks -- see takeArrestRelease.
     arrestRelease_ = true;
+}
+
+bool Tavern::hearingPending() const noexcept {
+    return dialogue_.crimes().hearingPending();
+}
+
+const HearingState& Tavern::hearing() const noexcept {
+    return dialogue_.crimes().hearing();
+}
+
+Arraignment Tavern::plead(Plea plea) {
+    CrimeLedger& crimes = dialogue_.crimes();
+    if (!crimes.hearing().awaitingPlea()) {
+        return Arraignment{};
+    }
+    const Arraignment answer = crimes.plead(plea);
+    if (answer.heard && answer.plea != Plea::NoPlea) {
+        // A plea is a haggle with your neck on the table. Daggerfall's
+        // Streetwise trains on the plea, win or lose; so does the ward's.
+        (void)dialogue_.skills().use(kHaggleSkill);
+    }
+    return answer;
+}
+
+bool Tavern::executed() const noexcept {
+    return dialogue_.crimes().executed();
 }
 
 const Actor* Tavern::respondingWatchman() const noexcept {

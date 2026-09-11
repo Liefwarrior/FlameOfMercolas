@@ -7153,19 +7153,27 @@ std::string Session::heatLine() const {
     const sim::CrimeLedger& crimes = tavern_->dialogue().crimes();
     const sim::Stash& sack = crimes.stash();
     if (crimes.heat() <= 0 && crimes.loot() <= 0 && !crimes.carryingBale() && sack.empty() &&
-        !crimes.maimed() && !sheetCarry_) {
+        !crimes.maimed() && !crimes.condemned() && !sheetCarry_) {
         return {};
     }
     std::string line;
-    // The two the ward has done TO you outrank everything else on the line:
-    // a condemned man wants to know he is one before he wants his heat.
+    // THE CRIMINAL TAG (JUSTICE BUILD, section 1.2). Three states the ledger
+    // keeps, one row. The two the ward has done TO you outrank everything
+    // else on the line: a condemned man wants to know he is one before he
+    // wants his heat. CONDEMNED is the shipped word with the court's meaning
+    // -- the rope passed and commuted, for the rest of the run.
     if (crimes.condemned()) {
         line = "CONDEMNED  ";
     } else if (crimes.maimed()) {
         line = "MAIMED  ";
     }
+    // WANTED is paper; WANTED FOR BLOOD is paper with a corpse behind it,
+    // which only the bench clears. A murderer whose heat has cooled is not
+    // WANTED on this row -- the paper lapsed -- but the next arrest on any
+    // paper is a rope hearing, and the row does not pretend otherwise by
+    // inventing a word for it: standing stays a phrase, heat stays a number.
     if (crimes.warrant()) {
-        line += "WANTED  ";
+        line += crimes.murderer() ? "WANTED FOR BLOOD  " : "WANTED  ";
     }
     line += "HEAT " + std::to_string(crimes.heat());
     if (crimes.loot() > 0) {
