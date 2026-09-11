@@ -1035,8 +1035,11 @@ namespace Granadad.LotPipeline {
             for (int s = 0; s < matOrder.Count; s++) combined.SetTriangles(tris[matOrder[s]], s);
             combined.RecalculateBounds();
 
-            // Drop every source renderer (active or hidden) and then every empty non-bone
-            // leaf, so the glb is skeleton + Body and nothing else.
+            // Drop every source renderer (active or hidden) and then every empty leaf
+            // outside the skeleton, so the glb is skeleton + Body and nothing else. The
+            // skeleton subtree (the top-level ancestor of the first bone, e.g. "Root") is
+            // never pruned: the Humanoid avatar maps bones the parts may not weight
+            // (toes, finger tips) and the retarget needs every one of them present.
             foreach (var r in root.GetComponentsInChildren<Renderer>(true).ToList()) {
                 if (r == null) continue;
                 var go = r.gameObject;
@@ -1044,7 +1047,9 @@ namespace Granadad.LotPipeline {
                 Object.DestroyImmediate(r);
                 if (mf != null) Object.DestroyImmediate(mf);
             }
-            PruneEmpty(root.transform, boneIndex);
+            var skeletonRoot = bones[0];
+            while (skeletonRoot.parent != null && skeletonRoot.parent != root.transform) skeletonRoot = skeletonRoot.parent;
+            PruneEmpty(root.transform, skeletonRoot);
 
             var bodyGo = new GameObject("Body");
             bodyGo.transform.SetParent(root.transform, false);
@@ -1076,11 +1081,12 @@ namespace Granadad.LotPipeline {
             return true;
         }
 
-        // Bottom-up: a transform with no other components, no children and no bone role goes.
-        static void PruneEmpty(Transform t, Dictionary<Transform, int> bones) {
-            for (int i = t.childCount - 1; i >= 0; i--) PruneEmpty(t.GetChild(i), bones);
+        // Bottom-up: a transform with no other components and no children goes, unless it
+        // is the skeleton or lives inside it.
+        static void PruneEmpty(Transform t, Transform skeletonRoot) {
+            if (t == skeletonRoot) return;
+            for (int i = t.childCount - 1; i >= 0; i--) PruneEmpty(t.GetChild(i), skeletonRoot);
             if (t.parent == null) return;
-            if (bones.ContainsKey(t)) return;
             if (t.childCount == 0 && t.GetComponents<Component>().Length == 1) Object.DestroyImmediate(t.gameObject);
         }
     }

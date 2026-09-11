@@ -302,3 +302,46 @@ Same schema, cell size and cell order as the Synty sheets, drawn from code in ME
 
 2 files, 17,662 bytes.
 <!-- lot-pipeline:end lot-viewmodel-silhouette -->
+
+## 3D exports -- content/art/lot-3d/ (the docks set and the rigs)
+
+Hand-written lane note (not a generated block). `render-lot.ps1 -Mode gltf|glb` + `lot3d-manifest.py` append the generated
+`<!-- lot-pipeline:begin lot3d -->` block below it on the first licensed run; until then this is the list of what the jobs export,
+so the renderer lanes can code against the names. Everything lands gitignored under `content/art/lot-3d/` (this worktree and fom-3d);
+licence asset-store-eula (Synty POLYGON meshes/atlases, Malbers Animations clips baked into the rigs). Coordinates: glTF right-handed
+Y-up, X mirrored from Unity, 1 unit = 1 m = 1 tile; bone names survive (`Root`, `Hips`, `Spine_01`.., `Hand_R`).
+
+**Static set** `static/<pack>/<prefab>.gltf` + `.bin` (+ the pack atlas PNG once per folder), job `tools/lot-pipeline/unity/jobs/docks-3d-static.json`:
+
+| pack | role | count | prefabs |
+|---|---|---|---|
+| PolygonGeneric | world | 35 | `SM_Bld_Base_Floor_01`, `SM_Bld_Base_Floor_Half_01`, `SM_Bld_Base_Floor_Quarter_Combined_01`, `SM_Bld_Base_Floor_Hole_01`, `SM_Bld_Base_Ceiling_01`, `SM_Bld_Base_Ceiling_Half_01`, `SM_Bld_Base_Wall_01`, `SM_Bld_Base_Wall_Half_01`, `SM_Bld_Base_Wall_Quarter_01`, `SM_Bld_Base_Wall_Corner_01`, `SM_Bld_Base_Wall_Door_01`, `SM_Bld_Base_Wall_Door_Double_01`, `SM_Bld_Base_Wall_Door_Large_01`, `SM_Bld_Base_Wall_Window_01`, `SM_Bld_Base_Wall_Window_Double_01`, `SM_Bld_Base_Wall_Window_Half_01`, `SM_Bld_Base_Wall_Thin_01`, `SM_Bld_Base_Wall_Thin_Half_01`, `SM_Bld_Base_Wall_Trim_01`, `SM_Bld_Base_Wall_Destroyed_01`, `SM_Bld_Base_Door_01`, `SM_Bld_Base_Door_Large_01`, `SM_Bld_Base_Pillar_01`, `SM_Bld_Base_Pillar_Half_01`, `SM_Bld_Base_Roof_Straight_01`, `SM_Bld_Base_Roof_Half_01`, `SM_Bld_Base_Roof_Cap_01`, `SM_Bld_Base_Roof_Cap_End_01`, `SM_Bld_Base_Roof_Corner_In_01`, `SM_Bld_Base_Roof_Corner_Out_01`, `SM_Bld_Base_Roof_Trim_01`, `SM_Bld_Base_Stairs_01`, `SM_Bld_Base_Stairs_02`, `SM_Bld_Base_Stairwell_Wall_01`, `SM_Bld_Base_45_Wall_01` |
+| PolygonGeneric | prop | 26 | `SM_Gen_Prop_Barrel_Wood_01`, `SM_Gen_Prop_Barrel_Wood_02`, `SM_Gen_Prop_Barrel_Wood_03`, `SM_Gen_Prop_Barrel_Metal_01`, `SM_Gen_Prop_Crate_01`, `SM_Gen_Prop_Crate_02`, `SM_Gen_Prop_Crate_03`, `SM_Gen_Prop_Crate_Preset_01`, `SM_Gen_Prop_Chain_01`, `SM_Gen_Prop_Chain_Anchor_01`, `SM_Gen_Prop_Rope_01`, `SM_Gen_Prop_Rope_Knot_01`, `SM_Gen_Prop_Sack_01`, `SM_Gen_Prop_Sack_Stack_01`, `SM_Gen_Prop_Plank_01`, `SM_Gen_Prop_Plank_02`, `SM_Gen_Prop_Hook_01`, `SM_Gen_Prop_Bottle_01`, `SM_Gen_Prop_Mug_01`, `SM_Gen_Prop_Table_01`, `SM_Gen_Prop_Chair_01`, `SM_Gen_Prop_Chest_01`, `SM_Gen_Prop_Shelf_01`, `SM_Gen_Prop_Pot_01`, `SM_Gen_Prop_Light_Wall_01`, `SM_Gen_Prop_Food_Bread_01` |
+| PolygonGeneric | world | 3 | `SM_Gen_Bld_Beam_01`, `SM_Gen_Bld_Beam_02`, `SM_Gen_Bld_Ladder_01` |
+| PolygonGeneric | world | 2 | `SM_Gen_Env_Water_Plane_01`, `SM_Gen_Env_Ground_Dirt_01` |
+| PolygonKnights | world | 26 | `SM_Bld_House_Room_01`, `SM_Bld_House_Room_02`, `SM_Bld_House_RoomTall_01`, `SM_Bld_House_RoomTop_01`, `SM_Bld_House_TopRoomSmall_01`, `SM_Bld_House_Door_01`, `SM_Bld_House_Door_02`, `SM_Bld_House_Window_01`, `SM_Bld_House_Window_02`, `SM_Bld_House_Chimney_01`, `SM_Bld_House_Foundation_01`, `SM_Bld_House_Foundation_02`, `SM_Bld_House_Foundation_Beams_01`, `SM_Bld_House_Extension_01`, `SM_Bld_House_StepsSmall_01`, `SM_Bld_Leanto_01`, `SM_Bld_Castle_Wall_01`, `SM_Bld_Castle_Door_01`, `SM_Bld_Castle_Iron_Gate_01`, `SM_Bld_Castle_Wall_Gate_01`, `SM_Bld_Castle_Tower_Mini_01`, `SM_Bld_Rockwall_Straight_01`, `SM_Bld_Rockwall_Archway_01`, `SM_Bld_StairsLarge_01`, `SM_Bld_Village_Well_01`, `SM_Bld_Tent_01` |
+| PolygonKnights | prop | 18 | `SM_Prop_Lampost_01`, `SM_Prop_Brazier_01`, `SM_Prop_CampFire_01`, `SM_Prop_Crate_01`, `SM_Prop_Cart_01`, `SM_Prop_CartWheel_01`, `SM_Prop_Fence_01`, `SM_Prop_Fence_02`, `SM_Prop_Grate_01`, `SM_Prop_Rowboat_01`, `SM_Prop_ShopSign_01`, `SM_Prop_Banner_01`, `SM_Prop_Beam_01`, `SM_Prop_Trapdoor_01`, `SM_Prop_WaterWheel_01`, `SM_Prop_Weathervane_01`, `SM_Prop_Plinth_01`, `SM_Prop_Gravestone_01` |
+| PolygonKnights | world | 15 | `SM_Env_Canal_01`, `SM_Env_Canal_02`, `SM_Env_Canal_Block_01`, `SM_Env_Canal_Bridge_01`, `SM_Env_Path_Cobble_01`, `SM_Env_Path_Cobble_02`, `SM_Env_Path_Cobble_Stone_01`, `SM_Env_Path_Stone_01`, `SM_Env_Path_Tile_01`, `SM_Env_Tile_Dirt_01`, `SM_Env_Tile_Grass_01`, `SM_Env_Tile_Water_01`, `SM_Env_RockPile_01`, `SM_Env_Tree_01`, `SM_Env_Tree_Twisted_01` |
+| PolygonDungeonRealms | prop | 17 | `SM_Prop_Barrel_01`, `SM_Prop_Barrel_Small_01`, `SM_Prop_Barrel_Stack_01`, `SM_Prop_Barrel_Broken_01`, `SM_Prop_Crate_01`, `SM_Prop_Crate_Stack_01`, `SM_Prop_Crate_Broken_01`, `SM_Prop_Camp_Lantern_01`, `SM_Prop_Camp_Plank_01`, `SM_Prop_Camp_Table_01`, `SM_Prop_Camp_HangingBag_01`, `SM_Prop_Chair_01`, `SM_Prop_Mug_01`, `SM_Prop_Dwarf_Torch_01`, `SM_Prop_Dwarf_Chain_01`, `SM_Prop_Dwarf_Chair_Bench_01`, `SM_Prop_Dwarf_Fire_Pit_01` |
+| PolygonDungeonRealms | world | 1 | `SM_Generic_Water_Plane_01` |
+| PolygonFantasyHeroCharacters | weapon | 5 | `SM_Wep_Dagger_01`, `SM_Wep_Sword_01`, `SM_Wep_Sword_Small_01`, `SM_Wep_Mace_01`, `SM_Wep_Axe_01` |
+| PolygonDungeonRealms | weapon | 4 | `SM_Wep_Knife_Small_01`, `SM_Wep_Mace_Medium_01`, `SM_Wep_Sword_Medium_01`, `SM_Wep_Staff_01` |
+| PolygonKnights | weapon | 2 | `SM_Wep_Broadsword_01`, `SM_Wep_Rapier_01` |
+
+154 prefabs. Materials are flattened to base colour + atlas (no tints, no normal/emission maps); LOD0 only; meshes only.
+
+**Rigs** `characters/<name>.glb` (one skin, textures embedded, clips baked at 30 fps, animation index = job order), job `tools/lot-pipeline/unity/jobs/docks-3d-rigs.json`:
+
+| glb | role | source prefab | avatar | clips (index order) |
+|---|---|---|---|---|
+| `characters/townsman.glb` | actor | `Assets/Synty/PolygonGeneric/Prefabs/Characters/SM_Gen_Chr_Peasent_Male_01.prefab` | `Assets/Synty/PolygonGeneric/Models/Generic_Characters.fbx` | 0=`idle`, 1=`walk`, 2=`punch_l`, 3=`punch_r`, 4=`block`, 5=`hit`, 6=`recover`, 7=`death`, 8=`sword_swing`, 9=`spell_blast` |
+| `characters/dockhand.glb` | actor | `Assets/Synty/PolygonFantasyHeroCharacters/Prefabs/Characters_Presets/Chr_FantasyHero_Preset_1.prefab` | `Assets/Synty/PolygonFantasyHeroCharacters/Models/FixedScale/ModularCharacters.fbx` | 0=`idle`, 1=`walk`, 2=`punch_l`, 3=`punch_r`, 4=`block`, 5=`hit`, 6=`recover`, 7=`death`, 8=`sword_swing`, 9=`spell_blast` |
+| `characters/watchman.glb` | actor | `Assets/Synty/PolygonKnights/Prefabs/Characters/SM_Chr_Soldier_01_Blue.prefab` | `Assets/Synty/PolygonKnights/Models/Characters/Characters.fbx` | 0=`idle`, 1=`walk`, 2=`punch_l`, 3=`punch_r`, 4=`block`, 5=`hit`, 6=`recover`, 7=`death`, 8=`sword_swing`, 9=`spell_blast` |
+| `characters/viewmodel_fists.glb` | viewmodel | `Assets/Synty/PolygonFantasyHeroCharacters/Prefabs/Characters_Presets/Chr_FantasyHero_Preset_1.prefab` | `Assets/Synty/PolygonFantasyHeroCharacters/Models/FixedScale/ModularCharacters.fbx` | 0=`idle`, 1=`charging`, 2=`charged_hard`, 3=`swing_light`, 4=`swing_hard`, 5=`block`, 6=`cast`, 7=`hit` |
+| `characters/viewmodel_sword.glb` | viewmodel | `Assets/Synty/PolygonFantasyHeroCharacters/Prefabs/Characters_Presets/Chr_FantasyHero_Preset_1.prefab` | `Assets/Synty/PolygonFantasyHeroCharacters/Models/FixedScale/ModularCharacters.fbx` | 0=`idle`, 1=`charging`, 2=`charged_hard`, 3=`swing_light`, 4=`swing_hard`, 5=`block`, 6=`cast`, 7=`hit` |
+
+Actor clip sources (index 0-7 = `granadad::render3d::ActorClip`, 8-9 extras): `idle` = Idle/Idle_Combat.fbx : Idle_Combat; `walk` = Locomotion/Strafe/S_Strafe_Walk_N_IP.fbx : S_Strafe_Walk_N_IP; `punch_l` = Attacks/H_Punching Left.fbx : H_Punching Left; `punch_r` = Attacks/H_Punching Right.fbx : H_Punching Right; `block` = Block/H_Block_Unharmed.fbx : H_Block_Disarmed; `hit` = Hit/H_Hit_Front.fbx : H_Hit_Front; `recover` = Recover/S_Recover_FaceDown.fbx : S_Recover_FaceDown; `death` = Deaths/H_Death1.fbx : H_Death1; `sword_swing` = Weapons/Sword_OneHand/Human_SwordOneHand_Right.fbx : Human_SwordOneHand_Right; `spell_blast` = Weapons/Spell_1H/H_1HSpell_Blast_Loop.fbx : H_1HSpell_Blast_Loop.
+Viewmodel clips (index = `granadad::render3d::ViewmodelState`): fists = Idle_Combat, H_Punching Right (charging, swing_light), H_Punching Left (charged_hard, swing_hard), H_Block_Disarmed, H_1HSpell_Blast_Loop, H_Hit_Front; sword = the same with Human_SwordOneHand_Right_Charge / _Right / _SwipeUp and H_Block_Axe, `SM_Wep_Sword_01` fused into the hand.
+
+Status 2026-09-11: tool, jobs and ledger step committed and compiled offline; the export run needs a signed-in Unity licence on this machine (exit 198, 0 entitlements) -- open Unity Hub, sign in, rerun the two commands in `tools/lot-pipeline/unity/README.md`.
+
