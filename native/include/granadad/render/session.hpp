@@ -2485,6 +2485,16 @@ private:
     /// its two siblings.
     ImpactPulse blockPulse_;
     std::int32_t lastBlowsBlocked_ = 0;
+    /// STREET PANIC BUILD (feel/build, 9a). What the room looked like last
+    /// step, so step() can tell the street what just happened to it: the sum
+    /// of every non-vermin hp on the tavern roster (a drop under lethal rules
+    /// is a landed blow) and how many of them are corpses (a rise is a
+    /// killing). The identical comparison-not-flag shape lastPlayerHp_ keeps
+    /// for the player's own body, and for the identical reason: nothing new
+    /// reaches into the simulation and nothing here is hashed. -1 until the
+    /// first step has read the room, so boot never reads as a blow.
+    std::int32_t lastRoomHpForAlarm_ = -1;
+    std::int32_t lastCorpsesForAlarm_ = -1;
     /// ACTION-COMBAT BUILD (section 5, channel 5). THE CAMERA IMPULSE, composed
     /// as a render-only BAM offset inside Session::camera() -- never written to
     /// sim yaw. Three events, three pulses: a HARD swing's own forward dip on

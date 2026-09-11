@@ -666,6 +666,15 @@ if(GRANADAD_BUILD_TESTS)
         # sprint arriving at, and a soak that watches the mouse count actually
         # fall and come back.
         tests/test_ward_hunt.cpp
+        # STREET PANIC BUILD (feel/build, 9a) -- AND WHETHER THE STREET RUNS
+        # FROM A KNIFE. The alarm against the three-clause witness rule,
+        # computed independently (same band, in range, line of sight); the
+        # walled, the other-band, the far and the Watch all untouched; the
+        # panic lasting as long as its severity says and no longer; the
+        # frightened alone paying the panic rate; and the population's
+        # twin-run byte-identical after an alarm -- the one declared
+        # population baseline move of the Oblivion-feel program.
+        tests/test_street_panic.cpp
         # #80 -- THE ORIGIN-SELECT AND CUSTOMIZE FLOW. Three cards, a name
         # field, and a real sim::Chargen sheet hosted rather than reinvented
         # -- see creation.hpp's own header on why this reuses

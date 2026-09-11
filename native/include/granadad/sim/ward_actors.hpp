@@ -722,6 +722,102 @@ static_assert(kScavengeCeiling < kNeedLow,
 inline constexpr std::int32_t kPreyPanicRadius = 6;
 
 // ---------------------------------------------------------------------------
+// STREET PANIC (feel/build, 9a): the crowd reacts to violence it can see
+// ---------------------------------------------------------------------------
+//
+// Eli, 2026-09-10: "I'd expect the watch and crowd to react appropriately to
+// the violence they're witnessing." WardPolicy::Flee was built, hashed and
+// DEAD for people: every authored row starts Safety at 9,000 or 10,000 with a
+// decay of 0, and until this build the only thing that ever lowered it was a
+// cat closing on a mouse (actHunt, kPreyPanicRadius above). alarm() is the
+// trigger the channel was waiting for, and everything under it is the needs
+// machinery that already existed: FLEE fires at the raws' own priority, the
+// reserve climbs back, and NOTHING NEW IS HASHED -- needs[3] and needAccum[3]
+// have been in hash_into since the port.
+//
+// WHO PANICS: the three-clause witness rule the taproom's spreadWitness keeps,
+// applied draw-free -- SAME BAND (somebody one floor up is not on the street),
+// WITHIN RANGE (Chebyshev, the metric witnessesAround already uses) and LINE
+// OF SIGHT through TileQuery::lineOfSight (the Gull is roofed and walled, so a
+// killing at the bar reaches the street only through the door). People only,
+// as witnessesAround counts them -- and NOT THE WATCH. A watchman who runs from
+// a drawn knife is the wrong feel; what he does instead (Respond, 9b) sequences
+// after the justice build, and until then he holds, as the Gull's bouncers hold
+// the door and never rout (Tavern::isProfessional, the same rule).
+//
+// THE TUNING IS CODE, NOT RAWS. The raws' own Safety recovery is 2-4 a tick in
+// Java ticks, which this engine's day rescales to about half a point a second:
+// a serf driven to nothing would run for half an hour. That rate is right for a
+// mouse (mouse.json says 25 and the chase is tuned to it) and wrong for a
+// street, and COMBAT-ACTION-SPEC.md section 1 forbids content edits -- so the
+// panic rate is a constant here, and moves to the raws when the actor files
+// are next opened (DECISIONS.md, "Oblivion feel: street panic").
+
+/// How bad what they saw was. Picks the radius the alarm carries and how far
+/// the reserve is driven down: a blade makes the nearby give you room for
+/// half a minute; a killing empties the street for the better part of two.
+enum class AlarmSeverity : std::uint8_t {
+    /// Steel in a raised hand, or the hands up over a floored man.
+    Steel = 0,
+    /// A blow landed on somebody under lethal rules.
+    Blow = 1,
+    /// A killing. A body that will not get up.
+    Kill = 2,
+};
+
+/// How far each severity carries, in tiles. Six is across a street; twelve is
+/// a stretch of it; twenty-four is the predators' own sense radius, the
+/// furthest anybody in this district notices anything.
+inline constexpr std::int32_t kAlarmRadiusSteel = 6;
+inline constexpr std::int32_t kAlarmRadiusBlow = 12;
+inline constexpr std::int32_t kAlarmRadiusKill = 24;
+
+/// Where the reserve is driven to, per severity. Every one is under
+/// kNeedCritical, so FLEE fires next tick for everybody alarmed; the depth is
+/// how long they run before the gate lets them stop.
+inline constexpr std::int32_t kPanicSafetySteel = 700;
+inline constexpr std::int32_t kPanicSafetyBlow = 250;
+inline constexpr std::int32_t kPanicSafetyKill = 0;
+
+/// Extra Safety a FRIGHTENED person recovers per tick -- one whose reserve is
+/// under kNeedCritical, which is to say one FLEE is driving -- on top of the
+/// raws' own rate. Nine a second puts a serf driven to nothing back over the
+/// gate in about 105 seconds (from 700 in ~31, from 250 in ~78). A person who
+/// is not frightened recovers at the raws' rate exactly as before, so the
+/// no-player gate run's arithmetic is untouched by construction; beasts are
+/// never alarmed and keep their own rates (the mouse's chase depends on it).
+inline constexpr std::int32_t kPanicRecoverPerTick = 9;
+
+static_assert(kPanicSafetySteel < kNeedCritical && kPanicSafetyBlow < kNeedCritical &&
+                  kPanicSafetyKill < kNeedCritical,
+              "an alarm that does not cross the FLEE gate frightens nobody");
+static_assert(kPanicSafetyKill <= kPanicSafetyBlow && kPanicSafetyBlow <= kPanicSafetySteel,
+              "a killing must frighten a street at least as long as a blow, and a blow as "
+              "long as a blade");
+static_assert(kAlarmRadiusSteel <= kAlarmRadiusBlow && kAlarmRadiusBlow <= kAlarmRadiusKill,
+              "a killing must carry at least as far as a blow, and a blow as far as a blade");
+
+[[nodiscard]] constexpr std::int32_t alarmRadius(AlarmSeverity severity) noexcept {
+    switch (severity) {
+        case AlarmSeverity::Steel: return kAlarmRadiusSteel;
+        case AlarmSeverity::Blow: return kAlarmRadiusBlow;
+        case AlarmSeverity::Kill: return kAlarmRadiusKill;
+    }
+    return kAlarmRadiusKill;
+}
+
+[[nodiscard]] constexpr std::int32_t alarmFloor(AlarmSeverity severity) noexcept {
+    switch (severity) {
+        case AlarmSeverity::Steel: return kPanicSafetySteel;
+        case AlarmSeverity::Blow: return kPanicSafetyBlow;
+        case AlarmSeverity::Kill: return kPanicSafetyKill;
+    }
+    return kPanicSafetyKill;
+}
+
+[[nodiscard]] std::string_view alarmSeverityName(AlarmSeverity severity) noexcept;
+
+// ---------------------------------------------------------------------------
 // the system
 // ---------------------------------------------------------------------------
 
@@ -824,6 +920,20 @@ public:
     /// What "did anybody see that" is asked of on a street with no walls in it.
     [[nodiscard]] std::int32_t witnessesAround(std::int32_t actorId,
                                                std::int32_t reachTiles) const noexcept;
+
+    /// STREET PANIC. Frightens every person who can SEE (x, y) on `band` from
+    /// within `radiusTiles` -- same band, Chebyshev range, line of sight --
+    /// by driving their Safety down to alarmFloor(severity), so FLEE fires
+    /// next tick and the street scatters; kPanicRecoverPerTick brings them
+    /// back. A reserve already lower is left where it is. Answers how many
+    /// saw it. Draw-free, and touches no field the hash does not already
+    /// cover. The Watch is exempt (it holds); beasts are not asked.
+    ///
+    /// The caller passes the radius as well as the severity so a case can
+    /// probe the edge of the rule directly; the client passes
+    /// alarmRadius(severity), which is the three tiers.
+    std::int32_t alarm(std::int32_t x, std::int32_t y, std::int32_t band,
+                       std::int32_t radiusTiles, AlarmSeverity severity) noexcept;
 
     [[nodiscard]] std::int32_t secondOfDay() const noexcept { return secondOfDay_; }
     [[nodiscard]] std::int64_t currentTick() const noexcept { return tick_; }

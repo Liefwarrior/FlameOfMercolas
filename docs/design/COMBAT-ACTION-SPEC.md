@@ -38,6 +38,9 @@ thieving, or targeting); the never-remove actor convention; terminal register + 
 conventions (DECISIONS.md:61); device-aware prompts; NO new art, NO font changes, NO map/content
 edits. **The population baseline `0x2646C1AAA2BA38DF` must not move** (no WardActor edits
 anywhere); the tavern/gate-workload baseline moves exactly once, declared at lane-SIM's landing.
+*(v1's contract, kept. The Oblivion-feel program AFTER v1 made the ONE declared population move
+— street panic, 9a, `WardPopulation::alarm` — re-blessed at the same number; DECISIONS.md
+"Oblivion feel: street panic".)*
 
 ---
 

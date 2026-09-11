@@ -4057,6 +4057,65 @@ void Session::step(const sim::MoveInput& input) {
         timeOfDay_ = tavern_->timeOfDay();
         settings_.timeOfDay = timeOfDay_;
     }
+    // STREET PANIC BUILD (feel/build, 9a). THE STREET REACTS TO WHAT IT CAN
+    // SEE, and this is the ONE call site that tells it. The tavern's own
+    // violence is read off public state by the comparison-not-flag shape the
+    // hp watch above uses, tiered, and handed to the district's people at
+    // the player's own tile -- the takeCoinFrom shape: the client moves a
+    // WardActor through one named verb and hashes nothing of its own. Three
+    // tiers, by severity (ward_actors.hpp names every constant and why):
+    //   KILL   a body on the roster died this step -- a non-vermin corpse
+    //          appeared. The edge, fired at once.
+    //   BLOW   a blow landed on somebody under LETHAL rules this step -- the
+    //          room's hp fell while a lethal fight was live or the fight had
+    //          escalated. The edge, fired at once. A bar-fight punch is the
+    //          house's business and frightens nobody outside.
+    //   STEEL  the hands are up with steel in them, or up over a floored man
+    //          in reach. Continuous, so it is re-asserted once a simulated
+    //          second -- on the ward's own tick, just taken -- and the bubble
+    //          follows a man walking the Tarwalk with a blade out.
+    // Who actually runs is the ward's rule (same band, in range, line of
+    // sight), which is why a killing inside the roofed Gull reaches the street
+    // only through the door. people_ is null in a session without a district
+    // (the tavern fixture), and then the street is nobody.
+    if (people_ != nullptr) {
+        std::int32_t roomHp = 0;
+        std::int32_t corpses = 0;
+        bool flooredInReach = false;
+        for (const sim::Actor& actor : tavern_->actors()) {
+            if (actor.role() == sim::ActorRole::Vermin) {
+                continue;  // a rat is not a man, alive or dead
+            }
+            roomHp += actor.hp();
+            if (actor.activity() == sim::Activity::Dead) {
+                ++corpses;
+            }
+            if (actor.present() && sim::isFloored(actor.activity()) &&
+                actor.distanceTo(body_->x(), body_->y()) <= sim::kMeleeReach) {
+                flooredInReach = true;
+            }
+        }
+        bool alarmed = false;
+        sim::AlarmSeverity severity = sim::AlarmSeverity::Steel;
+        if (lastCorpsesForAlarm_ >= 0 && corpses > lastCorpsesForAlarm_) {
+            severity = sim::AlarmSeverity::Kill;
+            alarmed = true;
+        } else if (lastRoomHpForAlarm_ >= 0 && roomHp < lastRoomHpForAlarm_ &&
+                   (tavern_->lethalFightLive() || tavern_->escalated())) {
+            severity = sim::AlarmSeverity::Blow;
+            alarmed = true;
+        } else if (stepsThisSecond_ == 0 && tavern_->playerHandsUp() &&
+                   (tavern_->playerWeapon() >= sim::kFirstLethalWeapon || flooredInReach)) {
+            severity = sim::AlarmSeverity::Steel;
+            alarmed = true;
+        }
+        if (alarmed) {
+            people_->alarm(body_->tileX(), body_->tileY(), body_->band(),
+                           sim::alarmRadius(severity), severity);
+        }
+        lastRoomHpForAlarm_ = roomHp;
+        lastCorpsesForAlarm_ = corpses;
+    }
     syncWardToCalendar();
     // COURIER CASE. Last, deliberately: the courier's countdown, the take
     // nudge and the scripted delivery all read the step the world just

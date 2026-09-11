@@ -81,6 +81,12 @@ Combined that's **32/32 combat-relevant cases, 97,282 assertions, 0 failed**, li
   run A == run B, PASS.**
 - **The population baseline never moved** — `0x2646C1AAA2BA38DF` at hour 16 /
   7200 ticks, 18,772-byte report, byte-for-byte the recorded Phase C/D baseline.
+  **Then DECLARED MOVED ONCE by the Oblivion-feel program's street panic (feel/build,
+  DECISIONS.md "Oblivion feel: street panic"): `WardPopulation::alarm` is the first thing
+  that ever changed a WardActor's BEHAVIOUR off the player's violence, so the number is
+  re-run and re-blessed by law — `0x2646C1AAA2BA38DF` -> `0x2646C1AAA2BA38DF`, unchanged,
+  because the gate's no-player run frightens nobody and the panic rate is inert above the
+  FLEE gate (`docs/BASELINE-WORLD-HASH.md`, "Oblivion feel — street panic").**
 
 ## The honest gaps
 

@@ -724,6 +724,16 @@ void WardPopulation::decayNeeds(WardActor& actor) {
         if (n == static_cast<std::size_t>(Need::Rest) && actor.atHome()) {
             recover += kRestRecoveredPerKilotickAtHome;
         }
+        // STREET PANIC. A FRIGHTENED PERSON -- one under the FLEE gate, which
+        // only alarm() puts a person under -- recovers at the panic rate on
+        // top of the raws' own, the same shape as the bed's rest bonus above.
+        // Persons only: a mouse's own rate is tuned to its chase, and beasts
+        // are never alarmed. Above the gate the arithmetic is exactly what it
+        // was, which is what keeps the no-player gate run untouched.
+        if (n == static_cast<std::size_t>(Need::Safety) && value < kNeedCritical &&
+            isPerson(actor.type)) {
+            recover += kPanicRecoverPerTick * 1000;
+        }
         accum -= recover;
         while (accum < 0) {
             accum += 1000;
@@ -2017,6 +2027,58 @@ std::int32_t WardPopulation::witnessesAround(std::int32_t actorId,
         }
     }
     return seen;
+}
+
+std::string_view alarmSeverityName(AlarmSeverity severity) noexcept {
+    switch (severity) {
+        case AlarmSeverity::Steel: return "steel";
+        case AlarmSeverity::Blow: return "blow";
+        case AlarmSeverity::Kill: return "kill";
+    }
+    return "kill";
+}
+
+std::int32_t WardPopulation::alarm(std::int32_t x, std::int32_t y, std::int32_t band,
+                                   std::int32_t radiusTiles, AlarmSeverity severity) noexcept {
+    const std::int32_t floor = alarmFloor(severity);
+    std::int32_t saw = 0;
+    for (WardActor& actor : actors_) {
+        // THE TAPROOM'S REFUSALS, IN THE STREET'S TERMS. A corpse is not a
+        // witness and neither is a body in a stomach (visible), a beast is not
+        // asked (witnessesAround's own rule), and THE WATCH HOLDS: a watchman
+        // who ran from a drawn knife would be the wrong reaction, and the right
+        // one -- Respond, 9b -- sequences after the justice build. He stands
+        // where he is, exactly as a bouncer holds the door against steel.
+        if (!actor.visible() || !isPerson(actor.type) || actor.type == WardType::MilitiaWatch) {
+            continue;
+        }
+        // SAME BAND. The taproom's witness filter learned this the hard way
+        // and witnessesAround keeps it: a body one floor up is not on the
+        // street, whatever its (x, y) says.
+        if (actor.band != band) {
+            continue;
+        }
+        // WITHIN RANGE. Chebyshev, the metric witnessesAround already uses.
+        if (chebyshev(actor.x, actor.y, x, y) > radiusTiles) {
+            continue;
+        }
+        // LINE OF SIGHT, the clause witnessesAround lacks and the street needs
+        // most: the Gull is roofed and walled, and a killing at the bar reaches
+        // the Tarwalk only through the door. lineOfSight excludes both
+        // endpoints, so an adjacent body always sees; the alarm's own tile is
+        // answered without asking.
+        if ((actor.x != x || actor.y != y) && !tiles_->lineOfSight(actor.x, actor.y, x, y, band)) {
+            continue;
+        }
+        ++saw;
+        // Driven DOWN to the floor and never up: somebody already more
+        // frightened than this stays that frightened. The accumulator is left
+        // alone -- it is under a thousandth of a point either way.
+        if (actor.needs[static_cast<std::size_t>(Need::Safety)] > floor) {
+            actor.needs[static_cast<std::size_t>(Need::Safety)] = static_cast<std::int16_t>(floor);
+        }
+    }
+    return saw;
 }
 
 // --- reporting -------------------------------------------------------------
