@@ -33,7 +33,7 @@ constexpr std::string_view kRoleNames[kPieceRoleCount] = {
     "joist",       "table",        "bench",       "mug",          "bottle",      "shelf",
     "barrel_rack", "fireplace",    "pillar",      "post",         "parapet",     "roof_tile",
     "rowboat",     "crane",        "gunwale",     "window_timber", "rope",
-    "hull",        "wall_plaster", "stool",
+    "hull",        "wall_plaster", "stool",       "quay_wall",     "roof_flag",
 };
 
 // ---------------------------------------------------------------------------
@@ -87,12 +87,30 @@ constexpr float kFireFlameWidth = 0.34F;
 constexpr float kFireFlameHeight = 0.42F;
 /// Where the flame sits in a lantern hung from `lift` (the lantern's origin
 /// is its top ring; its glass is about half way down) and in a brazier's
-/// cage (the cage floor is at 1.2 m of the 1.9 m stand).
+/// cage (the cage floor is at 1.2 m of the 1.9 m stand), the brazier's
+/// figures at the stand's own scale.
 constexpr float kLanternFlameDrop = 0.66F;
 constexpr float kFireFlameLift = 1.55F;
 constexpr float kEmberLift = 1.24F;
-/// The ember tray is fitted to this square inside the cage, in metres.
+/// The ember tray is fitted to this square inside the cage, in metres, at
+/// the stand's own scale.
 constexpr float kEmberSize = 0.5F;
+/// A pile's head stands this far over the boarded core it is driven
+/// through, in metres.
+constexpr float kPileHeadOver = 0.7F;
+/// A pile's thickness, in metres.
+constexpr float kPileThickness = 0.3F;
+/// How many cells from the water a timber post is still a pile.
+constexpr std::int32_t kWaterReach = 2;
+/// A timber post's tint is the material's top tint lifted this much, in
+/// 1/64ths: a post in the light, not a wall head in the shade.
+constexpr unsigned kPostLift = 90U;
+/// A thin plaster quad overlaps whatever it meets -- the next quad, a door
+/// frame, a corner's leg -- by this much, so no hairline of the chunk shows
+/// at a seam; it stands this much proud of the kit pieces so the overlap
+/// never fights, and every second one along a run a step further.
+constexpr float kCutOverlap = 0.005F;
+constexpr float kCutStagger = 0.002F;
 /// A ceiling lantern hangs its chain from a hair under the ceiling; one
 /// beside an overhang from this far inside the overhang's edge.
 constexpr float kChainDrop = 0.04F;
@@ -111,6 +129,9 @@ constexpr float kShelfLift = 1.55F;
 /// the facade plane.
 constexpr float kLeafOffReveal = 0.14F;
 constexpr float kLeafOffFacade = 0.06F;
+/// The return quad over a frame's end stops this far behind the frame's
+/// outer face, inside its jamb post.
+constexpr float kReturnInset = 0.004F;
 /// A gate's lintel beam height.
 constexpr float kGateLintelLift = 2.85F;
 /// The joist's half-height under a ceiling (the kit beam's section is 0.36).
@@ -215,6 +236,15 @@ struct Vec2 {
                                          255U);
     };
     return Rgba8{ch(a.r, b.r), ch(a.g, b.g), ch(a.b, b.b), ch(a.a, b.a)};
+}
+
+/// A tint's colour lifted by a fixed ratio in 1/64ths (the alpha as is),
+/// clamped: integers only, so every machine lifts it the same way.
+[[nodiscard]] Rgba8 liftTint(const Rgba8& a, unsigned sixtyFourths) noexcept {
+    const auto ch = [sixtyFourths](std::uint8_t p) {
+        return static_cast<std::uint8_t>(std::min(255U, (static_cast<unsigned>(p) * sixtyFourths + 32U) / 64U));
+    };
+    return Rgba8{ch(a.r), ch(a.g), ch(a.b), a.a};
 }
 
 /// [r, g, b] or [r, g, b, a]: a fourth number is the alpha (a translucent
@@ -421,6 +451,52 @@ private:
                wallNeighbours(x, y, z) == 0;
     }
 
+    /// A timber POST: a lone timber cell, or one whose single wall
+    /// neighbour is of another class (a pilaster against a stone wall) or
+    /// is itself a lone pair's other half. The end cell of a timber run
+    /// has a timber neighbour with neighbours of its own, and is a wall.
+    [[nodiscard]] bool isPost(std::int32_t x, std::int32_t y, std::int32_t z) const noexcept {
+        if (!isWall(tiles_, x, y, z) || wallClassAt(x, y, z) != WallClass::Timber) {
+            return false;
+        }
+        int walls = 0;
+        bool runBeside = false;
+        for (int s = 0; s < 4; ++s) {
+            const std::int32_t nx = x + kSideDx[s];
+            const std::int32_t ny = y + kSideDy[s];
+            if (!isWall(tiles_, nx, ny, z)) {
+                continue;
+            }
+            ++walls;
+            if (wallClassAt(nx, ny, z) == WallClass::Timber && wallNeighbours(nx, ny, z) > 1) {
+                runBeside = true;
+            }
+        }
+        return walls == 0 || (walls == 1 && !runBeside);
+    }
+
+    /// The harbour within two cells of a cell, on its own level or the one
+    /// under it: a mooring post stands a cell back from the coping.
+    [[nodiscard]] bool besideWater(std::int32_t x, std::int32_t y, std::int32_t z) const noexcept {
+        for (std::int32_t dy = -kWaterReach; dy <= kWaterReach; ++dy) {
+            for (std::int32_t dx = -kWaterReach; dx <= kWaterReach; ++dx) {
+                if (std::abs(dx) + std::abs(dy) > kWaterReach || (dx == 0 && dy == 0)) {
+                    continue;
+                }
+                if (isWater(tiles_, x + dx, y + dy, z) || isWater(tiles_, x + dx, y + dy, z - 1)) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    /// A post that keeps its boards: beside the water, where the tarred
+    /// core carries the pile -- on the quay, or under a pier's deck.
+    [[nodiscard]] bool boardedPost(std::int32_t x, std::int32_t y, std::int32_t z) const noexcept {
+        return isPost(x, y, z) && besideWater(x, y, z);
+    }
+
     /// The harbour at a cell: open water, or one of the piles that stand in
     /// it (a lone timber cell).
     [[nodiscard]] bool harbourAt(std::int32_t x, std::int32_t y, std::int32_t z) const noexcept {
@@ -432,7 +508,7 @@ private:
     /// beside THAT (the gunwale over a hull).
     [[nodiscard]] bool hullFace(std::int32_t x, std::int32_t y, std::int32_t z,
                                 int side) const noexcept {
-        if (wallClassAt(x, y, z) != WallClass::Timber || wallNeighbours(x, y, z) == 0) {
+        if (wallClassAt(x, y, z) != WallClass::Timber || isPost(x, y, z)) {
             return false;
         }
         const std::int32_t nx = x + kSideDx[side];
@@ -457,6 +533,7 @@ private:
     void emit(StaticPlacement placement) {
         ++out_.stats.byRole[static_cast<std::size_t>(placement.role)];
         placement.instance.role = static_cast<std::uint8_t>(placement.role);
+        placement.instance.mode = placement.mode;
         if (!placement.gradient && !placement.bilinear) {
             placement.instance.tint2 = placement.instance.tint;
             placement.instance.gradientFrom = 0.0F;
@@ -509,12 +586,18 @@ private:
         } else if (spec.upright) {
             // A flat quad on its edge: local Z up (a quarter turn about X
             // brings +Y, its face, to -Z), so the height is its Z scale. A
-            // flare tips the top outward.
+            // flare tips the top outward. An extent that does not start at
+            // the origin (the flag piece) is brought back to it.
             p.instance.pitch = -kHalfPi - o.flareDegrees * kDegToRad;
             const float depth = std::max(0.01F, spec.maxZ - spec.minZ);
             const float thick = spec.twoSided ? -spec.scale : spec.scale;
-            p.instance.scale = Vec3{(a1 - a0) / std::max(0.01F, spec.maxX - spec.minX) * spec.scale,
-                                    thick, height / depth * spec.scale};
+            const float sx = (a1 - a0) / std::max(0.01F, spec.maxX - spec.minX) * spec.scale;
+            const float sz = height / depth * spec.scale;
+            p.instance.scale = Vec3{sx, thick, sz};
+            const float back = (flip ? 1.0F : -1.0F) * spec.minX * sx;
+            p.instance.position.x += kTangentX[run.side] * back;
+            p.instance.position.z += kTangentZ[run.side] * back;
+            p.instance.position.y -= spec.minZ * sz;
         } else {
             const float ys = spec.height > 0.01F ? height / spec.height : 1.0F;
             const float thick = spec.twoSided ? -spec.scale : spec.scale;
@@ -551,10 +634,14 @@ private:
     /// The light of a piece cut from `from` to `to` along a run of `cells`
     /// cells from (x0, y0) stepping (dx, dy), in tiles from the run's start:
     /// at each cut, the two cell centres it falls between and its place
-    /// between them. Past the run's ends, the end cell alone.
+    /// between them. Past the run's ends, the end cell alone -- unless that
+    /// end is `beyondA0` / `beyondA1` (a door jamb): then the cut falls
+    /// between the end cell and the cell beyond it, which is the value the
+    /// door frame's own light takes at its edge, so the two meet.
     [[nodiscard]] static FaceLight runLight(std::int32_t x0, std::int32_t y0, std::int32_t dx,
                                             std::int32_t dy, std::int32_t cells, float from,
-                                            float to) noexcept {
+                                            float to, bool beyondA0 = false,
+                                            bool beyondA1 = false) noexcept {
         FaceLight l;
         const auto at = [&](float cut, std::int32_t& ax, std::int32_t& ay, std::int32_t& bx,
                             std::int32_t& by, float& t) {
@@ -562,10 +649,10 @@ private:
             std::int32_t a = static_cast<std::int32_t>(std::floor(u));
             std::int32_t b = a + 1;
             t = u - static_cast<float>(a);
-            if (a < 0) {
+            if (a < 0 && !beyondA0) {
                 a = b = 0;
                 t = 0.0F;
-            } else if (b > cells - 1) {
+            } else if (b > cells - 1 && !beyondA1) {
                 a = b = cells - 1;
                 t = 0.0F;
             }
@@ -663,6 +750,9 @@ private:
         p.lightZ = lz;
         p.facing = 1.0F;
         p.radius = radius;
+        // A thing with volume is shaded by its own normals; a lamp is its
+        // own light and stays flat.
+        p.mode = p.selfLit ? kDrawPlain : kDrawShaded;
         emit(std::move(p));
     }
 
@@ -681,6 +771,16 @@ private:
         const Vec3 at{centre.x - 0.5F * w * c, centre.y - 0.5F * h, centre.z - 0.5F * w * s};
         pointPiece(PieceRole::Flame, spec, at, yaw, lx, ly, lz, tint, Vec3{sx, sy, -1.0F}, true,
                    1.5F);
+        // A halo: its alpha falls off radially over the quad, whose local X
+        // spans its width and local Y its height (the adapter reads the Z
+        // span as Y for this mode).
+        StaticPlacement& p = out_.placements.back();
+        p.mode = kDrawHalo;
+        p.instance.mode = kDrawHalo;
+        p.instance.gradientFrom = 0.0F;
+        p.instance.gradientTo = spec.width;
+        p.instance.gradientFromZ = 0.0F;
+        p.instance.gradientToZ = spec.height;
     }
 
     /// A crossed pair of flame quads at a point: the light in a lamp.
@@ -860,12 +960,14 @@ private:
             const bool brickOut = jamb == nullptr || !jamb->plasterOut;
             const std::int32_t farX = gap.x + (gap.alongX ? gap.w - 1 : 0);
             const std::int32_t farY = gap.y + (gap.alongX ? 0 : gap.w - 1);
-            FaceLight light;
-            light.gradient = true;
-            light.firstX = light.beforeX = gap.x;
-            light.firstY = light.beforeY = gap.y;
-            light.lastX = light.afterX = farX;
-            light.lastY = light.afterY = farY;
+            // Lit across the gap in the facade's own a-order, and at each
+            // edge between the last gap cell and the jamb beyond it: the
+            // value the wall's piece takes where it meets the frame.
+            std::int32_t gdx = 0, gdy = 0;
+            runStep(gap.side, gdx, gdy);
+            const bool forward = gdx + gdy > 0;
+            const FaceLight light = runLight(forward ? gap.x : farX, forward ? gap.y : farY, gdx, gdy, gap.w,
+                                             0.0F, static_cast<float>(gap.w), true, true);
             const Rgba8 outTint = jamb != nullptr ? jamb->tint : Rgba8{};
             const Rgba8 inTint = jamb != nullptr ? jamb->insideTint : Rgba8{};
             const float yBase = render::bandSurface(gap.z);
@@ -934,10 +1036,14 @@ private:
             }
             // The frame's ends stand in the reveal planes, their brick
             // cross-section facing into the doorway: a plaster quad over
-            // each, from the frame's outer face back to where the reveal's
-            // own quad begins.
+            // each, inside the frame's hollow end, over the WALL's thickness
+            // (the frame's own thickness counts its trim, which stands
+            // proud of the wall on both sides but does not reach the end)
+            // less a hair each way -- proud of either face, the quad's
+            // edge is a bright hairline beside the frame from the street.
             if (inside != nullptr) {
-                const float outer = standoff + door->thickness * 0.5F + 0.01F;
+                const float outer = standoff + wallThick * 0.5F - kReturnInset;
+                const float inner = standoff - wallThick * 0.5F + kReturnInset;
                 for (int end = 0; end < 2; ++end) {
                     // The reveal plane at the a0 end faces +tangent (into
                     // the gap); at the a1 end -tangent. As a face run: the
@@ -958,8 +1064,8 @@ private:
                     // facade's normal: for the a0-end face (a quarter turn
                     // on) that is -tangent; for the a1-end face +tangent.
                     const float sign = end == 0 ? -1.0F : 1.0F;
-                    const float b0 = std::min(sign * outer, sign * -kRevealInset);
-                    const float b1 = std::max(sign * outer, sign * -kRevealInset);
+                    const float b0 = std::min(sign * outer, sign * inner);
+                    const float b1 = std::max(sign * outer, sign * inner);
                     FaceOpts ret;
                     ret.frontOut = true;
                     ret.standoff = 0.006F;
@@ -1051,6 +1157,7 @@ private:
         const PieceSpec* hullSpec = catalogue_.piece(PieceRole::Hull);
         const PieceSpec* timberWindow = catalogue_.piece(PieceRole::WindowTimber);
         const PieceSpec* plasterQuad = catalogue_.piece(PieceRole::WallPlaster);
+        const PieceSpec* quayWall = catalogue_.piece(PieceRole::QuayWall);
         const RuleKnobs& knobs = catalogue_.knobs();
 
         std::vector<FaceRun> runs;
@@ -1130,9 +1237,9 @@ private:
         }
 
         for (const FaceRun& r : runs) {
-            // A lone timber post indoors is a pillar (posts()); the run is
-            // not boarded.
-            if (r.post && cellRoofed(tiles_, r.firstX, r.firstY, r.z)) {
+            // A timber post is a pillar (posts()) and is not boarded, unless
+            // it stands beside the water: a tarred core under its pile.
+            if (r.post && !boardedPost(r.firstX, r.firstY, r.z)) {
                 continue;
             }
             // The piece this run wears: boards for timber, the kit wall
@@ -1145,11 +1252,20 @@ private:
             const bool hullBoards = boards && r.hull && hullSpec != nullptr;
             const bool brickOut = r.brickOut;
             const bool plasterFace = !boards && !brickOut;
+            // A masonry face at the harbour band with the water beside it
+            // is a quay wall: the stone piece stood on edge, coping to
+            // water, when the catalogue has one.
+            const bool quay = r.cls == WallClass::Masonry && r.z == catalogue_.minBand() && quayWall != nullptr &&
+                              isWater(tiles_, r.firstX + kSideDx[r.side], r.firstY + kSideDy[r.side], r.z);
             // A plaster face is the thin one-sided quad when the catalogue
             // has one (no brick back, no brick end at a corner), else the
             // kit wall's plaster side.
-            const bool thinPlaster = plasterFace && plasterQuad != nullptr;
-            const PieceSpec& piece = hullBoards ? *hullSpec : boards ? *timber : thinPlaster ? *plasterQuad : *wall;
+            const bool thinPlaster = plasterFace && plasterQuad != nullptr && !quay;
+            const PieceSpec& piece = quay          ? *quayWall
+                                     : hullBoards  ? *hullSpec
+                                     : boards      ? *timber
+                                     : thinPlaster ? *plasterQuad
+                                                   : *wall;
             // A convex end extends by the piece's thickness less a hair, so
             // the end cap sits INSIDE the perpendicular piece's body rather
             // than on its surface plane, where the two would fight; a thin
@@ -1202,13 +1318,17 @@ private:
             // end, or the last piece stretched a little when the remainder
             // is too short to be a piece of its own. Boards are cut to the
             // module too.
+            // A run that ends at a door's jamb (and starts at no door) is
+            // cut from the door, so the bay beside the door is a whole one
+            // and the remainder falls at the far end.
+            const bool fromFar = r.gapA1 && !r.gapA0;
             std::vector<float> cuts;
             cuts.push_back(lo);
             if (plasterFace) {
                 // Every two cells, the cuts on the grid: a piece per pair,
                 // the last one a single cell when the run is odd.
                 for (std::int32_t c = 2; c < cells; c += 2) {
-                    const float cut = r.a0 + static_cast<float>(c);
+                    const float cut = fromFar ? r.a1 - static_cast<float>(c) : r.a0 + static_cast<float>(c);
                     if (cut > lo + 0.3F && cut < hi - 0.3F) {
                         cuts.push_back(cut);
                     }
@@ -1218,28 +1338,53 @@ private:
                 const float total = hi - lo;
                 const int whole = static_cast<int>(std::floor(total / module + 1.0e-4F));
                 const float rem = total - static_cast<float>(whole) * module;
+                const auto cutAt = [&](int i) {
+                    return fromFar ? hi - module * static_cast<float>(i) : lo + module * static_cast<float>(i);
+                };
                 if (whole == 0) {
                     // Shorter than a module: one piece, squeezed.
                 } else if (rem < 0.35F * module) {
                     // The last whole piece stretches over the remainder.
                     for (int i = 1; i < whole; ++i) {
-                        cuts.push_back(lo + module * static_cast<float>(i));
+                        cuts.push_back(cutAt(i));
                     }
                 } else {
                     for (int i = 1; i <= whole; ++i) {
-                        cuts.push_back(lo + module * static_cast<float>(i));
+                        cuts.push_back(cutAt(i));
                     }
                 }
             }
+            if (fromFar) {
+                std::reverse(cuts.begin() + 1, cuts.end());
+            }
             cuts.push_back(hi);
             const int k = static_cast<int>(cuts.size()) - 1;
-            const bool windowOk = r.outdoor && r.cls == WallClass::Masonry && !r.hull;
+            const bool windowOk = r.outdoor && r.cls == WallClass::Masonry && !r.hull && !quay;
             const bool timberWindowOk =
                 r.outdoor && boards && !r.hull && !r.post && timberWindow != nullptr;
+            const bool hullTopOpen =
+                r.hull && tiles_.form(r.firstX, r.firstY, r.z + 1) == content::TileForm::Open;
             // The window rhythm counts the pieces that could carry one: on
             // a patterned (brick, board) run the whole modules only, so a
-            // window is never a squeezed one; on plaster every piece.
-            int eligible = 0;
+            // window is never a squeezed one; on plaster every piece wide
+            // enough; never a piece carrying a corner extension (the window
+            // piece is a box, and its brick end would show). Ranked from
+            // the door's end when the run ends at a jamb, and there the
+            // rhythm starts on the door's own bay: a window beside the door.
+            const auto eligibleAt = [&](int i) {
+                const float w = cuts[static_cast<std::size_t>(i) + 1] - cuts[static_cast<std::size_t>(i)];
+                const bool whole = plasterFace ? w >= kWindowMinLength : std::fabs(w - piece.width) < 0.05F;
+                const bool onExtension = (i == 0 && lo < r.a0 - 0.001F) || (i + 1 == k && hi > r.a1 + 0.001F);
+                return whole && !onExtension;
+            };
+            std::vector<int> rank(static_cast<std::size_t>(k), -1);
+            for (int j = 0, n = 0; j < k; ++j) {
+                const int i = fromFar ? k - 1 - j : j;
+                if (eligibleAt(i)) {
+                    rank[static_cast<std::size_t>(i)] = n++;
+                }
+            }
+            const int phase = (r.gapA0 || r.gapA1) ? 0 : knobs.windowEvery / 2;
             for (int i = 0; i < k; ++i) {
                 const float pa0 = cuts[static_cast<std::size_t>(i)];
                 const float pa1 = cuts[static_cast<std::size_t>(i) + 1];
@@ -1250,26 +1395,20 @@ private:
                     static_cast<std::int32_t>(std::floor(pa0 + 0.5F * len - r.a0)), 0, cells - 1);
                 const std::int32_t lx = r.firstX + dx * along;
                 const std::int32_t ly = r.firstY + dy * along;
-                PieceRole role = hullBoards     ? PieceRole::Hull
+                PieceRole role = quay           ? PieceRole::QuayWall
+                                 : hullBoards   ? PieceRole::Hull
                                  : boards       ? PieceRole::WallTimber
                                  : thinPlaster  ? PieceRole::WallPlaster
                                                 : PieceRole::Wall;
                 const PieceSpec* spec = &piece;
                 // The window rhythm: one eligible piece in `windowEvery`
-                // along the run, by index -- the second, the fourth -- and
-                // only where a room stands behind the wall.
-                const bool wholeModule = plasterFace ? len >= kWindowMinLength
-                                                     : std::fabs(len - piece.width) < 0.05F;
-                bool rhythm = false;
-                if (wholeModule && knobs.windowEvery > 0) {
-                    rhythm = (eligible % knobs.windowEvery) == (knobs.windowEvery / 2);
-                    ++eligible;
-                }
+                // along the run, by rank -- the second, the fourth from a
+                // plain end; the first, the third from a door -- and only
+                // where a room stands behind the wall.
+                const int rk = rank[static_cast<std::size_t>(i)];
+                const bool rhythm = rk >= 0 && knobs.windowEvery > 0 && (rk % knobs.windowEvery) == phase;
                 const bool roomBehind = isOpenish(tiles_, lx - kSideDx[r.side], ly - kSideDy[r.side], r.z);
-                // Never on a piece that carries a corner extension: the
-                // window piece is a box, and its brick end would show.
-                const bool onExtension = (i == 0 && lo < r.a0 - 0.001F) || (i + 1 == k && hi > r.a1 + 0.001F);
-                if (windowOk && window != nullptr && rhythm && roomBehind && !onExtension) {
+                if (windowOk && window != nullptr && rhythm && roomBehind) {
                     role = PieceRole::WallWindow;
                     spec = window;
                 }
@@ -1277,19 +1416,34 @@ private:
                 // A board or plaster quad has one face and it looks out; the
                 // kit wall (and the window piece in it) shows its brick or
                 // its plaster.
-                o.frontOut = boards || brickOut || (thinPlaster && spec == &piece);
+                o.frontOut = boards || brickOut || quay || (thinPlaster && spec == &piece);
                 o.standoff = spec->standoffSet ? spec->standoff : spec->thickness * 0.5F;
                 o.yBase = render::bandSurface(r.z);
                 o.tint = r.tint;
-                o.light = runLight(r.firstX, r.firstY, dx, dy, cells, pa0 - r.a0, pa1 - r.a0);
+                // Lit at each cut between the two cells it falls between;
+                // at a jamb, between the jamb and the gap, where the frame
+                // takes the same value.
+                o.light = runLight(r.firstX, r.firstY, dx, dy, cells, pa0 - r.a0, pa1 - r.a0, r.gapA0,
+                                   r.gapA1);
                 if (r.hull) {
-                    o.flareDegrees = knobs.hullFlareDegrees;
+                    // The boards lean out only under an open top (the
+                    // gunwale); under a deck they stand plumb.
+                    o.flareDegrees = hullTopOpen ? knobs.hullFlareDegrees : 0.0F;
                     o.tint = mulTint(r.tint, knobs.hullTint);
                 } else if (r.post) {
                     // A pile out of doors: tarred like a hull.
                     o.tint = mulTint(r.tint, knobs.hullTint);
                 }
-                facePiece(r, role, *spec, pa0, pa1, o);
+                // A thin quad overlaps whatever it meets by a hair, proud of
+                // the kit pieces by a hair, every second one a hair more.
+                float qa0 = pa0;
+                float qa1 = pa1;
+                if (thinPlaster && spec == &piece) {
+                    qa0 -= kCutOverlap;
+                    qa1 += kCutOverlap;
+                    o.standoff += (i & 1) != 0 ? 2.0F * kCutStagger : kCutStagger;
+                }
+                facePiece(r, role, *spec, qa0, qa1, o);
                 if (role == PieceRole::WallWindow) {
                     StaticPlacement& p = out_.placements.back();
                     p.hasInside = true;
@@ -1341,7 +1495,7 @@ private:
                         const float a = r.a0 + static_cast<float>(c) + 0.5F;
                         const float top = render::bandSurface(r.z + 1) + 0.02F;
                         const float drop = render::kBandHeight + 0.4F;
-                        const float out = lean + 0.32F;
+                        const float out = lean + 0.18F;
                         const Vec3 at{r.baseX + kTangentX[r.side] * a + kNormalX[r.side] * out, top - drop,
                                       r.baseZ + kTangentZ[r.side] * a + kNormalZ[r.side] * out};
                         pointPiece(PieceRole::Rope, *rope, at, yawOf(r.side), cx, cy, r.z, Rgba8{},
@@ -1431,12 +1585,14 @@ private:
                             material = tiles_.material(x, y, z);
                             facingGap = gapAt(x + kSideDx[side], y + kSideDy[side], z);
                             hull = hullFace(x, y, z, side);
-                            post = lonePost(x, y, z);
+                            post = isPost(x, y, z);
                             if (roofEdge) {
-                                // A cornice belongs to masonry: a hull or a
-                                // shed of timber has no roof line to trim.
+                                // A cornice belongs to masonry with a storey
+                                // under it: a hull or a shed of timber has no
+                                // roof line to trim, and the quay wall at
+                                // the harbour band is a wall, not a roof.
                                 qualifies = outdoor && cls == WallClass::Masonry &&
-                                            !isWall(tiles_, x, y, z + 1);
+                                            !isWall(tiles_, x, y, z + 1) && z > catalogue_.minBand();
                             }
                         }
                         const bool joins = qualifies && open && current.material == material &&
@@ -1508,9 +1664,11 @@ private:
 
     // --- posts and pillars ------------------------------------------------
 
-    /// A lone 1x1 timber cell: indoors a square pillar the cell's own size
-    /// (the chunk box inside it), out of doors a bundle of tarred piles
-    /// round the boarded core.
+    /// A timber post (a lone 1x1 cell, or one against a wall of another
+    /// kind): a square pillar the cell's own size (the chunk box inside it),
+    /// plaster indoors and timber out of doors; beside the water the tarred
+    /// boarded core keeps its boards (walls()) and one pile is driven
+    /// through it, its head over the top.
     void posts() {
         const PieceSpec* pillar = catalogue_.piece(PieceRole::Pillar);
         const PieceSpec* pile = catalogue_.piece(PieceRole::Post);
@@ -1521,38 +1679,40 @@ private:
         for (std::int32_t z = zLo; z < tiles_.sizeZ(); ++z) {
             for (std::int32_t y = 0; y < tiles_.sizeY(); ++y) {
                 for (std::int32_t x = 0; x < tiles_.sizeX(); ++x) {
-                    if (!lonePost(x, y, z)) {
+                    if (!isPost(x, y, z)) {
                         continue;
                     }
                     const Vec3 centre{static_cast<float>(x) + 0.5F, render::bandSurface(z),
                                       static_cast<float>(y) + 0.5F};
-                    if (cellRoofed(tiles_, x, y, z)) {
-                        if (pillar != nullptr) {
-                            // Fitted to the cell: its shaft the cell's width
-                            // plus a hair, the storey its height, in the
-                            // catalogue's own colour (a plastered pier).
-                            const float w = std::max(0.01F, pillar->width);
-                            const float s = (1.0F + 2.0F * pillar->thickness) / w;
-                            pointPiece(PieceRole::Pillar, *pillar, centre, 0.0F, x, y, z, Rgba8{},
-                                       Vec3{s, heightScale(*pillar), s}, false, 3.0F);
+                    if (boardedPost(x, y, z)) {
+                        if (pile != nullptr) {
+                            // On its foot in the cell's centre, the storey
+                            // tall and its head over the core -- under a
+                            // deck, a hair short of it.
+                            const bool decked = cellRoofed(tiles_, x, y, z);
+                            const float tall = render::kBandHeight + (decked ? -0.01F : kPileHeadOver);
+                            const float sy = tall / std::max(0.01F, pile->height);
+                            const float sxz = kPileThickness / std::max(0.01F, pile->thickness);
+                            pointPiece(PieceRole::Post, *pile, centre,
+                                       static_cast<float>((x + y) & 3) * kHalfPi, x, y, z,
+                                       catalogue_.knobs().hullTint, Vec3{sxz, sy, sxz}, false, 3.0F);
                         }
                         continue;
                     }
-                    if (pile == nullptr) {
+                    if (pillar == nullptr) {
                         continue;
                     }
-                    // Four piles at the corners, a hair outside the box, the
-                    // storey tall and a hair over; the box between wears the
-                    // hull tint from walls(). The pile stands on its foot.
-                    const float tall = render::kBandHeight + 0.06F;
-                    const float s = tall / std::max(0.01F, pile->height);
-                    for (int c = 0; c < 4; ++c) {
-                        const float ox = (c & 1) != 0 ? 0.5F + pile->thickness : -0.5F - pile->thickness;
-                        const float oz = (c & 2) != 0 ? 0.5F + pile->thickness : -0.5F - pile->thickness;
-                        const Vec3 at{centre.x + ox, centre.y, centre.z + oz};
-                        pointPiece(PieceRole::Post, *pile, at, static_cast<float>(c) * kHalfPi, x, y, z,
-                                   catalogue_.knobs().hullTint, Vec3{s, s, s}, false, 3.0F);
-                    }
+                    // Fitted to the cell: its shaft the cell's width plus a
+                    // hair, the storey its height; the catalogue's own
+                    // colour indoors (a plastered pier), the material's top
+                    // tint out of doors (a timber post).
+                    const float w = std::max(0.01F, pillar->width);
+                    const float s = (1.0F + 2.0F * pillar->thickness) / w;
+                    const MaterialRule* r = rule(x, y, z);
+                    const bool indoors = cellRoofed(tiles_, x, y, z);
+                    const Rgba8 tint = indoors ? Rgba8{} : (r != nullptr ? liftTint(r->topTint, kPostLift) : Rgba8{});
+                    pointPiece(PieceRole::Pillar, *pillar, centre, 0.0F, x, y, z, tint,
+                               Vec3{s, heightScale(*pillar), s}, false, 3.0F);
                 }
             }
         }
@@ -1763,9 +1923,34 @@ private:
         // Pass one: the flat fill under EVERY cell of a material that has
         // one (a patterned piece has gaps between its stones; the fill is
         // what shows through them). Pass two: the patterned pieces over it.
+        // The roofs first, when the catalogue has the roof flag: every
+        // building top with sky over it wears the roof finish whatever its
+        // tile says -- the dark fill under every cell, the flag piece at
+        // its own module (whole 3 x 3 blocks; the rest stays lead) over it.
+        const PieceSpec* roofFlag = catalogue_.piece(PieceRole::RoofFlag);
+        const PieceSpec* roofFill = catalogue_.piece(PieceRole::FloorFill);
+        const RuleKnobs& knobs = catalogue_.knobs();
         for (int pass = 0; pass < 2; ++pass) {
             resetCover();
             for (std::int32_t z = zLo; z < tiles_.sizeZ(); ++z) {
+                const bool roofs = roofFlag != nullptr && z >= 1;
+                if (roofs) {
+                    const PieceRole role = pass == 0 ? PieceRole::FloorFill : PieceRole::RoofFlag;
+                    const PieceSpec* spec = pass == 0 ? roofFill : roofFlag;
+                    const Rgba8 tint = pass == 0 ? knobs.roofFillTint : knobs.roofTint;
+                    if (spec != nullptr) {
+                        const auto roof = [&](std::int32_t x, std::int32_t y) { return roofCell(x, y, z); };
+                        mergeRectangles(z, std::max(1, spec->minBlock), std::max(1, spec->maxBlock), roof,
+                                        [&](std::int32_t x, std::int32_t y, std::int32_t w, std::int32_t h) {
+                                            const int turns =
+                                                w == h && spec->minBlock > 1
+                                                    ? static_cast<int>((cellHash(x, y, z, kSaltCobble) >> 8) & 3U)
+                                                    : 0;
+                                            blockPiece(role, *spec, x, y, z, w, h, render::bandSurface(z), tint,
+                                                       turns);
+                                        });
+                    }
+                }
                 for (std::size_t m = 0; m < ids.size(); ++m) {
                     const auto material = static_cast<std::uint16_t>(m);
                     const MaterialRule* r = catalogue_.material(material);
@@ -1780,7 +1965,8 @@ private:
                     const std::uint8_t variants = catalogue_.variantCount(role);
                     const Rgba8 tint = pass == 0 ? r->fillTint : r->floorTint;
                     const auto same = [&](std::int32_t x, std::int32_t y) {
-                        return floorCell(x, y, z) && tiles_.material(x, y, z) == material;
+                        return floorCell(x, y, z) && tiles_.material(x, y, z) == material &&
+                               !(roofs && roofCell(x, y, z));
                     };
                     mergeRectangles(
                         z, std::max(1, spec->minBlock), std::max(1, spec->maxBlock), same,
@@ -1810,6 +1996,7 @@ private:
     /// in a deck never shows the atlas. Merged into runs along each side.
     void lips() {
         const std::int32_t zLo = std::max(0, catalogue_.minBand());
+        const bool roofFlagged = catalogue_.piece(PieceRole::RoofFlag) != nullptr;
         for (std::int32_t z = zLo; z < tiles_.sizeZ(); ++z) {
             for (int side = 0; side < 4; ++side) {
                 const bool rows = side == kNorth || side == kSouth;
@@ -1821,6 +2008,7 @@ private:
                     bool open = false;
                     FaceRun current;
                     const MaterialRule* currentRule = nullptr;
+                    bool currentRoof = false;
                     const auto flush = [&]() {
                         if (!open) {
                             return;
@@ -1837,7 +2025,9 @@ private:
                         o.standoff = spec->standoffSet ? spec->standoff : 0.01F;
                         o.height = render::kFloorSlab - 0.01F;
                         o.yBase = render::bandSurface(current.z) - render::kFloorSlab + 0.005F;
-                        o.tint = currentRule->lipTint;
+                        // A roof's edge is the roof's own dark, whatever the
+                        // tile under it says.
+                        o.tint = currentRoof ? catalogue_.knobs().roofFillTint : currentRule->lipTint;
                         o.light = runLight(current.firstX, current.firstY, dx, dy, cells, 0.0F,
                                            static_cast<float>(cells));
                         facePiece(current, currentRule->lipRole, *spec, current.a0, current.a1, o);
@@ -1853,7 +2043,8 @@ private:
                         // under that air to hide the slab's side.
                         const bool exposed = r != nullptr && r->lipRole != PieceRole::None &&
                                              isAir(tiles_, nx, ny, z) && !isWall(tiles_, nx, ny, z - 1);
-                        if (!exposed || (open && r != currentRule)) {
+                        const bool roof = exposed && roofFlagged && roofCell(x, y, z);
+                        if (!exposed || (open && (r != currentRule || roof != currentRoof))) {
                             flush();
                         }
                         if (!exposed) {
@@ -1864,6 +2055,7 @@ private:
                         if (!open) {
                             current = cellFace(x, y, z, side);
                             currentRule = r;
+                            currentRoof = roof;
                             open = true;
                         }
                         current.a1 = a1;
@@ -1904,6 +2096,29 @@ private:
                                 });
             }
         }
+    }
+
+    /// A floor cell over a dressed WALL that stands inside a room: every
+    /// open neighbour of the wall on its own level is a roofed walkable
+    /// cell, and there is at least one. A pillar, a counter, a hearth; not
+    /// the room's own outer wall.
+    [[nodiscard]] bool overRoomWall(std::int32_t x, std::int32_t y, std::int32_t z) const noexcept {
+        if (!isWall(tiles_, x, y, z - 1) || wallClassAt(x, y, z - 1) == WallClass::None) {
+            return false;
+        }
+        bool room = false;
+        for (int s = 0; s < 4; ++s) {
+            const std::int32_t nx = x + kSideDx[s];
+            const std::int32_t ny = y + kSideDy[s];
+            if (!isOpenish(tiles_, nx, ny, z - 1)) {
+                continue;
+            }
+            if (!isWalkableForm(tiles_, nx, ny, z - 1) || !cellRoofed(tiles_, nx, ny, z - 1)) {
+                return false;
+            }
+            room = true;
+        }
+        return room;
     }
 
     /// The tint a wall cell's underside wears: the ceiling tint of the
@@ -1949,12 +2164,20 @@ private:
                 const auto material = static_cast<std::uint16_t>(m);
                 const MaterialRule* r = catalogue_.material(material);
                 // Over rooms and over the open (a pier over the water)
-                // separately: only a room gets joists.
+                // separately: only a room gets joists. A floor over a WALL
+                // that stands inside a room -- the slab over a taproom's
+                // pillar, its bar, its hearth -- is the room's ceiling too,
+                // or the ceiling would have a hole over every one of them.
                 for (int room = 1; room >= 0; --room) {
                     const auto same = [&](std::int32_t x, std::int32_t y) {
-                        return tiles_.form(x, y, z) == content::TileForm::Floor &&
-                               tiles_.material(x, y, z) == material && isOpenish(tiles_, x, y, z - 1) &&
-                               (isWalkableForm(tiles_, x, y, z - 1) ? 1 : 0) == room;
+                        if (tiles_.form(x, y, z) != content::TileForm::Floor ||
+                            tiles_.material(x, y, z) != material) {
+                            return false;
+                        }
+                        if (isOpenish(tiles_, x, y, z - 1)) {
+                            return (isWalkableForm(tiles_, x, y, z - 1) ? 1 : 0) == room;
+                        }
+                        return room == 1 && overRoomWall(x, y, z);
                     };
                     // The material's own ceiling tint, or the piece's plain
                     // plaster for a material the catalogue does not dress.
@@ -1975,7 +2198,9 @@ private:
             }
         }
         // The undersides of walls over open cells, in the storey's ceiling
-        // tint, at the wall's own foot.
+        // tint, at the slab plane the floor ceilings round them hang at --
+        // not the wall's own foot, a slab higher, where the quad would sit
+        // in a recess whose sides are the slabs' atlas.
         for (std::int32_t z = zLo; z < tiles_.sizeZ(); ++z) {
             for (std::size_t m = 0; m < ids.size(); ++m) {
                 const auto source = static_cast<std::uint16_t>(m);
@@ -2002,7 +2227,7 @@ private:
                 mergeRectangles(z, 1, std::max(1, ceiling->maxBlock), same,
                                 [&](std::int32_t x, std::int32_t y, std::int32_t w, std::int32_t h) {
                                     blockPiece(PieceRole::Ceiling, *ceiling, x, y, z, w, h,
-                                               render::bandSurface(z), tint);
+                                               render::bandSurface(z) - render::kFloorSlab, tint);
                                     StaticPlacement& p = out_.placements.back();
                                     p.lightZ = z - 1;
                                     p.facing = render::kUndersideLift;
@@ -2280,7 +2505,7 @@ private:
         for (std::int32_t z = zLo; z < tiles_.sizeZ(); ++z) {
             for (std::int32_t y = 1; y + 1 < tiles_.sizeY(); ++y) {
                 for (std::int32_t x = 1; x + 1 < tiles_.sizeX(); ++x) {
-                    if (!lonePost(x, y, z) || !cellRoofed(tiles_, x, y, z)) {
+                    if (!isPost(x, y, z) || !cellRoofed(tiles_, x, y, z)) {
                         continue;
                     }
                     for (int s = kEast; s <= kWest; s += 2) {
@@ -2437,13 +2662,39 @@ private:
 
     // --- roofs ------------------------------------------------------------
 
-    /// A roof plane cell: a floor of a roofing material with the sky over it.
+    /// A building top with the sky over it: a floor of a roofing material,
+    /// or any floor with a room (a walkable cell) under it, or one over a
+    /// dressed wall with such a floor beside or cornerwise to it (the ring
+    /// over a building's walls, its corners too) -- whatever the tile's
+    /// material. Never a street over the ground, never a deck over water.
     [[nodiscard]] bool roofCell(std::int32_t x, std::int32_t y, std::int32_t z) const noexcept {
         if (!floorCell(x, y, z) || tiles_.form(x, y, z + 1) != content::TileForm::Open) {
             return false;
         }
         const MaterialRule* r = rule(x, y, z);
-        return r != nullptr && r->roof;
+        if (r != nullptr && r->roof) {
+            return true;
+        }
+        if (isWalkableForm(tiles_, x, y, z - 1)) {
+            return true;
+        }
+        if (!isWall(tiles_, x, y, z - 1) || wallClassAt(x, y, z - 1) == WallClass::None) {
+            return false;
+        }
+        for (std::int32_t dy = -1; dy <= 1; ++dy) {
+            for (std::int32_t dx = -1; dx <= 1; ++dx) {
+                if (dx == 0 && dy == 0) {
+                    continue;
+                }
+                const std::int32_t nx = x + dx;
+                const std::int32_t ny = y + dy;
+                if (floorCell(nx, ny, z) && tiles_.form(nx, ny, z + 1) == content::TileForm::Open &&
+                    isWalkableForm(tiles_, nx, ny, z - 1)) {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 
     /// Whether a roof edge cell's upstand is brick: the wall under it is
@@ -2775,20 +3026,22 @@ private:
                               static_cast<float>(lamp.y) + 0.5F};
             if (lamp.warmth == render::LampWarmth::Fire) {
                 // A brazier: the stand, the ember tray in its cage, the
-                // flame over it.
+                // flame over it -- the tray and the flame at the stand's
+                // own scale, so a small brazier keeps its fire in its cage.
+                const float bs = brazier != nullptr ? brazier->scale : 1.0F;
                 if (brazier != nullptr) {
                     pointPiece(PieceRole::Brazier, *brazier, centre, 0.0F, lamp.x, lamp.y, lamp.z);
                 }
                 if (ember != nullptr) {
                     // The tray fitted to the cage, whatever its own shape.
-                    const Vec3 fit{kEmberSize / std::max(0.05F, ember->maxX - ember->minX), 1.0F,
-                                   kEmberSize / std::max(0.05F, ember->maxZ - ember->minZ)};
-                    pointPiece(PieceRole::Ember, *ember, Vec3{centre.x, centre.y + kEmberLift, centre.z},
+                    const Vec3 fit{kEmberSize * bs / std::max(0.05F, ember->maxX - ember->minX), bs,
+                                   kEmberSize * bs / std::max(0.05F, ember->maxZ - ember->minZ)};
+                    pointPiece(PieceRole::Ember, *ember, Vec3{centre.x, centre.y + kEmberLift * bs, centre.z},
                                static_cast<float>((lamp.x + lamp.y) & 1) * kHalfPi, lamp.x, lamp.y, lamp.z,
                                Rgba8{}, fit, true);
                 }
-                flameAt(Vec3{centre.x, centre.y + kFireFlameLift, centre.z}, kFireFlameWidth,
-                        kFireFlameHeight, knobs.fireFlame, lamp.x, lamp.y, lamp.z);
+                flameAt(Vec3{centre.x, centre.y + kFireFlameLift * bs, centre.z}, kFireFlameWidth * bs,
+                        kFireFlameHeight * bs, knobs.fireFlame, lamp.x, lamp.y, lamp.z);
                 continue;
             }
             // The wall it hangs on: the wall beside the lamp's tile, or --
@@ -2975,6 +3228,9 @@ StaticCatalogue StaticCatalogue::fromJson(std::string_view json) {
             tintFromJson(rules.contains("lanternFlame") ? rules["lanternFlame"] : nlohmann::json(), k.lanternFlame);
         k.fireFlame = tintFromJson(rules.contains("fireFlame") ? rules["fireFlame"] : nlohmann::json(), k.fireFlame);
         k.litPane = tintFromJson(rules.contains("litPane") ? rules["litPane"] : nlohmann::json(), k.litPane);
+        k.roofTint = tintFromJson(rules.contains("roofTint") ? rules["roofTint"] : nlohmann::json(), k.roofTint);
+        k.roofFillTint =
+            tintFromJson(rules.contains("roofFillTint") ? rules["roofFillTint"] : nlohmann::json(), k.roofFillTint);
     }
 
     // Pieces in role order, whatever order the file lists them in; a row
@@ -3256,6 +3512,12 @@ std::uint64_t StaticCatalogue::digest() const noexcept {
     h.mixU8(knobs_.litPane.r);
     h.mixU8(knobs_.litPane.g);
     h.mixU8(knobs_.litPane.b);
+    h.mixU8(knobs_.roofTint.r);
+    h.mixU8(knobs_.roofTint.g);
+    h.mixU8(knobs_.roofTint.b);
+    h.mixU8(knobs_.roofFillTint.r);
+    h.mixU8(knobs_.roofFillTint.g);
+    h.mixU8(knobs_.roofFillTint.b);
     return h.value();
 }
 

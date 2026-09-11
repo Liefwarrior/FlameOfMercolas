@@ -226,6 +226,7 @@ std::uint64_t sceneHash(const SceneDescription& scene) noexcept {
         h.mixF32(piece.gradientFromZ);
         h.mixF32(piece.gradientToZ);
         mixRgba(h, piece.pane);
+        h.mixU8(piece.mode);
     }
     return h.value();
 }

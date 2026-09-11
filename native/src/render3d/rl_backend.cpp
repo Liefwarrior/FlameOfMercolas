@@ -217,6 +217,8 @@ struct PieceTints {
     float toZ = 0.0F;
     /// What a pane of glass in the piece is drawn with.
     Color pane{};
+    /// kDrawPlain / kDrawHalo / kDrawShaded (scene.hpp).
+    std::uint8_t mode = 0;
 
     [[nodiscard]] bool uniform() const noexcept {
         const auto same = [](const Color& p, const Color& q) {
@@ -262,36 +264,65 @@ constexpr float kViewmodelDepthSpan = 0.2F;
 /// instead of one patch. A run piece passes an empty Z span (its factor
 /// 0), a point piece both. GL 3.3 only; the software rasterizer has no
 /// shaders and never has the licensed files to draw with it anyway.
+/// Two more things the same shader does, by `pieceMode` (scene.hpp): a
+/// HALO (1) takes its alpha to nothing at the edge of the quad, radially
+/// over the piece's local XY (the span uniform then carries X and Y), so a
+/// flame's glow is a soft disc and not a square; a SHADED piece (2) darkens
+/// faces that look down (to half) and lifts faces that look up (by an
+/// eighth) from the mesh's own normals, the vertical faces untouched: the
+/// volume a prop needs when nothing lights it, and the difference between
+/// a rowboat and a dome.
 constexpr const char* kBlendVertexShader =
     "#version 330\n"
     "in vec3 vertexPosition;\n"
     "in vec2 vertexTexCoord;\n"
+    "in vec3 vertexNormal;\n"
     "in vec4 vertexColor;\n"
     "uniform mat4 mvp;\n"
+    "uniform mat4 matNormal;\n"
     "uniform vec4 tintA;\n"
     "uniform vec4 tintB;\n"
     "uniform vec4 tintC;\n"
     "uniform vec4 tintD;\n"
     "uniform vec4 tintSpan;\n"
+    "uniform int pieceMode;\n"
     "out vec2 fragTexCoord;\n"
     "out vec4 fragColor;\n"
+    "out vec2 haloUV;\n"
     "void main() {\n"
     "    float tx = clamp((vertexPosition.x - tintSpan.x) * tintSpan.y, 0.0, 1.0);\n"
     "    float tz = clamp((vertexPosition.z - tintSpan.z) * tintSpan.w, 0.0, 1.0);\n"
     "    fragTexCoord = vertexTexCoord;\n"
-    "    fragColor = vertexColor * mix(mix(tintA, tintB, tx), mix(tintC, tintD, tx), tz);\n"
+    "    vec4 tint = mix(mix(tintA, tintB, tx), mix(tintC, tintD, tx), tz);\n"
+    "    haloUV = vec2(0.0, 0.0);\n"
+    "    if (pieceMode == 1) {\n"
+    "        tint = tintA;\n"
+    "        haloUV = vec2((vertexPosition.x - tintSpan.x) * tintSpan.y * 2.0 - 1.0,\n"
+    "                      (vertexPosition.y - tintSpan.z) * tintSpan.w * 2.0 - 1.0);\n"
+    "    } else if (pieceMode == 2) {\n"
+    "        vec3 n = normalize(vec3(matNormal * vec4(vertexNormal, 0.0)));\n"
+    "        float f = n.y < 0.0 ? 1.0 + 0.5 * n.y : 1.0 + 0.125 * n.y;\n"
+    "        tint.rgb *= f;\n"
+    "    }\n"
+    "    fragColor = vertexColor * tint;\n"
     "    gl_Position = mvp * vec4(vertexPosition, 1.0);\n"
     "}\n";
 constexpr const char* kBlendFragmentShader =
     "#version 330\n"
     "in vec2 fragTexCoord;\n"
     "in vec4 fragColor;\n"
+    "in vec2 haloUV;\n"
     "uniform sampler2D texture0;\n"
     "uniform vec4 colDiffuse;\n"
+    "uniform int pieceMode;\n"
     "out vec4 finalColor;\n"
     "void main() {\n"
     "    vec4 texelColor = texture(texture0, fragTexCoord);\n"
     "    finalColor = texelColor * colDiffuse * fragColor;\n"
+    "    if (pieceMode == 1) {\n"
+    "        float fall = max(0.0, 1.0 - dot(haloUV, haloUV));\n"
+    "        finalColor.a *= fall * fall;\n"
+    "    }\n"
     "}\n";
 #endif
 
@@ -382,6 +413,7 @@ struct Backend::Impl {
     int blendTintC = -1;
     int blendTintD = -1;
     int blendSpan = -1;
+    int blendMode = -1;
 
     void ensureBlendShader() {
         if (blendTried) {
@@ -396,6 +428,7 @@ struct Backend::Impl {
             blendTintC = GetShaderLocation(blend, "tintC");
             blendTintD = GetShaderLocation(blend, "tintD");
             blendSpan = GetShaderLocation(blend, "tintSpan");
+            blendMode = GetShaderLocation(blend, "pieceMode");
         } else {
             blend = Shader{};
         }
@@ -595,6 +628,7 @@ struct Backend::Impl {
         tints.fromZ = piece.gradientFromZ;
         tints.toZ = piece.gradientToZ;
         tints.pane = colourOf(piece.pane);
+        tints.mode = piece.mode;
         // A translucent instance (a flame's halo, its tint alpha under 255)
         // is held back whole, like a pane of glass.
         const bool seeThrough = piece.tint.a < 255;
@@ -616,10 +650,11 @@ struct Backend::Impl {
             return;
         }
         // The blend: the four tints over the piece when the shader is there
-        // and they differ, their average when it is not (the software path)
-        // or they do not.
+        // and they differ -- or the piece asks for a halo or shading, which
+        // only the shader does -- their average when it is not (the
+        // software path) or they do not.
         const bool spanned = tints.to > tints.from || tints.toZ > tints.fromZ;
-        const bool blended = blend.id != 0 && spanned && !tints.uniform();
+        const bool blended = blend.id != 0 && ((spanned && !tints.uniform()) || tints.mode != kDrawPlain);
         const Color tint = blended ? Color{255, 255, 255, tints.a.a} : averageColour(tints);
         const Color base = model.baseColour[static_cast<std::size_t>(m)];
         const auto ch = [](unsigned char a, unsigned char b) {
@@ -656,6 +691,8 @@ struct Backend::Impl {
             SetShaderValue(blend, blendTintC, c, SHADER_UNIFORM_VEC4);
             SetShaderValue(blend, blendTintD, d, SHADER_UNIFORM_VEC4);
             SetShaderValue(blend, blendSpan, span, SHADER_UNIFORM_VEC4);
+            const int mode = static_cast<int>(tints.mode);
+            SetShaderValue(blend, blendMode, &mode, SHADER_UNIFORM_INT);
         }
         DrawMesh(model.model.meshes[i], material, transform);
         material.shader = keep;

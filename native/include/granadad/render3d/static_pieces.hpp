@@ -109,20 +109,28 @@
 //                  indoor masonry faces, barrel racks against walls; a
 //                  free-standing two-cell masonry block in a roofed room is
 //                  a hearth and wears the fireplace; joists cross every
-//                  room's ceiling on the odd grid lines; a lone 1x1 timber
-//                  cell indoors is a square pillar, out of doors a bundle of
-//                  tarred piles.
-//   ROOFS          a roof plane (a floor with sky above, of a roofing
-//                  material) is a tar-dark flat fill with loose tiles
-//                  scattered by hash, an upstand along every edge cell
-//                  (brick over masonry, boards over timber), chimneys over
-//                  masonry walls only, and the odd crate or barrel at the
-//                  edge. FLAT, always: every roof cell in the district is
-//                  standable and the Skyrunners route across them.
+//                  room's ceiling on the odd grid lines; a timber POST (a
+//                  lone 1x1 cell, or one whose single wall neighbour is of
+//                  another kind) is a square pillar the cell's size, plaster
+//                  indoors and timber out, and beside the water a tarred
+//                  boarded core with one pile driven through it.
+//   ROOFS          a building top with sky over it (a floor of a roofing
+//                  material, or any floor with a room under it, or one over
+//                  a wall at such a floor's side) wears the roof finish
+//                  whatever its tile says: the slate-tinted flag piece at
+//                  its own module over a tar-dark fill, loose tiles by hash,
+//                  an upstand along every edge cell (brick over masonry,
+//                  boards over timber), chimneys over masonry walls only,
+//                  the odd crate or barrel at the edge. FLAT, always: every
+//                  roof cell in the district is standable and the
+//                  Skyrunners route across them.
 //   HARBOUR        a timber wall with water beside it is a hull: its plank
-//                  quad leans outward from the waterline, tarred, with a
-//                  gunwale beam along an open top; rowboats moor along quay
-//                  edges by hash; a pier head carries a crane.
+//                  quad stands plumb (a lean is a knob), tarred, with a
+//                  gunwale beam along an open top; a masonry face at the
+//                  harbour band with water beside it is a quay wall and
+//                  wears the stone piece from the coping down into the
+//                  water, no cornice; rowboats moor along quay edges by
+//                  hash; a pier head carries a crane.
 //
 // Floats are legal here (render-side); nothing in this file is read by the
 // simulation.
@@ -209,9 +217,10 @@ enum class PieceRole : std::uint8_t {
     Shelf,
     BarrelRack,
     Fireplace,
-    /// A lone 1x1 timber cell indoors: a square pillar the cell's size.
+    /// A timber post (a lone 1x1 cell, or one against a wall of another
+    /// kind): a square pillar the cell's size, plaster indoors, timber out.
     Pillar,
-    /// One of the piles bundled round a lone 1x1 timber cell out of doors.
+    /// The one pile driven through a timber post beside the water.
     Post,
     /// The upstand along a roof edge cell (brick over masonry; the plank
     /// quad stands in for it over timber).
@@ -235,8 +244,13 @@ enum class PieceRole : std::uint8_t {
     /// A stool beside an indoor pillar (the sim's own table): somewhere to
     /// sit at it.
     Stool,
+    /// The stone face of a quay wall at the harbour band, coping to water.
+    QuayWall,
+    /// The finish every building top with sky over it wears, whatever its
+    /// tile material: the flagstone piece at its own module, as slates.
+    RoofFlag,
 };
-inline constexpr std::size_t kPieceRoleCount = 50;
+inline constexpr std::size_t kPieceRoleCount = 52;
 
 /// The JSON key of a role ("wall", "wall_corner", ...), and back. None for
 /// an unknown key.
@@ -389,6 +403,10 @@ struct RuleKnobs {
     Rgba8 lanternFlame{255, 214, 150, 255};
     Rgba8 fireFlame{255, 150, 64, 255};
     Rgba8 litPane{255, 196, 120, 255};
+    /// The roof finish: the tint of the RoofFlag piece and of the flat fill
+    /// under it, on every building top with sky over it.
+    Rgba8 roofTint{255, 255, 255, 255};
+    Rgba8 roofFillTint{255, 255, 255, 255};
 };
 
 /// THE CATALOGUE. Loaded from JSON, queried by role and by material.
@@ -496,6 +514,9 @@ struct StaticPlacement {
     /// How far the piece reaches from its origin, in tiles: the frustum
     /// cull's margin.
     float radius = 1.0F;
+    /// The adapter's draw mode (scene.hpp): plain, a halo, or shaded by
+    /// the mesh's own normals.
+    std::uint8_t mode = 0;
 };
 
 struct StaticPlacementStats {

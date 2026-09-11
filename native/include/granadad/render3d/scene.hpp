@@ -306,7 +306,18 @@ struct StaticInstance {
     /// behind it is unlit, or it is day) or the warm lit-window tint. The
     /// world scene decides; the adapter draws it verbatim.
     Rgba8 pane{40, 44, 52, 255};
+    /// How the adapter shades the piece: kDrawPlain (the tints alone);
+    /// kDrawHalo (a translucent quad whose alpha falls off radially over
+    /// its local XY -- gradientFrom..To is its X span, gradientFromZ..ToZ
+    /// its Y span -- a flame's glow); kDrawShaded (the tint darkened on
+    /// faces that look down and lifted on faces that look up, from the
+    /// mesh's own normals: the volume a prop needs when nothing lights it).
+    std::uint8_t mode = 0;
 };
+
+inline constexpr std::uint8_t kDrawPlain = 0;
+inline constexpr std::uint8_t kDrawHalo = 1;
+inline constexpr std::uint8_t kDrawShaded = 2;
 
 struct SceneDescription {
     SceneCamera camera;

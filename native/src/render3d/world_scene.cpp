@@ -60,7 +60,7 @@ void pushDoubleTriangle(MeshData& mesh, std::uint16_t a, std::uint16_t b, std::u
 constexpr float kLightClamp = 1.15F;
 
 /// A flame's halo keeps this much of its alpha at full daylight.
-constexpr float kFlameDayAlpha = 0.35F;
+constexpr float kFlameDayAlpha = 0.12F;
 
 /// A window pane goes warm when the sky is darker than this (0 at
 /// midnight, 1 at noon) and the room behind it glows more than this.
@@ -497,6 +497,7 @@ void WorldScene::refresh(SceneDescription& scene, const render::Camera& camera, 
             at.tint3 = slots[2];
             at.tint4 = slots[3];
             at.pane = slots[4];
+            at.mode = p.mode;
             scene.statics.push_back(at);
             ++stats_.piecesInstanced;
         }
