@@ -10878,9 +10878,9 @@ std::string gCourtNote;
     for (int second = 0; second < 90 && !tavern.lastArrest().happened; ++second) {
         if (const sim::Actor* cull = tavern.actorById(cullId); cull != nullptr && cull->present()) {
             // In his face: distance zero is inside reach whatever the room
-            // does with the line.
+            // does with the line. The room is told where the body is by the
+            // step that follows, exactly as every relocation is.
             session.placeBodyAt(cull->tileX(), cull->tileY(), cull->band());
-            session.syncTavernToBody();
         }
         session.stepMany(sim::MoveInput{}, sim::kStepsPerSecond);
     }

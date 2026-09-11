@@ -101,11 +101,19 @@ constexpr Window kWindows[] = {{320, 180}, {640, 360}, {960, 540}, {1280, 720}, 
     return nullptr;
 }
 
+/// Tells the room where the body is and which way it faces -- the step's
+/// own sync (Session::syncTavernToBody is the step's and private), through
+/// the tavern's public setters the way test_court's Room pushes its body.
+void syncBody(Session& session) {
+    session.tavern().setPlayer(session.body().x(), session.body().y(), session.body().band());
+    session.tavern().setPlayerYaw(session.body().yaw());
+}
+
 /// Stands the body on `actor`'s own tile -- distance zero beats every
 /// tie-break there is -- and tells the room so.
 void standOn(Session& session, const Actor& actor) {
     session.placeBodyAt(actor.tileX(), actor.tileY(), actor.band());
-    session.syncTavernToBody();
+    syncBody(session);
 }
 
 /// Stands where `watcher` can SEE the body by the three-clause notice rule
@@ -120,7 +128,7 @@ void standOn(Session& session, const Actor& actor) {
             continue;
         }
         session.placeBodyAt(px, py, watcher.band());
-        session.syncTavernToBody();
+        syncBody(session);
         if (session.tavern().noticeBy(watcher).seen) {
             return true;
         }
@@ -174,7 +182,7 @@ void standOn(Session& session, const Actor& actor) {
         if (session.tiles().standable(px, py, mark.band())) {
             session.placeBodyAt(px, py, mark.band());
             session.body().setYaw(s.yaw);
-            session.syncTavernToBody();
+            syncBody(session);
             return true;
         }
     }
