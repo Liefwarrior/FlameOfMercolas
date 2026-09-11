@@ -114,7 +114,7 @@ std::uint64_t sceneHash(const SceneDescription& scene) noexcept {
     Fnv1a64 h;
     // A format tag first, so a future field added to the byte image cannot
     // collide with an old image by accident.
-    h.mixU32(0x53434E33U);  // "SCN3" -- the viewmodel was appended by the V lane
+    h.mixU32(0x53434E34U);  // "SCN4" -- the static pieces were appended by the S lane
 
     mixVec3(h, scene.camera.position);
     mixVec3(h, scene.camera.target);
@@ -198,6 +198,35 @@ std::uint64_t sceneHash(const SceneDescription& scene) noexcept {
         mixVec3(h, part.rotation);
         h.mixF32(part.scale);
         mixRgba(h, part.tint);
+    }
+    // The static pieces: the table they index (the catalogue's files, so a
+    // catalogue edit is a different picture) and every placement.
+    h.mixU64(static_cast<std::uint64_t>(scene.pieces.size()));
+    for (const StaticPieceRef& piece : scene.pieces) {
+        h.mixU64(static_cast<std::uint64_t>(piece.file.size()));
+        if (!piece.file.empty()) {
+            h.mix(piece.file.data(), piece.file.size());
+        }
+    }
+    h.mixU64(static_cast<std::uint64_t>(scene.statics.size()));
+    for (const StaticInstance& piece : scene.statics) {
+        h.mixU16(piece.piece);
+        h.mixU8(piece.role);
+        mixVec3(h, piece.position);
+        h.mixF32(piece.yaw);
+        h.mixF32(piece.pitch);
+        h.mixF32(piece.roll);
+        mixVec3(h, piece.scale);
+        mixRgba(h, piece.tint);
+        mixRgba(h, piece.tint2);
+        h.mixF32(piece.gradientFrom);
+        h.mixF32(piece.gradientTo);
+        mixRgba(h, piece.tint3);
+        mixRgba(h, piece.tint4);
+        h.mixF32(piece.gradientFromZ);
+        h.mixF32(piece.gradientToZ);
+        mixRgba(h, piece.pane);
+        h.mixU8(piece.mode);
     }
     return h.value();
 }

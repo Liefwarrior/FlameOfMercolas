@@ -20,6 +20,14 @@
 // Fog is NOT here: rlsw has no shader for it and a multiply can't add the
 // fog colour in; the GPU path's fog shader is the render lane's, and until
 // then the district reads sharp to its far end.
+//
+// THE STATIC PIECES (static_pieces.hpp) ride here too: placed once from the
+// tiles and the catalogue when the chunks are built, lit per lighting bucket
+// exactly as the chunk faces are (ambient + baked + dynamic, times the
+// facing factor), and written into scene.statics every frame -- only those
+// within their role's reach of the eye, the cheap cull -- with the
+// catalogue's piece table beside them. No catalogue: no pieces, and the
+// description is what it was before the lane.
 
 #include <cstdint>
 #include <vector>
@@ -27,6 +35,7 @@
 #include "granadad/render/lamps.hpp"
 #include "granadad/render3d/chunk_mesher.hpp"
 #include "granadad/render3d/scene.hpp"
+#include "granadad/render3d/static_pieces.hpp"
 
 namespace granadad::render {
 struct Camera;
@@ -66,13 +75,24 @@ struct WorldSceneStats {
     std::size_t trianglesBuilt = 0;
     std::size_t meshesRecoloured = 0;
     bool anyTruncated = false;
+    /// S LANE. Pieces placed over the whole district, pieces inside their
+    /// reach this frame, pieces described this frame (inside the reach AND
+    /// the frustum), and how many times the placements were relit (once
+    /// per lighting bucket, never per frame).
+    std::size_t piecesPlaced = 0;
+    std::size_t piecesInReach = 0;
+    std::size_t piecesInstanced = 0;
+    std::size_t piecesRelit = 0;
 };
 
 class WorldScene {
 public:
-    /// Borrows all three for its lifetime. `glow` may be null (ambient only).
+    /// Borrows all of them for its lifetime. `glow` may be null (ambient
+    /// only). `catalogue` may be null (no static pieces); with one, `lamps`
+    /// is the baked lamp list the lamp pieces stand at (null = none).
     WorldScene(const sim::TileQuery& tiles, const render::TileAtlas& atlas,
-               const render::LampGlow* glow);
+               const render::LampGlow* glow, const StaticCatalogue* catalogue = nullptr,
+               const std::vector<render::Lamp>* lamps = nullptr);
 
     /// Builds every chunk's geometry. Called by the first refresh() if the
     /// caller did not; separate so a loading step can pay for it up front.
@@ -90,6 +110,14 @@ public:
 
     [[nodiscard]] const WorldSceneStats& stats() const noexcept { return stats_; }
     [[nodiscard]] const ChunkMaterials& materials() const noexcept { return materials_; }
+    /// Every piece placed over the district (built with the chunks), and
+    /// the rule counts behind them.
+    [[nodiscard]] const std::vector<StaticPlacement>& placements() const noexcept {
+        return placements_.placements;
+    }
+    [[nodiscard]] const StaticPlacementStats& placementStats() const noexcept {
+        return placements_.stats;
+    }
 
 private:
     struct Slot {
@@ -106,6 +134,8 @@ private:
 
     [[nodiscard]] Slot& slot(ChunkKey key) noexcept;
     void build(Slot& s, ChunkKey key);
+    void placePieces();
+    void relightPieces(const ChunkLighting& lighting);
 
     const sim::TileQuery* tiles_;
     const render::TileAtlas* atlas_;
@@ -117,6 +147,15 @@ private:
     bool texturePut_ = false;
     std::uint32_t skyVersionPut_ = 0;
     WorldSceneStats stats_;
+    const StaticCatalogue* catalogue_ = nullptr;
+    const std::vector<render::Lamp>* lamps_ = nullptr;
+    StaticPlacements placements_;
+    bool piecesPlaced_ = false;
+    /// The lit tints per placement -- the four blend corners and the pane
+    /// -- for the lighting bucket `litVersion_`.
+    static constexpr std::size_t kLitSlots = 5;
+    std::vector<Rgba8> litTints_;
+    std::uint32_t litVersion_ = 0;
 };
 
 }  // namespace granadad::render3d

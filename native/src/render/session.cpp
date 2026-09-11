@@ -286,6 +286,9 @@ Session::Session(const SessionConfig& config)
                                                 loadLamps(config_.contentDir, config_.world));
     body_ = std::make_unique<sim::PlayerBody>(*tiles_, config_.spawnX, config_.spawnY,
                                               config_.spawnBand, config_.spawnYaw);
+    if (config_.spawnPitchGiven) {
+        body_->setPitch(config_.spawnPitch);
+    }
     // S5. The district declares its own floor: everything under the harbour
     // surface is unbuilt dungeon, and a body that fell into it could not climb
     // back out. See PlayerBody::setLandingFloor for the shaft this closes.

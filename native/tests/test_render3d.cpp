@@ -33,6 +33,7 @@
 #include "granadad/render3d/backend.hpp"
 #include "granadad/render3d/scene.hpp"
 #include "granadad/render3d/starter_scene.hpp"
+#include "granadad/render3d/static_pieces.hpp"
 #include "granadad/render3d/world_scene.hpp"
 #include "granadad/sim/docks.hpp"
 #include "granadad/sim/tile_query.hpp"
@@ -506,4 +507,79 @@ TEST_CASE("the ward's people render as figures in the 3D frame") {
     // And again, byte for byte.
     const render::Framebuffer second = drawOnce(*video, scene, nullptr, nullptr);
     CHECK(frame.pixels() == second.pixels());
+}
+
+TEST_CASE("a missing piece falls back to the placeholder and the scene still renders") {
+    // THE S LANE'S FALLBACK, on the pixels. The Docks described WITH every
+    // building piece the catalogue places near the spawn, drawn through a
+    // backend that has no static model directory (this container never has
+    // the licensed files): every placement counts as missing, nothing of it
+    // is drawn, and the frame is BYTE-IDENTICAL to the same description
+    // with its pieces stripped out -- the chunk mesh under the pieces is
+    // the placeholder, always there. Then a directory that exists but holds
+    // no .gltf: the same frame again, no file opened, no crash.
+    if (!Backend::headlessCapable()) {
+        MESSAGE("skipped: this build renders through a GPU window, not rlsw");
+        return;
+    }
+    namespace content = granadad::content;
+    namespace sim = granadad::sim;
+    const content::World world =
+        content::loadWorldFile(content::bakedMap(sim::docks::kWorldName));
+    const sim::TileQuery tiles(world);
+    const render::TileAtlas atlas = render::TileAtlas::load(content::contentDir());
+    const std::vector<render::Lamp> lamps =
+        render::loadLamps(content::contentDir(), sim::docks::kWorldName);
+    const render::LampGlow glow = render::LampGlow::build(tiles, lamps);
+    const StaticCatalogue catalogue =
+        StaticCatalogue::load(staticCataloguePath(content::contentDir()));
+    REQUIRE_FALSE(catalogue.empty());
+
+    render::Camera eye;
+    eye.x = static_cast<float>(sim::docks::kSpawnTileX) + 0.5F;
+    eye.y = static_cast<float>(sim::docks::kSpawnTileY) + 0.5F;
+    eye.z = render::bandSurface(sim::docks::kSpawnBand) +
+            static_cast<float>(sim::kEyeHeightTilesQ8) / 256.0F;
+    eye.yaw = 265.0F * 3.14159265358979323846F / 180.0F;
+    eye.pitch = 0.0F;
+    eye.hfovTan = 1.0F;
+
+    WorldSceneParams params;
+    params.timeOfDaySeconds = 12 * 3600;
+    WorldScene docks(tiles, atlas, &glow, &catalogue, &lamps);
+    SceneDescription dressed;
+    docks.refresh(dressed, eye, static_cast<float>(kWidth) / static_cast<float>(kHeight), params);
+    REQUIRE(dressed.statics.size() > 100);
+    REQUIRE(dressed.pieces.size() == catalogue.pieces().size());
+    SceneDescription bare = dressed;
+    bare.statics.clear();
+    bare.pieces.clear();
+    CHECK(sceneHash(bare) != sceneHash(dressed));
+
+    BackendConfig config = headlessConfig();
+    std::unique_ptr<Backend> video = Backend::open(config);
+    REQUIRE(video != nullptr);
+    SceneStats stats;
+    const render::Framebuffer withPieces = drawOnce(*video, dressed, nullptr, &stats);
+    CHECK(stats.staticsMissing == dressed.statics.size());
+    CHECK(stats.staticsDrawn == 0);
+    CHECK(stats.staticModelsLoaded == 0);
+    CHECK(stats.instancesDrawn == dressed.instances.size());
+    const render::Framebuffer withoutPieces = drawOnce(*video, bare, nullptr, nullptr);
+    CHECK(withPieces.pixels() == withoutPieces.pixels());
+    video.reset();
+
+    // A directory with no pieces in it: looked in, nothing found, the same
+    // picture.
+    config.staticDir = (content::contentDir() / "maps").string();
+    video = Backend::open(config);
+    REQUIRE(video != nullptr);
+    SceneStats again;
+    const render::Framebuffer lookedFor = drawOnce(*video, dressed, nullptr, &again);
+    CHECK(again.staticsMissing == dressed.statics.size());
+    CHECK(again.staticsDrawn == 0);
+    CHECK(again.staticModelsLoaded == 0);
+    CHECK(lookedFor.pixels() == withoutPieces.pixels());
+    MESSAGE("placeholder frame: " << dressed.statics.size() << " pieces described, none drawn, "
+                                  << dressed.instances.size() << " chunk instances stand");
 }

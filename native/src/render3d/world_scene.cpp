@@ -55,6 +55,75 @@ void pushDoubleTriangle(MeshData& mesh, std::uint16_t a, std::uint16_t b, std::u
     return dx * dx + dz * dz;
 }
 
+/// A surface's light is ambient + glow, and a piece in a lamp's pool is
+/// lit rather than blown out: the sum is clamped a little over one.
+constexpr float kLightClamp = 1.15F;
+
+/// A flame's halo keeps this much of its alpha at full daylight.
+constexpr float kFlameDayAlpha = 0.12F;
+
+/// A window pane goes warm when the sky is darker than this (0 at
+/// midnight, 1 at noon) and the room behind it glows more than this.
+constexpr float kPaneNightBelow = 0.42F;
+constexpr float kPaneLitAbove = 0.12F;
+
+/// The glass of an unlit window: a third of the light, blue-grey -- a dark
+/// pane, not a wash over the wall the chunk mesh puts behind it.
+[[nodiscard]] Rgba8 darkPane(const Rgba8& lit) noexcept {
+    return Rgba8{static_cast<std::uint8_t>(lit.r / 4), static_cast<std::uint8_t>(lit.g / 4 + lit.g / 16),
+                 static_cast<std::uint8_t>(lit.b / 3), lit.a};
+}
+
+[[nodiscard]] Vec3 sub(const Vec3& a, const Vec3& b) noexcept { return Vec3{a.x - b.x, a.y - b.y, a.z - b.z}; }
+[[nodiscard]] float dot(const Vec3& a, const Vec3& b) noexcept { return a.x * b.x + a.y * b.y + a.z * b.z; }
+[[nodiscard]] Vec3 cross(const Vec3& a, const Vec3& b) noexcept {
+    return Vec3{a.y * b.z - a.z * b.y, a.z * b.x - a.x * b.z, a.x * b.y - a.y * b.x};
+}
+[[nodiscard]] Vec3 normalised(const Vec3& v) noexcept {
+    const float len = std::sqrt(dot(v, v));
+    return len > 1.0e-6F ? Vec3{v.x / len, v.y / len, v.z / len} : Vec3{0.0F, 0.0F, -1.0F};
+}
+
+/// THE FRUSTUM CULL on a piece: its origin, pushed out by its radius,
+/// against the camera's forward half-space, the two side planes and the
+/// two lid planes, with a margin. A piece behind the eye or well off the
+/// sides is not described at all.
+struct Frustum {
+    Vec3 eye;
+    Vec3 forward;
+    Vec3 right;
+    Vec3 up;
+    float tanHalfX = 1.0F;
+    float tanHalfY = 1.0F;
+
+    [[nodiscard]] static Frustum of(const SceneCamera& camera, float aspect) noexcept {
+        Frustum f;
+        f.eye = camera.position;
+        f.forward = normalised(sub(camera.target, camera.position));
+        f.right = normalised(cross(f.forward, camera.up));
+        f.up = cross(f.right, f.forward);
+        const float halfY = camera.fovyDegrees * 0.5F * (kPi / 180.0F);
+        f.tanHalfY = std::tan(halfY) * 1.15F;
+        f.tanHalfX = std::tan(halfY) * std::max(0.1F, aspect) * 1.15F;
+        return f;
+    }
+
+    [[nodiscard]] bool sees(const Vec3& at, float radius) const noexcept {
+        const Vec3 v = sub(at, eye);
+        const float ahead = dot(v, forward);
+        if (ahead < -radius) {
+            return false;
+        }
+        const float reach = std::max(0.0F, ahead + radius);
+        const float side = std::fabs(dot(v, right)) - radius;
+        if (side > reach * tanHalfX) {
+            return false;
+        }
+        const float lid = std::fabs(dot(v, up)) - radius;
+        return lid <= reach * tanHalfY;
+    }
+};
+
 }  // namespace
 
 // ---------------------------------------------------------------------------
@@ -110,8 +179,14 @@ MeshData buildSkyDome(int timeOfDaySeconds) {
 // ---------------------------------------------------------------------------
 
 WorldScene::WorldScene(const sim::TileQuery& tiles, const render::TileAtlas& atlas,
-                       const render::LampGlow* glow)
-    : tiles_(&tiles), atlas_(&atlas), glow_(glow), materials_(ChunkMaterials::fromAtlas(atlas)) {
+                       const render::LampGlow* glow, const StaticCatalogue* catalogue,
+                       const std::vector<render::Lamp>* lamps)
+    : tiles_(&tiles),
+      atlas_(&atlas),
+      glow_(glow),
+      materials_(ChunkMaterials::fromAtlas(atlas)),
+      catalogue_(catalogue),
+      lamps_(lamps) {
     chunksAcross_ = std::min(kChunksAcross, (tiles.sizeX() + kChunkTiles - 1) / kChunkTiles);
     chunksDown_ = (tiles.sizeY() + kChunkTiles - 1) / kChunkTiles;
     slots_.resize(static_cast<std::size_t>(chunksAcross_) * static_cast<std::size_t>(chunksDown_));
@@ -164,6 +239,147 @@ void WorldScene::buildAll() {
             }
         }
     }
+    if (!piecesPlaced_) {
+        placePieces();
+    }
+}
+
+void WorldScene::placePieces() {
+    piecesPlaced_ = true;
+    placements_ = StaticPlacements{};
+    litTints_.clear();
+    litVersion_ = 0;
+    if (catalogue_ == nullptr || catalogue_->empty()) {
+        stats_.piecesPlaced = 0;
+        return;
+    }
+    static const std::vector<render::Lamp> kNoLamps;
+    placements_ = placeStaticPieces(*tiles_, *catalogue_, lamps_ != nullptr ? *lamps_ : kNoLamps);
+    stats_.piecesPlaced = placements_.placements.size();
+}
+
+void WorldScene::relightPieces(const ChunkLighting& lighting) {
+    // The same surface light the chunk colour stage computes for a cell --
+    // ambient + max(baked, dynamic) -- times the piece's facing factor,
+    // clamped a little over one so a piece in a lamp's pool is lit rather
+    // than blown out, folded into the unlit catalogue tint.
+    const render::SkyState sky = render::skyAt(lighting.timeOfDaySeconds);
+    const bool hasDynamic = lighting.dynamicLamps != nullptr && !lighting.dynamicLamps->empty();
+    litTints_.resize(placements_.placements.size() * kLitSlots);
+    const auto glowAt = [&](std::int32_t x, std::int32_t y, std::int32_t z) {
+        const render::Rgb baked = glow_ != nullptr ? glow_->at(x, y, z) : render::Rgb{};
+        const render::Rgb live =
+            hasDynamic ? render::dynamicGlowAt(*lighting.dynamicLamps, x, y, z) : render::Rgb{};
+        return render::Rgb{std::max(baked.r, live.r), std::max(baked.g, live.g),
+                           std::max(baked.b, live.b)};
+    };
+    // The glow AT A CUT between two cell centres, `t` of the way from the
+    // first to the second, so the two pieces meeting there share one value.
+    const auto glowBetween = [&](std::int32_t ax, std::int32_t ay, std::int32_t bx, std::int32_t by,
+                                 float t, std::int32_t z) {
+        const render::Rgb a = glowAt(ax, ay, z);
+        const render::Rgb b = glowAt(bx, by, z);
+        return render::Rgb{a.r + (b.r - a.r) * t, a.g + (b.g - a.g) * t, a.b + (b.b - a.b) * t};
+    };
+    // The glow at a grid CORNER POINT (px, py): the average of the four
+    // cells that meet there.
+    const auto glowAtCorner = [&](std::int32_t px, std::int32_t py, std::int32_t z) {
+        render::Rgb sum{};
+        for (std::int32_t dy = -1; dy <= 0; ++dy) {
+            for (std::int32_t dx = -1; dx <= 0; ++dx) {
+                const render::Rgb g = glowAt(px + dx, py + dy, z);
+                sum.r += g.r;
+                sum.g += g.g;
+                sum.b += g.b;
+            }
+        }
+        return render::Rgb{sum.r * 0.25F, sum.g * 0.25F, sum.b * 0.25F};
+    };
+    const Rgba8 litPaneTint =
+        catalogue_ != nullptr ? catalogue_->knobs().litPane : Rgba8{255, 196, 120, 255};
+    const bool night = sky.daylight < kPaneNightBelow;
+    for (std::size_t i = 0; i < placements_.placements.size(); ++i) {
+        const StaticPlacement& p = placements_.placements[i];
+        Rgba8* slots = &litTints_[i * kLitSlots];
+        const auto lit = [&p, &sky](const render::Rgb& glow, const Rgba8& tint) {
+            const auto ch = [&p](float ambient, float g, std::uint8_t t) {
+                const float light = std::min(kLightClamp, ambient + g) * p.facing;
+                return static_cast<std::uint8_t>(
+                    std::clamp(light * static_cast<float>(t), 0.0F, 255.0F) + 0.5F);
+            };
+            return Rgba8{ch(sky.ambient.r, glow.r, tint.r), ch(sky.ambient.g, glow.g, tint.g),
+                         ch(sky.ambient.b, glow.b, tint.b), tint.a};
+        };
+        if (p.selfLit) {
+            // A lamp is its own light. A flame's halo (a translucent quad)
+            // fades with the daylight: full at night, a third at noon.
+            Rgba8 own = p.instance.tint;
+            if (p.role == PieceRole::Flame) {
+                const float glowAlpha = static_cast<float>(own.a) * (kFlameDayAlpha + (1.0F - kFlameDayAlpha) *
+                                                                                      (1.0F - sky.daylight));
+                own.a = static_cast<std::uint8_t>(std::clamp(glowAlpha, 0.0F, 255.0F) + 0.5F);
+            }
+            slots[0] = slots[1] = slots[2] = slots[3] = own;
+            slots[4] = darkPane(own);
+        } else if (p.gradient) {
+            // A run piece: lit at each end AT THE BOUNDARY, blended across
+            // by the adapter. The piece's local X runs from the a0 end
+            // unless it was turned around to show its other finish.
+            const Rgba8 a = lit(glowBetween(p.lightX, p.lightY, p.endAX, p.endAY, p.endAT, p.lightZ),
+                                p.instance.tint);
+            const Rgba8 b = lit(glowBetween(p.lightX2, p.lightY2, p.endBX, p.endBY, p.endBT, p.lightZ),
+                                p.instance.tint);
+            if (p.alongZ) {
+                // The blend runs along the piece's Z: its near end (z = 0)
+                // first.
+                slots[0] = slots[1] = p.flipped ? b : a;
+                slots[2] = slots[3] = p.flipped ? a : b;
+            } else {
+                slots[0] = slots[2] = p.flipped ? b : a;
+                slots[1] = slots[3] = p.flipped ? a : b;
+            }
+            slots[4] = darkPane(slots[0]);
+        } else if (p.bilinear) {
+            // A block: its four corner points, in the piece's own order.
+            slots[0] = lit(glowAtCorner(p.lightX, p.lightY, p.lightZ), p.instance.tint);
+            slots[1] = lit(glowAtCorner(p.lightX2, p.lightY2, p.lightZ), p.instance.tint);
+            slots[2] = lit(glowAtCorner(p.endAX, p.endAY, p.lightZ), p.instance.tint);
+            slots[3] = lit(glowAtCorner(p.endBX, p.endBY, p.lightZ), p.instance.tint);
+            slots[4] = darkPane(slots[0]);
+        } else {
+            // A point piece, or a flat block: averaged over the cells it
+            // covers.
+            const std::int32_t x0 = std::min(p.lightX, p.lightX2);
+            const std::int32_t x1 = std::max(p.lightX, p.lightX2);
+            const std::int32_t y0 = std::min(p.lightY, p.lightY2);
+            const std::int32_t y1 = std::max(p.lightY, p.lightY2);
+            render::Rgb sum{};
+            int count = 0;
+            for (std::int32_t y = y0; y <= y1; ++y) {
+                for (std::int32_t x = x0; x <= x1; ++x) {
+                    const render::Rgb g = glowAt(x, y, p.lightZ);
+                    sum.r += g.r;
+                    sum.g += g.g;
+                    sum.b += g.b;
+                    ++count;
+                }
+            }
+            const float inv = 1.0F / static_cast<float>(std::max(1, count));
+            const Rgba8 flat = lit(render::Rgb{sum.r * inv, sum.g * inv, sum.b * inv}, p.instance.tint);
+            slots[0] = slots[1] = slots[2] = slots[3] = flat;
+            slots[4] = darkPane(flat);
+        }
+        // A window whose room is lit at night shows it: the pane goes
+        // warm and bright, its own light -- lit by a lamp that reaches the
+        // room, or by the candle the tile hash keeps in a roofed room.
+        if (p.hasInside && night) {
+            const render::Rgb room = glowAt(p.insideX, p.insideY, p.insideZ);
+            if (p.homely || std::max(room.r, std::max(room.g, room.b)) > kPaneLitAbove) {
+                slots[4] = litPaneTint;
+            }
+        }
+    }
+    ++stats_.piecesRelit;
 }
 
 void WorldScene::invalidate(ChunkKey key) {
@@ -239,7 +455,56 @@ void WorldScene::refresh(SceneDescription& scene, const render::Camera& camera, 
         }
     }
 
+    // The static pieces: relit when the lighting bucket moved, described
+    // when inside their role's reach AND inside the frustum (a piece
+    // behind the eye or off the sides is not described). The table rides
+    // with them.
     scene.camera = cameraFrom(camera, aspect);
+    scene.statics.clear();
+    stats_.piecesInstanced = 0;
+    stats_.piecesInReach = 0;
+    if (catalogue_ != nullptr && !placements_.placements.empty()) {
+        const std::uint32_t litVersion = chunkVersion(0, lighting);
+        if (litVersion != litVersion_ ||
+            litTints_.size() != placements_.placements.size() * kLitSlots) {
+            relightPieces(lighting);
+            litVersion_ = litVersion;
+        }
+        scene.pieces = catalogue_->pieceRefs();
+        const std::vector<PieceSpec>& specs = catalogue_->pieces();
+        const Frustum frustum = Frustum::of(scene.camera, aspect);
+        for (std::size_t i = 0; i < placements_.placements.size(); ++i) {
+            const StaticPlacement& p = placements_.placements[i];
+            const float roleReach =
+                p.instance.piece < specs.size() ? specs[p.instance.piece].maxDistance : reach;
+            // Measured to the piece's nearest reach, not its origin, so a
+            // wide block (a water plane, a floor) is not dropped while it
+            // still runs under the eye.
+            const float limit = std::min(reach, roleReach) + p.radius;
+            const float dx = p.instance.position.x - eye.x;
+            const float dz = p.instance.position.z - eye.z;
+            if (dx * dx + dz * dz > limit * limit) {
+                continue;
+            }
+            ++stats_.piecesInReach;
+            if (!frustum.sees(p.instance.position, p.radius)) {
+                continue;
+            }
+            StaticInstance at = p.instance;
+            const Rgba8* slots = &litTints_[i * kLitSlots];
+            at.tint = slots[0];
+            at.tint2 = slots[1];
+            at.tint3 = slots[2];
+            at.tint4 = slots[3];
+            at.pane = slots[4];
+            at.mode = p.mode;
+            scene.statics.push_back(at);
+            ++stats_.piecesInstanced;
+        }
+    } else {
+        scene.pieces.clear();
+    }
+
     const render::SkyState skyState = render::skyAt(params.timeOfDaySeconds);
     scene.clearColour = rgba(skyState.skyHorizon);
 }

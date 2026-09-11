@@ -485,6 +485,12 @@ add_library(granadad-render3d-core STATIC
     # recoloured on the minute, instanced near the eye, the sky dome, the
     # camera from the body.
     src/render3d/world_scene.cpp
+    # The S lane: the Synty building kit placed from the tile map -- the
+    # catalogue (content/raws/world3d/docks-pieces.json) and the rules that
+    # turn wall faces, door gaps, floors, water, lamps and a tile hash into
+    # StaticInstances beside the chunks. Pure over the tile bytes; the
+    # adapter draws the glTF files, or nothing where they are absent.
+    src/render3d/static_pieces.cpp
     src/render3d/actor_instances.cpp
     src/render3d/viewmodel.cpp
 )

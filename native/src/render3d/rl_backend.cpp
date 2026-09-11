@@ -44,6 +44,18 @@
 //      goes through the same path as any instance. glTF's front is +Z and
 //      the scene's yaw 0 faces -Z, hence kGltfForwardYaw.
 //
+//   5. (S LANE) HOW A STATIC PIECE IS DRAWN. scene.statics name a row of
+//      scene.pieces (a glTF file under staticDir); the adapter loads each
+//      file ONCE (LoadModel: cgltf reads the .bin and the pack atlas beside
+//      it, one raylib Mesh per primitive with its own material, base colour
+//      texture only per the export) and draws every mesh of it with the
+//      instance's non-uniform scale, yaw and place, the material's own
+//      colour factor multiplied by the instance tint. A sub-mesh whose
+//      material is translucent (window glass, the water plane) is held
+//      back and drawn after the people, so a body behind a window is not
+//      cut out by the glass's depth. No file: nothing is drawn and the
+//      chunk mesh underneath stands, which is the placeholder rule.
+//
 //   4. (V LANE) HOW THE PLAYER'S OWN HANDS ARE DRAWN. A second BeginMode3D
 //      after the world's, with a camera at the origin looking down -Z (the
 //      parts are described in view space), and its projection REPLACED by
@@ -176,6 +188,55 @@ struct WeaponModel {
     bool loaded = false;
 };
 
+/// S LANE. One building piece, loaded once per file. `baseColour` keeps each
+/// material's own colour factor (the water's 0.7 alpha, a glass pane's) so
+/// the instance tint multiplies it rather than replacing it per draw.
+struct StaticModel {
+    Model model{};
+    bool loaded = false;
+    std::vector<Color> baseColour;
+    /// Per mesh: its material's alpha is under 255 -- drawn in the late pass.
+    std::vector<bool> translucent;
+    /// Per mesh: translucent AND untextured -- a pane of glass, drawn with
+    /// the instance's pane tint (dark by day and over an unlit room, warm
+    /// over a lit room at night) rather than as a white wash over the wall
+    /// the chunk mesh puts behind it.
+    std::vector<bool> glass;
+};
+
+/// S LANE. The four blend corners of a piece and their spans: the light
+/// at local (x, z) = (from, fromZ), (to, fromZ), (from, toZ), (to, toZ).
+struct PieceTints {
+    Color a{};
+    Color b{};
+    Color c{};
+    Color d{};
+    float from = 0.0F;
+    float to = 0.0F;
+    float fromZ = 0.0F;
+    float toZ = 0.0F;
+    /// What a pane of glass in the piece is drawn with.
+    Color pane{};
+    /// kDrawPlain / kDrawHalo / kDrawShaded (scene.hpp).
+    std::uint8_t mode = 0;
+
+    [[nodiscard]] bool uniform() const noexcept {
+        const auto same = [](const Color& p, const Color& q) {
+            return p.r == q.r && p.g == q.g && p.b == q.b;
+        };
+        return same(a, b) && same(a, c) && same(a, d);
+    }
+};
+
+/// S LANE. A translucent sub-mesh held back for the late pass.
+struct DeferredMesh {
+    StaticModel* model = nullptr;
+    int mesh = 0;
+    Matrix transform{};
+    PieceTints tints{};
+    bool mirrored = false;
+};
+
 /// A glTF asset faces +Z (the spec's own convention, and the asset lane's
 /// export); the scene's yaw 0 faces -Z. Half a turn, applied to models only.
 constexpr float kGltfForwardYaw = 3.14159265358979323846F;
@@ -194,6 +255,84 @@ constexpr double kViewmodelFar = 4.0;
 constexpr float kViewmodelDepthSpan = 0.2F;
 
 [[nodiscard]] Color colourOf(const Rgba8& c) noexcept { return Color{c.r, c.g, c.b, c.a}; }
+
+#if !defined(GRAPHICS_API_OPENGL_11)
+/// S LANE. The static pieces' own vertex shader: raylib's default with the
+/// tint blended BILINEARLY over the piece's local X and Z between four
+/// colours, so a wall segment reads the light of the cells it spans
+/// instead of one flat step and a floor block reads its four corners
+/// instead of one patch. A run piece passes an empty Z span (its factor
+/// 0), a point piece both. GL 3.3 only; the software rasterizer has no
+/// shaders and never has the licensed files to draw with it anyway.
+/// Two more things the same shader does, by `pieceMode` (scene.hpp): a
+/// HALO (1) takes its alpha to nothing at the edge of the quad, radially
+/// over the piece's local XY (the span uniform then carries X and Y), so a
+/// flame's glow is a soft disc and not a square; a SHADED piece (2) darkens
+/// faces that look down (to half) and lifts faces that look up (by an
+/// eighth) from the mesh's own normals, the vertical faces untouched: the
+/// volume a prop needs when nothing lights it, and the difference between
+/// a rowboat and a dome.
+constexpr const char* kBlendVertexShader =
+    "#version 330\n"
+    "in vec3 vertexPosition;\n"
+    "in vec2 vertexTexCoord;\n"
+    "in vec3 vertexNormal;\n"
+    "in vec4 vertexColor;\n"
+    "uniform mat4 mvp;\n"
+    "uniform mat4 matNormal;\n"
+    "uniform vec4 tintA;\n"
+    "uniform vec4 tintB;\n"
+    "uniform vec4 tintC;\n"
+    "uniform vec4 tintD;\n"
+    "uniform vec4 tintSpan;\n"
+    "uniform int pieceMode;\n"
+    "out vec2 fragTexCoord;\n"
+    "out vec4 fragColor;\n"
+    "out vec2 haloUV;\n"
+    "void main() {\n"
+    "    float tx = clamp((vertexPosition.x - tintSpan.x) * tintSpan.y, 0.0, 1.0);\n"
+    "    float tz = clamp((vertexPosition.z - tintSpan.z) * tintSpan.w, 0.0, 1.0);\n"
+    "    fragTexCoord = vertexTexCoord;\n"
+    "    vec4 tint = mix(mix(tintA, tintB, tx), mix(tintC, tintD, tx), tz);\n"
+    "    haloUV = vec2(0.0, 0.0);\n"
+    "    if (pieceMode == 1) {\n"
+    "        tint = tintA;\n"
+    "        haloUV = vec2((vertexPosition.x - tintSpan.x) * tintSpan.y * 2.0 - 1.0,\n"
+    "                      (vertexPosition.y - tintSpan.z) * tintSpan.w * 2.0 - 1.0);\n"
+    "    } else if (pieceMode == 2) {\n"
+    "        vec3 n = normalize(vec3(matNormal * vec4(vertexNormal, 0.0)));\n"
+    "        float f = n.y < 0.0 ? 1.0 + 0.5 * n.y : 1.0 + 0.125 * n.y;\n"
+    "        tint.rgb *= f;\n"
+    "    }\n"
+    "    fragColor = vertexColor * tint;\n"
+    "    gl_Position = mvp * vec4(vertexPosition, 1.0);\n"
+    "}\n";
+constexpr const char* kBlendFragmentShader =
+    "#version 330\n"
+    "in vec2 fragTexCoord;\n"
+    "in vec4 fragColor;\n"
+    "in vec2 haloUV;\n"
+    "uniform sampler2D texture0;\n"
+    "uniform vec4 colDiffuse;\n"
+    "uniform int pieceMode;\n"
+    "out vec4 finalColor;\n"
+    "void main() {\n"
+    "    vec4 texelColor = texture(texture0, fragTexCoord);\n"
+    "    finalColor = texelColor * colDiffuse * fragColor;\n"
+    "    if (pieceMode == 1) {\n"
+    "        float fall = max(0.0, 1.0 - dot(haloUV, haloUV));\n"
+    "        finalColor.a *= fall * fall;\n"
+    "    }\n"
+    "}\n";
+#endif
+
+[[nodiscard]] Color averageColour(const PieceTints& t) noexcept {
+    return Color{static_cast<unsigned char>((t.a.r + t.b.r + t.c.r + t.d.r) / 4),
+                 static_cast<unsigned char>((t.a.g + t.b.g + t.c.g + t.d.g) / 4),
+                 static_cast<unsigned char>((t.a.b + t.b.b + t.c.b + t.d.b) / 4), t.a.a};
+}
+
+[[nodiscard]] float channelOf(unsigned char c) noexcept { return static_cast<float>(c) / 255.0F; }
 
 [[nodiscard]] Vector3 vec(const Vec3& v) noexcept { return Vector3{v.x, v.y, v.z}; }
 
@@ -261,6 +400,40 @@ struct Backend::Impl {
     /// V LANE. The arms rigs and the static weapons, the same way.
     std::map<std::string, std::unique_ptr<RigModel>> handRigs;
     std::map<std::string, std::unique_ptr<WeaponModel>> weapons;
+    /// S LANE. Building pieces by file; a null entry is a file looked for
+    /// and not found, never asked for again.
+    std::map<std::string, std::unique_ptr<StaticModel>> statics;
+    std::vector<DeferredMesh> deferred;
+    /// The blend shader (GL 3.3) and its uniform slots; id 0 = not
+    /// available, and the pieces draw with the average of their two tints.
+    Shader blend{};
+    bool blendTried = false;
+    int blendTintA = -1;
+    int blendTintB = -1;
+    int blendTintC = -1;
+    int blendTintD = -1;
+    int blendSpan = -1;
+    int blendMode = -1;
+
+    void ensureBlendShader() {
+        if (blendTried) {
+            return;
+        }
+        blendTried = true;
+#if !defined(GRAPHICS_API_OPENGL_11)
+        blend = LoadShaderFromMemory(kBlendVertexShader, kBlendFragmentShader);
+        if (blend.id != 0 && blend.id != rlGetShaderIdDefault()) {
+            blendTintA = GetShaderLocation(blend, "tintA");
+            blendTintB = GetShaderLocation(blend, "tintB");
+            blendTintC = GetShaderLocation(blend, "tintC");
+            blendTintD = GetShaderLocation(blend, "tintD");
+            blendSpan = GetShaderLocation(blend, "tintSpan");
+            blendMode = GetShaderLocation(blend, "pieceMode");
+        } else {
+            blend = Shader{};
+        }
+#endif
+    }
     Material material{};
     bool materialLoaded = false;
     Texture2D defaultTexture{};
@@ -347,6 +520,186 @@ struct Backend::Impl {
         RigModel* result = loaded.get();
         rigs.emplace(key, std::move(loaded));
         return result;
+    }
+
+    /// S LANE. The model for a piece file, loading it the first time it is
+    /// asked for. Null when there is none: the caller draws nothing.
+    StaticModel* staticFor(const std::string& file) {
+        if (file.empty() || config.staticDir.empty()) {
+            return nullptr;
+        }
+        auto found = statics.find(file);
+        if (found != statics.end()) {
+            return found->second.get();
+        }
+        std::unique_ptr<StaticModel> loaded;
+        const std::string path = config.staticDir + "/" + file;
+        if (FileExists(path.c_str())) {
+            auto candidate = std::make_unique<StaticModel>();
+            candidate->model = LoadModel(path.c_str());
+            if (candidate->model.meshCount > 0) {
+                candidate->loaded = true;
+                candidate->baseColour.resize(static_cast<std::size_t>(candidate->model.materialCount));
+                for (int m = 0; m < candidate->model.materialCount; ++m) {
+                    Material& material = candidate->model.materials[m];
+                    candidate->baseColour[static_cast<std::size_t>(m)] =
+                        material.maps[MATERIAL_MAP_DIFFUSE].color;
+#if !defined(PLATFORM_MEMORY)
+                    // The pack atlases are flat-colour sheets a few thousand
+                    // texels across drawn on 2.5 m walls: mipmapped and
+                    // filtered they read as paint, point-sampled they
+                    // shimmer. rlsw has neither, and never has the files.
+                    Texture2D& texture = material.maps[MATERIAL_MAP_DIFFUSE].texture;
+                    if (texture.id != 0 && texture.id != defaultTexture.id) {
+                        GenTextureMipmaps(&texture);
+                        SetTextureFilter(texture, TEXTURE_FILTER_TRILINEAR);
+                    }
+#endif
+                }
+                candidate->translucent.resize(static_cast<std::size_t>(candidate->model.meshCount));
+                candidate->glass.resize(static_cast<std::size_t>(candidate->model.meshCount));
+                for (int i = 0; i < candidate->model.meshCount; ++i) {
+                    const int m = candidate->model.meshMaterial[i];
+                    const bool inRange = m >= 0 && m < candidate->model.materialCount;
+                    const bool translucent =
+                        inRange && candidate->model.materials[m].maps[MATERIAL_MAP_DIFFUSE].color.a < 255;
+                    candidate->translucent[static_cast<std::size_t>(i)] = translucent;
+                    candidate->glass[static_cast<std::size_t>(i)] =
+                        translucent &&
+                        (candidate->model.materials[m].maps[MATERIAL_MAP_DIFFUSE].texture.id == 0 ||
+                         candidate->model.materials[m].maps[MATERIAL_MAP_DIFFUSE].texture.id ==
+                             defaultTexture.id);
+                }
+                loaded = std::move(candidate);
+            } else {
+                UnloadModel(candidate->model);
+                std::printf("granadad: render3d: piece %s did not load; the chunk stands\n",
+                            file.c_str());
+            }
+        }
+        StaticModel* result = loaded.get();
+        statics.emplace(file, std::move(loaded));
+        return result;
+    }
+
+    [[nodiscard]] std::size_t staticsLoaded() const noexcept {
+        std::size_t count = 0;
+        for (const auto& [name, piece] : statics) {
+            (void)name;
+            if (piece != nullptr) {
+                ++count;
+            }
+        }
+        return count;
+    }
+
+    /// S LANE. One piece: every opaque sub-mesh now, the translucent ones
+    /// deferred. The tint multiplies the material's own colour factor.
+    void drawStatic(const StaticInstance& piece, const SceneDescription& scene,
+                    SceneStats& stats) {
+        if (piece.piece >= scene.pieces.size()) {
+            ++stats.staticsMissing;
+            return;
+        }
+        StaticModel* model = staticFor(scene.pieces[piece.piece].file);
+        if (model == nullptr || !model->loaded) {
+            ++stats.staticsMissing;
+            return;
+        }
+        // Scale, roll about the piece's own Z, pitch about its X, yaw, place.
+        const Matrix transform = MatrixMultiply(
+            MatrixMultiply(MatrixMultiply(MatrixMultiply(MatrixScale(piece.scale.x, piece.scale.y, piece.scale.z),
+                                                         MatrixRotateZ(piece.roll)),
+                                          MatrixRotateX(piece.pitch)),
+                           MatrixRotateY(-piece.yaw)),
+            MatrixTranslate(piece.position.x, piece.position.y, piece.position.z));
+        const Matrix full = MatrixMultiply(model->model.transform, transform);
+        // A mirrored piece (one negative scale axis: a ceiling quad laid as
+        // a floor, a flat quad drawn both sides) has its winding reversed,
+        // so it is drawn both-sided.
+        const bool mirrored = piece.scale.x * piece.scale.y * piece.scale.z < 0.0F;
+        PieceTints tints;
+        tints.a = colourOf(piece.tint);
+        tints.b = colourOf(piece.tint2);
+        tints.c = colourOf(piece.tint3);
+        tints.d = colourOf(piece.tint4);
+        tints.from = piece.gradientFrom;
+        tints.to = piece.gradientTo;
+        tints.fromZ = piece.gradientFromZ;
+        tints.toZ = piece.gradientToZ;
+        tints.pane = colourOf(piece.pane);
+        tints.mode = piece.mode;
+        // A translucent instance (a flame's halo, its tint alpha under 255)
+        // is held back whole, like a pane of glass.
+        const bool seeThrough = piece.tint.a < 255;
+        for (int i = 0; i < model->model.meshCount; ++i) {
+            if (model->translucent[static_cast<std::size_t>(i)] || seeThrough) {
+                deferred.push_back(DeferredMesh{model, i, full, tints, mirrored});
+                continue;
+            }
+            drawStaticMesh(*model, i, full, tints, mirrored, stats);
+        }
+        ++stats.staticsDrawn;
+        ++stats.instancesDrawn;
+    }
+
+    void drawStaticMesh(StaticModel& model, int i, const Matrix& transform, const PieceTints& tints,
+                        bool mirrored, SceneStats& stats) {
+        const int m = model.model.meshMaterial[i];
+        if (m < 0 || m >= model.model.materialCount) {
+            return;
+        }
+        // The blend: the four tints over the piece when the shader is there
+        // and they differ -- or the piece asks for a halo or shading, which
+        // only the shader does -- their average when it is not (the
+        // software path) or they do not.
+        const bool spanned = tints.to > tints.from || tints.toZ > tints.fromZ;
+        const bool blended = blend.id != 0 && ((spanned && !tints.uniform()) || tints.mode != kDrawPlain);
+        const Color tint = blended ? Color{255, 255, 255, tints.a.a} : averageColour(tints);
+        const Color base = model.baseColour[static_cast<std::size_t>(m)];
+        const auto ch = [](unsigned char a, unsigned char b) {
+            return static_cast<unsigned char>((static_cast<unsigned>(a) * static_cast<unsigned>(b) + 127U) /
+                                              255U);
+        };
+        // Glass wears the pane tint the world scene decided -- dark by day
+        // and over an unlit room, warm over a lit room at night -- flat,
+        // never blended.
+        const bool glass = model.glass[static_cast<std::size_t>(i)];
+        const Color paneTint = glass ? tints.pane : tint;
+        model.model.materials[m].maps[MATERIAL_MAP_DIFFUSE].color =
+            Color{ch(base.r, paneTint.r), ch(base.g, paneTint.g), ch(base.b, paneTint.b),
+                  ch(base.a, paneTint.a)};
+        if (mirrored) {
+            rlDisableBackfaceCulling();
+        }
+        Material& material = model.model.materials[m];
+        const Shader keep = material.shader;
+        if (blended && !glass) {
+            // The material's own colour factor stays in colDiffuse; the
+            // four lit tints go through the shader's own slots. An empty
+            // span gets a zero factor: its blend stays at its first tint.
+            material.shader = blend;
+            const float a[4] = {channelOf(tints.a.r), channelOf(tints.a.g), channelOf(tints.a.b), 1.0F};
+            const float b[4] = {channelOf(tints.b.r), channelOf(tints.b.g), channelOf(tints.b.b), 1.0F};
+            const float c[4] = {channelOf(tints.c.r), channelOf(tints.c.g), channelOf(tints.c.b), 1.0F};
+            const float d[4] = {channelOf(tints.d.r), channelOf(tints.d.g), channelOf(tints.d.b), 1.0F};
+            const float span[4] = {tints.from, tints.to > tints.from ? 1.0F / (tints.to - tints.from) : 0.0F,
+                                   tints.fromZ,
+                                   tints.toZ > tints.fromZ ? 1.0F / (tints.toZ - tints.fromZ) : 0.0F};
+            SetShaderValue(blend, blendTintA, a, SHADER_UNIFORM_VEC4);
+            SetShaderValue(blend, blendTintB, b, SHADER_UNIFORM_VEC4);
+            SetShaderValue(blend, blendTintC, c, SHADER_UNIFORM_VEC4);
+            SetShaderValue(blend, blendTintD, d, SHADER_UNIFORM_VEC4);
+            SetShaderValue(blend, blendSpan, span, SHADER_UNIFORM_VEC4);
+            const int mode = static_cast<int>(tints.mode);
+            SetShaderValue(blend, blendMode, &mode, SHADER_UNIFORM_INT);
+        }
+        DrawMesh(model.model.meshes[i], material, transform);
+        material.shader = keep;
+        if (mirrored) {
+            rlEnableBackfaceCulling();
+        }
+        stats.trianglesDrawn += static_cast<std::size_t>(model.model.meshes[i].triangleCount);
     }
 
     [[nodiscard]] std::size_t rigsLoaded() const noexcept {
@@ -661,6 +1014,18 @@ struct Backend::Impl {
             }
         }
         weapons.clear();
+        for (auto& [name, piece] : statics) {
+            (void)name;
+            if (piece != nullptr && piece->loaded) {
+                UnloadModel(piece->model);
+            }
+        }
+        statics.clear();
+        deferred.clear();
+        if (blend.id != 0) {
+            UnloadShader(blend);
+            blend = Shader{};
+        }
         if (materialLoaded) {
             // First, while its diffuse map is rlgl's own 1x1 (drawScene puts
             // it back after every pass): UnloadMaterial frees any map whose
@@ -811,6 +1176,13 @@ SceneStats Backend::drawScene(const SceneDescription& scene) {
     for (const Instance& instance : scene.instances) {
         impl.drawInstance(instance, stats);
     }
+    // The building pieces over the chunks, opaque now, glass and water held
+    // back until the people are in.
+    impl.ensureBlendShader();
+    impl.deferred.clear();
+    for (const StaticInstance& piece : scene.statics) {
+        impl.drawStatic(piece, scene, stats);
+    }
     // The people, after the world: the skinned (near) bodies first so a
     // rig's one shared model is posed per body and then put back to rest
     // ONCE for every far body of its kind. Draw order within each set is
@@ -825,10 +1197,15 @@ SceneStats Backend::drawScene(const SceneDescription& scene) {
             impl.drawActor(actor, stats);
         }
     }
+    for (const DeferredMesh& late : impl.deferred) {
+        impl.drawStaticMesh(*late.model, late.mesh, late.transform, late.tints, late.mirrored, stats);
+    }
+    impl.deferred.clear();
     EndMode3D();
     // The hands, last, in their own pass over everything.
     impl.drawViewmodel(scene.viewmodel, stats);
     stats.rigModelsLoaded = impl.rigsLoaded();
+    stats.staticModelsLoaded = impl.staticsLoaded();
     // The material never keeps hold of a cached texture between passes:
     // UnloadMaterial would otherwise free it a second time at teardown.
     impl.material.maps[MATERIAL_MAP_DIFFUSE].texture = impl.defaultTexture;
