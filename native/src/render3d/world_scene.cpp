@@ -110,8 +110,14 @@ MeshData buildSkyDome(int timeOfDaySeconds) {
 // ---------------------------------------------------------------------------
 
 WorldScene::WorldScene(const sim::TileQuery& tiles, const render::TileAtlas& atlas,
-                       const render::LampGlow* glow)
-    : tiles_(&tiles), atlas_(&atlas), glow_(glow), materials_(ChunkMaterials::fromAtlas(atlas)) {
+                       const render::LampGlow* glow, const StaticCatalogue* catalogue,
+                       const std::vector<render::Lamp>* lamps)
+    : tiles_(&tiles),
+      atlas_(&atlas),
+      glow_(glow),
+      materials_(ChunkMaterials::fromAtlas(atlas)),
+      catalogue_(catalogue),
+      lamps_(lamps) {
     chunksAcross_ = std::min(kChunksAcross, (tiles.sizeX() + kChunkTiles - 1) / kChunkTiles);
     chunksDown_ = (tiles.sizeY() + kChunkTiles - 1) / kChunkTiles;
     slots_.resize(static_cast<std::size_t>(chunksAcross_) * static_cast<std::size_t>(chunksDown_));
@@ -164,6 +170,51 @@ void WorldScene::buildAll() {
             }
         }
     }
+    if (!piecesPlaced_) {
+        placePieces();
+    }
+}
+
+void WorldScene::placePieces() {
+    piecesPlaced_ = true;
+    placements_ = StaticPlacements{};
+    litTints_.clear();
+    litVersion_ = 0;
+    if (catalogue_ == nullptr || catalogue_->empty()) {
+        stats_.piecesPlaced = 0;
+        return;
+    }
+    static const std::vector<render::Lamp> kNoLamps;
+    placements_ = placeStaticPieces(*tiles_, *catalogue_, lamps_ != nullptr ? *lamps_ : kNoLamps);
+    stats_.piecesPlaced = placements_.placements.size();
+}
+
+void WorldScene::relightPieces(const ChunkLighting& lighting) {
+    // The same surface light the chunk colour stage computes for a cell --
+    // ambient + max(baked, dynamic) -- times the piece's facing factor,
+    // clamped a little over one so a piece in a lamp's pool is lit rather
+    // than blown out, folded into the unlit catalogue tint.
+    const render::SkyState sky = render::skyAt(lighting.timeOfDaySeconds);
+    const bool hasDynamic = lighting.dynamicLamps != nullptr && !lighting.dynamicLamps->empty();
+    litTints_.resize(placements_.placements.size());
+    for (std::size_t i = 0; i < placements_.placements.size(); ++i) {
+        const StaticPlacement& p = placements_.placements[i];
+        const render::Rgb baked =
+            glow_ != nullptr ? glow_->at(p.lightX, p.lightY, p.lightZ) : render::Rgb{};
+        const render::Rgb live = hasDynamic ? render::dynamicGlowAt(*lighting.dynamicLamps, p.lightX,
+                                                                    p.lightY, p.lightZ)
+                                            : render::Rgb{};
+        const auto lit = [&p](float ambient, float b, float d, std::uint8_t tint) {
+            const float light = std::min(1.15F, ambient + std::max(b, d)) * p.facing;
+            return static_cast<std::uint8_t>(
+                std::clamp(light * static_cast<float>(tint), 0.0F, 255.0F) + 0.5F);
+        };
+        litTints_[i] = Rgba8{lit(sky.ambient.r, baked.r, live.r, p.instance.tint.r),
+                             lit(sky.ambient.g, baked.g, live.g, p.instance.tint.g),
+                             lit(sky.ambient.b, baked.b, live.b, p.instance.tint.b),
+                             p.instance.tint.a};
+    }
+    ++stats_.piecesRelit;
 }
 
 void WorldScene::invalidate(ChunkKey key) {
@@ -237,6 +288,37 @@ void WorldScene::refresh(SceneDescription& scene, const render::Camera& camera, 
             scene.instances.push_back(at);
             ++stats_.chunksInstanced;
         }
+    }
+
+    // The static pieces: relit when the lighting bucket moved, described
+    // when inside their role's reach. The table rides with them.
+    scene.statics.clear();
+    stats_.piecesInstanced = 0;
+    if (catalogue_ != nullptr && !placements_.placements.empty()) {
+        const std::uint32_t litVersion = chunkVersion(0, lighting);
+        if (litVersion != litVersion_ || litTints_.size() != placements_.placements.size()) {
+            relightPieces(lighting);
+            litVersion_ = litVersion;
+        }
+        scene.pieces = catalogue_->pieceRefs();
+        const std::vector<PieceSpec>& specs = catalogue_->pieces();
+        for (std::size_t i = 0; i < placements_.placements.size(); ++i) {
+            const StaticPlacement& p = placements_.placements[i];
+            const float roleReach =
+                p.instance.piece < specs.size() ? specs[p.instance.piece].maxDistance : reach;
+            const float limit = std::min(reach, roleReach);
+            const float dx = p.instance.position.x - eye.x;
+            const float dz = p.instance.position.z - eye.z;
+            if (dx * dx + dz * dz > limit * limit) {
+                continue;
+            }
+            StaticInstance at = p.instance;
+            at.tint = litTints_[i];
+            scene.statics.push_back(at);
+            ++stats_.piecesInstanced;
+        }
+    } else {
+        scene.pieces.clear();
     }
 
     scene.camera = cameraFrom(camera, aspect);

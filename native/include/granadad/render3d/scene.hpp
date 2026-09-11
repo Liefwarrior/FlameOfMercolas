@@ -44,11 +44,19 @@
 //     100000 .. 199999  actor rigs    -- actor_instances.hpp
 //     200000 .. 209999  viewmodel     -- viewmodel.hpp
 //
+// STATIC PIECES (static_pieces.hpp) carry no mesh id at all: a StaticInstance
+// names a row of the description's own `pieces` table (a glTF file under the
+// static model directory) and the adapter draws the loaded model there, or
+// nothing when the file is absent -- the chunk mesh under it is the
+// placeholder, always present, so a build without the licensed export sees
+// the atlas-textured district it always saw.
+//
 // Floats are legal here and only here (render-side). Nothing in this header
 // is allowed anywhere near simulation state.
 
 #include <cstddef>
 #include <cstdint>
+#include <string>
 #include <string_view>
 #include <vector>
 
@@ -242,6 +250,36 @@ struct ViewmodelInstance {
     std::vector<ViewmodelPart> parts;
 };
 
+/// S LANE. One row of the static-piece table: the glTF file (pack directory
+/// and file name, "PolygonGeneric/SM_Bld_Base_Wall_01.gltf") the adapter
+/// loads once under BackendConfig::staticDir. The table is the catalogue's
+/// (content/raws/world3d/*.json) in its own order, put by the world scene;
+/// StaticInstance::piece indexes it. Hashed with the placements, so the
+/// description is a function of the tiles AND the catalogue.
+struct StaticPieceRef {
+    std::string file;
+};
+
+/// S LANE. ONE SYNTY BUILDING PIECE, PLACED: a wall segment on a wall tile's
+/// exposed face, a corner on a corner tile, a door frame in a door gap, a
+/// plank over a pier, a barrel against a wall. Positions and yaws come off
+/// the integer tile grid through the placement rules in static_pieces.cpp
+/// (never off the sim's state), the scale is NON-UNIFORM because the kit's
+/// 2.5 m module is fitted to whole tile runs, and the tint is the light where
+/// the piece stands times the catalogue's own tint for the role and material
+/// -- the same ambient + baked + dynamic light the chunk faces wear.
+struct StaticInstance {
+    /// Index into SceneDescription::pieces.
+    std::uint16_t piece = 0;
+    /// static_pieces.hpp's PieceRole as a byte: what rule put it here.
+    std::uint8_t role = 0;
+    Vec3 position;
+    /// Radians, clockwise from above, 0 faces north (-Z) -- the Instance rule.
+    float yaw = 0.0F;
+    Vec3 scale{1.0F, 1.0F, 1.0F};
+    Rgba8 tint;
+};
+
 struct SceneDescription {
     SceneCamera camera;
     /// The sky -- what the frame is cleared to before anything draws.
@@ -253,6 +291,11 @@ struct SceneDescription {
     std::vector<ActorInstance> actors;
     /// The player's own hands, after the people, in their own pass.
     ViewmodelInstance viewmodel;
+    /// S LANE. The static-piece table and the pieces placed this frame (only
+    /// those within their role's reach of the eye), drawn after the chunks
+    /// and before the people. Hashed like everything else here.
+    std::vector<StaticPieceRef> pieces;
+    std::vector<StaticInstance> statics;
 
     [[nodiscard]] const MeshData* findMesh(std::uint32_t id) const noexcept;
     [[nodiscard]] MeshData* findMesh(std::uint32_t id) noexcept;

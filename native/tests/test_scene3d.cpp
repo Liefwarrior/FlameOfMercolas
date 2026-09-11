@@ -133,6 +133,27 @@ TEST_CASE("any byte of the description moved is a different hash") {
         crowd.actors[0].skinned = true;
         CHECK(sceneHash(crowd) != withBody);
     }
+    SUBCASE("a building piece placed, then stretched, then its file renamed") {
+        // S LANE: the static pieces and the table they index are part of
+        // the digest -- a wall a hair longer, or the catalogue pointing the
+        // same placement at another file, is a different picture.
+        SceneDescription dressed = base;
+        dressed.pieces.push_back(StaticPieceRef{"PolygonGeneric/SM_Bld_Base_Wall_01.gltf"});
+        StaticInstance wall;
+        wall.piece = 0;
+        wall.role = 1;
+        wall.position = Vec3{4.0F, 0.0F, -2.0F};
+        wall.scale = Vec3{0.8F, 1.0F, 1.0F};
+        dressed.statics.push_back(wall);
+        const std::uint64_t withWall = sceneHash(dressed);
+        CHECK(withWall != reference);
+        dressed.statics[0].scale.x = 0.8F + 1.0F / 1024.0F;
+        CHECK(sceneHash(dressed) != withWall);
+        dressed.statics[0].scale.x = 0.8F;
+        CHECK(sceneHash(dressed) == withWall);
+        dressed.pieces[0].file = "PolygonGeneric/SM_Bld_Base_Wall_Window_01.gltf";
+        CHECK(sceneHash(dressed) != withWall);
+    }
 }
 
 TEST_CASE("the same params refresh the same scene and re-upload nothing") {

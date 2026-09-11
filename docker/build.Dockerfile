@@ -1181,6 +1181,33 @@ RUN --mount=type=cache,target=/deps,sharing=locked \
     done; \
     echo "ok: the 3D viewmodel lane's cases are all registered"; \
     \
+    # 3D BUILD, the static pieces lane. The Synty building kit placed from
+    # the tile map: a corner tile gets the corner piece, a door gap gets the
+    # door frame, the real Docks placed twice describe and hash the same,
+    # and -- the placeholder rule -- a description full of pieces drawn by
+    # a backend with no licensed file is the chunk mesh's own frame, byte
+    # for byte. None of it needs content/art/lot-3d/, which this container
+    # never has; the catalogue it needs is content/raws/world3d/.
+    test -f /src/content/raws/world3d/docks-pieces.json \
+        || { echo "FATAL: /src/content/raws/world3d/docks-pieces.json is missing from"; \
+             echo "       the build context. .dockerignore must re-admit"; \
+             echo "       content/raws/** or the static pieces lane places nothing"; \
+             echo "       and its cases prove the placeholder against nothing."; exit 1; }; \
+    for case in \
+        "a wall tile with two open neighbours places a corner piece" \
+        "a door tile places the door frame" \
+        "placement is a deterministic function of the tile map" \
+        "a missing piece falls back to the placeholder and the scene still renders" \
+        ; do \
+        case "$ctest_list" in *"$case"*) ;; *) false;; esac \
+            || { echo "FATAL: the case \"$case\" is not registered."; \
+                 echo "       It is what the 3D static pieces lane is judged on:"; \
+                 echo "       corners and doors off the tile grid, placements that"; \
+                 echo "       twin-run, and the chunk standing where a file is absent."; \
+                 exit 1; }; \
+    done; \
+    echo "ok: the 3D static pieces lane's cases are all registered"; \
+    \
     # ---------------------------------------------------------------------
     # AND THE SUITE RUNS IN PARALLEL, WHICH IS NOT A SUBSTITUTE FOR ANYTHING.
     # ---------------------------------------------------------------------

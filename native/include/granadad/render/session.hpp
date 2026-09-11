@@ -79,6 +79,11 @@ struct SessionConfig {
     /// BAM facing at spawn.
     std::int32_t spawnYaw = 0;
     bool spawnYawGiven = false;
+    /// BAM pitch at spawn (positive looks up), clamped by the body exactly as
+    /// mouse look is. Only applied when given: a capture can look down at a
+    /// doorstep or up at a roof line without a player at the mouse.
+    std::int32_t spawnPitch = 0;
+    bool spawnPitchGiven = false;
     /// Internal render resolution, before any window upscale.
     int width = 640;
     int height = 360;

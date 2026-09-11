@@ -44,6 +44,18 @@
 //      goes through the same path as any instance. glTF's front is +Z and
 //      the scene's yaw 0 faces -Z, hence kGltfForwardYaw.
 //
+//   5. (S LANE) HOW A STATIC PIECE IS DRAWN. scene.statics name a row of
+//      scene.pieces (a glTF file under staticDir); the adapter loads each
+//      file ONCE (LoadModel: cgltf reads the .bin and the pack atlas beside
+//      it, one raylib Mesh per primitive with its own material, base colour
+//      texture only per the export) and draws every mesh of it with the
+//      instance's non-uniform scale, yaw and place, the material's own
+//      colour factor multiplied by the instance tint. A sub-mesh whose
+//      material is translucent (window glass, the water plane) is held
+//      back and drawn after the people, so a body behind a window is not
+//      cut out by the glass's depth. No file: nothing is drawn and the
+//      chunk mesh underneath stands, which is the placeholder rule.
+//
 //   4. (V LANE) HOW THE PLAYER'S OWN HANDS ARE DRAWN. A second BeginMode3D
 //      after the world's, with a camera at the origin looking down -Z (the
 //      parts are described in view space), and its projection REPLACED by
@@ -176,6 +188,25 @@ struct WeaponModel {
     bool loaded = false;
 };
 
+/// S LANE. One building piece, loaded once per file. `baseColour` keeps each
+/// material's own colour factor (the water's 0.7 alpha, a glass pane's) so
+/// the instance tint multiplies it rather than replacing it per draw.
+struct StaticModel {
+    Model model{};
+    bool loaded = false;
+    std::vector<Color> baseColour;
+    /// Per mesh: its material's alpha is under 255 -- drawn in the late pass.
+    std::vector<bool> translucent;
+};
+
+/// S LANE. A translucent sub-mesh held back for the late pass.
+struct DeferredMesh {
+    StaticModel* model = nullptr;
+    int mesh = 0;
+    Matrix transform{};
+    Color tint{};
+};
+
 /// A glTF asset faces +Z (the spec's own convention, and the asset lane's
 /// export); the scene's yaw 0 faces -Z. Half a turn, applied to models only.
 constexpr float kGltfForwardYaw = 3.14159265358979323846F;
@@ -261,6 +292,10 @@ struct Backend::Impl {
     /// V LANE. The arms rigs and the static weapons, the same way.
     std::map<std::string, std::unique_ptr<RigModel>> handRigs;
     std::map<std::string, std::unique_ptr<WeaponModel>> weapons;
+    /// S LANE. Building pieces by file; a null entry is a file looked for
+    /// and not found, never asked for again.
+    std::map<std::string, std::unique_ptr<StaticModel>> statics;
+    std::vector<DeferredMesh> deferred;
     Material material{};
     bool materialLoaded = false;
     Texture2D defaultTexture{};
@@ -347,6 +382,117 @@ struct Backend::Impl {
         RigModel* result = loaded.get();
         rigs.emplace(key, std::move(loaded));
         return result;
+    }
+
+    /// S LANE. The model for a piece file, loading it the first time it is
+    /// asked for. Null when there is none: the caller draws nothing.
+    StaticModel* staticFor(const std::string& file) {
+        if (file.empty() || config.staticDir.empty()) {
+            return nullptr;
+        }
+        auto found = statics.find(file);
+        if (found != statics.end()) {
+            return found->second.get();
+        }
+        std::unique_ptr<StaticModel> loaded;
+        const std::string path = config.staticDir + "/" + file;
+        if (FileExists(path.c_str())) {
+            auto candidate = std::make_unique<StaticModel>();
+            candidate->model = LoadModel(path.c_str());
+            if (candidate->model.meshCount > 0) {
+                candidate->loaded = true;
+                candidate->baseColour.resize(static_cast<std::size_t>(candidate->model.materialCount));
+                for (int m = 0; m < candidate->model.materialCount; ++m) {
+                    Material& material = candidate->model.materials[m];
+                    candidate->baseColour[static_cast<std::size_t>(m)] =
+                        material.maps[MATERIAL_MAP_DIFFUSE].color;
+#if !defined(PLATFORM_MEMORY)
+                    // The pack atlases are flat-colour sheets a few thousand
+                    // texels across drawn on 2.5 m walls: mipmapped and
+                    // filtered they read as paint, point-sampled they
+                    // shimmer. rlsw has neither, and never has the files.
+                    Texture2D& texture = material.maps[MATERIAL_MAP_DIFFUSE].texture;
+                    if (texture.id != 0 && texture.id != defaultTexture.id) {
+                        GenTextureMipmaps(&texture);
+                        SetTextureFilter(texture, TEXTURE_FILTER_TRILINEAR);
+                    }
+#endif
+                }
+                candidate->translucent.resize(static_cast<std::size_t>(candidate->model.meshCount));
+                for (int i = 0; i < candidate->model.meshCount; ++i) {
+                    const int m = candidate->model.meshMaterial[i];
+                    candidate->translucent[static_cast<std::size_t>(i)] =
+                        m >= 0 && m < candidate->model.materialCount &&
+                        candidate->model.materials[m].maps[MATERIAL_MAP_DIFFUSE].color.a < 255;
+                }
+                loaded = std::move(candidate);
+            } else {
+                UnloadModel(candidate->model);
+                std::printf("granadad: render3d: piece %s did not load; the chunk stands\n",
+                            file.c_str());
+            }
+        }
+        StaticModel* result = loaded.get();
+        statics.emplace(file, std::move(loaded));
+        return result;
+    }
+
+    [[nodiscard]] std::size_t staticsLoaded() const noexcept {
+        std::size_t count = 0;
+        for (const auto& [name, piece] : statics) {
+            (void)name;
+            if (piece != nullptr) {
+                ++count;
+            }
+        }
+        return count;
+    }
+
+    /// S LANE. One piece: every opaque sub-mesh now, the translucent ones
+    /// deferred. The tint multiplies the material's own colour factor.
+    void drawStatic(const StaticInstance& piece, const SceneDescription& scene,
+                    SceneStats& stats) {
+        if (piece.piece >= scene.pieces.size()) {
+            ++stats.staticsMissing;
+            return;
+        }
+        StaticModel* model = staticFor(scene.pieces[piece.piece].file);
+        if (model == nullptr || !model->loaded) {
+            ++stats.staticsMissing;
+            return;
+        }
+        const Matrix transform = MatrixMultiply(
+            MatrixMultiply(MatrixScale(piece.scale.x, piece.scale.y, piece.scale.z),
+                           MatrixRotateY(-piece.yaw)),
+            MatrixTranslate(piece.position.x, piece.position.y, piece.position.z));
+        const Matrix full = MatrixMultiply(model->model.transform, transform);
+        const Color tint = colourOf(piece.tint);
+        for (int i = 0; i < model->model.meshCount; ++i) {
+            if (model->translucent[static_cast<std::size_t>(i)]) {
+                deferred.push_back(DeferredMesh{model, i, full, tint});
+                continue;
+            }
+            drawStaticMesh(*model, i, full, tint, stats);
+        }
+        ++stats.staticsDrawn;
+        ++stats.instancesDrawn;
+    }
+
+    void drawStaticMesh(StaticModel& model, int i, const Matrix& transform, const Color& tint,
+                        SceneStats& stats) {
+        const int m = model.model.meshMaterial[i];
+        if (m < 0 || m >= model.model.materialCount) {
+            return;
+        }
+        const Color base = model.baseColour[static_cast<std::size_t>(m)];
+        const auto ch = [](unsigned char a, unsigned char b) {
+            return static_cast<unsigned char>((static_cast<unsigned>(a) * static_cast<unsigned>(b) + 127U) /
+                                              255U);
+        };
+        model.model.materials[m].maps[MATERIAL_MAP_DIFFUSE].color =
+            Color{ch(base.r, tint.r), ch(base.g, tint.g), ch(base.b, tint.b), ch(base.a, tint.a)};
+        DrawMesh(model.model.meshes[i], model.model.materials[m], transform);
+        stats.trianglesDrawn += static_cast<std::size_t>(model.model.meshes[i].triangleCount);
     }
 
     [[nodiscard]] std::size_t rigsLoaded() const noexcept {
@@ -661,6 +807,14 @@ struct Backend::Impl {
             }
         }
         weapons.clear();
+        for (auto& [name, piece] : statics) {
+            (void)name;
+            if (piece != nullptr && piece->loaded) {
+                UnloadModel(piece->model);
+            }
+        }
+        statics.clear();
+        deferred.clear();
         if (materialLoaded) {
             // First, while its diffuse map is rlgl's own 1x1 (drawScene puts
             // it back after every pass): UnloadMaterial frees any map whose
@@ -811,6 +965,12 @@ SceneStats Backend::drawScene(const SceneDescription& scene) {
     for (const Instance& instance : scene.instances) {
         impl.drawInstance(instance, stats);
     }
+    // The building pieces over the chunks, opaque now, glass and water held
+    // back until the people are in.
+    impl.deferred.clear();
+    for (const StaticInstance& piece : scene.statics) {
+        impl.drawStatic(piece, scene, stats);
+    }
     // The people, after the world: the skinned (near) bodies first so a
     // rig's one shared model is posed per body and then put back to rest
     // ONCE for every far body of its kind. Draw order within each set is
@@ -825,10 +985,15 @@ SceneStats Backend::drawScene(const SceneDescription& scene) {
             impl.drawActor(actor, stats);
         }
     }
+    for (const DeferredMesh& late : impl.deferred) {
+        impl.drawStaticMesh(*late.model, late.mesh, late.transform, late.tint, stats);
+    }
+    impl.deferred.clear();
     EndMode3D();
     // The hands, last, in their own pass over everything.
     impl.drawViewmodel(scene.viewmodel, stats);
     stats.rigModelsLoaded = impl.rigsLoaded();
+    stats.staticModelsLoaded = impl.staticsLoaded();
     // The material never keeps hold of a cached texture between passes:
     // UnloadMaterial would otherwise free it a second time at teardown.
     impl.material.maps[MATERIAL_MAP_DIFFUSE].texture = impl.defaultTexture;

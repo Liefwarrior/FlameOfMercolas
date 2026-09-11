@@ -21,6 +21,8 @@
 #include <cmath>
 #include <cstdint>
 #include <span>
+#include <string>
+#include <string_view>
 #include <vector>
 
 #include "granadad/content/content_dir.hpp"
@@ -33,6 +35,7 @@
 #include "granadad/render/world_renderer.hpp"
 #include "granadad/render3d/chunk_mesher.hpp"
 #include "granadad/render3d/scene.hpp"
+#include "granadad/render3d/static_pieces.hpp"
 #include "granadad/render3d/world_scene.hpp"
 #include "granadad/sim/docks.hpp"
 #include "granadad/sim/tile_query.hpp"
@@ -363,4 +366,452 @@ TEST_CASE("the world scene instances the chunks near the eye and recolours on th
         REQUIRE(d < 512.0F);
         REQUIRE(d >= kSkyHeight - 1.0F);
     }
+}
+
+// ---------------------------------------------------------------------------
+// S LANE -- the Synty building kit placed from the tile map
+// ---------------------------------------------------------------------------
+//
+// Four claims, each a case that goes red on its own: a corner tile gets the
+// corner piece, a door gap gets the door frame, the placements are a pure
+// function of the tile map and the catalogue (the real Docks placed twice
+// hash the same), and the catalogue that ships is well-formed and dresses
+// the district. The licensed glTF files are never needed: placement never
+// opens one, and the frame test (test_render3d.cpp) proves the placeholder
+// stands when they are absent.
+
+namespace {
+
+const StaticCatalogue& shippedCatalogue() {
+    static const StaticCatalogue catalogue =
+        StaticCatalogue::load(staticCataloguePath(content::contentDir()));
+    return catalogue;
+}
+
+std::uint16_t materialId(std::string_view id) {
+    const std::span<const std::string_view> ids = render::materialIds();
+    for (std::size_t i = 0; i < ids.size(); ++i) {
+        if (ids[i] == id) {
+            return static_cast<std::uint16_t>(i);
+        }
+    }
+    return 0;
+}
+
+std::size_t countRole(const std::vector<StaticPlacement>& placements, PieceRole role) {
+    std::size_t n = 0;
+    for (const StaticPlacement& p : placements) {
+        if (p.role == role) {
+            ++n;
+        }
+    }
+    return n;
+}
+
+}  // namespace
+
+TEST_CASE("the shipped piece catalogue loads and names a piece for every rule") {
+    const StaticCatalogue& catalogue = shippedCatalogue();
+    REQUIRE(catalogue.error().empty());
+    for (const std::string& warning : catalogue.warnings()) {
+        MESSAGE("catalogue warning: " << warning);
+    }
+    CHECK(catalogue.warnings().empty());
+    REQUIRE_FALSE(catalogue.empty());
+    for (const PieceRole role : {PieceRole::Wall, PieceRole::WallCorner, PieceRole::WallWindow,
+                                 PieceRole::WallDoor, PieceRole::RoofEdge, PieceRole::FloorPlank,
+                                 PieceRole::FloorCobble, PieceRole::FloorFlag, PieceRole::Water,
+                                 PieceRole::PropBarrel, PieceRole::PropCrate, PieceRole::PropSack,
+                                 PieceRole::LampWall, PieceRole::LampPost, PieceRole::Brazier}) {
+        const PieceSpec* spec = catalogue.piece(role);
+        REQUIRE_MESSAGE(spec != nullptr, "no piece for role " << pieceRoleName(role));
+        CHECK(spec->file.find(".gltf") != std::string::npos);
+        CHECK(spec->file.find('/') != std::string::npos);
+        CHECK(catalogue.pieceIndex(role) >= 0);
+        CHECK(catalogue.pieces()[static_cast<std::size_t>(catalogue.pieceIndex(role))].role == role);
+    }
+    // The table is in role order, so piece indices agree on every machine.
+    for (std::size_t i = 1; i < catalogue.pieces().size(); ++i) {
+        CHECK(catalogue.pieces()[i - 1].role < catalogue.pieces()[i].role);
+    }
+    // The kit's own module: 2.5 m walls, 3 m storeys, the brick on -Z.
+    CHECK(catalogue.piece(PieceRole::Wall)->width == doctest::Approx(2.5F));
+    CHECK(catalogue.piece(PieceRole::Wall)->frontNegZ);
+    CHECK(catalogue.piece(PieceRole::RoofEdge)->frontNegZ == false);
+    // Materials: the Gull's granite is masonry, its timber storey is timber
+    // from the mid-slope band up, dirt is nothing at all.
+    REQUIRE(catalogue.materialByName("granite") != nullptr);
+    CHECK(catalogue.materialByName("granite")->wallClass == WallClass::Masonry);
+    CHECK(catalogue.materialByName("brick")->floorRole == PieceRole::FloorCobble);
+    REQUIRE(catalogue.materialByName("oak") != nullptr);
+    CHECK(catalogue.materialByName("oak")->wallClass == WallClass::Timber);
+    CHECK(catalogue.materialByName("oak")->minBand == 20);
+    CHECK(catalogue.materialByName("oak")->floorRole == PieceRole::FloorPlank);
+    CHECK(catalogue.materialByName("dirt") == nullptr);
+    CHECK(catalogue.material(materialId("granite")) == catalogue.materialByName("granite"));
+    CHECK(catalogue.minBand() == 18);
+    CHECK(catalogue.digest() != 0U);
+    // The role names round-trip, and an unknown one is None.
+    CHECK(pieceRoleFromName("wall_corner") == PieceRole::WallCorner);
+    CHECK(pieceRoleName(PieceRole::WallDoor) == "wall_door");
+    CHECK(pieceRoleFromName("gargoyle") == PieceRole::None);
+    // A malformed document is an empty catalogue with the reason kept.
+    const StaticCatalogue broken = StaticCatalogue::fromJson("[1, 2");
+    CHECK(broken.empty());
+    CHECK_FALSE(broken.error().empty());
+    CHECK(placeStaticPieces(sim::TileQuery(docksWorld()), broken, {}).placements.empty());
+}
+
+TEST_CASE("a wall tile with two open neighbours places a corner piece") {
+    // A brick house on a floor at level 19 (the quayside band, above the
+    // catalogue's floor band), out of doors: a 6 x 6 ring of
+    // WALL from (10, 10) to (15, 15) with FLOOR inside and a street of
+    // FLOOR around it, nothing built above. Its four corner tiles are the
+    // wall tiles with exactly two exposed neighbours -- and exactly those
+    // four get the corner piece, brick side out, on the tile's corner.
+    content::World world(content::Coords(1, 1, 3), content::LaneLayout::core());
+    const std::span<std::uint8_t> forms = world.byteLane(content::kFormLane);
+    const std::span<std::uint16_t> materials = world.shortLane(content::kMaterialLane);
+    std::fill(forms.begin(), forms.end(), static_cast<std::uint8_t>(content::TileForm::Open));
+    const sim::TileQuery tiles(world);
+    const std::uint16_t brick = materialId("brick");
+    const auto put = [&](std::int32_t x, std::int32_t y, std::int32_t z, content::TileForm form,
+                         std::uint16_t material) {
+        forms[tiles.index(x, y, z)] = static_cast<std::uint8_t>(form);
+        materials[tiles.index(x, y, z)] = material;
+    };
+    for (std::int32_t y = 6; y <= 19; ++y) {
+        for (std::int32_t x = 6; x <= 19; ++x) {
+            put(x, y, 19, content::TileForm::Floor, materialId("dirt"));
+        }
+    }
+    for (std::int32_t y = 10; y <= 15; ++y) {
+        for (std::int32_t x = 10; x <= 15; ++x) {
+            const bool ring = x == 10 || x == 15 || y == 10 || y == 15;
+            put(x, y, 19, ring ? content::TileForm::Wall : content::TileForm::Floor,
+                ring ? brick : materialId("oak"));
+        }
+    }
+    const StaticCatalogue& catalogue = shippedCatalogue();
+    REQUIRE(catalogue.piece(PieceRole::WallCorner) != nullptr);
+    const StaticPlacements placed = placeStaticPieces(tiles, catalogue, {});
+
+    // Exactly four corners, one on each corner tile.
+    CHECK(countRole(placed.placements, PieceRole::WallCorner) == 4);
+    bool seen[4] = {false, false, false, false};
+    for (const StaticPlacement& p : placed.placements) {
+        if (p.role != PieceRole::WallCorner) {
+            continue;
+        }
+        CHECK(p.lightZ == 19);
+        CHECK(p.instance.position.y == doctest::Approx(render::bandSurface(19)));
+        // Full legs: every run is long enough for the kit's own 2.5 m.
+        CHECK(p.instance.scale.x == doctest::Approx(1.0F));
+        CHECK(p.instance.scale.z == doctest::Approx(1.0F));
+        const bool nw = p.lightX == 10 && p.lightY == 10;
+        const bool ne = p.lightX == 15 && p.lightY == 10;
+        const bool se = p.lightX == 15 && p.lightY == 15;
+        const bool sw = p.lightX == 10 && p.lightY == 15;
+        CHECK((nw || ne || se || sw));
+        // The piece's brick corner stands 0.225 proud of the tile's own
+        // corner point, both ways -- the NE corner's piece origin is its
+        // leg's length back along the north face, the others turned.
+        if (ne) {
+            seen[0] = true;
+            CHECK(p.instance.yaw == doctest::Approx(0.0F));
+            CHECK(p.instance.position.x == doctest::Approx(16.0F - 2.3875F));
+            CHECK(p.instance.position.z == doctest::Approx(10.0F - 0.1125F));
+        } else if (se) {
+            seen[1] = true;
+            CHECK(p.instance.yaw == doctest::Approx(3.14159265F / 2.0F));
+        } else if (sw) {
+            seen[2] = true;
+            CHECK(p.instance.yaw == doctest::Approx(3.14159265F));
+        } else if (nw) {
+            seen[3] = true;
+            CHECK(p.instance.yaw == doctest::Approx(3.0F * 3.14159265F / 2.0F));
+        }
+    }
+    CHECK((seen[0] && seen[1] && seen[2] && seen[3]));
+
+    // The straight runs: each outer face is 6 tiles; the corners take 2.5
+    // less a hair at each end, so one stretched wall piece fills the rest
+    // of each face. The inner faces (nothing above, so still out of doors
+    // here) are 4 tiles with concave ends: two pieces each.
+    const std::size_t walls = countRole(placed.placements, PieceRole::Wall) +
+                              countRole(placed.placements, PieceRole::WallWindow);
+    CHECK(walls == 4 + 4 * 2);
+    for (const StaticPlacement& p : placed.placements) {
+        if (p.role == PieceRole::Wall || p.role == PieceRole::WallWindow) {
+            CHECK(p.instance.scale.x > 0.4F);
+            CHECK(p.instance.scale.x < 1.4F);
+            CHECK(p.instance.scale.y == doctest::Approx(render::kBandHeight / 3.0057F));
+        }
+    }
+    // No door: the ring is closed. No cobbles: the floors are dirt (no
+    // piece) and oak (planks -- the 4 x 4 interior takes one 3 x 3 block
+    // and leaves the rest to the chunk).
+    CHECK(countRole(placed.placements, PieceRole::WallDoor) == 0);
+    CHECK(countRole(placed.placements, PieceRole::FloorCobble) == 0);
+    CHECK(countRole(placed.placements, PieceRole::FloorPlank) == 1);
+    // A cornice along every outdoor face at the roof line.
+    CHECK(countRole(placed.placements, PieceRole::RoofEdge) >= 4);
+    for (const StaticPlacement& p : placed.placements) {
+        if (p.role == PieceRole::RoofEdge) {
+            CHECK(p.instance.position.y == doctest::Approx(render::bandSurface(20) - 0.2347F));
+        }
+    }
+    // And the same world placed again is the same list, byte for byte.
+    const StaticPlacements again = placeStaticPieces(tiles, catalogue, {});
+    REQUIRE(again.placements.size() == placed.placements.size());
+    for (std::size_t i = 0; i < placed.placements.size(); ++i) {
+        CHECK(again.placements[i].role == placed.placements[i].role);
+        CHECK(again.placements[i].instance.position.x == placed.placements[i].instance.position.x);
+        CHECK(again.placements[i].instance.position.z == placed.placements[i].instance.position.z);
+        CHECK(again.placements[i].instance.yaw == placed.placements[i].instance.yaw);
+    }
+}
+
+TEST_CASE("a door tile places the door frame") {
+    // The same house with a roof over it (a FLOOR storey above the ring's
+    // interior and the ring itself) and a two-tile gap in its south wall:
+    // the gap is walkable, open on both sides, roofed on one and not the
+    // other, and the wall runs on past both jambs -- a door. It gets one
+    // frame, fitted to the two tiles, brick side to the street. The gap
+    // between two houses is not a door and gets none.
+    content::World world(content::Coords(1, 1, 3), content::LaneLayout::core());
+    const std::span<std::uint8_t> forms = world.byteLane(content::kFormLane);
+    const std::span<std::uint16_t> materials = world.shortLane(content::kMaterialLane);
+    std::fill(forms.begin(), forms.end(), static_cast<std::uint8_t>(content::TileForm::Open));
+    const sim::TileQuery tiles(world);
+    const std::uint16_t granite = materialId("granite");
+    const auto put = [&](std::int32_t x, std::int32_t y, std::int32_t z, content::TileForm form,
+                         std::uint16_t material) {
+        forms[tiles.index(x, y, z)] = static_cast<std::uint8_t>(form);
+        materials[tiles.index(x, y, z)] = material;
+    };
+    for (std::int32_t y = 4; y <= 27; ++y) {
+        for (std::int32_t x = 4; x <= 27; ++x) {
+            put(x, y, 19, content::TileForm::Floor, materialId("brick"));
+        }
+    }
+    // House A: ring (8..15, 8..15), door at (11..12, 15).
+    for (std::int32_t y = 8; y <= 15; ++y) {
+        for (std::int32_t x = 8; x <= 15; ++x) {
+            const bool ring = x == 8 || x == 15 || y == 8 || y == 15;
+            put(x, y, 19, ring ? content::TileForm::Wall : content::TileForm::Floor,
+                ring ? granite : materialId("oak"));
+            put(x, y, 20, content::TileForm::Floor, materialId("thatch"));
+        }
+    }
+    put(11, 15, 19, content::TileForm::Floor, materialId("oak"));
+    put(12, 15, 19, content::TileForm::Floor, materialId("oak"));
+    // House B two tiles east of A, sharing A's rows: the alley mouth at
+    // (16..17, 8) has walls either side and walls beyond them, but both
+    // sides of it are open to the sky.
+    for (std::int32_t y = 8; y <= 15; ++y) {
+        for (std::int32_t x = 18; x <= 24; ++x) {
+            const bool ring = x == 18 || x == 24 || y == 8 || y == 15;
+            put(x, y, 19, ring ? content::TileForm::Wall : content::TileForm::Floor,
+                ring ? granite : materialId("oak"));
+            put(x, y, 20, content::TileForm::Floor, materialId("thatch"));
+        }
+    }
+    const StaticCatalogue& catalogue = shippedCatalogue();
+    REQUIRE(catalogue.piece(PieceRole::WallDoor) != nullptr);
+    const StaticPlacements placed = placeStaticPieces(tiles, catalogue, {});
+
+    REQUIRE(countRole(placed.placements, PieceRole::WallDoor) == 1);
+    CHECK(placed.stats.doorGaps == 1);
+    for (const StaticPlacement& p : placed.placements) {
+        if (p.role != PieceRole::WallDoor) {
+            continue;
+        }
+        // Brick to the south (the street), so the piece is yawed to face
+        // south and its module runs west from the gap's east edge.
+        CHECK(p.instance.yaw == doctest::Approx(3.14159265F));
+        CHECK(p.instance.position.x == doctest::Approx(13.0F));
+        CHECK(p.instance.position.z == doctest::Approx(15.5F));
+        CHECK(p.instance.position.y == doctest::Approx(render::bandSurface(19)));
+        // Fitted to the two-tile gap: 2 / 2.5.
+        CHECK(p.instance.scale.x == doctest::Approx(0.8F));
+        CHECK(p.lightX == 11);
+        CHECK(p.lightY == 15);
+    }
+    // The house's interior is roofed now, so its inner faces wear plaster:
+    // a wall piece on an indoor face is yawed half a turn from the brick
+    // rule -- checked on the north wall's south face, which looks south
+    // into the room and would face south (yaw pi) brick-out.
+    bool plasterSeen = false;
+    for (const StaticPlacement& p : placed.placements) {
+        if (p.role == PieceRole::Wall && p.lightY == 8 && p.lightX > 8 && p.lightX < 15 &&
+            p.instance.position.z > 8.9F && p.instance.position.z < 9.2F) {
+            plasterSeen = true;
+            CHECK(p.instance.yaw == doctest::Approx(0.0F));
+        }
+    }
+    CHECK(plasterSeen);
+    // The window rule only fires out of doors, on a stretched piece: none
+    // of the pieces inside the room are windows.
+    for (const StaticPlacement& p : placed.placements) {
+        if (p.role == PieceRole::WallWindow) {
+            CHECK((p.lightX == 8 || p.lightX == 15 || p.lightY == 8 || p.lightY == 15 ||
+                   p.lightX == 18 || p.lightX == 24));
+        }
+    }
+    // A lamp on the street beside the house's wall hangs a wall lamp on
+    // that wall; a lamp in the open stands a post; a fire is a brazier.
+    std::vector<render::Lamp> lamps(3);
+    lamps[0].name = "lamp_house_door";
+    lamps[0].x = 9;
+    lamps[0].y = 16;
+    lamps[0].z = 19;
+    lamps[0].warmth = render::LampWarmth::Lantern;
+    lamps[1].name = "lamp_square";
+    lamps[1].x = 5;
+    lamps[1].y = 5;
+    lamps[1].z = 19;
+    lamps[1].warmth = render::LampWarmth::Lantern;
+    lamps[2].name = "brazier_square";
+    lamps[2].x = 6;
+    lamps[2].y = 5;
+    lamps[2].z = 19;
+    lamps[2].warmth = render::LampWarmth::Fire;
+    const StaticPlacements lit = placeStaticPieces(tiles, catalogue, lamps);
+    CHECK(countRole(lit.placements, PieceRole::LampWall) == 1);
+    CHECK(countRole(lit.placements, PieceRole::LampPost) == 1);
+    CHECK(countRole(lit.placements, PieceRole::Brazier) == 1);
+    for (const StaticPlacement& p : lit.placements) {
+        if (p.role == PieceRole::LampWall) {
+            // On the door-side wall's south face (z = 16), hung out over
+            // the lamp's own tile.
+            CHECK(p.instance.position.z == doctest::Approx(16.0F + 0.323F));
+            CHECK(p.instance.position.x == doctest::Approx(9.5F));
+            CHECK(p.instance.position.y == doctest::Approx(render::bandSurface(19) + 2.1F));
+        }
+    }
+    CHECK(lit.placements.size() == placed.placements.size() + 3);
+}
+
+TEST_CASE("placement is a deterministic function of the tile map") {
+    // THE REAL DOCKS, dressed twice from two views of one world, through
+    // two world scenes: the same placements in the same order, the same
+    // description bytes, the same hash -- the S lane's determinism claim.
+    // And every rule fires somewhere in the district: walls and corners,
+    // windows, door frames, cornices, planks over the piers, cobbles on the
+    // Tarwalk, flags on the quay, the harbour's water, props, the lamps.
+    const sim::TileQuery tilesA(docksWorld());
+    const sim::TileQuery tilesB(docksWorld());
+    const StaticCatalogue& catalogue = shippedCatalogue();
+    REQUIRE_FALSE(catalogue.empty());
+    const std::vector<render::Lamp> lamps =
+        render::loadLamps(content::contentDir(), sim::docks::kWorldName);
+    REQUIRE_FALSE(lamps.empty());
+
+    const StaticPlacements first = placeStaticPieces(tilesA, catalogue, lamps);
+    const StaticPlacements second = placeStaticPieces(tilesB, catalogue, lamps);
+    REQUIRE(first.placements.size() == second.placements.size());
+    CHECK(first.placements.size() > 1000);
+    for (std::size_t i = 0; i < first.placements.size(); ++i) {
+        const StaticInstance& a = first.placements[i].instance;
+        const StaticInstance& b = second.placements[i].instance;
+        REQUIRE(a.piece == b.piece);
+        REQUIRE(a.role == b.role);
+        REQUIRE(a.position.x == b.position.x);
+        REQUIRE(a.position.y == b.position.y);
+        REQUIRE(a.position.z == b.position.z);
+        REQUIRE(a.yaw == b.yaw);
+        REQUIRE(a.scale.x == b.scale.x);
+        REQUIRE(a.scale.z == b.scale.z);
+    }
+    const StaticPlacementStats& stats = first.stats;
+    CHECK(stats.byRole[static_cast<std::size_t>(PieceRole::Wall)] > 500);
+    CHECK(stats.byRole[static_cast<std::size_t>(PieceRole::WallCorner)] > 20);
+    CHECK(stats.byRole[static_cast<std::size_t>(PieceRole::WallWindow)] > 20);
+    CHECK(stats.byRole[static_cast<std::size_t>(PieceRole::WallDoor)] >= 2);
+    CHECK(stats.byRole[static_cast<std::size_t>(PieceRole::RoofEdge)] > 50);
+    CHECK(stats.byRole[static_cast<std::size_t>(PieceRole::FloorPlank)] > 50);
+    CHECK(stats.byRole[static_cast<std::size_t>(PieceRole::FloorCobble)] > 50);
+    CHECK(stats.byRole[static_cast<std::size_t>(PieceRole::FloorFlag)] > 50);
+    CHECK(stats.byRole[static_cast<std::size_t>(PieceRole::Water)] > 5);
+    CHECK(stats.byRole[static_cast<std::size_t>(PieceRole::PropBarrel)] +
+              stats.byRole[static_cast<std::size_t>(PieceRole::PropCrate)] +
+              stats.byRole[static_cast<std::size_t>(PieceRole::PropSack)] >
+          20);
+    CHECK(stats.byRole[static_cast<std::size_t>(PieceRole::LampWall)] +
+              stats.byRole[static_cast<std::size_t>(PieceRole::LampPost)] +
+              stats.byRole[static_cast<std::size_t>(PieceRole::Brazier)] ==
+          lamps.size());
+    // The Gilded Gull's door (tavern.hpp: x 153..154 on the y = 66
+    // frontage) is one of the frames, brick to the Tarwalk (north).
+    bool gullDoor = false;
+    for (const StaticPlacement& p : first.placements) {
+        if (p.role == PieceRole::WallDoor && p.lightX == 153 && p.lightY == 66 && p.lightZ == 19) {
+            gullDoor = true;
+            CHECK(p.instance.yaw == doctest::Approx(0.0F));
+            CHECK(p.instance.position.z == doctest::Approx(66.5F));
+            CHECK(p.instance.scale.x == doctest::Approx(0.8F));
+        }
+    }
+    CHECK(gullDoor);
+    // Nothing is placed below the catalogue's floor band, and everything
+    // is inside the authored district.
+    for (const StaticPlacement& p : first.placements) {
+        CHECK(p.lightZ >= catalogue.minBand());
+        CHECK(p.instance.position.x > 30.0F);
+        CHECK(p.instance.position.x < 226.0F);
+    }
+    MESSAGE("Docks pieces: " << first.placements.size() << " placed -- " << stats.byRole[1]
+                             << " walls, " << stats.byRole[2] << " corners, " << stats.byRole[3]
+                             << " windows, " << stats.byRole[4] << " doors, " << stats.byRole[5]
+                             << " cornices, " << stats.byRole[6] << " plank, " << stats.byRole[7]
+                             << " cobble, " << stats.byRole[8] << " flag, " << stats.byRole[9]
+                             << " water, " << stats.byRole[10] + stats.byRole[11] + stats.byRole[12]
+                             << " props, " << stats.byRole[13] + stats.byRole[14] + stats.byRole[15]
+                             << " lamps; " << stats.wallRuns << " wall runs, " << stats.doorGaps
+                             << " door gaps");
+
+    // Through the world scene: the description carries the table and the
+    // pieces near the eye, lit, and hashes the same twice.
+    const render::TileAtlas& atlas = proceduralAtlas();
+    const render::Camera eye = spawnCamera();
+    WorldSceneParams params;
+    params.timeOfDaySeconds = 20 * 3600;
+    WorldScene worldA(tilesA, atlas, nullptr, &catalogue, &lamps);
+    WorldScene worldB(tilesB, atlas, nullptr, &catalogue, &lamps);
+    SceneDescription sceneA;
+    SceneDescription sceneB;
+    worldA.refresh(sceneA, eye, 320.0F / 180.0F, params);
+    worldB.refresh(sceneB, eye, 320.0F / 180.0F, params);
+    CHECK(worldA.stats().piecesPlaced == first.placements.size());
+    CHECK(worldA.stats().piecesInstanced > 100);
+    CHECK(worldA.stats().piecesInstanced < worldA.stats().piecesPlaced);
+    CHECK(worldA.stats().piecesRelit == 1);
+    REQUIRE(sceneA.statics.size() == worldA.stats().piecesInstanced);
+    REQUIRE(sceneA.pieces.size() == catalogue.pieces().size());
+    CHECK(sceneHash(sceneA) == sceneHash(sceneB));
+    // Every described piece is inside its reach.
+    for (const StaticInstance& piece : sceneA.statics) {
+        REQUIRE(piece.piece < sceneA.pieces.size());
+        const float dx = piece.position.x - eye.x;
+        const float dz = piece.position.z - eye.y;
+        CHECK(dx * dx + dz * dz <= 96.0F * 96.0F + 1.0F);
+    }
+    // The same minute again relights nothing; the next hour relights once
+    // and moves the hash.
+    const std::uint64_t evening = sceneHash(sceneA);
+    worldA.refresh(sceneA, eye, 320.0F / 180.0F, params);
+    CHECK(worldA.stats().piecesRelit == 1);
+    CHECK(sceneHash(sceneA) == evening);
+    params.timeOfDaySeconds = 21 * 3600;
+    worldA.refresh(sceneA, eye, 320.0F / 180.0F, params);
+    CHECK(worldA.stats().piecesRelit == 2);
+    CHECK(sceneHash(sceneA) != evening);
+    // And without a catalogue the description carries no pieces at all.
+    WorldScene bare(tilesA, atlas, nullptr);
+    SceneDescription plain;
+    bare.refresh(plain, eye, 320.0F / 180.0F, params);
+    CHECK(plain.statics.empty());
+    CHECK(plain.pieces.empty());
+    CHECK(bare.stats().piecesPlaced == 0);
 }

@@ -749,6 +749,9 @@ void print_usage() {
         "  --fov=DEG            horizontal field of view (default 90)\n"
         "  --spawn=X,Y,Z        spawn tile (default the authored Tarwalk spawn)\n"
         "  --yaw=DEG            spawn facing, 0 = north (default 0)\n"
+        "  --pitch=DEG          spawn look pitch, positive up, clamped like the\n"
+        "                       mouse (default 0): shoot down at a doorstep or\n"
+        "                       up at a roof line without touching the mouse\n"
         "  --sensitivity=N      mouse look, BAM per count (default 14). The\n"
         "                       OPTIONS page (F2) has a slider for this and\n"
         "                       it is what survives between runs -- this only\n"
@@ -1140,6 +1143,9 @@ void print_usage() {
         } else if (starts_with(arg, "--yaw=", &value)) {
             options.smoke.session.spawnYaw = sim::angle_from_degrees(std::atoi(value));
             options.smoke.session.spawnYawGiven = true;
+        } else if (starts_with(arg, "--pitch=", &value)) {
+            options.smoke.session.spawnPitch = sim::angle_from_degrees(std::atoi(value));
+            options.smoke.session.spawnPitchGiven = true;
         } else if (starts_with(arg, "--sensitivity=", &value)) {
             options.sensitivity =
                 std::clamp(std::atoi(value), render::kMinSensitivity, render::kMaxSensitivity);
@@ -3487,14 +3493,33 @@ struct VideoBridge {
     return (granadad::content::contentDir() / "art" / "lot-3d" / "static").string();
 }
 
+/// S LANE. Where the static building pieces live -- the same export tree
+/// the weapons come from; the catalogue names "<pack>/<prefab>.gltf" under
+/// it. Same licence, same gitignore, same silent fallback (the chunk mesh).
+[[nodiscard]] std::string static_model_dir() { return weapon_model_dir(); }
+
 struct SceneRig {
     render3d::SceneDescription scene;
     std::unique_ptr<render3d::WorldScene> world;
+    /// S LANE. The piece catalogue (content/raws/world3d/docks-pieces.json)
+    /// loaded once per rig; the world scene borrows it. Absent or malformed
+    /// -> empty -> no pieces, the district exactly as before the lane.
+    render3d::StaticCatalogue catalogue;
 
     void refresh(const render::Session& session, float aspect) {
         if (world == nullptr) {
-            world = std::make_unique<render3d::WorldScene>(session.tiles(), session.atlas(),
-                                                           &session.renderer().glow());
+            catalogue = render3d::StaticCatalogue::load(
+                render3d::staticCataloguePath(granadad::content::contentDir()));
+            if (!catalogue.error().empty()) {
+                std::printf("granadad: render3d: piece catalogue: %s -- the chunk mesh stands\n",
+                            catalogue.error().c_str());
+            }
+            for (const std::string& warning : catalogue.warnings()) {
+                std::printf("granadad: render3d: piece catalogue: %s\n", warning.c_str());
+            }
+            world = std::make_unique<render3d::WorldScene>(
+                session.tiles(), session.atlas(), &session.renderer().glow(), &catalogue,
+                &session.renderer().lamps());
         }
         render3d::WorldSceneParams params;
         params.timeOfDaySeconds = session.timeOfDay();
@@ -3553,6 +3578,7 @@ render3d::SceneStats present_frame(render3d::Backend& video, const Options& opti
     config.vsync = false;
     config.modelDir = rig_model_dir();
     config.weaponDir = weapon_model_dir();
+    config.staticDir = static_model_dir();
     std::unique_ptr<render3d::Backend> video = render3d::Backend::open(config);
     if (video == nullptr) {
         std::printf("granadad: the 3D backend could not open for the shutter\n");
@@ -3579,10 +3605,13 @@ render3d::SceneStats present_frame(render3d::Backend& video, const Options& opti
     // frame's INPUT twin-runs identical across processes -- the frame's
     // bytes are never hashed on a GPU, the description is.
     std::printf("granadad: 3d shutter -- %s backend, %dx%d, %zu instance(s), %zu triangle(s), "
+                "%zu piece(s) of %zu placed (%zu drawn, %zu piece file(s)), "
                 "%zu bod%s (%zu skinned, %zu rig file(s)), hands %s/%s %s %zu part(s)%s%s, "
                 "scene 0x%016llX%s\n",
                 video->kind() == render3d::VideoKind::Software ? "rlsw" : "gpu", output.width(),
-                output.height(), stats.instancesDrawn, stats.trianglesDrawn, stats.actorsDrawn,
+                output.height(), stats.instancesDrawn, stats.trianglesDrawn,
+                rig.scene.statics.size(), rig.world != nullptr ? rig.world->stats().piecesPlaced : std::size_t{0},
+                stats.staticsDrawn, stats.staticModelsLoaded, stats.actorsDrawn,
                 stats.actorsDrawn == 1 ? "y" : "ies", stats.actorsSkinned, stats.rigModelsLoaded,
                 render3d::viewmodelKindName(
                     static_cast<render3d::ViewmodelKind>(rig.scene.viewmodel.kind))
@@ -5379,6 +5408,7 @@ int main(int argc, char** argv) {
             config.windowScale = options.windowScale;
             config.modelDir = rig_model_dir();
             config.weaponDir = weapon_model_dir();
+            config.staticDir = static_model_dir();
             std::unique_ptr<render3d::Backend> video = render3d::Backend::open(config);
             if (video == nullptr) {
                 std::printf("granadad: could not open the window -- closing.\n");

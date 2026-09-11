@@ -90,6 +90,14 @@ struct BackendConfig {
     /// client). Empty means no weapon file is ever looked for; the
     /// placeholder weapon part draws instead.
     std::string weaponDir;
+    /// S LANE. Where the static building pieces live: the directory the
+    /// description's StaticPieceRef files are relative to
+    /// (content/art/lot-3d/static on the client, "<pack>/<prefab>.gltf"
+    /// under it). Empty means no file is ever looked for and every
+    /// placement draws nothing -- the chunk mesh under it is the
+    /// placeholder. A named directory with a file missing falls back the
+    /// same way, silently, per file.
+    std::string staticDir;
 };
 
 /// A key going down or up this frame. `hid` is the USB HID usage id (SDL's
@@ -165,6 +173,13 @@ struct SceneStats {
     std::size_t viewmodelPartsDrawn = 0;
     bool viewmodelSkinned = false;
     bool viewmodelWeaponLoaded = false;
+    /// S LANE. Static pieces drawn through a loaded glTF this pass, pieces
+    /// described whose file is absent (nothing drawn; the chunk stands),
+    /// and how many piece files are loaded in the process (0 on every build
+    /// without content/art/lot-3d/).
+    std::size_t staticsDrawn = 0;
+    std::size_t staticsMissing = 0;
+    std::size_t staticModelsLoaded = 0;
 };
 
 class Backend {
@@ -189,7 +204,11 @@ public:
 
     void beginFrame(const Rgba8& clear);
     /// The 3D pass: scene.instances through the mesh cache, then
-    /// scene.actors -- each through its rig's glb model when
+    /// scene.statics -- each through its piece's glTF under
+    /// BackendConfig::staticDir when the file exists (its own materials,
+    /// the tint multiplied in; translucent sub-meshes such as window glass
+    /// and the water plane held back and drawn after the people), else
+    /// nothing -- then scene.actors -- each through its rig's glb model when
     /// BackendConfig::modelDir holds one (animated by clip index when
     /// `skinned`, rest pose otherwise), else through the placeholder mesh
     /// the description carries under instance.meshId. Then, when
