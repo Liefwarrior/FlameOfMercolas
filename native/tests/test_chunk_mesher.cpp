@@ -1905,7 +1905,7 @@ TEST_CASE("a timber post beside a door gap hangs the shop sign") {
         CHECK(p.instance.position.z > 23.0F);
         CHECK(p.instance.position.x == doctest::Approx(11.5F));
         CHECK(p.instance.position.y == doctest::Approx(render::bandSurface(19) + 2.35F));
-        CHECK(p.instance.scale.x == doctest::Approx(0.55F / catalogue.piece(PieceRole::ShopSign)->scale));
+        CHECK(p.instance.scale.x == doctest::Approx(0.55F));
         CHECK(p.mode == kDrawShaded);
         // The bracket's +X points south, out from the face: a clockwise
         // yaw of a quarter turn.
