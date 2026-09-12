@@ -23,6 +23,7 @@
 
 #include <doctest/doctest.h>
 
+#include <cmath>
 #include <string>
 #include <vector>
 
@@ -293,4 +294,89 @@ TEST_CASE("the hands row names the thing in the hand, and a turned blow is said 
     session.setBlocking(false);
     // The row's edge: the room's own counter moving is what says it.
     CHECK(session.lastMessage().find("TURNS") == std::string::npos);
+}
+
+// ---------------------------------------------------------------------------
+// KIT BUILD: the things on the tiles, in 3D
+// ---------------------------------------------------------------------------
+
+#include "granadad/render3d/ground_items.hpp"
+#include "granadad/render3d/static_pieces.hpp"
+
+TEST_CASE("a thing on a tile is an Item piece off the catalogue, and the placeholder rule holds") {
+    namespace render3d = granadad::render3d;
+    const render3d::StaticCatalogue catalogue =
+        render3d::StaticCatalogue::load(render3d::staticCataloguePath(content::contentDir()));
+    REQUIRE_FALSE(catalogue.empty());
+    // The table dresses every item the raws put on a stand, the box and
+    // the bale; the sack's own five rows are never on a tile and need no
+    // row here.
+    REQUIRE_FALSE(catalogue.itemIds().empty());
+    CHECK(catalogue.itemPiece("knife") != nullptr);
+    CHECK(catalogue.itemPiece("strongbox") != nullptr);
+    CHECK(catalogue.itemPiece("bale") != nullptr);
+    CHECK(catalogue.itemPiece("dust") == nullptr);
+    // Every Item row indexes into the piece table where the description
+    // expects it, in variant order.
+    for (std::size_t v = 0; v < catalogue.itemIds().size(); ++v) {
+        const render3d::PieceSpec* spec = catalogue.itemPiece(catalogue.itemIds()[v]);
+        REQUIRE(spec != nullptr);
+        CHECK(spec->role == render3d::PieceRole::Item);
+        CHECK(spec->variant == static_cast<std::uint8_t>(v));
+        CHECK(catalogue.pieceIndex(render3d::PieceRole::Item, spec->variant) >= 0);
+        CHECK_FALSE(spec->file.empty());
+    }
+    // A weapon lies flat: pitched a quarter turn; a sack stands.
+    CHECK(catalogue.itemPiece("cutlass")->pitch > 1.0F);
+    CHECK(catalogue.itemPiece("bale")->pitch == 0.0F);
+
+    // The Tarwalk at four in the morning: the rope and the boots stand on
+    // the quay, the snug's bale and the four boxes are in the house. Drop a
+    // knife and the frame has one thing more; take the rope and one fewer.
+    Session session(gullAt(4, 151, 63, sim::gull::kGroundBand, 90));
+    const std::vector<render3d::StaticInstance> before =
+        render3d::groundItemInstances(session, catalogue, session.camera());
+    REQUIRE_FALSE(before.empty());
+    for (const render3d::StaticInstance& piece : before) {
+        CHECK(piece.role == static_cast<std::uint8_t>(render3d::PieceRole::Item));
+        CHECK(piece.piece < catalogue.pieces().size());
+        CHECK(catalogue.pieces()[piece.piece].role == render3d::PieceRole::Item);
+    }
+    REQUIRE(session.tavern().giveItem("knife"));
+    REQUIRE(session.tavern().dropItem(session.tavern().items().indexOf("knife")).result ==
+            sim::ServiceResult::Served);
+    const std::vector<render3d::StaticInstance> dropped =
+        render3d::groundItemInstances(session, catalogue, session.camera());
+    CHECK(dropped.size() == before.size() + 1);
+    // Position from the tile, never from anything the renderer keeps: the
+    // knife lies on the body's own tile at the band's surface plus its lift.
+    bool found = false;
+    for (const render3d::StaticInstance& piece : dropped) {
+        if (catalogue.itemIds()[catalogue.pieces()[piece.piece].variant] == "knife") {
+            found = true;
+            CHECK(std::abs(piece.position.x - (static_cast<float>(session.body().tileX()) + 0.5F)) < 0.6F);
+            CHECK(std::abs(piece.position.z - (static_cast<float>(session.body().tileY()) + 0.5F)) < 0.6F);
+        }
+    }
+    CHECK(found);
+    // TAKE (the rope is nearer than the knife or not, either is one fewer).
+    session.interact();
+    CHECK(session.lastMessage().rfind("TAKEN - ", 0) == 0);
+    const std::vector<render3d::StaticInstance> taken =
+        render3d::groundItemInstances(session, catalogue, session.camera());
+    CHECK(taken.size() == before.size());
+    // The same session described twice is the same bytes: pure over state.
+    const std::vector<render3d::StaticInstance> again =
+        render3d::groundItemInstances(session, catalogue, session.camera());
+    REQUIRE(again.size() == taken.size());
+    for (std::size_t i = 0; i < again.size(); ++i) {
+        CHECK(again[i].piece == taken[i].piece);
+        CHECK(again[i].position.x == taken[i].position.x);
+        CHECK(again[i].yaw == taken[i].yaw);
+        CHECK(again[i].tint.r == taken[i].tint.r);
+    }
+    // No catalogue table: no instance, nothing in the sim moved.
+    const render3d::StaticCatalogue bare = render3d::StaticCatalogue::fromJson("{}");
+    CHECK(render3d::groundItemInstances(session, bare, session.camera()).empty());
+    CHECK(session.tavern().groundItems().size() >= 1);
 }

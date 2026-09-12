@@ -34,6 +34,7 @@ constexpr std::string_view kRoleNames[kPieceRoleCount] = {
     "barrel_rack", "fireplace",    "pillar",      "post",         "parapet",     "roof_tile",
     "rowboat",     "crane",        "gunwale",     "window_timber", "rope",
     "hull",        "wall_plaster", "stool",       "quay_wall",     "roof_flag",
+    "item",
 };
 
 // ---------------------------------------------------------------------------
@@ -3307,6 +3308,43 @@ StaticCatalogue StaticCatalogue::fromJson(std::string_view json) {
         }
     }
 
+    // KIT BUILD. THE ITEM TABLE: one Item row per registry item id the
+    // world may draw on a tile -- "<pack>/<file>", a lift off the floor, a
+    // pitch to lay a point-up weapon flat, a scale, a yaw. Sorted by id (the
+    // parser's own object order), so the variant an id gets is the same on
+    // every machine. An id the sim's registry does not know is still a row
+    // here (the catalogue does not read the raws); the instancer simply
+    // never asks for it.
+    if (parsed.contains("items") && parsed["items"].is_object()) {
+        const nlohmann::json& items = parsed["items"];
+        std::size_t variant = 0;
+        for (const auto& [id, row] : items.items()) {
+            if (!row.is_object() || variant >= 255) {
+                continue;
+            }
+            const std::string pack = row.value("pack", std::string());
+            const std::string file = row.value("file", std::string());
+            if (file.empty()) {
+                out.warnings_.push_back("item without a file: " + id);
+                continue;
+            }
+            PieceSpec spec;
+            spec.role = PieceRole::Item;
+            spec.variant = static_cast<std::uint8_t>(variant);
+            spec.file = pack.empty() ? file : pack + "/" + file;
+            spec.lift = floatOf(row, "lift", 0.0F);
+            spec.yawOffset = floatOf(row, "yawOffsetDegrees", 0.0F) * (kPi / 180.0F);
+            spec.pitch = floatOf(row, "pitchDegrees", 0.0F) * (kPi / 180.0F);
+            spec.scale = floatOf(row, "scale", 1.0F);
+            spec.maxDistance = floatOf(row, "maxDistance", 32.0F);
+            spec.selfLit = row.value("selfLit", false);
+            spec.tint = tintFromJson(row.contains("tint") ? row["tint"] : nlohmann::json(), Rgba8{});
+            out.pieces_.push_back(std::move(spec));
+            out.itemIds_.push_back(id);
+            ++variant;
+        }
+    }
+
     if (parsed.contains("materials") && parsed["materials"].is_object()) {
         const std::span<const std::string_view> known = render::materialIds();
         for (const auto& [id, row] : parsed["materials"].items()) {
@@ -3395,6 +3433,15 @@ std::uint8_t StaticCatalogue::variantCount(PieceRole role) const noexcept {
     return n;
 }
 
+const PieceSpec* StaticCatalogue::itemPiece(std::string_view itemId) const noexcept {
+    for (std::size_t v = 0; v < itemIds_.size(); ++v) {
+        if (itemIds_[v] == itemId) {
+            return piece(PieceRole::Item, static_cast<std::uint8_t>(v));
+        }
+    }
+    return nullptr;
+}
+
 const MaterialRule* StaticCatalogue::materialByName(std::string_view id) const noexcept {
     for (const MaterialRule& rule : materials_) {
         if (rule.material == id) {
@@ -3432,6 +3479,7 @@ std::uint64_t StaticCatalogue::digest() const noexcept {
         h.mixF32(spec.height);
         h.mixF32(spec.thickness);
         h.mixF32(spec.standoff);
+        h.mixF32(spec.pitch);
         h.mixU8(static_cast<std::uint8_t>(spec.frontNegZ ? 1 : 0));
         h.mixF32(spec.minX);
         h.mixF32(spec.minZ);

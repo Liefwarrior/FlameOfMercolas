@@ -836,6 +836,9 @@ public:
     StealResult crackStrongbox();
     /// Which of the four boxes have been emptied, as a bitmask. Hashed.
     [[nodiscard]] std::int32_t crackedBoxes() const noexcept { return crackedBoxes_; }
+    /// KIT BUILD. How many bales stand in the snug right now -- the 3D
+    /// world draws the sack while this is above zero. Hashed already.
+    [[nodiscard]] std::int32_t balesInSnug() const noexcept { return balesInSnug_; }
 
     // --- S9: stealth ---------------------------------------------------------
     //

@@ -62,6 +62,7 @@
 #include "granadad/render3d/backend.hpp"
 #include "granadad/render3d/scene.hpp"
 #include "granadad/render3d/actor_instances.hpp"
+#include "granadad/render3d/ground_items.hpp"
 #include "granadad/render3d/viewmodel.hpp"
 #include "granadad/render3d/world_scene.hpp"
 #include "granadad/sim/angle.hpp"
@@ -3605,6 +3606,16 @@ struct SceneRig {
         params.timeOfDaySeconds = session.timeOfDay();
         params.dynamicLamps = session.tavernLights();
         world->refresh(scene, session.camera(), aspect, params);
+        // KIT BUILD: the things on the tiles -- the room's hashed ground
+        // list, the four strongboxes and the snug's bale -- as Item pieces
+        // off the same catalogue, appended after the placed pieces (whose
+        // table they index). Per frame, off sim state, never written back:
+        // TAKE removes a thing in the sim and the next frame has one fewer.
+        {
+            const std::vector<render3d::StaticInstance> things =
+                render3d::groundItemInstances(session, catalogue, session.camera());
+            scene.statics.insert(scene.statics.end(), things.begin(), things.end());
+        }
         // A LANE: the people. Sixteen placeholder rigs put once (the adapter
         // swaps in the glb by name where it has one), and the instances
         // rewritten every frame off the roster with wardSprites' own slide.

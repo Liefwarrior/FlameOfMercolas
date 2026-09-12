@@ -497,6 +497,10 @@ add_library(granadad-render3d-core STATIC
     # StaticInstances beside the chunks. Pure over the tile bytes; the
     # adapter draws the glTF files, or nothing where they are absent.
     src/render3d/static_pieces.cpp
+    # KIT BUILD: the things on the tiles -- the room's hashed ground list
+    # and its two fixtures as Item pieces off the catalogue's `items` table,
+    # per frame, never written back.
+    src/render3d/ground_items.cpp
     src/render3d/actor_instances.cpp
     src/render3d/viewmodel.cpp
 )
