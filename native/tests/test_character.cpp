@@ -341,11 +341,12 @@ TEST_CASE("ENTER on a carried row wears it or bares it; on a sheet row it does n
     CHECK(session.highlightedKitRow()->item == tavern.items().indexOf("coat"));
     // The tile says what the press does, in the keyboard's own words.
     const std::string enter(render::promptConfirmKey(render::InputDevice::KeyboardMouse));
-    CHECK(session.dialogueView().epithet == enter + " WEAR  LEFT RIGHT SLOT  X DROP");
+    const std::string arrows{render::kMotifLeft, render::kMotifRight};
+    CHECK(session.dialogueView().epithet == enter + " WEAR  " + arrows + " SLOT  X DROP");
     session.chooseTopic(static_cast<std::size_t>(session.topicCursor()));
     CHECK(tavern.kit().isWorn(tavern.items().indexOf("coat")));
     CHECK(session.lastMessage() == "COAT - ON.");
-    CHECK(session.dialogueView().epithet == enter + " BARE  LEFT RIGHT SLOT  X DROP");
+    CHECK(session.dialogueView().epithet == enter + " BARE  " + arrows + " SLOT  X DROP");
     session.chooseTopic(0);
     CHECK_FALSE(tavern.kit().isWorn(tavern.items().indexOf("coat")));
     CHECK(session.lastMessage() == "COAT - OFF.");

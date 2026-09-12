@@ -621,3 +621,58 @@ the Condemned rung, and the workload's arrests are paperless. Read again off the
 `--tavern --ticks 900` `run A` == `run B` == `0x837E94019BC49C25` (3,153 bytes);
 `--population --population-hour 16 --ticks 7200` `run A` == `run B` == `0x2646C1AAA2BA38DF`
 (18,772 bytes). The gate stamp and the counts are in the commit that carries this note.
+
+---
+
+## The Kit -- the ONE declared tavern move, re-blessed (2026-09-12)
+
+The Kit build (`lane/kit`, DECISIONS.md "The Kit landed") gives the room an
+item record: the player's Kit (dense int32 counts per row of
+`content/raws/items/items.json` plus one worn row per slot), the list of what
+lies on the tiles (the raws' authored stands less what was taken, plus what was
+dropped), what has been taken off each corpse (a mask per actor), and the two
+counters a turned blow moves. All of it decides what the next blow does, how
+fast the legs go and what the next TAKE picks up, so all of it joined
+`Tavern::hash_into` -- a DECLARED structure move of the tavern/gate-workload
+twin, the S13 shape (the pinned codec goldens hash fixed byte specs, not this
+struct; the live gates compare THIS shape against itself). The workload never
+takes, drops or wears: its draw schedule did not move, and the sack, the
+picks and every field that was hashed before are hashed exactly where they
+were. The Stash stays the illicit view over the Kit (its counts, codec and
+hash seat under the crime ledger are untouched), which is why the court's v5
+record did not have to be re-cut.
+
+```
+at branch lane/kit,
+granadad-twin-gate --tavern --ticks 900
+COMBINED WORLD HASH: 0x837E94019BC49C25 -> 0x4AD7CF75C5A0A326      <- DECLARED and RE-BLESSED
+```
+
+Recorded directly from `dist\granadad-twin-gate.exe --tavern --ticks 900` on
+Windows/mingw, two invocations, each `run A` == `run B` ==
+`0x4AD7CF75C5A0A326`, report text byte-identical (3,153 bytes) -- on the gate
+whose stamp names this tree (`native/` digest `GATE_DIGEST`, 323 files, 96/96
+ctest entries green, 1,194 doctest cases -- `test_kit.cpp`,
+`test_kit_page.cpp` and the `--kit` lines in `test_scripted_lines.cpp` among
+them; `verify-windows.ps1` PASS -- 1,194 sim cases / 2,164,818 assertions and
+71 content cases / 902,135 assertions under mingw, content-fingerprint and
+world-hash reports byte-identical linux/gcc vs mingw/windows, the stamp
+checked against the working tree).
+
+```
+at branch lane/kit,
+granadad-twin-gate --population --population-hour 16 --ticks 7200, 96 walkers
+COMBINED WORLD HASH: 0x2646C1AAA2BA38DF      <- unchanged: no WardActor touched
+```
+
+`run A` == `run B`, report text byte-identical at **18,772 bytes**, two
+invocations -- the same count every section since Phase C records. The
+street's people carry, drop and yield nothing (D10): the Kit's stands are
+authored tavern tiles and the corpse kits are the roster's, and the ONE call
+the renderer makes reads the room's list and writes nothing back.
+
+**The tavern baseline is therefore re-blessed at `0x4AD7CF75C5A0A326` with one
+declared record change behind it** -- the Kit, the ground, the corpse masks
+and the turned-blow counters on the room the tavern hashes. The next lane
+that changes the SHAPE of what the room hashes (a save frame's own fields, the
+attribute derivation D10 still owes) declares it the same way.

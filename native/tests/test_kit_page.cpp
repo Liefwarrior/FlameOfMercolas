@@ -130,7 +130,8 @@ TEST_CASE("the crosshair names the thing on the ground, its weight when it is no
     // THE PRESS does what the prompt said: the rope is on the body, the
     // row says so, and the crosshair falls back to whatever is left.
     session.interact();
-    CHECK(session.lastMessage() == "TAKEN - ROPE. 48 DRAMS.");
+    CHECK(session.lastMessage() ==
+          "TAKEN - ROPE. 48 DRAMS. " + std::to_string(session.tavern().loadDrams()) + "/240.");
     CHECK(session.tavern().kit().count(session.tavern().items().indexOf("rope")) == 1);
     CHECK(session.interactTarget().verb != "TAKE");
 

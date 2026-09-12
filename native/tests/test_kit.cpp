@@ -587,7 +587,7 @@ TEST_CASE("a free thing on the quay is taken with no crime, dropped back, and ta
     const std::int32_t liftsBefore = tavern.dialogue().crimes().tally(Crime::Lift);
     const Tavern::StealResult took = tavern.takeGroundItem();
     REQUIRE(took.result == ServiceResult::Served);
-    CHECK(took.line == "TAKEN - ROPE. 48 DRAMS.");
+    CHECK(took.line == "TAKEN - ROPE. 48 DRAMS. " + std::to_string(tavern.loadDrams()) + "/240.");
     CHECK_FALSE(took.seen);
     CHECK(tavern.dialogue().crimes().tally(Crime::Lift) == liftsBefore);
     CHECK(tavern.kit().count(rope) == 1);

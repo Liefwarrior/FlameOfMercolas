@@ -4903,6 +4903,12 @@ namespace {
 }
 }  // namespace
 
+std::string Tavern::loadWord() const {
+    // The one visible budget, on the row that moved it: "199/240" -- the
+    // reference's own 266/300, said where the drams landed.
+    return std::to_string(loadDrams()) + "/" + std::to_string(loadBudget());
+}
+
 bool Tavern::giveItem(std::string_view id, std::int32_t count) {
     // One unit of a registry row goes where it lives: the sack for a
     // contraband row, the picks counter for the picks row, the Kit for the
@@ -4972,7 +4978,7 @@ Tavern::StealResult Tavern::takeGroundItem() {
     }
     out.result = ServiceResult::Served;
     if (!theirs) {
-        out.line = "TAKEN - " + name + ". " + dramsWord(drams) + ".";
+        out.line = "TAKEN - " + name + ". " + dramsWord(drams) + ". " + loadWord() + ".";
         return out;
     }
     // SOMEBODY'S. The same three clauses a hand in a purse is judged by, and
@@ -4985,7 +4991,8 @@ Tavern::StealResult Tavern::takeGroundItem() {
         spreadWitness(kPlayerActorId, Deed::Robbed);
         reportOffence(Offence::Stole);
     }
-    out.line = "TAKEN - " + name + ". THEIRS" + (out.seen ? ", AND SEEN." : ". NOBODY SAW.");
+    out.line = "TAKEN - " + name + ". THEIRS" + (out.seen ? ", AND SEEN. " : ". NOBODY SAW. ") +
+               loadWord() + ".";
     return out;
 }
 
@@ -5180,7 +5187,7 @@ Tavern::StealResult Tavern::takeFromCorpse(std::int32_t actorId, std::int32_t ki
         corpseLoot_.push_back(loot);
     }
     out.result = ServiceResult::Served;
-    out.line = "TAKEN - " + item->name + ". " + dramsWord(item->drams) + ".";
+    out.line = "TAKEN - " + item->name + ". " + dramsWord(item->drams) + ". " + loadWord() + ".";
     return out;
 }
 

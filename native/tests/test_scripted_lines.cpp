@@ -465,7 +465,7 @@ TEST_CASE("--kit lands all ten of its beats: named, taken, dropped, THEIRS, the 
     CHECK(played.summary.find(" legs=") != std::string::npos);
 }
 
-TEST_CASE("--kit=take stops on the prompt, --kit=drop on the coil on the boards, --kit=search on the list") {
+TEST_CASE("--kit=take stops on the prompt, --kit=search on the list, --kit=drop on the coil on the boards") {
     render::SmokeRunConfig run;
     run.kit = true;
     run.kitEnd = "take";
@@ -477,17 +477,17 @@ TEST_CASE("--kit=take stops on the prompt, --kit=drop on the coil on the boards,
     // Stopped BEFORE the press: the coil is still on the quay.
     CHECK(played.summary.find("ground=") != std::string::npos);
 
-    run.kitEnd = "drop";
-    played = play(run);
-    INFO(played.summary);
-    CHECK(played.ok);
-    CHECK_FALSE(played.scriptFellShort());
-    CHECK(played.kitBeats == 2);
-
     run.kitEnd = "search";
     played = play(run);
     INFO(played.summary);
     CHECK(played.ok);
     CHECK_FALSE(played.scriptFellShort());
-    CHECK(played.kitBeats == 8);
+    CHECK(played.kitBeats == 7);
+
+    run.kitEnd = "drop";
+    played = play(run);
+    INFO(played.summary);
+    CHECK(played.ok);
+    CHECK_FALSE(played.scriptFellShort());
+    CHECK(played.kitBeats == 9);
 }

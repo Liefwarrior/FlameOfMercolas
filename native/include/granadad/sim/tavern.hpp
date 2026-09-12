@@ -1742,6 +1742,8 @@ public:
     /// The legs' Q8 term under the load -- items.hpp's loadSpeedScaleQ8 over
     /// the two numbers above. 256 unloaded.
     [[nodiscard]] std::int32_t loadSpeedQ8() const noexcept;
+    /// "199/240": the load against the budget, as the TAKE rows say it.
+    [[nodiscard]] std::string loadWord() const;
     /// Flat DR from what is worn. Defence v1.
     [[nodiscard]] std::int32_t wornDr() const noexcept;
     /// How many landed blows the kit has softened, and what the last one
