@@ -551,8 +551,11 @@ TEST_CASE("the two views swap the detail pane and nothing else") {
     std::size_t shelfMovedOutsideCursorRow = 0;
     std::size_t shelfMovedInCursorRow = 0;
     std::size_t shelfMovedInDetail = 0;
-    const int cursorRowY0 = geo.master.y;
-    const int cursorRowY1 = geo.master.y + geo.metric.cellH();
+    // The fill carries a hairline of its accent one scaled pixel above and
+    // below the row (drawInvertedFill's own eye candy), so the band is the
+    // row plus that hairline each side.
+    const int cursorRowY0 = geo.master.y - geo.metric.scale;
+    const int cursorRowY1 = geo.master.y + geo.metric.cellH() + geo.metric.scale;
     for (int y = geo.master.y; y < geo.master.y + geo.master.h; ++y) {
         for (int x = geo.master.x; x < geo.master.x + geo.master.w; ++x) {
             if (leads.pixels()[leads.index(x, y)] != shelf.pixels()[shelf.index(x, y)]) {

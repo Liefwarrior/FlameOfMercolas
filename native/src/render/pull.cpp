@@ -176,15 +176,17 @@ std::string pullLine(std::string_view bearing, std::string_view place) {
         return {};
     }
     // "NE 40  THE WEIGHHOUSE", and off-plane "W 66  BRANN'S CHANDLERY  BAND
-    // 18": the band rides AFTER the place on the ribbon (the page puts it
-    // after the bearing inside its own parenthesis), so the two numbers a
-    // walking body reads first -- the point and the paces -- stay in front.
-    const std::size_t band = bearing.find("  BAND ");
-    if (band == std::string_view::npos) {
+    // 18" or "...  BELOW": the plane word rides AFTER the place on the ribbon
+    // (the page puts it after the bearing inside its own parenthesis), so
+    // the two numbers a walking body reads first -- the point and the paces
+    // -- stay in front. pullBearing's own grammar: "POINT PACES", then two
+    // cells of air, then the plane word if any.
+    const std::size_t plane = bearing.find("  ");
+    if (plane == std::string_view::npos) {
         return std::string(bearing) + "  " + std::string(place);
     }
-    return std::string(bearing.substr(0, band)) + "  " + std::string(place) +
-           std::string(bearing.substr(band));
+    return std::string(bearing.substr(0, plane)) + "  " + std::string(place) +
+           std::string(bearing.substr(plane));
 }
 
 // ---------------------------------------------------------------------------

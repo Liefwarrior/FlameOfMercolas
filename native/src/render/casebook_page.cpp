@@ -67,11 +67,31 @@ namespace {
     }
 }
 
-/// THE COMPASS MARK on the list row: the arrowhead motif ahead of the place,
-/// so the row keeps its place word (the walk is still the cost) and still
-/// says, without a word, that the compass points at it.
-[[nodiscard]] std::string compassMark(const std::string& place) {
-    return std::string(kGlyphRight) + " " + place;
+/// THE COMPASS MARK on the list row: the arrowhead motif in the air between
+/// the row's short name and its place -- so the row keeps its place word
+/// (the walk is still the cost), the value column keeps its width (a mark
+/// inside the value would have cost the one cell of headroom the narrowest
+/// window has), and the row still says, without a word, that the compass
+/// points at it. Drawn AFTER the list, in the row's own knockout ink when
+/// the row is the one filled. A row with no air (the widest name beside the
+/// widest place) goes without; the badge beside it says ON THE COMPASS.
+void drawCompassMark(Framebuffer& target, const PanelRect& listRect, const PanelMetric& metric,
+                     const OptionListPlan& plan, const std::vector<PanelOption>& page, int row,
+                     bool picked, float alpha) {
+    if (row < 0 || row >= static_cast<int>(page.size()) || row >= plan.rows) {
+        return;
+    }
+    const PanelOption& option = page[static_cast<std::size_t>(row)];
+    const int labelEnd = plan.keyCells + std::min(static_cast<int>(option.label.size()),
+                                                 plan.labelCells);
+    const int valueStart = plan.columnCells - static_cast<int>(option.value.size());
+    const int at = labelEnd + 1;
+    if (at + 1 > valueStart) {
+        return;
+    }
+    const PanelInk& ink = panelInk();
+    drawCellText(target, listRect, metric, at, row, kGlyphRight,
+                 picked ? ink.knockout : Rgb{0.98F, 0.86F, 0.42F}, alpha);
 }
 
 /// A place name in a narrow column drops its leading article, exactly as
@@ -319,13 +339,10 @@ inline constexpr int kMinBodyRows = 8;
         // colour still carries the state, which is the reference's own `3 -
         // Blood` with no number beside it.
         const std::string place = shortPlace(row.place);
-        // THE PULL PACK: the row the compass carries KEEPS its place and
-        // wears the arrowhead ahead of it -- a row that said the place once
-        // (its name IS its place) wears the arrowhead alone.
+        // THE PULL PACK: the row the compass carries KEEPS its place word;
+        // the arrowhead is an overlay in the row's own air (drawCompassMark),
+        // never a cell of the value column.
         option.value = row.state != CasebookLeadState::Open ? stateWord(row)
-                       : row.followed ? (place == shortPlace(option.label)
-                                             ? std::string(kGlyphRight)
-                                             : compassMark(place))
                        : place == shortPlace(option.label) ? std::string()
                                                            : place;
         option.accent = stateAccent(row.state, row.close);
@@ -1142,6 +1159,13 @@ void drawCasebookPage(Framebuffer& target, const CasebookPageState& state) {
         const std::vector<PanelOption> page(options.begin() + first, options.begin() + last);
         drawOptionListPlanned(target, listRect, metric, page, shelfUp ? -1 : at - first, plan,
                               alpha);
+        for (int i = first; i < last; ++i) {
+            if (state.rows[static_cast<std::size_t>(i)].followed &&
+                state.rows[static_cast<std::size_t>(i)].state == CasebookLeadState::Open) {
+                drawCompassMark(target, listRect, metric, plan, page, i - first,
+                                !shelfUp && i == at, alpha);
+            }
+        }
     } else {
         // AN EMPTY BOOK IS WORDED. It happens for exactly one frame of one
         // session -- a casebook.json that failed to load -- and a blank pane
