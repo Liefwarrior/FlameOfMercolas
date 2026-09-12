@@ -692,24 +692,25 @@ TEST_CASE("the nav band always names the key that closes the book") {
     for (const auto& size : {std::pair{320, 180}, std::pair{640, 360}, std::pair{960, 540},
                              std::pair{1280, 720}, std::pair{1920, 1080}}) {
         // ALL THREE VIEWS, because the second and third entries' labels
-        // change with the tab and a wider label is a narrower column. FIVE
-        // entries since the PULL PACK: LEAD, the next view, the commit,
-        // FOLLOW, CLOSE.
+        // change with the tab and a wider label is a narrower column. SIX
+        // entries since the PULL PACK merged with NINE AND THE STICKS: LEAD,
+        // the next view, the commit, FOLLOW, NOTES, CLOSE.
         for (const CasebookTab tab : {CasebookTab::Leads, CasebookTab::Case, CasebookTab::Cases}) {
             page.tab = tab;
             const CasebookPageMetrics geo = casebookPageMetrics(page, size.first, size.second);
             INFO("at ", size.first, "x", size.second, " nav rows ", geo.navRows, " shown ",
                  geo.navShown, "/", geo.navEntries);
             REQUIRE(geo.usable);
-            // NINE AND THE STICKS: five slots on both hands -- the ring's
-            // keys ride the foot of every page of it.
-            CHECK(geo.navEntries == 5);
+            // NINE AND THE STICKS: the ring's keys ride the foot of every
+            // page of it, on both hands -- plus the PULL PACK's own FOLLOW
+            // slot, riding along on every view too.
+            CHECK(geo.navEntries == 6);
             CHECK(geo.navShown == geo.navEntries);
         }
     }
 
     // And with a pad in hand, LB RB NOTES, the same rule: every entry shown,
-    // at every size, the second row spent where one will not hold five.
+    // at every size, the second row spent where one will not hold six.
     session.noteInputDevice(InputDevice::Pad);
     CasebookPageState padPage = session.casebookPageState();
     REQUIRE(padPage.navPageKeys == "LB RB");
@@ -722,7 +723,7 @@ TEST_CASE("the nav band always names the key that closes the book") {
             INFO("pad at ", size.first, "x", size.second, " nav rows ", geo.navRows, " shown ",
                  geo.navShown, "/", geo.navEntries);
             REQUIRE(geo.usable);
-            CHECK(geo.navEntries == 5);
+            CHECK(geo.navEntries == 6);
             CHECK(geo.navShown == geo.navEntries);
         }
     }

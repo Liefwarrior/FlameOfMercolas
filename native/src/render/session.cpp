@@ -3874,11 +3874,14 @@ CasebookPageState Session::casebookPageState() const {
     // lanes wrote this line; one field, commitKey, survives the merge.)
     page.commitKey = std::string(promptConfirmKey(promptDevice_));
     // THE PULL PACK: the FOLLOW verb's key -- F on a keyboard (a raw page
-    // key, the map's own T precedent), the Attack half's button on a pad (X,
-    // the one face button unclaimed on this page: A is the commit, B backs
-    // out). Through promptLabel so a rebind of Attack re-words it.
+    // key, the map's own T precedent), X on a pad -- the one face button
+    // unclaimed on this page (A is the commit, B backs out) and, since NINE
+    // AND THE STICKS moved Attack's own pad half off X onto RT, no longer a
+    // button any live verb claims at all. Fixed to PadWest rather than
+    // derived from Action::Attack's current binding, so this page's own key
+    // doesn't silently follow Attack wherever a future rebind moves it.
     page.followKey = promptDevice_ == InputDevice::Pad
-                         ? std::string(promptLabel(controls_, Action::Attack, promptDevice_))
+                         ? std::string(promptKeyName(Key::PadWest))
                          : std::string("F");
     page.shelf = casebookShelfRows();
     page.shelfCursor =
