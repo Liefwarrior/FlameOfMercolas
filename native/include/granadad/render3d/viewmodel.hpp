@@ -154,6 +154,11 @@ struct ViewmodelRigPlacement {
 /// the spell clip, lands centre-frame with its glow. RAISES THE STANCE by
 /// construction -- a cast with the hands down still poses up here.
 [[nodiscard]] ViewmodelRigPlacement viewmodelCastPlacement(ViewmodelKind kind) noexcept;
+/// The swing: where the rig sits for a charge, a hold and a swing -- the
+/// punches lunge half a metre, so bare fists step the rig back and level
+/// it; a weapon keeps its guard. Eased to over a charge's first steps and
+/// eased back to the guard over a swing's last third.
+[[nodiscard]] ViewmodelRigPlacement viewmodelSwingPlacement(ViewmodelKind kind) noexcept;
 
 /// THE CLIP POLICY: which of the arms glb's eight clips a state plays and
 /// where in it (0..1 over the clip). The export's clip per state index is

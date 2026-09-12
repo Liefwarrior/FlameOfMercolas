@@ -422,6 +422,8 @@ TEST_CASE("the viewmodel is described from the sim's own hand and hashes") {
     CHECK(hands.rigClip == 5U);
     CHECK(hands.rigFrame == doctest::Approx(0.0F));
     CHECK(hands.rigPitch == doctest::Approx(viewmodelGuardPlacement(ViewmodelKind::Fists).pitch));
+    // And the rig itself sunk under the frame's bottom edge.
+    CHECK(hands.rigOffset.y < viewmodelGuardPlacement(ViewmodelKind::Fists).offset.y - 0.5F);
 
     // THE RAISED REST: the pose tables' own idle with the hands up, at
     // re-entry -- what a hand-built pose is (handsUp defaults to up, the
@@ -872,9 +874,16 @@ TEST_CASE("the weapon socket, the framing and the clip policy are pure per kind 
     const ViewmodelRigPlacement fistsGuard = viewmodelGuardPlacement(ViewmodelKind::Fists);
     CHECK(fistsGuard.pitch > 0.5F);
     CHECK(fistsGuard.offset.y < -1.0F);
-    CHECK(fistsGuard.yaw == doctest::Approx(kViewmodelRigYaw));
+    CHECK(fistsGuard.yaw <= kViewmodelRigYaw);
+    CHECK(fistsGuard.yaw > kViewmodelRigYaw - 0.3F);
     const ViewmodelRigPlacement fistsBlock = viewmodelBlockPlacement(ViewmodelKind::Fists);
     CHECK(fistsBlock.offset.z < fistsGuard.offset.z - 0.3F);
+    // The punch steps the rig back and levels it; a weapon keeps its guard.
+    const ViewmodelRigPlacement fistsPunch = viewmodelSwingPlacement(ViewmodelKind::Fists);
+    CHECK(fistsPunch.offset.z > fistsGuard.offset.z + 0.2F);
+    CHECK(fistsPunch.pitch < fistsGuard.pitch);
+    CHECK(viewmodelSwingPlacement(ViewmodelKind::Sword).pitch ==
+          doctest::Approx(viewmodelGuardPlacement(ViewmodelKind::Sword).pitch));
     const ViewmodelRigPlacement swordGuard = viewmodelGuardPlacement(ViewmodelKind::Sword);
     CHECK(swordGuard.pitch > fistsGuard.pitch);
     CHECK(swordGuard.offset.y < fistsGuard.offset.y);
@@ -986,6 +995,28 @@ TEST_CASE("the weapon socket, the framing and the clip policy are pure per kind 
     poseViewmodel(end, ViewmodelKind::Fists, castDown, Rgba8{});
     CHECK(end.rigOffset.y == doctest::Approx(fistsGuard.offset.y));
     CHECK(end.rigPitch == doctest::Approx(fistsGuard.pitch));
+
+    // A charge eases the rig to the swing placement, the hold sits there,
+    // and a swing comes back to the guard over its last third.
+    ViewmodelPose charging;
+    charging.state = ViewmodelState::Charging;
+    charging.stateSteps = kViewmodelEaseSteps;
+    ViewmodelInstance cocked;
+    poseViewmodel(cocked, ViewmodelKind::Fists, charging, Rgba8{});
+    CHECK(cocked.rigOffset.z == doctest::Approx(fistsPunch.offset.z));
+    CHECK(cocked.rigPitch == doctest::Approx(fistsPunch.pitch));
+    ViewmodelPose swinging;
+    swinging.state = ViewmodelState::SwingLight;
+    swinging.swingSeq = 1;
+    swinging.stateSteps = ViewmodelMachine::kSwingSteps / 2;
+    ViewmodelInstance flying;
+    poseViewmodel(flying, ViewmodelKind::Fists, swinging, Rgba8{});
+    CHECK(flying.rigOffset.z == doctest::Approx(fistsPunch.offset.z));
+    swinging.stateSteps = ViewmodelMachine::kSwingSteps;
+    ViewmodelInstance landed;
+    poseViewmodel(landed, ViewmodelKind::Fists, swinging, Rgba8{});
+    CHECK(landed.rigOffset.z == doctest::Approx(fistsGuard.offset.z));
+    CHECK(landed.rigPitch == doctest::Approx(fistsGuard.pitch));
 
     // The block's push eases in over its steps and the socket rides every
     // pose of an armed kind.

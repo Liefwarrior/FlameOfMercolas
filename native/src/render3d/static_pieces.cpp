@@ -1792,13 +1792,17 @@ private:
         }
     }
 
-    /// A PAIR OF POSTS ON A STREET IS A HITCHING RAIL. Two lone timber
-    /// cells two apart on a row or a column, out of doors, with a walkable
-    /// cell between them (the Tarwalk's pairs before the Gull): the rail
-    /// beam runs from face to face at hip height, placed once, from the
-    /// lower post of the pair. Indoors (the taproom's tables) nothing.
+    /// A PAIR OF POSTS ON A STREET IS A SIGN FRAME WITH A HITCHING RAIL.
+    /// Two lone timber cells two apart on a row or a column, out of doors,
+    /// with a walkable cell between them (the Tarwalk's pairs before the
+    /// Gull): the rail beam runs from face to face at hip height, and the
+    /// shop sign hangs from the first post's inner face out across the gap
+    /// at sign height -- the frame an inn hangs its board in. Placed once,
+    /// from the lower post of the pair. Indoors (the taproom's tables)
+    /// nothing.
     void railBetweenPosts(std::int32_t x, std::int32_t y, std::int32_t z, bool indoors) {
         const PieceSpec* rail = catalogue_.piece(PieceRole::PostRail);
+        const PieceSpec* sign = catalogue_.piece(PieceRole::ShopSign);
         if (rail == nullptr || indoors) {
             return;
         }
@@ -1820,6 +1824,17 @@ private:
             const float a0 = (axis == 0 ? static_cast<float>(x) : static_cast<float>(y)) + 1.0F;
             beamAlong(r, a0, a0 + 1.0F, render::bandSurface(z) + kRailLift, 0.0F, Rgba8{},
                       runLight(x + dx, y + dy, 0, 0, 1, 0.0F, 1.0F), z, PieceRole::PostRail);
+            if (sign != nullptr) {
+                // The board: its bracket's +X along the pair's line into the
+                // gap, from the first post's inner face.
+                const int face = axis == 0 ? kEast : kSouth;
+                const Vec3 at{static_cast<float>(x) + 0.5F + kNormalX[face] * 0.53F,
+                              render::bandSurface(z) + kSignLift,
+                              static_cast<float>(y) + 0.5F + kNormalZ[face] * 0.53F};
+                const float k = kSignScale / std::max(0.01F, sign->scale);
+                pointPiece(PieceRole::ShopSign, *sign, at, wrapYaw(yawOf(face) + 3.0F * kHalfPi), x, y, z,
+                           Rgba8{}, Vec3{k, k, k}, false, 2.5F);
+            }
         }
     }
 
@@ -2903,7 +2918,7 @@ private:
                     setBase(r, static_cast<float>(x));
                     const std::int32_t cells = y1 - y + 1;
                     beamAlong(r, static_cast<float>(y), static_cast<float>(y1 + 1),
-                              render::bandSurface(z) + lift, 0.0F, knobs.roofFillTint,
+                              render::bandSurface(z) + lift, 0.0F, knobs.roofTint,
                               runLight(x, y, 0, 1, cells, 0.0F, static_cast<float>(cells)), z,
                               PieceRole::RoofBatten);
                     y = y1 + 1;

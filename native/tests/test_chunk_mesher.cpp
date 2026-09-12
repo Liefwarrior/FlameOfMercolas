@@ -1772,6 +1772,54 @@ TEST_CASE("DIAG: the cells round the Gull's door and the hulls, printed") {
         }
     }
     MESSAGE("hull faces " << hullFaces << ", with a roofed floor behind " << hullRoomBehind << ": " << hullNote);
+    // Every timber wall cell beside the harbour on the street band: what its
+    // eight neighbours are (form + roofed), so the hull rule can be read
+    // off the real map rather than guessed.
+    std::string beside;
+    int besideCount = 0;
+    for (std::int32_t y = 36; y <= 60 && beside.size() < 6000; ++y) {
+        for (std::int32_t x = 120; x <= 160; ++x) {
+            for (std::int32_t z = 18; z <= 20; ++z) {
+                if (tiles.form(x, y, z) != content::TileForm::Wall) {
+                    continue;
+                }
+                const MaterialRule* r = catalogue.material(tiles.material(x, y, z));
+                if (r == nullptr || r->wallClass != WallClass::Timber) {
+                    continue;
+                }
+                bool water = false;
+                for (int sx = -1; sx <= 1 && !water; ++sx) {
+                    for (int sy = -1; sy <= 1 && !water; ++sy) {
+                        if ((sx == 0) == (sy == 0)) {
+                            continue;
+                        }
+                        water = (tiles.form(x + sx, y + sy, z) == content::TileForm::Open &&
+                                 tiles.fluidDepth(x + sx, y + sy, z) > 0) ||
+                                (tiles.form(x + sx, y + sy, z - 1) == content::TileForm::Open &&
+                                 tiles.fluidDepth(x + sx, y + sy, z - 1) > 0);
+                    }
+                }
+                if (!water) {
+                    continue;
+                }
+                ++besideCount;
+                beside += "(" + std::to_string(x) + "," + std::to_string(y) + "," + std::to_string(z) + ")[";
+                for (int dy = -1; dy <= 1; ++dy) {
+                    for (int dx = -1; dx <= 1; ++dx) {
+                        if (dx == 0 && dy == 0) {
+                            beside += "* ";
+                            continue;
+                        }
+                        beside += formName(tiles.form(x + dx, y + dy, z));
+                        beside += cellRoofed(tiles, x + dx, y + dy, z) ? "^" : " ";
+                    }
+                    beside += "|";
+                }
+                beside += "] ";
+            }
+        }
+    }
+    MESSAGE("timber walls beside water on 18..20 in x120..160 y36..60: " << besideCount << " -- " << beside);
     // Roof cells reachable by a stair or ramp beneath / beside.
     int roofFlags = 0;
     for (const StaticPlacement& p : placed.placements) {
@@ -2112,5 +2160,26 @@ TEST_CASE("a pair of lone posts two cells apart on a street carries a hitching r
     CHECK(acrossRow);
     CHECK(downColumn);
     CHECK(countRole(placed.placements, PieceRole::Pillar) >= 5);
+    // And a board in each frame, hung from the first post into the gap.
+    std::size_t boards = 0;
+    for (const StaticPlacement& p : placed.placements) {
+        if (p.role != PieceRole::ShopSign) {
+            continue;
+        }
+        ++boards;
+        CHECK(p.instance.position.y == doctest::Approx(render::bandSurface(19) + 2.35F));
+        const bool rowFrame = p.lightX == 20 && p.lightY == 20;
+        const bool columnFrame = p.lightX == 25 && p.lightY == 22;
+        CHECK((rowFrame || columnFrame));
+        if (rowFrame) {
+            CHECK(p.instance.position.x > 21.0F);
+            CHECK(p.instance.yaw == doctest::Approx(0.0F));
+        }
+        if (columnFrame) {
+            CHECK(p.instance.position.z > 23.0F);
+            CHECK(p.instance.yaw == doctest::Approx(3.14159265F * 0.5F));
+        }
+    }
+    CHECK(boards == 2);
 }
 

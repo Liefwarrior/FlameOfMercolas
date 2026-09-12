@@ -209,11 +209,25 @@ constexpr float kDegToRad = kPi / 180.0F;
     return ViewmodelRigPlacement{offset, kViewmodelRigYaw - turnLeftDegrees * kDegToRad,
                                  pitchDegrees * kDegToRad};
 }
-constexpr ViewmodelRigPlacement kFistsGuard = placementOf(Vec3{0.0F, -1.37F, 0.18F}, 0.0F, 40.0F);
-constexpr ViewmodelRigPlacement kFistsBlock = placementOf(Vec3{0.0F, -1.37F, -0.30F}, 0.0F, 35.0F);
+constexpr ViewmodelRigPlacement kFistsGuard = placementOf(Vec3{0.10F, -1.34F, 0.14F}, 8.0F, 35.0F);
+constexpr ViewmodelRigPlacement kFistsBlock = placementOf(Vec3{0.0F, -1.22F, -0.41F}, 0.0F, 10.0F);
+/// The punches lunge: the shoulder comes half a metre forward through the
+/// clip, so the rig sits further back and barely leans for them, the
+/// shoulders behind the near plane in every frame and the fist flying in
+/// from the lower right to the middle rather than up through the eye.
+constexpr ViewmodelRigPlacement kFistsPunch = placementOf(Vec3{0.0F, -1.27F, 0.45F}, 0.0F, 10.0F);
 constexpr ViewmodelRigPlacement kSwordGuard = placementOf(Vec3{0.40F, -2.04F, 0.28F}, 10.0F, 70.0F);
 constexpr ViewmodelRigPlacement kSwordBlock = placementOf(Vec3{0.30F, -1.96F, 0.28F}, 10.0F, 75.0F);
-constexpr ViewmodelRigPlacement kCastPlacement = placementOf(Vec3{0.30F, -1.76F, -0.24F}, 20.0F, -10.0F);
+constexpr ViewmodelRigPlacement kCastPlacement = placementOf(Vec3{0.30F, -1.88F, -0.24F}, 20.0F, -10.0F);
+/// The swing's last third eases the placement back to the guard, so the
+/// fall back to Idle lands on the framing it left.
+constexpr float kSwingReturnFrom = 0.7F;
+/// HANDS DOWN: the rig drops this far below its guard framing, so the arms
+/// at the hips are under the bottom edge -- Oblivion's sheathed state shows
+/// nothing, and the block clip's first frame at the guard framing put a
+/// forearm across the near plane instead. The stance flip eases the rig
+/// back up while the clip raises the hands, so the guard rises into view.
+constexpr float kLoweredDrop = 0.9F;
 
 [[nodiscard]] ViewmodelRigPlacement lerp(const ViewmodelRigPlacement& a, const ViewmodelRigPlacement& b,
                                          float t) noexcept {
@@ -332,6 +346,10 @@ ViewmodelRigPlacement viewmodelBlockPlacement(ViewmodelKind kind) noexcept {
 ViewmodelRigPlacement viewmodelCastPlacement(ViewmodelKind kind) noexcept {
     (void)kind;
     return kCastPlacement;
+}
+
+ViewmodelRigPlacement viewmodelSwingPlacement(ViewmodelKind kind) noexcept {
+    return kind == ViewmodelKind::Fists ? kFistsPunch : kSwordGuard;
 }
 
 ViewmodelRigClip viewmodelRigClip(ViewmodelKind kind, const ViewmodelPose& pose) noexcept {
@@ -474,6 +492,21 @@ void poseViewmodel(ViewmodelInstance& out, ViewmodelKind kind, const ViewmodelPo
             const float e = smooth(clamp01(static_cast<float>(pose.stateSteps) /
                                            static_cast<float>(kViewmodelEaseSteps)));
             at = lerp(guard, viewmodelBlockPlacement(kind), e);
+        } else if (pose.state == ViewmodelState::Charging) {
+            const float e = smooth(clamp01(static_cast<float>(pose.stateSteps) /
+                                           static_cast<float>(kViewmodelEaseSteps)));
+            at = lerp(guard, viewmodelSwingPlacement(kind), e);
+        } else if (pose.state == ViewmodelState::ChargedHard) {
+            at = viewmodelSwingPlacement(kind);
+        } else if (pose.state == ViewmodelState::SwingLight || pose.state == ViewmodelState::SwingHard) {
+            const std::int32_t window = render::viewmodelStateSteps(pose.state);
+            const float k = window > 0 ? clamp01(static_cast<float>(pose.stateSteps) /
+                                                 static_cast<float>(window))
+                                       : 0.0F;
+            const float back = k > kSwingReturnFrom
+                                   ? smooth((k - kSwingReturnFrom) / (1.0F - kSwingReturnFrom))
+                                   : 0.0F;
+            at = lerp(viewmodelSwingPlacement(kind), guard, back);
         } else if (pose.state == ViewmodelState::Cast) {
             const std::int32_t window = render::viewmodelStateSteps(pose.state);
             const float k = window > 0 ? clamp01(static_cast<float>(pose.stateSteps) /
@@ -487,8 +520,10 @@ void poseViewmodel(ViewmodelInstance& out, ViewmodelKind kind, const ViewmodelPo
             }
             at = lerp(guard, viewmodelCastPlacement(kind), e);
         } else if (pose.state == ViewmodelState::Idle) {
-            // The breathing sway, from rest at re-entry, and only with the
-            // hands up (down, the clip has them at the hips, out of frame).
+            // Down: the rig sinks under the bottom edge with the stance,
+            // eased like the clip. Up: the breathing sway, from rest at
+            // re-entry.
+            at.offset.y -= kLoweredDrop * down;
             const float t = static_cast<float>(pose.stateSteps);
             at.offset.y += (1.0F - down) * 0.006F * std::sin(t * (2.0F * kPi / 96.0F));
             at.offset.x += (1.0F - down) * 0.003F * std::sin(t * (2.0F * kPi / 192.0F));
