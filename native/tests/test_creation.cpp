@@ -911,11 +911,23 @@ TEST_CASE("DEVIN's fixed sheet, applied through CreationResult, reaches the live
     //
     // MORROWIND ROUND: ONE SPACE, NOT TWO -- see characterRows()'s own note
     // on why the tiled Character tile's narrower column gave that glyph
-    // back to the skill rows.
+    // back to the skill rows. THE HONEST SHEET (PULL PACK): the row carries
+    // what the next level costs after the level -- "SKYRUNNING LV 25  NEXT
+    // 41" -- so the pin is the row's head, and the NEXT figure is checked
+    // against the track's own arithmetic rather than retyped.
     const std::string expected =
         "SKYRUNNING LV " + std::to_string(chosen.companion.startingLevel(sim::kRoofSkill));
     const std::vector<std::string> rows = session.characterRows();
-    CHECK(std::find(rows.begin(), rows.end(), expected) != rows.end());
+    bool found = false;
+    for (const std::string& row : rows) {
+        if (row.rfind(expected, 0) == 0) {
+            found = true;
+            const std::int32_t level = chosen.companion.startingLevel(sim::kRoofSkill);
+            CHECK(row.find("  NEXT " + std::to_string(live.scaledUsesForLevel(
+                                           sim::kRoofSkill, level))) != std::string::npos);
+        }
+    }
+    CHECK(found);
 }
 
 TEST_CASE("CUSTOM's point-bought Chargen sheet, applied through CreationResult, reaches the "

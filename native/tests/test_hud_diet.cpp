@@ -200,11 +200,12 @@ TEST_CASE("the rest street holds the spec's eight-word budget") {
     CHECK(asleepInk > 0);         // ...and the rest frame still has its compass and bars
 }
 
-TEST_CASE("the followed lead is the one line the rest budget grew by, and it is never more than six words") {
+TEST_CASE("the followed lead is the one line the rest budget grew by, and it is never more than seven words") {
     // UI-EA-SPEC 1.2 #11, amended by the PULL PACK: rest = 8, plus the
-    // followed lead's line -- bearing, paces, the place in the sign's own
-    // words, BAND n off-plane -- while a lead is followed. The longest line
-    // any authored lead can print is pinned here across all three case files
+    // followed lead's line -- bearing and paces (2), the place in the sign's
+    // own words (the article kept: THE NETTERS' COMPOUND, 3), BAND n
+    // off-plane (2) -- while a lead is followed. The longest line any
+    // authored lead can print is pinned here across all three case files
     // from one fixed spot, so a renamed place cannot quietly grow the street.
     const sim::CasebookRaws bloodletter = sim::CasebookRaws::load(granadad::content::contentDir());
     const sim::CasebookRaws courier =
@@ -220,7 +221,7 @@ TEST_CASE("the followed lead is the one line the rest budget grew by, and it is 
             const std::string line =
                 pullLine(pullBearing(126, 110, 19, lead.site, false), lead.place);
             INFO("line: ", line);
-            CHECK(wordsIn(line) <= 6);
+            CHECK(wordsIn(line) <= 7);
             if (static_cast<int>(line.size()) > widest) {
                 widest = static_cast<int>(line.size());
                 widestLine = line;
@@ -231,7 +232,7 @@ TEST_CASE("the followed lead is the one line the rest budget grew by, and it is 
     rest.pullLabel = widestLine;
     const int words = hudWordCount(rest);
     INFO("rest street with the followed lead: ", words, " words (", widestLine, ")");
-    CHECK(words <= 8 + 6);
+    CHECK(words <= 8 + 7);
     // And with no lead followed the old budget is untouched.
     CHECK(hudWordCount(restStreet()) <= 8);
 }
