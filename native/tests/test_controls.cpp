@@ -74,106 +74,124 @@ TEST_CASE("the shipped bindings are the ones a player already knows") {
     // now folded into one Action instead of three (Jump/Traverse/DropDown).
     CHECK(keys.actionFor(Key::Space) == Action::Vertical);
 
-    // #85. EVERY CORE BUTTON HAS A PAD DEFAULT -- the whole point of a scheme
-    // sized for a controller's own scarcity of buttons.
-    CHECK(keys.bound(Action::Interact, Key::PadSouth));
-    CHECK(keys.bound(Action::Attack, Key::PadWest));
-    CHECK(keys.bound(Action::Vertical, Key::PadNorth));
-    CHECK(keys.bound(Action::Crouch, Key::PadEast));
-    CHECK(keys.bound(Action::Sprint, Key::PadLeftStick));
-    CHECK(keys.bound(Action::QuickWheel, Key::PadRightStick));
-    // CORE ACTION #13 MOVED MENU'S PAD KEY. PadBack (Select) is the ward
-    // map's now -- the owner's own "and select on controller" -- the classic
-    // Start/Select split beside Pause=Start; Menu took the previously-unbound
-    // D-pad up. See defaults()'s own comment and fromText()'s migration.
-    CHECK(keys.bound(Action::Menu, Key::PadUp));
-    CHECK_FALSE(keys.bound(Action::Menu, Key::PadBack));
-    CHECK(keys.bound(Action::Pause, Key::PadStart));
-    CHECK(keys.bound(Action::PagePrev, Key::PadLeftBumper));
-    CHECK(keys.bound(Action::PageNext, Key::PadRightBumper));
-
-    // THE WARD MAP -- the owner's own words for both halves: "a map that they
-    // can press M to see", "and select on controller".
-    CHECK(keys.bound(Action::Map, Key::M));
-    CHECK(keys.bound(Action::Map, Key::PadBack));
-    CHECK(keys.actionFor(Key::M) == Action::Map);
-    CHECK(keys.actionFor(Key::PadBack) == Action::Map);
-
-    // THE COMBAT PAIR. C casts and the right mouse button blocks -- the
-    // Morrowind hand layout -- and the pad spends its two remaining unused
-    // keys, the triggers, the way the genre always spends them: LT guards,
-    // RT casts.
-    CHECK(keys.bound(Action::Cast, Key::C));
-    CHECK(keys.bound(Action::Cast, Key::PadRightTrigger));
-    CHECK(keys.bound(Action::Block, Key::MouseRight));
+    // NINE AND THE STICKS. EVERY ONE OF THE NINE HAS A PAD DEFAULT, and the
+    // pad half is Oblivion's own layout: the triggers are the two hands (RT
+    // swings, LT guards), RB casts, A uses, B sneaks, Y jumps, D-pad up is
+    // NOTES, START pauses, the stick click is RUN's optional second half.
+    CHECK(keys.bound(Action::Attack, Key::PadRightTrigger));
     CHECK(keys.bound(Action::Block, Key::PadLeftTrigger));
-    // And neither stole its key from anyone: MouseRight has been free since
-    // #85 moved Interact's old secondary to PadSouth, and C never shipped
-    // bound. Attack keeps the left button; Interact keeps E.
+    CHECK(keys.bound(Action::Cast, Key::PadRightBumper));
+    CHECK(keys.bound(Action::Interact, Key::PadSouth));
+    CHECK(keys.bound(Action::Crouch, Key::PadEast));
+    CHECK(keys.bound(Action::Vertical, Key::PadNorth));
+    CHECK(keys.bound(Action::Sprint, Key::PadLeftStick));
+    CHECK(keys.bound(Action::Menu, Key::PadUp));
+    CHECK(keys.bound(Action::Pause, Key::PadStart));
+
+    // THE PAD BUTTONS THE NINE LEAVE FREE: X, R3, D-pad down. An unrecognised
+    // press wakes the tutor bands (contract (c)); nothing else happens.
+    CHECK(keys.actionFor(Key::PadWest) == Action::Count);
+    CHECK(keys.actionFor(Key::PadRightStick) == Action::Count);
+    CHECK(keys.actionFor(Key::PadDown) == Action::Count);
+    // And the bumpers/brackets are page grammar, not world bindings on the
+    // left: LB is free in the world, `[` `]` are unbound.
+    CHECK(keys.actionFor(Key::PadLeftBumper) == Action::Count);
+    CHECK(keys.actionFor(Key::LeftBracket) == Action::Count);
+    CHECK(keys.actionFor(Key::RightBracket) == Action::Count);
+
+    // THE TENTH: THE WARD MAP -- "a map that they can press M to see". M on
+    // a keyboard and NO pad key: on a pad the map is a page of NOTES, one
+    // bumper past the casebook (see the ring case in this file).
+    CHECK(keys.bound(Action::Map, Key::M));
+    CHECK(keys.actionFor(Key::M) == Action::Map);
+    CHECK_FALSE(keyIsPad(keys.primary[static_cast<std::size_t>(Action::Map)]));
+    CHECK(keys.secondary[static_cast<std::size_t>(Action::Map)] == Key::None);
+
+    // THE BONUS SHORTCUTS. SELECT is WAIT now (Oblivion's own spend), and T
+    // is its keyboard twin; the D-pad's left and right step the quick bar,
+    // the QuickWheel's hold-and-step folded into two plain presses.
+    CHECK(keys.bound(Action::Wait, Key::T));
+    CHECK(keys.bound(Action::Wait, Key::PadBack));
+    CHECK(keys.actionFor(Key::PadBack) == Action::Wait);
+    CHECK(keys.bound(Action::QuickNext, Key::PadRight));
+    CHECK(keys.bound(Action::QuickPrev, Key::PadLeft));
+    CHECK(keys.actionFor(Key::PadRight) == Action::QuickNext);
+    CHECK(keys.actionFor(Key::PadLeft) == Action::QuickPrev);
+
+    // THE COMBAT TRIO ON THE KEYBOARD: the mouse's two buttons are the two
+    // hands, C casts. Attack keeps the left button; Interact keeps E.
+    CHECK(keys.bound(Action::Cast, Key::C));
+    CHECK(keys.bound(Action::Block, Key::MouseRight));
     CHECK(keys.bound(Action::Attack, Key::MouseLeft));
     CHECK(keys.bound(Action::Interact, Key::E));
+    // The F-keys and Q are free: nothing hard-coded, nothing bound.
+    CHECK(keys.actionFor(Key::F1) == Action::Count);
+    CHECK(keys.actionFor(Key::F2) == Action::Count);
+    CHECK(keys.actionFor(Key::F3) == Action::Count);
+    CHECK(keys.actionFor(Key::Q) == Action::Count);
 }
 
-TEST_CASE("#85: the core gameplay button count is what Eli asked for") {
-    // THIRTEEN. Attack, Interact, Crouch, Vertical, Sprint, Menu, PagePrev,
-    // PageNext, Pause, QuickWheel, Cast, Block -- and, the one deliberate
-    // bend of the ceiling, Map. Movement axes, the TurnLeft/TurnRight
-    // accessibility fallback and Screenshot (a dev/capture utility) excluded,
-    // exactly as the brief asked. Thirteen is ONE OVER Eli's own "10-12
-    // buttons" range, and the bend is HIS: Cast and Block spent the budget's
-    // last two slots, and then the owner asked for the map key directly --
-    // "let's give the player a map that they can press M to see", "and
-    // select on controller" -- so the ceiling's own author raised it by one,
-    // stated here rather than fudged. The next core verb has to consolidate
-    // into an existing one the way Interact and Vertical already did. This
-    // is a COUNTING test, not a behaviour one: it exists so a future action
-    // added to the "core" bucket without updating this case is a red build
-    // instead of a drifted comment.
+TEST_CASE("nine and the sticks: the core count is nine, plus the keyboard's map") {
+    // NINE. Swing, Guard, Cast, Use, Sneak, Jump, Run, Notes, Pause -- the
+    // owner's ruling ("minimizing the number of inputs necessary. Even a
+    // game like Morrowind worked on the console with just a few buttons"),
+    // down from the thirteen #85 shipped. Plus MAP, the one keyboard-only
+    // direct shortcut he asked for by name; on a pad the map is a page of
+    // NOTES and spends nothing. Movement axes, the arrow-key turn fallback,
+    // the bonus shortcuts (WAIT, the digits, the wheel) and Screenshot are
+    // excluded exactly as the brief asked. A COUNTING test: a verb added to
+    // the core bucket without updating this case is a red build instead of
+    // a drifted comment.
     const Action core[] = {
-        Action::Attack,     Action::Interact, Action::Crouch,  Action::Vertical,
-        Action::Sprint,     Action::Menu,     Action::PagePrev, Action::PageNext,
-        Action::Pause,      Action::QuickWheel, Action::Cast,   Action::Block,
-        Action::Map,
+        Action::Attack, Action::Block,    Action::Cast, Action::Interact, Action::Crouch,
+        Action::Vertical, Action::Sprint, Action::Menu, Action::Pause,
     };
-    CHECK(static_cast<int>(sizeof(core) / sizeof(core[0])) == 13);
-    // One over the top of Eli's own 10-12 range, on his own direct ask --
-    // pinned as exactly 13 above so the NEXT bend also has to be stated.
-    CHECK(sizeof(core) / sizeof(core[0]) >= 10);
-    CHECK(sizeof(core) / sizeof(core[0]) <= 13);
+    CHECK(static_cast<int>(sizeof(core) / sizeof(core[0])) == 9);
+    // And the whole table, so a stray survivor of the old thirteen (the
+    // wheel, the page pair, the F-key pages) cannot creep back in unnoticed:
+    // six axes, nine verbs, the map, WAIT, ten slots, two steps, the shutter.
+    CHECK(kActionCount == 6 + 9 + 1 + 1 + 10 + 2 + 1);
+    CHECK(actionFromKey("quick_wheel") == Action::Count);
+    CHECK(actionFromKey("page_prev") == Action::Count);
+    CHECK(actionFromKey("page_next") == Action::Count);
+    CHECK(actionFromKey("keys_page") == Action::Count);
+    CHECK(actionFromKey("options_page") == Action::Count);
+    // The labels are the verbs the owner named.
+    CHECK(actionLabel(Action::Attack) == "SWING");
+    CHECK(actionLabel(Action::Block) == "GUARD");
+    CHECK(actionLabel(Action::Cast) == "CAST");
+    CHECK(actionLabel(Action::Interact) == "USE");
+    CHECK(actionLabel(Action::Crouch) == "SNEAK");
+    CHECK(actionLabel(Action::Vertical) == "JUMP");
+    CHECK(actionLabel(Action::Sprint) == "RUN");
+    CHECK(actionLabel(Action::Menu) == "NOTES");
+    CHECK(actionLabel(Action::Pause) == "PAUSE");
+    CHECK(actionLabel(Action::Map) == "MAP");
+    CHECK(actionLabel(Action::Wait) == "WAIT");
 }
 
-TEST_CASE("every CORE action resolves an actual pad key, generically") {
-    // GENERIC AND ENUM-DRIVEN, unlike "the shipped bindings are the ones a
-    // player already knows" above, which hardcodes each action's exact pad
-    // button by name (Interact->PadSouth, Attack->PadWest, and so on). That
-    // test proves TODAY'S table; this one proves the PROPERTY -- every one of
-    // the 12 core actions carries at least one key that is a pad key, whatever
-    // that key happens to be -- so a future core action added to controls.hpp
-    // without a pad default in defaults() fails HERE, on the property, rather
-    // than only if somebody remembers to add another hardcoded CHECK() to the
-    // list above. This is the binding-completeness gap class the gamepad-
-    // readiness task named directly: an unbound action is invisible until a
-    // player actually reaches for it on a pad.
+TEST_CASE("every one of the nine resolves an actual pad key, generically") {
+    // GENERIC AND ENUM-DRIVEN, unlike the shipped-bindings case above, which
+    // hardcodes each verb's exact pad button. This proves the PROPERTY --
+    // every one of the nine carries at least one key that is a pad key,
+    // whatever that key happens to be -- so a core verb added without a pad
+    // default fails HERE rather than only if somebody remembers another
+    // hardcoded CHECK. The tenth, MAP, is the deliberate exception (keyboard
+    // only; its pad route is the NOTES ring, proved in its own case below),
+    // and every one of the nine ALSO carries a keyboard/mouse key: a verb a
+    // keyboard player cannot reach is as invisible as one a pad cannot.
     const ControlSettings keys = ControlSettings::defaults();
     const Action core[] = {
-        Action::Attack,     Action::Interact, Action::Crouch,  Action::Vertical,
-        Action::Sprint,     Action::Menu,     Action::PagePrev, Action::PageNext,
-        Action::Pause,      Action::QuickWheel, Action::Cast,   Action::Block,
-        Action::Map,
-    };
-    // Key::PadSouth..Key::PadRight are one contiguous run in controls.hpp's
-    // own Key enum (the face buttons, bumpers, triggers, sticks, Start/Back
-    // and the D-pad, in that order, with nothing else interleaved) -- see the
-    // enum itself. That ordering is what makes a range check here a check on
-    // "is this a pad key" rather than a second hardcoded name list.
-    const auto isPadKey = [](Key key) noexcept {
-        return key >= Key::PadSouth && key <= Key::PadRight;
+        Action::Attack, Action::Block,    Action::Cast, Action::Interact, Action::Crouch,
+        Action::Vertical, Action::Sprint, Action::Menu, Action::Pause,
     };
     for (const Action action : core) {
         const std::size_t index = static_cast<std::size_t>(action);
         INFO("action ", actionKey(action), " primary=", keyName(keys.primary[index]),
              " secondary=", keyName(keys.secondary[index]));
-        CHECK((isPadKey(keys.primary[index]) || isPadKey(keys.secondary[index])));
+        CHECK((keyIsPad(keys.primary[index]) || keyIsPad(keys.secondary[index])));
+        CHECK(((keys.primary[index] != Key::None && !keyIsPad(keys.primary[index])) ||
+               (keys.secondary[index] != Key::None && !keyIsPad(keys.secondary[index]))));
     }
 }
 
@@ -609,15 +627,15 @@ TEST_CASE("the collision guard does not block a legitimate two-action key swap")
     CHECK(swapped.actionFor(Key::Escape) == Action::Menu);
     CHECK(swapped.actionFor(Key::Tab) == Action::Pause);
     CHECK(swapped.bound(Action::Pause, Key::PadStart));
-    // CORE ACTION #13 CHANGED THIS FILE'S PAD OUTCOME, deliberately: "bind
-    // menu ... PAD_BACK" in a file that never names the map action is
-    // indistinguishable from menu's own OLD shipped default carried forward
-    // (an old toText() wrote every action's line), so fromText()'s migration
-    // moves menu's PadBack slot to its NEW shipped pad default and gives the
-    // map its Select button back -- the deterministic, documented fallback.
-    CHECK(swapped.bound(Action::Menu, Key::PadUp));
-    CHECK_FALSE(swapped.bound(Action::Menu, Key::PadBack));
-    CHECK(swapped.actionFor(Key::PadBack) == Action::Map);
+    // NINE AND THE STICKS: a file that names NO retired verb is read exactly
+    // as written -- "bind menu ... PAD_BACK" here is the author's own hand,
+    // so Menu keeps SELECT and WAIT (whose shipped pad half that is) is left
+    // keyboard-only, honestly. Not core, so the validation pass leaves the
+    // trade alone; the pause menu's WAIT row is still its door.
+    CHECK(swapped.bound(Action::Menu, Key::PadBack));
+    CHECK(swapped.actionFor(Key::PadBack) == Action::Menu);
+    CHECK(swapped.bound(Action::Wait, Key::T));
+    CHECK_FALSE(swapped.bound(Action::Wait, Key::PadBack));
 }
 
 // ---------------------------------------------------------------------------
@@ -669,9 +687,9 @@ TEST_CASE("every CORE action keeps at least one live key, across a spread of "
     // can steal a key off a different one) is exactly the kind of collateral
     // strand a narrower check would miss.
     //
-    // ALL THIRTEEN since Cast, Block and then Map joined the core list -- and
-    // the sweep gained shapes that attack THEIR keys too, because a core
-    // action is only as protected as the orderings the sweep actually tries.
+    // ALL TEN -- the nine and the map -- and the sweep carries shapes that
+    // attack every one of their keys, because a core action is only as
+    // protected as the orderings the sweep actually tries.
     const char* const files[] = {
         // Round 2's own shape, both orderings.
         "bind menu ESC\nbind pause ESC\n",
@@ -721,15 +739,23 @@ TEST_CASE("every CORE action keeps at least one live key, across a spread of "
         "bind menu TAB PAD_BACK\nbind pause M PAD_START\n",
         "bind map ESC\nbind pause ESC\n",
         "bind cast M\nbind map C PAD_RT\n",
+        // NINE AND THE STICKS' own shapes: the triggers and the right bumper
+        // stolen by neighbours, an old file's retired lines beside hostile
+        // ones (the migration must fire AND the pass must still hold), and
+        // WAIT's T and SELECT taken by core verbs.
+        "bind block MOUSE1 PAD_RT\nbind cast MOUSE2 PAD_LT\n",
+        "bind interact C PAD_RB\n",
+        "bind quick_wheel Q PAD_RS\nbind attack E PAD_A\nbind interact MOUSE1 PAD_RT\n",
+        "bind page_next RBRACKET PAD_RB\nbind cast MOUSE1 PAD_RT\nbind attack C PAD_RB\n",
+        "bind pause T PAD_BACK\nbind menu ESC PAD_START\n",
+        "bind wait ESC PAD_START\nbind map J PAD_UP\n",
     };
     for (const char* const file : files) {
         INFO("file: ", file);
         const ControlSettings loaded = ControlSettings::fromText(file);
-        for (const Action action : {Action::Attack, Action::Interact, Action::Crouch,
-                                     Action::Vertical, Action::Sprint, Action::Menu,
-                                     Action::PagePrev, Action::PageNext, Action::Pause,
-                                     Action::QuickWheel, Action::Cast, Action::Block,
-                                     Action::Map}) {
+        for (const Action action : {Action::Attack, Action::Block, Action::Cast,
+                                     Action::Interact, Action::Crouch, Action::Vertical,
+                                     Action::Sprint, Action::Menu, Action::Pause, Action::Map}) {
             const std::size_t index = static_cast<std::size_t>(action);
             INFO("action: ", actionKey(action),
                  " primary=", keyName(loaded.primary[index]),
@@ -739,14 +765,16 @@ TEST_CASE("every CORE action keeps at least one live key, across a spread of "
     }
 }
 
-TEST_CASE("a settings file from before Cast and Block existed loads with both "
-          "on their shipped defaults") {
-    // THE BACKWARD-COMPAT GUARANTEE, PROVEN RATHER THAN ASSUMED. A player who
-    // saved granadad-controls.cfg on the 10-action build has a file that
-    // never says "bind cast" or "bind block" anywhere. This is toText()'s own
-    // write order for that build -- every action that existed, spelled the
-    // way the old build spelled it, including a real rebind (Vertical to K)
-    // to prove the old lines still land while the missing ones default.
+TEST_CASE("nine and the sticks migration: the S13-era file lands every old default "
+          "on its new home and keeps the player's own rebind") {
+    // THE BACKWARD-COMPAT GUARANTEE, PROVEN RATHER THAN ASSUMED, on the OLDEST
+    // shape a real granadad-controls.cfg has on this machine (the pre-Cast/
+    // Block, pre-Map, menu-on-TAB file): toText()'s own write order for that
+    // build, every action spelled out, a real rebind (Vertical to K) to prove
+    // the file's own lines still land. The file names quick_wheel and the
+    // page pair, so it is a PRE-BREAK file and the per-slot rule applies:
+    // an old shipped key is the old default carried forward and becomes the
+    // new shipped key; anything else is the author's hand and stands.
     const ControlSettings loaded = ControlSettings::fromText(
         "# Granadad: The Darkstreets -- controls.\n"
         "bind forward W UP\n"
@@ -766,67 +794,71 @@ TEST_CASE("a settings file from before Cast and Block existed loads with both "
         "bind pause ESC PAD_START\n"
         "bind quick_wheel Q PAD_RS\n"
         "bind quick_1 1\n"
+        "bind quick_next WHEELDOWN\n"
+        "bind quick_prev WHEELUP\n"
         "bind screenshot F12\n"
         "set sensitivity 22\n");
 
     // The old file's own lines landed.
     CHECK(loaded.bound(Action::Vertical, Key::K));
+    CHECK(loaded.bound(Action::Vertical, Key::PadNorth));
     CHECK(loaded.mouse.sensitivity == 22);
 
-    // AND THE ACTIONS THE FILE HAS NEVER HEARD OF ARE ON THEIR SHIPPED
-    // DEFAULTS, reachable -- not empty, not stranded. fromText() starts from
-    // defaults() and the file never overwrote these slots; being on
-    // kCoreActions means even a file that STOLE their keys would get them
-    // restored, but the ordinary old file never touches them at all.
+    // THE MOVED DEFAULTS MOVED. Attack's X is RT now; Menu's TAB is J and its
+    // SELECT is D-pad up; the bar's steps grew their D-pad halves.
+    CHECK(loaded.bound(Action::Attack, Key::MouseLeft));
+    CHECK(loaded.bound(Action::Attack, Key::PadRightTrigger));
+    CHECK_FALSE(loaded.bound(Action::Attack, Key::PadWest));
+    CHECK(loaded.bound(Action::Menu, Key::J));
+    CHECK(loaded.bound(Action::Menu, Key::PadUp));
+    CHECK_FALSE(loaded.bound(Action::Menu, Key::Tab));
+    CHECK_FALSE(loaded.bound(Action::Menu, Key::PadBack));
+    CHECK(loaded.bound(Action::QuickNext, Key::WheelDown));
+    CHECK(loaded.bound(Action::QuickNext, Key::PadRight));
+    CHECK(loaded.bound(Action::QuickPrev, Key::PadLeft));
+
+    // THE ACTIONS THE FILE HAS NEVER HEARD OF ARE ON THEIR SHIPPED DEFAULTS,
+    // reachable -- and the retired lines freed exactly the keys they hold:
+    // RB (page_next's) for Cast, SELECT (menu's old) for Wait, Q and R3 for
+    // nobody.
     CHECK(loaded.bound(Action::Cast, Key::C));
-    CHECK(loaded.bound(Action::Cast, Key::PadRightTrigger));
+    CHECK(loaded.bound(Action::Cast, Key::PadRightBumper));
     CHECK(loaded.bound(Action::Block, Key::MouseRight));
     CHECK(loaded.bound(Action::Block, Key::PadLeftTrigger));
-    CHECK(loaded.actionFor(Key::C) == Action::Cast);
-    CHECK(loaded.actionFor(Key::MouseRight) == Action::Block);
-
-    // AND THE MAP MIGRATION FIRED ON THIS FILE'S OWN "bind menu TAB PAD_BACK"
-    // LINE -- menu's old shipped default, spelled out the way every old
-    // toText() spelled it -- so the map holds M AND the Select button, and
-    // Menu holds Tab AND its new D-pad-up default. Every one of the 13 core
-    // actions ends this load with a live key on BOTH device families, which
-    // is the whole backward-compat claim for a file this old.
     CHECK(loaded.bound(Action::Map, Key::M));
-    CHECK(loaded.bound(Action::Map, Key::PadBack));
-    CHECK(loaded.actionFor(Key::PadBack) == Action::Map);
-    CHECK(loaded.bound(Action::Menu, Key::Tab));
-    CHECK(loaded.bound(Action::Menu, Key::PadUp));
-    const auto isPadKey = [](Key key) noexcept {
-        return key >= Key::PadSouth && key <= Key::PadRight;
-    };
-    for (const Action action : {Action::Attack, Action::Interact, Action::Crouch,
-                                 Action::Vertical, Action::Sprint, Action::Menu,
-                                 Action::PagePrev, Action::PageNext, Action::Pause,
-                                 Action::QuickWheel, Action::Cast, Action::Block, Action::Map}) {
+    CHECK(loaded.bound(Action::Wait, Key::T));
+    CHECK(loaded.bound(Action::Wait, Key::PadBack));
+    CHECK(loaded.actionFor(Key::PadBack) == Action::Wait);
+    CHECK(loaded.actionFor(Key::Q) == Action::Count);
+    CHECK(loaded.actionFor(Key::PadRightStick) == Action::Count);
+    CHECK(loaded.actionFor(Key::PadLeftBumper) == Action::Count);
+
+    // Every one of the nine ends this load with a live key on BOTH device
+    // families -- the whole backward-compat claim for a file this old.
+    for (const Action action : {Action::Attack, Action::Block, Action::Cast, Action::Interact,
+                                 Action::Crouch, Action::Vertical, Action::Sprint,
+                                 Action::Menu, Action::Pause}) {
         const std::size_t index = static_cast<std::size_t>(action);
         const Key first = loaded.primary[index];
         const Key second = loaded.secondary[index];
         INFO("action ", actionKey(action), " primary=", keyName(first),
              " secondary=", keyName(second));
-        // One live pad key, and one live NON-pad (keyboard/mouse) key.
-        CHECK(((first != Key::None && isPadKey(first)) ||
-               (second != Key::None && isPadKey(second))));
-        CHECK(((first != Key::None && !isPadKey(first)) ||
-               (second != Key::None && !isPadKey(second))));
+        CHECK(((first != Key::None && keyIsPad(first)) ||
+               (second != Key::None && keyIsPad(second))));
+        CHECK(((first != Key::None && !keyIsPad(first)) ||
+               (second != Key::None && !keyIsPad(second))));
     }
+    // And the file round-trips into the NEW format cleanly: saving what was
+    // loaded writes a file this build reads back identically.
+    CHECK(ControlSettings::fromText(loaded.toText()).toText() == loaded.toText());
 }
 
-// ---------------------------------------------------------------------------
-// CORE ACTION #13's OWN MIGRATION -- the project's most-burned bug class
-// (three prior fix rounds on exactly this shape), so every branch of the rule
-// stated in fromText()'s MIGRATION comment gets its own adversarial file.
-// ---------------------------------------------------------------------------
-
-TEST_CASE("map migration: an S13-era file (menu on PAD_BACK, cast/block "
-          "present, no map) lands all 13 on both devices") {
-    // toText()'s own write order for the build one before this one: every
-    // action spelled out, menu carrying its then-default PAD_BACK, and a
-    // real rebind (Vertical to K) to prove the file's own lines still land.
+TEST_CASE("nine and the sticks migration: the last shipped default file (thirteen verbs, "
+          "map on SELECT, F1/F2) lands on the nine") {
+    // THE SECOND REAL FILE ON THIS MACHINE: the build one before this one,
+    // every action spelled out, nothing customised. After the break it must
+    // read as a fresh default table, which is what a player who never
+    // touched their controls expects to find.
     const ControlSettings loaded = ControlSettings::fromText(
         "bind forward W UP\n"
         "bind back S DOWN\n"
@@ -837,109 +869,92 @@ TEST_CASE("map migration: an S13-era file (menu on PAD_BACK, cast/block "
         "bind attack MOUSE1 PAD_X\n"
         "bind interact E PAD_A\n"
         "bind crouch LCTRL PAD_B\n"
-        "bind vertical K PAD_Y\n"
+        "bind vertical SPACE PAD_Y\n"
         "bind sprint LSHIFT PAD_LS\n"
-        "bind menu TAB PAD_BACK\n"
+        "bind menu J PAD_UP\n"
         "bind page_prev LBRACKET PAD_LB\n"
         "bind page_next RBRACKET PAD_RB\n"
         "bind pause ESC PAD_START\n"
         "bind quick_wheel Q PAD_RS\n"
         "bind quick_1 1\n"
+        "bind quick_2 2\n"
+        "bind quick_3 3\n"
+        "bind quick_4 4\n"
+        "bind quick_5 5\n"
+        "bind quick_6 6\n"
+        "bind quick_7 7\n"
+        "bind quick_8 8\n"
+        "bind quick_9 9\n"
+        "bind quick_0 0\n"
+        "bind quick_next WHEELDOWN\n"
+        "bind quick_prev WHEELUP\n"
         "bind screenshot F12\n"
         "bind cast C PAD_RT\n"
         "bind block MOUSE2 PAD_LT\n"
-        "set sensitivity 22\n");
-    // The rebind landed; the migration moved exactly one thing.
-    CHECK(loaded.bound(Action::Vertical, Key::K));
-    CHECK(loaded.bound(Action::Menu, Key::Tab));
-    CHECK(loaded.bound(Action::Menu, Key::PadUp));
-    CHECK_FALSE(loaded.bound(Action::Menu, Key::PadBack));
+        "bind map M PAD_BACK\n"
+        "bind keys_page F1\n"
+        "bind options_page F2\n"
+        "set sensitivity 14\n"
+        "set invert_y 0\n"
+        "set fov 90\n"
+        "set pad_deadzone 18\n"
+        "set pad_saturation 95\n"
+        "set pad_look 40000\n"
+        "set pad_trigger_deadzone 12\n");
+    // Byte-for-byte the shipped table: every old default became the new one
+    // and nothing else was in the file.
+    CHECK(loaded.toText() == ControlSettings::defaults().toText());
+    CHECK(loaded.bound(Action::Attack, Key::PadRightTrigger));
+    CHECK(loaded.bound(Action::Cast, Key::PadRightBumper));
     CHECK(loaded.bound(Action::Map, Key::M));
-    CHECK(loaded.bound(Action::Map, Key::PadBack));
-    CHECK(loaded.actionFor(Key::PadBack) == Action::Map);
-    CHECK(loaded.actionFor(Key::PadUp) == Action::Menu);
-    // Both devices, all 13 -- the acceptance sentence for this file shape.
-    const auto isPadKey = [](Key key) noexcept {
-        return key >= Key::PadSouth && key <= Key::PadRight;
-    };
-    for (const Action action : {Action::Attack, Action::Interact, Action::Crouch,
-                                 Action::Vertical, Action::Sprint, Action::Menu,
-                                 Action::PagePrev, Action::PageNext, Action::Pause,
-                                 Action::QuickWheel, Action::Cast, Action::Block, Action::Map}) {
-        const std::size_t index = static_cast<std::size_t>(action);
-        const Key first = loaded.primary[index];
-        const Key second = loaded.secondary[index];
-        INFO("action ", actionKey(action), " primary=", keyName(first),
-             " secondary=", keyName(second));
-        CHECK(((first != Key::None && isPadKey(first)) ||
-               (second != Key::None && isPadKey(second))));
-        CHECK(((first != Key::None && !isPadKey(first)) ||
-               (second != Key::None && !isPadKey(second))));
-    }
+    CHECK(loaded.secondary[static_cast<std::size_t>(Action::Map)] == Key::None);
+    CHECK(loaded.actionFor(Key::PadBack) == Action::Wait);
+    CHECK(loaded.actionFor(Key::F1) == Action::Count);
+    CHECK(loaded.actionFor(Key::F2) == Action::Count);
 }
 
-TEST_CASE("map migration: an old file with menu custom-bound AWAY from "
-          "PAD_BACK is left exactly as its author wrote it") {
-    // Menu on a key of the player's own choosing (PadLeft was never a shipped
-    // default, so this line can only be deliberate). No PAD_BACK anywhere, so
-    // the migration has nothing to move: menu stands as written, and the map
-    // -- which the file predates -- simply keeps its whole shipped default.
+TEST_CASE("nine and the sticks migration: an old file's own choices stand, per slot") {
+    // THE PER-SLOT RULE. A player who moved only the KEYBOARD half of Attack
+    // (F for the fist, X untouched) keeps F and still gets the pad half the
+    // break moved -- the old PAD_X was never their choice. A player who put
+    // the map on N and left SELECT where it shipped keeps N, and the SELECT
+    // half -- the old default carried forward, per slot -- goes where every
+    // other pad's SELECT went: WAIT. The map is a page of NOTES on that pad,
+    // same as on a fresh one. A cast bound to a bumper of their own choosing
+    // stands where they put it, and RB is nobody's.
     const ControlSettings loaded = ControlSettings::fromText(
-        "bind menu J PAD_LEFT\n"
-        "bind pause ESC PAD_START\n");
-    CHECK(loaded.bound(Action::Menu, Key::J));
-    CHECK(loaded.bound(Action::Menu, Key::PadLeft));
-    CHECK_FALSE(loaded.bound(Action::Menu, Key::PadUp));
-    CHECK(loaded.bound(Action::Map, Key::M));
-    CHECK(loaded.bound(Action::Map, Key::PadBack));
-    CHECK(loaded.actionFor(Key::PadBack) == Action::Map);
+        "bind quick_wheel Q PAD_RS\n"
+        "bind attack F PAD_X\n"
+        "bind map N PAD_BACK\n"
+        "bind cast C PAD_LB\n");
+    CHECK(loaded.bound(Action::Attack, Key::F));
+    CHECK(loaded.bound(Action::Attack, Key::PadRightTrigger));
+    CHECK_FALSE(loaded.bound(Action::Attack, Key::PadWest));
+    CHECK(loaded.bound(Action::Map, Key::N));
+    CHECK_FALSE(loaded.bound(Action::Map, Key::PadBack));
+    CHECK(loaded.actionFor(Key::N) == Action::Map);
+    CHECK(loaded.bound(Action::Wait, Key::T));
+    CHECK(loaded.bound(Action::Wait, Key::PadBack));
+    CHECK(loaded.actionFor(Key::PadBack) == Action::Wait);
+    CHECK(loaded.bound(Action::Cast, Key::PadLeftBumper));
+    CHECK_FALSE(loaded.bound(Action::Cast, Key::PadRightBumper));
+    CHECK(loaded.actionFor(Key::PadRightBumper) == Action::Count);
 }
 
-TEST_CASE("map migration: a NON-menu action holding PAD_BACK in an old file "
-          "is a deliberate choice and is respected") {
-    // PadBack shipped on Menu alone, so an old file putting it on Attack can
-    // only be the player's own hand. The migration must NOT steal it back:
-    // Attack keeps it, the map keeps M (keyboard-live, pad-dead -- the
-    // player's own trade), and every core action still holds a live key.
-    const ControlSettings loaded = ControlSettings::fromText(
-        "bind attack MOUSE1 PAD_BACK\n"
-        "bind menu TAB PAD_LEFT\n");
-    CHECK(loaded.bound(Action::Attack, Key::PadBack));
-    CHECK(loaded.actionFor(Key::PadBack) == Action::Attack);
-    CHECK(loaded.bound(Action::Map, Key::M));
-    CHECK(loaded.actionFor(Key::M) == Action::Map);
-}
-
-TEST_CASE("map migration: a user who deliberately bound something else to M") {
-    // TWO SHAPES, one per generation. A file that KNOWS the map action and
-    // moves both keys deliberately: everything stands as written.
-    const ControlSettings knows = ControlSettings::fromText(
-        "bind cast M PAD_RT\n"
-        "bind map N PAD_BACK\n");
-    CHECK(knows.bound(Action::Cast, Key::M));
-    CHECK(knows.bound(Action::Map, Key::N));
-    CHECK(knows.bound(Action::Map, Key::PadBack));
-    CHECK(knows.actionFor(Key::M) == Action::Cast);
-    CHECK(knows.actionFor(Key::N) == Action::Map);
-
-    // And a file that PREDATES the map action but had already spent M on
-    // something else (its author never heard of a map key, so this cannot
-    // have been aimed at it): the choice is respected -- Cast keeps M -- and
-    // the map is still live through the pad side the migration restored off
-    // the file's own old-default menu line. Pad-only for the map here is the
-    // honest outcome of the player's own earlier claim on M, and the
-    // options page is where they hand it back if they want it.
-    const ControlSettings predates = ControlSettings::fromText(
-        "bind cast M PAD_RT\n"
-        "bind menu TAB PAD_BACK\n");
-    CHECK(predates.bound(Action::Cast, Key::M));
-    CHECK(predates.actionFor(Key::M) == Action::Cast);
-    CHECK(predates.bound(Action::Map, Key::PadBack));
-    CHECK(predates.actionFor(Key::PadBack) == Action::Map);
-    CHECK(predates.bound(Action::Menu, Key::PadUp));
-    const std::size_t mapIndex = static_cast<std::size_t>(Action::Map);
-    CHECK((predates.primary[mapIndex] != Key::None ||
-           predates.secondary[mapIndex] != Key::None));
+TEST_CASE("nine and the sticks migration: a file naming no retired verb is read as written") {
+    // NO GUESSING WITHOUT THE SIGNAL. A hand-trimmed file that never names a
+    // retired verb could be from either build, so nothing in it is treated
+    // as an old default: "bind attack MOUSE1 PAD_X" is a player who WANTS X,
+    // and gets X, with RT left free.
+    const ControlSettings loaded = ControlSettings::fromText("bind attack MOUSE1 PAD_X\n");
+    CHECK(loaded.bound(Action::Attack, Key::PadWest));
+    CHECK_FALSE(loaded.bound(Action::Attack, Key::PadRightTrigger));
+    CHECK(loaded.actionFor(Key::PadRightTrigger) == Action::Count);
+    // And the same shape WITH the signal is the old default carried forward.
+    const ControlSettings old =
+        ControlSettings::fromText("bind keys_page F1\nbind attack MOUSE1 PAD_X\n");
+    CHECK(old.bound(Action::Attack, Key::PadRightTrigger));
+    CHECK_FALSE(old.bound(Action::Attack, Key::PadWest));
 }
 
 TEST_CASE("round-1's own regression case still holds under the whole-file fix") {
@@ -977,21 +992,76 @@ TEST_CASE("a prompt names the device holding it, off the shipped table") {
     CHECK(promptLabel(keys, Action::Menu, InputDevice::KeyboardMouse) == "J");
     CHECK(promptLabel(keys, Action::Menu, InputDevice::Pad) == "\x06\x02");  // the d-pad cross + up motif
     CHECK(promptLabel(keys, Action::Map, InputDevice::KeyboardMouse) == "M");
-    CHECK(promptLabel(keys, Action::Map, InputDevice::Pad) == "SELECT");
     CHECK(promptLabel(keys, Action::Pause, InputDevice::KeyboardMouse) == "ESC");
     CHECK(promptLabel(keys, Action::Pause, InputDevice::Pad) == "START");
 
-    // The page pair prints the glyphs the 4x6 font can actually draw, never
-    // the bracket names -- and the pad half is the bumpers.
-    CHECK(promptLabel(keys, Action::PagePrev, InputDevice::KeyboardMouse) == "<");
-    CHECK(promptLabel(keys, Action::PageNext, InputDevice::KeyboardMouse) == ">");
-    CHECK(promptLabel(keys, Action::PagePrev, InputDevice::Pad) == "LB");
-    CHECK(promptLabel(keys, Action::PageNext, InputDevice::Pad) == "RB");
-
-    // The map's zoom pair on a pad: the triggers, exactly what main.cpp
-    // routes (Cast/Block while the map is up).
-    CHECK(promptLabel(keys, Action::Cast, InputDevice::Pad) == "RT");
+    // NINE AND THE STICKS: the hands. RT swings, LT guards, RB casts -- and
+    // the mouse's two buttons and C on a keyboard.
+    CHECK(promptLabel(keys, Action::Attack, InputDevice::KeyboardMouse) == "MOUSE1");
+    CHECK(promptLabel(keys, Action::Attack, InputDevice::Pad) == "RT");
+    CHECK(promptLabel(keys, Action::Block, InputDevice::KeyboardMouse) == "MOUSE2");
     CHECK(promptLabel(keys, Action::Block, InputDevice::Pad) == "LT");
+    CHECK(promptLabel(keys, Action::Cast, InputDevice::KeyboardMouse) == "C");
+    CHECK(promptLabel(keys, Action::Cast, InputDevice::Pad) == "RB");
+    // WAIT on both hands, and the bar's steps on the pad's own cross.
+    CHECK(promptLabel(keys, Action::Wait, InputDevice::KeyboardMouse) == "T");
+    CHECK(promptLabel(keys, Action::Wait, InputDevice::Pad) == "SELECT");
+    CHECK(promptLabel(keys, Action::QuickNext, InputDevice::Pad) == "\x06\x05");
+    CHECK(promptLabel(keys, Action::QuickPrev, InputDevice::Pad) == "\x06\x04");
+    // The map has no pad half, so the pad's ask falls back to the keyboard's
+    // M -- which is why no pad surface prints it: the ward map's own band
+    // names B to close and the bumpers to page (see the live-session case).
+    CHECK(promptLabel(keys, Action::Map, InputDevice::Pad) == "M");
+
+    // THE PAGE GRAMMAR, said once: the page step and the sub-tab step, the
+    // second commit, in both vocabularies.
+    CHECK(promptPageKeys(InputDevice::KeyboardMouse) == "< >");
+    CHECK(promptPageKeys(InputDevice::Pad) == "LB RB");
+    CHECK(promptTabKeys(InputDevice::KeyboardMouse) == "TAB");
+    CHECK(promptTabKeys(InputDevice::Pad) == "LT RT");
+    CHECK(promptAltCommitKey(InputDevice::KeyboardMouse) == "T");
+    CHECK(promptAltCommitKey(InputDevice::Pad) == "X");
+}
+
+TEST_CASE("nine and the sticks: the page step and the sub-tab step are raw page grammar") {
+    // LB/RB and `[` `]` turn the PAGE; TAB and LT/RT step the SUB-TABS. Read
+    // raw by the router ahead of any binding, which is what lets RB be CAST
+    // and the triggers be SWING and GUARD in the world and still be
+    // Oblivion's tab keys the moment a page is up.
+    CHECK(pageStep(Key::PadLeftBumper) == -1);
+    CHECK(pageStep(Key::PadRightBumper) == 1);
+    CHECK(pageStep(Key::LeftBracket) == -1);
+    CHECK(pageStep(Key::RightBracket) == 1);
+    CHECK(tabStep(Key::PadLeftTrigger) == -1);
+    CHECK(tabStep(Key::PadRightTrigger) == 1);
+    CHECK(tabStep(Key::Tab) == 1);
+    // Nothing else is either: the D-pad is list movement, the face buttons
+    // keep their bindings, and the two steps never overlap.
+    for (const Key key : {Key::PadSouth, Key::PadEast, Key::PadWest, Key::PadNorth, Key::PadUp,
+                          Key::PadDown, Key::PadLeft, Key::PadRight, Key::PadStart, Key::PadBack,
+                          Key::Escape, Key::Enter, Key::E, Key::T, Key::Q, Key::None}) {
+        INFO("key ", keyName(key));
+        CHECK(pageStep(key) == 0);
+        CHECK(tabStep(key) == 0);
+    }
+    for (int k = 1; k < static_cast<int>(Key::Count); ++k) {
+        const Key key = static_cast<Key>(k);
+        CHECK_FALSE((pageStep(key) != 0 && tabStep(key) != 0));
+    }
+    // The second commit: T and X, nothing else.
+    CHECK(isAltCommitKey(Key::T));
+    CHECK(isAltCommitKey(Key::PadWest));
+    CHECK_FALSE(isAltCommitKey(Key::PadSouth));
+    CHECK_FALSE(isAltCommitKey(Key::Enter));
+    // And the world binding of those keys is exactly what the grammar
+    // outranks while a page is up: RB casts, the triggers are the hands, T
+    // waits, X is nobody's.
+    const ControlSettings keys = ControlSettings::defaults();
+    CHECK(keys.actionFor(Key::PadRightBumper) == Action::Cast);
+    CHECK(keys.actionFor(Key::PadRightTrigger) == Action::Attack);
+    CHECK(keys.actionFor(Key::PadLeftTrigger) == Action::Block);
+    CHECK(keys.actionFor(Key::T) == Action::Wait);
+    CHECK(keys.actionFor(Key::PadWest) == Action::Count);
 }
 
 TEST_CASE("the prompt lookup falls back to the other hand rather than lying") {
@@ -1132,30 +1202,36 @@ TEST_CASE("the live session re-words its prompts the moment the other hand speak
     }
 
     // THE WARD MAP'S NAV BAND: what main.cpp actually routes on a pad --
-    // D-pad walks, the bumpers tab, the triggers zoom, SELECT closes, A
-    // commits -- and the old literals with a keyboard in hand.
+    // D-pad walks, the triggers step the views (Oblivion's sub-tabs), the
+    // right stick zooms, the bumpers page to the map's neighbours in NOTES,
+    // B closes, X travels, A commits -- and the keyboard's own literals.
     DistrictMapState padMap = session.districtMapState();
     // The movement keys are the keycap motifs now (UI-EA-SPEC sec. 5): the
     // d-pad cross sentinel on a pad, the four arrowheads on a keyboard.
     CHECK(padMap.navMoveKeys == std::string(kGlyphCross));
-    CHECK(padMap.navTabKeys == "LB RB");
-    CHECK(padMap.navZoomKeys == "RT LT");
-    CHECK(padMap.navCloseKey == "SELECT");
+    CHECK(padMap.navTabKeys == "LT RT");
+    CHECK(padMap.navZoomKeys == "RS");
+    CHECK(padMap.navPageKeys == "LB RB");
+    CHECK(padMap.navCloseKey == "B");
+    CHECK(padMap.travelKey == "X");
     CHECK(padMap.commitKey == "A");
     session.noteInputKey(Key::M);
     DistrictMapState kbMap = session.districtMapState();
     CHECK(kbMap.navMoveKeys == std::string(kGlyphMoveKeys));
     CHECK(kbMap.navTabKeys == "TAB");
     CHECK(kbMap.navZoomKeys == "+ -");
+    CHECK(kbMap.navPageKeys == "< >");
     CHECK(kbMap.navCloseKey == "M");
+    CHECK(kbMap.travelKey == "T");
     CHECK(kbMap.commitKey == "\x01");
 
-    // THE DIALOGUE WIDGET'S OWN KEYS ride the state the same way.
+    // THE DIALOGUE WIDGET'S OWN KEYS ride the state the same way -- the
+    // haggle's TAKE THEIR PRICE on the grammar's second commit, T / X.
     session.noteInputDevice(InputDevice::Pad);
     const DialogueViewState padView = session.dialogueView();
     CHECK(padView.confirmKey == "A");
     CHECK(padView.backKey == "B");
-    CHECK(padView.takeKey == "RB");
+    CHECK(padView.takeKey == "X");
     CHECK(padView.letterDownLine.empty());
     session.noteInputKey(Key::Space);
     const DialogueViewState kbView = session.dialogueView();
@@ -1163,6 +1239,37 @@ TEST_CASE("the live session re-words its prompts the moment the other hand speak
     CHECK(kbView.backKey == "ESC");
     CHECK(kbView.takeKey == "T");
     CHECK(kbView.letterDownLine == "L PUTS IT DOWN");
+
+    // THE CONTROLS PAGE'S OWN FOOT AND KEY COLUMN follow the hand too: a pad
+    // player reads PAD_RT beside SWING and LT RT beside OPTIONS; a keyboard
+    // player reads MOUSE1 and TAB. The lock's contextual rows name the live
+    // keys the same way (Y tries the pin on a pad, SPACE on a keyboard).
+    session.noteInputDevice(InputDevice::Pad);
+    const KeysPageState padKeys = session.keysPageState();
+    CHECK(padKeys.navTabKeys == "LT RT");
+    CHECK(padKeys.navMoveKeys == std::string(kGlyphCross));
+    bool padSwing = false;
+    bool padPin = false;
+    for (const KeysPageRow& row : padKeys.rows) {
+        if (row.verb == "SWING") {
+            padSwing = row.binding == "PAD_RT" && row.alternate == "MOUSE1";
+        }
+        if (row.verb == "TRY THE PIN") {
+            padPin = row.binding == "Y";
+        }
+    }
+    CHECK(padSwing);
+    CHECK(padPin);
+    session.noteInputKey(Key::W);
+    const KeysPageState kbKeys = session.keysPageState();
+    CHECK(kbKeys.navTabKeys == "TAB");
+    bool kbSwing = false;
+    for (const KeysPageRow& row : kbKeys.rows) {
+        if (row.verb == "SWING") {
+            kbSwing = row.binding == "MOUSE1" && row.alternate == "PAD_RT";
+        }
+    }
+    CHECK(kbSwing);
 }
 
 TEST_CASE("the opening hint is generated from the bindings and re-words live") {
@@ -1182,14 +1289,88 @@ TEST_CASE("the opening hint is generated from the bindings and re-words live") {
     if (session.lastMessage().empty()) {
         return;  // no authored case in this content dir; nothing to word
     }
-    CHECK(session.lastMessage() == "J NOTES  M MAP  E USE");
+    // NINE AND THE STICKS: the hand joins the band -- the owner's own
+    // sentence is about LMB, so SWING is one of the first things read. The
+    // keyboard keeps M MAP; a pad has no map button (the map is a page of
+    // NOTES), so its band does not advertise one.
+    CHECK(session.lastMessage() == "J NOTES  M MAP  E USE  MOUSE1 SWING");
     session.noteInputDevice(InputDevice::Pad);
     // HUD's dieted band (live verbs only, violation #11) carrying FLOW's
-    // motif key: the pad's D-PAD UP is the cross+up sentinels, SELECT stays
-    // a word (sec. 5 leaves the named buttons alone).
-    CHECK(session.lastMessage() == "\x06\x02 NOTES  SELECT MAP  A USE");
+    // motif key: the pad's D-PAD UP is the cross+up sentinels.
+    CHECK(session.lastMessage() == "\x06\x02 NOTES  A USE  RT SWING");
     session.noteInputKey(Key::A);
-    CHECK(session.lastMessage() == "J NOTES  M MAP  E USE");
+    CHECK(session.lastMessage() == "J NOTES  M MAP  E USE  MOUSE1 SWING");
+}
+
+// ---------------------------------------------------------------------------
+// NINE AND THE STICKS: the ring, the wait toggle -- the two Session seams the
+// controls break routes through.
+// ---------------------------------------------------------------------------
+
+TEST_CASE("the NOTES ring: the bumpers page from the last tile onto the ward map, "
+          "the grimoire, and round") {
+    // A PAD HAS NO MAP BUTTON AND NO GRIMOIRE BUTTON. This is how it reaches
+    // both: NOTES, then RB. The ring is read off which surface is up, so no
+    // new state is kept and the ward map's own toggle (which puts every
+    // other overlay down) is what opens it.
+    SessionConfig config;
+    config.contentDir = content::contentDir();
+    Session session(config);
+    session.toggleMenu();
+    REQUIRE(session.casebookOpen());
+    REQUIRE(session.menuFocus() == kMenuFocusJournal);
+
+    session.menuPageNext();  // the last tile -> the ward map
+    CHECK(session.districtMapOpen());
+    CHECK_FALSE(session.casebookOpen());
+    CHECK_FALSE(session.grimoireOpen());
+
+    session.menuPageNext();  // the ward map -> the grimoire
+    CHECK(session.grimoireOpen());
+    CHECK_FALSE(session.districtMapOpen());
+
+    session.menuPageNext();  // the grimoire -> round to the first tile
+    CHECK(session.casebookOpen());
+    CHECK(session.menuFocus() == kMenuFocusCharacter);
+    CHECK_FALSE(session.grimoireOpen());
+
+    // And backward, the other way round the same ring.
+    session.menuPagePrev();  // the first tile -> the grimoire
+    CHECK(session.grimoireOpen());
+    session.menuPagePrev();  // the grimoire -> the ward map
+    CHECK(session.districtMapOpen());
+    session.menuPagePrev();  // the ward map -> the last tile
+    CHECK(session.casebookOpen());
+    CHECK(session.menuFocus() == kMenuFocusJournal);
+
+    // The key that opened NOTES still closes it from the tile it is on, and
+    // with nothing open the ring does not open anything.
+    session.toggleMenu();
+    CHECK_FALSE(session.menuOpen());
+    session.menuPageNext();
+    CHECK_FALSE(session.menuOpen());
+    CHECK_FALSE(session.districtMapOpen());
+    CHECK_FALSE(session.grimoireOpen());
+}
+
+TEST_CASE("WAIT is a toggle: T and SELECT open the hour page and close it again") {
+    SessionConfig config;
+    config.contentDir = content::contentDir();
+    Session session(config);
+    REQUIRE_FALSE(session.waitOpen());
+    session.toggleWait();
+    CHECK(session.waitOpen());
+    CHECK_FALSE(session.waitSleeping());  // the pause row's plain WAIT, not a bed
+    session.toggleWait();
+    CHECK_FALSE(session.waitOpen());
+    // Inert over a page that owns the keyboard the way every toggle is: the
+    // pause menu is up, and WAIT does not open under it.
+    session.togglePause();
+    REQUIRE(session.pauseOpen());
+    session.toggleWait();
+    CHECK(session.waitOpen());  // the pause menu's own door -- opens over it, as the row does
+    session.toggleWait();
+    CHECK_FALSE(session.waitOpen());
 }
 
 // ---------------------------------------------------------------------------
@@ -1247,43 +1428,41 @@ TEST_CASE("the prompt choke points speak motifs for the long key names only") {
     CHECK(keyName(Key::PadUp) == "PAD_UP");
 }
 
-TEST_CASE("violation #5: F1 and F2 are real, bindable, defaulted actions now") {
-    // --help has said "F1 lists every key and F2 rebinds them" since #85, and
-    // until this pass both were hard-coded in main.cpp's event loop -- absent
-    // from the very page F1 opens, unreachable by the rebinding screen. They
-    // are ordinary actions now: named, labelled, defaulted, stealable.
+TEST_CASE("nine and the sticks: the F-keys, the wheel and the page pair are gone from the table") {
+    // What #85 and the UI-EA pass put in, the owner's ruling took out: F1/F2
+    // (the pause menu's CONTROLS and SETTINGS rows are the door on both
+    // devices), F3 (alt-tab gives the cursor back; every page brings it out
+    // on its own), the QuickWheel (the bar steps on the wheel and the D-pad;
+    // the Grimoire is a page of NOTES), and the page pair as ACTIONS (the
+    // bumpers and brackets are raw page grammar now). None of them parses,
+    // none of them binds, none of them prints.
     const ControlSettings keys = ControlSettings::defaults();
-    CHECK(keys.bound(Action::KeysPage, Key::F1));
-    CHECK(keys.bound(Action::OptionsPage, Key::F2));
-    CHECK(keys.actionFor(Key::F1) == Action::KeysPage);
-    CHECK(keys.actionFor(Key::F2) == Action::OptionsPage);
-    // The settings-file vocabulary and the page labels.
-    CHECK(actionKey(Action::KeysPage) == "keys_page");
-    CHECK(actionKey(Action::OptionsPage) == "options_page");
-    CHECK(actionFromKey("keys_page") == Action::KeysPage);
-    CHECK(actionFromKey("options_page") == Action::OptionsPage);
-    CHECK(actionLabel(Action::KeysPage) == "KEYS");
-    CHECK(actionLabel(Action::OptionsPage) == "OPTIONS");
-    // NOT CORE: the pad's door to both pages is the pause menu's own rows,
-    // so neither spends a pad default -- and the 13-count case above stays
-    // exactly 13.
-    CHECK_FALSE(keyIsPad(keys.primary[static_cast<std::size_t>(Action::KeysPage)]));
-    CHECK(keys.secondary[static_cast<std::size_t>(Action::KeysPage)] == Key::None);
-    CHECK(keys.secondary[static_cast<std::size_t>(Action::OptionsPage)] == Key::None);
-    // And a rebind can steal them, like any other action's key -- the whole
-    // point of putting them in the table. THE COLLISION GUARD applies to
-    // them like it does to anybody (see bind()'s own header): stealing F1
-    // outright would strand the page -- one slot, no pad default -- so that
-    // bind is REFUSED and the key stays. Move the page first; then the key
-    // is anyone's.
-    ControlSettings moved = ControlSettings::defaults();
-    moved.bind(Action::QuickSlot1, Key::F1);
-    CHECK(moved.bound(Action::KeysPage, Key::F1));  // refused: it would strand the page
-    moved.bind(Action::KeysPage, Key::F5);
-    CHECK(moved.bound(Action::KeysPage, Key::F5));
-    moved.bind(Action::QuickSlot1, Key::F1);
-    CHECK_FALSE(moved.bound(Action::KeysPage, Key::F1));
-    CHECK(moved.actionFor(Key::F1) == Action::QuickSlot1);
+    for (const char* retired : {"keys_page", "options_page", "quick_wheel", "page_prev",
+                                "page_next"}) {
+        INFO("retired name ", retired);
+        CHECK(actionFromKey(retired) == Action::Count);
+    }
+    for (std::size_t i = 0; i < kActionCount; ++i) {
+        const std::string_view label = actionLabel(static_cast<Action>(i));
+        CHECK(label != "QUICK WHEEL");
+        CHECK(label != "KEYS");
+        CHECK(label != "OPTIONS");
+        CHECK(label != "PAGE <");
+        CHECK(label != "PAGE >");
+    }
+    CHECK(keys.actionFor(Key::F1) == Action::Count);
+    CHECK(keys.actionFor(Key::F2) == Action::Count);
+    CHECK(keys.actionFor(Key::F3) == Action::Count);
+    CHECK(keys.actionFor(Key::Q) == Action::Count);
+    CHECK(keys.actionFor(Key::PadRightStick) == Action::Count);
+    // A file from the old build that binds any of them is dropped line by
+    // line and nothing else in it is disturbed.
+    const ControlSettings loaded = ControlSettings::fromText(
+        "bind keys_page F5\nbind quick_wheel Q PAD_RS\nbind page_next K\nbind vertical H\n");
+    CHECK(loaded.actionFor(Key::F5) == Action::Count);
+    CHECK(loaded.actionFor(Key::Q) == Action::Count);
+    CHECK(loaded.actionFor(Key::K) == Action::Count);
+    CHECK(loaded.bound(Action::Vertical, Key::H));
 }
 
 // ---------------------------------------------------------------------------
@@ -1310,16 +1489,15 @@ TEST_CASE("the hard-swing hold clock and the client's tap/hold boundary are one 
     CHECK(HoldToggle::kTapSteps == 15);
 }
 
-TEST_CASE("Attack's bindings survive the held-button migration unchanged") {
-    // The down-edge/release-edge rewrite changed WHEN Attack resolves, never
-    // WHICH keys it is on. A held button is worthless if the migration also
-    // moved the keys out from under the player's thumb: MouseLeft and PadWest
-    // are exactly where "the shipped bindings are the ones a player already
-    // knows" put them, and the page-scoped Attack uses (district-map fast
-    // travel on pad, lockpick forceLock) resolve off these same two keys.
+TEST_CASE("SWING is the primary hand on both devices: MOUSE1 and the right trigger") {
+    // The down-edge/release-edge model changed WHEN Attack resolves; nine and
+    // the sticks changed only its PAD key -- from X to RT, the pad analogue
+    // of the mouse's primary. MouseLeft is exactly where it has always been,
+    // and the lockpick's forceLock resolves off these same two keys.
     const ControlSettings keys = ControlSettings::defaults();
     CHECK(keys.bound(Action::Attack, Key::MouseLeft));
-    CHECK(keys.bound(Action::Attack, Key::PadWest));
+    CHECK(keys.bound(Action::Attack, Key::PadRightTrigger));
     CHECK(keys.actionFor(Key::MouseLeft) == Action::Attack);
-    CHECK(keys.actionFor(Key::PadWest) == Action::Attack);
+    CHECK(keys.actionFor(Key::PadRightTrigger) == Action::Attack);
+    CHECK(keys.actionFor(Key::PadWest) == Action::Count);
 }

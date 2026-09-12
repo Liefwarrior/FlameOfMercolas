@@ -513,14 +513,19 @@ struct DistrictMapState {
     // before these fields existed -- draws byte-identical frames.
     /// "ARROWS", or "D-PAD" with a pad in hand.
     std::string navMoveKeys = "ARROWS";
-    /// "TAB", or "LB RB" -- the bumpers are the pad's tab key on this page
-    /// (main.cpp routes PagePrev/PageNext to cycleDistrictMapTab).
+    /// "TAB", or "LT RT" -- the sub-tab grammar (controls.hpp's tabStep;
+    /// main.cpp routes it to cycleDistrictMapTab). Nine and the sticks put
+    /// the views on the triggers, Oblivion's own sub-tab pair.
     std::string navTabKeys = "TAB";
-    /// "+ -", or "RT LT" -- the triggers carry the zoom ladder on a pad
-    /// (main.cpp routes Cast/Block to adjustDistrictMapZoom).
+    /// "+ -", or "RS" -- the right stick carries the zoom ladder on a pad
+    /// (main.cpp's stickNav routes it as the raw `=` and `-`).
     std::string navZoomKeys = "+ -";
-    /// The key that shuts the page: Action::Map's own half for the device --
-    /// "M", or "SELECT".
+    /// "< >", or "LB RB" -- the PAGE grammar (pageStep): the map is a page
+    /// of NOTES and the bumpers leave it for its neighbours. EMPTY DRAWS
+    /// NOTHING, so a hand-built state keeps the old four-slot band.
+    std::string navPageKeys;
+    /// The key that shuts the page: "M" (Action::Map's keyboard half), or
+    /// the universal back "B" on a pad, which has no map button of its own.
     std::string navCloseKey = "M";
     /// The commit verb's key: "ENTER", or "A".
     std::string commitKey = "ENTER";
@@ -534,7 +539,8 @@ struct DistrictMapState {
     // Session always fills travelKey, so the live page always holds the row.
 
     /// The TRAVEL verb's key: "T" on a keyboard (a raw map-page key, Tab/+/-'s
-    /// own precedent), the pad's own Interact half ("X") otherwise.
+    /// own precedent), "X" on a pad -- the grammar's one second-commit key
+    /// (controls.hpp's promptAltCommitKey).
     std::string travelKey;
     /// The verb's cost restatement -- "4 MIN" -- when the walk is honest.
     /// Drawn in the number ink beside the verb, the commit-foot grammar's

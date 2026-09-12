@@ -41,25 +41,19 @@ struct ActionNames {
 // truncated is worse than none, because a player reads the truncation as the
 // binding.
 //
-// #85. A CLEAN BREAK, NOT A MIGRATION. The `key` column below is the settings
-// file's own vocabulary (ControlSettings::toText/fromText), and the file
-// format already tolerates drift by design: fromText() starts from defaults()
-// and skips any line it does not recognise (actionFromKey returns
-// Action::Count for a name this build has never heard of, and the loader
-// throws that line away rather than failing). So a save file written by the
-// old 38-action build -- "bind examine Q", "bind traverse V", "bind menu
-// ESC" -- loses exactly the lines that named a retired action and keeps
-// every line that still means the same thing (forward, crouch, jump's old
-// key now feeding Vertical under the "interact"-shaped name change, and so
-// on are NOT silently reinterpreted as something else; "examine"/"steal"/
-// "lift"/"rest"/"traverse"/"drop_down"/"journal"/"keys"/"options"/
-// "character"/"map"/"letters"/"walk" simply stop matching and the shipped
-// default takes over for those verbs). NOTHING CORRUPTS: an unrecognised
-// bind line cannot rebind the wrong verb, because actionFromKey has no
-// partial match, only an exact one or Action::Count. This is the right
-// call because there are no real players yet to migrate -- stated here
-// rather than left for somebody to wonder whether a save format changed out
-// from under them.
+// NINE AND THE STICKS -- THE SECOND CLEAN BREAK, stated once (controls.hpp's
+// enum header says what was cut and where it went). The `key` column below is
+// the settings file's own vocabulary (ControlSettings::toText/fromText), and
+// every SURVIVING verb keeps the name it had, so a saved file's "bind attack",
+// "bind interact", "bind menu" lines still parse onto the same verb. The
+// three retired names -- quick_wheel, page_prev, page_next, keys_page,
+// options_page -- stop matching (actionFromKey returns Action::Count and the
+// loader drops the line), which is exactly the #85 stance: nothing corrupts,
+// because an unrecognised line cannot rebind the wrong verb. What DID move is
+// the shipped DEFAULT of five survivors, and a file written by the old build
+// spells every old default out explicitly -- see fromText()'s MIGRATION for
+// the rule that tells an old default carried forward from a player's own
+// choice.
 constexpr ActionNames kActions[] = {
     {Action::Forward, "forward", "FORWARD",
      "WALK. HOLD RUN WITH IT TO SPRINT, AND WALK STRAIGHT INTO A LOW LEDGE TO HAUL YOURSELF OVER IT."},
@@ -73,26 +67,32 @@ constexpr ActionNames kActions[] = {
      "TURN LEFT ON THE SPOT. THE MOUSE DOES THIS BETTER; THE ARROWS ARE HERE FOR PLAYING WITHOUT ONE."},
     {Action::TurnRight, "turn_right", "TURN R",
      "TURN RIGHT ON THE SPOT, FOR WHOEVER PLAYS WITHOUT A MOUSE."},
-    {Action::Attack, "attack", "ATTACK",
-     "SWING WHATEVER IS IN THE HAND. A FIST DOES WELL ENOUGH ON MOST OF THE ROWS."},
+    // THE NINE. The label is the word the reticle and the rows use; the help
+    // is the one sentence the controls page's detail pane prints.
+    {Action::Attack, "attack", "SWING",
+     "HANDS DOWN, ONE PRESS BRINGS THEM UP AND SWINGS. HOLD IT TO SWING HARD. THE ROOM SEES YOUR FISTS COME UP."},
+    {Action::Block, "block", "GUARD",
+     "HELD, NEVER LATCHED. SOFTENS WHAT LANDS ON YOU, SCALED BY YOUR SHIELDWALL. FROM HANDS DOWN IT RAISES THEM WITHOUT A BLOW."},
+    {Action::Cast, "cast", "CAST",
+     "CASTS WHAT THE GRIMOIRE HAS READIED. IT REFUSES OUT LOUD RATHER THAN DOING NOTHING QUIETLY."},
     {Action::Interact, "interact", "USE",
-     "ONE BUTTON FOR EVERYTHING IN REACH. IT TALKS, OPENS, LIFTS, PICKS AND ROBS, AND WHICH OF THOSE IT DOES DEPENDS ON YOUR STANCE AND ON WHAT YOU ARE FACING."},
+     "ONE BUTTON FOR EVERYTHING IN REACH. IT TALKS, OPENS, LIFTS, PICKS AND ROBS BY YOUR STANCE AND WHAT YOU FACE. NOTHING IN REACH AND FISTS UP: IT LOWERS THEM."},
     {Action::Crouch, "crouch", "SNEAK",
      "DROP INTO A CROUCH. QUIETER, LOWER, AND THE STANCE EVERY THEFT IN THIS GAME RESOLVES OFF."},
     {Action::Vertical, "vertical", "JUMP",
      "GO UP, OR GO DOWN. A JUMP, A HAUL OVER A LEDGE, OR A DROP OFF A ROOF, WHICHEVER THE GROUND AHEAD ALLOWS."},
     {Action::Sprint, "sprint", "RUN",
-     "HOLD IT TO SPRINT. TAP IT TO WALK, AND TAP IT AGAIN TO STOP WALKING."},
-    {Action::Menu, "menu", "MENU",
-     "YOUR OWN PAPERS: THE CASEBOOK, THE SHEET, THE CHART AND THE LETTERS, ALL ON ONE SCREEN."},
-    {Action::PagePrev, "page_prev", "PAGE <",
-     "MOVES THE FOCUS BACK ONE PANEL ON THE MENU. THE OTHER THREE KEEP WHATEVER THEY WERE SHOWING."},
-    {Action::PageNext, "page_next", "PAGE >",
-     "MOVES THE FOCUS ON ONE PANEL ON THE MENU."},
+     "HOLD IT TO SPRINT. LET GO TO JOG. SNEAK IS THE QUIET WALK."},
+    {Action::Menu, "menu", "NOTES",
+     "YOUR OWN PAPERS ON ONE SCREEN: THE SHEET, THE CHART, THE LETTERS, THE CASEBOOK. PAGE ON PAST THEM TO THE WARD MAP AND THE GRIMOIRE."},
     {Action::Pause, "pause", "PAUSE",
-     "RESUME, SETTINGS, QUIT. THE DOCKS KEEP RUNNING WHILE YOU DECIDE, SO DO NOT TAKE ALL NIGHT."},
-    {Action::QuickWheel, "quick_wheel", "QUICK WHEEL",
-     "HOLD IT AND STEP THE QUICK BAR WITH THE PAD. LET GO AND THE PICK STANDS."},
+     "RESUME, WAIT, CONTROLS, SETTINGS, QUIT. THE DOCKS KEEP RUNNING WHILE YOU DECIDE, SO DO NOT TAKE ALL NIGHT."},
+    // THE TENTH, keyboard only. On a pad the map is a page of NOTES.
+    {Action::Map, "map", "MAP",
+     "THE WARD MAP: WHERE YOU ARE, WHERE THE NAMED PLACES ARE, AND HOW TO GET FROM ONE TO THE OTHER. ON A PAD IT IS A PAGE OF NOTES."},
+    // THE BONUS SHORTCUTS. Each has a door a new player finds without the key.
+    {Action::Wait, "wait", "WAIT",
+     "PASS THE HOURS SOMEWHERE SAFE. THE PAUSE MENU'S WAIT ROW IS THE SAME DOOR."},
     {Action::QuickSlot1, "quick_1", "SLOT 1",
      "READIES WHATEVER THE GRIMOIRE BOUND TO THE FIRST SLOT."},
     {Action::QuickSlot2, "quick_2", "SLOT 2",
@@ -114,34 +114,11 @@ constexpr ActionNames kActions[] = {
     {Action::QuickSlot0, "quick_0", "SLOT 10",
      "READIES WHATEVER THE GRIMOIRE BOUND TO THE TENTH SLOT."},
     {Action::QuickNext, "quick_next", "NEXT",
-     "STEPS THE QUICK BAR FORWARD. THE WHEEL DOES IT WITHOUT LOOKING DOWN."},
+     "STEPS THE QUICK BAR FORWARD. THE WHEEL DOES IT WITHOUT LOOKING DOWN; SO DOES THE PAD'S RIGHT."},
     {Action::QuickPrev, "quick_prev", "PREV",
      "STEPS THE QUICK BAR BACK."},
     {Action::Screenshot, "screenshot", "SCREENSHOT",
      "WRITES A PNG BESIDE THE GAME. A CAPTURE TOOL, NOT A GAMEPLAY CONTROL."},
-    // APPENDED, NOT INSERTED "near Attack". actionKey()/actionLabel() index
-    // this table BY ENUM VALUE, so its order must mirror the enum's order --
-    // and the enum's insert-only rule puts new actions on the END. The
-    // static_assert below only counts rows; it cannot catch a reorder.
-    {Action::Cast, "cast", "CAST",
-     "CASTS WHAT THE GRIMOIRE HAS READIED. IT REFUSES OUT LOUD RATHER THAN DOING NOTHING QUIETLY."},
-    {Action::Block, "block", "BLOCK",
-     "HELD, NEVER LATCHED. SOFTENS WHAT LANDS ON YOU, SCALED BY YOUR SHIELDWALL."},
-    // #13, THE WARD MAP. "map" was also a pre-#85 retired action name (the
-    // old map PAGE, folded into Menu); reintroducing it means a surviving
-    // pre-#85 file's "bind map ..." line parses again and lands here --
-    // which is the old map key opening the new map, the right outcome, and
-    // those files were declared unprotected by #85's clean break anyway.
-    {Action::Map, "map", "MAP",
-     "THE WARD MAP: WHERE YOU ARE, WHERE THE NAMED PLACES ARE, AND HOW TO GET FROM ONE TO THE OTHER."},
-    // UI-EA-SPEC sec. 4 violation #5: F1/F2 were advertised, hard-coded in
-    // main.cpp, and invisible to the very page F1 opens. Appended at the
-    // END, per the insert-only rule; NOT core (the pause menu's CONTROLS/
-    // SETTINGS rows are the pad's doors, so no pad default is spent).
-    {Action::KeysPage, "keys_page", "KEYS",
-     "OPENS THE LIST OF EVERY KEY. THE PAUSE MENU'S CONTROLS ROW IS THE SAME DOOR."},
-    {Action::OptionsPage, "options_page", "OPTIONS",
-     "OPENS THE SETTINGS: THE SLIDERS FIRST, EVERY REBINDABLE VERB UNDER THEM."},
 };
 static_assert(sizeof(kActions) / sizeof(kActions[0]) == kActionCount,
               "every action needs a name and a label, or the keys page lies");
@@ -221,23 +198,20 @@ constexpr KeyName kKeys[] = {
 // every line through ControlSettings::bind().
 // ---------------------------------------------------------------------------
 
-// THE 13 CORE BUTTONS -- exactly the ones controls.hpp's own Action enum
-// marks CORE in its doc comments, and exactly the thirteen the "#85: the core
-// gameplay button count is what Eli asked for" test counts. This is the list
-// fromText()'s whole-file validation pass enforces "at least one live
+// THE NINE, PLUS MAP -- exactly the actions controls.hpp's own Action enum
+// marks CORE (and the tenth, the keyboard's own map shortcut), and exactly
+// the ten the "nine and the sticks: the core count" test counts. This is the
+// list fromText()'s whole-file validation pass enforces "at least one live
 // binding" against: movement axes, the TurnLeft/TurnRight accessibility
-// fallback, and Screenshot (a dev/capture utility, not a Steam-Input-style
-// gameplay action) are deliberately not on it. Keep this in step with
-// controls.hpp if that list ever changes. Being ON this list is what makes
-// the backward-compat guarantee real for Cast and Block: an old settings
-// file that has never heard of them leaves their slots at the shipped
-// defaults (fromText starts from defaults()), and a file that STEALS their
-// keys gets them restored by the validation pass, same as the other ten.
+// fallback, the bonus shortcuts (WAIT, the digits, the wheel) and Screenshot
+// are deliberately not on it. Keep this in step with controls.hpp if that
+// list ever changes. Being ON this list is what makes the backward-compat
+// guarantee real: an old settings file that has never heard of a verb leaves
+// its slots at the shipped defaults (fromText starts from defaults()), and a
+// file that STEALS its keys gets them restored by the validation pass.
 constexpr Action kCoreActions[] = {
-    Action::Attack,   Action::Interact, Action::Crouch,    Action::Vertical,
-    Action::Sprint,   Action::Menu,     Action::PagePrev,  Action::PageNext,
-    Action::Pause,    Action::QuickWheel, Action::Cast,    Action::Block,
-    Action::Map,
+    Action::Attack, Action::Block,    Action::Cast,  Action::Interact, Action::Crouch,
+    Action::Vertical, Action::Sprint, Action::Menu,  Action::Pause,    Action::Map,
 };
 
 // RAW, UNCONDITIONAL steal-and-set on a bare table, with none of
@@ -444,6 +418,55 @@ std::string_view promptMoveKeys(InputDevice device) noexcept {
     return device == InputDevice::Pad ? "\x06" : "\x02\x03";
 }
 
+int pageStep(Key key) noexcept {
+    // The bumpers and the brackets, raw. Nothing else: TAB is a sub-tab step
+    // (below), the D-pad is list movement, and the face buttons keep their
+    // bindings.
+    switch (key) {
+        case Key::LeftBracket:
+        case Key::PadLeftBumper:
+            return -1;
+        case Key::RightBracket:
+        case Key::PadRightBumper:
+            return 1;
+        default:
+            return 0;
+    }
+}
+
+int tabStep(Key key) noexcept {
+    // TAB steps forward only, exactly as it always did on the map and the
+    // casebook page; the triggers step both ways, Oblivion's own sub-tab
+    // pair. In the world the same two triggers are GUARD and SWING -- a page
+    // owns the input while it is up, so the raw read here never reaches
+    // those bindings (route_menu_key runs ahead of pressed()).
+    switch (key) {
+        case Key::PadLeftTrigger:
+            return -1;
+        case Key::Tab:
+        case Key::PadRightTrigger:
+            return 1;
+        default:
+            return 0;
+    }
+}
+
+std::string_view promptPageKeys(InputDevice device) noexcept {
+    // The 4x6 font has no bracket glyphs -- see promptKeyName. "< >" is what
+    // the pair has always printed.
+    return device == InputDevice::Pad ? "LB RB" : "< >";
+}
+
+std::string_view promptTabKeys(InputDevice device) noexcept {
+    return device == InputDevice::Pad ? "LT RT" : "TAB";
+}
+
+std::string_view promptAltCommitKey(InputDevice device) noexcept {
+    return device == InputDevice::Pad ? "X" : "T";
+}
+
+bool isAltCommitKey(Key key) noexcept { return key == Key::T || key == Key::PadWest; }
+
 Key pageBackRemap(Key key, bool pageOpen) noexcept {
     // One key, one condition, no other business -- see the header on why the
     // whole B seam came down to this being applied in two places instead of
@@ -601,69 +624,47 @@ ControlSettings ControlSettings::defaults() noexcept {
     set(Action::TurnLeft, Key::Left);
     set(Action::TurnRight, Key::Right);
 
-    // #85. THE ~10 CORE BUTTONS. Every one of these carries a pad default now
-    // -- the earlier build left all but two Actions with no gamepad binding
-    // at all, which is a strange thing to ship for a scheme whose whole point
-    // is "small enough to hand to a controller". Face buttons read the way a
-    // lot of console action games already train a thumb to expect: A is the
-    // primary-action position (Interact, the button pressed the most), X is
-    // the attack, Y sits north for "vertical", B is the stance modifier.
-    // EVERY ONE OF THESE HAS A PAD KEY NOW, and every one of them had to give
-    // something up to fit it: two binding slots per action, one keyboard key
-    // that stays and one that moves to the pad. RightShift/RightCtrl were
-    // always a redundant duplicate of the other hand's key, not a loss; F and
-    // MouseRight were real alternates and are the actual trade -- see each
-    // set() below for which.
-    set(Action::Sprint, Key::LeftShift, Key::PadLeftStick);
+    // NINE AND THE STICKS. Every one of the nine carries a keyboard/mouse
+    // half AND a pad half, and the pad half is Oblivion's own layout: the two
+    // triggers are the two hands (RT swings, LT guards), RB casts, A uses, B
+    // sneaks (and backs out of every page), Y jumps, D-pad up opens the
+    // notes, Start pauses, and the left stick's own magnitude picks the gait
+    // (L3 is RUN's optional second half). X, R3, LB in the world and the
+    // three other D-pad directions are FREE -- an unrecognised press wakes
+    // the tutor bands, which is contract (c) doing its job.
+    //
+    // SWING ON THE RIGHT TRIGGER, NOT X. The owner's sentence is "LMB =
+    // fighting mode", and the pad analogue of the mouse's primary is the
+    // right trigger -- every shooter, Oblivion included. It also puts GUARD
+    // opposite SWING on the two triggers, the pair the ruling names. #85 had
+    // Attack on X because the triggers were spent last; they are spent
+    // first now.
+    set(Action::Attack, Key::MouseLeft, Key::PadRightTrigger);
+    set(Action::Block, Key::MouseRight, Key::PadLeftTrigger);
+    set(Action::Cast, Key::C, Key::PadRightBumper);
+    // MouseRight was Interact's old secondary once; PadSouth has held the
+    // slot since #85. E alone is enough on a keyboard, and Interact is the
+    // button pressed the most on a pad -- the primary-action position.
+    set(Action::Interact, Key::E, Key::PadSouth);
     set(Action::Crouch, Key::LeftCtrl, Key::PadEast);
     set(Action::Vertical, Key::Space, Key::PadNorth);
-    // ATTACK PROMOTES THE MOUSE TO PRIMARY. The old Punch had F first and the
-    // mouse second, which is backwards from every shooter's own convention.
-    // F is freed by giving the pad slot to PadWest instead -- a keyboard
-    // player still has the mouse, which is where an attack belongs anyway.
-    set(Action::Attack, Key::MouseLeft, Key::PadWest);
-    // MouseRight was Interact's old secondary; PadSouth takes that slot
-    // instead. E alone is enough on a keyboard, and Interact is the button
-    // pressed the most on a pad -- the primary-action position is where it
-    // belongs.
-    set(Action::Interact, Key::E, Key::PadSouth);
-
+    set(Action::Sprint, Key::LeftShift, Key::PadLeftStick);
     // ONE SCREEN, PAGES. J IS THE JOURNAL -- the owner's own words: "Use J
-    // for journal since that's how it's done by convention." The genre's own
-    // key (Oblivion, Skyrim, Daggerfall all answer J with the journal), and
-    // this game's Menu opens ON the journal, so J is where it belongs. Tab
-    // held the slot from #85 until now and is FREED, deliberately, to
-    // nothing: Menu's two slots are spent (J and the pad's D-pad up, which
-    // stays -- route_menu_key's parity pass is built around it), and no verb
-    // is short a key. The one Tab-shaped job in the build -- cycling a tabbed
-    // surface's views while it is up -- already reads raw Key::Tab ahead of
-    // any binding (the ward map's own branch), so it survives Tab being
-    // unbound exactly as F1/F2/F3 survive being unbound.
-    //
-    // NO MIGRATION for a settings file that still writes "bind menu TAB
-    // PAD_UP": unlike Map's PadBack move below, nothing strands -- that
-    // file's Tab still opens the journal for its author, and every prompt
-    // follows the file through promptKey and says TAB honestly. #85's
-    // clean-break stance (no released players) covers the rest.
-    //
-    // THE PAD SIDE MOVED for action #13: PadBack (the Select button) was
-    // Menu's from #85 until the ward map arrived, and the owner's own ask --
-    // "a map that they can press M to see... and select on controller" --
-    // put the map there instead, the classic Start/Select split
-    // (Pause=Start, Map=Select). Menu takes PadUp, D-pad up. fromText()
-    // migrates old files that still write Menu's PAD_BACK -- see the
-    // MIGRATION comment there.
+    // for journal since that's how it's done by convention." D-pad up on a
+    // pad, since #85's parity pass. The pages inside step on the RAW
+    // bumpers and brackets (pageStep), which is why no PagePrev/PageNext
+    // action exists to bind any more.
     set(Action::Menu, Key::J, Key::PadUp);
-    set(Action::PagePrev, Key::LeftBracket, Key::PadLeftBumper);
-    set(Action::PageNext, Key::RightBracket, Key::PadRightBumper);
-    // RENAMED FROM Menu, UNCHANGED KEY: this was always Escape's job.
     set(Action::Pause, Key::Escape, Key::PadStart);
-    // HELD. Right-stick click sits opposite the left stick that steers, so a
-    // thumb already on the stick that is NOT driving movement is the one that
-    // opens the wheel -- see the header on why the D-pad, not the stick
-    // angle, is what actually picks a slot while this is down.
-    set(Action::QuickWheel, Key::Q, Key::PadRightStick);
+    // THE TENTH, keyboard only: "a map that they can press M to see". The
+    // pad's SELECT used to open it and is WAIT now; on a pad the ward map is
+    // one bumper past the casebook inside NOTES.
+    set(Action::Map, Key::M);
 
+    // THE BONUS SHORTCUTS. WAIT is Oblivion's own T, and the pad's SELECT
+    // (Back), which the map fold freed -- the pause menu's WAIT row is the
+    // door a new player finds first on both devices.
+    set(Action::Wait, Key::T, Key::PadBack);
     set(Action::QuickSlot1, Key::Num1);
     set(Action::QuickSlot2, Key::Num2);
     set(Action::QuickSlot3, Key::Num3);
@@ -674,33 +675,15 @@ ControlSettings ControlSettings::defaults() noexcept {
     set(Action::QuickSlot8, Key::Num8);
     set(Action::QuickSlot9, Key::Num9);
     set(Action::QuickSlot0, Key::Num0);
-    set(Action::QuickNext, Key::WheelDown);
-    set(Action::QuickPrev, Key::WheelUp);
+    // THE BAR STEPS ON THE WHEEL AND ON THE D-PAD'S LEFT AND RIGHT -- the
+    // QuickWheel's hold-and-step, folded into two plain presses on the two
+    // D-pad directions the world never used (D-pad up is NOTES; down is
+    // free). No hold to teach, no radial to build: render::stickIntent only
+    // ever returned a direction's sign, and a stepper was always the honest
+    // shape.
+    set(Action::QuickNext, Key::WheelDown, Key::PadRight);
+    set(Action::QuickPrev, Key::WheelUp, Key::PadLeft);
     set(Action::Screenshot, Key::F12);
-
-    // THE COMBAT PAIR, actions 11 and 12 of the 12. No collision either way:
-    // C was never a shipped default, and MouseRight has been free since #85
-    // moved Interact's old secondary to PadSouth (see Interact's own set()
-    // above). The pad side finally spends the two triggers -- the only pad
-    // keys the other ten left unused -- in the position every first-person
-    // game with a shield puts them: LT guards, RT casts.
-    set(Action::Cast, Key::C, Key::PadRightTrigger);
-    set(Action::Block, Key::MouseRight, Key::PadLeftTrigger);
-
-    // #13, THE WARD MAP -- the owner's own words for both defaults: "a map
-    // that they can press M to see", "and select on controller". M was never
-    // a shipped default before this; PadBack is Menu's OLD pad key, freed by
-    // moving Menu to PadUp above.
-    set(Action::Map, Key::M, Key::PadBack);
-
-    // UI-EA-SPEC sec. 4 violation #5: the two F-keys --help has promised
-    // since #85, finally in the table they were promised FROM. F1 and F2
-    // were hard-coded in main.cpp's event loop with a yield-to-binding
-    // guard; making them real actions means they print on the keys page,
-    // the rebinding screen can move them, and the guard becomes ordinary
-    // binding resolution instead of a special case.
-    set(Action::KeysPage, Key::F1);
-    set(Action::OptionsPage, Key::F2);
     return out;
 }
 
@@ -815,6 +798,67 @@ std::string ControlSettings::toText() const {
     return out.str();
 }
 
+namespace {
+
+/// NINE AND THE STICKS -- THE MIGRATION TABLE. An old toText() wrote EVERY
+/// action's line, old default and custom choice spelled identically, so a
+/// file from before the break carries "bind attack MOUSE1 PAD_X" whether
+/// the player ever touched Attack or not. The honest, deterministic rule:
+/// in a file that PREDATES the break, a slot that holds the verb's OLD
+/// shipped key is the old default carried forward and becomes the NEW
+/// shipped key; a slot that holds anything else is the player's own hand
+/// and stands as written. Per SLOT, not per line, so a player who moved
+/// only the keyboard half keeps that half and still gets the pad half the
+/// break moved. The five verbs whose defaults moved, and the two older
+/// shapes Menu was shipped in before this (TAB then J on the keyboard,
+/// SELECT then D-pad up on the pad):
+struct SlotMigration {
+    Action action;
+    bool secondary;
+    Key from;
+    Key to;
+};
+constexpr SlotMigration kSlotMigrations[] = {
+    {Action::Attack, true, Key::PadWest, Key::PadRightTrigger},
+    {Action::Cast, true, Key::PadRightTrigger, Key::PadRightBumper},
+    {Action::Map, true, Key::PadBack, Key::None},
+    {Action::Menu, false, Key::Tab, Key::J},
+    {Action::Menu, true, Key::PadBack, Key::PadUp},
+    {Action::QuickNext, true, Key::None, Key::PadRight},
+    {Action::QuickPrev, true, Key::None, Key::PadLeft},
+};
+
+/// The action names the break RETIRED. A file that names any of them was
+/// written by the old build -- the one certain signal, since every old
+/// toText() wrote all of them and no new build ever will. A hand-trimmed
+/// file that names none is read as written: nothing in it is guessed at.
+constexpr std::string_view kRetiredActionNames[] = {
+    "quick_wheel", "page_prev", "page_next", "keys_page", "options_page",
+};
+
+[[nodiscard]] bool isRetiredActionName(std::string_view name) noexcept {
+    for (const std::string_view retired : kRetiredActionNames) {
+        if (retired == name) {
+            return true;
+        }
+    }
+    return false;
+}
+
+/// One slot of one parsed line, through the migration table: the new key
+/// when the old default is what the file carries, the file's own key
+/// otherwise.
+[[nodiscard]] Key migrateSlot(Action action, bool secondary, Key parsed) noexcept {
+    for (const SlotMigration& row : kSlotMigrations) {
+        if (row.action == action && row.secondary == secondary && row.from == parsed) {
+            return row.to;
+        }
+    }
+    return parsed;
+}
+
+}  // namespace
+
 ControlSettings ControlSettings::fromText(std::string_view text) {
     // WHOLE-FILE, THEN VALIDATE, THEN ADOPT. THIRD ATTEMPT AT THIS FILE'S ONE
     // BUG, and the first two both patched a single bind() call site -- a
@@ -853,12 +897,32 @@ ControlSettings ControlSettings::fromText(std::string_view text) {
     // other thirty playable. A settings file is a diff against the shipped
     // layout, not a replacement for it.
     ControlSettings candidate = shipped;
-    // Whether the file ever names the map action at all. A file that does is
-    // from a build that knows Map exists (or is a pre-#85 relic reusing the
-    // retired name -- see kActions' own note), and either way its author's
-    // lines stand as written; a file that does NOT predates action #13 and is
-    // what the MIGRATION pass below exists for.
-    bool fileNamedMap = false;
+
+    // MIGRATION, NINE AND THE STICKS: WHICH BUILD WROTE THIS FILE. Decided
+    // over the whole file BEFORE a line is applied, off the one certain
+    // signal -- a retired action name (see kRetiredActionNames). An old file
+    // then gets the per-slot rule in kSlotMigrations; a file from this build
+    // (or a hand-trimmed one naming no retired verb) is applied exactly as
+    // written. The retired lines themselves are dropped either way, which is
+    // what frees Q, R3, the bumpers and the F-keys for their new jobs.
+    bool preBreak = false;
+    {
+        std::istringstream scan{std::string(text)};
+        std::string line;
+        while (std::getline(scan, line)) {
+            std::istringstream fields(line);
+            std::string word;
+            std::string actionName;
+            if (!(fields >> word >> actionName)) {
+                continue;
+            }
+            if (lower(word) == "bind" && isRetiredActionName(lower(actionName))) {
+                preBreak = true;
+                break;
+            }
+        }
+    }
+
     std::istringstream lines{std::string(text)};
     std::string line;
     while (std::getline(lines, line)) {
@@ -881,14 +945,16 @@ ControlSettings ControlSettings::fromText(std::string_view text) {
             if (action == Action::Count) {
                 continue;
             }
-            if (action == Action::Map) {
-                fileNamedMap = true;
-            }
             std::string second;
             const bool hasSecond = static_cast<bool>(fields >> second);
-            rawApplyBind(candidate, action, keyFromName(first), /*asSecondary=*/false);
-            rawApplyBind(candidate, action, hasSecond ? keyFromName(second) : Key::None,
-                         /*asSecondary=*/true);
+            Key firstKey = keyFromName(first);
+            Key secondKey = hasSecond ? keyFromName(second) : Key::None;
+            if (preBreak) {
+                firstKey = migrateSlot(action, /*secondary=*/false, firstKey);
+                secondKey = migrateSlot(action, /*secondary=*/true, secondKey);
+            }
+            rawApplyBind(candidate, action, firstKey, /*asSecondary=*/false);
+            rawApplyBind(candidate, action, secondKey, /*asSecondary=*/true);
         } else if (verb == "set") {
             std::string name;
             std::string value;
@@ -912,61 +978,6 @@ ControlSettings ControlSettings::fromText(std::string_view text) {
             } else if (what == "pad_trigger_deadzone") {
                 candidate.pad.triggerDeadzonePercent = number;
             }
-        }
-    }
-
-    // MIGRATION: ACTION #13 TOOK MENU'S OLD PAD DEFAULT, AND OLD FILES WRITE
-    // IT OUT EXPLICITLY. toText() has always written EVERY action's line, so
-    // a file saved before Map existed carries "bind menu TAB PAD_BACK" --
-    // menu's own OLD shipped default, spelled out -- and parsing it above
-    // steals PadBack off Map's shipped secondary, leaving the map with no pad
-    // key at all on every controller in the world. That is this project's
-    // most-burned bug class (three prior fix rounds on this exact shape), so
-    // the rule is stated and implemented EXPLICITLY rather than left to the
-    // strand-repair pass below, which never fires here (Map still holds M, so
-    // it is not stranded, merely half-dead):
-    //
-    //   IF the file predates Map (no "bind map" line anywhere) AND Menu came
-    //   out of parsing holding PadBack, that PadBack is treated as menu's own
-    //   old shipped default carried forward, NOT as a user's custom choice --
-    //   the two are indistinguishable from the file (an old toText() wrote
-    //   both the same way), and the honest, deterministic fallback the design
-    //   settled is: Menu's PadBack slot becomes its NEW shipped pad default
-    //   (PadUp), and Map gets PadBack back. Documented outcome, same every
-    //   time.
-    //
-    //   IF a NON-Menu action holds PadBack in a pre-Map file, that binding
-    //   could only ever have been a deliberate user choice (PadBack shipped
-    //   on Menu alone), so it is respected: Map keeps whatever it still has
-    //   (M, unless the file deliberately took that too -- in which case the
-    //   validation pass below restores the fully-stranded Map to its whole
-    //   shipped default, stealing both keys back, exactly as it would for any
-    //   other stranded core action).
-    //
-    //   IF the file names Map at all, no migration: the author knows the
-    //   action exists and their lines stand as written, under the ordinary
-    //   validation pass alone.
-    if (!fileNamedMap) {
-        const std::size_t menuIndex = static_cast<std::size_t>(Action::Menu);
-        const std::size_t mapIndex = static_cast<std::size_t>(Action::Map);
-        for (int slot = 0; slot < 2; ++slot) {
-            const bool asSecondary = slot == 1;
-            const Key held = asSecondary ? candidate.secondary[menuIndex]
-                                         : candidate.primary[menuIndex];
-            if (held != Key::PadBack) {
-                continue;
-            }
-            // Menu's PadBack slot becomes its new shipped pad default. Raw
-            // steal semantics, same as every parsed line: PadUp comes off
-            // whoever holds it (nobody, in any file old enough to trip this
-            // -- PadUp was never a shipped default before Menu's move).
-            rawApplyBind(candidate, Action::Menu, Key::PadUp, asSecondary);
-            // And Map gets its shipped pad key back, into whichever of its
-            // own slots is free (the secondary, unless the file stole M too).
-            const bool mapSecondaryFree = candidate.secondary[mapIndex] == Key::None;
-            rawApplyBind(candidate, Action::Map, Key::PadBack,
-                         /*asSecondary=*/mapSecondaryFree);
-            break;
         }
     }
 

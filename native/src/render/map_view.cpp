@@ -611,22 +611,30 @@ constexpr int kMinDetailCells = 22;
 /// can decide how many rows to give it -- see navRowsFor.
 [[nodiscard]] std::vector<PanelOption> navOptions(const DistrictMapState& state) {
     // SHIP NOTE MOVE 3: the keys arrive on the state, worded for whichever
-    // device last spoke -- see DistrictMapState's own note.
-    return {
+    // device last spoke -- see DistrictMapState's own note. NINE AND THE
+    // STICKS: a fifth slot, NOTES, when the state names the page keys -- the
+    // map is a page of the notes and the bumpers leave it for its
+    // neighbours; an empty navPageKeys (every hand-built state) draws the
+    // four-slot band it always drew.
+    std::vector<PanelOption> out{
         PanelOption{state.navMoveKeys, "PLACE", "", kCursorTone, InkRole::Dim, false},
         PanelOption{state.navTabKeys, std::string(tabName(state.tab)), "", kCursorTone,
                     InkRole::Dim, false},
         PanelOption{state.navZoomKeys, "ZOOM",
                     std::to_string(state.zoom + 1) + "/" + std::to_string(mapZoomSteps()),
                     kCursorTone, InkRole::Dim, false},
-        PanelOption{state.navCloseKey, "CLOSE", "", kCursorTone, InkRole::Dim, false},
     };
+    if (!state.navPageKeys.empty()) {
+        out.push_back(PanelOption{state.navPageKeys, "NOTES", "", kCursorTone, InkRole::Dim, false});
+    }
+    out.push_back(PanelOption{state.navCloseKey, "CLOSE", "", kCursorTone, InkRole::Dim, false});
+    return out;
 }
 
 [[nodiscard]] OptionListStyle navListStyle() {
     OptionListStyle style;
     style.showKeys = true;
-    style.maxColumns = 4;
+    style.maxColumns = 5;
     style.gutterCells = 2;
     // NO minRows: the BAND decides the height, and navRowsFor decides the band.
     style.minRows = 0;
@@ -652,9 +660,9 @@ constexpr int kMinDetailCells = 22;
 [[nodiscard]] int navRowsFor(const DistrictMapState& state, const PanelRect& interior,
                              const PanelMetric& metric) {
     const PanelRect oneRow{interior.x, interior.y, interior.w, metric.cellH()};
-    const OptionListPlan plan =
-        planOptionList(navOptions(state), oneRow, metric, navListStyle());
-    return plan.columns * plan.rows >= 4 ? 1 : 2;
+    const std::vector<PanelOption> options = navOptions(state);
+    const OptionListPlan plan = planOptionList(options, oneRow, metric, navListStyle());
+    return plan.columns * plan.rows >= static_cast<int>(options.size()) ? 1 : 2;
 }
 
 }  // namespace

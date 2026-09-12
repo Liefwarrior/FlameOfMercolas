@@ -147,17 +147,14 @@ TEST_CASE("the keys are in the game, and every verb the client binds is on the l
     // fragment match cannot see that. These are the exact strings the shipped
     // layout produces.
     //
-    // #85: TEN CORE ROWS, NOT SEVENTEEN. Examine/Steal/Lift/Rest/Traverse/
-    // DropDown/Journal/Keys/Options/Character/Map/Letters/Walk no longer have
-    // rows of their own -- they are folded into Interact, Vertical, Menu and
-    // Sprint, which is the whole point of the consolidation this list is
-    // proving.
+    // NINE AND THE STICKS: NINE VERB ROWS, plus the map, WAIT, the bar and
+    // the shutter. The wheel, the page pair and the F-key pages have no rows
+    // any more; the page grammar is not a binding.
     for (const char* row : {"MOUSE  LOOK", "W  FORWARD", "S  BACK", "A  STEP LEFT",
-                            "D  STEP RIGHT", "MOUSE1  ATTACK", "E  USE", "LCTRL  SNEAK",
-                            "SPACE  JUMP", "LSHIFT  RUN", "J  MENU",
-                            "LBRACKET  PAGE <", "RBRACKET  PAGE >", "ESC  PAUSE",
-                            "Q  QUICK WHEEL", "1-0  QUICK BAR", "F12  SCREENSHOT",
-                            "LOCK:"}) {
+                            "D  STEP RIGHT", "MOUSE1  SWING", "MOUSE2  GUARD", "C  CAST",
+                            "E  USE", "LCTRL  SNEAK", "SPACE  JUMP", "LSHIFT  RUN",
+                            "J  NOTES", "ESC  PAUSE", "M  MAP", "T  WAIT", "1-0  QUICK BAR",
+                            "F12  SCREENSHOT", "LOCK:"}) {
         INFO("missing key row: " << row);
         CHECK(mentions(row));
     }
@@ -207,7 +204,7 @@ TEST_CASE("the keys are in the game, and every verb the client binds is on the l
     CHECK(second.page == 1);
     CHECK(second.topics.size() == keys.topics.size());
 
-    // F1 again puts it down.
+    // The CONTROLS row's own toggle puts it down.
     session.toggleKeys();
     CHECK_FALSE(session.keysOpen());
 }

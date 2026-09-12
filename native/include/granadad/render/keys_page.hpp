@@ -126,6 +126,18 @@ struct KeysPageState {
     /// A bouncer's warning, or anything else that outranks a menu. Empty draws
     /// nothing.
     std::string alert;
+
+    // --- nine and the sticks: the nav band names the device holding it ------
+    //
+    // The keys the foot prints, in the vocabulary of whichever device last
+    // spoke -- filled by Session off controls.hpp's grammar choke points
+    // (promptMoveKeys / promptTabKeys). THE DEFAULTS ARE THE KEYBOARD'S OWN
+    // LITERALS, so a hand-built state draws the page it always drew.
+    /// The list movement: the up/down triangles, or the d-pad cross.
+    std::string navMoveKeys = "";
+    /// The sibling-tab step to OPTIONS: "TAB", or "LT RT". The F2 that used
+    /// to print here is cut with the KeysPage/OptionsPage actions.
+    std::string navTabKeys = "TAB";
 };
 
 /// Draws the whole page over a rendered frame.

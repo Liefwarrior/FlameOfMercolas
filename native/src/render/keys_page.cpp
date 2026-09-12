@@ -315,14 +315,15 @@ void drawKeysPage(Framebuffer& target, const KeysPageState& state) {
 
     // --- THE ONE HEADER LINE -----------------------------------------------
     // The tab row is the breadcrumb (UI-EA-SPEC sec. 5); the intro prose died
-    // with its band (#36). F1 and F2 are the real keys; the tabs say so
-    // rather than inventing a letter that does nothing. A bouncer's warning
-    // outranks the page and takes the row while it lasts.
+    // with its band (#36). NINE AND THE STICKS: no F-keys any more -- the pair
+    // steps on the sub-tab grammar the nav band below names (TAB / LT RT),
+    // so the tabs carry no keycap, the casebook page's own shape. A
+    // bouncer's warning outranks the page and takes the row while it lasts.
     if (!state.alert.empty()) {
         drawCellText(target, frame.band(comp.tabRow, 1), metric, 0, 0, state.alert,
                      Rgb{0.90F, 0.52F, 0.30F}, alpha);
     } else {
-        const std::vector<PanelTab> tabs{PanelTab{"F1", "KEYS"}, PanelTab{"F2", "OPTIONS"}};
+        const std::vector<PanelTab> tabs{PanelTab{"", "KEYS"}, PanelTab{"", "OPTIONS"}};
         drawTabRow(target, frame.band(comp.tabRow, 1), metric, state.title, tabs, 0,
                    state.readout, ink.accent, alpha);
     }
@@ -456,9 +457,8 @@ void drawKeysPage(Framebuffer& target, const KeysPageState& state) {
     // ENTER - REBIND duplicate is dead (the pane keeps the verb) and `0` is
     // MORE, the universal pager, never BACK (sec. 4).
     const std::vector<PanelOption> nav{
-        PanelOption{std::string(kGlyphUpDown), "MOVE", "", panelInk().accent, InkRole::Dim,
-                    false},
-        PanelOption{"F2", "OPTIONS", "", panelInk().accent, InkRole::Dim, false},
+        PanelOption{state.navMoveKeys, "MOVE", "", panelInk().accent, InkRole::Dim, false},
+        PanelOption{state.navTabKeys, "OPTIONS", "", panelInk().accent, InkRole::Dim, false},
         PanelOption{"0", "MORE", "", panelInk().accent, InkRole::Dim, false},
     };
     OptionListStyle navStyle;

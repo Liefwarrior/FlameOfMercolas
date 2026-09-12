@@ -283,12 +283,12 @@ struct HudState {
     int quickSelected = -1;
     int quickEquipped = -1;
     float quickBarFade = 0.0F;
-    /// UI-EA (LANE HUD): THE Q-HOLD TUTOR TOAST -- "Q HOLD - WHEEL" (the key
-    /// through promptLabel, so a pad reads its own button). The grimoire's
-    /// tap-vs-hold split is a modern idiom and stays undiscoverable by
-    /// accident (flow map violation #9, ruled KEPT); this toast is how it is
-    /// taught: Session raises it the first two times the quick bar comes up,
-    /// riding the strip's own countdown, and never again. TUTOR tier: it
+    /// UI-EA (LANE HUD): THE QUICK BAR'S TUTOR TOAST -- "WHEEL - STEP" on a
+    /// keyboard, the D-pad's left and right on a pad (the keys through
+    /// promptLabel, so a rebind re-words it). Nine and the sticks cut the
+    /// QuickWheel hold, so the STEP is what is taught: Session raises it the
+    /// first two times the quick bar comes up, riding the strip's own
+    /// countdown, and never again. TUTOR tier: it
     /// takes a bottom-band slot directly after the strip, in the quiet
     /// reference ink, and both empty-and-zero defaults draw nothing at all.
     std::string_view wheelHint;

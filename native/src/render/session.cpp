@@ -269,9 +269,18 @@ void pickCursorIfVisible(int& cursor, int page, int slot, std::size_t total) noe
 /// then verb, no filler words -- "J NOTES  M MAP  E USE" on the shipped
 /// keyboard, the pad's own buttons the moment a pad speaks.
 [[nodiscard]] std::string openingHintLine(const ControlSettings& controls, InputDevice device) {
-    return std::string(promptLabel(controls, Action::Menu, device)) + " NOTES  " +
-           std::string(promptLabel(controls, Action::Map, device)) + " MAP  " +
-           std::string(promptLabel(controls, Action::Interact, device)) + " USE";
+    // NINE AND THE STICKS: the hand joins the band -- the owner's own
+    // sentence is "press LMB and hit whoever is in front of me", so SWING is
+    // one of the first things a stranger reads. The keyboard keeps M MAP (the
+    // owner's own direct shortcut); a pad has no map button -- the map is a
+    // page of NOTES there -- so the pad band does not advertise one.
+    std::string out = std::string(promptLabel(controls, Action::Menu, device)) + " NOTES  ";
+    if (device != InputDevice::Pad) {
+        out += std::string(promptLabel(controls, Action::Map, device)) + " MAP  ";
+    }
+    out += std::string(promptLabel(controls, Action::Interact, device)) + " USE  " +
+           std::string(promptLabel(controls, Action::Attack, device)) + " SWING";
+    return out;
 }
 
 }  // namespace
@@ -1532,18 +1541,11 @@ namespace {
         case Action::TurnRight:
             return kKeysGroupMove;
         case Action::Menu:
-        case Action::PagePrev:
-        case Action::PageNext:
         case Action::Pause:
         case Action::Map:
+        case Action::Wait:
         case Action::Screenshot:
-        // Violation #5 (FLOW): the two F-key pages are screens, and they
-        // file with the screens -- two case labels, PAGES' grouped page
-        // takes it from here.
-        case Action::KeysPage:
-        case Action::OptionsPage:
             return kKeysGroupScreen;
-        case Action::QuickWheel:
         case Action::QuickNext:
         case Action::QuickPrev:
             return kKeysGroupQuick;
@@ -1561,36 +1563,49 @@ namespace {
 ///
 /// Everything a key is BOUND to is generated from ControlSettings -- see the
 /// note in keyPageRows(). These five are not bindings: they are what walking
-/// into a ledge does, and what W, S, SPACE and F do WHILE A WIRE IS IN A LOCK,
-/// which is a mode the simulation is in rather than a verb with a key of its
-/// own. They carry bindable=false, and the detail pane says so with a state
-/// label where the rebind verb would otherwise be.
+/// into a ledge does, and what the movement keys, JUMP, SWING and BACK do
+/// WHILE A WIRE IS IN A LOCK, which is a mode the simulation is in rather
+/// than a verb with a key of its own. They carry bindable=false, and the
+/// detail pane says so with a state label where the rebind verb would
+/// otherwise be. NINE AND THE STICKS: the lock's keys are the LIVE bindings
+/// in the device's own words (a pad reads Y / RT / B here, not SPACE / F /
+/// ESC), the way every other prompt in the game reads.
 ///
 /// `listRow` is the exact string the flat keyRows() list has always printed for
 /// them, kept because two cases assert on it and because the one-line wording
 /// genuinely differs from the two-column wording -- see KeysPageRow::listRow.
-[[nodiscard]] std::vector<KeysPageRow> contextualRows() {
+[[nodiscard]] std::vector<KeysPageRow> contextualRows(const ControlSettings& controls,
+                                                      InputDevice device) {
+    const bool pad = device == InputDevice::Pad;
+    const std::string jump(promptLabel(controls, Action::Vertical, device));
+    // MOUSE1 does not fit the flat list's sixteen cells beside "LOCK:" and
+    // "FORCE"; the drawn page prints the full keycap, the flat row says LMB.
+    const std::string swing(promptLabel(controls, Action::Attack, device));
+    const std::string swingShort = swing == "MOUSE1" ? std::string("LMB") : swing;
+    const std::string back(promptBackKey(device));
     std::vector<KeysPageRow> rows;
     rows.push_back(KeysPageRow{"WALK", "CLIMB A LEDGE", "",
                                "NO KEY FOR THIS -- THAT IS THE POINT. WALK AT A LOW LEDGE "
                                "AND YOU HAUL YOURSELF UP.",
                                false, "WALK AT A LEDGE", kKeysGroupNote});
-    rows.push_back(KeysPageRow{"W  S", "AIM THE WIRE", "",
+    rows.push_back(KeysPageRow{pad ? std::string("\x06\x02 \x06\x03") : std::string("W  S"),
+                               "AIM THE WIRE", "",
                                "TURNS THE WIRE IN THE LOCK. THE WARDS ARE NOT ALL AT THE "
                                "SAME DEPTH AND YOU HAVE TO FEEL FOR EACH ONE.",
-                               false, "LOCK: W S  AIM", kKeysGroupNote});
-    rows.push_back(KeysPageRow{"SPACE", "TRY THE PIN", "",
+                               false, pad ? "LOCK: \x06\x02\x06\x03  AIM" : "LOCK: W S  AIM",
+                               kKeysGroupNote});
+    rows.push_back(KeysPageRow{jump, "TRY THE PIN", "",
                                "PUSHES AT THE PIN YOU ARE AIMED AT. GET IT WRONG AND THE "
                                "WIRE COMPLAINS, LOUDLY, TO ANYBODY IN THE ROOM.",
-                               false, "LOCK: SPACE TRY", kKeysGroupNote});
-    rows.push_back(KeysPageRow{"F", "FORCE IT", "",
+                               false, "LOCK: " + jump + " TRY", kKeysGroupNote});
+    rows.push_back(KeysPageRow{swing, "FORCE IT", "",
                                "STOPS BEING SUBTLE. FAST, CRUDE, AND IT COSTS YOU THE WIRE "
                                "MORE OFTEN THAN NOT.",
-                               false, "LOCK: F  FORCE", kKeysGroupNote});
-    rows.push_back(KeysPageRow{"ESC", "LEAVE THE LOCK", "",
+                               false, "LOCK: " + swingShort + " FORCE", kKeysGroupNote});
+    rows.push_back(KeysPageRow{back, "LEAVE THE LOCK", "",
                                "TAKES THE WIRE BACK OUT. THE LOCK REMEMBERS NOTHING AND "
                                "NEITHER DOES THE WATCH, IF YOU ARE QUICK.",
-                               false, "LOCK: ESC  OUT", kKeysGroupNote});
+                               false, "LOCK: " + back + "  OUT", kKeysGroupNote});
     return rows;
 }
 
@@ -1634,15 +1649,23 @@ std::vector<KeysPageRow> Session::keyPageRows() const {
             row.help = "THE NUMBER ROW READIES A CRAFTING WITH NOTHING OPEN. THE "
                        "OPTIONS PAGE LISTS ALL TEN.";
         } else {
-            row.binding = std::string(keyName(controls_.primary[i]));
-            const Key second = controls_.secondary[i];
-            if (second != Key::None) {
-                row.alternate = std::string(keyName(second));
+            // NINE AND THE STICKS: THE HAND THAT LAST SPOKE READS FIRST. The
+            // table holds both devices' keys; the KEY column is the live
+            // device's half (promptKey's own order) and ALSO is the other --
+            // so a pad player reads "PAD_RT  SWING" where a keyboard player
+            // reads "MOUSE1  SWING", and neither has to find their key in
+            // the second column.
+            const Key first = promptKey(controls_, action, promptDevice_);
+            const Key other = first == controls_.primary[i] ? controls_.secondary[i]
+                                                            : controls_.primary[i];
+            row.binding = std::string(keyName(first));
+            if (other != Key::None) {
+                row.alternate = std::string(keyName(other));
             }
         }
         rows.push_back(std::move(row));
     }
-    for (KeysPageRow& row : contextualRows()) {
+    for (KeysPageRow& row : contextualRows(controls_, promptDevice_)) {
         rows.push_back(std::move(row));
     }
     return rows;
@@ -1663,6 +1686,9 @@ KeysPageState Session::keysPageState() const {
     // bindings side by side -- the table's two slots ARE the two devices.
     state.rows = keyPageRows();
     state.cursor = caseCursor_;
+    // NINE AND THE STICKS: the foot's keys in the live hand's own words.
+    state.navMoveKeys = std::string(promptMoveKeys(promptDevice_));
+    state.navTabKeys = std::string(promptTabKeys(promptDevice_));
     return state;
 }
 
@@ -2549,34 +2575,32 @@ DistrictMapState Session::districtMapState() const {
                    "   BAND " + std::to_string(body_->band());
 
     // SHIP NOTE MOVE 3: the nav band's keys, in the device's own vocabulary.
-    // Each pad wording is what main.cpp's map branch ACTUALLY routes: the
-    // D-pad walks places, LB/RB (PagePrev/PageNext) cycle the views, RT/LT
-    // (Cast/Block) ride the zoom ladder, SELECT (Action::Map's own pad half)
-    // shuts the page, A commits. The movement keys are the KEYCAP MOTIFS
-    // (UI-EA-SPEC sec. 5): four arrowheads for the keyboard, the d-pad cross
-    // for the pad -- rendered by the panel drawers from the sentinel bytes.
+    // NINE AND THE STICKS: each wording is what main.cpp's map branch
+    // ACTUALLY routes, off the grammar's own choke points: the D-pad walks
+    // places, the SUB-TAB keys (TAB / LT RT) cycle the views, the zoom rides
+    // `=` `-` and the right stick, the PAGE keys (< > / LB RB) leave for the
+    // map's neighbours in NOTES, the universal back (ESC / B) shuts the page
+    // -- M on a keyboard too, but a pad has no map button to print -- and A
+    // commits. The movement keys are the KEYCAP MOTIFS (UI-EA-SPEC sec. 5):
+    // four arrowheads for the keyboard, the d-pad cross for the pad.
     plan.navMoveKeys = std::string(kGlyphMoveKeys);
+    plan.navTabKeys = std::string(promptTabKeys(promptDevice_));
+    plan.navPageKeys = std::string(promptPageKeys(promptDevice_));
     if (promptDevice_ == InputDevice::Pad) {
         plan.navMoveKeys = std::string(kGlyphCross);
-        plan.navTabKeys = std::string(promptLabel(controls_, Action::PagePrev, promptDevice_)) +
-                          " " + std::string(promptLabel(controls_, Action::PageNext, promptDevice_));
-        plan.navZoomKeys = std::string(promptLabel(controls_, Action::Cast, promptDevice_)) + " " +
-                           std::string(promptLabel(controls_, Action::Block, promptDevice_));
+        plan.navZoomKeys = "RS";
+        plan.navCloseKey = std::string(promptBackKey(promptDevice_));
+    } else {
+        plan.navCloseKey = std::string(promptLabel(controls_, Action::Map, promptDevice_));
     }
-    plan.navCloseKey = std::string(promptLabel(controls_, Action::Map, promptDevice_));
     plan.commitKey = std::string(promptConfirmKey(promptDevice_));
 
-    // FAST TRAVEL (TRAVEL lane): the verb's key in the device's own
-    // vocabulary -- T on a keyboard (a raw map-page key, Tab/=/-'s own
-    // precedent, so a literal like the nav keys' own "TAB"), the Attack half
-    // on a pad (X/PadWest, the one face button unclaimed on this page: A is
-    // FACE IT, so travel takes the "verb wearing a different mode's clothes"
-    // slot the zoom triggers already spend). Through promptLabel so a rebind
-    // of Attack re-words it. Cost and refusal come off the SAME plan the
-    // commit spends, so the row and the press can never name different doors.
-    plan.travelKey = promptDevice_ == InputDevice::Pad
-                         ? std::string(promptLabel(controls_, Action::Attack, promptDevice_))
-                         : std::string("T");
+    // FAST TRAVEL (TRAVEL lane): the page's second commit, on the grammar's
+    // one second-commit key -- T on a keyboard (a raw map-page key, Tab/=/-'s
+    // own precedent), X on a pad (the face button the nine leave free). Cost
+    // and refusal come off the SAME plan the commit spends, so the row and
+    // the press can never name different doors.
+    plan.travelKey = std::string(promptAltCommitKey(promptDevice_));
     const TravelPlan travel = districtMapTravelPlan();
     if (!travel.standingIn) {
         if (!travel.refusal.empty()) {
@@ -3360,23 +3384,65 @@ void Session::toggleMenu() {
     // focused on", which is exactly what re-pressing the single Menu action
     // (never any of the four toggle*() entry points a real key no longer
     // reaches) always asks for.
+    //
+    // NINE AND THE STICKS: the ward map and the grimoire are pages of NOTES
+    // (the ring), so NOTES pressed on either of them puts the papers DOWN --
+    // back to the street -- rather than flipping back to the tiles over
+    // them. J puts your papers down whichever page you are on.
+    if (districtMapOpen_) {
+        toggleDistrictMap();
+        return;
+    }
+    if (grimoireOpen_) {
+        toggleGrimoire();
+        return;
+    }
     toggleMenuFocused(menuFocus_);
 }
 
 void Session::menuPageNext() {
-    // MORROWIND ROUND: STEPS FOCUS, NOT PAGES. With all four tiles on screen
-    // at once there is no "next page" left -- see session.hpp's own note.
+    // NINE AND THE STICKS: THE RING -- see the declaration. Four tiles, then
+    // the ward map, then the grimoire, then round again. The two full-screen
+    // pages open through their own toggles (which put every other overlay
+    // down, the tiled Menu included) and the tiles reopen through
+    // toggleMenuFocused, so no new state is kept: the ring is read off which
+    // surface is up.
+    //
+    // EVERY STEP OF THE RING IS ONE PAGE-TURN, and it sounds like one: the
+    // BookFlip the tile cycle has always played, once per step. The two
+    // steps INTO the tiles clear the full-screen page's own flag directly
+    // rather than toggling it shut first -- a close-then-open would flip
+    // syncPanelAnim's one panel toggle twice inside a step and speak
+    // BookClose + BookOpen for what is one turn of the paper (the same
+    // sound bug setMenuFocus's own header names).
+    //
     // Keys and Options have no tiles of their own to step between, so this
-    // is a no-op while either of them (rather than the tiled Menu) is what is
-    // open; NOT OPEN AT ALL is the same no-op it always was, so a bumper
-    // press with nothing open still does not open anything.
+    // is a no-op while either of them is what is open; NOT OPEN AT ALL is
+    // the same no-op it always was, so a bumper press with nothing open
+    // still does not open anything.
+    if (districtMapOpen_) {
+        toggleGrimoire();  // ward map -> grimoire (the toggle puts the map down)
+        pageTurnSound();
+        return;
+    }
+    if (grimoireOpen_) {
+        grimoireOpen_ = false;  // grimoire -> the first tile
+        grimoireCursor_ = 0;
+        grimoirePage_ = 0;
+        toggleMenuFocused(kMenuFocusCharacter);
+        pageTurnSound();
+        return;
+    }
     if (!casebookOpen_) {
         return;
     }
-    // AUDIO WIRING: the plan's "page cycle in the tiled Menu -> BookFlip".
-    if (audio_ != nullptr) {
-        audio_->playOneShot(audio::SoundId::BookFlip);
+    if (menuFocus_ == kMenuFocusJournal) {
+        toggleDistrictMap();  // the last tile -> ward map (the toggle puts the tiles down)
+        pageTurnSound();
+        return;
     }
+    // AUDIO WIRING: the plan's "page cycle in the tiled Menu -> BookFlip".
+    pageTurnSound();
     menuFocus_ = ((menuFocus_ + 1) % kMenuFocusCount + kMenuFocusCount) % kMenuFocusCount;
 }
 
@@ -3390,22 +3456,49 @@ void Session::setMenuFocus(int focus) {
     if (!casebookOpen_ || focus < 0 || focus >= kMenuFocusCount || focus == menuFocus_) {
         return;
     }
-    if (audio_ != nullptr) {
-        audio_->playOneShot(audio::SoundId::BookFlip);
-    }
+    pageTurnSound();
     menuFocus_ = focus;
 }
 
 void Session::menuPagePrev() {
+    // The ring, backward -- see menuPageNext.
+    if (districtMapOpen_) {
+        districtMapOpen_ = false;  // ward map -> the last tile
+        toggleMenuFocused(kMenuFocusJournal);
+        pageTurnSound();
+        return;
+    }
+    if (grimoireOpen_) {
+        toggleDistrictMap();  // grimoire -> ward map (the toggle puts the grimoire down)
+        pageTurnSound();
+        return;
+    }
     if (!casebookOpen_) {
         return;
     }
+    if (menuFocus_ == kMenuFocusCharacter) {
+        toggleGrimoire();  // the first tile -> grimoire (the toggle puts the tiles down)
+        pageTurnSound();
+        return;
+    }
     // AUDIO WIRING: the same page-turn, backward.
+    pageTurnSound();
+    menuFocus_ =
+        ((menuFocus_ - 1) % kMenuFocusCount + kMenuFocusCount) % kMenuFocusCount;
+}
+
+void Session::pageTurnSound() {
     if (audio_ != nullptr) {
         audio_->playOneShot(audio::SoundId::BookFlip);
     }
-    menuFocus_ =
-        ((menuFocus_ - 1) % kMenuFocusCount + kMenuFocusCount) % kMenuFocusCount;
+}
+
+void Session::toggleWait() {
+    if (waitOpen_) {
+        closeConversation();
+        return;
+    }
+    openWait(/*sleepMode=*/false);
 }
 
 std::vector<std::int32_t> Session::unlockedLetters() const {
@@ -5920,7 +6013,7 @@ DialogueViewState Session::dialogueView() const {
     // carries no glyph in the 4x6 font; T is the advertised key and now
     // routed too -- see main.cpp's haggle branch); the pad's half is RB.
     if (dev == InputDevice::Pad) {
-        view.takeKey = std::string(promptLabel(controls_, Action::PageNext, dev));
+        view.takeKey = std::string(promptAltCommitKey(dev));
         // The pad has no L; its B BACK already names the way out of a letter.
         view.letterDownLine.clear();
     }
@@ -5989,10 +6082,10 @@ DialogueViewState Session::dialogueView() const {
         view.epithet = "GRANADAD: THE DARKSTREETS  " + std::string(sim::build_info().version);
         // THREE LINES IS WHAT THE TOP BAND WRAPS TO, so this is written to fit
         // in two. The first version ran to four and lost its own last sentence.
-        // F1 is a keyboard convenience key (main.cpp hard-codes it); a pad
-        // player backed in through the pause menu and backs out with B.
-        view.line = "THE DOCKS OF GRANADAD. THE DISTRICT KEEPS ITS OWN HOURS. " +
-                    (dev == InputDevice::Pad ? back : std::string("F1")) + " PUTS THIS DOWN.";
+        // NINE AND THE STICKS: no F1 any more -- both hands came in through
+        // the pause menu's CONTROLS row and back out on the universal back.
+        view.line = "THE DOCKS OF GRANADAD. THE DISTRICT KEEPS ITS OWN HOURS. " + back +
+                    " PUTS THIS DOWN.";
         for (const std::string& row : keyRows()) {
             view.topics.push_back(row);
         }
@@ -6059,7 +6152,7 @@ DialogueViewState Session::dialogueView() const {
         tile.confirmKey = confirm;
         tile.backKey = back;
         if (dev == InputDevice::Pad) {
-            tile.takeKey = std::string(promptLabel(controls_, Action::PageNext, dev));
+            tile.takeKey = std::string(promptAltCommitKey(dev));
             tile.letterDownLine.clear();
         }
         return tile;
@@ -6075,7 +6168,7 @@ DialogueViewState Session::dialogueView() const {
                                     : "LEFT RIGHT CHANGE  " + confirm + " REBIND";
         view.line = "MOUSE LOOK IS RAW -- NO SMOOTHING, NO ACCELERATION. A KEY YOU BIND IS TAKEN "
                     "OFF WHATEVER HAD IT. " +
-                    (dev == InputDevice::Pad ? back : std::string("F2")) + " PUTS THIS DOWN.";
+                    back + " PUTS THIS DOWN.";
         for (const std::string& row : optionRows()) {
             view.topics.push_back(row);
         }
@@ -8869,19 +8962,22 @@ void Session::syncPanelAnim() noexcept {
         }
     }
     quickBarAnim_.setTarget(barWanted);
-    // UI-EA (LANE HUD): THE Q-HOLD TUTOR TOAST, on the strip's own rising
-    // edge and only its first two ever. The grimoire's tap-vs-hold split is
-    // kept (flow map #9, a modern idiom); the toast is how it is taught --
-    // whichever way the bar first came up (a number press, a wheel hold),
-    // the player learns the hold exists, in the hand's own vocabulary
-    // through promptLabel. It rides the strip's countdown so the pair rise
-    // and fall as one, and after two showings it is retired for the session.
+    // UI-EA (LANE HUD): THE QUICK BAR'S TUTOR TOAST, on the strip's own
+    // rising edge and only its first two ever. NINE AND THE STICKS: the
+    // QuickWheel hold is cut, so what is taught is the STEP -- the wheel on
+    // a keyboard, D-pad left and right on a pad (QuickPrev/QuickNext's own
+    // two halves, through promptLabel, so a rebind re-words it). It rides
+    // the strip's countdown so the pair rise and fall as one, and after two
+    // showings it is retired for the session.
     if (barWanted && !lastQuickBarUp_ && wheelHintShows_ < kWheelHintShows) {
         ++wheelHintShows_;
         wheelHint_.raise(kQuickBarShowSteps);
-        wheelHintText_ =
-            std::string(promptLabel(controls_, Action::QuickWheel, promptDevice_)) +
-            " HOLD - WHEEL";
+        const std::string prev(promptLabel(controls_, Action::QuickPrev, promptDevice_));
+        const std::string next(promptLabel(controls_, Action::QuickNext, promptDevice_));
+        // The two halves of one wheel print as the one word; anything else
+        // prints both keycaps.
+        const bool wheel = prev == "WHEELUP" && next == "WHEELDOWN";
+        wheelHintText_ = (wheel ? std::string("WHEEL") : prev + " " + next) + " - STEP";
     }
     lastQuickBarUp_ = barWanted;
     wheelHint_.sync(conversing);
