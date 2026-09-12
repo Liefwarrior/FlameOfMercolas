@@ -448,9 +448,27 @@ struct PadBeat {
     /// Stick beats: which axis, and which way past the deadzone.
     SDL_GamepadAxis axis = SDL_GAMEPAD_AXIS_LEFTX;
     Sint16 value = 0;
+    /// Where the axis goes back to on the release beat. A stick rests at 0; a
+    /// TRIGGER rests at the raw axis MINIMUM -- see kTriggerRest.
+    Sint16 rest = 0;
     int millis = 0;
     std::string name;
 };
+
+/// THE RAW REST VALUE OF A VIRTUAL TRIGGER, AND WHY IT IS NOT ZERO. SDL maps a
+/// joystick axis bound to a trigger from the axis's full signed range onto
+/// the trigger's 0..32767, so a raw 0 reads back as a HALF-PULLED trigger
+/// (about 16383 -- well past the shipped 12% deadzone). The virtual pad's
+/// axes attach at raw 0, and its trigger beats used to release to 0: both
+/// triggers therefore read PRESSED from the moment the pad attached, and a
+/// trigger beat's "release" never crossed back under the threshold at all.
+/// Under the old scheme (RT cast on its down edge, LT blocked while down)
+/// nobody looked; under nine and the sticks RT is SWING -- a HELD button
+/// whose release resolves the swing -- and the first LOWER HANDS capture
+/// came back with the charge row still up two seconds after the pull. The
+/// game's own trigger edge was right; the harness's idea of "at rest" was a
+/// half-pull. Raw minimum is a trigger fully released.
+constexpr Sint16 kTriggerRest = -32768;
 
 /// Parses "back,wait:400,down,down,shot:pad-map,a" into beats. Unknown words are
 /// reported and refuse the run rather than being skipped -- a capture that
@@ -472,18 +490,19 @@ struct PadBeat {
         const char* word;
         SDL_GamepadAxis axis;
         Sint16 value;
+        Sint16 rest;
     };
     // PAST kNavStickOn (18000) BY A MARGIN, so the latch in the frame loop is
     // being crossed and not grazed.
     static constexpr NamedStick kSticks[] = {
-        {"lsup", SDL_GAMEPAD_AXIS_LEFTY, -28000},
-        {"lsdown", SDL_GAMEPAD_AXIS_LEFTY, 28000},
-        {"lsleft", SDL_GAMEPAD_AXIS_LEFTX, -28000},
-        {"lsright", SDL_GAMEPAD_AXIS_LEFTX, 28000},
+        {"lsup", SDL_GAMEPAD_AXIS_LEFTY, -28000, 0},
+        {"lsdown", SDL_GAMEPAD_AXIS_LEFTY, 28000, 0},
+        {"lsleft", SDL_GAMEPAD_AXIS_LEFTX, -28000, 0},
+        {"lsright", SDL_GAMEPAD_AXIS_LEFTX, 28000, 0},
         // The right stick's vertical, the ward map's zoom (nine and the
         // sticks) -- the same latch the left stick's nav uses.
-        {"rsup", SDL_GAMEPAD_AXIS_RIGHTY, -28000},
-        {"rsdown", SDL_GAMEPAD_AXIS_RIGHTY, 28000},
+        {"rsup", SDL_GAMEPAD_AXIS_RIGHTY, -28000, 0},
+        {"rsdown", SDL_GAMEPAD_AXIS_RIGHTY, 28000, 0},
         // THE TRIGGERS ARE AXES, NOT BUTTONS, and that is SDL's rule rather
         // than this harness's: S13's own note in the frame loop is that
         // SDL reports LT/RT through SDL_GAMEPAD_AXIS_*_TRIGGER and never as a
@@ -491,8 +510,9 @@ struct PadBeat {
         // polling. So they are driven here the way the game reads them --
         // well past the shipped triggerDeadzonePercent, and back to rest on
         // the release beat, which is the release edge.
-        {"lt", SDL_GAMEPAD_AXIS_LEFT_TRIGGER, 28000},
-        {"rt", SDL_GAMEPAD_AXIS_RIGHT_TRIGGER, 28000},
+        // A trigger's rest is the raw minimum, not 0 -- see kTriggerRest.
+        {"lt", SDL_GAMEPAD_AXIS_LEFT_TRIGGER, 28000, kTriggerRest},
+        {"rt", SDL_GAMEPAD_AXIS_RIGHT_TRIGGER, 28000, kTriggerRest},
     };
 
     std::size_t at = 0;
@@ -535,6 +555,7 @@ struct PadBeat {
                 beat.kind = PadBeat::Kind::Stick;
                 beat.axis = row.axis;
                 beat.value = row.value;
+                beat.rest = row.rest;
                 out.push_back(beat);
                 found = true;
                 break;
@@ -593,6 +614,13 @@ struct PadDriver {
             return false;
         }
         device = SDL_OpenJoystick(id);
+        // THE TRIGGERS ATTACH RELEASED, not half-pulled -- see kTriggerRest.
+        if (device != nullptr) {
+            (void)SDL_SetJoystickVirtualAxis(device, static_cast<int>(SDL_GAMEPAD_AXIS_LEFT_TRIGGER),
+                                             kTriggerRest);
+            (void)SDL_SetJoystickVirtualAxis(
+                device, static_cast<int>(SDL_GAMEPAD_AXIS_RIGHT_TRIGGER), kTriggerRest);
+        }
         std::printf("granadad: --padscript: virtual pad attached, %d beats\n",
                     static_cast<int>(beats.size()));
         // FLUSHED, EVERY LINE. A harness whose progress is invisible until it
@@ -669,7 +697,7 @@ struct PadDriver {
             if (beat.kind == PadBeat::Kind::Button) {
                 pushButton(beat.button, false);
             } else if (beat.kind == PadBeat::Kind::Stick) {
-                (void)SDL_SetJoystickVirtualAxis(device, static_cast<int>(beat.axis), 0);
+                (void)SDL_SetJoystickVirtualAxis(device, static_cast<int>(beat.axis), beat.rest);
             }
             held = false;
             ++at;
@@ -1683,7 +1711,11 @@ void print_usage() {
         // the menu down and throw a punch at whoever is in front of you --
         // the exact class of surprise sec. 4 exists to kill. Same on the
         // wait page, the grimoire and the tiled Menu below.
-        if (tab != 0) {
+        // AND THE PAGE STEP, for the same reason: RB is CAST in the world, and
+        // a bumper that reached pressed() from a page that has no pages would
+        // put the page down and cast the readied crafting at whoever is in
+        // front of you. Every page that is not in the NOTES ring swallows it.
+        if (tab != 0 || page != 0) {
             return true;
         }
         // ESCAPE FALLS THROUGH ON PURPOSE, same as the options page below: the
@@ -1718,6 +1750,9 @@ void print_usage() {
             session.armCommitPulse();  // rule 2: a tab step answers instantly
             session.toggleKeys();
             return true;
+        }
+        if (page != 0) {
+            return true;  // not a page of NOTES -- swallowed, see the pause branch
         }
         if (up) {
             session.moveOptionCursor(-1);
@@ -1816,8 +1851,8 @@ void print_usage() {
         // printed number or ENTER passes them (or is refused out loud), 0
         // pages the list. ESC falls through, so the key that closes every
         // page closes this one.
-        if (tab != 0) {
-            return true;  // no sub-tabs here -- swallowed, see the pause branch
+        if (tab != 0 || page != 0) {
+            return true;  // no sub-tabs, not a page of NOTES -- swallowed, see the pause branch
         }
         if (up) {
             session.moveWaitCursor(-1);
@@ -1972,10 +2007,21 @@ void print_usage() {
             session.forceLock();
             return true;
         }
+        if (tab != 0 || page != 0) {
+            return true;  // the wire has no pages -- swallowed, see the pause branch
+        }
         return false;
     }
 
     if (session.talking()) {
+        // NINE AND THE STICKS: a conversation has no pages and no sub-tabs;
+        // the bumpers and triggers are swallowed here rather than reaching
+        // CAST, SWING and GUARD through pressed() and putting the counter
+        // down with a spell or a punch. The forge and the haggle below take
+        // their own keys first and inherit this for the rest.
+        if (tab != 0 || page != 0) {
+            return true;
+        }
         if (session.forging()) {
             // The workbench takes the keyboard the way the counter does. Up and
             // down walk the five fields, left and right change the one under the
@@ -2086,6 +2132,22 @@ void print_usage() {
             session.moveCasebookCursor(1);
             return true;
         }
+        // NINE AND THE STICKS: THE JOURNAL TILE IS THIS PAGE (casebookPageOpen
+        // is the tiled Menu focused on the Journal), so it is a page of the
+        // ring like the other three tiles -- the page step walks on to the
+        // ward map from here. Ahead of the sub-tab step, which stays the
+        // page's own LEADS / THE CASE. Without this a bumper here fell
+        // through to the world and CAST, which is the exact "a verb wearing
+        // another mode's clothes" the grammar exists to end.
+        if (page != 0) {
+            session.armCommitPulse();
+            if (page > 0) {
+                session.menuPageNext();
+            } else {
+                session.menuPagePrev();
+            }
+            return true;
+        }
         if (tab != 0) {
             session.armCommitPulse();  // rule 2: a tab step answers instantly
             session.cycleCasebookTab(tab);
@@ -2149,7 +2211,10 @@ void print_usage() {
         // order. This used to be pressed()'s PagePrev/PageNext dispatch; the
         // two are raw page grammar now and the router is where page grammar
         // lives. The keys page has no tiles to step and is not in the ring.
-        if (page != 0 && !session.keysOpen()) {
+        if (page != 0) {
+            if (session.keysOpen()) {
+                return true;  // the keys page is not a page of NOTES -- swallowed
+            }
             session.armCommitPulse();
             if (page > 0) {
                 session.menuPageNext();

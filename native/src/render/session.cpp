@@ -748,8 +748,18 @@ bool Session::stealNearestThing() {
         // not one of the roofs, which is what the guild's first rung buys.
         took = tavern_->buyPicks();
     }
-    say(took.line);
-    return took.result != sim::ServiceResult::TooFar;
+    // NOTHING IN REACH SAYS NOTHING. The chain's last link is buyPicks(),
+    // whose TooFar line is "NOBODY HERE SELLS WIRE." -- and it used to be
+    // spoken for EVERY press of USE at nothing, on every street, before the
+    // walk went on to LOWER HANDS or LOOK. A player lowering their fists
+    // was told about wire. Only a link that resolved (or refused something
+    // real) has a line worth the alert row; the walk's own next slot is the
+    // answer otherwise.
+    if (took.result != sim::ServiceResult::TooFar) {
+        say(took.line);
+        return true;
+    }
+    return false;
 }
 
 void Session::steal() {
@@ -1720,7 +1730,13 @@ std::vector<std::string> Session::optionRows() const {
         // it is.
         const bool listening =
             awaitingKey_ && optionCursor_ == static_cast<int>(kSliderRows + i);
-        row += listening ? "..." : std::string(keyName(controls_.primary[i]));
+        // NINE AND THE STICKS: the live hand's half of the row, promptKey's
+        // own order -- a pad player reads and rebinds PAD_RT beside SWING,
+        // a keyboard player MOUSE1 (see bindAwaited for the slot a press
+        // lands in).
+        row += listening ? "..."
+                         : std::string(keyName(
+                               promptKey(controls_, static_cast<Action>(i), promptDevice_)));
         rows.push_back(row);
     }
     return rows;
@@ -1843,7 +1859,27 @@ void Session::bindAwaited(Key key) {
     // STEALS, VISIBLY. See ControlSettings::bind: two verbs sharing a key is a
     // game where one of them stops working and the player cannot find out
     // which. The row it was taken from shows "--" on this very page.
-    controls_.bind(static_cast<Action>(index), key);
+    //
+    // NINE AND THE STICKS: INTO THE SLOT OF THE KEY'S OWN DEVICE. The two
+    // slots of a verb are its two hands -- a keyboard key and a pad key -- so
+    // a pad button pressed at the prompt replaces the verb's PAD half and
+    // leaves MOUSE1 where it was, and a keyboard key replaces the keyboard
+    // half and leaves RT. It used to land in the primary slot whichever hand
+    // pressed it, which cost a pad player their keyboard key for every verb
+    // they touched. A verb with no key of that device yet takes the free
+    // slot (pad keys go second, keyboard keys first, the shipped order).
+    const Action action = static_cast<Action>(index);
+    const std::size_t slot = static_cast<std::size_t>(index);
+    const bool padKey = keyIsPad(key);
+    const Key first = controls_.primary[slot];
+    const Key second = controls_.secondary[slot];
+    bool asSecondary = padKey;
+    if (first != Key::None && keyIsPad(first) == padKey) {
+        asSecondary = false;
+    } else if (second != Key::None && keyIsPad(second) == padKey) {
+        asSecondary = true;
+    }
+    controls_.bind(action, key, asSecondary);
 }
 
 // ---------------------------------------------------------------------------
@@ -2585,10 +2621,15 @@ DistrictMapState Session::districtMapState() const {
     // four arrowheads for the keyboard, the d-pad cross for the pad.
     plan.navMoveKeys = std::string(kGlyphMoveKeys);
     plan.navTabKeys = std::string(promptTabKeys(promptDevice_));
-    plan.navPageKeys = std::string(promptPageKeys(promptDevice_));
     if (promptDevice_ == InputDevice::Pad) {
         plan.navMoveKeys = std::string(kGlyphCross);
         plan.navZoomKeys = "RS";
+        // THE FIFTH SLOT, PAD ONLY: the bumpers are the pad's only way on to
+        // the map's neighbours in NOTES, so the band says so there. A
+        // keyboard has M and `[` `]` besides, and its four-slot band keeps
+        // its one row (and the plan keeps the pixel per tile a second row
+        // would cost -- navRowsFor's own note).
+        plan.navPageKeys = std::string(promptPageKeys(promptDevice_));
         plan.navCloseKey = std::string(promptBackKey(promptDevice_));
     } else {
         plan.navCloseKey = std::string(promptLabel(controls_, Action::Map, promptDevice_));
@@ -3259,6 +3300,12 @@ CasebookPageState Session::casebookPageState() const {
         promptDevice_ == InputDevice::Pad
             ? std::string(promptBackKey(InputDevice::Pad))
             : std::string(promptLabel(controls_, Action::Menu, InputDevice::KeyboardMouse));
+    // NINE AND THE STICKS: the bumpers walk on to the ward map and the
+    // grimoire from this page -- said on the foot for a pad, which has no
+    // other way there. See CasebookPageState::navPageKeys.
+    if (promptDevice_ == InputDevice::Pad) {
+        page.navPageKeys = std::string(promptPageKeys(InputDevice::Pad));
+    }
     page.lookKey = std::string(promptLabel(controls_, Action::Interact, promptDevice_));
     // The page grammar's confirm, in the live hand's vocabulary -- "ENTER" /
     // "A" -- for the commit verb and the nav band's GO TO IT. The last two

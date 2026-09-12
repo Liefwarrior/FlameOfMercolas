@@ -1220,7 +1220,7 @@ TEST_CASE("the live session re-words its prompts the moment the other hand speak
     CHECK(kbMap.navMoveKeys == std::string(kGlyphMoveKeys));
     CHECK(kbMap.navTabKeys == "TAB");
     CHECK(kbMap.navZoomKeys == "+ -");
-    CHECK(kbMap.navPageKeys == "< >");
+    CHECK(kbMap.navPageKeys.empty());  // four slots, one row: the keyboard has M and `[` `]`
     CHECK(kbMap.navCloseKey == "M");
     CHECK(kbMap.travelKey == "T");
     CHECK(kbMap.commitKey == "\x01");
@@ -1351,6 +1351,52 @@ TEST_CASE("the NOTES ring: the bumpers page from the last tile onto the ward map
     CHECK_FALSE(session.menuOpen());
     CHECK_FALSE(session.districtMapOpen());
     CHECK_FALSE(session.grimoireOpen());
+}
+
+TEST_CASE("a rebind on the settings page lands in the slot of the key's own device") {
+    // A pad player who moves SWING to X keeps MOUSE1; a keyboard player who
+    // moves it to F keeps RT. The page's row reads the live hand's half too.
+    SessionConfig config;
+    config.contentDir = content::contentDir();
+    Session session(config);
+    session.toggleOptions();
+    REQUIRE(session.optionsOpen());
+    const int swingRow = Session::kSliderRows + static_cast<int>(Action::Attack);
+    // Walk the cursor onto SWING and arm the rebind.
+    while (session.optionCursor() < swingRow) {
+        session.moveOptionCursor(1);
+    }
+    REQUIRE(session.optionCursor() == swingRow);
+    session.noteInputDevice(InputDevice::Pad);
+    session.chooseOption();
+    REQUIRE(session.awaitingKey());
+    session.bindAwaited(Key::PadWest);
+    CHECK(session.controls().bound(Action::Attack, Key::MouseLeft));
+    CHECK(session.controls().bound(Action::Attack, Key::PadWest));
+    CHECK_FALSE(session.controls().bound(Action::Attack, Key::PadRightTrigger));
+    CHECK(session.controls().actionFor(Key::PadRightTrigger) == Action::Count);
+    bool padRow = false;
+    for (const std::string& row : session.optionRows()) {
+        if (row.rfind("SWING  ", 0) == 0) {
+            padRow = row == "SWING  PAD_X";
+        }
+    }
+    CHECK(padRow);
+
+    session.noteInputKey(Key::W);
+    session.chooseOption();
+    REQUIRE(session.awaitingKey());
+    session.bindAwaited(Key::F);
+    CHECK(session.controls().bound(Action::Attack, Key::F));
+    CHECK(session.controls().bound(Action::Attack, Key::PadWest));
+    CHECK_FALSE(session.controls().bound(Action::Attack, Key::MouseLeft));
+    bool kbRow = false;
+    for (const std::string& row : session.optionRows()) {
+        if (row.rfind("SWING  ", 0) == 0) {
+            kbRow = row == "SWING  F";
+        }
+    }
+    CHECK(kbRow);
 }
 
 TEST_CASE("WAIT is a toggle: T and SELECT open the hour page and close it again") {

@@ -226,6 +226,12 @@ struct CasebookPageState {
     /// What the nav band prints for "put the book down": the real bound key for
     /// Action::Menu, so the page never invents one.
     std::string closeKey = "J";
+    /// NINE AND THE STICKS: the page keys -- "LB RB" with a pad in hand, the
+    /// pad's only way on to the ward map and the grimoire from here (this
+    /// page is the Journal tile of NOTES, a page of the ring). EMPTY DRAWS
+    /// THE FOUR-SLOT BAND it always drew; Session fills it for a pad only,
+    /// the keyboard having `[` `]`, M and the row of digits besides.
+    std::string navPageKeys;
     /// And the real bound key for the look verb, which the commit line names
     /// when the body is already standing on the lead.
     std::string lookKey = "E";

@@ -38,7 +38,7 @@ The sim owns the state. The controls only ever send the same edges they always s
 - SWING down from hands down raises the hands and starts the charge in one press. Tap swings, hold swings hard. No wasted draw press, which is the one Oblivion habit deliberately not copied.
 - GUARD down from hands down raises the hands with no blow.
 - Being hit raises the hands (sim side).
-- USE with nothing in reach lowers them. The reticle says LOWER HANDS before the press, through the same walk the press takes.
+- USE with nothing in reach lowers them. The reticle says LOWER HANDS before the press, through the same walk the press takes. Nothing is spoken. The row going down is the feedback (the walk's fixture link used to say NOBODY HERE SELLS WIRE on every USE at nothing, and no longer does).
 - 600 idle steps (10 s) lower them on their own. No sheathe button exists.
 - Talking, any page opening, picking, sleeping, arrest and defeat lower them.
 
@@ -65,7 +65,11 @@ The page grammar, said once in `controls.hpp` and read raw by the router ahead o
 | pick a row | digits | none | every list |
 | more | 0 | none | every paged list |
 
-On a page with no sub-tabs a trigger pull is swallowed. It does not fall through to SWING and put the page down with a punch.
+On a page with no sub-tabs a trigger pull is swallowed, and on a page that is not in the ring a bumper is swallowed. Neither falls through to SWING or CAST and puts the page down with a punch or a spell. The one place a world verb still reaches through a page is a conversation, where SWING is the fight starting, which is the game.
+
+With a pad in hand the casebook page and the ward map carry a fifth foot slot, LB RB NOTES, because the bumpers are the pad's only way on to the next page. The keyboard's foot keeps its four slots and one row.
+
+The settings page rebinds into the slot of the key's own device. A pad button pressed at the prompt replaces the verb's pad half and leaves the keyboard key alone, and the other way round. The row shows the live hand's half.
 
 The ward map on a pad. D-pad walks places, LT/RT cycle the views, the right stick zooms, LB/RB leave for the map's neighbours, A faces, X travels, B closes. On a keyboard the same page keeps TAB, `=` `-`, `[` `]`, ENTER, T and M.
 

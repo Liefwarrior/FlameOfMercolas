@@ -666,6 +666,27 @@ TEST_CASE("the nav band always names the key that closes the book") {
             CHECK(geo.navShown == geo.navEntries);
         }
     }
+
+    // NINE AND THE STICKS: with a pad in hand the band carries a fifth slot,
+    // LB RB NOTES -- the pad's only way on to the ward map from here -- and
+    // the same rule holds: every entry shown, at every size, the second row
+    // spent where one will not hold five.
+    session.noteInputDevice(InputDevice::Pad);
+    CasebookPageState padPage = session.casebookPageState();
+    REQUIRE(padPage.navPageKeys == "LB RB");
+    REQUIRE(padPage.closeKey == "B");
+    for (const auto& size : {std::pair{320, 180}, std::pair{640, 360}, std::pair{960, 540},
+                             std::pair{1280, 720}, std::pair{1920, 1080}}) {
+        for (const CasebookTab tab : {CasebookTab::Leads, CasebookTab::Case}) {
+            padPage.tab = tab;
+            const CasebookPageMetrics geo = casebookPageMetrics(padPage, size.first, size.second);
+            INFO("pad at ", size.first, "x", size.second, " nav rows ", geo.navRows, " shown ",
+                 geo.navShown, "/", geo.navEntries);
+            REQUIRE(geo.usable);
+            CHECK(geo.navEntries == 5);
+            CHECK(geo.navShown == geo.navEntries);
+        }
+    }
 }
 
 TEST_CASE("a lead never silently reports fewer things than it opened") {
