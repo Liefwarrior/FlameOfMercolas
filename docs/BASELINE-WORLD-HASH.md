@@ -645,13 +645,13 @@ record did not have to be re-cut.
 ```
 at branch lane/kit,
 granadad-twin-gate --tavern --ticks 900
-COMBINED WORLD HASH: 0x837E94019BC49C25 -> 0x4AD7CF75C5A0A326      <- DECLARED and RE-BLESSED
+COMBINED WORLD HASH: 0x837E94019BC49C25 -> 0x63F354D02A6B600F      <- DECLARED and RE-BLESSED
 ```
 
 Recorded directly from `dist\granadad-twin-gate.exe --tavern --ticks 900` on
 Windows/mingw, two invocations, each `run A` == `run B` ==
-`0x4AD7CF75C5A0A326`, report text byte-identical (3,153 bytes) -- on the gate
-whose stamp names this tree (`native/` digest `GATE_DIGEST`, 323 files, 96/96
+`0x63F354D02A6B600F`, report text byte-identical (3,153 bytes) -- on the gate
+whose stamp names this tree (`native/` digest `a9f9e3d3255990afd78734e73fd5840b72541ed2663e00b7d0f298ef56cda702`, 323 files, 96/96
 ctest entries green, 1,194 doctest cases -- `test_kit.cpp`,
 `test_kit_page.cpp` and the `--kit` lines in `test_scripted_lines.cpp` among
 them; `verify-windows.ps1` PASS -- 1,194 sim cases / 2,164,818 assertions and
@@ -671,7 +671,7 @@ street's people carry, drop and yield nothing (D10): the Kit's stands are
 authored tavern tiles and the corpse kits are the roster's, and the ONE call
 the renderer makes reads the room's list and writes nothing back.
 
-**The tavern baseline is therefore re-blessed at `0x4AD7CF75C5A0A326` with one
+**The tavern baseline is therefore re-blessed at `0x63F354D02A6B600F` with one
 declared record change behind it** -- the Kit, the ground, the corpse masks
 and the turned-blow counters on the room the tavern hashes. The next lane
 that changes the SHAPE of what the room hashes (a save frame's own fields, the

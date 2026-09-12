@@ -11935,19 +11935,22 @@ void standAtFacing(Session& session, std::int32_t standX, std::int32_t standY,
     }
 
     // 9. DROP: out to the Tarwalk in daylight, the coil put down through the
-    // tile's own X on a tile clear of the quay's clutter, then two tiles
-    // back, facing it, so the frame has it on the boards.
+    // tile's own X on a tile clear of the quay's clutter, then a tile back,
+    // facing it, so the frame has it on the boards.
     session.closeConversation();
-    walkToTile(session, 154, 63);
+    walkToTile(session, 154, 62);
     session.closeConversation();
     if (openKitRow(session, "rope")) {
         session.dropHighlightedKitRow();
     }
     session.closeConversation();
-    standAtFacing(session, 156, 63, 154, 63);
+    // One tile back, off the dockers' own line down the middle of the quay,
+    // so the coil is in reach whatever side of the tile the walk landed on
+    // and nobody is standing on it for the frame.
+    standAtFacing(session, 155, 62, 154, 62);
     bool coilDown = false;
     for (const sim::GroundItem& entry : tavern.groundItems()) {
-        if (entry.item == item("rope") && entry.x == 154 && entry.y == 63) {
+        if (entry.item == item("rope") && entry.x == 154 && entry.y == 62) {
             coilDown = true;
         }
     }

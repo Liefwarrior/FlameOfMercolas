@@ -33,7 +33,7 @@ $shots = @(
     @('kit-drop',    '1280x720', @('--kit=drop',   '--settle-steps=0')),
     @('kit-search',  '960x540',  @('--kit=search')),
     @('kit-load',    '960x540',  @('--kit=load')),
-    @('kit-dr',      '960x540',  @('--kit=dr',     '--settle-steps=0')),
+    @('kit-dr',      '960x540',  @('--kit=dr',     '--settle-steps=12')),
     @('kit-full',    '960x540',  @('--kit'))
 )
 
