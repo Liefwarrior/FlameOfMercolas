@@ -3849,6 +3849,47 @@ render3d::SceneStats present_frame(render3d::Backend& video, const Options& opti
                 static_cast<unsigned long long>(render3d::sceneHash(rig.scene)),
                 options.video3d ? " (the Docks in 3D under the HUD)"
                                 : " (software world in the overlay: --2d)");
+    // THE BODIES IN FRAME, by rig: the nearest of each look to the eye and
+    // its tile, so a frame of a townswoman, a wastrel or an urchin can be
+    // composed from the shutter's own report rather than by walking the
+    // ward blind. Description-side, nothing drawn.
+    {
+        const render3d::Vec3 eye = rig.scene.camera.position;
+        std::string report;
+        for (std::uint32_t r = 0; r < render3d::kActorRigCount; ++r) {
+            const std::string_view file = render3d::actorRigFile(static_cast<std::uint8_t>(r));
+            if (file.empty()) {
+                continue;
+            }
+            const render3d::ActorInstance* nearest = nullptr;
+            float best = 0.0F;
+            int count = 0;
+            for (const render3d::ActorInstance& body : rig.scene.actors) {
+                if (body.rig != r) {
+                    continue;
+                }
+                ++count;
+                const float dx = body.instance.position.x - eye.x;
+                const float dz = body.instance.position.z - eye.z;
+                const float d = dx * dx + dz * dz;
+                if (nearest == nullptr || d < best) {
+                    nearest = &body;
+                    best = d;
+                }
+            }
+            if (nearest == nullptr) {
+                continue;
+            }
+            char line[160];
+            (void)std::snprintf(line, sizeof(line), " %.*s x%d nearest (%d,%d) at %.1f;",
+                                static_cast<int>(file.size()), file.data(), count,
+                                static_cast<int>(std::floor(nearest->instance.position.x)),
+                                static_cast<int>(std::floor(nearest->instance.position.z)),
+                                static_cast<double>(std::sqrt(best)));
+            report += line;
+        }
+        std::printf("granadad: 3d bodies by rig --%s\n", report.empty() ? " none" : report.c_str());
+    }
     return ok;
 }
 
@@ -4465,6 +4506,8 @@ int run_client(const Options& options, const render::CreationResult& chosen,
                 video.height(), options.video3d ? ", 3D world" : ", --2d software world");
 
     render::Framebuffer frame(options.smoke.session.width, options.smoke.session.height);
+    /// F12 was pressed: the next presented frame is read back and written.
+    bool screenshotPending = false;
 
     bool mouseLook = true;
     video.setRelativeMouse(true);
@@ -4774,16 +4817,15 @@ int run_client(const Options& options, const render::CreationResult& chosen,
                     quickSlot = (quickSlot + 9) % 10;
                     session.selectQuickSlot(quickSlot);
                     return;
-                case render::Action::Screenshot: {
-                    const render::Framebuffer output =
-                        render::upscaleNearest(frame, options.windowScale);
-                    if (render::writePng(output, "granadad-screenshot.png")) {
-                        std::printf("granadad: wrote granadad-screenshot.png\n");
-                    } else {
-                        std::printf("granadad: FAILED to write granadad-screenshot.png\n");
-                    }
+                case render::Action::Screenshot:
+                    // 3D BUILD. THE SHUTTER CAPTURES THE COMPOSITED FRAME: the
+                    // 3D world under the HUD, read back off the backend when
+                    // this frame is presented (present_frame's capture), the
+                    // same picture --screenshot writes -- not the software
+                    // overlay alone, which was the old F12 and showed a HUD
+                    // over a black world.
+                    screenshotPending = true;
                     return;
-                }
                 // #85. RENAMED FROM Menu, unchanged body: the system panic/
                 // save/quit screen, deliberately apart from the new Menu
                 // above -- see controls.hpp's own note on why that reads as
@@ -5455,8 +5497,24 @@ int run_client(const Options& options, const render::CreationResult& chosen,
         ++frames;
 
         // 3D BUILD: the frame goes out through the backend -- the 3D pass
-        // under --3d, then this frame as the overlay, then the swap.
-        (void)present_frame(video, options, rig, session, frame, nullptr);
+        // under --3d, then this frame as the overlay, then the swap -- and,
+        // on the frame after F12, read back before the swap and written.
+        if (screenshotPending) {
+            screenshotPending = false;
+            render::Framebuffer shot(1, 1);
+            (void)present_frame(video, options, rig, session, frame, &shot);
+            const bool needsUpscale = shot.width() == frame.width() && options.windowScale > 1;
+            const render::Framebuffer output =
+                needsUpscale ? render::upscaleNearest(shot, options.windowScale) : shot;
+            if (render::writePng(output, "granadad-screenshot.png")) {
+                std::printf("granadad: wrote granadad-screenshot.png (%dx%d, the 3D frame under the HUD)\n",
+                            output.width(), output.height());
+            } else {
+                std::printf("granadad: FAILED to write granadad-screenshot.png\n");
+            }
+        } else {
+            (void)present_frame(video, options, rig, session, frame, nullptr);
+        }
 
         // PACED FOR AN EYE, NOT FOR A BENCHMARK. VSync alone is whatever the
         // monitor happens to be, so a 144 Hz panel would run the route at 2.4x

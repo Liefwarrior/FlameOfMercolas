@@ -134,20 +134,29 @@ std::string_view actorRigFile(std::uint8_t rig) noexcept {
     if (rig >= kActorRigCount) {
         return {};
     }
+    // The variant looks first: no WardType has these values.
+    if (rig == kActorRigTownswoman) {
+        // The Generic peasant woman: the other half of the working ward.
+        return "townswoman.glb";
+    }
     switch (static_cast<sim::WardType>(rig)) {
         // The Knights soldier: helmet and blue. The bouncer borrows it too.
+        // (knight.glb is exported and unmapped: the sim has no Watch rank.)
         case sim::WardType::MilitiaWatch:
             return "watchman.glb";
         // The FantasyHero preset: the working quay's own build.
         case sim::WardType::Sailor:
         case sim::WardType::Fisher:
         case sim::WardType::Carter:
-        case sim::WardType::Thief:
             return "dockhand.glb";
-        // The Generic peasant: everybody else who walks on two legs.
+        // The Generic prisoner: rags for the ward's poor and its thieves.
+        case sim::WardType::Wastrel:
+        case sim::WardType::Thief:
+            return "wastrel.glb";
+        // The Generic peasant: everybody else who walks on two legs. The
+        // clergy too, until a robed preset is exported (none is).
         case sim::WardType::Serf:
         case sim::WardType::Shopkeeper:
-        case sim::WardType::Wastrel:
         case sim::WardType::Urchin:
         case sim::WardType::PriestOfTheFlame:
         case sim::WardType::DiscipleOfTheFlame:
@@ -161,6 +170,107 @@ std::string_view actorRigFile(std::uint8_t rig) noexcept {
         default:
             return {};
     }
+}
+
+namespace {
+
+/// The women's and the men's given names of content/raws/names/names.json
+/// (the serf, shopkeeper, wastrel and disciple pools, as anybody reads
+/// them), the Gull's roster and the Forty of notables.json, plus the titles
+/// a notable carries that say it for them. Sorted once, searched by word.
+/// A pool name that reads neither way (Wenn, Joss, the animal keepers'
+/// Drover and Fodder, most wastrel nicknames) is on neither list.
+constexpr std::string_view kWomensWords[] = {
+    "Aldis",    "Annis",    "Berta",    "Bettrys",  "Birdie",   "Bodil",     "Brigga",   "Ceffa",
+    "Cressida", "Dagny",    "Dessa",    "Ditta",    "Ebba",     "Edda",      "Elsba",    "Elspet",
+    "Emmeline", "Frieda",   "Gerta",    "Grandmother", "Grette", "Haddie",   "Hedda",    "Herdis",
+    "Hestia",   "Ilsa",     "Inka",     "Isolde",   "Jessa",    "Jocosa",    "Katrin",   "Kessa",
+    "Lavinia",  "Lisbet",   "Mabet",    "Mag",      "Maren",    "Marta",     "Mirabel",  "Mistress",
+    "Moll",     "Mother",   "Nedda",    "Nessa",    "Odalys",   "Odda",      "Odile",    "Onna",
+    "Pernilla", "Petra",    "Quenna",   "Redda",    "Rilla",    "Rosamund",  "Sabeth",   "Salla",
+    "Sanna",    "Sella",    "Sethra",   "Sigga",    "Tama",     "Ulla",      "Ulrika",   "Unna",
+    "Ursel",    "Ursuline", "Vanna",    "Vespera",  "Vetta",    "Wendeline", "Widow",    "Willa",
+    "Winnifred", "Withy",   "Yette",    "Yseult",   "Ysolt",
+};
+constexpr std::string_view kMensWords[] = {
+    "Adric",    "Aldous",   "Ambrus",   "Ansgar",   "Arno",     "Askel",     "Askold",   "Baker",
+    "Benedar",  "Berthold", "Bondsman", "Brakk",    "Bram",     "Brann",     "Bront",    "Calixt",
+    "Captain",  "Carter",   "Casker",   "Caspar",   "Cathal",   "Cobb",      "Colm",     "Cooper",
+    "Cort",     "Corvin",   "Crell",    "Cull",     "Cutter",   "Dain",      "Delvin",   "Demetrian",
+    "Dormund",  "Dovric",   "Dray",     "Elior",    "Evrard",   "Ewald",     "Falk",     "Farold",
+    "Father",   "Fenner",   "Fenwick",  "Ferrin",   "Finch",    "Fintan",    "Flint",    "Folke",
+    "Foreman",  "Garrin",   "Godric",   "Goodman",  "Gorm",     "Gregor",    "Grieve",   "Haldan",
+    "Halvor",   "Harl",     "Hask",     "Hobb",     "Hobbin",   "Hyacinth",  "Ingmar",   "Innocens",
+    "Ivo",      "Jarrick",  "Jek",      "Jerome",   "Jorun",    "Jorvath",   "Kettil",   "Kled",
+    "Kort",     "Kyrill",   "Leofric",  "Lom",      "Luff",     "Lunt",      "Mace",     "Malachy",
+    "Marek",    "Master",   "Merle",    "Mordo",    "Neddry",   "Nils",      "Norrick",  "Norvin",
+    "Ondrey",   "Orin",     "Osric",    "Oswin",    "Ottavan",  "Ottmar",    "Ox",       "Perrin",
+    "Pettar",   "Piet",     "Pike",     "Quarrel",  "Quintus",  "Ragvald",   "Ranulf",   "Rasp",
+    "Rolf",     "Sergeant", "Slavik",   "Squall",   "Stannic",  "Sten",      "Tancred",  "Tarl",
+    "Tarn",     "Theodric", "Tobbin",   "Tolley",   "Tolliver", "Torvald",   "Ulf",      "Ulfric",
+    "Ulwer",    "Valdo",    "Varn",     "Varric",   "Venn",     "Vess",      "Vetch",    "Vidar",
+    "Vinzenz",  "Watchman", "Wick",     "Wilm",     "Wold",     "Wull",      "Yarrow",   "Yohan",
+    "Yorrel",
+};
+
+[[nodiscard]] bool listed(const std::string_view* words, std::size_t count,
+                          std::string_view word) noexcept {
+    // Sorted in the source; a binary search per word.
+    std::size_t lo = 0;
+    std::size_t hi = count;
+    while (lo < hi) {
+        const std::size_t mid = lo + (hi - lo) / 2;
+        if (words[mid] < word) {
+            lo = mid + 1;
+        } else {
+            hi = mid;
+        }
+    }
+    return lo < count && words[lo] == word;
+}
+
+}  // namespace
+
+int actorNameSays(std::string_view name) noexcept {
+    std::size_t at = 0;
+    while (at < name.size()) {
+        std::size_t end = name.find(' ', at);
+        if (end == std::string_view::npos) {
+            end = name.size();
+        }
+        const std::string_view word = name.substr(at, end - at);
+        if (!word.empty()) {
+            if (listed(kWomensWords, sizeof(kWomensWords) / sizeof(kWomensWords[0]), word)) {
+                return 1;
+            }
+            if (listed(kMensWords, sizeof(kMensWords) / sizeof(kMensWords[0]), word)) {
+                return -1;
+            }
+        }
+        at = end + 1;
+    }
+    return 0;
+}
+
+std::uint8_t actorRigFor(sim::WardType type, std::int32_t actorId, std::string_view name) noexcept {
+    if (!actorKindSplits(type)) {
+        return actorRigOf(type);
+    }
+    const int says = actorNameSays(name);
+    if (says > 0) {
+        return kActorRigTownswoman;
+    }
+    if (says < 0) {
+        return actorRigOf(type);
+    }
+    return actorRigFor(type, actorId);
+}
+
+float actorInstanceScale(sim::WardType type) noexcept {
+    if (!sim::isPerson(type)) {
+        return 1.0F;
+    }
+    return render::figureScaleOf(type).heightTiles / kPersonHeightTiles;
 }
 
 std::string_view actorClipName(ActorClip clip) noexcept {
@@ -198,11 +308,11 @@ ActorClip clipForActivity(sim::Activity activity, std::int32_t swingSeq) noexcep
     }
 }
 
-MeshData buildActorPlaceholder(std::uint8_t rig) {
+MeshData buildActorPlaceholder(std::uint8_t kind) {
     MeshData mesh;
-    mesh.id = actorRigMeshId(rig);
+    mesh.id = actorRigMeshId(kind);
     mesh.version = 1;
-    const auto type = static_cast<sim::WardType>(rig < kActorRigCount ? rig : 0);
+    const auto type = static_cast<sim::WardType>(kind < kActorKindCount ? kind : 0);
     const Palette palette = paletteOf(type);
     const render::FigureScale figure = render::figureScaleOf(type);
     if (sim::isPerson(type)) {
@@ -259,12 +369,12 @@ MeshData buildActorPlaceholder(std::uint8_t rig) {
 }
 
 void putActorRigs(SceneDescription& scene) {
-    for (std::uint32_t rig = 0; rig < kActorRigCount; ++rig) {
-        const MeshData* present = scene.findMesh(actorRigMeshId(rig));
+    for (std::uint32_t kind = 0; kind < kActorKindCount; ++kind) {
+        const MeshData* present = scene.findMesh(actorRigMeshId(kind));
         if (present != nullptr && present->version == 1) {
             continue;
         }
-        scene.putMesh(buildActorPlaceholder(static_cast<std::uint8_t>(rig)));
+        scene.putMesh(buildActorPlaceholder(static_cast<std::uint8_t>(kind)));
     }
 }
 
@@ -296,15 +406,14 @@ std::vector<ActorInstance> actorInstances(const render::Session& session,
         if (distance > params.maxDistance) {
             continue;
         }
-        const render::FigureScale figure = render::figureScaleOf(actor.type);
         ActorInstance body;
-        body.rig = actorRigOf(actor.type);
-        body.instance.meshId = actorRigMeshId(body.rig);
+        // The look by kind, name and id; the placeholder by kind alone.
+        body.rig = actorRigFor(actor.type, actor.id, people.identity(actor.id).name);
+        body.instance.meshId = actorRigMeshId(actorRigOf(actor.type));
         body.instance.textureId = 0;
         body.instance.position = toScene(px, py, render::bandSurface(actor.band));
         body.instance.yaw = yawOf(actor.facing);
-        body.instance.scale =
-            sim::isPerson(actor.type) ? figure.heightTiles / kPersonHeightTiles : 1.0F;
+        body.instance.scale = actorInstanceScale(actor.type);
         body.instance.tint = tintFor(sky, glow.at(actor.x, actor.y, actor.band), render::Rgb{});
         body.clip = actor.dead ? ActorClip::Death
                                : wardClip(actor.x != actor.prevX || actor.y != actor.prevY);
@@ -328,14 +437,15 @@ std::vector<ActorInstance> actorInstances(const render::Session& session,
             continue;
         }
         const sim::WardType type = render::figureForRole(actor.role(), actor.id());
-        const render::FigureScale figure = render::figureScaleOf(type);
         ActorInstance body;
-        body.rig = actorRigOf(type);
-        body.instance.meshId = actorRigMeshId(body.rig);
+        // The Gull's roster: named, so the name's say first, the id draw
+        // after (Gerta a woman, Tarn a man, whatever their ids draw).
+        body.rig = actorRigFor(type, actor.id(), actor.name());
+        body.instance.meshId = actorRigMeshId(actorRigOf(type));
         body.instance.textureId = 0;
         body.instance.position = toScene(px, py, render::bandSurface(actor.band()));
         body.instance.yaw = yawOf(actor.facing());
-        body.instance.scale = sim::isPerson(type) ? figure.heightTiles / kPersonHeightTiles : 1.0F;
+        body.instance.scale = actorInstanceScale(type);
         body.instance.tint =
             tintFor(sky, glow.at(actor.tileX(), actor.tileY(), actor.band()),
                     render::dynamicGlowAt(live, actor.tileX(), actor.tileY(), actor.band()));

@@ -246,11 +246,25 @@ enum class PieceRole : std::uint8_t {
     Stool,
     /// The stone face of a quay wall at the harbour band, coping to water.
     QuayWall,
-    /// The finish every building top with sky over it wears, whatever its
-    /// tile material: the flagstone piece at its own module, as slates.
+    /// The paved deck a roof keeps only where a stair or a ramp arrives on
+    /// it: the flagstone piece at its own module. Every other building top
+    /// is lead -- the dark fill with battens.
     RoofFlag,
+    /// The batten seams of a lead roof: the kit beam laid thin along every
+    /// module line of a roof plane, in the roof's own dark.
+    RoofBatten,
+    /// A shop sign hung on a timber post beside a door gap: the job that
+    /// makes a lone post a signpost.
+    ShopSign,
+    /// The one-wide strip a cobbled street leaves along a frontage, where
+    /// no 2 x 2 block fits: the flag piece at a third, its stones as setts.
+    FloorStrip,
+    /// The rail between a PAIR of lone timber posts two cells apart on a
+    /// street: a hitching rail at hip height, the job that makes two
+    /// metre-square piers a rail and not a gate to nowhere.
+    PostRail,
 };
-inline constexpr std::size_t kPieceRoleCount = 52;
+inline constexpr std::size_t kPieceRoleCount = 56;
 
 /// The JSON key of a role ("wall", "wall_corner", ...), and back. None for
 /// an unknown key.
@@ -517,6 +531,12 @@ struct StaticPlacement {
     /// The adapter's draw mode (scene.hpp): plain, a halo, or shaded by
     /// the mesh's own normals.
     std::uint8_t mode = 0;
+    /// A billboard (a flame's halo): one quad turned to face the eye every
+    /// frame by the world scene, about `anchor` (its centre) -- so a halo
+    /// is never seen edge-on as a bright bar. The instance's yaw and
+    /// position are rewritten at refresh; the placement keeps the centre.
+    bool billboard = false;
+    Vec3 anchor;
 };
 
 struct StaticPlacementStats {
