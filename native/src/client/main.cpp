@@ -62,6 +62,7 @@
 #include "granadad/render3d/backend.hpp"
 #include "granadad/render3d/scene.hpp"
 #include "granadad/render3d/actor_instances.hpp"
+#include "granadad/render3d/ground_items.hpp"
 #include "granadad/render3d/viewmodel.hpp"
 #include "granadad/render3d/world_scene.hpp"
 #include "granadad/sim/angle.hpp"
@@ -1018,6 +1019,15 @@ void print_usage() {
         "                       plea, deny, hand (the Skyrunners' oath first), serve,\n"
         "                       bloodtag, ropepage, rope or newman (--flame first to\n"
         "                       have what you gave at the door weighed)\n"
+        "  --kit[=WHERE]        play the Kit: name and take the coil on the\n"
+        "                       Tarwalk, lift the house's lantern, knife and\n"
+        "                       coat (THEIRS) at four, open the Character tile\n"
+        "                       on the carried rows, wear the coat and the\n"
+        "                       knife, slot the knife, take Ox's blow on the\n"
+        "                       coat, put him down and search him, load up to\n"
+        "                       the budget, put the coil down and look at it.\n"
+        "                       WHERE is take, theirs, sheet, equip, slot, dr,\n"
+        "                       search, load, drop or empty for the whole line\n"
         "  --nemesis[=WHERE]    lose a fist fight to a named laborer three\n"
         "                       times and watch him rise: a rung, a guild\n"
         "                       with members in it, a permanent cut of the\n"
@@ -1467,6 +1477,12 @@ void print_usage() {
         } else if (starts_with(arg, "--court=", &value)) {
             options.smoke.court = true;
             options.smoke.courtEnd = value;
+        } else if (std::strcmp(arg, "--kit") == 0) {
+            // KIT BUILD. See SmokeRunConfig::kit.
+            options.smoke.kit = true;
+        } else if (starts_with(arg, "--kit=", &value)) {
+            options.smoke.kit = true;
+            options.smoke.kitEnd = value;
             options.wantsSmoke = true;
         } else if (std::strcmp(arg, "--nemesis") == 0) {
             options.smoke.nemesis = true;
@@ -2258,6 +2274,36 @@ void print_usage() {
             session.armCommitPulse();  // rule 2
             session.toggleOptions();
             return true;
+        }
+        // KIT BUILD. THE CHARACTER TILE'S THREE PRESSES OVER A CARRIED ROW,
+        // and only there: LEFT/RIGHT walk the row's quick slot (the
+        // Grimoire's own cycle, D-pad-reachable for the same reason), and X
+        // -- the keyboard's own unbound X, or the pad's X, which is the
+        // Attack binding wearing the tile's clothes exactly as PageNext
+        // wears the haggle's -- DROPS it at the feet. ENTER already wears it
+        // through chooseTopic. A sheet row takes none of these, so the
+        // tiled Menu's own bumper/tab grammar (below) is untouched
+        // everywhere else. Checked first and ahead of the ring, since it
+        // reads leftward/rightward/X rather than page/tab and only claims
+        // them while a kit row is actually highlighted.
+        // CONTROLS LANE: the X prompt on this tile is the one to re-key if
+        // the pad's X leaves Attack.
+        if (session.casebookOpen() && session.menuFocus() == render::kMenuFocusCharacter &&
+            session.highlightedKitRow().has_value()) {
+            if (leftward) {
+                session.adjustKitSlot(-1);
+                return true;
+            }
+            if (rightward) {
+                session.adjustKitSlot(1);
+                return true;
+            }
+            if ((key == render::Key::X && action == render::Action::Count) ||
+                action == render::Action::Attack) {
+                session.armCommitPulse();  // contract (b): a drop commits
+                session.dropHighlightedKitRow();
+                return true;
+            }
         }
         // NINE AND THE STICKS: THE RING. LB/RB and `[` `]` step the tiles --
         // sheet, chart, letters, casebook -- and on past the last of them to
@@ -3751,6 +3797,16 @@ struct SceneRig {
         params.timeOfDaySeconds = session.timeOfDay();
         params.dynamicLamps = session.tavernLights();
         world->refresh(scene, session.camera(), aspect, params);
+        // KIT BUILD: the things on the tiles -- the room's hashed ground
+        // list, the four strongboxes and the snug's bale -- as Item pieces
+        // off the same catalogue, appended after the placed pieces (whose
+        // table they index). Per frame, off sim state, never written back:
+        // TAKE removes a thing in the sim and the next frame has one fewer.
+        {
+            const std::vector<render3d::StaticInstance> things =
+                render3d::groundItemInstances(session, catalogue, session.camera());
+            scene.statics.insert(scene.statics.end(), things.begin(), things.end());
+        }
         // A LANE: the people. Sixteen placeholder rigs put once (the adapter
         // swaps in the glb by name where it has one), and the instances
         // rewritten every frame off the roster with wardSprites' own slide.

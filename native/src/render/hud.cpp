@@ -1179,8 +1179,18 @@ void drawAnnouncePlate(Framebuffer& target, std::string_view text, float rawFade
 /// runs.
 constexpr Rgb kAimVerb{0.92F, 0.80F, 0.38F};
 /// The qualifier beside the subject -- a trade, a state, what you came for.
-/// Deliberately the quietest ink on the frame: it is the third thing read.
-constexpr Rgb kAimNote{0.60F, 0.58F, 0.52F};
+/// The third thing read, not the loudest -- but KIT FIX PASS: the original
+/// {0.60, 0.58, 0.52} (luma ~0.58) is a note read against whatever ground
+/// sits behind the reticle, not a fixed backdrop the way a menu row is, and
+/// a real capture (docs/frames/kit/kit-take-960x540.png, "ROPE  48DR" over
+/// open sky and a sunlit crate) showed the weight number nearly vanish --
+/// the scrim behind this row only darkens the ground in proportion to how
+/// bright it reads, and a note this close to mid-grey still loses to a
+/// bright sky even scrimmed. Raised to a bright, slightly warm bone so it
+/// reads unaided against ground the scrim under-corrects for, while staying
+/// visibly quieter than kAimVerb's saturated gold -- still the third thing
+/// read, just no longer an invisible one.
+constexpr Rgb kAimNote{0.82F, 0.80F, 0.74F};
 
 /// ONE ACCENT PER KIND OF THING A CROSSHAIR CAN LAND ON. Scannable by hue
 /// before a word of it is read, which is the whole argument for entity accents
@@ -1200,6 +1210,12 @@ constexpr Rgb kAimNote{0.60F, 0.58F, 0.52F};
             // this reason; a player has to be able to tell "this is the
             // investigation" from "this is a door" without reading.
             return Rgb{0.76F, 0.58F, 0.88F};
+        case AimKind::Owned:
+            // KIT BUILD. SOMEBODY'S. The reference's red hand, in this HUD's
+            // own ink: warm enough to read as a warning before the THEIRS
+            // note is, and nothing else on the frame wears it -- the brawl
+            // washes are alpha blends, not an accent.
+            return Rgb{0.92F, 0.46F, 0.40F};
         case AimKind::Nothing:
         default:
             return Rgb{0.74F, 0.72F, 0.66F};
@@ -1512,6 +1528,20 @@ void drawBottomBand(Framebuffer& target, const HudState& state, BottomBand& band
             // A caller that never set it gets 1, which is 0.95F unchanged.
             drawText(target, textX, y, alert, Rgb{0.90F, 0.62F, 0.30F}, 0.95F * rowAlpha,
                      alertScale);
+            // KIT FIX PASS. THE ONE SLOT THE COMMENT ABOVE WARNED ABOUT.
+            // band.take(alertScale) reserves this row's SPAN off the bare
+            // glyph height, which says nothing about padY -- so the plate
+            // above (drawn at y - padY, outside the glyph box) can land
+            // inside the slot the priority order is about to hand the next
+            // row up. A real capture caught it: docs/frames/kit/
+            // kit-dr-960x540.png stacked "FISTS UP" against this row's own
+            // plate with barely a pixel between the two. padY stays tight
+            // (the comment above still holds -- a taller plate is the wrong
+            // fix), so the gap is bought here instead: one bare minor-scale
+            // slot, spent and thrown away, purely so whatever the priority
+            // order stacks above the alert next has a real gap to sit in
+            // rather than share this row's own reserved pixels.
+            (void)band.take(minor);
         }
     }
     // SPELLS BUILD. THE QUICK BAR STRIP, bottom-centre -- the hotbar slot
@@ -1619,6 +1649,13 @@ void drawBottomBand(Framebuffer& target, const HudState& state, BottomBand& band
     // both be true (a guard raises the hands), so this takes its own slot.
     takeCentred(state.handsLabel, Rgb{0.82F, 0.76F, 0.60F},
                 0.90F * std::clamp(state.handsFade, 0.0F, 1.0F));
+    // KIT BUILD (defence v1). THE TURN, right behind the hands: "COAT TURNS
+    // 2" for a plate's hold after a blow the worn kit softened, in the
+    // blocked-blow wash's own steel-cool ink so the row and the wash read as
+    // one fact. An event, its own slot: a guard, raised hands and a turned
+    // blow can all be true on one step.
+    takeCentred(state.turnLabel, Rgb{0.62F, 0.70F, 0.80F},
+                0.92F * std::clamp(state.turnFade, 0.0F, 1.0F));
     // ACTION-COMBAT BUILD (section 5, channel 2). THE HELD HARD charge row,
     // adjacent to the guard row and in the hot charge register -- the same warm
     // hue the reticle takes at the hard threshold, so the row and the reticle

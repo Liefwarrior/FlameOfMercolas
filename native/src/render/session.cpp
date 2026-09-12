@@ -2195,8 +2195,23 @@ void Session::selectQuickSlot(int slot) {
         }
         // `SLOT 3 - CLEAR THE HEAD` (UI-EA-SPEC sec. 5): the toast is the
         // slot and the name; READY was the toast announcing itself.
+        // KIT BUILD: an item slot names the thing now worn the same way.
+        const sim::Spell* crafting = tavern_->slotSpell(slot);
+        const sim::ItemDef* thing = tavern_->slotItem(slot);
         say("SLOT " + std::to_string(slot + 1) + " - " +
-            upperAscii(tavern_->slotSpell(slot)->displayName) + ".");
+            (crafting != nullptr ? upperAscii(crafting->displayName)
+                                 : thing != nullptr ? thing->name : std::string("EMPTY")) +
+            ".");
+        return;
+    }
+    if (tavern_->slotItem(slot) != nullptr) {
+        // KIT BUILD: the slot names a thing no longer carried -- said, not
+        // swallowed, the empty slot's own rule.
+        if (audio_ != nullptr) {
+            audio_->playOneShot(audio::SoundId::UiTick);
+        }
+        say("SLOT " + std::to_string(slot + 1) + " - " + tavern_->slotItem(slot)->name +
+            ". NOT ON YOU.");
         return;
     }
     // AUDIO WIRING: the quiet tick a cursor move gets -- nothing changed.
@@ -2208,10 +2223,39 @@ void Session::selectQuickSlot(int slot) {
 
 void Session::showQuickBar() {
     // A couple of seconds past the last touch -- the strip is up exactly
-    // while the wheel or the number row is being used. The ease itself is
-    // quickBarAnim_'s business, driven in syncPanelAnim()/step() like every
-    // other row.
+    // while the wheel or the number row is being used. The countdown's own
+    // decay is quickBarAnim_'s business, driven in syncPanelAnim()/step()
+    // like every other row.
     quickBarShowSteps_ = kQuickBarShowSteps;
+    // KIT FIX PASS. A SLOT-JUST-CHANGED EVENT SNAPS THE STRIP OPEN, THE SAME
+    // WAY say() SNAPS message_ ON RATHER THAN LEAVING IT TO THE NEXT step().
+    //
+    // Before this, opening the strip from a dead stop (quickBarAnim_ never
+    // targeted true before -- true of the very first slot press in a fresh
+    // session) rode EasedToggle::setTarget's own "first tick free" bump
+    // (1/riseSteps_, an eighth) and NOTHING ELSE, because nothing here ever
+    // called advance() -- that only happens once a step(), and most callers
+    // of this function do not take one before the caller returns. A
+    // --settle-steps=0 capture right after a fresh selectQuickSlot() (see
+    // docs/frames/kit/kit-slot-960x540.png, the strip at a bare 0.125 fade)
+    // photographs exactly that one-eighth-open frame and calls it the
+    // feature's own showcase, which is a real defect even though a live
+    // player would never notice eight steps (~130ms) of ramp.
+    //
+    // snapTo(true) FROM A DEAD STOP ONLY -- value() <= 0 is exactly "never
+    // risen at all yet", the case that produced the illegible capture.
+    // Reopening while the strip is already up, or mid-decay after the last
+    // touch, is deliberately left alone: EasedToggle::setTarget's own
+    // header ("reopening mid-close resumes from wherever it had got to")
+    // is the correct feel for that case and this pass has no complaint
+    // against it -- only the very first rise, which had nothing to resume
+    // FROM, needed the guarantee. The CLOSE still eases the ordinary way:
+    // syncPanelAnim()'s quickBarAnim_.setTarget(barWanted) below still owns
+    // the fall once quickBarShowSteps_ runs out, so the strip's one-
+    // transition-grammar veil on the way OUT is untouched.
+    if (quickBarAnim_.value() <= 0.0F) {
+        quickBarAnim_.snapTo(true);
+    }
 }
 
 void Session::jump() {
@@ -2277,6 +2321,9 @@ void Session::toggleGrimoire() {
     }
     const bool willOpen = !grimoireOpen_;
     grimoireOpen_ = willOpen;
+    // KIT BUILD: the widget opened by the wheel's tap is the Grimoire, never
+    // a search list left behind by a body walked away from.
+    searchActorId_ = -1;
     if (willOpen) {
         // See toggleOptions' comment: an overlay that opens without putting the
         // others down is how a page draws on screen while a different one is
@@ -2823,6 +2870,27 @@ DistrictMapState Session::districtMapState() const {
 }
 
 std::vector<std::string> Session::grimoireRows() const {
+    if (searchOpen()) {
+        // KIT BUILD: the corpse's kit, less what was taken -- name, weight,
+        // worth -- and TAKE ALL as the last row, a row being a choice.
+        std::vector<std::string> rows;
+        const std::vector<sim::Tavern::CorpseRow> carried = tavern_->corpseRows(searchActorId_);
+        for (const sim::Tavern::CorpseRow& row : carried) {
+            const sim::ItemDef* thing = tavern_->items().at(row.item);
+            if (thing == nullptr) {
+                continue;
+            }
+            std::string line = thing->name + "  " + std::to_string(thing->drams) + "DR";
+            if (thing->royals > 0) {
+                line += "  " + std::to_string(thing->royals) + "C";
+            }
+            rows.push_back(std::move(line));
+        }
+        if (!carried.empty()) {
+            rows.push_back("TAKE ALL");
+        }
+        return rows;
+    }
     // ONE ROW PER KNOWN CRAFTING, grimoire order -- the same order
     // equipSpellAt counts in, so the number printed beside a row IS the index
     // the equip spends. Name, the cost model's own difficulty (the number the
@@ -2864,7 +2932,8 @@ void Session::moveGrimoireCursor(int delta) {
         audio_->playOneShot(audio::SoundId::UiTick);
     }
     wrapCursorAndPage(grimoireCursor_, grimoirePage_, delta,
-                      static_cast<int>(tavern_->dialogue().grimoire().spells().size()));
+                      static_cast<int>(searchOpen() ? grimoireRows().size()
+                                                    : tavern_->dialogue().grimoire().spells().size()));
 }
 
 void Session::nextGrimoirePage() {
@@ -2872,7 +2941,8 @@ void Session::nextGrimoirePage() {
         return;
     }
     advancePage(grimoirePage_, grimoireCursor_,
-                tavern_->dialogue().grimoire().spells().size());
+                searchOpen() ? grimoireRows().size()
+                             : tavern_->dialogue().grimoire().spells().size());
 }
 
 void Session::chooseGrimoireRow(int slot) {
@@ -2880,6 +2950,58 @@ void Session::chooseGrimoireRow(int slot) {
         return;
     }
     const int index = grimoirePage_ * kTopicPageSize + slot;
+    if (searchOpen()) {
+        // KIT BUILD: TAKE the row, or TAKE ALL on the last one. The list is
+        // re-read after every take (a pure function of the room), so the
+        // cursor lands on what is left; an emptied body closes the list.
+        const std::vector<sim::Tavern::CorpseRow> carried = tavern_->corpseRows(searchActorId_);
+        if (carried.empty()) {
+            closeConversation();
+            return;
+        }
+        std::string line;
+        bool anyTaken = false;
+        if (index >= static_cast<int>(carried.size())) {
+            if (index != static_cast<int>(carried.size())) {
+                return;
+            }
+            std::int32_t taken = 0;
+            for (const sim::Tavern::CorpseRow& row : carried) {
+                const sim::Tavern::StealResult took =
+                    tavern_->takeFromCorpse(searchActorId_, row.kitRow);
+                if (took.result == sim::ServiceResult::Served) {
+                    ++taken;
+                    anyTaken = true;
+                } else {
+                    line = took.line;
+                    break;
+                }
+            }
+            if (line.empty()) {
+                line = "TAKEN - ALL OF IT. " + std::to_string(taken) +
+                       (taken == 1 ? " THING." : " THINGS.");
+            } else if (taken > 0) {
+                line = std::to_string(taken) + " TAKEN, THEN " + line;
+            }
+        } else {
+            const sim::Tavern::StealResult took = tavern_->takeFromCorpse(
+                searchActorId_, carried[static_cast<std::size_t>(index)].kitRow);
+            anyTaken = took.result == sim::ServiceResult::Served;
+            line = took.line;
+        }
+        if (audio_ != nullptr) {
+            audio_->playOneShot(anyTaken ? audio::SoundId::ClothRustle : audio::SoundId::UiTick);
+        }
+        say(line);
+        const int left = static_cast<int>(grimoireRows().size());
+        if (left == 0) {
+            closeConversation();
+            return;
+        }
+        grimoireCursor_ = std::min(grimoireCursor_, left - 1);
+        grimoirePage_ = topicPageOf(grimoireCursor_);
+        return;
+    }
     const std::vector<sim::Spell>& spells = tavern_->dialogue().grimoire().spells();
     if (index >= static_cast<int>(spells.size())) {
         return;
@@ -2898,7 +3020,7 @@ void Session::chooseGrimoireRow(int slot) {
 }
 
 void Session::adjustGrimoireSlot(int delta) {
-    if (!grimoireOpen_ || delta == 0) {
+    if (!grimoireOpen_ || delta == 0 || searchOpen()) {
         return;
     }
     const std::vector<sim::Spell>& spells = tavern_->dialogue().grimoire().spells();
@@ -4429,8 +4551,17 @@ void Session::step(const sim::MoveInput& input) {
     // state driving continuous motion, the same seam applyPlayerAttributes
     // crossed at boot. Exactly the shipped scale whenever no hold is live, so
     // every pre-existing capture walks bit for bit.
-    body_->setSpeedScaleQ8(sim::agilitySpeedScaleQ8(
-        tavern_->effectiveAttributes().value(sim::AttributeId::Agility)));
+    // KIT BUILD. THE LOAD, at the same seam: AGI's gait times the Q8 term
+    // the drams on the body earn (items.hpp's loadSpeedScaleQ8 -- 256 to
+    // half the budget, down to 128 at it), >> 8. Exactly the shipped scale
+    // with nothing on the body, so every pre-existing capture walks bit for
+    // bit; player-only, integer, the one movement seam the gap analysis
+    // named. PlayerBody clamps the product to its own 64..512.
+    body_->setSpeedScaleQ8(static_cast<std::int32_t>(
+        (static_cast<std::int64_t>(sim::agilitySpeedScaleQ8(
+             tavern_->effectiveAttributes().value(sim::AttributeId::Agility))) *
+         tavern_->loadSpeedQ8()) >>
+        8));
     tavern_->stepMovement();
     const std::int32_t shoveX = tavern_->takePlayerShoveX();
     const std::int32_t shoveY = tavern_->takePlayerShoveY();
@@ -4691,6 +4822,12 @@ void Session::step(const sim::MoveInput& input) {
     chargeAnim_.advance();
     // STANCE & ROOM BUILD. THE SAME PER-STEP ADVANCE for the FISTS UP row.
     handsAnim_.advance();
+    // KIT BUILD. THE SAME PER-STEP ADVANCE for the turn row, and its hold
+    // counted down here so a plate's worth of steps is the row's life.
+    turnAnim_.advance();
+    if (turnSteps_ > 0) {
+        --turnSteps_;
+    }
     // HELD-EFFECTS BUILD. THE SAME PER-STEP ADVANCE, ONE PER SLOT.
     for (EasedToggle& anim : effectAnims_) {
         anim.advance();
@@ -4875,6 +5012,30 @@ void Session::step(const sim::MoveInput& input) {
         viewmodelSwingPending_ = 0;
         viewmodelCastPending_ = false;
     }
+    // KIT BUILD -- DEFENCE v1 ON ITS OWN ROW. A blow the worn kit softened
+    // says so, once per blow, on the same edge shape the guard's clang
+    // rides: blowsTurned() moving. The piece named is the heaviest DR on the
+    // body (the coat over the hood over the boots), the number is what the
+    // blow lost to it. Its own centred row (hud.turnLabel) with a plate's
+    // hold, not the alert: a bouncer's warning outranks the alert for as
+    // long as the house minds you, which is exactly when blows land. An
+    // EVENT, never furniture: composed only when a blow actually lands and
+    // the kit actually turned some of it.
+    if (const std::int32_t turnedNow = tavern_->blowsTurned(); turnedNow > lastBlowsTurned_) {
+        std::string piece = "THE KIT";
+        std::int32_t best = 0;
+        for (const sim::ItemSlot slot :
+             {sim::ItemSlot::Body, sim::ItemSlot::Head, sim::ItemSlot::Feet, sim::ItemSlot::Trinket}) {
+            const sim::ItemDef* worn = tavern_->items().at(tavern_->kit().worn(slot));
+            if (worn != nullptr && worn->dr > best) {
+                best = worn->dr;
+                piece = worn->name;
+            }
+        }
+        turnLine_ = piece + " TURNS " + std::to_string(tavern_->lastTurned());
+        turnSteps_ = kPlateHoldSteps;
+    }
+    lastBlowsTurned_ = tavern_->blowsTurned();
     lastPlayerHp_ = hpNow;
     lastBlowsBlocked_ = blockedNow;
     // ACTION-COMBAT BUILD (section 4.1). THE STEEL-OUT FLIP, spoken ONCE on the
@@ -5001,6 +5162,7 @@ void Session::step(const sim::MoveInput& input) {
     clearIfClosed(blockAnim_, blockCache_);
     clearIfClosed(chargeAnim_, chargeCache_);
     clearIfClosed(handsAnim_, handsCache_);
+    clearIfClosed(turnAnim_, turnCache_);
 
     // One engine tick a simulated second. clockScale > 1 makes the world's
     // clock run faster than the body's, which is how a capture reaches a named
@@ -5291,6 +5453,14 @@ void Session::interact() {
             "PAPER. CARRY IT BACK SIGNED.");
         return;
     }
+    // 2a. THE DEAD (KIT BUILD): a corpse in reach, when no living roster
+    // body is NEARER, opens its search list -- ahead of the living for the
+    // person walk's own reason (a body at your feet is the one thing this
+    // press could mean that the man beside it could not also mean), and
+    // behind them when they are closer, so a crowded taproom still talks.
+    if (searchNearestCorpse()) {
+        return;
+    }
     if (!sneaking) {
         // TIME-AND-TENURE BUILD: the director is told what ground the feet
         // are on BEFORE the conversation opens, so a priest's topic list is
@@ -5300,11 +5470,28 @@ void Session::interact() {
         // EVICTION CASE: and the writ's stage, so Maell's own list carries
         // the hire (or the walk-back) the moment his conversation opens.
         syncEvictionTopics();
-        if (tavern_->talkTo() || talkToWard()) {
+        const auto opened = [this]() {
             topicCursor_ = 0;
             haggleOffer_ = 0;
             const sim::DialogueDirector& talk = tavern_->dialogue();
             say(talk.speaker().name + ": " + talk.greeting());
+        };
+        if (tavern_->talkTo()) {
+            opened();
+            return;
+        }
+        // 2b. A THING ON THE GROUND (KIT BUILD) sits between the house's
+        // roster and the street's people: the thing you walked to outranks
+        // a passer-by (and a mouse), and a named lead outranks the thing
+        // (lowerHandsResolves' own rule). After the box chain would have
+        // been the tidier seat, but the street's TALK is inside this walk
+        // and a rope on the Tarwalk must beat it. Upright only: crouched,
+        // the press is a lift or the box chain's TAKE QUIETLY below.
+        if (!leadNamedInReach() && takeNearestItem()) {
+            return;
+        }
+        if (talkToWard()) {
+            opened();
             return;
         }
     } else {
@@ -5321,6 +5508,14 @@ void Session::interact() {
     // function answers, so "facing a lock picks it, sneaking or not" is
     // already true with no branch here.
     if (stealNearestThing()) {
+        return;
+    }
+
+    // 3b. A THING ON THE GROUND (KIT BUILD), the crouched half: upright the
+    // walk took it at 2b; crouched it comes after the box chain (a bed-foot
+    // strongbox keeps its stand) as TAKE QUIETLY -- the notice rule, never
+    // the verb, is what the stance moves. The look still outranks the take.
+    if (sneaking && !leadNamedInReach() && takeNearestItem()) {
         return;
     }
 
@@ -5341,21 +5536,65 @@ void Session::interact() {
     examine();
 }
 
-bool Session::lowerHandsResolves() const {
-    if (!tavern_->playerHandsUp()) {
-        return false;
-    }
-    // A LEAD THE CROSSHAIR WOULD NAME IS SOMETHING IN REACH, and the look
-    // outranks the lower -- the identical three-book walk, with the identical
-    // "an unheard lead is not named" line, that resolveInteract() names the
-    // subject with. Read-only: leadInLookReach() and its two siblings are
-    // walks over Lead::site, never Casebook::look().
+bool Session::leadNamedInReach() const {
+    // A LEAD THE CROSSHAIR WOULD NAME IS SOMETHING IN REACH -- the identical
+    // three-book walk, with the identical "an unheard lead is not named"
+    // line, that resolveInteract() names the subject with. Read-only:
+    // leadInLookReach() and its two siblings are walks over Lead::site,
+    // never Casebook::look().
     const auto named = [](const sim::Casebook& book, int lead) {
         return lead >= 0 && book.raws() != nullptr &&
                book.state(static_cast<std::int32_t>(lead)) != sim::LeadState::Unheard;
     };
-    return !named(casebook_, leadInLookReach()) && !named(sheetBook_, sheetLeadInLookReach()) &&
-           !named(evictBook_, evictLeadInLookReach());
+    return named(casebook_, leadInLookReach()) || named(sheetBook_, sheetLeadInLookReach()) ||
+           named(evictBook_, evictLeadInLookReach());
+}
+
+bool Session::lowerHandsResolves() const {
+    if (!tavern_->playerHandsUp()) {
+        return false;
+    }
+    // The look outranks the lower.
+    return !leadNamedInReach();
+}
+
+const sim::Actor* Session::corpseToSearch() const {
+    // The corpse in reach of the BODY, and only when no living roster body
+    // is nearer -- ties to the dead, so standing on him is a search.
+    const sim::Actor* corpse = tavern_->corpseInReachOf(body_->x(), body_->y(), body_->band());
+    if (corpse == nullptr) {
+        return nullptr;
+    }
+    const bool sneaking = stance() == sim::Stance::Crouched;
+    const std::int32_t reach = sneaking ? sim::kLiftReachQ8 : sim::kReachQ8;
+    const sim::Actor* living = tavern_->nearestTo(body_->x(), body_->y(), reach);
+    if (living != nullptr &&
+        living->distanceTo(body_->x(), body_->y()) < corpse->distanceTo(body_->x(), body_->y())) {
+        return nullptr;
+    }
+    return corpse;
+}
+
+bool Session::groundTargetFor(InteractTarget& out) const {
+    if (leadNamedInReach()) {
+        return false;
+    }
+    const std::int32_t at = tavern_->groundItemInReachOf(body_->x(), body_->y(), body_->band());
+    if (at < 0) {
+        return false;
+    }
+    const sim::GroundItem& entry = tavern_->groundItems()[static_cast<std::size_t>(at)];
+    const sim::ItemDef* thing = tavern_->items().at(entry.item);
+    // A fixed thing (the strongbox) is not named here; the box block is.
+    if (thing == nullptr || thing->fixed) {
+        return false;
+    }
+    out = InteractTarget{};
+    out.verb = stance() == sim::Stance::Crouched ? "TAKE QUIETLY" : "TAKE";
+    out.subject = entry.count > 1 ? std::to_string(entry.count) + " " + thing->name : thing->name;
+    out.note = entry.owned ? std::string("THEIRS") : std::to_string(thing->drams) + "DR";
+    out.kind = entry.owned ? AimKind::Owned : AimKind::Thing;
+    return true;
 }
 
 std::string Session::interactPrompt() const {
@@ -5487,6 +5726,17 @@ Session::InteractTarget Session::resolveInteract() const {
         out.kind = AimKind::Place;
         return out;
     }
+    // 2a. THE DEAD (KIT BUILD), mirrored where interact() checks it: the
+    // corpse in reach, when no living roster body is nearer, is a SEARCH,
+    // named, a body's own accent, and DEAD where a living man's trade would
+    // print.
+    if (const sim::Actor* corpse = corpseToSearch(); corpse != nullptr) {
+        out.verb = "SEARCH";
+        out.subject = corpse->name();
+        out.note = "DEAD";
+        out.kind = AimKind::Person;
+        return out;
+    }
     // NAMED IN THE ORDER interact() WOULD REACH THEM. The taproom's own roster
     // is asked first because talkTo() is, so the body the crosshair names is
     // the body the key would actually speak to -- a prompt that named the
@@ -5503,7 +5753,17 @@ Session::InteractTarget Session::resolveInteract() const {
         out.kind = AimKind::Person;
         return out;
     }
+    // 2b. A THING ON THE GROUND (KIT BUILD), mirrored where interact()
+    // reaches it upright -- between the house's roster and the street's
+    // people: TAKE names the thing, the note is its weight, or THEIRS with
+    // the Owned accent when taking it is theft (the reference's red hand,
+    // before the press). A named lead in reach outranks it. The BODY's own
+    // position, as every other query on this walk. Crouched, the same read
+    // comes after the box (TAKE QUIETLY), where interact() takes it.
     if (!sneaking) {
+        if (InteractTarget thing; groundTargetFor(thing)) {
+            return thing;
+        }
         if (const sim::WardActor* outside = people_->nearestTo(
                 body_->tileX(), body_->tileY(), body_->band(), kWardTalkReachTiles);
             outside != nullptr) {
@@ -5564,6 +5824,14 @@ Session::InteractTarget Session::resolveInteract() const {
             // Cracked already. LOOK is what the key falls through to, and the
             // note says why rather than leaving the player to press it twice.
             out.note += "  EMPTIED";
+        }
+    }
+
+    // 3b. A THING ON THE GROUND (KIT BUILD), the crouched half: TAKE QUIETLY
+    // after the box's own stand, exactly where interact() takes it crouched.
+    if (sneaking) {
+        if (InteractTarget thing; groundTargetFor(thing)) {
+            return thing;
         }
     }
 
@@ -5929,6 +6197,15 @@ void Session::chooseTopic(std::size_t index) {
         }
         return;
     }
+    if (casebookOpen_ && menuFocus_ == kMenuFocusCharacter) {
+        // KIT BUILD. A CARRIED ROW IS A CHOICE NOW: ENTER wears it (or bares
+        // it) through the room's own door. A sheet row stays something to
+        // read -- the no-op the keys page gives -- so the index passed in
+        // is ignored for the tile's OWN cursor, which is the row on screen.
+        (void)index;
+        wearHighlightedKitRow();
+        return;
+    }
     if (casebookOpen_ && menuFocus_ == kMenuFocusLetters) {
         // TASK #82. Opening a letter is exactly as pure-UI as opening a
         // casebook entry -- see that branch's own note. A no-op while a
@@ -6289,6 +6566,27 @@ DialogueViewState Session::characterPanelView() const {
     view.speaker = "CHARACTER";
     const std::string title = legendLine();
     view.epithet = title.empty() ? std::string(sim::kReputationUnremarkable) : title;
+    // KIT BUILD: over a carried row the epithet is the verbs, in the
+    // device's own words -- the Grimoire page's "LEFT RIGHT BIND A SLOT"
+    // idiom -- so the tile never advertises a press it will not take. The
+    // reputation line stands on every sheet row.
+    if (const std::optional<KitRow> row = highlightedKitRow(); row.has_value() && row->inKit) {
+        const sim::ItemDef* thing = tavern_->items().at(row->item);
+        const InputDevice dev = promptDevice_;
+        // The arrows as motifs on a keyboard (the tile is thirty-odd cells
+        // wide at 960 and "LEFT RIGHT" pushed DROP off it), the bare cross on
+        // a pad -- UI-EA-SPEC sec. 5's own substitutions.
+        std::string verbs;
+        if (thing != nullptr && thing->slot != sim::ItemSlot::None) {
+            verbs = std::string(promptConfirmKey(dev)) +
+                    (tavern_->kit().isWorn(row->item) ? " BARE  " : " WEAR  ") +
+                    (dev == InputDevice::Pad ? std::string(1, kMotifDPad)
+                                             : std::string{kMotifLeft, kMotifRight}) +
+                    " SLOT  ";
+        }
+        verbs += "X DROP";
+        view.epithet = verbs;
+    }
     view.line = "WHAT THE STREETS HAVE MADE OF YOU, AND THE HANDS THAT DID IT.";
     for (const std::string& row : characterRows()) {
         view.topics.push_back(row);
@@ -6727,6 +7025,22 @@ DialogueViewState Session::dialogueView() const {
         view.page = casePage_;
         return view;
     }
+    if (searchOpen()) {
+        // KIT BUILD. The corpse's kit on the same widget: his name on the
+        // badge, the verbs on the epithet, TAKE ALL as the last row.
+        view.open = true;
+        const sim::Actor* corpse = tavern_->actorById(searchActorId_);
+        view.speaker = corpse != nullptr ? upperAscii(corpse->name()) : std::string("THE DEAD");
+        view.epithet = confirm + " TAKES  " + back + " LEAVES HIM";
+        const std::vector<std::string> rows = grimoireRows();
+        view.line = rows.empty() ? "NOTHING ON HIM." : "WHAT HE HAD ON HIM. DR IS DRAMS.";
+        for (const std::string& row : rows) {
+            view.topics.push_back(row);
+        }
+        view.cursor = grimoireCursor_;
+        view.page = grimoirePage_;
+        return view;
+    }
     if (grimoireOpen_) {
         // SPELLS BUILD. The same one list widget every page is -- see
         // toggleGrimoire()'s own header. The rows carry the difficulty out of
@@ -6934,6 +7248,14 @@ CreationPage Session::stripCard() const {
         cursor = optionCursor_;
         window = optionPage_;
         out.bodyHoldRows = 14;
+    } else if (searchOpen()) {
+        // KIT BUILD: the corpse's kit as the composed card.
+        const sim::Actor* corpse = tavern_->actorById(searchActorId_);
+        out.title = corpse != nullptr ? upperAscii(corpse->name()) : std::string("THE DEAD");
+        rows = grimoireRows();
+        out.instruction = rows.empty() ? "NOTHING ON HIM." : "DR - DRAMS.";
+        cursor = grimoireCursor_;
+        window = grimoirePage_;
     } else if (grimoireOpen_) {
         out.title = "GRIMOIRE";
         rows = grimoireRows();
@@ -9221,19 +9543,294 @@ std::vector<std::string> Session::characterRows() const {
     rows.push_back("REPUTATION  " + std::string(talk.ledger().reputationLabel()));
     rows.push_back("COIN  " + std::to_string(tavern_->playerCoin()));
     rows.push_back("HEAT  " + std::to_string(talk.crimes().heat()));
-    // IN HAND -- the reference sheet's w slot ("cane 1-6 Impact"), printed
-    // ONLY once the world has actually put something in the player's hand.
-    // Not an empty-state row on purpose: this build has no item system
-    // (the header above says so out loud), and "IN HAND FISTS" would claim
-    // an equipment model nothing simulates. The moment a case beat calls
-    // grantPlayerWeapon, the sheet says what it is and what it does --
-    // eighteen rows then, seventeen until, which test_character.cpp pins
-    // from both sides. Page arithmetic: the row lands on page two, which
-    // carries eight rows bare and kTopicPageSize is nine.
-    if (tavern_->playerWeapon() != sim::Weapon::Fists) {
+    // IN HAND -- the reference sheet's w slot ("cane 1-6 Impact"). KIT
+    // BUILD (D10): ALWAYS printed now, because fists are a real state once
+    // an equipment model exists -- the sheet says what the hand holds, the
+    // item by name when a Kit row is worn there, the class line when a
+    // sheet armed the hand directly, FISTS 3-5 IMPACT otherwise.
+    if (const sim::ItemDef* held = tavern_->heldItem(); held != nullptr) {
+        rows.push_back("IN HAND  " + sim::itemSheetLine(*held));
+    } else {
         rows.push_back("IN HAND  " + sim::weaponSheetLine(tavern_->playerWeapon()));
     }
+    // THE WORN SLOTS, printed ONLY for a slot the raws hold at least one
+    // item for (D10's own rule against furniture): the thing worn there by
+    // name, or NOTHING -- the reference's "no trinket" wording.
+    const sim::ItemRegistry& items = tavern_->items();
+    for (std::int32_t slotIndex = 0; slotIndex < static_cast<std::int32_t>(sim::kWornSlotCount);
+         ++slotIndex) {
+        const sim::ItemSlot slot = sim::wornSlotAt(slotIndex);
+        if (slot == sim::ItemSlot::Hand || !items.slotHasItems(slot)) {
+            continue;
+        }
+        const sim::ItemDef* worn = items.at(tavern_->kit().worn(slot));
+        std::string line = std::string(sim::itemSlotSheetLabel(slot)) + "  ";
+        if (worn != nullptr) {
+            line += worn->name;
+            if (worn->dr > 0) {
+                line += "  DR " + std::to_string(worn->dr);
+            }
+        } else {
+            line += "NOTHING";
+        }
+        rows.push_back(std::move(line));
+    }
+    // THE LOAD, the one visible budget, then every carried row.
+    rows.push_back(loadLine());
+    for (const KitRow& row : kitRows()) {
+        const sim::ItemDef* thing = items.at(row.item);
+        if (thing == nullptr) {
+            continue;
+        }
+        std::string line;
+        if (row.count > 1) {
+            line += std::to_string(row.count) + " ";
+        }
+        line += thing->name;
+        // Weight and worth, the reference's right-aligned numbers, in the
+        // font's own letters (no icons): DR is drams, C is coin.
+        const std::int32_t drams = row.item == tavern_->items().indexOf("bale")
+                                       ? tavern_->dialogue().crimes().baleUnits() *
+                                             sim::contrabandWeight(
+                                                 tavern_->dialogue().crimes().baleGood())
+                                       : thing->drams * row.count;
+        line += "  " + std::to_string(drams) + "DR";
+        if (thing->royals > 0) {
+            line += "  " + std::to_string(thing->royals * row.count) + "C";
+        }
+        if (row.inKit && tavern_->kit().isWorn(row.item)) {
+            line += thing->slot == sim::ItemSlot::Hand ? "  IN HAND" : "  WORN";
+        }
+        for (std::int32_t slot = 0; slot < sim::Tavern::kQuickSlotCount; ++slot) {
+            if (tavern_->slotItemIndex(slot) == row.item) {
+                line += "  SLOT " + std::to_string(slot + 1);
+                break;
+            }
+        }
+        if (thing->heat > 0) {
+            line += "  HOT";
+        }
+        rows.push_back(std::move(line));
+    }
     return rows;
+}
+
+// ---------------------------------------------------------------------------
+// KIT BUILD: the Kit on the Character tile, and the search list
+// ---------------------------------------------------------------------------
+
+std::vector<Session::KitRow> Session::kitRows() const {
+    // ONE LIST OUT OF THREE STORES, in the registry's document order: the
+    // Kit's own count, or the sack's for a contraband row, or the bale, or
+    // the picks. Rows with nothing on them are not rows.
+    std::vector<KitRow> rows;
+    const sim::ItemRegistry& items = tavern_->items();
+    const sim::CrimeLedger& crimes = tavern_->dialogue().crimes();
+    const std::int32_t picks = items.indexOf("picks");
+    const std::int32_t bale = items.indexOf("bale");
+    for (std::int32_t i = 0; i < static_cast<std::int32_t>(items.size()); ++i) {
+        const sim::ItemDef& thing = items.items()[static_cast<std::size_t>(i)];
+        KitRow row;
+        row.item = i;
+        if (!thing.contraband.empty()) {
+            sim::Contraband good = sim::Contraband::Scalp;
+            if (sim::contrabandFromSymbol(thing.contraband, good)) {
+                row.count = crimes.stash().count(good);
+            }
+        } else if (i == picks) {
+            row.count = tavern_->picks();
+        } else if (i == bale) {
+            row.count = crimes.carryingBale() ? 1 : 0;
+        } else {
+            row.count = tavern_->kit().count(i);
+            row.inKit = row.count > 0;
+        }
+        if (row.count > 0) {
+            rows.push_back(row);
+        }
+    }
+    return rows;
+}
+
+std::size_t Session::characterKitOffset() const {
+    // The standings block (five tracks, four skills, five ladders, three
+    // ward rows), IN HAND, one row per worn slot the raws populate, LOAD.
+    std::size_t offset = sim::kLegendTracks + 4 + 5 + 3 + 1 + 1;
+    for (std::int32_t slotIndex = 0; slotIndex < static_cast<std::int32_t>(sim::kWornSlotCount);
+         ++slotIndex) {
+        const sim::ItemSlot slot = sim::wornSlotAt(slotIndex);
+        if (slot != sim::ItemSlot::Hand && tavern_->items().slotHasItems(slot)) {
+            ++offset;
+        }
+    }
+    return offset;
+}
+
+std::optional<Session::KitRow> Session::highlightedKitRow() const {
+    const std::size_t offset = characterKitOffset();
+    if (characterCursor_ < 0 || static_cast<std::size_t>(characterCursor_) < offset) {
+        return std::nullopt;
+    }
+    const std::vector<KitRow> rows = kitRows();
+    const std::size_t at = static_cast<std::size_t>(characterCursor_) - offset;
+    if (at >= rows.size()) {
+        return std::nullopt;
+    }
+    return rows[at];
+}
+
+std::string Session::loadLine() const {
+    return "LOAD  " + std::to_string(tavern_->loadDrams()) + " / " +
+           std::to_string(tavern_->loadBudget()) + " DRAMS";
+}
+
+void Session::wearHighlightedKitRow() {
+    const std::optional<KitRow> row = highlightedKitRow();
+    if (!row.has_value()) {
+        return;
+    }
+    const sim::ItemDef* thing = tavern_->items().at(row->item);
+    if (thing == nullptr) {
+        return;
+    }
+    if (!row->inKit) {
+        // The sack, the bale, the picks: not worn, and the room says so in
+        // the words wearItem would.
+        if (audio_ != nullptr) {
+            audio_->playOneShot(audio::SoundId::UiTick);
+        }
+        say("THE " + thing->name + " IS NOT WORN.");
+        return;
+    }
+    const bool wasWorn = tavern_->kit().isWorn(row->item);
+    const sim::Tavern::StealResult done = tavern_->wearItem(row->item);
+    if (audio_ != nullptr) {
+        if (done.result != sim::ServiceResult::Served) {
+            audio_->playOneShot(audio::SoundId::UiTick);
+        } else if (thing->slot == sim::ItemSlot::Hand) {
+            // A blade leaves its sheath; a cudgel is picked up off the table.
+            audio_->playOneShot(thing->weaponClass >= sim::kFirstLethalWeapon
+                                    ? audio::SoundId::KnifeDraw
+                                    : audio::SoundId::MetalClick);
+        } else {
+            audio_->playOneShot(audio::SoundId::ClothRustle);
+        }
+    }
+    (void)wasWorn;
+    say(done.line);
+}
+
+void Session::dropHighlightedKitRow() {
+    const std::optional<KitRow> row = highlightedKitRow();
+    if (!row.has_value()) {
+        return;
+    }
+    syncTavernToBody();
+    const sim::Tavern::StealResult done = tavern_->dropItem(row->item);
+    if (audio_ != nullptr) {
+        audio_->playOneShot(done.result == sim::ServiceResult::Served
+                                ? audio::SoundId::ThudMedium
+                                : audio::SoundId::UiTick);
+    }
+    say(done.line);
+    // The cursor stays on the row; a row that emptied is gone from the
+    // list, so keep the cursor inside what is left.
+    const int count = static_cast<int>(characterRows().size());
+    if (count > 0 && characterCursor_ >= count) {
+        characterCursor_ = count - 1;
+        characterPage_ = topicPageOf(characterCursor_);
+    }
+}
+
+void Session::adjustKitSlot(int delta) {
+    if (delta == 0) {
+        return;
+    }
+    const std::optional<KitRow> row = highlightedKitRow();
+    if (!row.has_value() || !row->inKit) {
+        return;
+    }
+    const sim::ItemDef* thing = tavern_->items().at(row->item);
+    if (thing == nullptr) {
+        return;
+    }
+    if (thing->slot == sim::ItemSlot::None) {
+        if (audio_ != nullptr) {
+            audio_->playOneShot(audio::SoundId::UiTick);
+        }
+        say("THE " + thing->name + " IS NOT WORN. NO SLOT.");
+        return;
+    }
+    // Which slot holds it now, or -1 -- the Grimoire's own cycle: NONE,
+    // 1..10 and round. Moving it clears the slot it leaves.
+    std::int32_t current = -1;
+    for (std::int32_t slot = 0; slot < sim::Tavern::kQuickSlotCount; ++slot) {
+        if (tavern_->slotItemIndex(slot) == row->item) {
+            current = slot;
+            break;
+        }
+    }
+    const std::int32_t positions = sim::Tavern::kQuickSlotCount + 1;
+    const std::int32_t next = ((current + 1 + delta) % positions + positions) % positions - 1;
+    if (current >= 0) {
+        tavern_->clearSlot(current);
+    }
+    if (next >= 0) {
+        tavern_->bindItemToSlot(next, row->item);
+    }
+    if (audio_ != nullptr) {
+        audio_->playOneShot(audio::SoundId::UiTick);
+    }
+    say(next >= 0 ? thing->name + " -- SLOT " + std::to_string(next + 1) + "."
+                  : thing->name + " -- NO SLOT.");
+}
+
+bool Session::takeNearestItem() {
+    if (tavern_->groundItemInReach() < 0) {
+        return false;
+    }
+    const sim::Tavern::StealResult took = tavern_->takeGroundItem();
+    if (took.result == sim::ServiceResult::TooFar) {
+        return false;
+    }
+    if (audio_ != nullptr) {
+        // A pickup click; a refusal ticks. The sack's own CoinHandle stays
+        // the purse's.
+        audio_->playOneShot(took.result == sim::ServiceResult::Served
+                                ? audio::SoundId::UiSelect
+                                : audio::SoundId::UiTick);
+    }
+    say(took.line);
+    return true;
+}
+
+bool Session::searchNearestCorpse() {
+    if (refusedInCustody() || talking() || picking()) {
+        return false;
+    }
+    syncTavernToBody();
+    const sim::Actor* corpse = corpseToSearch();
+    if (corpse == nullptr) {
+        return false;
+    }
+    // The Grimoire widget, wearing the search list: every other overlay
+    // stands down exactly as toggleGrimoire does, and the id says which
+    // list it is.
+    casebookOpen_ = false;
+    keysOpen_ = false;
+    waitOpen_ = false;
+    districtMapOpen_ = false;
+    optionsOpen_ = false;
+    pauseOpen_ = false;
+    quitArmed_ = false;
+    awaitingKey_ = false;
+    menuFocus_ = kMenuFocusJournal;
+    grimoireOpen_ = true;
+    searchActorId_ = corpse->id();
+    grimoireCursor_ = 0;
+    grimoirePage_ = 0;
+    syncPanelAnim();
+    return true;
 }
 
 std::vector<std::string> Session::mapRows() const {
@@ -9641,6 +10238,8 @@ void Session::syncPanelAnim() noexcept {
     // STANCE & ROOM BUILD. THE SAME sync() SHAPE for the FISTS UP row, on its
     // own toggle: fighting mode outlives any one guard or swing.
     sync(handsAnim_, handsCache_, handsLine());
+    // KIT BUILD. THE SAME sync() SHAPE for the turn row, on its own toggle.
+    sync(turnAnim_, turnCache_, turnLine());
     // HELD-EFFECTS BUILD. THE SAME sync() SHAPE, one per active-effect slot
     // -- each on its own EasedToggle per the pinned convention, because a
     // warmth lapsing in slot 0 has nothing to do with a tuning arriving in
@@ -9666,8 +10265,13 @@ void Session::syncPanelAnim() noexcept {
     if (barWanted) {
         for (std::int32_t slot = 0; slot < sim::Tavern::kQuickSlotCount; ++slot) {
             const sim::Spell* bound = tavern_->slotSpell(slot);
+            // KIT BUILD: a slot is a spell OR an item; the strip prints
+            // whichever it holds by name, the same cell either way.
+            const sim::ItemDef* thing = tavern_->slotItem(slot);
             quickBarNames_[static_cast<std::size_t>(slot)] =
-                bound == nullptr ? std::string() : upperAscii(bound->displayName);
+                bound != nullptr ? upperAscii(bound->displayName)
+                : thing != nullptr ? thing->name
+                                   : std::string();
         }
     }
     quickBarAnim_.setTarget(barWanted);
@@ -9829,6 +10433,10 @@ std::string Session::blockLine() const {
     return tavern_->playerBlocking() ? "GUARD UP" : std::string();
 }
 
+std::string Session::turnLine() const {
+    return turnSteps_ > 0 ? turnLine_ : std::string();
+}
+
 std::string Session::chargeLine() const {
     // ACTION-COMBAT BUILD (section 5, channel 2). "HELD HARD -- CUDGEL 14-18"
     // while the swing is charged past the hard threshold, and empty otherwise
@@ -9871,6 +10479,12 @@ std::string Session::handsLine() const {
     // blade -- STEEL, as the flip line and the epitaph already say it.
     if (!tavern_->playerHandsUp()) {
         return {};
+    }
+    // KIT BUILD: a thing worn in the hand is named as itself -- KNIFE UP,
+    // MACE UP -- the sheet's own word; the class reading stands for a hand
+    // a sheet armed directly.
+    if (const sim::ItemDef* held = tavern_->heldItem(); held != nullptr) {
+        return held->name + " UP";
     }
     const sim::Weapon weapon = tavern_->playerHeldWeapon();
     if (weapon == sim::Weapon::Edged) {
@@ -10264,6 +10878,8 @@ FrameStats Session::drawFrame(Framebuffer& target, FramePasses passes) const {
     // STANCE & ROOM BUILD. The FISTS UP row, its own cache and fade.
     hud.handsLabel = std::string_view{handsCache_};
     hud.handsFade = handsAnim_.value();
+    hud.turnLabel = std::string_view{turnCache_};
+    hud.turnFade = turnAnim_.value();
     // HELD-EFFECTS BUILD. The live holds, each reading its own cache and
     // fading on its own toggle -- the identical shape every row above uses.
     for (std::size_t slot = 0; slot < kEffectRows; ++slot) {
@@ -10855,11 +11471,20 @@ void climbAndLand(Session& session) {
 /// SOUTH of kStreetY would have quietly cropped the street back out of the box.
 /// Both ends are named, so the box contains the frontage and the body wherever
 /// the opening shot is aimed next.
+///
+/// KIT FIX PASS: the drop beat's own photography spot moved to world x=195/
+/// 196, well past kFootprintX1 -- the quay's wall line stands a full
+/// architectural pillar (not the thin mooring posts elsewhere on it) at
+/// x=155/157, and a fixed prop_crate/barrel pair sits at roughly x=167; the
+/// beat's own camera has to clear BOTH, not just the wall, to find open
+/// boards. +2 no longer reaches that stretch, so it is named for it directly
+/// rather than guessed at again by a second body standing somewhere this box
+/// still cannot route to.
 constexpr sim::TileBox kCaptureRegion{
     sim::gull::kFootprintX0 - 2,
     std::min(sim::gull::kStreetY - 2, sim::docks::kSpawnTileY - 1),
     sim::gull::kGroundBand,
-    sim::gull::kFootprintX1 + 2, sim::gull::kFootprintY1 + 1, sim::gull::kUpperBand};
+    sim::gull::kFootprintX1 + 40, sim::gull::kFootprintY1 + 1, sim::gull::kUpperBand};
 static_assert(kCaptureRegion.x0 <= sim::docks::kSpawnTileX &&
                   sim::docks::kSpawnTileX <= kCaptureRegion.x1 &&
                   kCaptureRegion.y0 <= sim::docks::kSpawnTileY &&
@@ -11877,6 +12502,370 @@ std::string gWatchHaltNote;
     return landed;
 }
 
+
+// ---------------------------------------------------------------------------
+// KIT BUILD: the Kit, played
+// ---------------------------------------------------------------------------
+
+/// THE KIT LINE, through the real verbs. Two in the afternoon on the Tarwalk
+/// (daylight for the coil on the boards), the clock forward to four the next
+/// morning for the lifts (the house empty, so a thing on a chair can be
+/// named and taken with nobody to see it and no bouncer's ladder started),
+/// and forward again to two for Ox on the door. Ten beats, each an ending:
+///   1. take     the crosshair reads TAKE ROPE  48DR over the coil on the
+///               Tarwalk (nobody's), and the press takes it
+///   2. theirs   in the house at four: the lantern on Hobbin's table from
+///               Maell's chair -- TAKE LANTERN  THEIRS in the Owned accent --
+///               then the knife on Edda's and the coat on Colm's, each a lift
+///               under the witness rule with nobody to witness it
+///   3. sheet    the clock at two; the Character tile open on the carried
+///               rows: IN HAND FISTS, the four worn slots at NOTHING, LOAD n
+///               / 240 DRAMS, the rows with their weights and worths
+///   4. equip    the coat WORN and the knife IN HAND by the tile's own press
+///   5. slot     the knife bound to slot 3 by LEFT/RIGHT, the number pressed,
+///               the strip up with KNIFE on it
+///   6. dr       the knife bared, fists on Ox Gullbane, his blow turned by the
+///               coat -- COAT TURNS n on the row, stopped on that step
+///   7. search   the knife back in hand, Ox put down for good, SEARCH OX
+///               GULLBANE  DEAD on the crosshair and his kit on the list
+///   8. load     everything off him and the bottle and the hood off the
+///               tables: the body near its budget, the legs at half, the tile
+///               open on the LOAD line
+///   9. drop     out to the Tarwalk, the coil put down through the tile's own
+///               X, the body stepped back to look at it on the boards -- the
+///               3D frame
+///  10. done     the tile again on what is left (the default)
+constexpr std::int32_t kKitBeats = 10;
+
+[[nodiscard]] std::int32_t kitBeatsFor(const std::string& ending) {
+    if (ending == "take") {
+        return 1;
+    }
+    if (ending == "theirs") {
+        return 2;
+    }
+    if (ending == "sheet") {
+        return 3;
+    }
+    if (ending == "equip") {
+        return 4;
+    }
+    if (ending == "slot") {
+        return 5;
+    }
+    if (ending == "dr") {
+        return 6;
+    }
+    if (ending == "search") {
+        return 7;
+    }
+    if (ending == "load") {
+        return 8;
+    }
+    if (ending == "drop") {
+        return 9;
+    }
+    return kKitBeats;
+}
+
+/// What the Kit line saw, for the summary.
+std::string gKitNote;
+
+/// Opens the tiled Menu on the Character tile and walks its cursor onto the
+/// carried row for `itemId`. False when the row is not on the tile.
+[[nodiscard]] bool openKitRow(Session& session, std::string_view itemId) {
+    if (!session.characterOpen()) {
+        session.toggleCharacter();
+    } else {
+        session.setMenuFocus(kMenuFocusCharacter);
+    }
+    const std::int32_t index = session.tavern().items().indexOf(itemId);
+    const std::vector<Session::KitRow> rows = session.kitRows();
+    for (std::size_t i = 0; i < rows.size(); ++i) {
+        if (rows[i].item != index) {
+            continue;
+        }
+        const int target = static_cast<int>(session.characterKitOffset() + i);
+        // Walk, never jump: the same wrap the arrows make.
+        for (int guard = 0; guard < 64; ++guard) {
+            const std::optional<Session::KitRow> at = session.highlightedKitRow();
+            if (at.has_value() && at->item == index) {
+                return true;
+            }
+            const int cursor = session.dialogueView().cursor;
+            session.moveTopicCursor(cursor < target ? 1 : -1);
+        }
+        return false;
+    }
+    return false;
+}
+
+/// Walks to a tile and faces a neighbouring tile, so the crosshair reads
+/// what lies there.
+void standAtFacing(Session& session, std::int32_t standX, std::int32_t standY,
+                   std::int32_t faceX, std::int32_t faceY) {
+    walkToTile(session, standX, standY);
+    session.closeConversation();
+    facePlayerAndSync(session, sim::q8_tile_centre(faceX), sim::q8_tile_centre(faceY));
+}
+
+[[nodiscard]] int runKitLine(Session& session, const std::string& ending) {
+    int landed = 0;
+    gKitNote.clear();
+    const sim::Tavern& tavern = session.tavern();
+    if (!tavern.items().loaded()) {
+        gKitNote = " items=unloaded";
+        return landed;
+    }
+    const auto item = [&](std::string_view id) { return tavern.items().indexOf(id); };
+    const auto carried = [&](std::string_view id) {
+        return tavern.kit().count(item(id)) > 0;
+    };
+    const auto noteAim = [&](const char* key, const Session::InteractTarget& aim) {
+        gKitNote += std::string(" ") + key + "=" + aim.verb +
+                    (aim.subject.empty() ? "" : ":" + aim.subject) +
+                    (aim.note.empty() ? "" : "/" + aim.note);
+    };
+
+    // 1. TAKE. The rope at (151,63), from the tile east of it, facing west.
+    // Two in the afternoon: daylight on the quay, and the thing you walked
+    // to outranks the passers-by.
+    standAtFacing(session, 152, 63, 151, 63);
+    Session::InteractTarget aim = session.interactTarget();
+    noteAim("take", aim);
+    if (ending == "take") {
+        return aim.verb == "TAKE" && aim.subject == "ROPE" ? 1 : 0;
+    }
+    session.interact();
+    if (aim.verb == "TAKE" && aim.subject == "ROPE" && carried("rope")) {
+        ++landed;  // 1
+    }
+
+    // 2. THEIRS. Four the next morning, the house empty. The lantern on
+    // Hobbin's table from Maell's chair, then the knife and the coat.
+    session.skipToHour(4);
+    session.stepMany(sim::MoveInput{}, sim::kStepsPerSecond);
+    standAtFacing(session, 149, 74, 150, 74);
+    aim = session.interactTarget();
+    noteAim("theirs", aim);
+    const bool theirsCue = aim.verb == "TAKE" && aim.subject == "LANTERN" && aim.note == "THEIRS" &&
+                           aim.kind == AimKind::Owned;
+    if (ending == "theirs") {
+        return landed + (theirsCue ? 1 : 0);
+    }
+    session.interact();
+    standAtFacing(session, 155, 73, 156, 73);
+    session.interact();  // the knife
+    walkToTile(session, 148, 72);
+    session.closeConversation();
+    session.interact();  // the coat, underfoot
+    if (theirsCue && carried("lantern") && carried("knife") && carried("coat")) {
+        ++landed;  // 2
+    }
+    gKitNote += " lifts=" + std::to_string(tavern.dialogue().crimes().tally(sim::Crime::Lift));
+
+    // 3. THE SHEET, at two, on the carried rows.
+    session.skipToHour(14);
+    session.stepMany(sim::MoveInput{}, sim::kStepsPerSecond);
+    if (openKitRow(session, "knife")) {
+        ++landed;  // 3
+    }
+    if (ending == "sheet") {
+        return landed;
+    }
+
+    // 4. EQUIP: the coat, then the knife, by the tile's own press.
+    if (openKitRow(session, "coat")) {
+        session.chooseTopic(0);
+    }
+    if (openKitRow(session, "knife")) {
+        session.chooseTopic(0);
+    }
+    if (tavern.kit().isWorn(item("coat")) && tavern.playerWeapon() == sim::Weapon::Edged) {
+        ++landed;  // 4
+    }
+    if (ending == "equip") {
+        return landed;
+    }
+
+    // 5. SLOT: the knife to slot 3 by three presses of RIGHT, then the key.
+    if (openKitRow(session, "knife")) {
+        session.adjustKitSlot(3);
+    }
+    session.closeConversation();
+    session.selectQuickSlot(2);
+    if (tavern.slotItemIndex(2) == item("knife")) {
+        ++landed;  // 5
+    }
+    if (ending == "slot") {
+        return landed;
+    }
+
+    // 6. DR: knife bared (the tile's press again), fists on Ox at the door,
+    // his blow turned by the coat -- stepped ONE STEP AT A TIME so the run
+    // stops on the exact step the row says COAT TURNS n, before the house's
+    // own barks overwrite it.
+    if (openKitRow(session, "knife")) {
+        session.chooseTopic(0);
+    }
+    session.closeConversation();
+    const sim::Actor* ox = actorNamed(session, "Ox Gullbane");
+    const std::int32_t oxId = ox != nullptr ? ox->id() : -1;
+    const std::int32_t turnedBefore = tavern.blowsTurned();
+    if (oxId >= 0 && tavern.playerWeapon() == sim::Weapon::Fists) {
+        (void)swingOnceAt(session, oxId, 8);
+        for (int step = 0; step < 20 * sim::kStepsPerSecond && tavern.blowsTurned() == turnedBefore;
+             ++step) {
+            if (step % sim::kStepsPerSecond == 0) {
+                (void)closeOnAndFace(session, oxId);
+            }
+            session.stepMany(sim::MoveInput{}, 1);
+        }
+    }
+    gKitNote += " turned=" + std::to_string(tavern.blowsTurned() - turnedBefore) +
+                " last=" + std::to_string(tavern.lastTurned());
+    if (tavern.blowsTurned() > turnedBefore) {
+        ++landed;  // 6
+    }
+    if (ending == "dr") {
+        return landed;
+    }
+
+    // 7. SEARCH: the knife back in hand off its slot, Ox put down for good,
+    // the crosshair over him, the list.
+    session.selectQuickSlot(2);
+    bool dead = false;
+    if (oxId >= 0 && tavern.playerWeapon() == sim::Weapon::Edged) {
+        for (int swings = 0; swings < 24 && !dead; ++swings) {
+            if (!closeOnAndFace(session, oxId)) {
+                break;
+            }
+            session.attackDown();
+            session.stepMany(sim::MoveInput{}, sim::kHardSwingHoldSteps + 1);
+            session.attackUp();
+            session.stepMany(sim::MoveInput{}, sim::kHardSwingRecoverySteps + 2);
+            const sim::Actor* struck = tavern.actorById(oxId);
+            dead = struck != nullptr && struck->activity() == sim::Activity::Dead;
+        }
+    }
+    if (dead) {
+        const sim::Actor* corpse = tavern.actorById(oxId);
+        walkToTile(session, corpse->tileX(), corpse->tileY());
+        session.closeConversation();
+        session.stepMany(sim::MoveInput{}, 1);
+        aim = session.interactTarget();
+        noteAim("search", aim);
+        session.interact();
+    }
+    if (dead && session.searchOpen() && !session.grimoireRows().empty()) {
+        ++landed;  // 7
+    }
+    if (ending == "search") {
+        return landed;
+    }
+
+    // 8. LOAD: everything off him (TAKE ALL is the last row), the bottle and
+    // the hood off the tables, the body near its budget, the tile open on
+    // the LOAD line.
+    if (session.searchOpen()) {
+        session.chooseGrimoireRow(static_cast<int>(session.grimoireRows().size()) - 1);
+    }
+    session.closeConversation();
+    standAtFacing(session, 150, 69, 150, 70);  // Bram's chair: the bottle on Wick's
+    session.interact();
+    walkToTile(session, 149, 69);  // the hood on Bram's own
+    session.closeConversation();
+    session.interact();
+    gKitNote += " load=" + std::to_string(tavern.loadDrams()) + "/" +
+                std::to_string(tavern.loadBudget()) + " legs=" + std::to_string(tavern.loadSpeedQ8()) +
+                "/256";
+    const bool loaded = openKitRow(session, "coat");
+    if (loaded && tavern.loadSpeedQ8() < 256 && tavern.loadDrams() * 4 >= tavern.loadBudget() * 3) {
+        ++landed;  // 8
+    }
+    if (ending == "load") {
+        return landed;
+    }
+
+    // 9. DROP: out to the Tarwalk in daylight, the coil put down through the
+    // tile's own X on a tile clear of the quay's clutter, then a tile back,
+    // facing it, so the frame has it on the boards.
+    //
+    // KIT FIX PASS. (154,62)/(155,62) -- this beat's spot one commit back --
+    // stood the camera one tile off a lone timber cell at world (155,61),
+    // one of two PAIRS of them flanking a gap in the quay's own wall line
+    // (world (149,61)/(151,61) and (155,61)/(157,61); see
+    // content/maps/src/docks_surface.tmx's z:+11 group, local (117,29) etc.,
+    // +32/+32/+8 per docks.hpp's own VOID-border rule). A lone timber cell
+    // beside water becomes a thin mooring pile (isPost()+boardedPost(),
+    // docks-pieces.json's "post", thickness 0.13); this one is not beside
+    // water at this reach, so static_pieces.cpp's posts() falls through to
+    // the OTHER branch -- a full architectural PILLAR (PieceRole::Pillar,
+    // "SM_Bld_Base_Pillar_01.gltf"), deliberately scaled to fill its own
+    // cell edge to edge ("fitted to the cell: its shaft the cell's width
+    // plus a hair" -- (1 + 2*thickness) / width, confirmed live at 2.81x
+    // off the catalogue's 0.37 m pillar against a GRANADAD_DEBUG_NEARBY
+    // dump: role=38 pos=(155.50,*,61.50) scale=(2.81,0.99,2.81)) and a full
+    // storey tall. Not a bug in the piece -- it is exactly as wide as its
+    // own cell, on purpose -- but the gap it stands beside is only four
+    // tiles wide, and standing IN that gap (tried at both (154,62) and the
+    // gap's own midpoint (153,62)) never put more than about two tiles
+    // between the camera and whichever of the pair sits ahead of it once
+    // standAtFacing turns west: close enough that the frustum is still
+    // inside the column's own personal space, and the second-attempt frame
+    // read exactly like the first. The ground-item entry was always there
+    // at every one of these spots -- this was never a case of the coil
+    // being off-camera, only of the camera being too close to a piece that
+    // is doing its job.
+    //
+    // So: OFF THE GAP ENTIRELY, onto the long clear reach of the Tarwalk
+    // east of it. The wall line carries nothing at all from world x=158 to
+    // beyond 200 (same tmx group, same row, checked the same way) -- ten
+    // tiles of clearance in every direction is a different problem than the
+    // four-tile gap ever could solve.
+    //
+    // KIT FIX PASS, SECOND CUT. (166,62)/(165,62) still put the quay's own
+    // ambient set dressing dead in frame -- a `prop_crate` (docks-pieces.json,
+    // SM_Gen_Prop_Crate_03.gltf) and its neighbouring barrel sit fixed at
+    // roughly world (167,62), the wall line's own clearance never having
+    // accounted for the loose clutter it carries, only the buildings framing
+    // it. A camera one tile off that pair reads the same as one tile off a
+    // pillar: full-frame and foreground. Walked the boards further east in
+    // fixed-camera surveys (facing 270 from x=170 through x=200) until the
+    // pair fell far enough behind to read as background scenery rather than
+    // an obstruction -- clear by x=195, with nothing else fixed standing in
+    // the stretch immediately ahead of it. (196,62) facing (195,62) keeps
+    // the beat's own shape and stays north of the dockers' own line (63).
+    session.closeConversation();
+    walkToTile(session, 195, 62);
+    session.closeConversation();
+    if (openKitRow(session, "rope")) {
+        session.dropHighlightedKitRow();
+    }
+    session.closeConversation();
+    // One tile back, off the dockers' own line down the middle of the quay,
+    // so the coil is in reach whatever side of the tile the walk landed on
+    // and nobody is standing on it for the frame.
+    standAtFacing(session, 196, 62, 195, 62);
+    bool coilDown = false;
+    for (const sim::GroundItem& entry : tavern.groundItems()) {
+        if (entry.item == item("rope") && entry.x == 195 && entry.y == 62) {
+            coilDown = true;
+        }
+    }
+    if (!carried("rope") && coilDown) {
+        ++landed;  // 9
+    }
+    if (ending == "drop") {
+        return landed;
+    }
+
+    // 10. The tile again, on what is left.
+    if (openKitRow(session, "coat")) {
+        ++landed;  // 10
+    }
+    return landed;
+}
 
 // ---------------------------------------------------------------------------
 // JUSTICE BUILD (HEARING PAGE LANE): the court, played
@@ -13974,6 +14963,14 @@ int scriptedStartHour(const SmokeRunConfig& config) noexcept {
     if (config.skyrun) {
         return 1;
     }
+    // KIT BUILD. Two in the afternoon: daylight on the quay for the coil
+    // the crosshair names and the coil put down at the end. The line moves
+    // its own clock to four the next morning for the lifts (the house
+    // empty, nobody to see them, no bouncer's ladder started) and back to
+    // two for Ox and the coat's turn -- see runKitLine.
+    if (config.kit) {
+        return 14;
+    }
     // Father Maell takes an evening hour in the Gull between seven and half
     // past nine. Eight is the middle of it, which is also the default.
     if (config.flame) {
@@ -14402,6 +15399,16 @@ SmokeRunResult runSmoke(const SmokeRunConfig& config) {
         result.watchHaltBeats = landed;
         // "halt" stops on the third beat by design; it owes three, not five.
         result.scriptedWanted += config.watchHaltEnd == "halt" ? kWatchHaltStopBeats : kWatchHaltBeats;
+        result.scriptedLanded += landed;
+    }
+
+    if (config.kit) {
+        // KIT BUILD. The Kit, played through the real verbs -- see
+        // runKitLine. Each ending owes its own count.
+        const std::int32_t landed =
+            static_cast<std::int32_t>(runKitLine(session, config.kitEnd));
+        result.kitBeats = landed;
+        result.scriptedWanted += kitBeatsFor(config.kitEnd);
         result.scriptedLanded += landed;
     }
 
@@ -15093,6 +16100,12 @@ SmokeRunResult runSmoke(const SmokeRunConfig& config) {
                         ? sim::watchCauseName(session.tavern().lastArrest().cause)
                         : "no")
                 << gWatchHaltNote << " row=\"" << session.lastMessage() << '"';
+    }
+    if (config.kit) {
+        summary << " | kit beats=" << result.kitBeats << '/' << kitBeatsFor(config.kitEnd)
+                << gKitNote << " hand=" << sim::weaponName(session.tavern().playerWeapon())
+                << " dr=" << session.tavern().wornDr()
+                << " ground=" << session.tavern().groundItems().size();
     }
     if (config.court) {
         summary << " | court beats=" << result.courtBeats << '/' << courtBeatsFor(config.courtEnd)

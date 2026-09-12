@@ -263,8 +263,18 @@ enum class PieceRole : std::uint8_t {
     /// street: a hitching rail at hip height, the job that makes two
     /// metre-square piers a rail and not a gate to nowhere.
     PostRail,
+    /// KIT BUILD. A THING ON A TILE: an item of the player's registry
+    /// (sim/items.hpp) lying where the room says it lies -- a dropped
+    /// knife, the cudgel under the bar, the four strongboxes, the snug's
+    /// bale -- as the Synty static the catalogue's `items` table names for
+    /// that item id, one variant per id. NOT placed by placeStaticPieces
+    /// (which is pure over the tile bytes): the ground list is SIM STATE,
+    /// so the instances are written per frame by groundItemInstances()
+    /// off the room's hashed list, and the renderer never removes one --
+    /// TAKE does, in the sim, and the next frame simply has fewer.
+    Item,
 };
-inline constexpr std::size_t kPieceRoleCount = 56;
+inline constexpr std::size_t kPieceRoleCount = 57;
 
 /// The JSON key of a role ("wall", "wall_corner", ...), and back. None for
 /// an unknown key.
@@ -332,6 +342,10 @@ struct PieceSpec {
     float lift = 0.0F;
     /// Radians added to the rule's yaw.
     float yawOffset = 0.0F;
+    /// KIT BUILD. Radians about the piece's own X (StaticInstance::pitch):
+    /// what lays a sword, authored point-up, flat on the boards. Read by
+    /// the item path only.
+    float pitch = 0.0F;
     /// A uniform scale on top of the fit (a crate shrunk a little).
     float scale = 1.0F;
     /// Multiplies the light; 255 = the piece's own colours.
@@ -444,6 +458,12 @@ public:
     [[nodiscard]] int pieceIndex(PieceRole role, std::uint8_t variant = 0) const noexcept;
     /// How many variants a role has (0 when absent).
     [[nodiscard]] std::uint8_t variantCount(PieceRole role) const noexcept;
+    /// KIT BUILD. The Item row for a registry item id, or null when the
+    /// `items` table does not dress it (the placeholder rule: nothing is
+    /// drawn, the sim's list is untouched).
+    [[nodiscard]] const PieceSpec* itemPiece(std::string_view itemId) const noexcept;
+    /// The item ids the table dresses, in the variant order the rows carry.
+    [[nodiscard]] const std::vector<std::string>& itemIds() const noexcept { return itemIds_; }
     /// The material rule for a registry material id (render::materialIds()
     /// order), or null for a material the catalogue does not dress.
     [[nodiscard]] const MaterialRule* material(std::uint16_t materialId) const noexcept;
@@ -472,6 +492,8 @@ public:
 private:
     std::vector<PieceSpec> pieces_;
     std::vector<MaterialRule> materials_;
+    /// KIT BUILD. itemIds_[v] is the item id of the Item row with variant v.
+    std::vector<std::string> itemIds_;
     std::int32_t minBand_ = 0;
     RuleKnobs knobs_;
     std::string error_;

@@ -449,3 +449,45 @@ TEST_CASE("--radiant=offer stops with the giver's row on the open list, one beat
     CHECK_FALSE(played.radiantResult.taken);
     CHECK(played.talking);
 }
+
+TEST_CASE("--kit lands all ten of its beats: named, taken, dropped, THEIRS, the sheet, worn, slotted, the coat's turn, the search, the load") {
+    // KIT BUILD. The whole line, through the real verbs -- see runKitLine.
+    render::SmokeRunConfig run;
+    run.kit = true;
+    const render::SmokeRunResult played = play(run);
+    INFO(played.summary);
+    CHECK(played.ok);
+    CHECK_FALSE(played.scriptFellShort());
+    CHECK(played.kitBeats == 10);
+    CHECK(played.summary.find("take=TAKE:ROPE/48DR") != std::string::npos);
+    CHECK(played.summary.find("theirs=TAKE:LANTERN/THEIRS") != std::string::npos);
+    CHECK(played.summary.find("search=SEARCH:Ox Gullbane") != std::string::npos);
+    CHECK(played.summary.find(" legs=") != std::string::npos);
+}
+
+TEST_CASE("--kit=take stops on the prompt, --kit=search on the list, --kit=drop on the coil on the boards") {
+    render::SmokeRunConfig run;
+    run.kit = true;
+    run.kitEnd = "take";
+    render::SmokeRunResult played = play(run);
+    INFO(played.summary);
+    CHECK(played.ok);
+    CHECK_FALSE(played.scriptFellShort());
+    CHECK(played.kitBeats == 1);
+    // Stopped BEFORE the press: the coil is still on the quay.
+    CHECK(played.summary.find("ground=") != std::string::npos);
+
+    run.kitEnd = "search";
+    played = play(run);
+    INFO(played.summary);
+    CHECK(played.ok);
+    CHECK_FALSE(played.scriptFellShort());
+    CHECK(played.kitBeats == 7);
+
+    run.kitEnd = "drop";
+    played = play(run);
+    INFO(played.summary);
+    CHECK(played.ok);
+    CHECK_FALSE(played.scriptFellShort());
+    CHECK(played.kitBeats == 9);
+}

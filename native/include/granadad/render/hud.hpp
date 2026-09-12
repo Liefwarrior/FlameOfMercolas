@@ -270,6 +270,16 @@ struct HudState {
     /// draws nothing, the usual state, so every hand-built HudState that
     /// predates it is pixel-identical.
     std::string_view handsLabel;
+    /// KIT BUILD (defence v1): "COAT TURNS 2" for kPlateHoldSteps after a
+    /// landed blow the worn kit softened -- the piece with the most DR on
+    /// the body and what the blow lost to it. An EVENT row (the Law of
+    /// Earned Text: said when it happens, never furniture), centred right
+    /// behind the hands row in the blocked-blow wash's own steel-cool ink,
+    /// so the row and the wash read as one fact. Its own row rather than
+    /// the alert, because a bouncer's warning outranks the alert for as
+    /// long as the house minds you and would eat every turn in a brawl.
+    /// Empty draws nothing, the usual state.
+    std::string_view turnLabel;
     /// SPELLS BUILD: the quick bar strip -- BOTTOM-CENTRE, which is this
     /// file's own header giving Barony's hotbar its place ("hotbar
     /// bottom-centre"). Ten cells out of the bottom band's slot grid, never
@@ -470,6 +480,9 @@ struct HudState {
     /// STANCE & ROOM BUILD. The fighting-mode row's own ease, its own
     /// Session-side EasedToggle, the same no-op-by-default reasoning.
     float handsFade = 1.0F;
+    /// KIT BUILD. The turn row's own ease, its own Session-side EasedToggle,
+    /// the same no-op-by-default reasoning.
+    float turnFade = 1.0F;
     /// INNOVATION SPRINT ITEM #3. 1 the instant a NEW bouncer's warning
     /// arrives, easing down to 0 over a handful of frames -- see
     /// render::ImpactPulse's own header and Session::alertPulse_'s. Unlike
@@ -656,6 +669,10 @@ enum class AimKind : int {
     /// this one and a player who cannot tell it from a doorway is the player
     /// who thought the Bloodletter trail ended at the Weighhouse.
     Clue = 4,
+    /// KIT BUILD. SOMEBODY'S THING: taking it is theft, and the crosshair
+    /// says so before the press -- the reference's red hand. Its own
+    /// accent, and the THEIRS note beside the name.
+    Owned = 5,
 };
 
 /// THE ONE REGION OF THE PLAY SPACE THE HUD MAY ENTER, and it is a clamp
