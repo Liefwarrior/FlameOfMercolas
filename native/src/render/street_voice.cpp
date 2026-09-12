@@ -6,6 +6,7 @@
 #include "granadad/sim/angle.hpp"
 #include "granadad/sim/crime.hpp"
 #include "granadad/sim/tavern.hpp"
+#include "granadad/sim/tile_query.hpp"
 #include "granadad/sim/ward_actors.hpp"
 #include "granadad/sim/ward_voice.hpp"
 #include "granadad/sim/watch.hpp"
@@ -381,8 +382,11 @@ bool StreetVoice::stepReact(const VoiceScene& scene) {
     std::int32_t chosenDistance = 0;
     for (const Witness& waiting : queue_) {
         const sim::Actor* actor = room.actorById(waiting.actorId);
+        // A bouncer's reaction is his ladder -- house.warning, house.eject,
+        // on the alert row in his own name -- and a witness line from him a
+        // second before it would be the same man saying two things.
         if (actor == nullptr || !gullSpeaker(*actor, room) || !gullPeaceable(*actor) ||
-            actor->id() == closingId ||
+            actor->id() == closingId || actor->role() == sim::ActorRole::Bouncer ||
             !speakerFree(actor->id(), scene.step, kReactSpeakerCooldownSteps)) {
             continue;
         }
@@ -534,10 +538,13 @@ bool StreetVoice::stepPass(const VoiceScene& scene) {
         }
         Candidate who{actor.id(), apart, actor.name(), std::string(), room.speakerFor(actor).family,
                       true};
-        // In the Gull a watchman's remark is his EYES landing on you: the
-        // three-clause notice rule, asked and not assumed.
-        if (who.family == sim::JobFamily::Watch) {
-            who.sees = room.noticeBy(actor).seen;
+        // In the Gull a remark in passing is the speaker's EYES landing on
+        // you: the three-clause notice rule, asked and not assumed, so a man
+        // with his back to you or one the dark and the din hide you from
+        // says nothing -- and for a watchman it is the whole of his cause.
+        who.sees = room.noticeBy(actor).seen;
+        if (!who.sees && who.family != sim::JobFamily::Watch) {
+            continue;
         }
         near.push_back(std::move(who));
     }
@@ -555,12 +562,16 @@ bool StreetVoice::stepPass(const VoiceScene& scene) {
                           scene.people->identity(actor.id).name,
                           std::string(sim::wardVoiceKey(actor.type)),
                           sim::wardJobFamily(actor.type), true};
+            // The street has no notice rule by ruling (the STREET SENSES
+            // lane), so the one honest clause it can ask is the facing: a
+            // man says "I see you" only to what is in front of him, and a
+            // body creeping past crouched is greeted only by one facing it.
+            const bool ahead =
+                inFrontOf(actor.x, actor.y, actor.facing, scene.playerTileX, scene.playerTileY);
             if (who.family == sim::JobFamily::Watch) {
-                // The street Watch has no eyes by ruling (the STREET SENSES
-                // lane); a man says "I see you" only to what is in front of
-                // him.
-                who.sees = inFrontOf(actor.x, actor.y, actor.facing, scene.playerTileX,
-                                     scene.playerTileY);
+                who.sees = ahead;
+            } else if (scene.crouched && !ahead) {
+                continue;
             }
             near.push_back(std::move(who));
         }
@@ -646,29 +657,43 @@ bool StreetVoice::stepOverheard(const VoiceScene& scene) {
         const sim::Actor* gull;
         const sim::WardActor* ward;
     };
+    // EARSHOT IS A ROOM OR A STREET, AND A SIGHT LINE. Inside the Gull the
+    // taproom is what you overhear; outside, the street -- a pair at a
+    // table is not heard through the wall by a man on the Tarwalk, and a
+    // pair round a corner is not heard at all. The same supercover ray the
+    // witness rule asks of the tiles.
+    const bool inside = room.playerInside();
+    const auto heard = [&](std::int32_t x, std::int32_t y) {
+        return scene.tiles == nullptr ||
+               scene.tiles->lineOfSight(scene.playerTileX, scene.playerTileY, x, y,
+                                        scene.playerBand);
+    };
     std::vector<Body> near;
-    for (const sim::Actor& actor : room.actors()) {
-        if (!gullSpeaker(actor, room) || !gullPeaceable(actor) || actor.band() != scene.playerBand) {
-            continue;
+    if (inside) {
+        for (const sim::Actor& actor : room.actors()) {
+            if (!gullSpeaker(actor, room) || !gullPeaceable(actor) ||
+                actor.band() != scene.playerBand) {
+                continue;
+            }
+            const sim::Activity doing = actor.activity();
+            if (doing != sim::Activity::Drinking && doing != sim::Activity::Working) {
+                continue;  // a man walking to his stool is not mid-sentence
+            }
+            const std::int32_t apart =
+                tilesApart(actor.tileX(), actor.tileY(), scene.playerTileX, scene.playerTileY);
+            if (apart <= kOverheardEarshotTiles && heard(actor.tileX(), actor.tileY())) {
+                near.push_back(
+                    Body{actor.id(), actor.tileX(), actor.tileY(), apart, &actor, nullptr});
+            }
         }
-        const sim::Activity doing = actor.activity();
-        if (doing != sim::Activity::Drinking && doing != sim::Activity::Working) {
-            continue;  // a man walking to his stool is not mid-sentence
-        }
-        const std::int32_t apart =
-            tilesApart(actor.tileX(), actor.tileY(), scene.playerTileX, scene.playerTileY);
-        if (apart <= kOverheardEarshotTiles) {
-            near.push_back(Body{actor.id(), actor.tileX(), actor.tileY(), apart, &actor, nullptr});
-        }
-    }
-    if (scene.people != nullptr) {
+    } else if (scene.people != nullptr) {
         for (const sim::WardActor& actor : scene.people->actors()) {
             if (actor.band != scene.playerBand || !wardSpeaker(actor, scene.wardTalkId)) {
                 continue;
             }
             const std::int32_t apart =
                 tilesApart(actor.x, actor.y, scene.playerTileX, scene.playerTileY);
-            if (apart <= kOverheardEarshotTiles) {
+            if (apart <= kOverheardEarshotTiles && heard(actor.x, actor.y)) {
                 near.push_back(Body{sim::kWardSpeakerIdBase + actor.id, actor.x, actor.y, apart,
                                     nullptr, &actor});
             }

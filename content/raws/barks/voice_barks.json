@@ -123,7 +123,7 @@
         "Orderly, now.",
         "Walk on. Nothing here is yours.",
         "Lane clear. Keep it that way.",
-        "Nothing to see. Go and not see it somewhere else."
+        "Carts have the Rise. You have the gutter. Walk it."
       ]
     },
     {
@@ -154,7 +154,7 @@
       "key": "pass.wastrel",
       "rows": [
         "Spare a Royal? No? Spare a look, then.",
-        "You look flush. I look hungry. The strand is a jest.",
+        "Coin in your walk. None in mine. Spare the difference?",
         "Mind your purse. Not me. Somebody else. Mostly.",
         "Nothing to sell and nothing to say. Walk on.",
         "(the hand goes out, and comes back empty)"
@@ -221,7 +221,7 @@
       "rows": [
         "Mind the beasts. They mind you.",
         "The dog likes you. That is not a compliment to either of you.",
-        "Goats fed. Me next. That is the order.",
+        "Ware the goats. They have opinions about strangers.",
         "Step wide of the pen. She kicks."
       ]
     },
@@ -252,7 +252,7 @@
       "key": "pass.thief",
       "rows": [
         "Nothing in my hands. Look.",
-        "Fine night for walking. Fine night for not seeing things.",
+        "Fine weather for walking. Fine weather for not seeing things.",
         "(a glance at your belt, and away)"
       ]
     },
@@ -454,7 +454,7 @@
     {
       "key": "farewell.urchin",
       "rows": [
-        "Bye, then. Watch your pockets. Not from me.",
+        "Off, then. Watch your pockets. Not from me.",
         "(gone into the crowd, small as a cat)"
       ]
     },
@@ -510,7 +510,7 @@
     {
       "key": "farewell.away.trade",
       "rows": [
-        "The door does not shut itself, you know.",
+        "The door does not shut itself. Mind it.",
         "Walk out mid-word. See how the price sits next time."
       ]
     },
@@ -551,7 +551,7 @@
       "key": "overheard.trade",
       "rows": [
         "...the Weighhouse stamps what it likes and I sell what I am left...",
-        "...Trojia's war on the Dezdant, and my shelves pay for it...",
+        "...the Dezdant war, a long way off, and my shelves pay for it...",
         "...Fenner is lending at a Royal on four. On four. Against the penny...",
         "...the Bond is full and sealed, and nobody's key fits it..."
       ]
@@ -559,7 +559,7 @@
     {
       "key": "overheard.maritime",
       "rows": [
-        "...the lanes past the point are Dezdant water now. No hull goes...",
+        "...the war has the lanes past the point. No hull goes, and none comes...",
         "...the Kestrel was out the night the bodies came up. Wake says so...",
         "...a war too far off to spell, and the sea road is what it costs us...",
         "...a candle at the Wall for him. The sea kept the rest...",
@@ -741,7 +741,7 @@
     {
       "key": "react.wastrel.slew",
       "rows": [
-        "Dead. Nobody saw. Nobody saw. Right?",
+        "Dead. Nobody saw it. Say it. Nobody saw it.",
         "(out of the door before the body is cold)",
         "That is the rope for you. And a bad night for the rest of us."
       ]

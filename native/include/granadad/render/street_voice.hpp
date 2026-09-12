@@ -66,6 +66,7 @@
 
 namespace granadad::sim {
 class Tavern;
+class TileQuery;
 class WardPopulation;
 }  // namespace granadad::sim
 
@@ -213,6 +214,10 @@ struct VoiceScene {
     const sim::Tavern* room = nullptr;
     /// Null in a session without a district (the tavern fixture).
     const sim::WardPopulation* people = nullptr;
+    /// The tiles, for the one sight line the channel asks: a snatch between
+    /// two bodies is heard across open ground, not through a wall. Null
+    /// means every line is open, which is what a test without a world gets.
+    const sim::TileQuery* tiles = nullptr;
     /// The player's tile and band, and the same in Q8 for the room's metric.
     std::int32_t playerTileX = 0;
     std::int32_t playerTileY = 0;

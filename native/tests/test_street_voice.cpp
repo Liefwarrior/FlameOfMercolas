@@ -374,6 +374,7 @@ TEST_CASE("the emitter reads the room through a const reference and moves neithe
     render::VoiceScene scene;
     scene.room = &session.tavern();
     scene.people = &session.people();
+    scene.tiles = &session.tiles();
     scene.playerTileX = session.body().tileX();
     scene.playerTileY = session.body().tileY();
     scene.playerBand = session.body().band();

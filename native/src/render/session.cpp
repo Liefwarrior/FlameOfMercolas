@@ -4417,6 +4417,7 @@ void Session::step(const sim::MoveInput& input) {
         VoiceScene scene;
         scene.room = tavern_;
         scene.people = people_;
+        scene.tiles = tiles_.get();
         scene.playerTileX = body_->tileX();
         scene.playerTileY = body_->tileY();
         scene.playerBand = body_->band();
@@ -8680,6 +8681,14 @@ void Session::endTalk(bool walkedOff) {
         voice_.speakFarewell(talk.speaker().name, talk.farewell(walkedOff),
                              talk.farewellKey(walkedOff), talk.speaker().actorId,
                              static_cast<std::int32_t>(body_->stepCount()));
+        // And the goodbye is the LAST thing they said: a greeting or a reply
+        // still on the alert row's clock would resurface under it the moment
+        // the panel let the row back -- the same mouth saying two things at
+        // once. Their own line stands down; a bouncer's warning or anybody
+        // else's word on the row is not theirs and keeps its clock.
+        if (message_.rfind(talk.speaker().name + ": ", 0) == 0) {
+            messageSteps_ = 0;
+        }
     }
     tavern_->endConversation();
     wardTalkId_ = -1;
@@ -11207,6 +11216,27 @@ constexpr int kVoiceWaitSteps = 90 * sim::kStepsPerSecond;
     return false;
 }
 
+/// Turns the body to look at whoever the row names, so the frame is a
+/// picture of the speaker and not of the wall the walk ended against. A
+/// Gull speaker by roster id, a ward speaker by its lifted id; a step to
+/// sync the facing, which the row's hold outlasts many times over.
+void faceTheSpeaker(Session& session) {
+    const VoiceLine& line = session.voice().current();
+    if (line.empty()) {
+        return;
+    }
+    if (line.actorId >= sim::kWardSpeakerIdBase) {
+        const sim::WardActor* who = session.people().byId(line.actorId - sim::kWardSpeakerIdBase);
+        if (who != nullptr) {
+            facePlayerAndSync(session, sim::q8_tile_centre(who->x), sim::q8_tile_centre(who->y));
+        }
+        return;
+    }
+    if (const sim::Actor* who = session.tavern().actorById(line.actorId); who != nullptr) {
+        facePlayerAndSync(session, who->x(), who->y());
+    }
+}
+
 /// How many beats each `--voice=` ending owes. See runVoiceLine.
 [[nodiscard]] std::int32_t voiceBeatsFor(const std::string& ending) noexcept {
     if (ending == "farewell" || ending == "moved" || ending == "react") {
@@ -11243,7 +11273,9 @@ constexpr int kVoiceWaitSteps = 90 * sim::kStepsPerSecond;
         if (!session.voice().current().name.empty()) {
             ++landed;
         }
-        // 2. And the row is up off a pass key.
+        // 2. And the row is up off a pass key. The shot is composed on the
+        //    speaker: the walk turns to look at whoever spoke.
+        faceTheSpeaker(session);
         session.stepMany(sim::MoveInput{}, kPageEaseSteps + 2);
         if (voiceRowUpFrom(session, "pass.")) {
             ++landed;
@@ -11252,17 +11284,26 @@ constexpr int kVoiceWaitSteps = 90 * sim::kStepsPerSecond;
     }
     if (ending == "overheard") {
         // THE CROWD, STOOD IN. Hold at the spawn on the Tarwalk and listen;
-        // if the street in front of the Gull is thin, walk it.
-        bool heard = waitForVoice(session, "overheard", sim::MoveInput{}, kVoiceWaitSteps / 2);
-        if (!heard) {
-            sim::MoveInput input;
-            input.forward = 1;
-            heard = waitForVoice(session, "overheard", input, kVoiceWaitSteps / 2);
+        // if the street in front of the Gull is thin, walk it with the
+        // smoke's own drift of the head, the way the pass ending does.
+        bool heard = false;
+        for (int i = 0; i < kVoiceWaitSteps / 2 && !heard; ++i) {
+            session.step(sim::MoveInput{});
+            heard = voiceRowUpFrom(session, "overheard");
+        }
+        sim::MoveInput input;
+        input.forward = 1;
+        for (int i = 0; i < kVoiceWaitSteps / 2 && !heard; ++i) {
+            input.turn = (i / 90) % 4 == 3 ? 1 : 0;
+            session.step(input);
+            heard = voiceRowUpFrom(session, "overheard");
         }
         if (!session.voice().current().name.empty()) {
             ++landed;  // 1. a pair stood together within earshot
         }
-        if (heard) {
+        faceTheSpeaker(session);
+        session.stepMany(sim::MoveInput{}, kPageEaseSteps + 2);
+        if (heard && voiceRowUpFrom(session, "overheard")) {
             ++landed;  // 2. the row is up off an overheard key
         }
         return landed;
@@ -11344,6 +11385,8 @@ constexpr int kVoiceWaitSteps = 90 * sim::kStepsPerSecond;
         }
         if (waitForVoice(session, "react.", sim::MoveInput{}, 6 * sim::kStepsPerSecond)) {
             ++landed;  // 3. the row is up off a react key
+            // The shot turns to the witness who spoke, not the man hit.
+            faceTheSpeaker(session);
         }
         return landed;
     }
@@ -11357,6 +11400,8 @@ constexpr int kVoiceWaitSteps = 90 * sim::kStepsPerSecond;
         }
         if (waitForVoice(session, "watch.approach", sim::MoveInput{}, 15 * sim::kStepsPerSecond)) {
             ++landed;
+            // The shot turns to the man crossing the room.
+            faceTheSpeaker(session);
         }
         return landed;
     }
