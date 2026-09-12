@@ -23,6 +23,8 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <cstdlib>
+#include <utility>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -191,11 +193,14 @@ TEST_CASE("the ribbon reads the followed lead in the page's own bearing, and the
 
     session.examine();
     session.stepMany(sim::MoveInput{}, 2);
-    // The look read the start lead; the default moves to the next Open lead
-    // in authored order -- Casebook::nextOpen, the same rule the corner row
-    // has always used.
-    const std::int32_t next = session.casebook().nextOpen();
+    // The look read the start lead; the default moves to the NEWEST-HEARD
+    // Open lead -- the three it opened share one dateline, so the tie falls
+    // to authored order and the flagstones lead, exactly where nextOpen()
+    // would have pointed. (The two rules part company after TAKE HIM UP;
+    // see the courier pin below.)
+    const std::int32_t next = newestOpenLead(session.casebook());
     REQUIRE(next >= 0);
+    CHECK(next == session.casebook().nextOpen());
     CHECK(session.pullTarget().lead == next);
     CHECK_FALSE(session.pullTarget().chosen);
 
@@ -209,6 +214,11 @@ TEST_CASE("the ribbon reads the followed lead in the page's own bearing, and the
     CHECK(row->followed);
     CHECK(session.pullLineNow() == pullLine(row->bearing, row->place));
     CHECK(session.pullLineNow() == row->bearing + "  THE OUTFALL");
+    // THE VERB ANSWERS WHERE IT CAN BE READ: the page's own band carries the
+    // line for the plate's hold, then lets it go.
+    CHECK(page.alert == "THE COMPASS HOLDS THE OUTFALL.");
+    session.stepMany(sim::MoveInput{}, 200);
+    CHECK(session.casebookPageState().alert.empty());
     // The page's other rows are not followed; the default row is not either
     // once a choice stands.
     int followedRows = 0;
@@ -238,16 +248,66 @@ TEST_CASE("the ribbon reads the followed lead in the page's own bearing, and the
     }
 
     // FOLLOW IS ITS OWN UNDO: the followed lead again lets it go, and the
-    // authored default is back.
+    // newest-heard default is back.
     const PullTarget chosen = session.pullTarget();
     REQUIRE(chosen.chosen);
     REQUIRE(session.followLead(chosen.book, chosen.lead));
     CHECK_FALSE(session.followedLead().chosen());
-    CHECK(session.pullTarget().lead == session.casebook().nextOpen());
+    CHECK(session.pullTarget().lead == newestOpenLead(session.casebook()));
+    CHECK(session.casebookPageState().alert == "THE COMPASS LETS IT GO.");
 
-    // A DEAD LEAD IS NOT A DIRECTION: the read start lead refuses.
+    // A READ LEAD IS NOT A DIRECTION: the start lead refuses, in the band.
     CHECK_FALSE(session.followLead(CaseBookId::Bloodletter, start));
     CHECK_FALSE(session.followedLead().chosen());
+    CHECK(session.casebookPageState().alert == "YOU HAVE BEEN THERE. FOLLOW WHAT IT OPENED.");
+}
+
+TEST_CASE("after TAKE HIM UP the compass reads the Mission, not the stool beside your feet") {
+    // THE CRITIC'S FLAGSHIP BEAT. Casebook::nextOpen() is the FIRST Open
+    // lead in authored order -- after the take that is the snug stool the
+    // body is standing on, "HERE  THE GILDED GULL", while the man on your
+    // shoulder wants the Mission's back room the book just heard. The
+    // default is the NEWEST-HEARD Open lead, and it says so.
+    Session session(configAt("mission-backroom"));
+    session.stepMany(sim::MoveInput{}, 2);
+    session.courierDeliverNow();
+    const sim::CasebookRaws& raws = session.sheetRaws();
+    const std::int32_t door = raws.indexOf("gull-door");
+    const std::int32_t stool = raws.indexOf("snug-stool");
+    const std::int32_t close = raws.indexOf("bring-him-in");
+    REQUIRE(door >= 0);
+    REQUIRE(stool >= 0);
+    REQUIRE(close >= 0);
+    // The door read (it opens the stair box and the stool, one dateline),
+    // then the stool heard by a later look's opens -- the courier drive's
+    // own order, replayed through the book's own verbs.
+    const sim::LeadSite doorSite = raws.leads()[static_cast<std::size_t>(door)].site;
+    (void)session.sheetBook().look(doorSite.x, doorSite.y, doorSite.band);
+    session.stepMany(sim::MoveInput{}, 1);
+    REQUIRE(session.sheetBook().state(stool) == sim::LeadState::Open);
+    // Now TAKE HIM UP's own hear, a later dateline than the stool's.
+    session.skipToHour(2);
+    (void)session.sheetBook().hear(close, 2 * 3600);
+    session.stepMany(sim::MoveInput{}, 1);
+    CHECK(session.sheetBook().nextOpen() != close);  // the old rule: the stool
+    CHECK(session.pullTarget().book == CaseBookId::Courier);
+    CHECK(session.pullTarget().lead == close);
+    CHECK(session.pullLineNow().find("MISSION OF THE FLAME") != std::string::npos);
+
+    // AND THROUGH THE REAL DRIVE: --case=taken ends with the man in hand,
+    // and the shutter's own summary says where the compass pointed.
+    SmokeRunConfig run;
+    run.session.contentDir = content::contentDir();
+    run.session.timeOfDay = scriptedStartHour(run) * 3600;
+    run.steps = 0;
+    run.stamp = false;
+    run.caseRun = true;
+    run.caseEnd = "taken";
+    const SmokeRunResult result = runSmoke(run);
+    INFO(result.summary);
+    CHECK(result.summary.find("carry=yes") != std::string::npos);
+    CHECK(result.pullLineAtCapture.find("MISSION OF THE FLAME") != std::string::npos);
+    CHECK(result.summary.find("compass \"") != std::string::npos);
 }
 
 TEST_CASE("the choice lapses when the followed lead is stood over, and the bearing is the one arithmetic") {
@@ -272,13 +332,20 @@ TEST_CASE("the choice lapses when the followed lead is stood over, and the beari
         }
         CHECK(found);
     }
-    // The line to a lead on another band names the band, the page's rule.
+    // The line to a lead on another band names the band in the BOOK and
+    // the direction on the STREET, where a body cannot see its own band.
     const sim::LeadSite below{px + 10, py, session.body().band() - 1};
+    const sim::LeadSite above{px + 10, py, session.body().band() + 2};
     CHECK(pullBearing(px, py, session.body().band(), below, false).find("BAND ") !=
           std::string::npos);
     CHECK(pullBearing(px, py, session.body().band(), below, true).rfind("HERE", 0) == 0);
+    CHECK(pullBearing(px, py, session.body().band(), below, false, BandWord::Relative) ==
+          "E 10  BELOW");
+    CHECK(pullBearing(px, py, session.body().band(), above, false, BandWord::Relative) ==
+          "E 10  ABOVE");
     CHECK(pullLine("NE 40", "THE WEIGHHOUSE") == "NE 40  THE WEIGHHOUSE");
     CHECK(pullLine("W 66  BAND 18", "BRANN'S CHANDLERY") == "W 66  BRANN'S CHANDLERY  BAND 18");
+    CHECK(pullLine("W 66  BELOW", "BRANN'S CHANDLERY") == "W 66  BRANN'S CHANDLERY  BELOW");
     CHECK(pullLine("", "THE WEIGHHOUSE").empty());
 
     // THE LAPSE: follow the flagstones (six tiles west, same building), walk
@@ -453,16 +520,18 @@ TEST_CASE("the CASES shelf lists the three books, fronts one the player has, ref
     session.stepMany(sim::MoveInput{}, 2);
     CHECK(session.frontedBook() == CaseBookId::Bloodletter);
 
-    // Not yet handed the courier's sheet: the shelf says NOT YET and the
-    // commit refuses.
+    // Not yet handed the courier's sheet: the shelf lists ONE book and
+    // counts three -- the two not in hand are never named -- and the commit
+    // on a book not in hand refuses.
     CasebookPageState page = session.casebookPageState();
-    REQUIRE(page.shelf.size() >= 3);
+    REQUIRE(page.shelf.size() == 1);
+    CHECK(page.shelfBookTotal == 3);
     CHECK(page.shelf[0].title == "THE BLOODLETTER");
+    CHECK(page.shelf[0].bookId == static_cast<int>(CaseBookId::Bloodletter));
     CHECK(page.shelf[0].fronted);
     CHECK(page.shelf[0].followed);
-    CHECK(page.shelf[1].state == "NOT YET");
-    CHECK_FALSE(page.shelf[1].selectable);
-    CHECK(page.shelf[2].state == "NOT YET");
+    CHECK(page.shelf[0].state == "READ 1/4");
+    CHECK(page.shelf[0].tally == "1/4");
     CHECK_FALSE(session.frontCase(CaseBookId::Courier));
     CHECK(session.frontedBook() == CaseBookId::Bloodletter);
     // BOTH DEVICES: F on a keyboard (a raw page key, the map's T precedent),
@@ -491,6 +560,8 @@ TEST_CASE("the CASES shelf lists the three books, fronts one the player has, ref
     CHECK(session.frontedBook() == CaseBookId::Courier);
     page = session.casebookPageState();
     CHECK(page.caseTitle == "THE QUIET TENANT");
+    REQUIRE(page.shelf.size() == 2);
+    CHECK(page.shelf[1].bookId == static_cast<int>(CaseBookId::Courier));
     CHECK(page.shelf[1].fronted);
     CHECK(page.shelf[1].state == "READ 0/1");
     CHECK(page.shelf[1].followed);
@@ -524,6 +595,10 @@ TEST_CASE("the CASES shelf lists the three books, fronts one the player has, ref
     CHECK(session.followedLead().book == CaseBookId::Courier);
     CHECK(session.pullTarget().book == CaseBookId::Courier);
     CHECK(session.pullLineNow().find("THE GILDED GULL") != std::string::npos);
+    // The same press again is NOT the undo from the shelf: it says so.
+    session.followCasebookSelection();
+    CHECK(session.followedLead().chosen());
+    CHECK(session.casebookPageState().alert == "THE COMPASS HOLDS IT ALREADY.");
     session.toggleCasebook();
 
     // THE FALL-BACK: front the courier book, then close it by the same
@@ -574,12 +649,12 @@ TEST_CASE("discovered named places tick the ribbon, the followed lead's tick is 
     const PullTarget target = session.pullTarget();
     REQUIRE(target.set);
     const sim::Lead& lead = raws().leads()[static_cast<std::size_t>(target.lead)];
-    CHECK(hud.pullTickBam == (sim::bearingTo(session.body().tileX(), session.body().tileY(),
-                                             lead.site.x, lead.site.y) &
-                              65535));
+    CHECK(hud.pullTickBam == pullTickBam(session.body().tileX(), session.body().tileY(),
+                                         lead.site.x, lead.site.y));
 
     // THE TICKS DRAW ON THE STRIP'S OWN RAIL AND NOWHERE ELSE, at both pinned
-    // sizes -- inside the ribbon's rectangle, never in the play space.
+    // sizes -- inside the ribbon's rectangle (its frame line included), never
+    // in the play space, and never on a glyph row.
     for (const auto& size : {std::pair{320, 180}, std::pair{1920, 1080}}) {
         HudState quiet;
         quiet.yawBam = hud.pullTickBam;  // facing the followed lead: its tick under the mark
@@ -608,8 +683,107 @@ TEST_CASE("discovered named places tick the ribbon, the followed lead's tick is 
                 CHECK(x >= x0);
                 CHECK(x < x1);
                 CHECK(y < hudCentreRect(size.first, size.second).y0);
+                // Above the letters' first glyph row (stripY + scale): the
+                // rail, not the shadows.
+                CHECK(y < 3 * scale + scale);
             }
         }
         CHECK(ink > 0);
+    }
+}
+
+namespace {
+
+/// The ink columns a HudState's ticks put on the ribbon's top rail, as runs
+/// of contiguous x, at the frame's own scale -- one run per notch.
+[[nodiscard]] std::vector<std::pair<int, int>> tickRuns(const HudState& ticked, int width,
+                                                        int height) {
+    HudState quiet = ticked;
+    quiet.placeTickBams.clear();
+    quiet.pullTickBam = -1;
+    Framebuffer without(width, height);
+    without.clear(Rgb{0.10F, 0.12F, 0.14F});
+    drawHud(without, quiet);
+    Framebuffer with(width, height);
+    with.clear(Rgb{0.10F, 0.12F, 0.14F});
+    drawHud(with, ticked);
+    const int scale = hudScale(height);
+    const int y = 3 * scale - scale;  // the rail's own first row
+    std::vector<std::pair<int, int>> runs;
+    int start = -1;
+    for (int x = 0; x <= width; ++x) {
+        const bool inked =
+            x < width && with.pixels()[with.index(x, y)] != without.pixels()[without.index(x, y)];
+        if (inked && start < 0) {
+            start = x;
+        } else if (!inked && start >= 0) {
+            runs.emplace_back(start, x - 1);
+            start = -1;
+        }
+    }
+    return runs;
+}
+
+}  // namespace
+
+TEST_CASE("a tick sits on its true bearing, not under a compass letter: two places fifteen degrees apart are two notches") {
+    // THE CRITIC'S FINDING: sim::bearingTo is the stealth pass's eight-point
+    // quantiser, so every notch snapped to a letter and ten discovered
+    // places collapsed onto two. pullTickBam is a real atan2.
+    CHECK(pullTickBam(0, 0, 0, -10) == 0);       // north
+    CHECK(pullTickBam(0, 0, 10, -10) == 8192);   // north-east
+    CHECK(pullTickBam(0, 0, 10, 0) == 16384);    // east
+    CHECK(pullTickBam(0, 0, 0, 10) == 32768);    // south
+    CHECK(pullTickBam(0, 0, -10, 0) == 49152);   // west
+    CHECK(pullTickBam(0, 0, 0, 0) == 0);
+    // Fifteen degrees east of north: 15/360 of a turn, 2731 BAM, give or
+    // take the rounding of a 10-by-37 tile triangle.
+    const std::int32_t fifteen = pullTickBam(0, 0, 10, -37);
+    CHECK(fifteen > 2600);
+    CHECK(fifteen < 2900);
+    // The old quantiser would have called both of these NORTH.
+    CHECK(sim::bearingTo(0, 0, 10, -37) == 0);
+    CHECK(sim::bearingTo(0, 0, 0, -37) == 0);
+    CHECK(pullTickBam(0, 0, 0, -37) != fifteen);
+
+    for (const auto& size : {std::pair{320, 180}, std::pair{960, 540}, std::pair{1920, 1080}}) {
+        const int scale = hudScale(size.second);
+        const int stripW = std::min(size.first / 4, 120 * scale);
+        const int stripX = (size.first - stripW) / 2;
+        // Facing north, two places: dead ahead and fifteen degrees right.
+        HudState hud;
+        hud.yawBam = 0;
+        hud.placeTickBams = {0, fifteen};
+        const std::vector<std::pair<int, int>> runs = tickRuns(hud, size.first, size.second);
+        INFO("at ", size.first, "x", size.second, ": ", runs.size(), " notch(es)");
+        // The mark itself is not a change (it draws in both frames), so the
+        // runs are the notches: two of them, and the second sits where the
+        // bearing says -- within a scale unit of the true offset.
+        REQUIRE(runs.size() == 2);
+        const float pixelsPerBam = static_cast<float>(stripW) / 32768.0F;
+        const int expected =
+            stripX + stripW / 2 + static_cast<int>(static_cast<float>(fifteen) * pixelsPerBam);
+        const int centre = (runs[1].first + runs[1].second) / 2;
+        CHECK(std::abs(centre - expected) <= scale);
+        CHECK(std::abs((runs[0].first + runs[0].second) / 2 - (stripX + stripW / 2)) <= scale);
+    }
+}
+
+TEST_CASE("behind you the pull pegs at the nearer rail; a place behind you draws nothing") {
+    for (const auto& size : {std::pair{320, 180}, std::pair{1920, 1080}}) {
+        const int scale = hudScale(size.second);
+        const int stripW = std::min(size.first / 4, 120 * scale);
+        const int stripX = (size.first - stripW) / 2;
+        HudState hud;
+        hud.yawBam = 0;
+        hud.pullTickBam = 32768 + 4096;  // south-south-west: behind, to the left
+        hud.placeTickBams = {32768};      // a place dead astern
+        const std::vector<std::pair<int, int>> runs = tickRuns(hud, size.first, size.second);
+        REQUIRE(runs.size() == 1);
+        CHECK(runs[0].first == stripX);
+        hud.pullTickBam = 32768 - 4096;  // behind, to the right
+        const std::vector<std::pair<int, int>> right = tickRuns(hud, size.first, size.second);
+        REQUIRE(right.size() == 1);
+        CHECK(right[0].second == stripX + stripW - 1);
     }
 }

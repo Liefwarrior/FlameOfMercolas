@@ -203,10 +203,11 @@ TEST_CASE("the rest street holds the spec's eight-word budget") {
 TEST_CASE("the followed lead is the one line the rest budget grew by, and it is never more than seven words") {
     // UI-EA-SPEC 1.2 #11, amended by the PULL PACK: rest = 8, plus the
     // followed lead's line -- bearing and paces (2), the place in the sign's
-    // own words (the article kept: THE NETTERS' COMPOUND, 3), BAND n
-    // off-plane (2) -- while a lead is followed. The longest line any
+    // own words (the article kept: MISSION OF THE FLAME, 4), BELOW or ABOVE
+    // off-plane (1) -- while a lead is followed. The longest line any
     // authored lead can print is pinned here across all three case files
-    // from one fixed spot, so a renamed place cannot quietly grow the street.
+    // from one fixed spot on three bands, so a renamed place cannot quietly
+    // grow the street.
     const sim::CasebookRaws bloodletter = sim::CasebookRaws::load(granadad::content::contentDir());
     const sim::CasebookRaws courier =
         sim::CasebookRaws::loadFile(sim::missionSheetRawsPath(granadad::content::contentDir()));
@@ -216,15 +217,20 @@ TEST_CASE("the followed lead is the one line the rest budget grew by, and it is 
     std::string widestLine;
     for (const sim::CasebookRaws* file : {&bloodletter, &courier, &eviction}) {
         for (const sim::Lead& lead : file->leads()) {
-            // From the Mission's back room, on the surface band, so every
-            // off-band lead prints its BAND word too.
-            const std::string line =
-                pullLine(pullBearing(126, 110, 19, lead.site, false), lead.place);
-            INFO("line: ", line);
-            CHECK(wordsIn(line) <= 7);
-            if (static_cast<int>(line.size()) > widest) {
-                widest = static_cast<int>(line.size());
-                widestLine = line;
+            // From the Mission's back room, on the surface band AND from a
+            // body a plane up or down -- so every lead prints its BELOW or
+            // ABOVE word somewhere in the sweep, the way the street words
+            // it (the book keeps the band number; that form is the page's).
+            for (const std::int32_t band : {19, 20, 18}) {
+                const std::string line = pullLine(
+                    pullBearing(126, 110, band, lead.site, false, BandWord::Relative),
+                    lead.place);
+                INFO("line: ", line);
+                CHECK(wordsIn(line) <= 7);
+                if (static_cast<int>(line.size()) > widest) {
+                    widest = static_cast<int>(line.size());
+                    widestLine = line;
+                }
             }
         }
     }
@@ -273,7 +279,7 @@ TEST_CASE("the followed-lead strip is pinned at 320x180 and 1920x1080: whole, un
         without.clear(Rgb{0.10F, 0.12F, 0.14F});
         drawHud(without, street);
         HudState lined = street;
-        lined.pullLabel = "SW 120  THE DROWNED-NAME WALL  BAND 18";
+        lined.pullLabel = "SW 120  THE DROWNED-NAME WALL  BELOW";
         Framebuffer with(size.first, size.second);
         with.clear(Rgb{0.10F, 0.12F, 0.14F});
         drawHud(with, lined);

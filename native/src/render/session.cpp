@@ -1103,8 +1103,11 @@ void Session::armCasePlate(std::string news) {
     // over, the errand paid, the Evictor granted, the watcher's own news --
     // so the cue lives here, once, rather than beside each of them. Ids
     // only, deterministic, one-way (audio_engine.hpp's own rule): the sim
-    // cannot hear it.
-    if (audio_ != nullptr) {
+    // cannot hear it. EXCEPT ON A CLOSE: a plate armed on the step a book
+    // closed ("THE ERRAND IS PAID", "THE EVICTOR IS YOURS") rides the
+    // CaseClosed sting step() is about to play, and two cues for one close
+    // is two cues.
+    if (audio_ != nullptr && closedBookCount() == lastClosedBooks_) {
         audio_->playOneShot(audio::SoundId::CaseNews);
     }
     syncPanelAnim();
@@ -3139,9 +3142,11 @@ bool Session::followLead(CaseBookId book, std::int32_t lead) {
     }
     if (target->state(lead) != sim::LeadState::Open) {
         // NOWHERE TO GO: a lead already stood over is a page in the book, not
-        // a place on the street. Said, not swallowed.
-        say(target->state(lead) == sim::LeadState::Cold ? "A DEAD END IS NOT A DIRECTION."
-                                                        : "YOU HAVE BEEN THERE. FOLLOW WHAT IT OPENED.");
+        // a place on the street. Said where it can be read -- the page's own
+        // band while the book is up, the row once it is down.
+        notePage(target->state(lead) == sim::LeadState::Cold
+                     ? "A DEAD END IS NOT A DIRECTION."
+                     : "YOU HAVE BEEN THERE. FOLLOW WHAT IT OPENED.");
         if (audio_ != nullptr) {
             audio_->playOneShot(audio::SoundId::UiError);
         }
@@ -3150,13 +3155,13 @@ bool Session::followLead(CaseBookId book, std::int32_t lead) {
     const sim::Lead& where = raws->leads()[static_cast<std::size_t>(lead)];
     if (followedLead_.chosen() && followedLead_.book == book && followedLead_.lead == lead) {
         // THE ONE VERB IS ITS OWN UNDO: picking the followed lead again lets
-        // it go, and the authored default takes the ribbon back.
+        // it go, and the newest-heard default takes the compass back.
         followedLead_.clear();
-        say("THE RIBBON LETS " + where.place + " GO.");
+        notePage("THE COMPASS LETS IT GO.");
     } else {
         followedLead_.book = book;
         followedLead_.lead = lead;
-        say("THE RIBBON FOLLOWS " + where.place + ".");
+        notePage("THE COMPASS HOLDS " + where.place + ".");
     }
     if (audio_ != nullptr) {
         audio_->playOneShot(audio::SoundId::UiConfirm);
@@ -3170,26 +3175,40 @@ bool Session::followLead(CaseBookId book, std::int32_t lead) {
     return true;
 }
 
+void Session::notePage(std::string line) {
+    // ONE LINE, TWO SURFACES: the page's own header band while the book is
+    // up (the alert row is stood down under a page, so a line said only
+    // there would answer the key in sound alone), and the message row the
+    // moment the book goes down. The band holds it the plate's own ~3 s.
+    pageNote_ = line;
+    pageNoteSteps_ = kCasePlateShowSteps;
+    say(std::move(line));
+}
+
 void Session::followCasebookSelection() {
     if (casebookTab_ == CasebookTab::Cases) {
-        // ON THE SHELF: follow the highlighted case -- its own next lead.
+        // ON THE SHELF: follow the highlighted case -- its own newest lead.
+        // Never the undo from here: the shelf is where a case is picked up,
+        // and a press that quietly let one go would be the surprise sec. 4
+        // exists to kill.
         const std::vector<CasebookShelfRow> shelf = casebookShelfRows();
         if (shelf.empty()) {
             return;
         }
         const int at = std::clamp(caseShelfCursor_, 0, static_cast<int>(shelf.size()) - 1);
-        if (at >= kCaseBookCount || !shelf[static_cast<std::size_t>(at)].book) {
-            say("A LINE, NOT A BOOK. THE JOURNAL HAS IT.");
+        const CasebookShelfRow& row = shelf[static_cast<std::size_t>(at)];
+        if (!row.book || row.bookId < 0 || row.bookId >= kCaseBookCount) {
+            notePage("A LINE, NOT A BOOK. THE JOURNAL HAS IT.");
             return;
         }
-        const CaseBookId book = static_cast<CaseBookId>(at);
-        if (!bookSet().begun(book)) {
-            say("NOT IN YOUR HANDS YET.");
-            return;
-        }
-        const std::int32_t next = bookOf(book).nextOpen();
+        const CaseBookId book = static_cast<CaseBookId>(row.bookId);
+        const std::int32_t next = newestOpenLead(bookOf(book));
         if (next < 0) {
-            say("NOTHING OPEN IN IT.");
+            notePage("NOTHING OPEN IN IT.");
+            return;
+        }
+        if (followedLead_.chosen() && followedLead_.book == book && followedLead_.lead == next) {
+            notePage("THE COMPASS HOLDS IT ALREADY.");
             return;
         }
         (void)followLead(book, next);
@@ -3214,8 +3233,10 @@ std::string Session::pullLineNow() const {
         return {};
     }
     const sim::Lead& lead = raws.leads()[static_cast<std::size_t>(target.lead)];
+    // BELOW / ABOVE on the street: a walking body cannot see its own band
+    // number, so the ribbon says which way; the book keeps the number.
     return pullLine(pullBearing(body_->tileX(), body_->tileY(), body_->band(), lead.site,
-                                bodyCanLookAt(lead)),
+                                bodyCanLookAt(lead), BandWord::Relative),
                     lead.place);
 }
 
@@ -3224,27 +3245,31 @@ std::vector<CasebookShelfRow> Session::casebookShelfRows() const {
     const BookSet books = bookSet();
     const CaseBookId fronted = frontedBook();
     const PullTarget target = pullTarget();
-    // THE THREE BOOKS FIRST, in fixed member order -- so a shelf row's index
-    // IS its CaseBookId and the commit needs no lookup.
+    // THE BOOKS IN HAND FIRST, in fixed member order, each carrying its own
+    // CaseBookId -- a book the player has not been handed is counted in the
+    // badge and never named (the journal never lists an unstarted quest).
     for (int i = 0; i < kCaseBookCount; ++i) {
         const CaseBookId id = static_cast<CaseBookId>(i);
+        if (!books.begun(id)) {
+            continue;
+        }
         const sim::Casebook& book = bookOf(id);
         const sim::CasebookRaws& raws = rawsOf(id);
         CasebookShelfRow row;
         row.book = true;
-        row.title = raws.loaded() ? std::string(raws.title()) : std::string("A CASE");
-        row.selectable = books.begun(id);
-        row.fronted = row.selectable && id == fronted;
+        row.bookId = i;
+        row.title = std::string(raws.title());
+        row.fronted = id == fronted;
         row.followed = target.set && target.book == id;
-        if (!row.selectable) {
-            row.state = "NOT YET";
-        } else if (book.closed()) {
+        if (book.closed()) {
             row.state = "CLOSED";
+            row.tally = "ALL";
             row.next = std::string(raws.close());
         } else {
-            row.state = "READ " + std::to_string(book.readCount()) + "/" +
+            row.tally = std::to_string(book.readCount()) + "/" +
                         std::to_string(book.known().size());
-            const std::int32_t next = book.nextOpen();
+            row.state = "READ " + row.tally;
+            const std::int32_t next = newestOpenLead(book);
             if (next >= 0 && static_cast<std::size_t>(next) < raws.leads().size()) {
                 row.next = raws.leads()[static_cast<std::size_t>(next)].place;
             }
@@ -3259,15 +3284,15 @@ std::vector<CasebookShelfRow> Session::casebookShelfRows() const {
         }
         CasebookShelfRow row;
         row.book = false;
-        row.selectable = false;
         row.title = upperAscii(line.title);
         const std::int32_t total = static_cast<std::int32_t>(line.stages.size());
         if (talk.journal().done(line.id)) {
             row.state = "DONE";
+            row.tally = std::to_string(total) + "/" + std::to_string(total);
         } else {
             const std::int32_t at = talk.journal().stage(line.id);
-            row.state = "STAGE " + std::to_string(std::min(total, at + 1)) + "/" +
-                        std::to_string(total);
+            row.tally = std::to_string(std::min(total, at + 1)) + "/" + std::to_string(total);
+            row.state = "STAGE " + row.tally;
             if (at >= 0 && at < total) {
                 row.next = line.stages[static_cast<std::size_t>(at)].label;
             }
@@ -3328,9 +3353,15 @@ void Session::stepPull() {
         skillToastText_ = std::move(skillToastQueue_.front());
         skillToastQueue_.erase(skillToastQueue_.begin());
         skillToastShowSteps_ = kCasePlateShowSteps;
+        // Its own cue -- the manifest's held progression chime -- not the
+        // menu's confirm: a level is news, not a button.
         if (audio_ != nullptr) {
-            audio_->playOneShot(audio::SoundId::UiConfirm);
+            audio_->playOneShot(audio::SoundId::SkillUp);
         }
+    }
+    // 3b. THE PAGE NOTE's own countdown, the plate family's rule.
+    if (pageNoteSteps_ > 0) {
+        --pageNoteSteps_;
     }
     skillToastAnim_.setTarget(skillToastShowSteps_ > 0);
     skillToastAnim_.advance();
@@ -3374,7 +3405,9 @@ void Session::composePullHud(HudState& hud) const {
         if (static_cast<std::size_t>(target.lead) < raws.leads().size()) {
             const sim::Lead& lead = raws.leads()[static_cast<std::size_t>(target.lead)];
             if (lead.site.x != px || lead.site.y != py) {
-                hud.pullTickBam = sim::bearingTo(px, py, lead.site.x, lead.site.y) & 65535;
+                // THE TRUE BEARING, not the stealth pass's eight-point one:
+                // a notch belongs on the bearing, not under a letter.
+                hud.pullTickBam = pullTickBam(px, py, lead.site.x, lead.site.y);
             }
         }
     }
@@ -3422,7 +3455,7 @@ void Session::composePullHud(HudState& hud) const {
         if (ax == px && ay == py) {
             continue;
         }
-        hud.placeTickBams.push_back(sim::bearingTo(px, py, ax, ay) & 65535);
+        hud.placeTickBams.push_back(pullTickBam(px, py, ax, ay));
     }
     // THE TOAST.
     hud.skillToast = std::string_view{skillToastText_};
@@ -3579,13 +3612,14 @@ void Session::commitCasebookLead() {
         }
         const int at = std::clamp(caseShelfCursor_, 0, static_cast<int>(shelf.size()) - 1);
         const CasebookShelfRow& row = shelf[static_cast<std::size_t>(at)];
-        if (!row.book || !row.selectable || at >= kCaseBookCount) {
+        if (!row.book || row.bookId < 0 || row.bookId >= kCaseBookCount) {
+            notePage("A LINE, NOT A BOOK. THE JOURNAL HAS IT.");
             if (audio_ != nullptr) {
                 audio_->playOneShot(audio::SoundId::UiError);
             }
             return;
         }
-        if (frontCase(static_cast<CaseBookId>(at))) {
+        if (frontCase(static_cast<CaseBookId>(row.bookId))) {
             casebookTab_ = CasebookTab::Leads;
             if (audio_ != nullptr) {
                 audio_->playOneShot(audio::SoundId::BookFlip);
@@ -3665,6 +3699,13 @@ CasebookPageState Session::casebookPageState() const {
     page.shelfCursor =
         page.shelf.empty() ? 0
                            : std::clamp(caseShelfCursor_, 0, static_cast<int>(page.shelf.size()) - 1);
+    page.shelfBookTotal = kCaseBookCount;
+    // THE FOLLOW VERB ANSWERS WHERE IT CAN BE READ: the page's own header
+    // band, for the plate's own hold. A bouncer's warning still outranks it
+    // (drawFrame overwrites the field while one stands).
+    if (pageNoteSteps_ > 0 && !pageNote_.empty()) {
+        page.alert = pageNote_;
+    }
     const PullTarget followed = pullTarget();
     const CaseBookId fronted = frontedBook();
 
@@ -8788,10 +8829,15 @@ std::vector<std::string> Session::characterRows() const {
         // marks the cut (the contract every clipped row keeps).
         std::string line = upperAscii(skill.displayName.empty() ? skill.id : skill.displayName) +
                            " LV " + std::to_string(skill.level);
-        if (skill.level < 100) {
+        // "3 TO NEXT" -- uses, not standing, so it cannot be read as the
+        // ladders' own NEXT price -- and only once the skill has MOVED: a
+        // fresh sheet's four bare LV 0 rows stay bare (and stay whole in the
+        // narrowest tile), and the cost appears the moment there is a count
+        // to set it against.
+        if (skill.level < 100 && (skill.level > 0 || skill.uses > 0)) {
             const std::int32_t owed =
                 std::max(1, talk.skills().scaledUsesForLevel(skill.id, skill.level) - skill.uses);
-            line += "  NEXT " + std::to_string(owed);
+            line += "  " + std::to_string(owed) + " TO NEXT";
         }
         rows.push_back(std::move(line));
     }
@@ -14068,12 +14114,13 @@ SmokeRunResult runSmoke(const SmokeRunConfig& config) {
                 target.book == CaseBookId::Courier    ? session.sheetRaws()
                 : target.book == CaseBookId::Eviction ? session.evictRaws()
                                                       : *session.casebook().raws();
-            result.scriptedLanded +=
-                (target.set && target.chosen &&
-                 static_cast<std::size_t>(target.lead) < raws.leads().size() &&
-                 raws.leads()[static_cast<std::size_t>(target.lead)].id == config.follow)
-                    ? 1
-                    : 0;
+            const bool took = target.set && target.chosen &&
+                              static_cast<std::size_t>(target.lead) < raws.leads().size() &&
+                              raws.leads()[static_cast<std::size_t>(target.lead)].id == config.follow;
+            // A REFUSAL THAT WAS READ is the page answering too: a lead
+            // already stood over refuses in the page's own band.
+            const bool refused = !took && !session.casebookPageState().alert.empty();
+            result.scriptedLanded += (took || refused) ? 1 : 0;
         }
         if (config.followEnd == "street") {
             // THE BOOK DOWN, the same call the Menu key makes, and a walk
@@ -14471,6 +14518,7 @@ SmokeRunResult runSmoke(const SmokeRunConfig& config) {
     // step() above has already run, so this is the exact value the frame
     // just drawn was a picture of.
     result.characterFocusAtCapture = session.characterFocusValue();
+    result.pullLineAtCapture = session.pullLineNow();
     result.mapFocusAtCapture = session.mapFocusValue();
     result.lettersFocusAtCapture = session.lettersFocusValue();
     result.journalFocusAtCapture = session.journalFocusValue();
@@ -14822,6 +14870,11 @@ SmokeRunResult runSmoke(const SmokeRunConfig& config) {
     // person and exited 0. The S4 review found it. A capture tool that reports
     // success while photographing the wrong thing will mislabel a future
     // sprint's evidence, so this is a hard failure and not a warning.
+    // THE PULL PACK: what the compass read at the shutter, so a run's own
+    // summary says which door the street was pointing at.
+    if (!result.pullLineAtCapture.empty()) {
+        summary << " | compass \"" << result.pullLineAtCapture << "\"";
+    }
     if (result.scriptFellShort()) {
         summary << " | WARNING: scripted run landed " << result.scriptedLanded << " of "
                 << result.scriptedWanted << " beats";

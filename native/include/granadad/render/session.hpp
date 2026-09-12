@@ -2400,6 +2400,13 @@ private:
     /// "NE 40  THE WEIGHHOUSE", rebuilt once a step (and on the press that
     /// changes it) -- the storage HudState::pullLabel points into.
     std::string pullLineCache_;
+    /// THE FOLLOW VERB'S ANSWER, readable: "THE COMPASS HOLDS THE
+    /// WEIGHHOUSE.", "A DEAD END IS NOT A DIRECTION." -- in the casebook
+    /// page's own header band for the plate's hold (the alert row is stood
+    /// down under a page), and on the message row once the book goes down.
+    std::string pageNote_;
+    int pageNoteSteps_ = 0;
+    void notePage(std::string line);
     /// Named places (mapPlaces() indices) the body has stood in -- the other
     /// half of "discovered" for the ribbon ticks. Render state.
     std::vector<std::uint8_t> placesStood_;
@@ -3843,6 +3850,10 @@ struct SmokeRunResult {
     /// never asked for a refocus, which is what a hand-built result already
     /// means.
     float characterFocusAtCapture = 0.0F;
+    /// THE PULL PACK: what the compass ribbon read at the shutter -- "NE 40
+    /// THE WEIGHHOUSE" -- so a case can pin which door a scripted line left
+    /// the street pointing at (test_pull's --case=taken pin).
+    std::string pullLineAtCapture;
     float mapFocusAtCapture = 0.0F;
     float lettersFocusAtCapture = 0.0F;
     float journalFocusAtCapture = 0.0F;

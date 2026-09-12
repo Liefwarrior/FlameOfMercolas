@@ -122,29 +122,56 @@ struct PullTarget {
 /// precedence, stated once here so the pull and the page agree.
 [[nodiscard]] CaseBookId autoFrontedBook(const BookSet& books) noexcept;
 
+/// THE DEFAULT LEAD: the NEWEST-HEARD Open lead of a book, or -1. Not
+/// Casebook::nextOpen() -- that is the FIRST Open lead in authored order,
+/// which after TAKE HIM UP is the snug stool beside your feet rather than
+/// the back room the book just heard. What a player was last told about is
+/// where they were going. Ties (several leads opened by one look, one
+/// dateline) fall to authored order, so the fresh book still opens on the
+/// flagstones.
+[[nodiscard]] std::int32_t newestOpenLead(const sim::Casebook& book) noexcept;
+
 /// Resolves the followed lead against the live books.
 ///
 ///   * The chosen lead, while it is still Open in a LIVE book. A lead that
 ///     has been stood over (Followed or Cold) is no longer a place to go, and
 ///     neither is any lead of a case that has closed, so the choice lapses
-///     and the default takes over -- the player never has to UNFOLLOW a lead
+///     and the default takes over -- the player never has to let go of a lead
 ///     they just walked to.
-///   * Otherwise the fronted book's authored next lead (Casebook::nextOpen),
+///   * Otherwise the fronted book's newest-heard Open lead (newestOpenLead),
 ///     while that book lives.
-///   * Otherwise the first open lead of any live book, in auto precedence.
+///   * Otherwise the newest-heard Open lead of any live book, in auto
+///     precedence.
 ///   * Otherwise nothing: the ribbon line is empty and the street is quiet.
 [[nodiscard]] PullTarget resolvePull(const FollowedLead& followed, const BookSet& books,
                                      CaseBookId fronted) noexcept;
 
-/// "NE 40", plus "  BAND 18" when the site is on another plane -- THE ONE
-/// bearing/paces arithmetic. The casebook page's commit verb and the ribbon
-/// line both print exactly this string, from this function, so a player
-/// reading NE 40 in the book finds NE 40 on the street. Euclidean paces,
-/// rounded, the way the page has always counted them. `here` is the caller's
-/// own answer to "could the body LOOK at it from where it stands" (the
-/// legend's reach bonus included), and prints as HERE.
+/// How a lead on another plane is worded. The BOOK prints the band's number
+/// ("BAND 18"): a reader with the page up can see the two planes side by
+/// side. The STREET cannot see its own band, so the ribbon says BELOW or
+/// ABOVE -- the fact a walking body can act on.
+enum class BandWord : std::uint8_t { Number = 0, Relative = 1 };
+
+/// "NE 40", plus "  BAND 18" (or "  BELOW" / "  ABOVE") when the site is on
+/// another plane -- THE ONE bearing/paces arithmetic. The casebook page's
+/// commit verb and the ribbon line both print exactly this string, from
+/// this function, so a player reading NE 40 in the book finds NE 40 on the
+/// street. Euclidean paces, rounded, the way the page has always counted
+/// them. `here` is the caller's own answer to "could the body LOOK at it
+/// from where it stands" (the legend's reach bonus included), and prints as
+/// HERE. The compass POINT stays eight-point: it is a word.
 [[nodiscard]] std::string pullBearing(std::int32_t px, std::int32_t py, std::int32_t band,
-                                      const sim::LeadSite& site, bool here);
+                                      const sim::LeadSite& site, bool here,
+                                      BandWord bandWord = BandWord::Number);
+
+/// THE TRUE BEARING for a ribbon tick, BAM 0..65535 (0 north, 16384 east),
+/// off a real atan2 -- render-side double math, legal on this side of the
+/// sim boundary and never fed back. NOT sim::bearingTo: that is the stealth
+/// pass's eight-point quantiser, and a notch snapped to a compass letter
+/// sits under the letter rather than on the bearing, so ten discovered
+/// places collapse onto two notches. Same tile answers 0.
+[[nodiscard]] std::int32_t pullTickBam(std::int32_t px, std::int32_t py, std::int32_t tx,
+                                       std::int32_t ty) noexcept;
 
 /// "NE 40  THE WEIGHHOUSE" -- the bearing, two cells of air, the place in the
 /// sign's own words. Never the witness, never the clue (doctrine D8).

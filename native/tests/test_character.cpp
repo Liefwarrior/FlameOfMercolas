@@ -143,20 +143,13 @@ TEST_CASE("the character sheet lists all five Legend tracks, the skills the trac
 
     // THE FOUR SKILLS THE SHEET ALWAYS SHOWS, each at LV 0 for a fresh
     // arrival, in the track's own id order (ascending, the raws' discipline)
-    // -- and each with what the next level costs, off the track's own
-    // scaledUsesForLevel: skyrunning is FAVORED (4 x 192 / 256 = 3),
-    // cracksmanship, streetwise and linkcraft read their tiers the same way.
-    CHECK(rows[5].rfind("CRACKSMANSHIP", 0) == 0);
-    CHECK(rows[6].rfind("LINKCRAFT", 0) == 0);
-    CHECK(rows[7].rfind("SKYRUNNING", 0) == 0);
-    CHECK(rows[8].rfind("STREETWISE", 0) == 0);
-    for (std::size_t i = 5; i < 9; ++i) {
-        CHECK(rows[i].find("LV 0") != std::string::npos);
-        CHECK(rows[i].find("NEXT ") != std::string::npos);
-    }
-    const SkillTrack& skills = session.tavern().dialogue().skills();
-    CHECK(rows[7].find("NEXT " + std::to_string(skills.scaledUsesForLevel(kRoofSkill, 0))) !=
-          std::string::npos);
+    // -- and BARE: what the next level costs prints once a skill has moved
+    // (see the case below), so a fresh sheet's rows stay whole in the
+    // narrowest tile the game draws.
+    CHECK(rows[5] == "CRACKSMANSHIP LV 0");
+    CHECK(rows[6] == "LINKCRAFT LV 0");
+    CHECK(rows[7] == "SKYRUNNING LV 0");
+    CHECK(rows[8] == "STREETWISE LV 0");
 
     // THE FOUR ATTRIBUTES, with no held delta on a fresh sheet: the chargen
     // base and the effective read agree, so the row is the bare number.
@@ -220,12 +213,17 @@ TEST_CASE("a skill the world has moved appears on the sheet, and a held tuning s
     const std::string banked = rowFor("SHIELDWALL");
     INFO("row: ", banked);
     REQUIRE_FALSE(banked.empty());
-    CHECK(banked.find("LV 0") != std::string::npos);
-    CHECK(banked.find("NEXT " + std::to_string(skills.scaledUsesForLevel(kBlockSkill, 0) - 1)) !=
-          std::string::npos);
+    // "SHIELDWALL LV 0  4 TO NEXT": uses, not standing, so it cannot be read
+    // as the ladders' own NEXT price -- off scaledUsesForLevel (NEGLECTED, 4
+    // x 320 / 256 = 5) less the one banked.
+    CHECK(banked == "SHIELDWALL LV 0  " +
+                        std::to_string(skills.scaledUsesForLevel(kBlockSkill, 0) - 1) + " TO NEXT");
     while (!skills.use(kBlockSkill)) {
     }
-    CHECK(rowFor("SHIELDWALL").find("LV 1") != std::string::npos);
+    CHECK(rowFor("SHIELDWALL").rfind("SHIELDWALL LV 1  ", 0) == 0);
+    CHECK(rowFor("SHIELDWALL").find(" TO NEXT") != std::string::npos);
+    // The always-shown four stay bare until they move.
+    CHECK(rowFor("SKYRUNNING") == "SKYRUNNING LV 0");
     // Every skill row still reads as a sentence the font can draw.
     for (const std::string& row : session.characterRows()) {
         for (const char c : row) {

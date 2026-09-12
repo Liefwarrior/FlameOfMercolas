@@ -544,13 +544,23 @@ TEST_CASE("the two views swap the detail pane and nothing else") {
         }
     }
     CHECK(movedInDetail > 200);
-    // THE SHELF KEEPS THE SAME LIST TOO, and its own pane is its own.
-    std::size_t shelfMovedInList = 0;
+    // THE SHELF KEEPS THE SAME LIST TOO -- the same rows in the same cells
+    // -- but with NO ROW FILLED: on the shelf its own highlight is the one
+    // armed cursor, so the only pixels that move in the list are the
+    // highlighted row's own fill (the first row: the cursor is on it).
+    std::size_t shelfMovedOutsideCursorRow = 0;
+    std::size_t shelfMovedInCursorRow = 0;
     std::size_t shelfMovedInDetail = 0;
+    const int cursorRowY0 = geo.master.y;
+    const int cursorRowY1 = geo.master.y + geo.metric.cellH();
     for (int y = geo.master.y; y < geo.master.y + geo.master.h; ++y) {
         for (int x = geo.master.x; x < geo.master.x + geo.master.w; ++x) {
             if (leads.pixels()[leads.index(x, y)] != shelf.pixels()[shelf.index(x, y)]) {
-                ++shelfMovedInList;
+                if (y >= cursorRowY0 && y < cursorRowY1) {
+                    ++shelfMovedInCursorRow;
+                } else {
+                    ++shelfMovedOutsideCursorRow;
+                }
             }
         }
     }
@@ -561,7 +571,8 @@ TEST_CASE("the two views swap the detail pane and nothing else") {
             }
         }
     }
-    CHECK(shelfMovedInList == 0);
+    CHECK(shelfMovedOutsideCursorRow == 0);
+    CHECK(shelfMovedInCursorRow > 0);
     CHECK(shelfMovedInDetail > 200);
 }
 

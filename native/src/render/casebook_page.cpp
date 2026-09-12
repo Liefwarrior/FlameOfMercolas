@@ -59,11 +59,19 @@ namespace {
             return "FOLLOWED";
         case CasebookLeadState::Open:
         default:
-            // THE PULL PACK: the lead the ribbon is carrying says so, in the
-            // same slot the three sim states use -- FOLLOWING (the player's
-            // present tense) beside FOLLOWED (the book's past one).
-            return row.followed ? "FOLLOWING" : "OPEN";
+            // THE PULL PACK: the lead the compass is carrying says so on the
+            // BADGE, in its own words -- not FOLLOWING, which shares a stem
+            // and a column with the book's own FOLLOWED and read as the same
+            // state twice.
+            return row.followed ? "ON THE COMPASS" : "OPEN";
     }
+}
+
+/// THE COMPASS MARK on the list row: the arrowhead motif ahead of the place,
+/// so the row keeps its place word (the walk is still the cost) and still
+/// says, without a word, that the compass points at it.
+[[nodiscard]] std::string compassMark(const std::string& place) {
+    return std::string(kGlyphRight) + " " + place;
 }
 
 /// A place name in a narrow column drops its leading article, exactly as
@@ -165,6 +173,12 @@ inline constexpr int kLeadPageRows = 8;
                        : state.tab == CasebookTab::Case ? "CASES"
                                                         : "LEADS";
     const char* commit = state.tab == CasebookTab::Cases ? "READ IT" : "GO TO IT";
+    // THE ONE VERB IS ITS OWN UNDO, and the band says which half it is: on
+    // the lead the compass already carries, F reads LET GO.
+    const int count = static_cast<int>(state.rows.size());
+    const bool onFollowed = state.tab != CasebookTab::Cases && count > 0 &&
+                            state.rows[static_cast<std::size_t>(std::clamp(state.cursor, 0, count - 1))]
+                                .followed;
     return {
         PanelOption{std::string(kGlyphUpDown), state.tab == CasebookTab::Cases ? "CASE" : "LEAD",
                     "", accent, InkRole::Dim, false},
@@ -174,8 +188,8 @@ inline constexpr int kLeadPageRows = 8;
         // a hardcoded ENTER -- a pad reads A GO TO IT here, live.
         PanelOption{state.commitKey.empty() ? std::string(kGlyphReturn) : state.commitKey, commit,
                     "", accent, InkRole::Dim, false},
-        PanelOption{state.followKey.empty() ? std::string("F") : state.followKey, "FOLLOW", "",
-                    accent, InkRole::Dim, false},
+        PanelOption{state.followKey.empty() ? std::string("F") : state.followKey,
+                    onFollowed ? "LET GO" : "FOLLOW", "", accent, InkRole::Dim, false},
         PanelOption{state.closeKey.empty() ? std::string("J") : state.closeKey, "CLOSE", "",
                     accent, InkRole::Dim, false},
     };
@@ -305,9 +319,15 @@ inline constexpr int kMinBodyRows = 8;
         // colour still carries the state, which is the reference's own `3 -
         // Blood` with no number beside it.
         const std::string place = shortPlace(row.place);
-        option.value = row.state != CasebookLeadState::Open || row.followed ? stateWord(row)
-                       : place == shortPlace(option.label)                  ? std::string()
-                                                                            : place;
+        // THE PULL PACK: the row the compass carries KEEPS its place and
+        // wears the arrowhead ahead of it -- a row that said the place once
+        // (its name IS its place) wears the arrowhead alone.
+        option.value = row.state != CasebookLeadState::Open ? stateWord(row)
+                       : row.followed ? (place == shortPlace(option.label)
+                                             ? std::string(kGlyphRight)
+                                             : compassMark(place))
+                       : place == shortPlace(option.label) ? std::string()
+                                                           : place;
         option.accent = stateAccent(row.state, row.close);
         // The value takes the row's own ink rather than the vocabulary's green:
         // on this list the value IS the state, so colouring it anything else
@@ -405,10 +425,11 @@ inline constexpr int kMinBodyRows = 8;
 /// cursor walks it -- leadFactsFor's own rule.
 [[nodiscard]] std::vector<PanelFact> shelfFactsFor(const CasebookShelfRow& row) {
     return {
-        PanelFact{"AT", row.state, InkRole::Number},
+        PanelFact{row.book ? "READ" : "STAGE", row.tally.empty() ? std::string("--") : row.tally,
+                  InkRole::Number},
         PanelFact{"NEXT", row.next.empty() ? std::string("--") : row.next,
                   row.next.empty() ? InkRole::Dim : InkRole::Prose},
-        PanelFact{"RIBBON", row.followed ? std::string("FOLLOWING THIS") : std::string("--"),
+        PanelFact{"COMPASS", row.followed ? std::string("ON THIS") : std::string("--"),
                   row.followed ? InkRole::Prose : InkRole::Dim},
     };
 }
@@ -462,7 +483,7 @@ inline constexpr int kMinBodyRows = 8;
         const int stateCells =
             std::max(static_cast<int>(stateWord(row).size()),
                      row.state == CasebookLeadState::Open
-                         ? static_cast<int>(std::string_view("FOLLOWING").size())
+                         ? static_cast<int>(std::string_view("ON THE COMPASS").size())
                          : 0);
         detail = std::max(detail, static_cast<int>(label.size()) + 2 + 2 + stateCells + 1);
         detail = std::max(detail, factsNaturalCells(leadFactsFor(row)));
@@ -801,6 +822,38 @@ void drawCaseDetail(Framebuffer& target, const PanelRect& detail, const PanelMet
                    alpha);
 }
 
+/// The shelf, as options -- one list, two drawings (the pane and the
+/// collapsed body), so the two cannot drift.
+[[nodiscard]] std::vector<PanelOption> shelfOptionsFor(const CasebookPageState& state) {
+    const PanelInk& ink = panelInk();
+    const Rgb accent = Rgb{0.90F, 0.46F, 0.40F};
+    std::vector<PanelOption> options;
+    options.reserve(state.shelf.size());
+    for (const CasebookShelfRow& row : state.shelf) {
+        PanelOption option;
+        option.label = row.title;
+        // THE VALUE IS THE STATE, the lead list's own rule: the fronted book
+        // says so where the others say where they stand.
+        option.value = row.fronted ? "READING" : row.state;
+        option.accent = row.book ? accent : ink.dim;
+        option.valueInk = row.book ? InkRole::Prose : InkRole::Dim;
+        option.labelTakesAccent = row.book;
+        option.selectable = true;
+        options.push_back(std::move(option));
+    }
+    return options;
+}
+
+[[nodiscard]] OptionListStyle shelfStyle() {
+    OptionListStyle style;
+    style.showKeys = false;
+    style.maxColumns = 1;
+    style.gutterCells = 2;
+    style.minRows = 0;
+    style.alignValues = true;
+    return style;
+}
+
 /// THE CASES VIEW (THE PULL PACK): the shelf in the same pane. Every book the
 /// player has been handed and every questline they have started, one row
 /// each, where each stands in the tallies' own one-word forms; the
@@ -827,52 +880,31 @@ void drawShelfDetail(Framebuffer& target, const PanelRect& detail, const PanelMe
     drawInvertedFill(target, panes[0], metric, 0, 0, static_cast<int>(badge.size()) + 2, accent,
                      alpha);
     drawCellTextKnockout(target, panes[0], metric, 1, 0, badge, ink.knockout, alpha);
-    // The count, right-aligned: begun books over the shelf's, which is the
-    // one number here the player CAN know -- three files ship, and a shelf
-    // that hid the third would be the map hiding the Roost.
-    int begun = 0;
-    int books = 0;
+    // The count, right-aligned: books in hand over the files that ship --
+    // the one number here the player CAN know. The ones not in hand are
+    // counted and never named.
+    int inHand = 0;
     for (const CasebookShelfRow& row : state.shelf) {
-        books += row.book ? 1 : 0;
-        begun += row.book && row.selectable ? 1 : 0;
+        inHand += row.book ? 1 : 0;
     }
     drawCellTextRight(target, panes[0], metric, 1, 0,
-                      std::to_string(begun) + "/" + std::to_string(books) + " IN HAND", ink.dim,
-                      alpha);
+                      std::to_string(inHand) + "/" + std::to_string(std::max(inHand, state.shelfBookTotal)) +
+                          " IN HAND",
+                      ink.dim, alpha);
 
     if (count == 0) {
         drawCellText(target, panes[2], metric, 0, 0, "NOTHING ON THE SHELF YET", ink.dim, alpha);
         return;
     }
-    std::vector<PanelOption> options;
-    options.reserve(state.shelf.size());
-    for (const CasebookShelfRow& row : state.shelf) {
-        PanelOption option;
-        option.label = row.title;
-        // THE VALUE IS THE STATE, the lead list's own rule: the fronted book
-        // says so where the others say where they stand.
-        option.value = row.fronted ? "READING" : row.state;
-        option.accent = row.book ? accent : ink.dim;
-        option.valueInk = row.selectable ? InkRole::Prose : InkRole::Dim;
-        option.labelTakesAccent = row.book;
-        option.selectable = true;
-        options.push_back(std::move(option));
-    }
-    OptionListStyle style;
-    style.showKeys = false;
-    style.maxColumns = 1;
-    style.gutterCells = 2;
-    style.minRows = 0;
-    style.alignValues = true;
-    const OptionListPlan plan = planOptionList(options, panes[2], metric, style);
+    const OptionListPlan plan = planOptionList(shelfOptionsFor(state), panes[2], metric, shelfStyle());
     const int at = std::clamp(state.shelfCursor, 0, count - 1);
-    drawOptionListPlanned(target, panes[2], metric, options, at, plan, alpha);
+    drawOptionListPlanned(target, panes[2], metric, shelfOptionsFor(state), at, plan, alpha);
 
     const CasebookShelfRow& row = state.shelf[static_cast<std::size_t>(at)];
     drawFacts(target, panes[4], metric, shelfFactsFor(row), -1, alpha);
 
     // STATE CHANGES THE VERB: a book you can read, the book you ARE reading,
-    // a book not yet in hand, a questline (read in the Journal tile).
+    // a questline (read in the Journal tile).
     const std::string commit =
         state.commitKey.empty() ? std::string(kGlyphReturn) : state.commitKey;
     const int lastRow = metric.rowsIn(detail.h) - 1;
@@ -881,14 +913,47 @@ void drawShelfDetail(Framebuffer& target, const PanelRect& detail, const PanelMe
                      ink.dim, alpha);
         return;
     }
-    if (!row.selectable) {
-        drawCellText(target, detail, metric, 0, lastRow, "NOT IN YOUR HANDS YET", ink.dim, alpha);
-        return;
-    }
     const std::string verb = commit + " - READ IT";
-    const std::string cost = row.fronted ? std::string("(THIS ONE)") : std::string();
+    const std::string cost = row.fronted ? std::string("(OPEN)") : std::string();
     drawCommitVerb(target, detail, metric, verb, cost, ink.key, alpha);
     drawCommitPulse(target, detail, metric, verb, cost, accent, alpha, state.commitPulse);
+}
+
+/// THE SHELF WHERE THE BODY IS ONE PANE (320x180): the split collapsed and
+/// the list took the whole body, so the shelf takes the whole body too --
+/// the same rows, the same highlight, the facts of the highlighted case
+/// under them and the commit at the foot. A tab that showed nothing at the
+/// smallest window would be a tab that lied there.
+void drawShelfList(Framebuffer& target, const PanelRect& body, const PanelMetric& metric,
+                   const CasebookPageState& state, float alpha) {
+    const PanelInk& ink = panelInk();
+    const Rgb accent = Rgb{0.90F, 0.46F, 0.40F};
+    const int count = static_cast<int>(state.shelf.size());
+    if (count == 0) {
+        drawCellText(target, body, metric, 0, 0, "NOTHING ON THE SHELF YET", ink.dim, alpha);
+        return;
+    }
+    const int listRows = std::max(1, std::min(count, 6));
+    const std::vector<PanelRect> panes = splitRows(body, metric,
+                                                   {
+                                                       spanCells(listRows),  // the shelf
+                                                       spanCells(1),         // air
+                                                       spanCells(3),         // the facts
+                                                       spanWeight(1),        // air, then the verb
+                                                   });
+    const OptionListPlan plan = planOptionList(shelfOptionsFor(state), panes[0], metric, shelfStyle());
+    const int at = std::clamp(state.shelfCursor, 0, count - 1);
+    drawOptionListPlanned(target, panes[0], metric, shelfOptionsFor(state), at, plan, alpha);
+    const CasebookShelfRow& row = state.shelf[static_cast<std::size_t>(at)];
+    drawFacts(target, panes[2], metric, shelfFactsFor(row), -1, alpha);
+    const std::string commit =
+        state.commitKey.empty() ? std::string(kGlyphReturn) : state.commitKey;
+    if (row.book) {
+        const std::string verb = commit + " - READ IT";
+        const std::string cost = row.fronted ? std::string("(OPEN)") : std::string();
+        drawCommitVerb(target, body, metric, verb, cost, ink.key, alpha);
+        drawCommitPulse(target, body, metric, verb, cost, accent, alpha, state.commitPulse);
+    }
 }
 
 }  // namespace
@@ -1064,11 +1129,19 @@ void drawCasebookPage(Framebuffer& target, const CasebookPageState& state) {
     const std::vector<PanelOption> options = optionsFor(state.rows);
     const OptionListPlan plan = planOptionList(options, listRect, metric, listStyle());
     const CasebookPageScroll scroll = casebookPageScroll(state, target.width(), target.height());
-    if (count > 0) {
+    // THE PULL PACK: on the CASES view the shelf's own highlight is the ONE
+    // armed cursor -- the lead list still draws (the stable-geometry rule)
+    // but with no row filled, so two lists cannot both look chosen. Where
+    // the body is one pane the shelf takes it outright.
+    const bool shelfUp = state.tab == CasebookTab::Cases;
+    if (shelfUp && !comp.body.split) {
+        drawShelfList(target, listRect, metric, state, alpha);
+    } else if (count > 0) {
         const int first = std::clamp(scroll.firstRow, 0, count);
         const int last = std::min(count, first + scroll.perScreen);
         const std::vector<PanelOption> page(options.begin() + first, options.begin() + last);
-        drawOptionListPlanned(target, listRect, metric, page, at - first, plan, alpha);
+        drawOptionListPlanned(target, listRect, metric, page, shelfUp ? -1 : at - first, plan,
+                              alpha);
     } else {
         // AN EMPTY BOOK IS WORDED. It happens for exactly one frame of one
         // session -- a casebook.json that failed to load -- and a blank pane
@@ -1082,7 +1155,7 @@ void drawCasebookPage(Framebuffer& target, const CasebookPageState& state) {
     // book's remaining room is not news, and the fresh book's detail pane now
     // hands a stranger the case's own hook instead of scaffolding. The faint
     // field still says "left on purpose".
-    if (count > 0) {
+    if (count > 0 && !(shelfUp && !comp.body.split)) {
         const int listRows = metric.rowsIn(listRect.h);
         const int used = std::min(count, scroll.perScreen);
         const int spare = listRows - used;
@@ -1098,7 +1171,7 @@ void drawCasebookPage(Framebuffer& target, const CasebookPageState& state) {
     // reference's own text-on-the-divider trick, no row spent, and the digits
     // key (`0` = MORE) pages it.
     const int below = count - std::min(count, scroll.firstRow + scroll.perScreen);
-    if (below > 0 && comp.ruleRows.size() >= 2) {
+    if (below > 0 && comp.ruleRows.size() >= 2 && !(shelfUp && !comp.body.split)) {
         const PanelRect ruleBand{comp.body.master.x,
                                  comp.interior.y + metric.heightOf(comp.ruleRows[1]),
                                  comp.body.master.w, metric.cellH()};

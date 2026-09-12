@@ -271,11 +271,16 @@ constexpr sv kCaseClosedKenney[] = {
     "RPG Audio/Audio/bookPlace3.ogg",
 };
 // THE PULL PACK. CaseNews: the book changed -- a page turning, restrained,
-// so the plate's one cue never reads as a fanfare.
+// so the plate's one cue never reads as a fanfare. Kenney only: the LOT
+// chime is the skill-up's.
 constexpr sv kCaseNewsKenney[] = {
     "RPG Audio/Audio/bookFlip1.ogg",
     "RPG Audio/Audio/bookFlip2.ogg",
     "RPG Audio/Audio/bookFlip3.ogg",
+};
+// SkillUp: one bong, the Kenney stand-in for the LOT progression chime.
+constexpr sv kSkillUpKenney[] = {
+    "Interface Sounds/Audio/bong_001.ogg",
 };
 
 // ---------------------------------------------------------------------------
@@ -466,8 +471,8 @@ constexpr LotSoundFile kLotAmbienceStone[] = {
 constexpr LotSoundFile kLotAmbienceOrganic[] = {
     {"sfx/trojia3d/ambience_organic.ogg",             0.0F},  // peak -10.6 dBFS
 };
-// CaseNews: the manifest's own held candidate for a progression cue (0.28 s)
-constexpr LotSoundFile kLotCaseNews[] = {
+// SkillUp: the manifest's own held candidate for a progression cue (0.28 s)
+constexpr LotSoundFile kLotSkillUp[] = {
     {"sfx/trojia3d/combo_chime.ogg",                  -4.0F},  // peak -1.6 dBFS, trimmed
 };
 
@@ -572,6 +577,7 @@ std::span<const std::string_view> soundPaths(SoundId id) noexcept {
         case SoundId::Sheathe: return asSpan(kSheatheKenney);
         case SoundId::CaseClosed: return asSpan(kCaseClosedKenney);
         case SoundId::CaseNews: return asSpan(kCaseNewsKenney);
+        case SoundId::SkillUp: return asSpan(kSkillUpKenney);
         case SoundId::PlayerHurt:
         case SoundId::PlayerDown:
         case SoundId::AmbienceCoastal:
@@ -606,7 +612,7 @@ std::span<const LotSoundFile> lotSoundPaths(SoundId id) noexcept {
         case SoundId::AmbienceCoastal: return asLotSpan(kLotAmbienceCoastal);
         case SoundId::AmbienceStone: return asLotSpan(kLotAmbienceStone);
         case SoundId::AmbienceOrganic: return asLotSpan(kLotAmbienceOrganic);
-        case SoundId::CaseNews: return asLotSpan(kLotCaseNews);
+        case SoundId::SkillUp: return asLotSpan(kLotSkillUp);
         default:
             return {};
     }
@@ -685,6 +691,7 @@ Bus busFor(SoundId id) noexcept {
         case SoundId::ClothRustle:
         case SoundId::CaseClosed:
         case SoundId::CaseNews:
+        case SoundId::SkillUp:
             return Bus::World;
         case SoundId::KnifeDraw:
         case SoundId::KnifeSlice:

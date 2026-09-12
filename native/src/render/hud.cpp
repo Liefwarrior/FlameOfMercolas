@@ -627,28 +627,30 @@ void drawCompass(Framebuffer& target, const HudState& state) {
         drawText(target, px - labelWidth / 2, y + scale, point.label,
                  cardinal ? kInk : Rgb{0.62F, 0.60F, 0.54F}, cardinal ? 0.95F : 0.7F, scale);
     }
-    // The fixed mark. One pixel column, at the very top edge of the strip, so
-    // it never encroaches on the view.
-    target.fillRect(x + stripW / 2, y, scale, 2 * scale, Rgb{0.95F, 0.80F, 0.35F}, 1.0F);
-
     // THE PULL PACK: TICKS ON THE RIBBON FOR DISCOVERED NAMED PLACES (owner
-    // ruling D8). Along the strip's own bottom rail, one scale unit tall and
-    // spilling one more into the frame line under it, so they never touch
-    // the letters (the glyph rows end at y + 7 * scale) and never cross the
-    // fixed mark at the top. Bone for a named place, amber -- the fixed
-    // mark's own ink -- for the followed lead's site, and wider, so the eye
-    // lines the two amber marks up without reading a word. A bearing on a
-    // strip of sky, not an arrow in the world: the doctrine's own shape.
-    const auto tickX = [&](std::int32_t bam) -> int {
+    // ruling D8). On the strip's TOP rail -- the frame line above the strip
+    // and the strip's own first row, which the letters never reach (their
+    // first glyph row is y + scale) and which no drop shadow can cross
+    // (shadows fall down and right). Bone for a named place, amber -- the
+    // fixed mark's own ink -- for the followed lead's site, and wider, so
+    // the eye lines it up with the mark without reading a word; when the two
+    // coincide you are facing it. Drawn BEFORE the mark so the mark stays on
+    // top. Every tick sits on its TRUE bearing (pull.hpp's pullTickBam, a
+    // real atan2): a notch snapped to a compass letter would sit under the
+    // letter, not on the bearing. A bearing on a strip of sky, not an arrow
+    // in the world: the doctrine's own shape.
+    const auto tickDelta = [&](std::int32_t bam) -> std::int32_t {
         std::int32_t delta = (bam & 65535) - (state.yawBam & 65535);
-        delta = ((delta + 32768) & 65535) - 32768;
+        return ((delta + 32768) & 65535) - 32768;  // to [-32768, 32768)
+    };
+    const auto tickX = [&](std::int32_t delta) -> int {
         return x + stripW / 2 + static_cast<int>(static_cast<float>(delta) * pixelsPerBam);
     };
-    // A tick at the strip's very edge (a place dead abeam) is clipped to the
-    // strip rather than dropped: half a notch at the rail still says "there,
-    // just off the arc", which is exactly the fact a body turning wants.
-    const int tickY = y + stripH - scale;
+    const int tickY = y - scale;
     const auto notch = [&](int px, int halfWidth, const Rgb& ink, float alpha) {
+        // A tick at the strip's very edge (a place dead abeam) is clipped to
+        // the strip rather than dropped: half a notch at the rail still says
+        // "there, just off the arc", which is the fact a body turning wants.
         const int x0 = std::max(x, px - halfWidth);
         const int x1 = std::min(x + stripW, px + halfWidth + scale);
         if (x1 > x0) {
@@ -656,11 +658,23 @@ void drawCompass(Framebuffer& target, const HudState& state) {
         }
     };
     for (const std::int32_t bam : state.placeTickBams) {
-        notch(tickX(bam), scale / 2, Rgb{0.90F, 0.87F, 0.78F}, 0.95F);
+        const std::int32_t delta = tickDelta(bam);
+        if (delta < -16384 || delta > 16384) {
+            continue;  // outside the arc: a place has no peg, only the pull does
+        }
+        notch(tickX(delta), scale / 2, Rgb{0.90F, 0.87F, 0.78F}, 0.95F);
     }
     if (state.pullTickBam >= 0) {
-        notch(tickX(state.pullTickBam), scale, Rgb{0.95F, 0.80F, 0.35F}, 1.0F);
+        // BEHIND YOU THE PULL DOES NOT VANISH: it pegs at the nearer rail,
+        // half a notch's worth, so a turn keeps something to turn toward.
+        const std::int32_t delta = tickDelta(state.pullTickBam);
+        const bool behind = delta < -16384 || delta > 16384;
+        const int px = behind ? (delta < 0 ? x : x + stripW - scale) : tickX(delta);
+        notch(px, behind ? scale / 2 : scale, Rgb{0.95F, 0.80F, 0.35F}, behind ? 0.85F : 1.0F);
     }
+    // The fixed mark. One pixel column, at the very top edge of the strip, so
+    // it never encroaches on the view.
+    target.fillRect(x + stripW / 2, y, scale, 2 * scale, Rgb{0.95F, 0.80F, 0.35F}, 1.0F);
 
     // UI-EA (LANE HUD): THE SUB-LABEL ROW WAS EMPTIED. The place name used
     // to be printed here every frame; the word diet deleted it -- the
@@ -696,7 +710,9 @@ void drawPullLine(Framebuffer& target, const HudState& state, int rightBlock) {
     const int scale = hudScale(height);
     const int minor = hudMinorScale(height);
     const int margin = 6 * scale;
-    const int budget = width - 2 * (margin + std::max(0, rightBlock) + scale);
+    // THREE SCALE UNITS OF AIR OFF THE CORNER, each side: a line that ended
+    // flush against SEEN read as one word with it.
+    const int budget = width - 2 * (margin + std::max(0, rightBlock) + 3 * scale);
     if (budget <= 0) {
         return;
     }
@@ -713,20 +729,44 @@ void drawPullLine(Framebuffer& target, const HudState& state, int rightBlock) {
     if (textWidth(line, minor) > budget) {
         // STILL TOO WIDE: the PLACE is what gets cut, marked, and the two
         // numbers that change as you walk -- the point and the paces in
-        // front, the band behind -- stay whole. The line is "bearing  place"
-        // or "bearing  place  BAND n", two cells of air between parts.
+        // front, the plane behind -- stay whole. The line is "bearing
+        // place" or "bearing  place  BELOW", two cells of air between parts.
+        // THE CUT IS ON A WORD, and never after an article: "MISSION OF
+        // THE.." names nothing, "MISSION.." names the Mission.
         const std::size_t first = line.find("  ");
-        const std::size_t bandAt = line.rfind("  BAND ");
+        const std::size_t tailAt = line.rfind("  ");
         if (first != std::string::npos) {
             const std::string head = line.substr(0, first + 2);
-            const std::string tail = bandAt != std::string::npos && bandAt > first
-                                         ? line.substr(bandAt)
-                                         : std::string();
-            std::string place = line.substr(first + 2, bandAt != std::string::npos && bandAt > first
-                                                             ? bandAt - (first + 2)
-                                                             : std::string::npos);
+            const bool hasTail = tailAt != std::string::npos && tailAt > first;
+            const std::string tail = hasTail ? line.substr(tailAt) : std::string();
+            std::string place =
+                line.substr(first + 2, hasTail ? tailAt - (first + 2) : std::string::npos);
             const int room = budget - textWidth(head, minor) - textWidth(tail, minor);
-            place = room > 0 ? clipToWidth(place, room, minor) : std::string();
+            // Whole words off the end until the place and its mark fit, then
+            // the articles and joints a cut leaves dangling.
+            const auto fits = [&](const std::string& text) {
+                return textWidth(text + "..", minor) <= room;
+            };
+            bool cut = false;
+            while (!place.empty() && !fits(place)) {
+                const std::size_t space = place.rfind(' ');
+                place = space == std::string::npos ? std::string() : place.substr(0, space);
+                cut = true;
+            }
+            for (bool trimmed = true; trimmed && cut;) {
+                trimmed = false;
+                for (const char* joint : {" THE", " OF", " AND", " O'"}) {
+                    const std::string_view word(joint);
+                    if (place.size() > word.size() &&
+                        place.compare(place.size() - word.size(), word.size(), word) == 0) {
+                        place.erase(place.size() - word.size());
+                        trimmed = true;
+                    }
+                }
+            }
+            if (cut && !place.empty()) {
+                place += "..";
+            }
             line = place.empty() ? head.substr(0, first) + tail : head + place + tail;
         }
     }
@@ -807,8 +847,11 @@ void drawSkillToast(Framebuffer& target, const HudState& state) {
     // line -- the corner's rule, mirrored.
     const int settledY = band.stripY + lift;
     const int padX = plateScale * 2;
-    const int padY = std::max(1, plateScale / 2);
-    const int textH = rowCount * rowHeight(plateScale) - plateScale;
+    // A FULL SCALE UNIT OF PAD, and the text's height counts every row's
+    // drop shadow: a plate shallower than the shadow let the letters' feet
+    // spill under its bottom rail.
+    const int padY = plateScale;
+    const int textH = rowCount * rowHeight(plateScale);
     const int lowest = settledY + lift + textH + padY;
     if (lowest >= hudCentreRect(width, height).y0) {
         return;
@@ -816,8 +859,8 @@ void drawSkillToast(Framebuffer& target, const HudState& state) {
     const float drift = std::clamp(state.skillToastDrift, -1.0F, 1.0F);
     const int y = settledY - static_cast<int>(std::round(drift * static_cast<float>(lift)));
     const int textX = margin + padX;
-    drawTextPlate(target, textX - padX, y - padY, textX + drawn + padX, y + textH + padY,
-                  std::max(1, plateScale / 2), fade);
+    drawTextPlate(target, textX - padX, y - padY, textX + drawn + plateScale + padX,
+                  y + textH + padY, std::max(1, plateScale / 2), fade);
     // The number ink, the same green the case plate spends on "the trail
     // grew": a level is the one other place on this frame where green means
     // you gained something.
