@@ -4330,6 +4330,16 @@ void Session::step(const sim::MoveInput& input) {
         // ward interpolates nothing off it. This is the client side of the ONE
         // declared population field; the sim hashes it, the client only feeds it.
         people_->setPlayer(body_->tileX(), body_->tileY(), body_->band());
+        // STREET SENSES leg (c): and whether he PRESENTS AS A WIELDER -- the
+        // tavern's own deference gate, pushed so the street Watch reads the
+        // same answer the Gull's does (D6: absolute, Gull and street).
+        people_->setPlayerPresentsAsWielder(tavern_->playerPresentsAsWielder());
+        // AND WHETHER HE IS INDOORS -- a house's own brawl is not street
+        // business (test_scripted_lines.cpp's nemesis line found this: the
+        // alarm below already crosses the Gull's open door on purpose, for
+        // the ordinary crowd, but the Watch has no jurisdiction over what
+        // Watchman Cull's own separate watch already polices).
+        people_->setPlayerIndoors(tavern_->playerInside());
         std::int32_t roomHp = 0;
         std::int32_t corpses = 0;
         bool flooredInReach = false;
@@ -4389,10 +4399,61 @@ void Session::step(const sim::MoveInput& input) {
             sim::Fighter sheet;
             sheet.actorId = sim::kWardSpeakerIdBase + attacker->id;
             sheet.weapon = sim::Weapon::Fists;
-            sheet.intent = sim::Intent::Subdue;
+            // STREET SENSES leg (c): a watchman you struck fights with
+            // Intent::Kill (the Gull's own rule for a blow on the closing
+            // Cull) -- Lethal by B2, so his blows can kill and the floor is
+            // lifted. A sailor means Subdue: a fist fight on the quay.
+            sheet.intent = attacker->type == sim::WardType::MilitiaWatch ? sim::Intent::Kill
+                                                                          : sim::Intent::Subdue;
             sheet.hp = attacker->hp;
             sheet.hpMax = sim::kActorHealth;
             (void)tavern_->takeStreetBlow(sheet, thrown.roll);
+        }
+        // STREET SENSES leg (c) -- THE WATCH ON THE BEATS. What the closing
+        // watchmen did on the ward's tick just taken: the halt and the demand
+        // said on the alert row out of the street's own rows (a new file in
+        // the salted register, falling through to the Gull's watch.* rows
+        // until authored), the offence landed on the heat, and the ARREST AT
+        // REACH landed through the Gull's one seam (arrestByStreetWatch ->
+        // arrestPlayer -> the charge sheet, the seizure, the hearing) -- so
+        // TAKEN TO THE MISSION and the page follow from the quay exactly as
+        // they follow from Cull's stool. In custody already, or hanged, the
+        // ward's arrest is refused by the room and nothing is written.
+        for (const sim::WatchEvent& event : people_->takeWatchEvents()) {
+            const sim::WardActor* officer = people_->byId(event.watchmanId);
+            if (officer == nullptr) {
+                continue;
+            }
+            const std::string name = people_->identity(officer->id).name;
+            const sim::BarkTables& barks = tavern_->dialogue().barks();
+            const std::int32_t salt = static_cast<std::int32_t>(elapsedSeconds_ % 1024) + officer->id;
+            switch (event.kind) {
+                case sim::WatchEventKind::Halt:
+                    say(name + ": " +
+                        std::string(barks.line(
+                            barks.resolve({std::string("street.halt"), std::string("watch.halt"),
+                                           std::string("watch.demand")}),
+                            salt)));
+                    break;
+                case sim::WatchEventKind::Sheathe:
+                    say(name + ": " +
+                        std::string(barks.line(
+                            barks.resolve({std::string("street.sheathe"), std::string("watch.demand")}),
+                            salt)));
+                    break;
+                case sim::WatchEventKind::Offence:
+                    tavern_->noteStreetOffence();
+                    say(name + ": " +
+                        std::string(barks.line(
+                            barks.resolve({std::string("street.offence"), std::string("watch.demand")}),
+                            salt)));
+                    break;
+                case sim::WatchEventKind::Arrest:
+                    if (!inCustody() && !tavern_->hearingPending() && !tavern_->executed()) {
+                        tavern_->arrestByStreetWatch(name);
+                    }
+                    break;
+            }
         }
     }
     // BARKS LANE (feel/build). WHAT THE ROOM SAID THIS STEP, on the alert
@@ -6351,6 +6412,20 @@ void Session::attackUp() {
                                                witnesses);
         if (result.swung && result.targetId >= 0) {
             (void)people_->applyStreetBlow(wardId, sheet.hp, result.blow, result.lethal);
+            // THE ROUTED DOCKER'S LINE (the street's own row, salted register):
+            // a man struck and still standing who is not a fighter and not the
+            // Watch has just decided to run, and says so once on the alert row.
+            // Presentation only: a string, unhashed.
+            if (result.blow.landed && !result.blow.downed && !result.killed &&
+                !sim::wardTypeFightsBack(street->type)) {
+                const sim::BarkTables& barks = tavern_->dialogue().barks();
+                const std::string_view key =
+                    barks.resolve({std::string("street.routed"), std::string("crowd.flee")});
+                if (!key.empty()) {
+                    say(people_->identity(wardId).name + ": " +
+                        std::string(barks.line(key, static_cast<std::int32_t>(elapsedSeconds_ % 1024) + wardId)));
+                }
+            }
         }
     } else {
         result = tavern_->playerAttackUp();
@@ -12867,8 +12942,202 @@ StreetLineResult runStreetLine(Session& session, const std::string& who, int top
     return out;
 }
 
+/// STREET SENSES leg (c), played through the real verbs and no other door: a
+/// watchman on the beats sees cause on his own two feet -- `alarm()` fires
+/// from EXACTLY the places it already fires for legs (a)/(b)
+/// (`WardActor::applyStreetBlow`'s own tail for a landed blow, the periodic
+/// once-a-second check in `Session::step` for a raised blade) -- and
+/// `Session::step`'s leg (c) block turns his `WatchEvent`s into the alert
+/// row and the arrest. Nothing here calls `WardPopulation::alarm` or
+/// `takeWatchEvents` by hand.
+///
+/// "watch-halt": a fist lands on a docker within a nearby watchman's sight,
+/// and the frame stops the moment he starts Closing -- HALT in his own name
+/// on the row. "watch-sheathe": steel goes up within a watchman's sight
+/// instead, and the frame stops on his SHEATHE IT demand. "watch-offence":
+/// the same demand held past its six-second grace, so the frame stops on the
+/// row that follows it -- heat, and no arrest by itself.
+StreetLineResult runStreetWatchEnding(Session& session, const std::string& where) {
+    StreetLineResult out;
+    const bool steel = where == "watch-sheathe" || where == "watch-offence";
+
+    // THE WATCHMAN AND HIS WITNESS: the first MilitiaWatch on the roster with
+    // a non-Watch body within kWatchSightTiles and a line to it, and a free
+    // standable tile beside that body for the player. Ascending roster order,
+    // deterministic and draw-free -- runStreetAssault's own shape, asked of a
+    // pair instead of a crowd.
+    static constexpr std::int32_t dx[4] = {1, -1, 0, 0};
+    static constexpr std::int32_t dy[4] = {0, 0, 1, -1};
+    const sim::WardActor* cop = nullptr;
+    const sim::WardActor* victim = nullptr;
+    std::int32_t standX = 0;
+    std::int32_t standY = 0;
+    std::int32_t standBand = 0;
+    for (const sim::WardActor& watch : session.people().actors()) {
+        if (!watch.visible() || watch.type != sim::WardType::MilitiaWatch) {
+            continue;
+        }
+        for (const sim::WardActor& body : session.people().actors()) {
+            if (!body.visible() || !sim::isPerson(body.type) ||
+                body.type == sim::WardType::MilitiaWatch || body.band != watch.band) {
+                continue;
+            }
+            if (std::max(std::abs(watch.x - body.x), std::abs(watch.y - body.y)) >
+                sim::kWatchSightTiles) {
+                continue;
+            }
+            if ((watch.x != body.x || watch.y != body.y) &&
+                !session.tiles().lineOfSight(watch.x, watch.y, body.x, body.y, watch.band)) {
+                continue;
+            }
+            bool stood = false;
+            for (int n = 0; n < 4 && !stood; ++n) {
+                const std::int32_t sx = body.x + dx[n];
+                const std::int32_t sy = body.y + dy[n];
+                if (!session.tiles().standable(sx, sy, body.band) ||
+                    session.people().nearestTo(sx, sy, body.band, 0) != nullptr) {
+                    continue;
+                }
+                // THE WATCHMAN MUST NOT BE ON THE RAY HIMSELF: within his own
+                // sight of the victim is fine (that is the whole point), but
+                // standing within melee reach of the STAND TILE would make
+                // him, not the victim, the nearer body along it -- a fist
+                // meant for the victim landing on the watchman instead
+                // (wardTypeFightsBack now includes him, so it would still
+                // "connect", just never on the tracked id). Two tiles clears
+                // sightlineTarget's own reach with room to spare.
+                if (std::max(std::abs(watch.x - sx), std::abs(watch.y - sy)) <= 2) {
+                    continue;
+                }
+                standX = sx;
+                standY = sy;
+                standBand = body.band;
+                stood = true;
+            }
+            if (!stood) {
+                continue;
+            }
+            cop = &watch;
+            victim = &body;
+            break;
+        }
+        if (cop != nullptr) {
+            break;
+        }
+    }
+    if (cop == nullptr || victim == nullptr) {
+        return out;
+    }
+    out.found = true;
+    out.actorId = cop->id;
+    const std::int32_t copId = cop->id;
+    const std::int32_t victimId = victim->id;
+
+    // THE ONE PLACEMENT, runStreetAssault's own reasoning: a tile off the
+    // victim, facing in.
+    session.placeBodyAt(standX, standY, standBand);
+    {
+        const std::int32_t toX = victim->x - standX;
+        const std::int32_t toY = victim->y - standY;
+        sim::Angle look = sim::kFacingNorth;
+        if (std::abs(toX) >= std::abs(toY)) {
+            look = toX > 0 ? sim::kFacingEast : sim::kFacingWest;
+        } else {
+            look = toY > 0 ? sim::kFacingSouth : sim::kFacingNorth;
+        }
+        session.body().setYaw(look);
+    }
+
+    if (steel) {
+        // STEEL UP, NO BLOW: an Edged weapon and the hands raised, the exact
+        // stance Session::step's own once-a-second check reads as Steel.
+        session.tavern().setPlayerCombat(sim::Weapon::Edged, sim::Intent::Subdue);
+        session.setBlocking(true);
+        session.stepMany(sim::MoveInput{}, 1);
+    } else {
+        // ONE FIST, LANDED: the leg (b) swing over the street roster,
+        // unchanged -- applyStreetBlow's own tail is what alarms him.
+        // runStreetAssault's own swingAt shape: re-stand and re-face each tap
+        // since a body not yet struck may still have drifted a tile between
+        // them (its own ordinary loiter, not a reaction to anything here).
+        session.tavern().setPlayerCombat(sim::Weapon::Fists, sim::Intent::Subdue);
+        session.stepMany(sim::MoveInput{}, 1);
+        bool landed = false;
+        for (int tap = 0; tap < 6 && !landed; ++tap) {
+            const sim::WardActor* mark = session.people().byId(victimId);
+            if (mark == nullptr || !mark->visible()) {
+                break;
+            }
+            std::int32_t sx = mark->x;
+            std::int32_t sy = mark->y;
+            bool stoodHere = false;
+            for (int n = 0; n < 4 && !stoodHere; ++n) {
+                sx = mark->x + dx[n];
+                sy = mark->y + dy[n];
+                if (session.tiles().standable(sx, sy, mark->band) &&
+                    session.people().nearestTo(sx, sy, mark->band, 0) == nullptr) {
+                    stoodHere = true;
+                }
+            }
+            if (!stoodHere) {
+                break;
+            }
+            const std::int32_t hpBefore = mark->hp;
+            session.placeBodyAt(sx, sy, mark->band);
+            {
+                const std::int32_t toX = mark->x - sx;
+                const std::int32_t toY = mark->y - sy;
+                sim::Angle look = sim::kFacingNorth;
+                if (std::abs(toX) >= std::abs(toY)) {
+                    look = toX > 0 ? sim::kFacingEast : sim::kFacingWest;
+                } else {
+                    look = toY > 0 ? sim::kFacingSouth : sim::kFacingNorth;
+                }
+                session.body().setYaw(look);
+            }
+            session.stepMany(sim::MoveInput{}, 1);
+            session.attackDown();
+            session.stepMany(sim::MoveInput{}, 1);
+            session.attackUp();
+            const sim::WardActor* after = session.people().byId(victimId);
+            landed = after != nullptr && (after->hp < hpBefore || after->slain);
+            session.stepMany(sim::MoveInput{}, sim::kSwingRecoverySteps + 1);
+        }
+        if (!landed) {
+            out.line = "no-blow-landed";
+            return out;
+        }
+    }
+
+    // THE CLOSING: real steps only, waiting for Session::step's own leg (c)
+    // block to notice -- never a hand-fed alarm() or takeWatchEvents().
+    bool closing = false;
+    for (int second = 0; second < 20 && !closing; ++second) {
+        session.stepMany(sim::MoveInput{}, sim::kStepsPerSecond);
+        closing = session.people().watchmanClosing(copId);
+    }
+    out.opened = closing;
+    out.line = session.lastMessage();
+    if (where != "watch-offence" || !closing) {
+        return out;
+    }
+
+    // "watch-offence": hold the demand past its six-second grace -- the row
+    // that follows it, said once.
+    for (std::int64_t second = 0; second < sim::kSheatheGraceSeconds + 3 && closing; ++second) {
+        session.stepMany(sim::MoveInput{}, sim::kStepsPerSecond);
+        closing = session.people().watchmanClosing(copId);
+    }
+    out.line = session.lastMessage();
+    out.opened = closing;
+    return out;
+}
+
 StreetLineResult runStreetAssault(Session& session, const std::string& where) {
     StreetLineResult out;
+    if (where == "watch-halt" || where == "watch-sheathe" || where == "watch-offence") {
+        return runStreetWatchEnding(session, where);
+    }
     // THE ENDINGS. Empty (or "steel"): the blade up, no blow -- leg (a)'s
     // panic. "blow": fists, one tap that lands on a docker. "down": taps until
     // he is on the floor. "up": the same, then his six seconds, so he is on

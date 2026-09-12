@@ -1484,6 +1484,18 @@ public:
     /// nemesis rise is ceiling, the book keys on the roster). The client has
     /// already checked reach. Returns whether it landed.
     bool takeStreetBlow(const Fighter& attacker, std::uint64_t roll);
+    /// STREET SENSES leg (c). A WATCHMAN ON THE BEATS TOOK YOU AT REACH, with a
+    /// blow or a killing behind it (WardPopulation's Close, landed by the
+    /// client): the SAME seam the Gull's Cull uses -- arrestPlayer, cause
+    /// VIOLENCE -- so the charge, the seizure, the paperless fine or the
+    /// hearing (TAKEN TO THE MISSION, the page), the lost contracts and the
+    /// release are one path with two officers. Refused (nothing written) with
+    /// a hearing already open or after the rope.
+    void arrestByStreetWatch(std::string_view officerName);
+    /// STREET SENSES leg (c). D5: an unsheathed blade with no blow, past the
+    /// street Watch's grace, is an OFFENCE -- kSheatheOffenceHeat on the heat
+    /// the Watch keeps, no paper and no arrest by itself.
+    void noteStreetOffence();
     /// Drops a charge with no swing and no cost -- what a cast, a page, a
     /// conversation or a pick does to a raised hand. IDLE and RECOVERY are
     /// untouched. Idempotent.
@@ -1749,6 +1761,12 @@ private:
     [[nodiscard]] bool canSeePlayer(const Actor& actor) const noexcept;
     /// The Watch puts its hands on you. One call site.
     void applyArrest(Actor& officer);
+    /// STREET SENSES leg (c). THE BODY OF THE ARREST, shared by the Gull's
+    /// officer (applyArrest) and the street's (arrestByStreetWatch): the
+    /// charge sheet, the one draw, the paperless fine or the seizure and the
+    /// hearing, the lost contracts, the officer's line, the room's resets,
+    /// and the release the client takes the body on. One seam, two officers.
+    void arrestPlayer(std::string_view officerName, WatchCause cause);
     /// The nearest downed vermin within reach, or nullptr.
     [[nodiscard]] Actor* downedVerminInReach() noexcept;
     /// The nearest rat on its feet within reach, or nullptr.

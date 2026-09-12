@@ -1,8 +1,10 @@
 #include "granadad/gate/workload.hpp"
 
+#include <algorithm>
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <cstdlib>
 #include <map>
 #include <memory>
 #include <string>
@@ -435,17 +437,35 @@ public:
         // player is drained every tick -- the gate has no sheet to land them
         // on, and a mailbox nobody reads is the one thing this file must not
         // leave growing. Drained BEFORE the window check so a fight that
-        // outlives the window is drained too.
+        // outlives the window is drained too. Leg (c): the Watch's mailbox the
+        // same, and its ARRESTS COUNTED -- the gate has nobody to take, so the
+        // arrest at reach is reported rather than served (the tavern driver's
+        // own rule for the roof-run and the concession), said out loud here.
         (void)people_->takeStreetBlows();
-        if (ticks_ < kFromTick || ticks_ > kToTick) {
+        for (const sim::WatchEvent& event : people_->takeWatchEvents()) {
+            if (event.kind == sim::WatchEventKind::Arrest) {
+                arrests_ = sim::wrap_add(arrests_, 1);
+                // TAKEN. Once the docker has been put down, the first arrest at
+                // reach ends the assault: a man in custody throws no more
+                // blows and frightens nobody, so the alarms stop and the street
+                // is left to recover on the compared report.
+                if (downedOnce_) {
+                    arrested_ = true;
+                }
+            }
+        }
+        if (ticks_ < kFromTick || ticks_ > kToTick || arrested_) {
             return;
         }
-        // The point, found ONCE and held: the first person standing on the
-        // Tarwalk on walking ground, ascending id -- a docker where the day
-        // trades are, deterministic and draw-free. Latched, so the fright's
-        // origin stays where the blow landed while the crowd breaks away from
-        // it (actFlee reads exactly that vector).
+        // The point, found ONCE and held: a person standing on the Tarwalk on
+        // walking ground -- a docker where the day trades are -- and, leg (c),
+        // one a WATCHMAN CAN SEE (kWatchSightTiles, same band, line of sight)
+        // so the blow has a beat to answer it; failing that, the first docker
+        // at all. Ascending id, deterministic and draw-free. Latched, so the
+        // fright's origin stays where the blow landed while the crowd breaks
+        // away from it (actFlee reads exactly that vector).
         if (!located_) {
+            std::int32_t fallback = -1;
             for (const sim::WardActor& actor : people_->actors()) {
                 if (!actor.visible() || !sim::isPerson(actor.type) ||
                     actor.type == sim::WardType::MilitiaWatch) {
@@ -460,12 +480,23 @@ public:
                 if (!people_->onWalkingGround(actor.x, actor.y, actor.band)) {
                     continue;
                 }
-                x_ = actor.x;
-                y_ = actor.y;
-                band_ = actor.band;
-                victimId_ = actor.id;
+                if (fallback < 0) {
+                    fallback = actor.id;
+                }
+                if (people_->witnessesInSight(actor.x, actor.y, actor.band, sim::kWatchSightTiles,
+                                              actor.id) > 0 &&
+                    watchmanInSight(actor)) {
+                    fallback = actor.id;
+                    break;
+                }
+            }
+            if (fallback >= 0) {
+                const sim::WardActor& victim = *people_->byId(fallback);
+                x_ = victim.x;
+                y_ = victim.y;
+                band_ = victim.band;
+                victimId_ = victim.id;
                 located_ = true;
-                break;
             }
         }
         if (!located_) {
@@ -510,15 +541,33 @@ public:
     }
 
     void hash_into(sim::HashSink& sink) const override {
-        // Its own tick count and blow count only: the fright and the floor it
-        // caused are the population's state to hash, and two systems folding
-        // the same numbers would make one divergence look like two. The tavern
-        // driver's own rule.
+        // Its own tick, blow and arrest counts only: the fright, the floor and
+        // the closing are the population's state to hash, and two systems
+        // folding the same numbers would make one divergence look like two.
+        // The tavern driver's own rule.
         sink.put_long(static_cast<std::uint64_t>(ticks_));
         sink.put_int(static_cast<std::uint32_t>(blows_));
+        sink.put_int(static_cast<std::uint32_t>(arrests_));
     }
 
 private:
+    /// Whether a watchman can see this body: the street Watch's own three
+    /// clauses (same band, kWatchSightTiles, a line), asked of the roll.
+    [[nodiscard]] bool watchmanInSight(const sim::WardActor& body) const {
+        for (const sim::WardActor& actor : people_->actors()) {
+            if (actor.type != sim::WardType::MilitiaWatch || !actor.visible() ||
+                actor.band != body.band) {
+                continue;
+            }
+            if (std::max(std::abs(actor.x - body.x), std::abs(actor.y - body.y)) >
+                sim::kWatchSightTiles) {
+                continue;
+            }
+            return true;
+        }
+        return false;
+    }
+
     /// 16:30 on a 16:00-start run: past the minutes the ward spends walking to
     /// its posts, so the crowd is on the Tarwalk to be scattered.
     static constexpr std::int64_t kFromTick = 1800;
@@ -538,6 +587,12 @@ private:
     std::int32_t victimId_ = -1;
     std::int32_t blows_ = 0;
     bool downedOnce_ = false;
+    /// STREET SENSES leg (c): the Watch's arrests at reach, counted since the
+    /// gate has no sheet to land one on (hash_into's own note), and the
+    /// assault's give-up once the docker taken has already gone down once
+    /// (the tick() comment above this field's use).
+    std::int32_t arrests_ = 0;
+    bool arrested_ = false;
 };
 
 // ---------------------------------------------------------------------------

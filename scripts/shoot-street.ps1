@@ -1,10 +1,11 @@
 <#
-Shoots the STREET SENSES leg (a) panic at 1280x720 off dist\granadad.exe into
-docs\frames\street. Every frame is the real exe playing the real verb
-(--street-assault: stand in the crowd on the Tarwalk, raise steel, no blow) --
-the settle window does the scattering. The summary line each run prints is kept
-beside its frame in shoot-street.log so a frame that fell short cannot pass as
-one that did.
+Shoots the STREET SENSES set (legs a/b/c) at 1280x720 off dist\granadad.exe
+into docs\frames\street. Every frame is the real exe playing the real verb
+(--street-assault: stand in the crowd on the Tarwalk, raise steel, no blow;
+--street-assault=blow/down/up/kill/hearing: a body to hit; the watch-* endings:
+a watchman on the beats seeing cause on his own two feet) -- nothing is a hand-
+fed alarm. The summary line each run prints is kept beside its frame in
+shoot-street.log so a frame that fell short cannot pass as one that did.
 
     powershell -ExecutionPolicy Bypass -File .\scripts\shoot-street.ps1
 #>
@@ -38,7 +39,13 @@ $shots = @(
     @('street-down',       @('--street-assault=down', '--settle-steps=0')),
     @('street-up',         @('--street-assault=up', '--settle-steps=0')),
     @('street-kill',       @('--street-assault=kill', '--settle-steps=0')),
-    @('street-hearing',    @('--street-assault=hearing'))
+    @('street-hearing',    @('--street-assault=hearing')),
+    # Leg (c): the Watch on the beats gets eyes. A fist or steel within a
+    # nearby watchman's own sight (never a hand-fed alarm), played through the
+    # real verbs; Session::step's own leg (c) block says the line.
+    @('street-watch-halt',    @('--street-assault=watch-halt')),
+    @('street-watch-sheathe', @('--street-assault=watch-sheathe')),
+    @('street-watch-offence', @('--street-assault=watch-offence'))
 )
 
 $failed = 0

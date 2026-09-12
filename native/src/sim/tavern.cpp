@@ -3950,6 +3950,31 @@ void Tavern::tickWatch() {
 }
 
 void Tavern::applyArrest(Actor& officer) {
+    // STREET SENSES leg (c): the body of the arrest is arrestPlayer, shared
+    // with the street Watch -- one seam, two officers. What is the room's
+    // alone is the officer's own activity.
+    arrestPlayer(officer.name(), watchCause_);
+    officer.setActivity(Activity::Watching);
+}
+
+void Tavern::arrestByStreetWatch(std::string_view officerName) {
+    // A watchman on the beats reached the player with a blow or a killing
+    // behind it (WardPopulation's Close, landed by the client). The same
+    // charge, the same seizure, the same hearing -- cause VIOLENCE, since the
+    // street's Watch only ever closes on what it saw.
+    if (dialogue_.crimes().executed() || dialogue_.crimes().hearingPending()) {
+        return;
+    }
+    arrestPlayer(officerName, WatchCause::Violence);
+}
+
+void Tavern::noteStreetOffence() {
+    // D5: an unsheathed blade with no blow, past the grace, is an Offence --
+    // heat the Watch heard, no paper by itself (ten is a sixth of a warrant).
+    dialogue_.crimes().addHeat(kSheatheOffenceHeat);
+}
+
+void Tavern::arrestPlayer(std::string_view officerName, WatchCause cause) {
     CrimeLedger& crimes = dialogue_.crimes();
     const Stash before = crimes.stash();
     const std::int32_t roofs = dialogue_.factions().indexOf("skyrunners");
@@ -3975,8 +4000,8 @@ void Tavern::applyArrest(Actor& officer) {
     lastArrest_ = ArrestReport{};
     lastArrest_.happened = true;
     lastArrest_.sentence = sheet.tier;
-    lastArrest_.cause = watchCause_;
-    lastArrest_.officer = officer.name();
+    lastArrest_.cause = cause;
+    lastArrest_.officer = std::string(officerName);
 
     const char* table = "watch.fined";
     if (sheet.tier == Sentence::Fined) {
@@ -3998,7 +4023,7 @@ void Tavern::applyArrest(Actor& officer) {
         // laid the paper; the plea is a stepped input and the sentence waits
         // on it.
         lastArrest_.unitsSeized = crimes.seizeAtArrest();
-        crimes.openHearing(sheet, lastArrest_.unitsSeized, draw, officer.name());
+        crimes.openHearing(sheet, lastArrest_.unitsSeized, draw, officerName);
         switch (sheet.tier) {
             case Sentence::Held:
                 table = "watch.held";
@@ -4019,7 +4044,7 @@ void Tavern::applyArrest(Actor& officer) {
     // The officer's own line: the door's for a search, the walk to the bench
     // for paper (the shipped watch.held/maimed/condemned rows already read as
     // exactly that).
-    lastArrest_.line = officer.name() + ": " +
+    lastArrest_.line = std::string(officerName) + ": " +
                        std::string(dialogue_.barks().line(
                            dialogue_.barks().resolve({std::string(table)}),
                            crimes.arrests() + lastArrest_.unitsSeized));
@@ -4033,7 +4058,6 @@ void Tavern::applyArrest(Actor& officer) {
     watchStance_ = WatchStance::Idle;
     watchmanId_ = -1;
     watchCause_ = WatchCause::None;
-    officer.setActivity(Activity::Watching);
     // And the body is somebody else's to move: to the Tarwalk after a search,
     // to the Mission's door with a hearing open. The room does not own it, so
     // it asks -- see takeArrestRelease.

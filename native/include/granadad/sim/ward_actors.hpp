@@ -56,6 +56,7 @@
 #include "granadad/sim/engine.hpp"
 #include "granadad/sim/path_finder.hpp"
 #include "granadad/sim/tile_query.hpp"
+#include "granadad/sim/watch.hpp"
 #include "granadad/sim/world_hash.hpp"
 
 namespace granadad::sim {
@@ -199,7 +200,12 @@ inline constexpr std::size_t kWardTypeCount = 16;
 /// (a) flee plan, deeper); the Watch is neither -- it holds, and what it does
 /// instead is leg (c)'s.
 [[nodiscard]] constexpr bool wardTypeFightsBack(WardType type) noexcept {
-    return type == WardType::Sailor || type == WardType::Thief;
+    // STREET SENSES leg (c): and the Watch. A blow on a watchman makes him a
+    // brawler (D6, the Gull's own rule for a blow on the closing Cull) -- he
+    // fights, he does not arrest, and his blows can kill (the client lands
+    // them with Intent::Kill, Lethal by B2). Killing him is murder like
+    // anybody else's.
+    return type == WardType::Sailor || type == WardType::Thief || type == WardType::MilitiaWatch;
 }
 
 // ---------------------------------------------------------------------------
@@ -407,9 +413,15 @@ enum class WardPolicy : std::uint8_t {
     /// out or he is floored. Wins over everything while it runs -- a man in a
     /// fight is not hungry. APPENDED for the same reason Cower was.
     Brawl = 8,
+    /// STREET SENSES leg (c). THE WATCH CLOSING: a watchman who SAW cause --
+    /// steel up, a blow, a killing -- walking the player down for
+    /// kWatchClosingSeconds, the halt in his mouth, the arrest at reach. Below
+    /// Brawl (a blow on him makes him a brawler, and he fights rather than
+    /// arrests) and above everything else. APPENDED.
+    Close = 9,
 };
 
-inline constexpr std::size_t kWardPolicyCount = 9;
+inline constexpr std::size_t kWardPolicyCount = 10;
 
 [[nodiscard]] std::string_view wardPolicyName(WardPolicy policy) noexcept;
 
@@ -597,6 +609,27 @@ struct WardActor {
     /// Gull's npcSwingSeq_ keeps -- order-independent across bodies, no shared
     /// index, no new stream.
     std::int32_t swingSeq = 0;
+
+    /// --- STREET SENSES leg (c): the Watch's eyes ---------------------------
+    ///
+    /// For a MilitiaWatch body only, and every field an absolute tick or a
+    /// byte, hashed. The Gull's tickWatch keeps the same three facts on the
+    /// room (noticedAtTick_, watchCause_, the stance); here they live on the
+    /// watchman, since there are thirteen of him.
+    ///
+    /// THE 12 s GIVE-UP LATCH: he is Closing while this is ahead of the clock
+    /// (kWatchClosingSeconds from the cause he saw, refreshed by a cause seen
+    /// again); out of his sight is out of it at once (actClose). 0 = not
+    /// closing.
+    std::int64_t closingUntil = 0;
+    /// WHY: 0 none, else 1 + AlarmSeverity (Steel 1, Blow 2, Kill 3). A blow
+    /// or a killing is arrested at reach; steel alone is a DEMAND with a
+    /// grace.
+    std::uint8_t closeCause = 0;
+    /// THE SHEATHE GRACE (D5, kSheatheGraceSeconds): a blade seen up buys the
+    /// player this long to put it away. Past it with the blade still out and
+    /// it is an Offence (heat, no arrest by itself), fired once. 0 = none.
+    std::int64_t sheatheBy = 0;
 
     /// DERIVED AND NOT HASHED: the cached route and where along it the body is.
     /// Reproducible from (position, target, world) by construction -- the
@@ -951,6 +984,60 @@ struct StreetBlow {
 };
 
 // ---------------------------------------------------------------------------
+// STREET SENSES leg (c): the Watch on the beats gets eyes
+// ---------------------------------------------------------------------------
+//
+// The gap analysis' third finding: "THE STREET WATCH IS SCENERY. Thirteen
+// MilitiaWatch WardActors by day and seven by night walk beats with no eyes."
+// Leg (c) gives them the Gull's own Watch, on the street's terms: a watchman
+// who SEES cause (the same three-clause notice rule, at kWatchSightTiles --
+// the number the Gull's canSeePlayer and the room's witnessCount are held to
+// by static_assert) goes Closing, walks the player down with the halt in his
+// mouth, gives it up at kWatchClosingSeconds or the moment the player is out
+// of his sight (the Gull's own two rules, the roofs' whole counterplay), and
+// ARRESTS AT REACH through the ONE seam the Gull's Cull uses (the client
+// lands it: Tavern::arrestByStreetWatch -> CrimeLedger::charge /
+// seizeAtArrest / openHearing, TAKEN TO THE MISSION, the hearing). Steel seen
+// up is a DEMAND first (SHEATHE IT, kSheatheGraceSeconds), and only an
+// Offence (kSheatheOffenceHeat, no arrest by itself) if it stays out -- D5.
+// Deference is absolute: a presented Wielder is never closed on (D6). Nothing
+// here draws.
+
+/// Seconds a watchman gives a raised blade before it goes on the paper. D5's
+/// "6 s sheathe grace".
+inline constexpr std::int64_t kSheatheGraceSeconds = 6;
+/// What ignoring it costs: D5's "heat +10 for ignoring it; an unsheathed blade
+/// with no blow is an Offence". Heat, not paper -- ten is a sixth of a
+/// warrant, and the Watch heard it.
+inline constexpr std::int32_t kSheatheOffenceHeat = 10;
+/// Reach for a street arrest, in tiles: adjacent, the same tile-reach a street
+/// swing has (the ward walks in whole tiles).
+inline constexpr std::int32_t kStreetArrestReachTiles = kStreetReachTiles;
+
+static_assert(kSheatheGraceSeconds < kWatchClosingSeconds,
+              "a blade must be given its grace before the chase it started runs out");
+
+/// What a closing watchman did this tick, for the client to say and to land.
+enum class WatchEventKind : std::uint8_t {
+    /// He started Closing on a blow or a killing: the halt line.
+    Halt = 0,
+    /// He started Closing on steel: the SHEATHE IT demand, the grace running.
+    Sheathe = 1,
+    /// The grace ran out with the blade still up: an Offence, heat, no arrest.
+    Offence = 2,
+    /// He reached the player with a blow or a killing behind it: the arrest,
+    /// landed by the client through the Gull's own seam.
+    Arrest = 3,
+};
+
+struct WatchEvent {
+    std::int32_t watchmanId = -1;
+    WatchEventKind kind = WatchEventKind::Halt;
+    /// The cause he closed on, 1 + AlarmSeverity, for the arrest's own record.
+    std::uint8_t cause = 0;
+};
+
+// ---------------------------------------------------------------------------
 // the system
 // ---------------------------------------------------------------------------
 
@@ -1136,6 +1223,42 @@ public:
     /// sheet through Tavern::takeStreetBlow after its own reach check.
     [[nodiscard]] std::vector<StreetBlow> takeStreetBlows();
 
+    // --- STREET SENSES leg (c): the Watch --------------------------------------
+
+    /// DEFERENCE (D6, absolute). Pushed by the client beside setPlayer from
+    /// Tavern::playerPresentsAsWielder(): while true no watchman is ever given
+    /// cause, and one already Closing stands down. HASHED -- it decides what
+    /// the Watch does.
+    void setPlayerPresentsAsWielder(bool presents) noexcept;
+    [[nodiscard]] bool playerPresentsAsWielder() const noexcept { return playerWielder_; }
+    /// A HOUSE'S OWN BRAWL IS NOT STREET BUSINESS (found chasing
+    /// test_scripted_lines.cpp's nemesis line). Pushed by the client beside
+    /// setPlayer from Tavern::playerInside(): the Gull's ground floor and the
+    /// open Tarwalk share a band (both 19) and alarm()'s own line-of-sight
+    /// deliberately crosses an open door -- the owner's rule, "a killing at
+    /// the bar reaches the Tarwalk only through the door" -- so the ordinary
+    /// crowd still panics at a fight it heard through the door exactly as leg
+    /// (a)/(b) shipped. The WATCH is a different question: a sanctioned house
+    /// brawl is Watchman Cull's jurisdiction, through the Gull's own separate
+    /// watch (WatchCause, violenceInView), never a beat cop's on the strength
+    /// of what leaked past the threshold. While true no watchman is ever given
+    /// cause. HASHED -- it decides what the Watch does, same as the deference
+    /// flag beside it.
+    void setPlayerIndoors(bool indoors) noexcept;
+    [[nodiscard]] bool playerIndoors() const noexcept { return playerIndoors_; }
+    /// What the Watch did this tick -- halts, demands, offences and arrests at
+    /// reach -- read-and-clear, the blows' own mailbox rule (unhashed; the
+    /// client says the lines and lands the arrest through the Gull's seam; the
+    /// gate's driver drains and counts).
+    [[nodiscard]] std::vector<WatchEvent> takeWatchEvents();
+    /// Whether this watchman is Closing right now (the latch ahead of the
+    /// clock). For the HUD's mark and the cases.
+    [[nodiscard]] bool watchmanClosing(std::int32_t actorId) const noexcept;
+    /// The three-clause notice rule asked of ONE body about the pushed player:
+    /// standing, same band, within kWatchSightTiles, line of sight. The same
+    /// question the Gull's canSeePlayer asks of its roster, on this one.
+    [[nodiscard]] bool canSeePlayer(const WardActor& actor) const noexcept;
+
     [[nodiscard]] std::int32_t secondOfDay() const noexcept { return secondOfDay_; }
     [[nodiscard]] std::int64_t currentTick() const noexcept { return tick_; }
 
@@ -1291,6 +1414,11 @@ private:
     /// the fixed order, else he lies a little longer (the den-full rule).
     /// Answers whether he stood.
     bool standUp(WardActor& actor);
+    /// STREET SENSES leg (c). THE WATCH CLOSING: out of sight is out of it;
+    /// else face him, close (the route step), and at reach arrest (a blow or a
+    /// killing behind it) or hold the demand (steel), firing the Offence once
+    /// when the grace runs out. Draw-free.
+    void actClose(WardActor& actor);
     void actHunt(WardActor& actor);
 
     /// The throttled prey probe: an ascending scan of the MICE ONLY -- see
@@ -1386,6 +1514,13 @@ private:
     /// STREET SENSES leg (b). The mailbox of blows thrown at the player this
     /// tick -- see takeStreetBlows. Not hashed, by design (its own note).
     std::vector<StreetBlow> pendingBlows_;
+    /// STREET SENSES leg (c). The Watch's own mailbox (takeWatchEvents), the
+    /// same rule; and the deference flag, HASHED (the Watch reads it).
+    std::vector<WatchEvent> pendingWatch_;
+    bool playerWielder_ = false;
+    /// A house's own brawl is not street business -- see setPlayerIndoors.
+    /// HASHED, the deference flag's own reason.
+    bool playerIndoors_ = false;
 
     WardTypeTable types_;
     std::vector<WardActor> actors_;

@@ -758,3 +758,87 @@ files; `verify-windows.ps1` PASS -- content 71 cases / 902,135 assertions and si
 2,165,602 assertions under mingw, content-fingerprint and world-hash reports byte-identical
 linux/gcc vs mingw/windows, the stamp naming this tree), and photographed through the real
 `--street-assault=blow|down|up|kill|hearing` verbs (`docs/frames/street/`).
+
+---
+
+## STREET SENSES leg (c) -- the Watch on the beats gets eyes (2026-09-12)
+
+The third and last leg of the consented move (DECISIONS.md "Street senses, leg (c)"). The gap
+analysis' third finding: "THE STREET WATCH IS SCENERY. Thirteen MilitiaWatch WardActors by day
+and seven by night walk beats with no eyes." **Leg (c) MOVES this number for real, the third
+time.**
+
+What changed the number, all in `WardPopulation`:
+
+1. **`WardPolicy::Close = 9`**, appended (the Brawl precedent): a watchman with cause and a
+   clock (`closingUntil`, `closeCause`, `sheatheBy`, all hashed) walks the player down, priced
+   under Brawl (a blow on him makes him a brawler -- `wardTypeFightsBack` now includes
+   MilitiaWatch -- and he fights rather than arrests) and over everything else.
+2. **`alarm()` stopped skipping the Watch outright.** A watchman is now given cause by the same
+   three-clause notice rule everybody else's fright already reads (own sight range, line of
+   sight, never for a presented Wielder), closes, and arrests at reach through the ONE seam the
+   Gull's Cull uses (`Tavern::arrestByStreetWatch` -> the new shared `arrestPlayer`, factored out
+   of `applyArrest` -- one charge sheet, two officers). Steel alone is a DEMAND first
+   (`kSheatheGraceSeconds` 6s), an ignored one an Offence (`kSheatheOffenceHeat` 10, no arrest by
+   itself) -- D5.
+3. **A house's own brawl is not street business.** The gap analysis' own bar-fight rule
+   ("a brawl-class fist fight is the house's law... the Watch has no cause in it") only ever
+   existed for Watchman Cull's separate, already-nuanced watch. Once the street Watch stopped
+   being skipped, `Session::step()`'s PRE-EXISTING per-step alarm (leg (a): room HP falling
+   under an escalated fight, unconditional on indoor/outdoor since it shipped) started reaching
+   a street watchman through the Gull's own open door -- the owner's rule ("a killing at the bar
+   reaches the Tarwalk only through the door") the crowd already leans on, now also read by a
+   beat cop with no jurisdiction over a sanctioned house brawl. Found by
+   `test_scripted_lines.cpp`'s nemesis line (a fresh regression on every one of six walk-length
+   timelines it had held before this leg): a watchman closed on the player mid-brawl and
+   arrested at reach, clearing the room's brawl roster and stalling the arc at its third win,
+   every time. **`onWalkingGround` was tried first and does not help at all -- the Gull's own
+   floor tiles answer yes to it exactly as the street does.** The fix is a fourth hashed field,
+   `playerIndoors_` (`WardPopulation::setPlayerIndoors`, pushed from `Session::step` off
+   `Tavern::playerInside()`, the deference flag's own shape): while true, no watchman is ever
+   given cause, and one already closing stands down -- the ordinary crowd's own door-leak panic
+   (leg a/b, untested and unmoved by this) is completely unaffected, because only the Watch
+   branch reads it.
+4. **The client** (`Session::attackUp`) says the halt, the demand and the offence off the new
+   `content/raws/barks/street_barks.json` (four keys: `street.halt`, `street.sheathe`,
+   `street.offence`, `street.routed`), falling through to the Gull's own `watch.*` rows until
+   each key is authored -- it already is. A struck body that is not a fighter and not the Watch
+   now says `street.routed` once, the moment it is struck and still standing.
+
+```
+at branch lane/street (STREET SENSES leg (c)),
+granadad-twin-gate --population --population-hour 16 --ticks 7200, 96 walkers
+COMBINED WORLD HASH: 0xED0CA90E26DB0F5B -> 0xDD3890042DD2B472      <- DECLARED and RE-BLESSED
+```
+
+Recorded directly from `dist\granadad-twin-gate.exe --population --population-hour 16
+--ticks 7200` on Windows/mingw, **two invocations**, each `run A` == `run B` ==
+`0xDD3890042DD2B472`, report text byte-identical at **22,320 bytes** in all runs (up from leg
+(b)'s 21,746: the Watch's own closing/cause/sheathe state, hashed). On Linux/GCC the same gate
+ran green in the Docker build (ctest `granadad-twin-run-gate-population` PASSED, `run A` ==
+`run B`).
+
+The tavern/gate-workload twin on the same exe is UNMOVED: `--tavern --ticks 900`, `run A` ==
+`run B` == `0x837E94019BC49C25`, two invocations (3,153 bytes) -- leg (c) touched no hashed
+tavern field (`arrestPlayer` is a pure factoring of `applyArrest`'s own body, same operations,
+same order; the tavern workload has no player and never calls it). The nemesis arc, the very
+thing this leg nearly broke, is the sharpest proof available that it did not:
+`granadad.exe --nemesis` (via `--smoke=N --nemesis`, all six of the README's own walk lengths,
+0/40/50/80/100/120) reads `beats=7/7 mask=127` on every one, `Tarn Wrenhale x3`, `Foreman of The
+Ropewalk Gang (7 members, toll 6%) holds THE GULLET` -- the exact leg (b) baseline, re-read
+clean.
+
+**The population baseline is therefore re-blessed at `0xDD3890042DD2B472` with all three
+declared legs behind it.** Street senses is complete.
+
+Proved by `native/tests/test_street_watch.cpp` (a watchman who sees a blow closes, halts, and
+arrests at reach through the Gull's own seam; steel is a demand with a grace and only an
+ignored one becomes an offence, never an arrest by itself; a presented Wielder is never given
+cause and standing one down stands every closing watchman down; the population twin-runs
+byte-identical under all three), gated on the tree whose GATE-STAMP names it (`native/` digest
+`1a980410bcc2f5ac5443df9e4a3c0f212dfbae91723e09eddd14ea4727696b8a`, ctest cases 1260, 319
+files; `verify-windows.ps1` PASS -- content 71 cases / 902,135 assertions and sim 1179 cases /
+2,167,264 assertions under mingw, content-fingerprint and world-hash reports byte-identical
+linux/gcc vs mingw/windows, the stamp naming this tree), and photographed through the real
+`--street-assault=watch-halt|watch-sheathe|watch-offence` verbs and the leg (b) `blow` ending
+re-shot under this tree (`docs/frames/street/`).
