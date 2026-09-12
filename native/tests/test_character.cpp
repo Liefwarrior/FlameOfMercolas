@@ -323,11 +323,17 @@ TEST_CASE("twenty-eight rows is more than three pages, and the character sheet t
     CHECK(render::topicPageOf(view.cursor) == view.page);
 
     // 0 -- the MORE key -- turns the page directly, same as F1 and the
-    // casebook: page two (the carried rows), then round to the first.
+    // casebook: page two (the carried rows), then a fourth page for the
+    // twenty-eighth row twenty-eight rows leaves over on its own (three
+    // full pages of nine spend twenty-seven), then round to the first.
     session.nextTopicPage();
     view = session.dialogueView();
     CHECK(view.page == 2);
     CHECK(view.cursor == 18);
+    session.nextTopicPage();
+    view = session.dialogueView();
+    CHECK(view.page == 3);
+    CHECK(view.cursor == 27);
     session.nextTopicPage();
     view = session.dialogueView();
     CHECK(view.page == 0);
@@ -413,8 +419,10 @@ TEST_CASE("ENTER on a carried row wears it or bares it; on a sheet row it does n
     CHECK(session.dialogueView().epithet == "X DROP");
     session.chooseTopic(0);
     CHECK(session.lastMessage() == "THE ROPE IS NOT WORN.");
-    // A sheet row is something to read.
-    session.moveTopicCursor(-30);
+    // A sheet row is something to read. Back to row zero exactly, by the
+    // cursor's own count rather than a magic constant that would drift
+    // every time the sheet's own row count does.
+    session.moveTopicCursor(-session.topicCursor());
     CHECK_FALSE(session.highlightedKitRow().has_value());
     const std::string before = session.lastMessage();
     session.chooseTopic(0);

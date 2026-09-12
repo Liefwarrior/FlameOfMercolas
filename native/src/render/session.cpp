@@ -9653,9 +9653,14 @@ std::vector<Session::KitRow> Session::kitRows() const {
 }
 
 std::size_t Session::characterKitOffset() const {
-    // The standings block (five tracks, four skills, five ladders, three
-    // ward rows), IN HAND, one row per worn slot the raws populate, LOAD.
-    std::size_t offset = sim::kLegendTracks + 4 + 5 + 3 + 1 + 1;
+    // The standings block (five tracks, four skills, four attributes, five
+    // ladders, three ward rows), IN HAND, one row per worn slot the raws
+    // populate, LOAD. MERGE FIX: this fell out of step with characterRows()
+    // when THE HONEST SHEET (pull pack) inserted the four attribute rows --
+    // nothing here counted them, so every cursor-vs-offset comparison in
+    // highlightedKitRow() was off by kAttributeCount the moment both landed
+    // on the same tree.
+    std::size_t offset = sim::kLegendTracks + 4 + sim::kAttributeCount + 5 + 3 + 1 + 1;
     for (std::int32_t slotIndex = 0; slotIndex < static_cast<std::int32_t>(sim::kWornSlotCount);
          ++slotIndex) {
         const sim::ItemSlot slot = sim::wornSlotAt(slotIndex);
