@@ -895,79 +895,6 @@ TEST_CASE("a door tile places the door frame") {
     CHECK(lit.placements.size() == placed.placements.size() + 3 + 3 + 1);
 }
 
-TEST_CASE("a flame's halo faces the eye from wherever the eye is") {
-    // THE BILLBOARD, through the world scene: the same lantern described
-    // from two eyes yaws its one quad toward each, about the same centre,
-    // so a body walking past never sees it edge-on. And the description
-    // stays a pure function of the eye: the same eye twice is the same
-    // yaw and the same hash.
-    HouseWorld house;
-    const StaticCatalogue& catalogue = shippedCatalogue();
-    std::vector<render::Lamp> lamps(1);
-    lamps[0].name = "lamp_street";
-    lamps[0].x = 20;
-    lamps[0].y = 19;
-    lamps[0].z = 19;
-    lamps[0].warmth = render::LampWarmth::Lantern;
-    // A wall to hang it on, north of the lamp's tile.
-    house.put(20, 18, 19, content::TileForm::Wall, materialId("granite"));
-    const render::LampGlow glow = render::LampGlow::build(house.tiles, lamps);
-    WorldScene scene(house.tiles, proceduralAtlas(), &glow, &catalogue, &lamps);
-    WorldSceneParams params;
-    params.timeOfDaySeconds = 21 * 3600;
-    const auto describe = [&](float ex, float ey) {
-        render::Camera eye;
-        eye.x = ex;
-        eye.y = ey;
-        eye.z = render::bandSurface(19) + 1.7F;
-        eye.yaw = std::atan2(20.5F - ex, -(19.5F - ey));
-        eye.pitch = 0.0F;
-        eye.hfovTan = 1.0F;
-        SceneDescription out;
-        scene.refresh(out, eye, 16.0F / 9.0F, params);
-        return out;
-    };
-    const SceneDescription fromSouth = describe(20.5F, 23.5F);
-    const SceneDescription fromEast = describe(24.5F, 19.5F);
-    const SceneDescription fromSouthAgain = describe(20.5F, 23.5F);
-    CHECK(sceneHash(fromSouth) == sceneHash(fromSouthAgain));
-    const auto flameOf = [&](const SceneDescription& d) -> const StaticInstance* {
-        for (const StaticInstance& at : d.statics) {
-            if (at.mode == kDrawHalo) {
-                return &at;
-            }
-        }
-        return nullptr;
-    };
-    const StaticInstance* south = flameOf(fromSouth);
-    const StaticInstance* east = flameOf(fromEast);
-    REQUIRE(south != nullptr);
-    REQUIRE(east != nullptr);
-    // A quarter turn between the two eyes, the quad turned with them (a
-    // two-sided quad: the turn is read modulo a half turn).
-    const float turned = std::fmod(std::fabs(south->yaw - east->yaw), 3.14159265F);
-    CHECK(std::fabs(turned - 3.14159265F * 0.5F) < 0.02F);
-    // The centre held: the origin is half a width along the quad's own +X
-    // from it, so the two origins differ but their centres agree.
-    const PieceSpec* flame = catalogue.piece(PieceRole::Flame);
-    REQUIRE(flame != nullptr);
-    const auto centreOf = [flame](const StaticInstance& at) {
-        const float w = flame->width * at.scale.x;
-        return Vec3{at.position.x + 0.5F * w * std::cos(at.yaw), at.position.y,
-                    at.position.z + 0.5F * w * std::sin(at.yaw)};
-    };
-    const Vec3 a = centreOf(*south);
-    const Vec3 b = centreOf(*east);
-    CHECK(std::fabs(a.x - b.x) < 0.01F);
-    CHECK(std::fabs(a.z - b.z) < 0.01F);
-    CHECK(std::fabs(a.y - b.y) < 0.01F);
-    // And the quad's normal (-sin, cos) lies along the line to the eye.
-    const float dx = 20.5F - a.x;
-    const float dz = 23.5F - a.z;
-    const float along = -std::sin(south->yaw) * dx + std::cos(south->yaw) * dz;
-    CHECK(std::fabs(along) > 0.99F * std::sqrt(dx * dx + dz * dz));
-}
-
 TEST_CASE("placement is a deterministic function of the tile map") {
     // THE REAL DOCKS, dressed twice from two views of one world, through
     // two world scenes: the same placements in the same order, the same
@@ -2060,4 +1987,77 @@ TEST_CASE("the one-wide cobble leftovers along a frontage wear setts") {
             }
         }
     }
+}
+
+TEST_CASE("a flame's halo faces the eye from wherever the eye is") {
+    // THE BILLBOARD, through the world scene: the same lantern described
+    // from two eyes yaws its one quad toward each, about the same centre,
+    // so a body walking past never sees it edge-on. And the description
+    // stays a pure function of the eye: the same eye twice is the same
+    // yaw and the same hash.
+    HouseWorld house;
+    const StaticCatalogue& catalogue = shippedCatalogue();
+    std::vector<render::Lamp> lamps(1);
+    lamps[0].name = "lamp_street";
+    lamps[0].x = 20;
+    lamps[0].y = 19;
+    lamps[0].z = 19;
+    lamps[0].warmth = render::LampWarmth::Lantern;
+    // A wall to hang it on, north of the lamp's tile.
+    house.put(20, 18, 19, content::TileForm::Wall, materialId("granite"));
+    const render::LampGlow glow = render::LampGlow::build(house.tiles, lamps);
+    WorldScene scene(house.tiles, proceduralAtlas(), &glow, &catalogue, &lamps);
+    WorldSceneParams params;
+    params.timeOfDaySeconds = 21 * 3600;
+    const auto describe = [&](float ex, float ey) {
+        render::Camera eye;
+        eye.x = ex;
+        eye.y = ey;
+        eye.z = render::bandSurface(19) + 1.7F;
+        eye.yaw = std::atan2(20.5F - ex, -(19.5F - ey));
+        eye.pitch = 0.0F;
+        eye.hfovTan = 1.0F;
+        SceneDescription out;
+        scene.refresh(out, eye, 16.0F / 9.0F, params);
+        return out;
+    };
+    const SceneDescription fromSouth = describe(20.5F, 23.5F);
+    const SceneDescription fromEast = describe(24.5F, 19.5F);
+    const SceneDescription fromSouthAgain = describe(20.5F, 23.5F);
+    CHECK(sceneHash(fromSouth) == sceneHash(fromSouthAgain));
+    const auto flameOf = [&](const SceneDescription& d) -> const StaticInstance* {
+        for (const StaticInstance& at : d.statics) {
+            if (at.mode == kDrawHalo) {
+                return &at;
+            }
+        }
+        return nullptr;
+    };
+    const StaticInstance* south = flameOf(fromSouth);
+    const StaticInstance* east = flameOf(fromEast);
+    REQUIRE(south != nullptr);
+    REQUIRE(east != nullptr);
+    // A quarter turn between the two eyes, the quad turned with them (a
+    // two-sided quad: the turn is read modulo a half turn).
+    const float turned = std::fmod(std::fabs(south->yaw - east->yaw), 3.14159265F);
+    CHECK(std::fabs(turned - 3.14159265F * 0.5F) < 0.02F);
+    // The centre held: the origin is half a width along the quad's own +X
+    // from it, so the two origins differ but their centres agree.
+    const PieceSpec* flame = catalogue.piece(PieceRole::Flame);
+    REQUIRE(flame != nullptr);
+    const auto centreOf = [flame](const StaticInstance& at) {
+        const float w = flame->width * at.scale.x;
+        return Vec3{at.position.x + 0.5F * w * std::cos(at.yaw), at.position.y,
+                    at.position.z + 0.5F * w * std::sin(at.yaw)};
+    };
+    const Vec3 a = centreOf(*south);
+    const Vec3 b = centreOf(*east);
+    CHECK(std::fabs(a.x - b.x) < 0.01F);
+    CHECK(std::fabs(a.z - b.z) < 0.01F);
+    CHECK(std::fabs(a.y - b.y) < 0.01F);
+    // And the quad's normal (-sin, cos) lies along the line to the eye.
+    const float dx = 20.5F - a.x;
+    const float dz = 23.5F - a.z;
+    const float along = -std::sin(south->yaw) * dx + std::cos(south->yaw) * dz;
+    CHECK(std::fabs(along) > 0.99F * std::sqrt(dx * dx + dz * dz));
 }
