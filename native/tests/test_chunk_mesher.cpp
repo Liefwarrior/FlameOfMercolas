@@ -1803,7 +1803,12 @@ TEST_CASE("DIAG: the cells round the Gull's door and the hulls, printed") {
                     continue;
                 }
                 ++besideCount;
-                beside += "(" + std::to_string(x) + "," + std::to_string(y) + "," + std::to_string(z) + ")[";
+                const std::uint16_t mBelow = tiles.material(x, y, z - 1);
+                const std::uint16_t mAbove = tiles.material(x, y, z + 1);
+                beside += "(" + std::to_string(x) + "," + std::to_string(y) + "," + std::to_string(z) + ") below=" +
+                          formName(tiles.form(x, y, z - 1)) + (mBelow < ids.size() ? std::string(ids[mBelow]) : "?") +
+                          " above=" + formName(tiles.form(x, y, z + 1)) +
+                          (mAbove < ids.size() ? std::string(ids[mAbove]) : "?") + " [";
                 for (int dy = -1; dy <= 1; ++dy) {
                     for (int dx = -1; dx <= 1; ++dx) {
                         if (dx == 0 && dy == 0) {
