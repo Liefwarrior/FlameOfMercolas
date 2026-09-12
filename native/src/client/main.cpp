@@ -3715,8 +3715,7 @@ render3d::SceneStats present_frame(render3d::Backend& video, const Options& opti
                                 static_cast<double>(std::sqrt(best)));
             report += line;
         }
-        std::printf("granadad: 3d bodies by rig --%s
-", report.empty() ? " none" : report.c_str());
+        std::printf("granadad: 3d bodies by rig --%s\n", report.empty() ? " none" : report.c_str());
     }
     return ok;
 }
