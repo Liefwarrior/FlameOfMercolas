@@ -88,6 +88,14 @@ struct Speaker {
     /// A mood.* override key when they are in no state for pleasantries --
     /// "mood.downed" for somebody on the floor. Empty for the usual case.
     std::string moodKey;
+    /// VOICE LANE. The trade INSIDE the family, as a bark key -- "urchin",
+    /// "fisher", "disciple" (wardVoiceKey) -- or empty for a body that has
+    /// only a family, which is the whole of the Gilded Gull's roster. The
+    /// voice chains (farewellChain, voiceChain) try `<prefix>.<type>` above
+    /// `<prefix>.<family>`, so an urchin's goodbye is not a wastrel's; the
+    /// greeting chain does not read it, deliberately -- greet.<family> is the
+    /// owner's authored vocabulary and widening it is his call.
+    std::string typeKey;
 
     // --- S4: who they are to the guilds --------------------------------------
 
@@ -584,6 +592,22 @@ public:
 
     /// Picks a topic off the list.
     Reply choose(std::size_t index);
+
+    /// VOICE LANE. THE GOODBYE. What the person in front of you says as the
+    /// conversation ends, out of farewellChain(their trade, their family,
+    /// what they think of you) -- the LEAVE topic carries it in its Reply
+    /// (dialogue.cpp used to answer Leave with an empty line and the panel
+    /// closed on nothing), and whoever owns the body asks for it again when
+    /// the player walks off mid-talk (`walkedOff`, the farewell.away cell)
+    /// or presses the back key. Pure and draw-free: the same rowIndexFor
+    /// rotation every other line uses, keyed on TopicKind::Leave, so two runs
+    /// say the same goodbye. Read off the speaker the director holds, which
+    /// outlives close() -- the LEAVE reply is composed before the close and
+    /// reported after it. Empty for a beast, for nobody, or when nothing is
+    /// authored; never "...".
+    [[nodiscard]] std::string farewell(bool walkedOff = false) const;
+    /// The key the farewell comes out of, for the summary line and the suite.
+    [[nodiscard]] std::string farewellKey(bool walkedOff = false) const;
 
     /// TIME-AND-TENURE BUILD. Voices a line composed OUTSIDE the director --
     /// the settled half of an intent reply (ReadRoll/Petition follow Buy's

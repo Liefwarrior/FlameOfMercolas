@@ -3979,6 +3979,8 @@ void Session::step(const sim::MoveInput& input) {
     chargeAnim_.advance();
     // STANCE & ROOM BUILD. THE SAME PER-STEP ADVANCE for the FISTS UP row.
     handsAnim_.advance();
+    // VOICE LANE. THE SAME PER-STEP ADVANCE for the voice row.
+    voiceAnim_.advance();
     // HELD-EFFECTS BUILD. THE SAME PER-STEP ADVANCE, ONE PER SLOT.
     for (EasedToggle& anim : effectAnims_) {
         anim.advance();
@@ -4288,6 +4290,9 @@ void Session::step(const sim::MoveInput& input) {
     clearIfClosed(blockAnim_, blockCache_);
     clearIfClosed(chargeAnim_, chargeCache_);
     clearIfClosed(handsAnim_, handsCache_);
+    // VOICE LANE. The row's text goes once its fade has finished, the same
+    // rule: a line that finished fading out cannot keep claiming a slot.
+    voice_.clearIfSettled(voiceAnim_.settled() && !voiceAnim_.target());
 
     // One engine tick a simulated second. clockScale > 1 makes the world's
     // clock run faster than the body's, which is how a capture reaches a named
@@ -4379,6 +4384,59 @@ void Session::step(const sim::MoveInput& input) {
     if (tavern_->lastDemand() != lastDemandSpoken_) {
         lastDemandSpoken_ = tavern_->lastDemand();
         say(lastDemandSpoken_);
+    }
+    // VOICE LANE, THE ADDRESS: THE WALK-OFF CLOSE. A conversation on foot
+    // ends when you leave it: the reach is re-checked every step while the
+    // director is open (neither talkTo path ever did, so a body you had
+    // walked twenty tiles from was still "in front of you"), and past
+    // kTalkWalkOffTiles the talk ends with the word thrown after you. The
+    // Gull's man is measured in the room's own Q8 metric, the ward's in
+    // tiles; a page over the panel (pause, the keys) is not a walk.
+    if (tavern_->dialogue().isOpen() && !pauseOpen_ && !optionsOpen_ && !keysOpen_ &&
+        !waitOpen_ && !casebookOpen_ && !grimoireOpen_ && !districtMapOpen_ && !courtOpen_) {
+        bool walkedOff = false;
+        if (wardTalkId_ >= 0) {
+            const sim::WardActor* who = people_ == nullptr ? nullptr : people_->byId(wardTalkId_);
+            walkedOff = who == nullptr || who->band != body_->band() ||
+                        std::max(std::abs(who->x - body_->tileX()),
+                                 std::abs(who->y - body_->tileY())) > kTalkWalkOffTiles;
+        } else if (const sim::Actor* who = tavern_->actorById(tavern_->talkingTo());
+                   who != nullptr) {
+            walkedOff = who->band() != body_->band() ||
+                        who->distanceTo(body_->x(), body_->y()) > kTalkWalkOffTiles * sim::kSubOne;
+        }
+        if (walkedOff) {
+            endTalk(true);
+        }
+    }
+    // VOICE LANE. THE ONE VOICE CHANNEL, stepped here and nowhere else: after
+    // the room and the ward have moved and after the sim's own lines went
+    // on the alert row (the halt keeps its rank), from public state only.
+    // A line landing re-arms the row's toggle eagerly, say()'s own rule.
+    {
+        VoiceScene scene;
+        scene.room = tavern_;
+        scene.people = people_;
+        scene.playerTileX = body_->tileX();
+        scene.playerTileY = body_->tileY();
+        scene.playerBand = body_->band();
+        scene.playerXQ8 = body_->x();
+        scene.playerYQ8 = body_->y();
+        scene.step = static_cast<std::int32_t>(body_->stepCount());
+        scene.talking = tavern_->dialogue().isOpen();
+        scene.wardTalkId = wardTalkId_;
+        scene.crouched = tavern_->stance() == sim::Stance::Crouched;
+        scene.handsUp = tavern_->playerHandsUp();
+        voice_.step(scene);
+        syncVoiceAnim();
+    }
+    // VOICE LANE, THE ADDRESS. The worded reaction's own countdown, spent
+    // once a step like every sibling.
+    if (reactionSteps_ > 0) {
+        --reactionSteps_;
+        if (reactionSteps_ == 0) {
+            reactionLine_.clear();
+        }
     }
     syncWardToCalendar();
     // COURIER CASE. Last, deliberately: the courier's countdown, the take
@@ -5272,7 +5330,28 @@ void Session::chooseTopic(std::size_t index) {
         haggleOffer_ = tavern_->dialogue().haggle().asking();
     }
     if (!reply.line.empty()) {
-        say(tavern_->dialogue().speaker().name + ": " + reply.line);
+        if (reply.kind == sim::TopicKind::Leave) {
+            // VOICE LANE: THE GOODBYE rides the street channel as the panel
+            // closes, in the speaker's name, never the amber alert row (a
+            // goodbye is not a warning). The director has closed, but its
+            // speaker still says who it was.
+            voice_.speakFarewell(tavern_->dialogue().speaker().name, reply.line,
+                                 tavern_->dialogue().farewellKey(false),
+                                 tavern_->dialogue().speaker().actorId,
+                                 static_cast<std::int32_t>(body_->stepCount()));
+            syncVoiceAnim();
+        } else {
+            say(tavern_->dialogue().speaker().name + ": " + reply.line);
+        }
+    }
+    // VOICE LANE, THE ADDRESS: A WORDED REACTION when the reply moved them.
+    // Never a number (DECISIONS.md: standing is never SHOWN as one): a
+    // stage direction on the panel's dateline row for four seconds, so the
+    // face reacts to every act, which is the one durable lesson of the
+    // persuasion wheel and the whole of what the tone dial gets back.
+    if (reply.ok && talking() && reply.dispositionAfter != reply.dispositionBefore) {
+        reactionLine_ = wordedReaction(reply.dispositionBefore, reply.dispositionAfter);
+        reactionSteps_ = reactionLine_.empty() ? 0 : kReactionHoldSteps;
     }
     if (reply.forging) {
         // The bench opens where the simulation put it.
@@ -5424,13 +5503,9 @@ void Session::closeConversation() {
         syncPanelAnim();
         return;
     }
-    tavern_->endConversation();
-    wardTalkId_ = -1;
-    topicCursor_ = 0;
-    topicPage_ = 0;
-    haggleOffer_ = 0;
-    forgeOpen_ = false;
-    syncPanelAnim();
+    // VOICE LANE: the back key says goodbye too. Leaving is a transition
+    // and not a cut, whichever key ends it.
+    endTalk(false);
 }
 
 sim::Reply Session::chooseWardTopic(std::size_t index) {
@@ -6105,6 +6180,11 @@ DialogueViewState Session::dialogueView() const {
                                 kSpeechRevealSteps);
     view.cursor = topicCursor_;
     view.page = topicPage_;
+    // VOICE LANE, THE ADDRESS: the worded reaction on the dateline row, in
+    // the dim ink reference material takes, while it stands.
+    if (reactionSteps_ > 0 && !reactionLine_.empty()) {
+        view.caseRef = reactionLine_;
+    }
     for (const sim::Topic& topic : talk.topics()) {
         view.topics.push_back(topic.label);
     }
@@ -8586,6 +8666,32 @@ bool Session::conversingNow() const noexcept {
            districtMapOpen_ || optionsOpen_ || pauseOpen_ || courtOpen_;
 }
 
+void Session::syncVoiceAnim() noexcept {
+    // Wanted while the channel holds a line and no panel owns the screen --
+    // the partner's lines are the panel's, and the goodbye lands as it
+    // closes. The text itself stays behind to fade (clearIfSettled).
+    voiceAnim_.setTarget(voice_.up() && !conversingNow());
+}
+
+void Session::endTalk(bool walkedOff) {
+    sim::DialogueDirector& talk = tavern_->dialogue();
+    if (talk.isOpen()) {
+        // THE GOODBYE, before the director forgets who it was talking to.
+        voice_.speakFarewell(talk.speaker().name, talk.farewell(walkedOff),
+                             talk.farewellKey(walkedOff), talk.speaker().actorId,
+                             static_cast<std::int32_t>(body_->stepCount()));
+    }
+    tavern_->endConversation();
+    wardTalkId_ = -1;
+    topicCursor_ = 0;
+    topicPage_ = 0;
+    haggleOffer_ = 0;
+    forgeOpen_ = false;
+    reactionLine_.clear();
+    reactionSteps_ = 0;
+    syncPanelAnim();
+}
+
 void Session::syncPanelAnim() noexcept {
     // AUDIO WIRING: PANEL OPEN AND CLOSE, on the exact edge the plan names --
     // "wherever an EasedToggle target flips is exactly where the matching
@@ -8690,6 +8796,8 @@ void Session::syncPanelAnim() noexcept {
     sync(lockAnim_, lockCache_, lockLine());
     sync(rivalAnim_, rivalCache_, rivalLine());
     sync(stealthAnim_, stealthCache_, tavern_->playerInside() ? stealthLine() : std::string());
+    // VOICE LANE. The voice row's own toggle, re-read like every row here.
+    syncVoiceAnim();
 
     // UI-EA (LANE HUD): THE LAW OF EARNED TEXT. Text prints when it CHANGES,
     // when it is aimed at, or when the player hesitates -- never merely
@@ -9599,6 +9707,11 @@ FrameStats Session::drawFrame(Framebuffer& target, FramePasses passes) const {
     // construction, which is the whole of what every caller before this field
     // existed drew.
     hud.alertFade = alertAnim_.value();
+    // VOICE LANE. The street's own line, on its own toggle, down while a
+    // panel owns the screen (the partner's lines are the panel's).
+    hud.voiceName = std::string_view{voice_.current().name};
+    hud.voiceLine = std::string_view{voice_.current().text};
+    hud.voiceFade = conversing ? 0.0F : voiceAnim_.value();
     // INNOVATION SPRINT ITEM #3. See HudState::alertPulse's own header.
     hud.alertPulse = alertPulse_.value();
     hud.caseLabel = std::string_view{caseCache_};
@@ -11062,6 +11175,193 @@ std::string gWatchHaltNote;
     return landed;
 }
 
+
+// ---------------------------------------------------------------------------
+// VOICE LANE: the one voice channel, photographed
+// ---------------------------------------------------------------------------
+
+/// How long an ambient wait may run before the drive gives up: a Tarwalk
+/// afternoon that passes nobody within reach in a minute and a half is not
+/// this build's Tarwalk, and the frame that comes out of it says so.
+constexpr int kVoiceWaitSteps = 90 * sim::kStepsPerSecond;
+
+/// True while the voice row holds a line off a key with this prefix.
+[[nodiscard]] bool voiceRowUpFrom(const Session& session, std::string_view prefix) {
+    const VoiceLine& line = session.voice().current();
+    return session.voice().up() && line.key.rfind(prefix, 0) == 0;
+}
+
+/// Steps `input` until the row holds a line off `prefix`, then lets its own
+/// fade settle so the frame is a picture of the line and not of its rise.
+/// The hold outlasts the settle by four seconds at least, so nothing is
+/// lost to the wait. False when the bound ran out.
+[[nodiscard]] bool waitForVoice(Session& session, std::string_view prefix,
+                                const sim::MoveInput& input, int boundSteps) {
+    for (int i = 0; i < boundSteps; ++i) {
+        session.step(input);
+        if (voiceRowUpFrom(session, prefix)) {
+            session.stepMany(sim::MoveInput{}, kPageEaseSteps + 2);
+            return voiceRowUpFrom(session, prefix);
+        }
+    }
+    return false;
+}
+
+/// How many beats each `--voice=` ending owes. See runVoiceLine.
+[[nodiscard]] std::int32_t voiceBeatsFor(const std::string& ending) noexcept {
+    if (ending == "farewell" || ending == "moved" || ending == "react") {
+        return 3;
+    }
+    if (ending == "watch") {
+        return kWatchHaltStopBeats + 1;
+    }
+    return 2;  // pass, overheard
+}
+
+/// THE ONE VOICE CHANNEL, played through the real verbs -- the smoke's own
+/// walk, the talk key, the topic list, the swing, the Watch line -- and
+/// stopped the step the row holds what was asked for. Nothing here composes
+/// a line: every word on the row came out of BarkTables through the
+/// emitter, off a body the simulation put there.
+[[nodiscard]] int runVoiceLine(Session& session, const std::string& ending) {
+    int landed = 0;
+    if (ending == "pass") {
+        // THE TARWALK, WALKED. The smoke's own forward walk with its slow
+        // drift of the head, until somebody passes within the talk reach
+        // and says their one line.
+        sim::MoveInput input;
+        input.forward = 1;
+        for (int i = 0; i < kVoiceWaitSteps; ++i) {
+            input.turn = (i / 90) % 4 == 3 ? 1 : 0;
+            session.step(input);
+            if (voiceRowUpFrom(session, "pass.")) {
+                break;
+            }
+        }
+        // 1. A body within reach: the row names a speaker, in reach by the
+        //    emitter's own rule.
+        if (!session.voice().current().name.empty()) {
+            ++landed;
+        }
+        // 2. And the row is up off a pass key.
+        session.stepMany(sim::MoveInput{}, kPageEaseSteps + 2);
+        if (voiceRowUpFrom(session, "pass.")) {
+            ++landed;
+        }
+        return landed;
+    }
+    if (ending == "overheard") {
+        // THE CROWD, STOOD IN. Hold at the spawn on the Tarwalk and listen;
+        // if the street in front of the Gull is thin, walk it.
+        bool heard = waitForVoice(session, "overheard", sim::MoveInput{}, kVoiceWaitSteps / 2);
+        if (!heard) {
+            sim::MoveInput input;
+            input.forward = 1;
+            heard = waitForVoice(session, "overheard", input, kVoiceWaitSteps / 2);
+        }
+        if (!session.voice().current().name.empty()) {
+            ++landed;  // 1. a pair stood together within earshot
+        }
+        if (heard) {
+            ++landed;  // 2. the row is up off an overheard key
+        }
+        return landed;
+    }
+    if (ending == "farewell" || ending == "moved") {
+        // THE STREET LINE FIRST: the talk key on a rope hand in the open
+        // district, the same placement `--street` makes and says so.
+        const StreetLineResult street = runStreetLine(session, "hand", 0);
+        if (!street.opened) {
+            return landed;
+        }
+        ++landed;  // 1. the talk opened
+        if (ending == "farewell") {
+            // LEAVE, BY ITS OWN TOPIC. The reply carries the goodbye and the
+            // panel closes under it.
+            const int leave = topicOfKind(session, sim::TopicKind::Leave);
+            if (leave < 0) {
+                return landed;
+            }
+            session.chooseTopic(static_cast<std::size_t>(leave));
+            if (!session.talking()) {
+                ++landed;  // 2. LEAVE closed it
+            }
+            // The panel's own close tail and the row's rise, both settled.
+            session.stepMany(sim::MoveInput{}, kPageEaseSteps * 2 + 2);
+            if (voiceRowUpFrom(session, "farewell")) {
+                ++landed;  // 3. the goodbye is on the row
+            }
+            return landed;
+        }
+        // MOVED: the first topic that is HEARD OUT -- the vanished clerk,
+        // which everybody has heard of, or their own business -- records
+        // Listened and moves them a hair; the worded reaction stands on the
+        // dateline row.
+        int heard = topicOfKind(session, sim::TopicKind::Quest);
+        if (heard < 0) {
+            heard = topicOfKind(session, sim::TopicKind::Personal);
+        }
+        if (heard < 0) {
+            return landed;
+        }
+        session.chooseTopic(static_cast<std::size_t>(heard));
+        if (!session.reactionLine().empty()) {
+            ++landed;  // 2. the reply moved them and the reaction is worded
+        }
+        // The reply's own typewriter reveal, run out, so the frame reads it.
+        session.stepMany(sim::MoveInput{}, sim::kStepsPerSecond / 2);
+        if (session.talking() && !session.reactionLine().empty()) {
+            ++landed;  // 3. still talking, the reaction still standing
+        }
+        return landed;
+    }
+    if (ending == "react") {
+        // INTO THE GULL AND A TAP ON THE NEAREST PATRON, exactly the beat
+        // `--punch` throws (walk up, face him, tap until it connects), and
+        // then the room says what it saw.
+        walkToTile(session, sim::gull::kBartenderX, sim::gull::kBartenderY + 1);
+        session.closeConversation();
+        const sim::Actor* mark = nearestMark(session);
+        if (mark == nullptr) {
+            return landed;
+        }
+        const std::int32_t markId = mark->id();
+        if (tapUntilItConnects(session, markId, 16)) {
+            ++landed;  // 1. the tap landed
+        }
+        // 2. A witness's memory carries the deed: the sim's own three-clause
+        //    rule put Struck on somebody who is not the man hit.
+        const sim::SocialLedger& ledger = session.tavern().dialogue().ledger();
+        bool witnessed = false;
+        for (const sim::Memory& memory : ledger.memories()) {
+            if (memory.actorId != markId && memory.lastDeed == sim::Deed::Struck) {
+                witnessed = true;
+                break;
+            }
+        }
+        if (witnessed) {
+            ++landed;
+        }
+        if (waitForVoice(session, "react.", sim::MoveInput{}, 6 * sim::kStepsPerSecond)) {
+            ++landed;  // 3. the row is up off a react key
+        }
+        return landed;
+    }
+    if (ending == "watch") {
+        // THE HALT FIRST, the feel build's own line stopped the step Cull
+        // starts Closing (his halt on the alert row), then the readback as
+        // he crosses the room: the row off watch.approach.* in his name.
+        landed = runWatchHaltLine(session, "halt");
+        if (landed < kWatchHaltStopBeats) {
+            return landed;
+        }
+        if (waitForVoice(session, "watch.approach", sim::MoveInput{}, 15 * sim::kStepsPerSecond)) {
+            ++landed;
+        }
+        return landed;
+    }
+    return landed;
+}
 
 // ---------------------------------------------------------------------------
 // JUSTICE BUILD (HEARING PAGE LANE): the court, played
@@ -13183,6 +13483,15 @@ int scriptedStartHour(const SmokeRunConfig& config) noexcept {
     if (config.watchHalt) {
         return 23;
     }
+    // VOICE LANE. The Watch ending is the Watch line's own hour; the Gull
+    // ending wants the room full (eight); the street endings want the
+    // Tarwalk crowded, which it is at four in the afternoon.
+    if (config.voice) {
+        if (config.voiceEnd == "watch") {
+            return 23;
+        }
+        return config.voiceEnd == "react" ? 20 : 16;
+    }
     // JUSTICE BUILD. The court line wants Cull on his stool for the arrest
     // (eleven, the Watch line's own hour) -- except the rope, whose killing
     // is made at eight before he arrives and waits for him through the wait
@@ -13577,6 +13886,21 @@ SmokeRunResult runSmoke(const SmokeRunConfig& config) {
         // "halt" stops on the third beat by design; it owes three, not five.
         result.scriptedWanted += config.watchHaltEnd == "halt" ? kWatchHaltStopBeats : kWatchHaltBeats;
         result.scriptedLanded += landed;
+    }
+
+    if (config.voice) {
+        // VOICE LANE. The one voice channel, played -- see runVoiceLine.
+        const std::int32_t landed =
+            static_cast<std::int32_t>(runVoiceLine(session, config.voiceEnd));
+        result.voiceBeats = landed;
+        result.scriptedWanted += voiceBeatsFor(config.voiceEnd);
+        result.scriptedLanded += landed;
+        result.talking = session.talking();
+        const VoiceLine& line = session.voice().current();
+        result.voiceChannel = std::string(voiceChannelName(line.channel));
+        result.voiceKey = line.key;
+        result.voiceSpeaker = line.name;
+        result.voiceRow = line.text;
     }
 
     if (config.court) {
@@ -14224,6 +14548,22 @@ SmokeRunResult runSmoke(const SmokeRunConfig& config) {
                         ? sim::watchCauseName(session.tavern().lastArrest().cause)
                         : "no")
                 << gWatchHaltNote << " row=\"" << session.lastMessage() << '"';
+    }
+    if (config.voice) {
+        // WHO SPOKE, OUT OF WHICH KEY, AND THE ROW ITSELF, beside the frame:
+        // a capture that says only "a line is up" cannot tell a goodbye from
+        // a witness, which is the whole claim being made. The reaction row
+        // is printed too, for the `moved` ending.
+        summary << " | voice end=" << config.voiceEnd << " beats=" << result.voiceBeats << '/'
+                << voiceBeatsFor(config.voiceEnd)
+                << " up=" << (session.voice().up() ? "yes" : "no")
+                << " channel=" << (result.voiceChannel.empty() ? "-" : result.voiceChannel)
+                << " key=" << (result.voiceKey.empty() ? "-" : result.voiceKey)
+                << " speaker=\"" << result.voiceSpeaker << "\""
+                << " row=\"" << result.voiceRow << "\""
+                << " spoken=" << session.voice().linesSpoken()
+                << " reaction=\"" << session.reactionLine() << "\""
+                << " talking=" << (session.talking() ? "yes" : "no");
     }
     if (config.court) {
         summary << " | court beats=" << result.courtBeats << '/' << courtBeatsFor(config.courtEnd)

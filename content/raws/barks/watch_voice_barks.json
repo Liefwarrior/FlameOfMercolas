@@ -1,0 +1,74 @@
+{
+  "id": "watch_voice_barks",
+  "notes": "VOICE LANE (lane/voice): the Watch on you, unprompted. watch.notice is a watchman's eyes landing on you crouched or with your hands up (a glance, not a cause); watch.heat is a watchman passing a man the post has heard of (heat above kWatchHeatNoticedAt, no paper yet); watch.paper is a watchman passing a man with a warrant out -- a demand or a seethe, NEVER a blow and never an arrest by itself (the arrest is the room's, at reach, through applyArrest); watch.wielder is the deference table, the Watch through gritted teeth to a presented Wielder (DOCKS-GAZETTEER 4.1: never hostile, absolute). watch.approach.<cause> is the readback as a Closing watchman crosses the room to you AFTER his halt (watch.halt, the alert row): the first line a breath after he starts, the second at reach, keyed by the cause the room recorded (violence, paper for a warrant, goods for a sack). Plain ASCII, no dashes, at most 72 glyphs.",
+  "tables": [
+    {
+      "key": "watch.notice",
+      "rows": [
+        "I see you. Stand up straight and be seen.",
+        "Hands where I can see them. Then we have no talk to have.",
+        "Lower them. Whatever you were about to do, do it elsewhere.",
+        "You. Yes, you. Walk like a man with nothing to hide."
+      ]
+    },
+    {
+      "key": "watch.heat",
+      "rows": [
+        "Word is out on you. Not paper. Not yet.",
+        "Your name came up at the post. Twice. Keep it from a third.",
+        "I have heard things. Give me a reason to have seen them.",
+        "Walk on. The sergeant knows your face and I know the sergeant."
+      ]
+    },
+    {
+      "key": "watch.paper",
+      "rows": [
+        "There is paper on you. Stand still and this goes easy.",
+        "The post has your name written down. I am reading it now.",
+        "Paper out, and here you are on my street. Bold.",
+        "Do not run. Every man who runs ends up on the same post."
+      ]
+    },
+    {
+      "key": "watch.wielder",
+      "rows": [
+        "Wielder. The ward is yours, as ever. Go where you like.",
+        "No door is locked to you. That was never my choice.",
+        "Whatever you need, Wielder. I will write down that I gave it."
+      ]
+    },
+    {
+      "key": "watch.approach",
+      "rows": [
+        "Stay where you are. I am coming to you.",
+        "Do not make me run. I am not paid to run.",
+        "Hands out. Empty. Now."
+      ]
+    },
+    {
+      "key": "watch.approach.violence",
+      "rows": [
+        "Stand still. I saw it, and I am the one who says what it was.",
+        "Put your hands down. Down. I will not say it a third time.",
+        "Nobody leaves this room. Least of all you.",
+        "Steady now. You are done swinging. That part is over."
+      ]
+    },
+    {
+      "key": "watch.approach.paper",
+      "rows": [
+        "The paper says your name and so do I. Stand there.",
+        "I have been looking for that face. Do not turn it away.",
+        "Stay put. The cell is warmer than the strand tonight."
+      ]
+    },
+    {
+      "key": "watch.approach.goods",
+      "rows": [
+        "That sack. Set it down where I can see it.",
+        "The sack stays. You stay with it. Do not make it two crimes.",
+        "Set it down. The jars are the ward's now, and so is your evening."
+      ]
+    }
+  ]
+}

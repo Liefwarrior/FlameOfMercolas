@@ -1,0 +1,62 @@
+{
+  "id": "rumor_barks",
+  "notes": "VOICE LANE (lane/voice): rumor.<family> is WHAT THE WARD SAYS in a trade's own mouth. The WardTalk topic resolves rumor.<family> first and the owner's gossip table after it, so the same door in a sailor's mouth is the lanes and in a keeper's is the dogs. The one row that says the learned word is a priest's (rumor.clergy), by the owner's diction rule; no other family's row ever does, and the suite greps for it. Plain ASCII, no dashes.",
+  "tables": [
+    {
+      "key": "rumor.serf",
+      "rows": [
+        "No Mercian bottom in two quarters. No wage, no penny, and the Duke counts both.",
+        "They pulled another off the strand at the turn of the tide. Third this season.",
+        "The crane line stopped at noon Kingsday and nobody at the Weighhouse said why."
+      ]
+    },
+    {
+      "key": "rumor.trade",
+      "rows": [
+        "The Bond is full and sealed. Whose goods, the harbourmaster will not say.",
+        "Fenner lends at a Royal on four against the penny. Half this row owes him.",
+        "Lamplight under the Hold's doors again. Officially empty for nine years."
+      ]
+    },
+    {
+      "key": "rumor.maritime",
+      "rows": [
+        "The Dezdant war has the lanes past the point. No hull goes out and comes back.",
+        "The Kestrel was at sea the night the bodies came up. Wake tells everyone.",
+        "There is a new name at the Wall every week and no storm to blame for it."
+      ]
+    },
+    {
+      "key": "rumor.watch",
+      "rows": [
+        "The sergeant doubled the Rise patrol. With what men, nobody at the post can say.",
+        "Whatever came up off the strand, the post wrote it down and did nothing else.",
+        "The Watch does not go down the Gullet. That is not a rumor. That is the rule."
+      ]
+    },
+    {
+      "key": "rumor.wastrel",
+      "rows": [
+        "Somebody is asking after the killings. Nobody asks. The Gullet is warned.",
+        "The grate at the Outfall opens at low tide. What comes up it I will not say.",
+        "The crimp works the Bilge on pay night. A hammock there is a berth elsewhere."
+      ]
+    },
+    {
+      "key": "rumor.clergy",
+      "rows": [
+        "The docket is one story this season: a war took the sea road, the widows came.",
+        "I wrote three letters to the monastery about the water. None was answered.",
+        "The catechism has a word for what crossed the sea. Bloodletter. Not on the quay."
+      ]
+    },
+    {
+      "key": "rumor.husbandry",
+      "rows": [
+        "The dogs will not work the east end. Not for meat, not for the Watch's coin.",
+        "Cobb's terrier refused the Hold's door. A dog does not refuse a door for nothing.",
+        "The goats are off their feed since the tide turned strange. Beasts know."
+      ]
+    }
+  ]
+}

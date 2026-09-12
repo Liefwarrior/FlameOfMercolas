@@ -42,6 +42,7 @@
 #include "granadad/render/lamps.hpp"
 #include "granadad/render/map_view.hpp"
 #include "granadad/render/menu_view.hpp"
+#include "granadad/render/street_voice.hpp"
 #include "granadad/render/viewmodel_machine.hpp"
 #include "granadad/render/world_renderer.hpp"
 #include "granadad/sim/casebook.hpp"
@@ -1710,6 +1711,13 @@ public:
 
     /// The last thing that happened, for the HUD. Fades after a few seconds.
     [[nodiscard]] const std::string& lastMessage() const noexcept { return message_; }
+    /// VOICE LANE. The one voice channel: what the street said without the
+    /// talk key, as the HUD's voice row draws it and the summary reports it.
+    [[nodiscard]] const StreetVoice& voice() const noexcept { return voice_; }
+    /// VOICE LANE, THE ADDRESS. The worded reaction to the last reply that
+    /// moved the speaker's disposition -- "(THE FACE SOFTENS A HAIR)" -- for
+    /// as long as it stands on the panel's dateline row; empty otherwise.
+    [[nodiscard]] const std::string& reactionLine() const noexcept { return reactionLine_; }
 
     /// "3 FLOWER  24DR", or empty when the sack is empty. Public because the
     /// HUD rule is a testable claim and not a preference: an inventory in this
@@ -2033,6 +2041,15 @@ private:
     /// says. The verb's first caller.
     [[nodiscard]] std::string settleGroundPetition();
     void say(std::string line);
+    /// VOICE LANE. Voices the goodbye on the street channel -- the director's
+    /// own farewell(walkedOff) for whoever the open conversation is with --
+    /// and ends the conversation: the tail closeConversation() runs for a
+    /// live talk, shared with the walk-off close in step(). A no-op with
+    /// nothing open.
+    void endTalk(bool walkedOff);
+    /// VOICE LANE. The voice row's toggle, re-read from the channel -- called
+    /// from syncPanelAnim and eagerly from the verbs that can say a line.
+    void syncVoiceAnim() noexcept;
     /// Charges a landing to the body: the skill, the guild's teaching, the hit
     /// points and the roof-run tally, in the one place a landing is resolved.
     void settleLanding(const sim::RoofResult& move);
@@ -2710,6 +2727,28 @@ private:
     std::string lastDemandSpoken_;
     std::string lastJoinSpoken_;
     std::string lastFleeSpoken_;
+    /// VOICE LANE. THE ONE VOICE CHANNEL -- see street_voice.hpp. Stepped
+    /// once per movement step after the room and the ward have moved, from
+    /// public state only; drawn on the HUD's voice row through its own
+    /// EasedToggle (DECISIONS.md UI rule 1). Unhashed, read-only, draw-free:
+    /// the same run with the channel silenced hashes byte-identical, and
+    /// test_street_voice.cpp pins it.
+    StreetVoice voice_;
+    EasedToggle voiceAnim_;
+    /// VOICE LANE, THE ADDRESS. The worded reaction to the last reply that
+    /// moved the speaker's disposition, on the panel's dateline row for
+    /// kReactionHoldSteps, and the countdown that keeps it there. Pure UI
+    /// state, never hashed: the disposition it describes already is.
+    std::string reactionLine_;
+    std::int32_t reactionSteps_ = 0;
+    static constexpr std::int32_t kReactionHoldSteps = 4 * sim::kStepsPerSecond;
+    /// VOICE LANE, THE ADDRESS. Tiles past which a conversation on foot is
+    /// over -- five: more than twice the talk reach, so a body that shifts a
+    /// tile or a player who steps back to look at somebody (the scripted
+    /// lines stand three tiles off for their frames) does not end it, and a
+    /// player who walks off does. The goodbye is farewell.away, the word
+    /// thrown after you.
+    static constexpr std::int32_t kTalkWalkOffTiles = 5;
     /// ACTION-COMBAT BUILD (section 5, channel 5). THE CAMERA IMPULSE, composed
     /// as a render-only BAM offset inside Session::camera() -- never written to
     /// sim yaw. Three events, three pulses: a HARD swing's own forward dip on
@@ -3251,6 +3290,18 @@ struct SmokeRunConfig {
     /// arc, the arrest line on the row).
     bool watchHalt = false;
     std::string watchHaltEnd = "street";
+    /// VOICE LANE. Photograph the one voice channel through the real verbs
+    /// -- see runVoiceLine. WHERE is what the row is asked to hold: "pass"
+    /// (walk the Tarwalk until a body passes within reach and says its one
+    /// line), "overheard" (stand in the crowd until two bodies standing
+    /// together are overheard), "farewell" (the street line, then LEAVE by
+    /// its own topic: the goodbye on the row as the panel closes), "moved"
+    /// (the street line, then a topic that moves them: the worded reaction
+    /// on the panel's dateline row), "react" (into the Gull, a tap on the
+    /// nearest patron, a witness's line), "watch" (the Watch line to the
+    /// halt, then the approach readback as Cull crosses the room).
+    bool voice = false;
+    std::string voiceEnd = "pass";
     /// JUSTICE BUILD (HEARING PAGE LANE). Play the court: walk into the Gull
     /// at Cull's hour, lift in his sight until the row reads WANTED, stand
     /// still with steel up until he takes you at reach -- his own line on
@@ -3662,6 +3713,14 @@ struct SmokeRunResult {
     std::int32_t skyrunStages = 0;
     /// BARKS LANE: beats of the Watch-on-violence line (--watch-halt).
     std::int32_t watchHaltBeats = 0;
+    /// VOICE LANE. What the voice line landed, and what the row held at the
+    /// shutter: the channel, the key, the speaker and the row verbatim, so a
+    /// frame cannot pass as a picture of a line that was not on it.
+    std::int32_t voiceBeats = 0;
+    std::string voiceChannel;
+    std::string voiceKey;
+    std::string voiceSpeaker;
+    std::string voiceRow;
     /// JUSTICE BUILD: beats of the court line (--court), by its ending.
     std::int32_t courtBeats = 0;
     /// How many of the six beats of the bounty run landed.

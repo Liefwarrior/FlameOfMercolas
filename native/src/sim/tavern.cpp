@@ -724,6 +724,21 @@ void Tavern::stepMovement() {
         if (!actor.present() || isFloored(actor.activity())) {
             continue;
         }
+        // VOICE LANE: THE ADDRESS. The one you are talking to HOLDS for the
+        // talk -- stands where the conversation found them and keeps their
+        // face to you, so a conversation reads as being looked at rather
+        // than as a panel opened over somebody walking off to their post.
+        // Only the peaceable activities hold: a bouncer mid-warning, a man
+        // in the fight and a Closing watchman all have somewhere to be that
+        // outranks a chat, and the rota, the brawl and the arrest keep them.
+        // DERIVED, NOT STORED: the hold reads talkingToId_ (hashed since S3)
+        // and adds no field, and the gate's workload opens and closes its
+        // conversation inside one tick with no movement step between, so
+        // the tavern baseline reads exactly what it read.
+        if (holdsForTalk(actor)) {
+            actor.faceToward(playerX_, playerY_);
+            continue;
+        }
         actor.step(path_, speedFor(actor));
     }
 
@@ -2588,6 +2603,19 @@ Speaker Tavern::speakerFor(const Actor& actor) const {
         }
     }
     return speaker;
+}
+
+bool Tavern::holdsForTalk(const Actor& actor) const noexcept {
+    if (talkingToId_ != actor.id() || !dialogue_.isOpen()) {
+        return false;
+    }
+    const Activity doing = actor.activity();
+    if (doing != Activity::Drinking && doing != Activity::Working &&
+        doing != Activity::Walking) {
+        return false;
+    }
+    // A brawler wears Walking while he routs; the fight keeps him.
+    return std::find(brawlers_.begin(), brawlers_.end(), actor.id()) == brawlers_.end();
 }
 
 bool Tavern::talkTo() {

@@ -1270,6 +1270,40 @@ void drawBottomBand(Framebuffer& target, const HudState& state, BottomBand& band
                      alertScale);
         }
     }
+    // VOICE LANE. THE STREET'S OWN LINE, right after the alert in priority
+    // and under it in rank: it takes the slot above the alert when both are
+    // up and the alert's own slot when the alert is down. Drawn at the minor
+    // size -- it is read, not heeded -- on the same plate the alert stands
+    // on, the speaker in the person accent (aimAccent(AimKind::Person),
+    // the colour a body already wears under the crosshair) and the row in
+    // the panel's dim ink, the court's officer block moved to the street.
+    // Clipped as ONE line against the frame's width, the row first, so a
+    // long sentence loses its tail and never its speaker.
+    if (!state.voiceLine.empty() && state.voiceFade > 0.0F) {
+        const float fade = std::clamp(state.voiceFade, 0.0F, 1.0F);
+        const int y = band.take(minor);
+        if (y >= 0) {
+            const std::string name =
+                state.voiceName.empty() ? std::string() : std::string(state.voiceName) + ":";
+            const int gutter = name.empty() ? 0 : kGlyphAdvance * minor;
+            const int nameW = textWidth(name, minor);
+            const int lineBudget = std::max(0, rowBudget - nameW - gutter);
+            const std::string line = clipToWidth(state.voiceLine, lineBudget, minor);
+            const int lineW = textWidth(line, minor);
+            const int drawn = nameW + gutter + lineW;
+            const int textX = std::max(margin, (width - drawn) / 2);
+            const int padX = minor * 2;
+            const int padY = std::max(1, minor / 2);
+            drawTextPlate(target, textX - padX, y - padY, textX + drawn + padX,
+                          y + kGlyphH * minor + padY, std::max(1, minor / 2), fade);
+            if (!name.empty()) {
+                drawText(target, textX, y, name, aimAccent(static_cast<int>(AimKind::Person)),
+                         0.95F * fade, minor);
+            }
+            drawText(target, textX + nameW + gutter, y, line, Rgb{0.74F, 0.72F, 0.64F},
+                     0.92F * fade, minor);
+        }
+    }
     // SPELLS BUILD. THE QUICK BAR STRIP, bottom-centre -- the hotbar slot
     // this file's own header has reserved in Barony's name since task #66,
     // finally holding something. Right after the alert in priority: while it

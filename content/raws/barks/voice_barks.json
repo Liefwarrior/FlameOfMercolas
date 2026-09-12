@@ -1,0 +1,795 @@
+{
+  "id": "voice_barks",
+  "notes": "VOICE LANE (lane/voice), the one voice channel: what a body says WITHOUT the talk key. pass.<family>.<attitude> is the one line as you pass within reach (the type rung -- pass.urchin, pass.fisher, pass.disciple -- sits above the family rung so a trade inside a family sounds like itself); farewell.<family>.<attitude> is the goodbye on LEAVE and farewell.away.<family> the word thrown after you when you walk off mid-talk; overheard.<family> is one side of an exchange between two bodies standing together (the war on the Dezdant ground that took the Mercian lanes, the ground penny, the Duke, the strand, the Hold), so the street talks to itself; react.<family>.<deed> is what a WITNESS says on a landed blow (struck), a drawn blade (steel) and a killing (slew) -- spoken by the bodies the sim's own three-clause witness rule put the deed on, never by the man in the fight and never by the Closing watchman, who keeps his halt. Selection is BarkTables::line off (actor id, step, talks), no draw; the emitter is native/src/render/street_voice.cpp and it reads state, writes none. Attitude falls back by tier (kin>friend>warm, hostile>cold) so an unauthored cell borrows the nearest one authored, never the wrong one. Plain ASCII, no dashes in a spoken row, at most 72 glyphs so a name and the row fit one 92-cell line at 960x540. Loaded after the owner's barks.json; nothing here can take a key of his.",
+  "tables": [
+    {
+      "key": "pass",
+      "rows": [
+        "Mind yourself.",
+        "Wet planks. Watch your feet.",
+        "Move along, there is a cart behind you.",
+        "(a nod, no more)"
+      ]
+    },
+    {
+      "key": "pass.serf",
+      "rows": [
+        "Rope coming through. Mind your feet.",
+        "Long shift. Longer tide.",
+        "Crane line is moving. Stand clear of it.",
+        "Quarter-day is Kingsday. Do not remind me.",
+        "Planks are wet. Everybody says so and somebody still goes in."
+      ]
+    },
+    {
+      "key": "pass.serf.cold",
+      "rows": [
+        "Not you again.",
+        "Walk on. I have nothing for you.",
+        "(a look, and a wider berth)"
+      ]
+    },
+    {
+      "key": "pass.serf.hostile",
+      "rows": [
+        "Keep walking or I call the lads.",
+        "The ropes remember faces. Yours is one.",
+        "Cross me on the quay and the tide can have you."
+      ]
+    },
+    {
+      "key": "pass.serf.warm",
+      "rows": [
+        "There goes a friend of the ropes.",
+        "Still upright. Good. Ale later, if the wage lands.",
+        "Wind is fair and so is your name today."
+      ]
+    },
+    {
+      "key": "pass.serf.friend",
+      "rows": [
+        "You owe me a drink and I intend to collect.",
+        "Mind the crates, friend. They do not know you."
+      ]
+    },
+    {
+      "key": "pass.trade",
+      "rows": [
+        "Stock is fresh as the tide brings it. Which is not very.",
+        "Buying, or blocking my light?",
+        "Mind the shutters. They bite.",
+        "Nothing off a Mercian bottom this quarter. Nothing off any bottom."
+      ]
+    },
+    {
+      "key": "pass.trade.cold",
+      "rows": [
+        "My counter, my business. Yours is elsewhere.",
+        "I count the stock after you pass. Take it as counted.",
+        "(the ledger closes as you pass)"
+      ]
+    },
+    {
+      "key": "pass.trade.hostile",
+      "rows": [
+        "Out of my doorway.",
+        "I know what walked out of here last time. Keep walking.",
+        "The Watch has your face from me. Remember that."
+      ]
+    },
+    {
+      "key": "pass.trade.warm",
+      "rows": [
+        "Good day to a good customer.",
+        "There is a Royal's credit for you here. Tell nobody.",
+        "Mind the step, friend. I would hate to lose you."
+      ]
+    },
+    {
+      "key": "pass.maritime",
+      "rows": [
+        "Fair wind, landsman.",
+        "Tide waits on nobody. Walk quicker.",
+        "Mind the lines. A mooring rope has broken better legs than yours.",
+        "No lane open past the point. Ask any man with salt on him."
+      ]
+    },
+    {
+      "key": "pass.maritime.cold",
+      "rows": [
+        "Landsman. Keep to the land.",
+        "Out of the way of working men.",
+        "(a spit over the side, and a look)"
+      ]
+    },
+    {
+      "key": "pass.maritime.hostile",
+      "rows": [
+        "The sea keeps what the ward will not. Remember that on a pier.",
+        "Walk the strand alone some night. Go on."
+      ]
+    },
+    {
+      "key": "pass.maritime.warm",
+      "rows": [
+        "Fair wind, friend. What there is of it.",
+        "You would make a sailor. A poor one, but a sailor.",
+        "First cup at the Bilge is yours if the boats ever sail."
+      ]
+    },
+    {
+      "key": "pass.watch",
+      "rows": [
+        "Orderly, now.",
+        "Walk on. Nothing here is yours.",
+        "Lane clear. Keep it that way.",
+        "Nothing to see. Go and not see it somewhere else."
+      ]
+    },
+    {
+      "key": "pass.watch.cold",
+      "rows": [
+        "I know that face. Keep it moving.",
+        "Every step in my ward, I count it.",
+        "The post has your name written down. Do not add to the page."
+      ]
+    },
+    {
+      "key": "pass.watch.hostile",
+      "rows": [
+        "Give me a reason. Any reason at all.",
+        "One shout and you sleep in the garrison. Walk.",
+        "I am watching you in daylight. Think about the dark."
+      ]
+    },
+    {
+      "key": "pass.watch.warm",
+      "rows": [
+        "Good day. That is not a thing I say to many.",
+        "Keep my rounds boring and I will keep them yours.",
+        "A quiet street is a friend's doing. Walk on."
+      ]
+    },
+    {
+      "key": "pass.wastrel",
+      "rows": [
+        "Spare a Royal? No? Spare a look, then.",
+        "You look flush. I look hungry. The strand is a jest.",
+        "Mind your purse. Not me. Somebody else. Mostly.",
+        "Nothing to sell and nothing to say. Walk on.",
+        "(the hand goes out, and comes back empty)"
+      ]
+    },
+    {
+      "key": "pass.wastrel.cold",
+      "rows": [
+        "Not to you. Not even for a Royal.",
+        "The Gullet has heard about you. Walk wide of it.",
+        "(the face turns to the wall)"
+      ]
+    },
+    {
+      "key": "pass.wastrel.hostile",
+      "rows": [
+        "Come down the Gullet after dark. We will talk properly.",
+        "The fog knows your name now.",
+        "Keep walking. Faster than that."
+      ]
+    },
+    {
+      "key": "pass.wastrel.warm",
+      "rows": [
+        "There is the one who stood us a crust. Flame keep you.",
+        "A friend of the strand. Say it loud so the Watch hears.",
+        "Half a herring in my sleeve, and half of it yours if you ask."
+      ]
+    },
+    {
+      "key": "pass.clergy",
+      "rows": [
+        "The Flame keep you, whoever you are.",
+        "The Mission feeds at dusk. Tell whoever is hungry.",
+        "Every soul a wick. Mind yours in this wind.",
+        "Peace on the quay, child. What there is of it."
+      ]
+    },
+    {
+      "key": "pass.clergy.cold",
+      "rows": [
+        "The Flame sees what the Watch does not. Walk on.",
+        "The door is open to you. My ear is not, today.",
+        "(a blessing, made quickly, and not for you)"
+      ]
+    },
+    {
+      "key": "pass.clergy.hostile",
+      "rows": [
+        "The Flame keeps its own accounts. Yours is long.",
+        "Not in the Mission's sight. Whatever you are about, not here."
+      ]
+    },
+    {
+      "key": "pass.clergy.warm",
+      "rows": [
+        "Warmth of the Flame on you. You have earned a little.",
+        "The bunkroom speaks well of you. That is rarer than gold here.",
+        "Peace, friend. The soup is thin tonight but the bowl is yours."
+      ]
+    },
+    {
+      "key": "pass.husbandry",
+      "rows": [
+        "Mind the beasts. They mind you.",
+        "The dog likes you. That is not a compliment to either of you.",
+        "Goats fed. Me next. That is the order.",
+        "Step wide of the pen. She kicks."
+      ]
+    },
+    {
+      "key": "pass.husbandry.cold",
+      "rows": [
+        "The dog does not like you. I trust the dog.",
+        "Keep your hands off the animals and off my yard."
+      ]
+    },
+    {
+      "key": "pass.husbandry.warm",
+      "rows": [
+        "The dog remembers you. So do I. Both fondly.",
+        "Come by the yard. There is always a pup nobody wants."
+      ]
+    },
+    {
+      "key": "pass.urchin",
+      "rows": [
+        "Got a crust? Got a Royal? Got a name?",
+        "Mind the gulls. They take bread and fingers.",
+        "I saw a hand in your pocket. Not mine. Mine is here.",
+        "(a small shape, gone before you look)"
+      ]
+    },
+    {
+      "key": "pass.thief",
+      "rows": [
+        "Nothing in my hands. Look.",
+        "Fine night for walking. Fine night for not seeing things.",
+        "(a glance at your belt, and away)"
+      ]
+    },
+    {
+      "key": "pass.fisher",
+      "rows": [
+        "Nets up. Nothing in them a man would eat.",
+        "Strand is wide at this tide. Do not trust it.",
+        "The sea gave back a boot this morning. Only the boot."
+      ]
+    },
+    {
+      "key": "pass.sailor",
+      "rows": [
+        "No sailing. No lanes. No pay. Ask me anything else.",
+        "Hammock at the Rows, if a body has not died in it.",
+        "The Kestrel is the last hull with a crew. The rest are firewood."
+      ]
+    },
+    {
+      "key": "pass.carter",
+      "rows": [
+        "Cart coming through. Feet or wheels, your pick.",
+        "Do not touch the dray. Hold her with your eyes.",
+        "Round again. Weighhouse to the Bond and back till dark."
+      ]
+    },
+    {
+      "key": "pass.disciple",
+      "rows": [
+        "The Flame keep you. Have you eaten?",
+        "Father Maell says to tell the hungry. You look hungry.",
+        "I am not to stare at the sea. I am staring at the sea."
+      ]
+    },
+    {
+      "key": "farewell",
+      "rows": [
+        "Go on, then.",
+        "Mind how you go.",
+        "(a nod, and back to it)"
+      ]
+    },
+    {
+      "key": "farewell.hostile",
+      "rows": [
+        "Get gone.",
+        "We are done. Do not make it twice.",
+        "(nothing more, and a hand near the belt)"
+      ]
+    },
+    {
+      "key": "farewell.serf",
+      "rows": [
+        "Back to the ropes. Mind the planks.",
+        "Go on. The crane line will not wait for either of us.",
+        "Kingsday, if the wage lands. Look for me at the Gull."
+      ]
+    },
+    {
+      "key": "farewell.serf.cold",
+      "rows": [
+        "That is all you get. Go.",
+        "(a turned shoulder)"
+      ]
+    },
+    {
+      "key": "farewell.serf.warm",
+      "rows": [
+        "Go carefully, friend. The quay is not.",
+        "Come back at the pay-out. I will owe you a cup by then."
+      ]
+    },
+    {
+      "key": "farewell.trade",
+      "rows": [
+        "Mind the step on your way out.",
+        "Come back with coin. Or with news. Coin first.",
+        "Shutters at dusk. Be quick if you want anything."
+      ]
+    },
+    {
+      "key": "farewell.trade.cold",
+      "rows": [
+        "The door is behind you. Use it.",
+        "I will count the shelves now. Good day."
+      ]
+    },
+    {
+      "key": "farewell.trade.warm",
+      "rows": [
+        "Come back any hour. The back room is yours if you need it.",
+        "Go well. I will keep the good cask for you."
+      ]
+    },
+    {
+      "key": "farewell.maritime",
+      "rows": [
+        "Fair wind, if there is any.",
+        "Off with you. The tide does not stand and talk.",
+        "Look for me at the Bilge. Or under it."
+      ]
+    },
+    {
+      "key": "farewell.maritime.cold",
+      "rows": [
+        "Go. Landsmen talk too long.",
+        "(a turn back to the water)"
+      ]
+    },
+    {
+      "key": "farewell.maritime.warm",
+      "rows": [
+        "Go well. Keep off the strand at night. I mean it.",
+        "Next hull out has a place for you. If any hull ever goes out."
+      ]
+    },
+    {
+      "key": "farewell.watch",
+      "rows": [
+        "Walk on, citizen. That is all.",
+        "Keep the lane clear behind you.",
+        "Go about your business, and keep it business."
+      ]
+    },
+    {
+      "key": "farewell.watch.cold",
+      "rows": [
+        "I will remember this talk. Go.",
+        "Off you go. The page is still open."
+      ]
+    },
+    {
+      "key": "farewell.watch.warm",
+      "rows": [
+        "Keep my rounds quiet. Go on.",
+        "Go well. Any trouble finds you, the post answers it."
+      ]
+    },
+    {
+      "key": "farewell.wastrel",
+      "rows": [
+        "Go on. The strand will still be here.",
+        "Say nothing to the Watch. Nothing. Go.",
+        "(already looking past you)"
+      ]
+    },
+    {
+      "key": "farewell.wastrel.cold",
+      "rows": [
+        "Done, then. Walk wide of the Gullet.",
+        "(a look at your purse, and then the wall)"
+      ]
+    },
+    {
+      "key": "farewell.wastrel.warm",
+      "rows": [
+        "Flame keep you, friend of the strand. Go careful.",
+        "Come find me if you have bread. Or news. Bread first."
+      ]
+    },
+    {
+      "key": "farewell.clergy",
+      "rows": [
+        "The Flame keep you. Go in peace, what there is of it.",
+        "Go carefully, child. The Mission's door stays open.",
+        "Peace on you. Tell the hungry about the soup."
+      ]
+    },
+    {
+      "key": "farewell.clergy.cold",
+      "rows": [
+        "The door is open. My time is not. Go.",
+        "Go, and think on what you carry."
+      ]
+    },
+    {
+      "key": "farewell.clergy.warm",
+      "rows": [
+        "Warmth of the Flame on you, friend. Come back before dark.",
+        "Go well. There is a bowl with your name on it tonight."
+      ]
+    },
+    {
+      "key": "farewell.husbandry",
+      "rows": [
+        "Go on. The beasts get restless around strangers.",
+        "Mind the pen on your way. She kicks.",
+        "Off with you. The dog will see you out."
+      ]
+    },
+    {
+      "key": "farewell.husbandry.warm",
+      "rows": [
+        "Come by the yard. The dog will be glad. So will I.",
+        "Go well. Bring a bone next time and you are family."
+      ]
+    },
+    {
+      "key": "farewell.urchin",
+      "rows": [
+        "Bye, then. Watch your pockets. Not from me.",
+        "(gone into the crowd, small as a cat)"
+      ]
+    },
+    {
+      "key": "farewell.disciple",
+      "rows": [
+        "The Flame keep you. You have not eaten. Go and eat.",
+        "Go well. I will tell Father you asked."
+      ]
+    },
+    {
+      "key": "farewell.sailor",
+      "rows": [
+        "Fair wind. It is all any of us has left to say.",
+        "Off you go. Hammocks fill early at the Rows."
+      ]
+    },
+    {
+      "key": "farewell.fisher",
+      "rows": [
+        "Go on. Mind the strand at the turn of the tide."
+      ]
+    },
+    {
+      "key": "farewell.carter",
+      "rows": [
+        "Go on. The dray is patient and I am not."
+      ]
+    },
+    {
+      "key": "farewell.thief",
+      "rows": [
+        "Go on. I was never here and neither were you.",
+        "(melting back into the doorway)"
+      ]
+    },
+    {
+      "key": "farewell.away",
+      "rows": [
+        "Suit yourself.",
+        "Walk off, then. The tide will not miss you either.",
+        "(the words trail off behind you)",
+        "That is one way to end a talk."
+      ]
+    },
+    {
+      "key": "farewell.away.watch",
+      "rows": [
+        "I was not finished. Remember that I was not finished.",
+        "Walking away from the Watch. Bold."
+      ]
+    },
+    {
+      "key": "farewell.away.trade",
+      "rows": [
+        "The door does not shut itself, you know.",
+        "Walk out mid-word. See how the price sits next time."
+      ]
+    },
+    {
+      "key": "farewell.away.wastrel",
+      "rows": [
+        "Off you go, then. Nobody stays for the strand.",
+        "(a shrug, and the hand goes back in the sleeve)"
+      ]
+    },
+    {
+      "key": "farewell.away.serf",
+      "rows": [
+        "Aye, go on. Rope waits for nobody either.",
+        "Half a word and gone. The foreman would like you."
+      ]
+    },
+    {
+      "key": "overheard",
+      "rows": [
+        "...two quarters, and not a Mercian bottom at the quay...",
+        "...the penny falls Kingsday whether the wage does or not...",
+        "...they say it was a war a long way off that did it...",
+        "...ask the Netmenders. They saw the ship come in. They see everything..."
+      ]
+    },
+    {
+      "key": "overheard.serf",
+      "rows": [
+        "...the Duke says patience, and patience is what I am paying him in...",
+        "...bondsworn by the spring if the lanes stay shut. Mark me...",
+        "...no shipments, no shifts. No shifts, no penny. That is the sum...",
+        "...they pulled another one off the strand at the turn of the tide...",
+        "...the crane line went slack at noon and nobody said why..."
+      ]
+    },
+    {
+      "key": "overheard.trade",
+      "rows": [
+        "...the Weighhouse stamps what it likes and I sell what I am left...",
+        "...Trojia's war on the Dezdant, and my shelves pay for it...",
+        "...Fenner is lending at a Royal on four. On four. Against the penny...",
+        "...the Bond is full and sealed, and nobody's key fits it..."
+      ]
+    },
+    {
+      "key": "overheard.maritime",
+      "rows": [
+        "...the lanes past the point are Dezdant water now. No hull goes...",
+        "...the Kestrel was out the night the bodies came up. Wake says so...",
+        "...a war too far off to spell, and the sea road is what it costs us...",
+        "...a candle at the Wall for him. The sea kept the rest...",
+        "...lamplight under the Hold's doors again. Officially empty..."
+      ]
+    },
+    {
+      "key": "overheard.watch",
+      "rows": [
+        "...the sergeant wants the Rise walked twice. Twice, with what men...",
+        "...no wage three weeks and the pot cold at the post. Say that to Vess...",
+        "...another one off the strand and we write it down and that is all...",
+        "...the impound dog will not go near the Hold. I trust the dog..."
+      ]
+    },
+    {
+      "key": "overheard.wastrel",
+      "rows": [
+        "...the crimp works the Bilge on pay night. Stay off the hammocks...",
+        "...low tide at the grate, and what came up the grate I will not say...",
+        "...the Watch does not come down the Gullet. Never has...",
+        "...somebody asked after the killings. Nobody asks. Warn the rest...",
+        "...a Royal for a dry throat and two for a name, that is the rate..."
+      ]
+    },
+    {
+      "key": "overheard.clergy",
+      "rows": [
+        "...the docket is all one story this season, and the story is the sea...",
+        "...three letters to the monastery, and the fourth I did not send...",
+        "...not the war that frightens me. What the war lets through...",
+        "...soup for forty and bread for twenty. We will manage. We always do..."
+      ]
+    },
+    {
+      "key": "overheard.husbandry",
+      "rows": [
+        "...the dogs will not work the east end. Not for meat, not for me...",
+        "...rat scalps pay by the Watch's count, and the Watch cannot count...",
+        "...the goats know the tide better than the harbourmaster does..."
+      ]
+    },
+    {
+      "key": "react.struck",
+      "rows": [
+        "Hoy! Not in here!",
+        "Somebody get between them.",
+        "(a stool goes over, and the room goes quiet)"
+      ]
+    },
+    {
+      "key": "react.steel",
+      "rows": [
+        "Steel! Get back from it!",
+        "Put it away. Put it away, for the Flame's sake.",
+        "Fetch Cull. Fetch anybody."
+      ]
+    },
+    {
+      "key": "react.slew",
+      "rows": [
+        "He is not getting up. He is not getting up.",
+        "Flame keep us. That one is gone.",
+        "Murder. Under this roof. Murder."
+      ]
+    },
+    {
+      "key": "react.serf.struck",
+      "rows": [
+        "Hoy! Venn will have you out for that.",
+        "Not on pay night. Not in here.",
+        "That was a working man you hit. Mind who else is one."
+      ]
+    },
+    {
+      "key": "react.serf.steel",
+      "rows": [
+        "Steel! Get behind the tables!",
+        "A blade in the Gull. Somebody hold the door.",
+        "Put that away or the whole quay comes down on you."
+      ]
+    },
+    {
+      "key": "react.serf.slew",
+      "rows": [
+        "He is down and he is not moving. Flame keep us.",
+        "A rope hand. Dead on the boards. Somebody get the Watch.",
+        "You killed him. In front of all of us. You killed him."
+      ]
+    },
+    {
+      "key": "react.trade.struck",
+      "rows": [
+        "Not by my counter you do not.",
+        "Mind the stock! Fight where there is nothing to break.",
+        "One more swing and the door has your name on it."
+      ]
+    },
+    {
+      "key": "react.trade.steel",
+      "rows": [
+        "Steel in a house of trade. Put it up, or get out.",
+        "Not the shelves. Flame, not the shelves.",
+        "A blade. That is the Watch's business now, not the house's."
+      ]
+    },
+    {
+      "key": "react.trade.slew",
+      "rows": [
+        "A dead man on the floor. Somebody get Cull.",
+        "Flame keep him. And Flame keep this house, after that.",
+        "That will be talked about at every counter by morning."
+      ]
+    },
+    {
+      "key": "react.maritime.struck",
+      "rows": [
+        "Hoy! Fists on land are still fists.",
+        "Knives checked at the door, and still this.",
+        "Steady. Steady. That is a man, not a bale."
+      ]
+    },
+    {
+      "key": "react.maritime.steel",
+      "rows": [
+        "Steel! Stand off him, all of you.",
+        "A blade on land. Land has a Watch. Put it away.",
+        "Get back from it. The sea is enough killing for one quay."
+      ]
+    },
+    {
+      "key": "react.maritime.slew",
+      "rows": [
+        "Dead. On land, and dead. Light a candle at the Wall.",
+        "He is gone. Somebody bar the door before the Watch does.",
+        "The sea did not take him. You did. Say it to the Wall."
+      ]
+    },
+    {
+      "key": "react.watch.struck",
+      "rows": [
+        "A brawl is the house's law. Keep it a brawl.",
+        "Fists. I saw fists. Keep it at fists and I keep my seat.",
+        "One blow. I have seen one blow. Do not show me two."
+      ]
+    },
+    {
+      "key": "react.watch.steel",
+      "rows": [
+        "Steel. Now it is mine.",
+        "That blade is written down. Put it away before the rest is.",
+        "A blade in my sight. You know how this ends."
+      ]
+    },
+    {
+      "key": "react.watch.slew",
+      "rows": [
+        "A killing. In my sight. Stand where you are.",
+        "Dead. That is a rope, and I am the man who fetches it.",
+        "You put him down in front of the Watch. Nobody is that stupid twice."
+      ]
+    },
+    {
+      "key": "react.wastrel.struck",
+      "rows": [
+        "Not my fight. Not my fight. Not my fight.",
+        "(under the table, and staying there)",
+        "Hit him again and the Watch hears it on the Rise."
+      ]
+    },
+    {
+      "key": "react.wastrel.steel",
+      "rows": [
+        "Steel. Out. Out the back, all of you.",
+        "(a purse changes hands in the panic and nobody sees whose)",
+        "Not for a stranger. Not tonight. Get back."
+      ]
+    },
+    {
+      "key": "react.wastrel.slew",
+      "rows": [
+        "Dead. Nobody saw. Nobody saw. Right?",
+        "(out of the door before the body is cold)",
+        "That is the rope for you. And a bad night for the rest of us."
+      ]
+    },
+    {
+      "key": "react.clergy.struck",
+      "rows": [
+        "Peace. Peace, both of you. The Flame does not want this.",
+        "Enough. Every soul a wick, and you are snuffing one.",
+        "Hands down, child. Whatever he said, hands down."
+      ]
+    },
+    {
+      "key": "react.clergy.steel",
+      "rows": [
+        "Put the steel away. The Flame has seen it and so have I.",
+        "Not steel. Not under a roof the Flame keeps. Put it up.",
+        "Flame keep us all. A blade, and the night not half done."
+      ]
+    },
+    {
+      "key": "react.clergy.slew",
+      "rows": [
+        "Flame receive him. And Flame forgive what did this.",
+        "A man is dead and the lamp did not go out. It should have.",
+        "I will say the words over him. I will say others over you."
+      ]
+    },
+    {
+      "key": "react.husbandry.struck",
+      "rows": [
+        "Hoy! The dog is up. Do not make me let her go.",
+        "Beasts fight cleaner than that. Stop it."
+      ]
+    },
+    {
+      "key": "react.husbandry.steel",
+      "rows": [
+        "Steel! Down, girl. Down. Nobody goes near it.",
+        "Put it away. The dog knows what a blade is and so do I."
+      ]
+    },
+    {
+      "key": "react.husbandry.slew",
+      "rows": [
+        "Dead. The dog knew before I did. She always does.",
+        "Flame keep him. Somebody fetch the Watch, and not the dog."
+      ]
+    }
+  ]
+}

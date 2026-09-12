@@ -778,6 +778,15 @@ public:
 
     /// Opens a conversation with whoever is in reach. False when nobody is.
     bool talkTo();
+    /// VOICE LANE. Who the open conversation is with, by roster id, or -1.
+    /// Exposed for the walk-off close (whoever owns the body re-checks the
+    /// reach each step) and for the hold's own case; the Speaker's actorId
+    /// says the same thing while the director is open.
+    [[nodiscard]] std::int32_t talkingTo() const noexcept { return talkingToId_; }
+    /// VOICE LANE. Whether this actor is standing still for the talk: the
+    /// one the conversation is with, in a peaceable activity, not in the
+    /// fight. See stepMovement, where it is applied.
+    [[nodiscard]] bool holdsForTalk(const Actor& actor) const noexcept;
     /// Picks a topic. The reply's coin and offences are applied HERE, so the
     /// dialogue layer never has to know what a tavern is.
     Reply chooseTopic(std::size_t index);

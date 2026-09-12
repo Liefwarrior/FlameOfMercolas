@@ -129,6 +129,15 @@ private:
 /// presents as a wastrel and IS villain.skyrunner.
 [[nodiscard]] JobFamily wardJobFamily(WardType type) noexcept;
 
+/// VOICE LANE. The trade's OWN bark key inside its presented family --
+/// "urchin", "thief", "fisher", "sailor", "carter", "disciple", "priest",
+/// "shopkeeper", "keeper" -- or the family key itself for a type that is its
+/// family (serf, watch, wastrel). voiceChain tries `<prefix>.<type>` above
+/// `<prefix>.<family>`, so an urchin passing you is not a wastrel passing
+/// you, and a type nobody has authored a cell for falls to its family
+/// without a gap. Empty for a beast: a cat has no voice rung at all.
+[[nodiscard]] std::string_view wardVoiceKey(WardType type) noexcept;
+
 /// The content/raws/skills id this type will talk shop about, or empty.
 ///
 /// Six of the ward's trades have an authored mastery table -- fieldcraft,

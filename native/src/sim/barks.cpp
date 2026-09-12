@@ -306,6 +306,52 @@ std::string_view BarkTables::line(std::string_view key, std::int32_t index) cons
     return (*found)[static_cast<std::size_t>(slot)];
 }
 
+std::int32_t BarkTables::cellRowCount(std::string_view key) const noexcept {
+    const std::vector<std::string>* own = rows(key);
+    if (own == nullptr) {
+        return 0;
+    }
+    std::int32_t count = static_cast<std::int32_t>(own->size());
+    // Siblings are numbered from 2 and stop at the first gap: a `.4` with no
+    // `.3` is a typo in a content file, and reading past a gap would make the
+    // cell's width depend on which typo. Bounded, so a runaway is impossible.
+    for (int sibling = 2; sibling < 10; ++sibling) {
+        const std::vector<std::string>* more =
+            rows(std::string(key) + "." + std::to_string(sibling));
+        if (more == nullptr) {
+            break;
+        }
+        count += static_cast<std::int32_t>(more->size());
+    }
+    return count;
+}
+
+std::string_view BarkTables::cellLine(std::string_view key, std::int32_t index) const noexcept {
+    const std::int32_t count = cellRowCount(key);
+    if (count == 0) {
+        return {};
+    }
+    // The same non-negative modulo line() takes, over the union's width.
+    std::int32_t slot = ((index % count) + count) % count;
+    const std::vector<std::string>* own = rows(key);
+    if (slot < static_cast<std::int32_t>(own->size())) {
+        return (*own)[static_cast<std::size_t>(slot)];
+    }
+    slot -= static_cast<std::int32_t>(own->size());
+    for (int sibling = 2; sibling < 10; ++sibling) {
+        const std::vector<std::string>* more =
+            rows(std::string(key) + "." + std::to_string(sibling));
+        if (more == nullptr) {
+            break;
+        }
+        if (slot < static_cast<std::int32_t>(more->size())) {
+            return (*more)[static_cast<std::size_t>(slot)];
+        }
+        slot -= static_cast<std::int32_t>(more->size());
+    }
+    return (*own)[0];
+}
+
 std::string_view BarkTables::resolve(const std::vector<std::string>& candidates) const noexcept {
     for (const std::string& candidate : candidates) {
         if (has(candidate)) {
@@ -369,6 +415,72 @@ std::vector<std::string> topicChain(std::string_view prefix, std::string_view id
     // fallback -- the one rung every topic id authors, so the chain never
     // bottoms out into "...".
     return {withAttitude + "." + std::string(timeBandKey(band)), withAttitude, withFamily, base};
+}
+
+// ---------------------------------------------------------------------------
+// VOICE LANE: the chains for what is said without the talk key
+// ---------------------------------------------------------------------------
+
+std::vector<std::string_view> attitudeFallbacks(Attitude attitude) {
+    switch (attitude) {
+        case Attitude::Kin:
+            return {"kin", "friend", "warm"};
+        case Attitude::Friend:
+            return {"friend", "warm"};
+        case Attitude::Warm:
+            return {"warm"};
+        case Attitude::Neutral:
+            // The bare cell IS the neutral register, exactly as toneKey says
+            // of Tone::Normal: nothing is authored under "neutral" for these
+            // prefixes and the chain must not invent the rung.
+            return {};
+        case Attitude::Cold:
+            return {"cold"};
+        case Attitude::Hostile:
+            return {"hostile", "cold"};
+    }
+    return {};
+}
+
+std::vector<std::string> voiceChain(std::string_view prefix, std::string_view typeKey,
+                                    JobFamily family, Attitude attitude) {
+    const std::string base(prefix);
+    const std::string familyKey(jobFamilyKey(family));
+    // A type that IS its family (serf, watch, wastrel) would only repeat the
+    // family rung; the chain stays honest about how many keys it really has.
+    const bool typed = !typeKey.empty() && typeKey != familyKey;
+    const std::string withType = typed ? base + "." + std::string(typeKey) : std::string();
+    const std::string withFamily = base + "." + familyKey;
+    std::vector<std::string> chain;
+    // EVERY ATTITUDE RUNG BEFORE ANY BARE ONE. A hostile keeper of beasts
+    // with no hostile husbandry cell authored says the generic hostile row
+    // ("Get gone.") and not the keeper's everyday goodbye: what they think
+    // of you outranks the flavour of their trade, and the bare cells are the
+    // neutral register by construction (attitudeFallbacks on Neutral).
+    for (const std::string_view tier : attitudeFallbacks(attitude)) {
+        if (typed) {
+            chain.push_back(withType + "." + std::string(tier));
+        }
+        chain.push_back(withFamily + "." + std::string(tier));
+    }
+    for (const std::string_view tier : attitudeFallbacks(attitude)) {
+        chain.push_back(base + "." + std::string(tier));
+    }
+    if (typed) {
+        chain.push_back(withType);
+    }
+    chain.push_back(withFamily);
+    chain.push_back(base);
+    return chain;
+}
+
+std::vector<std::string> farewellChain(std::string_view typeKey, JobFamily family,
+                                       Attitude attitude) {
+    return voiceChain("farewell", typeKey, family, attitude);
+}
+
+std::vector<std::string> rumorChain(JobFamily family) {
+    return {"rumor." + std::string(jobFamilyKey(family)), "gossip"};
 }
 
 }  // namespace granadad::sim

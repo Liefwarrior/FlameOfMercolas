@@ -963,6 +963,13 @@ void print_usage() {
         "  --watch-halt[=WHERE] draw steel in the Gull in Watchman Cull's sight\n"
         "                       and stand there: the halt, the arrest at reach,\n"
         "                       the street. WHERE is halt or street\n"
+        "  --voice[=WHERE]      the street speaking without the talk key, stopped\n"
+        "                       the step the row holds it. WHERE is pass (a body\n"
+        "                       passing you on the Tarwalk), overheard (two bodies\n"
+        "                       talking to each other), farewell (the goodbye on\n"
+        "                       LEAVE), moved (the worded reaction to a reply),\n"
+        "                       react (a witness to a tap in the Gull) or watch\n"
+        "                       (Cull's readback as he closes after the halt)\n"
         "  --court[=WHERE]      lift in Cull's sight until WANTED, be taken to the\n"
         "                       Mission's bench. WHERE is wanted, cull (his line, his\n"
         "                       hand on you), taken (the plate), page, paper, armed,\n"
@@ -1381,6 +1388,14 @@ void print_usage() {
         } else if (starts_with(arg, "--roofs=", &value)) {
             options.smoke.roofs = true;
             options.smoke.roofsEnd = value;
+            options.wantsSmoke = true;
+        } else if (std::strcmp(arg, "--voice") == 0) {
+            // VOICE LANE. See SmokeRunConfig::voice.
+            options.smoke.voice = true;
+            options.wantsSmoke = true;
+        } else if (starts_with(arg, "--voice=", &value)) {
+            options.smoke.voice = true;
+            options.smoke.voiceEnd = value;
             options.wantsSmoke = true;
         } else if (std::strcmp(arg, "--watch-halt") == 0) {
             // BARKS LANE (feel/build). See SmokeRunConfig::watchHalt.

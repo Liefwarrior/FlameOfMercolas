@@ -170,6 +170,22 @@ public:
     /// non-negative first, so a negative counter cannot index out of the table.
     [[nodiscard]] std::string_view line(std::string_view key, std::int32_t index) const noexcept;
 
+    /// VOICE LANE. The SAME row pick over a CELL: the key's own rows joined
+    /// with its numbered siblings' (`<key>.2`, then `<key>.3`, ...) and
+    /// rotated across the union. This is how an authored greet cell gets
+    /// breadth without the owner's barks.json being edited -- the canon rows
+    /// stay in his file and win their key, the extra rows sit in a
+    /// supplementary file under the sibling key, and the chain still lands
+    /// on the canon key (greetingKey() never names a sibling). A key with no
+    /// sibling authored reads exactly as line() does, row for row, so every
+    /// caller that predates this draws what it always drew.
+    [[nodiscard]] std::string_view cellLine(std::string_view key,
+                                            std::int32_t index) const noexcept;
+    /// How many rows the cell holds, siblings included. Zero for an
+    /// unauthored key. Public so the suite can pin the rule the greeting's
+    /// rotation depends on: a cell must never total seven rows.
+    [[nodiscard]] std::int32_t cellRowCount(std::string_view key) const noexcept;
+
     /// The FIRST key in `candidates` that is authored, or empty. This is the
     /// fallback chain, and it is the only place it exists.
     [[nodiscard]] std::string_view resolve(
@@ -212,6 +228,47 @@ private:
 [[nodiscard]] std::vector<std::string> topicChain(std::string_view prefix, std::string_view id,
                                                    JobFamily family, Attitude attitude,
                                                    TimeBand band);
+
+/// VOICE LANE. The attitude keys a chain tries for one attitude, most
+/// specific first. Neutral is the bare cell and names nothing; the tiers
+/// above and below it borrow the NEAREST authored neighbour and never cross
+/// the middle: kin falls to friend and then to warm, hostile falls to cold,
+/// and a cold cell never borrows a warm row. Exposed so a case can assert the
+/// ladder itself rather than only a line that came out of it.
+[[nodiscard]] std::vector<std::string_view> attitudeFallbacks(Attitude attitude);
+
+/// VOICE LANE. The chain for a line said WITHOUT the talk key -- a body
+/// passing you (pass), a goodbye (farewell), a snatch between two bodies
+/// (overheard), a witness's word on a deed (react.<family>.<deed> is built
+/// by the caller as its own prefix). Shape, most specific first:
+///
+///     <prefix>.<type>.<attitude>      the trade's own cell at this attitude
+///     <prefix>.<family>.<attitude>    the family's
+///     ... the same two rungs for each fallback attitude in the tier ...
+///     <prefix>.<attitude>             a generic row at this attitude, and
+///                                     the fallback tiers after it
+///     <prefix>.<type>                 the trade's bare cell (neutral)
+///     <prefix>.<family>               the family's
+///     <prefix>                        the floor every prefix authors
+///
+/// Every attitude rung sits above every bare one: what they think of you
+/// outranks the flavour of their trade, and the bare cells ARE the neutral
+/// register (Neutral names no rung at all).
+///
+/// `typeKey` is the ward trade's own key (wardVoiceKey) or empty for a body
+/// with only a family -- the Gilded Gull's roster -- and an empty type skips
+/// its rungs rather than building a key nobody authored under.
+[[nodiscard]] std::vector<std::string> voiceChain(std::string_view prefix, std::string_view typeKey,
+                                                  JobFamily family, Attitude attitude);
+
+/// VOICE LANE. The goodbye: voiceChain("farewell", ...), named because two
+/// call sites (the LEAVE topic and the walk-off) must agree on it.
+[[nodiscard]] std::vector<std::string> farewellChain(std::string_view typeKey, JobFamily family,
+                                                     Attitude attitude);
+
+/// VOICE LANE. WHAT THE WARD SAYS in a trade's own mouth: rumor.<family>
+/// first, then the owner's generic gossip table as the floor it always was.
+[[nodiscard]] std::vector<std::string> rumorChain(JobFamily family);
 
 /// Fold to the ASCII the 4x6 HUD font can actually draw. The authored JSON
 /// carries mojibake em-dashes (a UTF-8 em-dash re-encoded through cp1252), and

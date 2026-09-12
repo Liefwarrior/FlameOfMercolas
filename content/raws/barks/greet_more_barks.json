@@ -1,0 +1,97 @@
+{
+  "id": "greet_more_barks",
+  "notes": "VOICE LANE (lane/voice): NUMBERED SIBLINGS that widen an authored greet cell without editing the owner's barks.json. BarkTables::cellLine joins a key's rows with its .2 sibling's (and .3 if one is ever authored) and rotates across the union, so greet.serf.neutral.evening reads its three canon rows and these two as one cell of five. A CELL MUST NEVER TOTAL SEVEN ROWS: the greeting's rotation steps by seven per conversation and a cell of seven would say the same row every time -- the suite pins it. Every sibling here lands its cell on five or six. Plain ASCII, no dashes.",
+  "tables": [
+    {
+      "key": "greet.serf.neutral.morning.2",
+      "rows": [
+        "Muster is called. If you are not on the list you are in the way.",
+        "Cold enough to stiffen rope. Say your piece and let me pull."
+      ]
+    },
+    {
+      "key": "greet.serf.neutral.day.2",
+      "rows": [
+        "Berths are full and the Weighhouse is slow. Talk while I wait.",
+        "Half the hold shifted and the other half is arguing. What?"
+      ]
+    },
+    {
+      "key": "greet.serf.neutral.evening.2",
+      "rows": [
+        "Wage table first, then the Gull, then whatever you want.",
+        "Shoulders done. If it is work, ask tomorrow. If it is ale, ask now."
+      ]
+    },
+    {
+      "key": "greet.serf.neutral.night.2",
+      "rows": [
+        "Keep your voice down. The bunkhouse sleeps light.",
+        "Late for the planks. Late for honest business, my mother would say."
+      ]
+    },
+    {
+      "key": "greet.watch.neutral.morning.2",
+      "rows": [
+        "Dawn cart is through and the Rise is mine. Business?",
+        "Early. State it quick, the sergeant walks at this hour."
+      ]
+    },
+    {
+      "key": "greet.watch.neutral.day.2",
+      "rows": [
+        "Midday. The lane is clear and I would like it kept so.",
+        "Papers, cargo or trouble. Pick one and be quick."
+      ]
+    },
+    {
+      "key": "greet.watch.neutral.evening.2",
+      "rows": [
+        "Lamps lit, honest folk home. Which are you?",
+        "Evening rounds. Say it walking if you can."
+      ]
+    },
+    {
+      "key": "greet.watch.neutral.night.2",
+      "rows": [
+        "Late walker. Name and business.",
+        "The post is cold and so am I. What?"
+      ]
+    },
+    {
+      "key": "greet.trade.2",
+      "rows": [
+        "Stock is what the tide left, and the tide left little. Buying?",
+        "Counter is open. Purse open?"
+      ]
+    },
+    {
+      "key": "greet.wastrel.2",
+      "rows": [
+        "A Royal for a dry throat, or a word for nothing. Your pick.",
+        "You have the look of coin. I have the look of nothing. Talk."
+      ]
+    },
+    {
+      "key": "greet.maritime.2",
+      "rows": [
+        "No lanes, no sailing, no pay. What else is there to talk about?",
+        "Salt in the air and a hull on blocks. Speak, landsman."
+      ]
+    },
+    {
+      "key": "greet.clergy.2",
+      "rows": [
+        "The Flame keep you. Have you eaten? The pot is on.",
+        "Peace, child. What brings you to the Flame's door?"
+      ]
+    },
+    {
+      "key": "greet.husbandry.2",
+      "rows": [
+        "Mind the dog. She minds you. Speak.",
+        "Beasts fed, pen shut. What do you want with a keeper?"
+      ]
+    }
+  ]
+}

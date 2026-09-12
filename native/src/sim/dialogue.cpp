@@ -380,7 +380,11 @@ bool DialogueDirector::open(const Speaker& speaker, std::int32_t secondOfDay) {
     chain.insert(chain.end(), greetKeys.begin(), greetKeys.end());
 
     greetingKey_ = std::string(barks_.resolve(chain));
-    greeting_ = std::string(barks_.line(greetingKey_, rowIndexFor(TopicKind::Personal, 0)));
+    // VOICE LANE: read as a CELL, so an authored greet key widened by a
+    // numbered sibling (greet.serf.neutral.evening.2, a supplementary file)
+    // rotates across the union -- the key itself stays the owner's, and a
+    // key with no sibling reads row for row what line() always gave.
+    greeting_ = std::string(barks_.cellLine(greetingKey_, rowIndexFor(TopicKind::Personal, 0)));
     if (greeting_.empty()) {
         // The raws are missing or being edited. Say so plainly rather than
         // inventing a line and passing it off as canon.
@@ -421,6 +425,37 @@ std::string DialogueDirector::speak(const std::vector<std::string>& chain, Topic
         return {};
     }
     return std::string(barks_.line(key, rowIndexFor(kind, payload)));
+}
+
+std::string DialogueDirector::farewellKey(bool walkedOff) const {
+    // Read off the speaker the director still holds, open or just closed:
+    // the LEAVE reply is composed before close() and reported after it.
+    if (speaker_.name.empty() || speaker_.beast) {
+        // A beast has no goodbye: greet.beast is three stage directions and
+        // that is the whole of what a cat has to say, at the start or the end.
+        return {};
+    }
+    if (walkedOff) {
+        // The word thrown after you: farewell.away.<family>, then the
+        // generic farewell.away -- NOT the attitude cells, because a man cut
+        // off mid-sentence says the same thing whether he likes you or not.
+        const std::string away = "farewell.away";
+        return std::string(barks_.resolve(
+            {away + "." + std::string(jobFamilyKey(speaker_.family)), away}));
+    }
+    return std::string(barks_.resolve(farewellChain(speaker_.typeKey, speaker_.family, attitude_)));
+}
+
+std::string DialogueDirector::farewell(bool walkedOff) const {
+    const std::string key = farewellKey(walkedOff);
+    if (key.empty()) {
+        return {};
+    }
+    // Keyed on Leave, whose ordinal (8) is fixed, so the rotation is a pure
+    // function of (talks, actor) exactly as every other row's is -- and the
+    // walk-off takes the next slot along so the two goodbyes of one visit
+    // are two different rows.
+    return std::string(barks_.line(key, rowIndexFor(TopicKind::Leave, walkedOff ? 1 : 0)));
 }
 
 void DialogueDirector::buildTopics() {
@@ -1103,12 +1138,15 @@ void DialogueDirector::buildPersonTopics() {
         topics_.push_back(std::move(topic));
     }
 
-    // What the ward is saying.
-    if (barks_.has("gossip")) {
+    // What the ward is saying. VOICE LANE: in this trade's own mouth first
+    // (rumor.<family>, a supplementary file) and the owner's generic gossip
+    // table as the floor it always was, so a sailor's WHAT THE WARD SAYS is
+    // the lanes and a keeper's is the dogs.
+    if (const std::string key(barks_.resolve(rumorChain(speaker_.family))); !key.empty()) {
         Topic topic;
         topic.kind = TopicKind::WardTalk;
         topic.label = "WHAT THE WARD SAYS";
-        topic.barkKey = "gossip";
+        topic.barkKey = key;
         topics_.push_back(std::move(topic));
     }
 
@@ -1803,7 +1841,12 @@ Reply DialogueDirector::choose(std::size_t index) {
             break;
         }
         case TopicKind::Leave: {
-            out = reply(TopicKind::Leave, {});
+            // VOICE LANE: LEAVING IS A TRANSITION, NOT A CUT. The goodbye
+            // rides the reply -- whoever owns the body voices it on the
+            // street channel as the panel closes -- and it is composed
+            // BEFORE close() empties the speaker. Nothing is recorded: a
+            // goodbye is not a deed.
+            out = reply(TopicKind::Leave, farewell(false));
             out.closes = true;
             close();
             break;

@@ -365,6 +365,12 @@ add_library(granadad-render STATIC
     # badge, the sentence in numbers. Draws into the Framebuffer like every
     # other page, so the 3D overlay composites it unchanged. See the header.
     src/render/hearing_page.cpp
+    # VOICE LANE (lane/voice) -- the one voice channel: a subtitle emitter
+    # over events the sim already emits (a witness's memory moving, a body
+    # within reach, a Closing watchman, the goodbye), read-only and draw-free,
+    # stepped by Session once per movement step and drawn on the HUD's voice
+    # row. See the header on the cooldowns and the honest street bound.
+    src/render/street_voice.cpp
 )
 target_include_directories(granadad-render PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
 # GRANADAD_CONTENT_DIR_DEFAULT arrives through granadad-content.
@@ -782,6 +788,13 @@ if(GRANADAD_BUILD_TESTS)
         # twin-run byte-identical after an alarm -- the one declared
         # population baseline move of the Oblivion-feel program.
         tests/test_street_panic.cpp
+        # VOICE LANE (lane/voice) -- AND WHETHER THE STREET SPEAKS. Every
+        # authored row against the register and the diction rule, the chain
+        # falling the right way, the pick pure and the emitter moving neither
+        # hash, LEAVE carrying a goodbye and the walk-off throwing one after
+        # you, the hold for the talk, the worded reaction never a number, the
+        # pass cooldown, and the six --voice endings landing every beat.
+        tests/test_street_voice.cpp
         # #80 -- THE ORIGIN-SELECT AND CUSTOMIZE FLOW. Three cards, a name
         # field, and a real sim::Chargen sheet hosted rather than reinvented
         # -- see creation.hpp's own header on why this reuses

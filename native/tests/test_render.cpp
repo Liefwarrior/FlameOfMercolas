@@ -1089,6 +1089,13 @@ TEST_CASE("walking to the water's edge keeps the harbour in front of the eye") {
     config.spawnX = sim::docks::kQuayApproachX;
     config.spawnY = sim::docks::kQuayApproachY;
     config.spawnBand = sim::docks::kBandQuayside;
+    // THE WORLD, NOT THE HUD (VOICE LANE). The lower half of the frame is
+    // where the HUD's bottom band lives, and the street now talks: a docker
+    // passing within reach during the eight-second walk puts a plate and a
+    // row of text there, which is not the harbour. This is a claim about the
+    // renderer's water, so the HUD stands down for it -- exactly what
+    // --nohud is for.
+    config.hud = false;
     Session session(config);
     session.body().setYaw(sim::kFacingNorth);
     Framebuffer before(320, 180);

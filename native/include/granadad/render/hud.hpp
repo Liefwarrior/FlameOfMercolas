@@ -568,6 +568,29 @@ struct HudState {
     /// Where the plate is in its own rise, signed. See placePlateDrift: the
     /// identical contract, driven off the identical toggle shape.
     float casePlateDrift = 0.0F;
+
+    /// VOICE LANE: THE ONE VOICE CHANNEL'S ROW. What a body said WITHOUT the
+    /// talk key -- a docker passing you on the Tarwalk, a witness to a blow,
+    /// the goodbye as a panel closes, the watchman's word as he crosses the
+    /// room -- as Oblivion's one subtitle line: the speaker in the person
+    /// accent (the crosshair's own colour for a body) and the row in dim
+    /// ink, exactly the court's officer block, on one plate.
+    ///
+    /// NOT THE ALERT. The alert (amber, its own plate) is the line the player
+    /// must not miss and it keeps its slot and its rank; this is quieter and
+    /// takes the slot above it when both are up, its own slot when the
+    /// alert is down. Its own EasedToggle per DECISIONS.md UI rule 1. Empty
+    /// draws nothing and so does a zero fade: every hand-built HudState that
+    /// predates these three fields is pixel-identical.
+    ///
+    /// `voiceName` is drawn with a colon after it; `voiceLine` is the row.
+    /// The pair is clipped as one line against the frame's own width, the
+    /// row before the name, so the speaker is never the part that is cut.
+    std::string_view voiceName;
+    std::string_view voiceLine;
+    /// 0 (gone) .. 1 (full strength). Defaults to 0 for placePlateFade's
+    /// reason: this row's ordinary state is "not there".
+    float voiceFade = 0.0F;
 };
 
 /// The size the HUD's own register is drawn at: the compass, the hour, the
