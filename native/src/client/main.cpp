@@ -371,6 +371,11 @@ struct Options {
     /// overrode it would silently undo the options page on every launch.
     int sensitivity = 14;
     bool sensitivityGiven = false;
+    /// --fov=, the same shape: the settings file's fov is the source of
+    /// truth (the VIEW ANGLE slider saves it), and the command line only
+    /// overrides it for one launch when it was actually given. It used to
+    /// clobber the file's value with the default 90 on every launch.
+    bool fovGiven = false;
     bool invertY = false;
     /// Where the bindings live. Overridable so a capture, a case or a second
     /// player on the same machine can have their own.
@@ -1185,6 +1190,7 @@ void print_usage() {
             options.smoke.session.timeOfDayGiven = true;
         } else if (starts_with(arg, "--fov=", &value)) {
             options.smoke.session.fovDegrees = std::clamp(std::atoi(value), 40, 130);
+            options.fovGiven = true;
         } else if (starts_with(arg, "--yaw=", &value)) {
             options.smoke.session.spawnYaw = sim::angle_from_degrees(std::atoi(value));
             options.smoke.session.spawnYawGiven = true;
@@ -1661,6 +1667,14 @@ void print_usage() {
     // every nav band prints (promptPageKeys/promptTabKeys).
     const int page = render::pageStep(key);
     const int tab = render::tabStep(key);
+    // WHAT A PAGE LETS THROUGH TO pressed() WHEN ITS OWN BRANCH DECLINES A
+    // KEY. Every branch below ends in this instead of a bare `return false`:
+    // the documented fall-throughs (render::pageFallThrough -- Pause, Menu,
+    // Map, Wait, Screenshot, and SWING across a counter) still reach the
+    // world; every other verb is SWALLOWED while a page owns the input. The
+    // leak this closes: the D-pad's left and right are QuickPrev/QuickNext,
+    // and a sideways press on the pause menu used to reach the quick bar.
+    const auto declined = [&]() { return !render::pageFallThrough(action, session.talking()); };
     // The printed number beside a row. Ten of them, and the tenth turns the page
     // -- see kTopicPageSize.
     const int slotBase = static_cast<int>(render::Action::QuickSlot1);
@@ -1722,7 +1736,7 @@ void print_usage() {
         // key that opened this closes it, and closeConversation() already
         // knows to disarm QUIT on the first press rather than leaving the page
         // entirely.
-        return false;
+        return declined();
     }
 
     // JUSTICE BUILD (HEARING PAGE LANE). THE BENCH. Below the pause branch on
@@ -1787,7 +1801,7 @@ void print_usage() {
         }
         // ESCAPE AND F2 FALL THROUGH on purpose, so the key that opened the
         // page always closes it and Menu always backs out of it.
-        return false;
+        return declined();
     }
 
     if (session.grimoireOpen()) {
@@ -1843,7 +1857,7 @@ void print_usage() {
                                       session.grimoirePage() * render::kTopicPageSize);
             return true;
         }
-        return false;
+        return declined();
     }
 
     if (session.waitOpen()) {
@@ -1877,7 +1891,7 @@ void print_usage() {
                                   session.waitPage() * render::kTopicPageSize);
             return true;
         }
-        return false;
+        return declined();
     }
 
     if (session.districtMapOpen()) {
@@ -1982,7 +1996,7 @@ void print_usage() {
             // `0` to the detail page-turn. Inert-but-swallowed until then.
             return true;
         }
-        return false;
+        return declined();
     }
 
     if (session.picking()) {
@@ -2010,7 +2024,7 @@ void print_usage() {
         if (tab != 0 || page != 0) {
             return true;  // the wire has no pages -- swallowed, see the pause branch
         }
-        return false;
+        return declined();
     }
 
     if (session.talking()) {
@@ -2081,7 +2095,7 @@ void print_usage() {
                 session.takeAskingPrice();
                 return true;
             }
-            return false;
+            return declined();
         }
         if (up) {
             session.moveTopicCursor(-1);
@@ -2106,7 +2120,7 @@ void print_usage() {
             session.interact();
             return true;
         }
-        return false;
+        return declined();
     }
 
     if (session.casebookPageOpen()) {
@@ -2191,7 +2205,7 @@ void print_usage() {
         }
         // Anything else falls through to the ordinary bindings, and every verb
         // down there puts the page away first.
-        return false;
+        return declined();
     }
 
     if (session.casebookOpen() || session.keysOpen() || session.characterOpen() ||
@@ -2248,7 +2262,7 @@ void print_usage() {
         }
         // Anything else falls through to the ordinary bindings, and every verb
         // down there puts the page away first.
-        return false;
+        return declined();
     }
     return false;
 }
@@ -4321,7 +4335,14 @@ int run_client(const Options& options, const render::CreationResult& chosen,
     if (options.invertY) {
         controls.mouse.invertY = true;
     }
-    controls.fovDegrees = start.fovDegrees;
+    // THE FILE'S FOV SURVIVES A RELAUNCH. Only an explicit --fov= overrides
+    // it, for this launch; the slider's saved value is otherwise what the
+    // camera reads. (start.fovDegrees is the option's default, 90, whenever
+    // nobody passed --fov=, and writing that over the file every boot was
+    // the VIEW ANGLE slider "saving" into a value nothing ever read back.)
+    if (options.fovGiven) {
+        controls.fovDegrees = start.fovDegrees;
+    }
     controls.sanitise();
     session.setControls(controls);
     // SHIP NOTE SEAM #2, CLOSED: THE FEET READ THE HAND FROM THE DOOR. The
@@ -4559,6 +4580,12 @@ int run_client(const Options& options, const render::CreationResult& chosen,
     // quiet behind a menu): livePad reading null is an ordinary release edge.
     bool leftTriggerDown = false;
     bool rightTriggerDown = false;
+    // THE B SEAM, BOTH EDGES. The down edge of PadEast is remapped to Escape
+    // while a page is up (pageBackRemap); this remembers that it was, so the
+    // UP edge is released as Escape too and never reaches Crouch's release
+    // -- which ran setCrouched() and put the page the Escape had just backed
+    // out to straight back down. See render::PadBackEdge.
+    render::PadBackEdge padBack;
     // THE PARITY PASS. The left stick's own latch state while a page owns the
     // input -- see the stickNav block in the frame loop. The third is the
     // RIGHT stick's vertical latch, the ward map's zoom (nine and the sticks:
@@ -4611,8 +4638,15 @@ int run_client(const Options& options, const render::CreationResult& chosen,
             // any binding lookup, because the whole point of "press a key" is
             // that the key's current meaning does not matter.
             if (session.awaitingKey()) {
-                session.bindAwaited(key == render::Key::Escape ? render::Key::None : key);
-                if (key != render::Key::Escape) {
+                // ESC cancels, and so do the pad's B and START -- the universal
+                // back and the pause button, which the settings page says out
+                // loud ("PRESS A KEY. B CANCELS.") and which can therefore not
+                // be bound to anything, exactly as ESC cannot. A grammar key
+                // that could be captured into a verb would strand the grammar.
+                const bool cancel = key == render::Key::Escape || key == render::Key::PadEast ||
+                                    key == render::Key::PadStart;
+                session.bindAwaited(cancel ? render::Key::None : key);
+                if (!cancel) {
                     (void)render::saveControls(session.controls(), controlsFile);
                 }
                 return;
@@ -4850,7 +4884,7 @@ int run_client(const Options& options, const render::CreationResult& chosen,
                     // is listening for a key: a rebinding must capture the
                     // real PadEast. See render::pageBackRemap and
                     // route_menu_key's own header.
-                    const render::Key key = render::pageBackRemap(
+                    const render::Key key = padBack.down(
                         key_of_pad_button(event.gbutton.button),
                         pointer_page_open(session) && !session.awaitingKey());
                     if (!route_menu_key(session, key)) {
@@ -4859,7 +4893,9 @@ int run_client(const Options& options, const render::CreationResult& chosen,
                     break;
                 }
                 case SDL_EVENT_GAMEPAD_BUTTON_UP:
-                    released(key_of_pad_button(event.gbutton.button));
+                    // The release of a remapped B is Escape's release (which
+                    // nothing listens for), never Crouch's -- see padBack.
+                    released(padBack.up(key_of_pad_button(event.gbutton.button)));
                     break;
                 case SDL_EVENT_KEY_DOWN: {
                     const render::Key key = key_of_scancode(event.key.scancode);
@@ -5527,6 +5563,12 @@ int main(int argc, char** argv) {
         }
         if (options.wantsSmoke) {
             render::SmokeRunConfig smoke = options.smoke;
+            // An EXPLICIT --controls= reaches the headless path too, so a
+            // capture can be taken under a rebound table; the default file
+            // beside the exe is deliberately NOT read here, which is what
+            // keeps every shipped frame byte-stable against a player's own
+            // bindings. Same for --fov=: given, it rides the config.
+            smoke.controlsFile = options.controlsFile;
             if (!smoke.screenshot.empty()) {
                 // 3D BUILD: the capture is composited through the backend the
                 // window uses, so the PNG is the picture the window shows.

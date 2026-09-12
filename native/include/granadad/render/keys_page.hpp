@@ -23,8 +23,9 @@
 //
 // The composition here shows every binding it can fit, in as many columns as
 // the window affords, with the highlighted one explained in full beside the
-// list. At 960x540 that is all twenty-nine on one screen with no page turn at
-// all.
+// list. At 960x540 that is the whole table on one screen with no page turn at
+// all: the nine verbs first, the map and WAIT, movement, the bar, then the
+// page grammar and the lock's own keys as fixed rows.
 //
 // NOT MODULAR. There is no drag, no resize and no saved arrangement -- see
 // panel.hpp's header and the owner's own ruling. What varies here is the
@@ -90,7 +91,13 @@ inline constexpr int kKeysGroupAct = 1;
 inline constexpr int kKeysGroupScreen = 2;
 inline constexpr int kKeysGroupQuick = 3;
 inline constexpr int kKeysGroupNote = 4;
-inline constexpr int kKeysGroupCount = 5;
+/// NINE AND THE STICKS: the page grammar -- the keys every page reads raw,
+/// ahead of any binding (confirm, back, the page ring, the sub-tabs, the
+/// second commit, the cursor). Fixed rows: they are not bindings and the
+/// detail pane says so, but a player has to be able to READ them somewhere,
+/// and this page is the somewhere.
+inline constexpr int kKeysGroupPage = 5;
+inline constexpr int kKeysGroupCount = 6;
 
 /// Everything the page draws. A closed page draws nothing at all.
 struct KeysPageState {
@@ -138,6 +145,10 @@ struct KeysPageState {
     /// The sibling-tab step to OPTIONS: "TAB", or "LT RT". The F2 that used
     /// to print here is cut with the KeysPage/OptionsPage actions.
     std::string navTabKeys = "TAB";
+    /// The MORE key: the keyboard's "0". EMPTY DRAWS NO MORE SLOT -- a pad
+    /// has no digit to press, and pages this list by walking the cursor off
+    /// the end of the screen.
+    std::string navMoreKey = "0";
 };
 
 /// Draws the whole page over a rendered frame.

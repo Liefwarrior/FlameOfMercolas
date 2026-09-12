@@ -662,15 +662,15 @@ TEST_CASE("the nav band always names the key that closes the book") {
             INFO("at ", size.first, "x", size.second, " nav rows ", geo.navRows, " shown ",
                  geo.navShown, "/", geo.navEntries);
             REQUIRE(geo.usable);
-            CHECK(geo.navEntries == 4);
+            // NINE AND THE STICKS: five slots on both hands -- the ring's
+            // keys ride the foot of every page of it.
+            CHECK(geo.navEntries == 5);
             CHECK(geo.navShown == geo.navEntries);
         }
     }
 
-    // NINE AND THE STICKS: with a pad in hand the band carries a fifth slot,
-    // LB RB NOTES -- the pad's only way on to the ward map from here -- and
-    // the same rule holds: every entry shown, at every size, the second row
-    // spent where one will not hold five.
+    // And with a pad in hand, LB RB NOTES, the same rule: every entry shown,
+    // at every size, the second row spent where one will not hold five.
     session.noteInputDevice(InputDevice::Pad);
     CasebookPageState padPage = session.casebookPageState();
     REQUIRE(padPage.navPageKeys == "LB RB");

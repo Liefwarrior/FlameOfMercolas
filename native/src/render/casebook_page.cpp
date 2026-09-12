@@ -153,7 +153,9 @@ inline constexpr int kLeadPageRows = 8;
     const Rgb accent = panelInk().accent;
     std::vector<PanelOption> out{
         PanelOption{std::string(kGlyphUpDown), "LEAD", "", accent, InkRole::Dim, false},
-        PanelOption{std::string(kGlyphLeft) + std::string(kGlyphRight),
+        PanelOption{state.navTabKeys.empty()
+                        ? std::string(kGlyphLeft) + std::string(kGlyphRight)
+                        : state.navTabKeys,
                     state.tab == CasebookTab::Leads ? "CASE" : "LEADS", "", accent, InkRole::Dim,
                     false},
         // SHIP NOTE SEAM 3: the confirm is the state's device-worded key, not

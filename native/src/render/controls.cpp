@@ -84,12 +84,12 @@ constexpr ActionNames kActions[] = {
     {Action::Sprint, "sprint", "RUN",
      "HOLD IT TO SPRINT. LET GO TO JOG. SNEAK IS THE QUIET WALK."},
     {Action::Menu, "menu", "NOTES",
-     "YOUR OWN PAPERS ON ONE SCREEN: THE SHEET, THE CHART, THE LETTERS, THE CASEBOOK. PAGE ON PAST THEM TO THE WARD MAP AND THE GRIMOIRE."},
+     "YOUR OWN PAPERS ON ONE SCREEN: THE SHEET, THE CHART, THE LETTERS, THE CASEBOOK. < > (LB RB ON A PAD) PAGE ON PAST THEM TO THE WARD MAP AND THE GRIMOIRE, AND ROUND AGAIN."},
     {Action::Pause, "pause", "PAUSE",
      "RESUME, WAIT, CONTROLS, SETTINGS, QUIT. THE DOCKS KEEP RUNNING WHILE YOU DECIDE, SO DO NOT TAKE ALL NIGHT."},
     // THE TENTH, keyboard only. On a pad the map is a page of NOTES.
     {Action::Map, "map", "MAP",
-     "THE WARD MAP: WHERE YOU ARE, WHERE THE NAMED PLACES ARE, AND HOW TO GET FROM ONE TO THE OTHER. ON A PAD IT IS A PAGE OF NOTES."},
+     "THE WARD MAP: WHERE YOU ARE, WHERE THE NAMED PLACES ARE, AND HOW TO GET FROM ONE TO THE OTHER. ON A PAD IT IS A PAGE OF NOTES: D-PAD UP, THEN RB."},
     // THE BONUS SHORTCUTS. Each has a door a new player finds without the key.
     {Action::Wait, "wait", "WAIT",
      "PASS THE HOURS SOMEWHERE SAFE. THE PAUSE MENU'S WAIT ROW IS THE SAME DOOR."},
@@ -473,6 +473,40 @@ Key pageBackRemap(Key key, bool pageOpen) noexcept {
     // one. ONLY East: the D-pad stays raw list movement, the face buttons
     // keep their bindings, and Escape itself is already Escape.
     return pageOpen && key == Key::PadEast ? Key::Escape : key;
+}
+
+Key PadBackEdge::down(Key key, bool pageOpen) noexcept {
+    const Key out = pageBackRemap(key, pageOpen);
+    if (key == Key::PadEast) {
+        remapped_ = out != key;
+    }
+    return out;
+}
+
+Key PadBackEdge::up(Key key) noexcept {
+    if (key == Key::PadEast && remapped_) {
+        remapped_ = false;
+        return Key::Escape;
+    }
+    if (key == Key::PadEast) {
+        remapped_ = false;
+    }
+    return key;
+}
+
+bool pageFallThrough(Action action, bool talking) noexcept {
+    switch (action) {
+        case Action::Pause:
+        case Action::Menu:
+        case Action::Map:
+        case Action::Wait:
+        case Action::Screenshot:
+            return true;
+        case Action::Attack:
+            return talking;
+        default:
+            return false;
+    }
 }
 
 // ---------------------------------------------------------------------------

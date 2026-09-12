@@ -527,6 +527,10 @@ struct DistrictMapState {
     /// The key that shuts the page: "M" (Action::Map's keyboard half), or
     /// the universal back "B" on a pad, which has no map button of its own.
     std::string navCloseKey = "M";
+    /// Whether the tab row prints its digits (`1 - OVERVIEW`). A keyboard's
+    /// digits pick a view outright; a pad has none and steps views on the
+    /// triggers, so its tab row prints the names alone.
+    bool showDigits = true;
     /// The commit verb's key: "ENTER", or "A".
     std::string commitKey = "ENTER";
 

@@ -65,11 +65,17 @@ The page grammar, said once in `controls.hpp` and read raw by the router ahead o
 | pick a row | digits | none | every list |
 | more | 0 | none | every paged list |
 
-On a page with no sub-tabs a trigger pull is swallowed, and on a page that is not in the ring a bumper is swallowed. Neither falls through to SWING or CAST and puts the page down with a punch or a spell. The one place a world verb still reaches through a page is a conversation, where SWING is the fight starting, which is the game.
+What a page lets through to the world, and nothing else (`pageFallThrough` in controls.hpp, read by every page branch of the router). PAUSE (ESC, B as back, START) backs out one layer. NOTES closes the notes from any page of them. MAP swaps to the ward map. WAIT opens the hour page over anything. F12 is a capture key. SWING reaches through a conversation only, because a fight starting across the counter is the game. Everything else is swallowed while a page owns the input. The quick bar (the pad's D-pad left and right), the hands, the stance, the jump, the run, the axes. A sideways press on the pause menu used to reach the quick bar and a bumper on the keys page used to cast. Neither does now.
 
-With a pad in hand the casebook page and the ward map carry a fifth foot slot, LB RB NOTES, because the bumpers are the pad's only way on to the next page. The keyboard's foot keeps its four slots and one row.
+B backs out one layer on a pad, on both edges. The down edge of B is Escape while a page is up and the up edge is released as Escape too (`PadBackEdge`), never as SNEAK's release, which used to put the page the Escape had just returned to straight back down. And a sneak release that changes nothing touches nothing (`setCrouched` checks the stance before it dismisses anything). CONTROLS then B lands on the pause menu with the cursor on CONTROLS. An armed QUIT disarms without closing. An open letter closes to the Letters tile.
 
-The settings page rebinds into the slot of the key's own device. A pad button pressed at the prompt replaces the verb's pad half and leaves the keyboard key alone, and the other way round. The row shows the live hand's half.
+Every page of the ring carries the ring on its foot, both hands. The four tiles (a new foot under the casebook tile), the casebook page, the ward map and the grimoire all print `< > NOTES` on a keyboard and `LB RB NOTES` on a pad. The controls page lists the page grammar as fixed rows under ON EVERY PAGE (confirm, back, page, view, travel/take, cursor), in the live hand's keycaps.
+
+The settings page rebinds into the slot of the key's own device. A pad button pressed at the prompt replaces the verb's pad half and leaves the keyboard key alone, and the other way round. The row shows the live hand's half. The capture says what cancels it and it is true. ESC on a keyboard, B or START on a pad, and none of the three can be captured into a verb. The options page wears the controls page's tab strip (CONTROLS, KEYS, OPTIONS) and its foot names the sub-tab key that swaps them.
+
+A pad prints no digit column. The pause menu, the options list, the conversation topics and the ward map's tab row print their words alone with a pad in hand, since a pad has no number row. The wait page keeps its numbers, which are the hours ahead.
+
+The controls page puts the nine first, then the map and WAIT, then movement (a pad's two sticks, a keyboard's mouse and six axes), the bar, the page grammar and the lock's keys, and caps its list per column, so the whole table is one screen at 960x540. The key column speaks the feet's vocabulary (RT, SELECT, the D-pad cross), and a pad's MAP row says how the map is reached (D-pad up, then RB).
 
 The ward map on a pad. D-pad walks places, LT/RT cycle the views, the right stick zooms, LB/RB leave for the map's neighbours, A faces, X travels, B closes. On a keyboard the same page keeps TAB, `=` `-`, `[` `]`, ENTER, T and M.
 
@@ -118,4 +124,9 @@ The two real files on this machine (the S13-era shape with menu on TAB and PAD_B
 - The sim is untouched. This is input and presentation. Both twin baselines stand (`0x2646C1AAA2BA38DF` population, `0x837E94019BC49C25` tavern).
 - Every scripted drive calls Session verbs, not keys, so `--punch`, `--charge`, `--block`, `--cast`, `--court`, `--watch-halt`, `--nemesis`, `--street`, `--skyrun`, `--roofs`, `--demo`, `--creation` keep working through the new scheme.
 - Every prompt names the key for the device that last spoke. The reticle, the opening band, the ward map's foot, the haggle's foot, the controls page's own key column and its lock rows, the casebook foot.
-- A controller-only player can do everything a keyboard player can. `--padscript` beats cover the buttons, both sticks (`rsup`/`rsdown` were added for the zoom) and the triggers.
+- A controller-only player can do everything a keyboard player can. `--padscript` beats cover the buttons, both sticks (`rsup`/`rsdown` were added for the zoom) and the triggers, which rest at the raw minimum (a raw 0 is a half pull to SDL).
+- The reticle does not lie about the hand. With the fists up and a street body on the reticle, the note reads NO BLOW REACHES THEM, because the swing's sightline still walks the Gull's roster only. The street becomes hittable when the STREET SENSES lane lands, and the note goes with it.
+
+## 7. The count, as a critic counts it
+
+Keyboard inputs with a meaning, before this build, 42. After it, 38. Gone are Q, F1, F2 and F3. Everything else survives because each remaining key is one of three things. A page-grammar key with one meaning everywhere (TAB, ENTER, ESC, the arrows, the digits, 0). The no-mouse fallback (the arrows, `=` `-` for the map's zoom). A bonus direct shortcut the pad reaches another way (T, the wheel, the digits, `[` `]`, M). The reduction is in what a new player has to LEARN, which is nine verbs and the page grammar, and in what a button means, which is now one thing per surface. Folding further would cost a verb somewhere. `[` `]` onto TAB would leave the ward map with no way to step both its views and its neighbours. `=` `-` onto the wheel alone would leave a keyboard without a mouse no zoom. ENTER onto E is already true (E confirms on every list) and ENTER stays because every player expects it. The count is the floor for this scheme.

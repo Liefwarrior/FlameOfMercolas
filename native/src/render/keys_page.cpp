@@ -28,6 +28,8 @@ namespace {
             return Rgb{0.52F, 0.82F, 0.48F};
         case kKeysGroupNote:
             return Rgb{0.66F, 0.64F, 0.58F};
+        case kKeysGroupPage:
+            return Rgb{0.74F, 0.62F, 0.86F};
         case kKeysGroupAct:
         default:
             return Rgb{0.98F, 0.86F, 0.42F};
@@ -44,6 +46,8 @@ namespace {
             return "QUICK BAR";
         case kKeysGroupNote:
             return "WHILE PICKING A LOCK";
+        case kKeysGroupPage:
+            return "ON EVERY PAGE";
         case kKeysGroupAct:
         default:
             return "WHAT YOU DO";
@@ -77,11 +81,16 @@ struct Composition {
 /// its foot is accounted for.
 inline constexpr int kIndicatorRows = 1;
 
-/// THE PAGING CAP (UI-EA-SPEC 1.7 #36): about fourteen binding rows visible,
-/// `+N` riding the rule for the rest -- the group colours do the grouping and
-/// `0` turns the page. A seventy-four-word wall is not a reference card.
-/// Fifteen exactly, so the twenty-nine-row default table is two even screens
-/// rather than two screens and an orphan.
+/// THE PAGING CAP (UI-EA-SPEC 1.7 #36), PER COLUMN: about fifteen rows down
+/// any one column, `+N` riding the rule for the rest -- the group colours do
+/// the grouping and `0` turns the page. A seventy-four-word wall is not a
+/// reference card, and neither is a pane forty percent empty with the nine
+/// verbs split across a fold: the cap used to be fifteen rows per SCREEN
+/// while the list was planned in two columns, so 960x540 drew fourteen rows
+/// down one column and "NOTES  J" alone at the top of the next. A screen is
+/// the plan's columns times the rows the pane holds, capped per column, so
+/// the whole thirty-odd row table is one screen at 960x540 and two balanced
+/// ones at 320x180.
 inline constexpr int kKeysPageRows = 15;
 
 /// The master's share of the body, out of 100. Deliberately generous: this
@@ -176,7 +185,7 @@ constexpr int kMasterShares[] = {58, 62, 66};
 ///
 /// The reference's option lists are numbered because they are CHOICES: nine
 /// things you might pick, `1` through `9`, direct-select. This list is
-/// twenty-nine bindings, which is four times as many rows as there are digits,
+/// thirty-odd rows, which is three times as many rows as there are digits,
 /// and its value column is ALREADY a key name. "1 FORWARD W" on a page about
 /// keys asks the reader to work out which of the two keys on the row is the one
 /// they are being told about. So the bindings list is cursor-driven and the
@@ -246,8 +255,9 @@ KeysPageScroll keysPageScroll(const KeysPageState& state, int frameWidth, int fr
     // exists and do not shuffle when the page turns.
     const OptionListPlan plan =
         planOptionList(optionsFor(state.rows), listRect, comp.metric, listStyle());
-    // The paging cap: a tall window does not get the word wall back.
-    out.perScreen = std::max(1, std::min(kKeysPageRows, plan.columns * plan.rows));
+    // The paging cap, per column: a tall window does not get the word wall
+    // back, and a wide one is not made to fold what it could show.
+    out.perScreen = std::max(1, std::max(1, plan.columns) * std::min(kKeysPageRows, plan.rows));
     const int count = static_cast<int>(state.rows.size());
     out.screens = std::max(1, (count + out.perScreen - 1) / out.perScreen);
     out.screen = std::clamp(std::max(0, state.cursor) / out.perScreen, 0, out.screens - 1);
@@ -456,11 +466,14 @@ void drawKeysPage(Framebuffer& target, const KeysPageState& state) {
     // raised form, bare keycaps at rest, the words riding state.tutor. The
     // ENTER - REBIND duplicate is dead (the pane keeps the verb) and `0` is
     // MORE, the universal pager, never BACK (sec. 4).
-    const std::vector<PanelOption> nav{
+    std::vector<PanelOption> nav{
         PanelOption{state.navMoveKeys, "MOVE", "", panelInk().accent, InkRole::Dim, false},
         PanelOption{state.navTabKeys, "OPTIONS", "", panelInk().accent, InkRole::Dim, false},
-        PanelOption{"0", "MORE", "", panelInk().accent, InkRole::Dim, false},
     };
+    if (!state.navMoreKey.empty()) {
+        nav.push_back(PanelOption{state.navMoreKey, "MORE", "", panelInk().accent, InkRole::Dim,
+                                  false});
+    }
     OptionListStyle navStyle;
     navStyle.showKeys = true;
     navStyle.maxColumns = static_cast<int>(nav.size());

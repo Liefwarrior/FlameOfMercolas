@@ -1197,6 +1197,10 @@ TEST_CASE("the live session re-words its prompts the moment the other hand speak
     CHECK(pad.closeKey == "B");
     CHECK(pad.lookKey == "A");
     CHECK(pad.commitKey == "A");
+    CHECK(pad.navPageKeys == "LB RB");
+    CHECK(pad.navTabKeys == "LT RT");
+    CHECK(kb.navPageKeys == "< >");
+    CHECK(kb.navTabKeys == "TAB");
     if (!pad.rows.empty() && pad.read == 0 && !pad.closed) {
         CHECK(pad.instruction == "PICK A LEAD. A SHOWS YOU WHERE.");
     }
@@ -1215,15 +1219,17 @@ TEST_CASE("the live session re-words its prompts the moment the other hand speak
     CHECK(padMap.navCloseKey == "B");
     CHECK(padMap.travelKey == "X");
     CHECK(padMap.commitKey == "A");
+    CHECK_FALSE(padMap.showDigits);  // no number row on a pad
     session.noteInputKey(Key::M);
     DistrictMapState kbMap = session.districtMapState();
     CHECK(kbMap.navMoveKeys == std::string(kGlyphMoveKeys));
     CHECK(kbMap.navTabKeys == "TAB");
     CHECK(kbMap.navZoomKeys == "+ -");
-    CHECK(kbMap.navPageKeys.empty());  // four slots, one row: the keyboard has M and `[` `]`
+    CHECK(kbMap.navPageKeys == "< >");  // the ring, learnable from every page of it
     CHECK(kbMap.navCloseKey == "M");
     CHECK(kbMap.travelKey == "T");
     CHECK(kbMap.commitKey == "\x01");
+    CHECK(kbMap.showDigits);
 
     // THE DIALOGUE WIDGET'S OWN KEYS ride the state the same way -- the
     // haggle's TAKE THEIR PRICE on the grammar's second commit, T / X.
@@ -1250,26 +1256,129 @@ TEST_CASE("the live session re-words its prompts the moment the other hand speak
     CHECK(padKeys.navMoveKeys == std::string(kGlyphCross));
     bool padSwing = false;
     bool padPin = false;
+    bool padMapRow = false;
+    bool padMove = false;
+    bool padPage = false;
     for (const KeysPageRow& row : padKeys.rows) {
         if (row.verb == "SWING") {
-            padSwing = row.binding == "PAD_RT" && row.alternate == "MOUSE1";
+            // The feet's own vocabulary (RT, never the file's PAD_RT).
+            padSwing = row.binding == "RT" && row.alternate == "MOUSE1";
         }
         if (row.verb == "TRY THE PIN") {
             padPin = row.binding == "Y";
         }
+        if (row.verb == "MAP") {
+            // How a pad actually reaches it: NOTES, then RB -- not "M".
+            padMapRow = row.binding == "\x06\x02 RB" && !row.bindable;
+        }
+        if (row.verb == "MOVE") {
+            padMove = row.binding == "LS";  // the sticks, not six axes
+        }
+        if (row.verb == "PAGE THE NOTES") {
+            padPage = row.binding == "LB RB" && row.group == kKeysGroupPage;
+        }
     }
     CHECK(padSwing);
     CHECK(padPin);
+    CHECK(padMapRow);
+    CHECK(padMove);
+    CHECK(padPage);
+    CHECK(padKeys.navMoreKey.empty());  // no digit on a pad's foot
+    // The nine come first, whatever the enum's order.
+    REQUIRE(padKeys.rows.size() >= 9);
+    CHECK(padKeys.rows[0].verb == "SWING");
+    CHECK(padKeys.rows[8].verb == "PAUSE");
     session.noteInputKey(Key::W);
     const KeysPageState kbKeys = session.keysPageState();
     CHECK(kbKeys.navTabKeys == "TAB");
+    CHECK(kbKeys.navMoreKey == "0");
     bool kbSwing = false;
+    bool kbPage = false;
     for (const KeysPageRow& row : kbKeys.rows) {
         if (row.verb == "SWING") {
-            kbSwing = row.binding == "MOUSE1" && row.alternate == "PAD_RT";
+            kbSwing = row.binding == "MOUSE1" && row.alternate == "RT";
+        }
+        if (row.verb == "PAGE THE NOTES") {
+            kbPage = row.binding == "< >";
         }
     }
     CHECK(kbSwing);
+    CHECK(kbPage);
+    CHECK(kbKeys.rows[0].verb == "SWING");
+}
+
+TEST_CASE("the B seam, both edges: a remapped press releases as Escape, never as Crouch") {
+    // THE CRITIC'S FINDING: the down edge of B was Escape on a page and the
+    // up edge reached the release handler raw, where B is Crouch -- so the
+    // release ran setCrouched(), which put the pause menu the Escape had just
+    // returned to straight back down. PadBackEdge owns both edges.
+    PadBackEdge edge;
+    CHECK(edge.down(Key::PadEast, /*pageOpen=*/true) == Key::Escape);
+    CHECK(edge.remapped());
+    CHECK(edge.up(Key::PadEast) == Key::Escape);
+    CHECK_FALSE(edge.remapped());
+    // With no page open, B is B on both edges.
+    CHECK(edge.down(Key::PadEast, /*pageOpen=*/false) == Key::PadEast);
+    CHECK_FALSE(edge.remapped());
+    CHECK(edge.up(Key::PadEast) == Key::PadEast);
+    // Other keys pass through untouched, and never disturb the memo.
+    CHECK(edge.down(Key::PadSouth, true) == Key::PadSouth);
+    CHECK(edge.up(Key::PadSouth) == Key::PadSouth);
+    CHECK(edge.down(Key::PadEast, true) == Key::Escape);
+    CHECK(edge.up(Key::PadNorth) == Key::PadNorth);
+    CHECK(edge.remapped());  // the B is still down
+    CHECK(edge.up(Key::PadEast) == Key::Escape);
+}
+
+TEST_CASE("what a page lets through to the world is the documented list and nothing else") {
+    // Pause, Menu, Map, Wait, Screenshot -- and SWING only across a counter.
+    for (const Action action : {Action::Pause, Action::Menu, Action::Map, Action::Wait,
+                                Action::Screenshot}) {
+        INFO("action ", actionKey(action));
+        CHECK(pageFallThrough(action, /*talking=*/false));
+        CHECK(pageFallThrough(action, /*talking=*/true));
+    }
+    CHECK_FALSE(pageFallThrough(Action::Attack, /*talking=*/false));
+    CHECK(pageFallThrough(Action::Attack, /*talking=*/true));
+    // The quick bar (the pad's D-pad left and right), the hands, the stance,
+    // the jump, the run and the axes are swallowed while a page owns the
+    // input -- the leak the critic's START, LEFT, RIGHT, B found.
+    for (const Action action : {Action::QuickPrev, Action::QuickNext, Action::QuickSlot1,
+                                Action::QuickSlot0, Action::Block, Action::Cast,
+                                Action::Interact, Action::Crouch, Action::Vertical,
+                                Action::Sprint, Action::Forward, Action::StrafeLeft}) {
+        INFO("action ", actionKey(action));
+        CHECK_FALSE(pageFallThrough(action, false));
+        CHECK_FALSE(pageFallThrough(action, true));
+    }
+    // And the shipped table puts the leak's keys exactly where the list says:
+    // D-pad left/right ARE the quick bar's steps.
+    const ControlSettings keys = ControlSettings::defaults();
+    CHECK(keys.actionFor(Key::PadLeft) == Action::QuickPrev);
+    CHECK(keys.actionFor(Key::PadRight) == Action::QuickNext);
+}
+
+TEST_CASE("a sneak release that changes nothing leaves every page where it was") {
+    // The other half of the B seam, at the Session: the client calls
+    // setCrouched() on every release of the sneak key with the toggle's
+    // current answer, and a release that leaves the stance as it was must
+    // not put the pause menu (or an armed QUIT, or an open letter) down.
+    SessionConfig config;
+    config.contentDir = content::contentDir();
+    Session session(config);
+    session.togglePause();
+    REQUIRE(session.pauseOpen());
+    session.setCrouched(false);  // upright already: nothing changes
+    CHECK(session.pauseOpen());
+    session.togglePause();
+    session.toggleMenu();
+    REQUIRE(session.menuOpen());
+    session.setCrouched(false);
+    CHECK(session.menuOpen());
+    // A press that DOES change the stance is a world verb and puts the
+    // pages away, exactly as before.
+    session.setCrouched(true);
+    CHECK_FALSE(session.menuOpen());
 }
 
 TEST_CASE("the opening hint is generated from the bindings and re-words live") {

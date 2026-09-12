@@ -418,6 +418,52 @@ struct ControlSettings;  // declared below, with the rest of the binding table
 /// function owns only the rule.
 [[nodiscard]] Key pageBackRemap(Key key, bool pageOpen) noexcept;
 
+/// THE B SEAM'S OTHER HALF: THE UP EDGE. pageBackRemap turns PadEast's DOWN
+/// edge into Escape while a page is up -- and the UP edge used to reach the
+/// client's release handler RAW, where PadEast is Crouch's binding, so the
+/// release ran setCrouched(), which put every overlay down. The page the
+/// Escape had just backed out to (the pause menu from CONTROLS, an armed
+/// QUIT disarmed, the Letters tile's open letter) was closed again by the
+/// same press's release, and the NEXT B, with nothing open, crouched you.
+///
+/// One object owns both edges so they cannot disagree: down() applies the
+/// remap and REMEMBERS it; up() answers Escape for the release of a remapped
+/// press and the raw key otherwise. The client keeps one of these per pad.
+class PadBackEdge {
+public:
+    /// The down edge: pageBackRemap's answer, remembered when it remapped.
+    [[nodiscard]] Key down(Key key, bool pageOpen) noexcept;
+    /// The up edge: Escape for the release of a press down() remapped, the
+    /// key itself for everything else. Clears the memo.
+    [[nodiscard]] Key up(Key key) noexcept;
+    [[nodiscard]] bool remapped() const noexcept { return remapped_; }
+
+private:
+    bool remapped_ = false;
+};
+
+/// WHICH WORLD VERBS A PAGE LETS THROUGH. Every page branch of the client's
+/// router used to end in "anything else falls through to the ordinary
+/// bindings, and every verb down there puts the page away first" -- and
+/// nine and the sticks made that a leak: the D-pad's left and right are
+/// QuickPrev/QuickNext now, so a sideways press on the pause menu reached
+/// the quick bar and stepped a slot with the menu still up; a bumper on the
+/// keys page cast. The documented fall-throughs, and ONLY these, reach the
+/// world from a page:
+///
+///   Pause       ESC, B-as-Escape, START -- backs out one layer
+///   Menu        the key that opened NOTES closes it
+///   Map         M swaps to the ward map (a page of NOTES)
+///   Wait        T / SELECT opens the hour page over whatever is up
+///   Screenshot  a capture key is never a verb
+///   Attack      ONLY while talking: SWING across the counter is the fight
+///               starting, which is the game (THE DOCKS DO NOT WAIT ON YOU)
+///
+/// Everything else -- the quick bar, the hands, the stance, the jump, the
+/// run -- is swallowed while a page owns the input. Said once, here, so the
+/// router and a test read the same list.
+[[nodiscard]] bool pageFallThrough(Action action, bool talking) noexcept;
+
 // ---------------------------------------------------------------------------
 // hold AND toggle, which is two features and one control
 // ---------------------------------------------------------------------------

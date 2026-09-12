@@ -2948,6 +2948,13 @@ private:
 /// What a scripted capture run was asked to do.
 struct SmokeRunConfig {
     SessionConfig session;
+    /// NINE AND THE STICKS: an EXPLICIT settings file for the headless path
+    /// (`--controls=`), applied through the same loadControls/setControls
+    /// pair the window makes at boot, so a capture can be taken under a
+    /// rebound table. Empty leaves the shipped defaults -- the default file
+    /// beside the exe is never read here, which keeps every shipped frame
+    /// byte-stable against a player's own bindings.
+    std::filesystem::path controlsFile;
     /// Movement steps to run before the frame is taken. 0 captures the spawn.
     int steps = 0;
     /// Where the PNG goes. Empty writes nothing.

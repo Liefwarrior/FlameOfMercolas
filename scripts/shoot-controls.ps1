@@ -79,6 +79,10 @@ if (-not $SkipPad) {
         @('keys-page-pad',    16, 'wait:900,b,wait:400,start,wait:400,down,wait:200,down,wait:200,a,wait:600,shot:keys-page-pad-960x540,wait:200,b,wait:200,b'),
         # the settings page: START, down x3 to SETTINGS, A
         @('options-page-pad', 16, 'wait:900,b,wait:400,start,wait:400,down,wait:200,down,wait:200,down,wait:200,a,wait:600,shot:options-page-pad-960x540,wait:200,b,wait:200,b'),
+        # THE REBIND CANCEL, NOT DESTRUCTIVE: SETTINGS, down x4 to FORWARD (past
+        # the four sliders), A arms the capture (the banner must read B, not
+        # ESC), B backs out -- FORWARD keeps its W and does not become PAD B
+        @('rebind-cancel-pad', 16, 'wait:900,b,wait:400,start,wait:400,down,wait:200,down,wait:200,down,wait:200,a,wait:600,down,wait:200,down,wait:200,down,wait:200,down,wait:200,shot:rebind-forward-pad-960x540,a,wait:400,shot:rebind-prompt-pad-960x540,b,wait:400,shot:rebind-cancelled-pad-960x540,wait:200,b,wait:200,b'),
         # the ring: NOTES (D-pad up), RB onto the ward map, RB onto the grimoire
         @('ring-pad',         16, 'wait:900,b,wait:400,up,wait:700,shot:notes-pad-960x540,rb,wait:700,shot:ward-map-pad-960x540,rb,wait:700,shot:grimoire-pad-960x540,wait:200,b'),
         # the bar stepped by the D-pad: right, right
@@ -91,7 +95,16 @@ if (-not $SkipPad) {
         @('street-pad',       16, 'wait:900,b,wait:600,shot:street-pad-960x540,rt,wait:900,shot:fists-up-pad-960x540'),
         # the small hours, nobody in reach: RT raises the fists and USE offers
         # LOWER HANDS; A takes it and the row goes down
-        @('lower-hands-pad',   3, 'wait:900,b,wait:600,rt,wait:900,shot:lower-hands-pad-960x540,a,wait:700,shot:hands-down-pad-960x540')
+        @('lower-hands-pad',   3, 'wait:900,b,wait:600,rt,wait:900,shot:lower-hands-pad-960x540,a,wait:700,shot:hands-down-pad-960x540'),
+        # the hub's own foot: NOTES opens on the casebook page, LB steps back
+        # onto the Letters tile -- the four tiles with the ring on their foot
+        @('tiles-pad',        16, 'wait:900,b,wait:400,up,wait:600,lb,wait:600,shot:tiles-pad-960x540,wait:200,b'),
+        # THE LEAK, CLOSED: START, LEFT, RIGHT, B -- the street must carry no
+        # strip and no SLOT line afterwards
+        @('pause-leak-pad',   16, 'wait:900,b,wait:400,start,wait:400,left,wait:300,right,wait:300,b,wait:600,shot:pause-leak-pad-960x540'),
+        # B BACKS OUT ONE LAYER: CONTROLS, then B, lands on the pause menu
+        # with the cursor on CONTROLS -- not on the street, not crouched
+        @('back-layer-pad',   16, 'wait:900,b,wait:400,start,wait:400,down,wait:200,down,wait:200,a,wait:600,b,wait:600,shot:back-to-pause-pad-960x540,wait:200,b,wait:600,shot:back-to-street-pad-960x540')
     )
     foreach ($pad in $pads) {
         $name = $pad[0]

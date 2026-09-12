@@ -1572,14 +1572,15 @@ namespace {
 /// hard-codes.
 ///
 /// Everything a key is BOUND to is generated from ControlSettings -- see the
-/// note in keyPageRows(). These five are not bindings: they are what walking
-/// into a ledge does, and what the movement keys, JUMP, SWING and BACK do
-/// WHILE A WIRE IS IN A LOCK, which is a mode the simulation is in rather
-/// than a verb with a key of its own. They carry bindable=false, and the
-/// detail pane says so with a state label where the rebind verb would
-/// otherwise be. NINE AND THE STICKS: the lock's keys are the LIVE bindings
-/// in the device's own words (a pad reads Y / RT / B here, not SPACE / F /
-/// ESC), the way every other prompt in the game reads.
+/// note in keyPageRows(). These are not bindings: they are what walking into
+/// a ledge does, what the movement keys, JUMP, SWING and BACK do WHILE A
+/// WIRE IS IN A LOCK, and -- NINE AND THE STICKS -- the PAGE GRAMMAR every
+/// page reads raw ahead of any binding (confirm, back, the ring, the
+/// sub-tabs, the second commit, the cursor). They carry bindable=false, and
+/// the detail pane says so with a state label where the rebind verb would
+/// otherwise be. Every keycap is the LIVE hand's (a pad reads A / B / LB RB /
+/// LT RT / X here, a keyboard the return motif / ESC / < > / TAB / T), the
+/// way every foot in the game reads.
 ///
 /// `listRow` is the exact string the flat keyRows() list has always printed for
 /// them, kept because two cases assert on it and because the one-line wording
@@ -1593,7 +1594,43 @@ namespace {
     const std::string swing(promptLabel(controls, Action::Attack, device));
     const std::string swingShort = swing == "MOUSE1" ? std::string("LMB") : swing;
     const std::string back(promptBackKey(device));
+    const std::string confirm(promptConfirmKey(device));
+    const std::string pages(promptPageKeys(device));
+    const std::string tabs(promptTabKeys(device));
+    const std::string second(promptAltCommitKey(device));
+    const std::string cursor(promptMoveKeys(device));
     std::vector<KeysPageRow> rows;
+
+    // ON EVERY PAGE -- the grammar, said once in controls.hpp and printed
+    // here so a stranger can read it before they need it.
+    rows.push_back(KeysPageRow{confirm, "CONFIRM", "",
+                               "PICKS THE ROW UNDER THE CURSOR. ON A PAGE WITH A COMMIT "
+                               "VERB AT ITS FOOT, THIS IS IT.",
+                               false, confirm + "  CONFIRM", kKeysGroupPage});
+    rows.push_back(KeysPageRow{back, "BACK", "",
+                               "OUT OF WHATEVER IS OPEN, ONE LAYER AT A TIME. THE PAUSE MENU "
+                               "COMES BACK BEFORE THE STREET DOES.",
+                               false, back + "  BACK", kKeysGroupPage});
+    rows.push_back(KeysPageRow{pages, "PAGE THE NOTES", "",
+                               "THROUGH YOUR PAPERS: THE SHEET, THE CHART, THE LETTERS, THE "
+                               "CASEBOOK, THE WARD MAP, THE GRIMOIRE, AND ROUND AGAIN.",
+                               false, pages + "  PAGE", kKeysGroupPage});
+    rows.push_back(KeysPageRow{tabs, "NEXT VIEW", "",
+                               "THE VIEWS INSIDE ONE PAGE: THE WARD MAP'S FOUR, THE "
+                               "CASEBOOK'S LEADS AND CASE, KEYS AND OPTIONS.",
+                               false, tabs + "  VIEW", kKeysGroupPage});
+    rows.push_back(KeysPageRow{second, "TRAVEL / TAKE", "",
+                               "THE PAGE'S SECOND VERB. ON THE WARD MAP IT TRAVELS TO THE "
+                               "PLACE UNDER THE CURSOR. ACROSS A COUNTER IT TAKES THEIR PRICE.",
+                               false, second + "  TRAVEL", kKeysGroupPage});
+    rows.push_back(KeysPageRow{cursor, "CURSOR", "",
+                               pad ? "THE D-PAD AND THE LEFT STICK WALK EVERY LIST."
+                                   : "THE ARROWS WALK EVERY LIST, AND THE DIGITS PICK A ROW "
+                                     "OUTRIGHT. 0 IS MORE WHERE A LIST PAGES.",
+                               false, cursor + "  CURSOR", kKeysGroupPage});
+
+    // WHILE PICKING A LOCK -- a mode the simulation is in, not a verb with a
+    // key of its own.
     rows.push_back(KeysPageRow{"WALK", "CLIMB A LEDGE", "",
                                "NO KEY FOR THIS -- THAT IS THE POINT. WALK AT A LOW LEDGE "
                                "AND YOU HAUL YOURSELF UP.",
@@ -1629,53 +1666,101 @@ std::vector<KeysPageRow> Session::keyPageRows() const {
     // rebinds one without looking down". It could not help drifting: nothing
     // connected the two. Now a rebinding shows up here by construction, because
     // this IS the binding table read out loud.
+    //
+    // NINE AND THE STICKS: IN THE ORDER A PLAYER READS, NOT THE ENUM'S. The
+    // nine first, the map and WAIT, then movement, the bar, the shutter --
+    // so the nine are the first thing on the first screen at every size.
+    // And in the LIVE HAND'S OWN WORDS: the KEY column is the device that
+    // last spoke (promptKey's own order), spelled the way every foot in the
+    // game spells a key (promptKeyName: RT, SELECT, the D-pad cross, the
+    // return motif -- never the settings file's PAD_RT), and the ALSO column
+    // is the other hand. A pad's movement is its two sticks, not six axes it
+    // does not have; a pad's map is a page of NOTES and its row says so.
+    const InputDevice dev = promptDevice_;
+    const bool pad = dev == InputDevice::Pad;
     std::vector<KeysPageRow> rows;
-    rows.reserve(kActionCount + 8);
-    rows.push_back(KeysPageRow{"MOUSE", "LOOK", "",
-                               "WHERE YOU POINT IS WHERE YOU LOOK. RAW, WITH NO SMOOTHING "
-                               "AND NO ACCELERATION -- THE SENSITIVITY IS ON THE OPTIONS "
-                               "PAGE.",
-                               false, "MOUSE  LOOK", kKeysGroupMove});
-    for (std::size_t i = 0; i < kActionCount; ++i) {
-        const Action action = static_cast<Action>(i);
-        // THE QUICK BAR IS ONE ROW, NOT TEN. Ten near-identical rows would push
-        // everything a player is actually looking for down the page. The
-        // OPTIONS page still lists all ten, because that is where you go to
-        // change one.
-        if (action >= Action::QuickSlot2 && action <= Action::QuickSlot0) {
-            continue;
-        }
+    rows.reserve(kActionCount + 14);
+    const auto bound = [&](Action action) {
+        const std::size_t i = static_cast<std::size_t>(action);
         KeysPageRow row;
         row.verb = std::string(actionLabel(action));
         row.help = std::string(actionHelp(action));
         row.group = keyGroupFor(action);
         row.bindable = true;
-        if (action == Action::QuickSlot1) {
-            row.binding =
-                std::string(keyName(controls_.primary[i])) + "-" +
-                std::string(keyName(controls_.primary[static_cast<std::size_t>(
-                    Action::QuickSlot0)]));
-            row.verb = "QUICK BAR";
-            row.help = "THE NUMBER ROW READIES A CRAFTING WITH NOTHING OPEN. THE "
-                       "OPTIONS PAGE LISTS ALL TEN.";
-        } else {
-            // NINE AND THE STICKS: THE HAND THAT LAST SPOKE READS FIRST. The
-            // table holds both devices' keys; the KEY column is the live
-            // device's half (promptKey's own order) and ALSO is the other --
-            // so a pad player reads "PAD_RT  SWING" where a keyboard player
-            // reads "MOUSE1  SWING", and neither has to find their key in
-            // the second column.
-            const Key first = promptKey(controls_, action, promptDevice_);
-            const Key other = first == controls_.primary[i] ? controls_.secondary[i]
-                                                            : controls_.primary[i];
-            row.binding = std::string(keyName(first));
-            if (other != Key::None) {
-                row.alternate = std::string(keyName(other));
-            }
+        const Key first = promptKey(controls_, action, dev);
+        const Key other =
+            first == controls_.primary[i] ? controls_.secondary[i] : controls_.primary[i];
+        if (first != Key::None) {
+            row.binding = std::string(promptKeyName(first));
         }
-        rows.push_back(std::move(row));
+        if (other != Key::None) {
+            row.alternate = std::string(promptKeyName(other));
+        }
+        return row;
+    };
+
+    // THE NINE.
+    for (const Action action : {Action::Attack, Action::Block, Action::Cast, Action::Interact,
+                                Action::Crouch, Action::Vertical, Action::Sprint, Action::Menu,
+                                Action::Pause}) {
+        rows.push_back(bound(action));
     }
-    for (KeysPageRow& row : contextualRows(controls_, promptDevice_)) {
+    // THE TENTH, and how a pad actually reaches it: NOTES, then RB.
+    {
+        KeysPageRow map = bound(Action::Map);
+        if (pad) {
+            map.alternate = map.binding;
+            map.binding = std::string(promptKeyName(Key::PadUp)) + " RB";
+            map.bindable = false;
+        }
+        rows.push_back(map);
+    }
+    rows.push_back(bound(Action::Wait));
+
+    // MOVEMENT: the sticks, or the mouse and the six axes.
+    if (pad) {
+        rows.push_back(KeysPageRow{std::string(promptKeyName(Key::PadLeftStick)), "MOVE", "",
+                                   "PUSH TO WALK, FURTHER TO JOG, ALL THE WAY TO SPRINT. HOW "
+                                   "FAR YOU PUSH IS YOUR GAIT.",
+                                   false, "LS  MOVE", kKeysGroupMove});
+        rows.push_back(KeysPageRow{std::string(promptKeyName(Key::PadRightStick)), "LOOK", "",
+                                   "WHERE YOU POINT IS WHERE YOU LOOK. A SMALL PUSH AIMS, A "
+                                   "FULL PUSH TURNS ROUND.",
+                                   false, "RS  LOOK", kKeysGroupMove});
+    } else {
+        rows.push_back(KeysPageRow{"MOUSE", "LOOK", "",
+                                   "WHERE YOU POINT IS WHERE YOU LOOK. RAW, WITH NO SMOOTHING "
+                                   "AND NO ACCELERATION -- THE SENSITIVITY IS ON THE OPTIONS "
+                                   "PAGE.",
+                                   false, "MOUSE  LOOK", kKeysGroupMove});
+        for (const Action action : {Action::Forward, Action::Back, Action::StrafeLeft,
+                                    Action::StrafeRight, Action::TurnLeft, Action::TurnRight}) {
+            rows.push_back(bound(action));
+        }
+    }
+
+    // THE QUICK BAR: one row for the ten digits (keyboard only), the two
+    // steps, and the shutter (a keyboard's F12).
+    if (!pad) {
+        KeysPageRow bar;
+        bar.binding =
+            std::string(keyName(controls_.primary[static_cast<std::size_t>(Action::QuickSlot1)])) +
+            "-" +
+            std::string(keyName(controls_.primary[static_cast<std::size_t>(Action::QuickSlot0)]));
+        bar.verb = "QUICK BAR";
+        bar.help = "THE NUMBER ROW READIES A CRAFTING WITH NOTHING OPEN. THE "
+                   "OPTIONS PAGE LISTS ALL TEN.";
+        bar.group = kKeysGroupQuick;
+        bar.bindable = true;
+        rows.push_back(std::move(bar));
+    }
+    rows.push_back(bound(Action::QuickNext));
+    rows.push_back(bound(Action::QuickPrev));
+    if (!pad) {
+        rows.push_back(bound(Action::Screenshot));
+    }
+
+    for (KeysPageRow& row : contextualRows(controls_, dev)) {
         rows.push_back(std::move(row));
     }
     return rows;
@@ -1696,9 +1781,12 @@ KeysPageState Session::keysPageState() const {
     // bindings side by side -- the table's two slots ARE the two devices.
     state.rows = keyPageRows();
     state.cursor = caseCursor_;
-    // NINE AND THE STICKS: the foot's keys in the live hand's own words.
+    // NINE AND THE STICKS: the foot's keys in the live hand's own words. The
+    // MORE key is the keyboard's `0`; a pad pages this list by walking the
+    // cursor off the screen's end, so its foot names no digit.
     state.navMoveKeys = std::string(promptMoveKeys(promptDevice_));
     state.navTabKeys = std::string(promptTabKeys(promptDevice_));
+    state.navMoreKey = promptDevice_ == InputDevice::Pad ? std::string() : std::string("0");
     return state;
 }
 
@@ -2052,11 +2140,19 @@ void Session::setCrouched(bool crouched) {
     if (refusedInCustody()) {
         return;
     }
-    dismissOverlays();
-    if (talking()) {
+    // A CALL THAT CHANGES NOTHING TOUCHES NOTHING. The client calls this on
+    // every release of the sneak key with the HoldToggle's current answer --
+    // including the release of a B whose press was Escape on a page -- and
+    // dismissOverlays() ran first, unconditionally, so a release that left
+    // the stance exactly as it was still put every page down: CONTROLS, B
+    // landed on the street instead of the pause menu it had just returned
+    // to. The stance check comes first now; only a press that actually
+    // changes the stance is a world verb that puts the pages away.
+    if ((tavern_->stance() == sim::Stance::Crouched) == crouched) {
         return;
     }
-    if ((tavern_->stance() == sim::Stance::Crouched) == crouched) {
+    dismissOverlays();
+    if (talking()) {
         return;
     }
     tavern_->toggleStance();
@@ -2621,15 +2717,16 @@ DistrictMapState Session::districtMapState() const {
     // four arrowheads for the keyboard, the d-pad cross for the pad.
     plan.navMoveKeys = std::string(kGlyphMoveKeys);
     plan.navTabKeys = std::string(promptTabKeys(promptDevice_));
+    // THE FIFTH SLOT ON BOTH HANDS: the map is a page of NOTES and the page
+    // keys walk on to its neighbours -- `< >` on a keyboard, LB RB on a pad.
+    // The ring is learnable from every page of it or it is not learnable.
+    plan.navPageKeys = std::string(promptPageKeys(promptDevice_));
+    // The digits on the tab row are a keyboard's; a pad steps views on the
+    // triggers and has no number to press.
+    plan.showDigits = promptDevice_ != InputDevice::Pad;
     if (promptDevice_ == InputDevice::Pad) {
         plan.navMoveKeys = std::string(kGlyphCross);
         plan.navZoomKeys = "RS";
-        // THE FIFTH SLOT, PAD ONLY: the bumpers are the pad's only way on to
-        // the map's neighbours in NOTES, so the band says so there. A
-        // keyboard has M and `[` `]` besides, and its four-slot band keeps
-        // its one row (and the plan keeps the pixel per tile a second row
-        // would cost -- navRowsFor's own note).
-        plan.navPageKeys = std::string(promptPageKeys(promptDevice_));
         plan.navCloseKey = std::string(promptBackKey(promptDevice_));
     } else {
         plan.navCloseKey = std::string(promptLabel(controls_, Action::Map, promptDevice_));
@@ -3300,12 +3397,14 @@ CasebookPageState Session::casebookPageState() const {
         promptDevice_ == InputDevice::Pad
             ? std::string(promptBackKey(InputDevice::Pad))
             : std::string(promptLabel(controls_, Action::Menu, InputDevice::KeyboardMouse));
-    // NINE AND THE STICKS: the bumpers walk on to the ward map and the
-    // grimoire from this page -- said on the foot for a pad, which has no
-    // other way there. See CasebookPageState::navPageKeys.
-    if (promptDevice_ == InputDevice::Pad) {
-        page.navPageKeys = std::string(promptPageKeys(InputDevice::Pad));
-    }
+    // NINE AND THE STICKS: the page keys walk on to the ward map and the
+    // grimoire from this page (the Journal tile of NOTES) -- said on the
+    // foot for both hands, `< >` and LB RB. And the sub-tab keycap the other
+    // pages print (TAB / LT RT) for the LEADS / THE CASE swap, ONE keycap
+    // everywhere; the arrows and the D-pad still work and the foot's cross
+    // already says so under LEAD.
+    page.navPageKeys = std::string(promptPageKeys(promptDevice_));
+    page.navTabKeys = std::string(promptTabKeys(promptDevice_));
     page.lookKey = std::string(promptLabel(controls_, Action::Interact, promptDevice_));
     // The page grammar's confirm, in the live hand's vocabulary -- "ENTER" /
     // "A" -- for the commit verb and the nav band's GO TO IT. The last two
@@ -4941,6 +5040,16 @@ Session::InteractTarget Session::resolveInteract() const {
             const sim::WardIdentity& who = people_->identity(outside->id);
             out.subject = who.name.empty() ? std::string("SOMEBODY") : who.name;
             out.note = std::string(sim::wardTypeName(outside->type));
+            // NINE AND THE STICKS: THE RETICLE DOES NOT LIE ABOUT THE HAND.
+            // A street body is in TALK reach and OUT of the swing's: the
+            // sightline a blow walks (Tavern::sightlineTarget) is the Gull's
+            // roster only, so SWING here whiffs with NOBODY IN REACH. While
+            // the fists are up the note says so BEFORE the press, in the
+            // same breath TALK is offered -- the street becomes hittable
+            // when the STREET SENSES lane lands, and this note goes with it.
+            if (tavern_->playerHandsUp()) {
+                out.note += " - NO BLOW REACHES THEM";
+            }
             out.kind = AimKind::Person;
             return out;
         }
@@ -6056,6 +6165,10 @@ DialogueViewState Session::dialogueView() const {
     const std::string back(promptBackKey(dev));
     view.confirmKey = confirm;
     view.backKey = back;
+    // NINE AND THE STICKS: the digit column is a keyboard's. A pad walks a
+    // list on the D-pad and confirms on A; a printed `6` beside a topic is a
+    // key it does not have.
+    view.showDigits = dev != InputDevice::Pad;
     // The haggle's third verb rides Action::PageNext in the router ("]"
     // carries no glyph in the 4x6 font; T is the advertised key and now
     // routed too -- see main.cpp's haggle branch); the pad's half is RB.
@@ -6211,7 +6324,8 @@ DialogueViewState Session::dialogueView() const {
         // the capture is raw (main.cpp's bindAwaited eats the next key ahead
         // of every remap), so a pad's B would be CAPTURED as the binding, and
         // ESC really is the one cancel there is.
-        view.epithet = awaitingKey_ ? "PRESS A KEY  (ESC CANCELS)"
+        view.epithet = awaitingKey_ ? (dev == InputDevice::Pad ? "PRESS A KEY  (B CANCELS)"
+                                                                : "PRESS A KEY  (ESC CANCELS)")
                                     : "LEFT RIGHT CHANGE  " + confirm + " REBIND";
         view.line = "MOUSE LOOK IS RAW -- NO SMOOTHING, NO ACCELERATION. A KEY YOU BIND IS TAKEN "
                     "OFF WHATEVER HAD IT. " +
@@ -6323,11 +6437,25 @@ CreationPage Session::stripCard() const {
         window = waitPage_;
         out.bodyHoldRows = 12;
     } else if (optionsOpen_) {
-        out.title = "OPTIONS";
+        // NINE AND THE STICKS: THE KEYS PAGE'S OWN TAB STRIP, so the sibling
+        // pair reads as one surface from both sides -- CONTROLS, then KEYS
+        // and OPTIONS as tabs with this one lit, exactly what drawKeysPage
+        // prints over the other. The sub-tab key that swaps them is named
+        // on the foot below.
+        out.title = "CONTROLS";
+        out.tabs = {PanelTab{"", "KEYS"}, PanelTab{"", "OPTIONS"}};
+        out.currentTab = 1;
         // Instruction 22 -> 4 (spec #37): the value hint, or the capture
         // state's own modal line, which is load-bearing while the game is
-        // listening for a raw key.
-        out.instruction = awaitingKey_ ? "PRESS A KEY. ESC CANCELS." : "BINDS TRADE KEYS.";
+        // listening for a raw key -- and TRUE on both hands: ESC cancels on
+        // a keyboard, B (and START) on a pad, and none of the three can be
+        // captured into a verb (main.cpp's pressed() drops them).
+        if (awaitingKey_) {
+            out.instruction = dev == InputDevice::Pad ? "PRESS A KEY. B CANCELS."
+                                                      : "PRESS A KEY. ESC CANCELS.";
+        } else {
+            out.instruction = "REBIND STEALS THE KEY.";
+        }
         rows = optionRows();
         cursor = optionCursor_;
         window = optionPage_;
@@ -6335,12 +6463,16 @@ CreationPage Session::stripCard() const {
     } else if (grimoireOpen_) {
         out.title = "GRIMOIRE";
         rows = grimoireRows();
-        // Instruction 19 -> 2: the one column that needs naming. The empty
-        // state is the cast refusal's OWN words -- the page and the C key
-        // must name the same door or one of them is lying (test_tavern pins
-        // the line), so the register literal outranks the six-word rule here.
+        // Instruction: the one column that needs naming, and the one verb
+        // this page has that no other list has -- LEFT/RIGHT binds a slot --
+        // named in the live hand's keycaps. The empty state is the cast
+        // refusal's OWN words -- the page and the C key must name the same
+        // door or one of them is lying (test_tavern pins the line), so the
+        // register literal outranks the six-word rule here.
+        const std::string sideways = dev == InputDevice::Pad ? std::string("\x06\x04\x05")
+                                                              : std::string("\x04\x05");
         out.instruction = rows.empty() ? "NO CRAFTING HELD. THE PRIEST OF THE FLAME TEACHES."
-                                       : "D - THE ASK.";
+                                       : "D IS THE ASK. " + sideways + " BINDS A SLOT.";
         cursor = grimoireCursor_;
         window = grimoirePage_;
         out.bodyHoldRows = 8;
@@ -6361,11 +6493,16 @@ CreationPage Session::stripCard() const {
     // The wait rows number THEMSELVES (`7 - DAWN 06:00`), so a printed key
     // column would say every digit twice -- digits pick what they print, and
     // those rows already print them.
+    // NINE AND THE STICKS: no digit column with a pad in hand -- a pad has
+    // no number row, so a printed `1` beside RESUME is a key nothing on the
+    // pad answers to. The wait rows keep their number: it is the hours
+    // ahead, information, not a key.
     const bool selfNumbered = waitOpen_;
+    const bool digits = dev != InputDevice::Pad;
     for (int i = first; i < last; ++i) {
         CreationPageRow row;
         const int slot = i - windowFirst;
-        if (!selfNumbered && slot >= 0 && slot < kTopicPageSize) {
+        if (digits && !selfNumbered && slot >= 0 && slot < kTopicPageSize) {
             row.key = std::to_string(slot + 1);
         }
         row.label = rows[static_cast<std::size_t>(i)];
@@ -6380,15 +6517,30 @@ CreationPage Session::stripCard() const {
         out.rows.push_back(std::move(more));
     }
     out.cursor = std::clamp(cursor, 0, std::max(0, total - 1)) - first;
-    // The one keycap foot every page keeps at rest; the word rides the tutor
-    // tier, which the pause stack leaves at rest -- these pages ARE their
-    // rows.
-    PanelOption backFoot;
-    backFoot.key = back;
-    backFoot.label = "BACK";
-    backFoot.valueInk = InkRole::Dim;
-    backFoot.selectable = false;
-    out.nav.push_back(std::move(backFoot));
+    // THE FOOT: the page's own keys, then BACK. Bare keycaps at rest; the
+    // words ride the tutor tier, which the pause stack leaves at rest --
+    // these pages ARE their rows. NINE AND THE STICKS: the grimoire is a
+    // page of NOTES, so its foot carries the page keys that walk on to the
+    // sheet (or back to the ward map); the options page names the sub-tab
+    // key that swaps to KEYS and the sideways key that changes a value.
+    const auto footKey = [&out](std::string key, const char* label) {
+        PanelOption foot;
+        foot.key = std::move(key);
+        foot.label = label;
+        foot.valueInk = InkRole::Dim;
+        foot.selectable = false;
+        out.nav.push_back(std::move(foot));
+    };
+    if (grimoireOpen_) {
+        footKey(std::string(promptPageKeys(dev)), "NOTES");
+        footKey(std::string(promptConfirmKey(dev)), "READY");
+    } else if (optionsOpen_) {
+        footKey(std::string(promptTabKeys(dev)), "KEYS");
+        footKey(dev == InputDevice::Pad ? std::string("\x06\x04\x05") : std::string("\x04\x05"),
+                "CHANGE");
+        footKey(std::string(promptConfirmKey(dev)), "REBIND");
+    }
+    footKey(back, "BACK");
     return out;
 }
 
@@ -9926,6 +10078,15 @@ FrameStats Session::drawFrame(Framebuffer& target, FramePasses passes) const {
         }
         tiles.focus = menuFocus_;
         tiles.phase = phase;
+        // NINE AND THE STICKS: the hub's foot, in the live hand's keycaps --
+        // the ring is learnable from every page of it, this one included.
+        tiles.navMoveKeys = std::string(promptMoveKeys(promptDevice_));
+        tiles.navPageKeys = std::string(promptPageKeys(promptDevice_));
+        tiles.confirmKey = std::string(promptConfirmKey(promptDevice_));
+        tiles.closeKey =
+            promptDevice_ == InputDevice::Pad
+                ? std::string(promptBackKey(InputDevice::Pad))
+                : std::string(promptLabel(controls_, Action::Menu, InputDevice::KeyboardMouse));
         // TASK #83's OWN EASE, REUSED. See the identical note on the
         // single-panel path below.
         tiles.openAmount = panelAnim_.value();
@@ -13378,6 +13539,13 @@ SmokeRunResult runSmoke(const SmokeRunConfig& config) {
         }
     }
     Session session(started);
+    if (!config.controlsFile.empty()) {
+        // The one door the window has: loadControls, then setControls. The
+        // file's own fov rides with it, as it does at the window's boot.
+        ControlSettings controls = loadControls(config.controlsFile);
+        controls.sanitise();
+        session.setControls(controls);
+    }
 
     // A scripted walk, so a capture at N steps is a picture of the game moving
     // rather than a picture of the spawn. Forward, with a slow drift of the
