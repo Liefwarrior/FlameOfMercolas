@@ -143,7 +143,13 @@ TEST_CASE("the followed lead, the fronted case and the toast move no hash: taver
     pulled.cycleCasebookTab(1);
     pulled.cycleCasebookTab(1);
     pulled.moveCasebookCursor(1);
+    // FOLLOW off the shelf: the one book in hand, its newest lead -- which
+    // is the flagstones, the default, so the choice is put back on the
+    // Outfall afterwards to keep the two sessions' lines apart.
     pulled.followCasebookSelection();
+    CHECK(pulled.pullTarget().chosen);
+    REQUIRE(pulled.followLead(CaseBookId::Bloodletter, outfall));
+    CHECK(pulled.pullTarget().lead == outfall);
     Framebuffer frame(960, 540);
     (void)pulled.drawFrame(frame);
     pulled.toggleCasebook();
