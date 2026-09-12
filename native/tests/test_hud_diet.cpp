@@ -242,37 +242,41 @@ TEST_CASE("the followed-lead strip is pinned at 320x180 and 1920x1080: whole, un
     // lived at the two sizes the game runs at the ends of, with the corner
     // FULL (clock, purse, standing, heat) -- the two are in one band and a
     // centred line that ran under a right-anchored corner would be the lock
-    // row through the guild row again.
+    // row through the guild row again. The line yields to the corner (it
+    // sheds the article, then clips the place), so it is measured on the
+    // frame the corner is actually on.
     for (const auto& size : {std::pair{320, 180}, std::pair{1920, 1080}}) {
-        HudState corner = restStreet();
-        corner.clockFade = 1.0F;
-        corner.purseFade = 1.0F;
-        corner.standingLabel = "WELL SPOKEN OF";
-        corner.heatLabel = "HEAT 12  WANTED";
-        Framebuffer base(size.first, size.second);
-        base.clear(Rgb{0.10F, 0.12F, 0.14F});
-        Framebuffer withCorner(size.first, size.second);
-        withCorner.clear(Rgb{0.10F, 0.12F, 0.14F});
-        drawHud(withCorner, corner);
+        Framebuffer bare(size.first, size.second);
+        bare.clear(Rgb{0.10F, 0.12F, 0.14F});
 
-        HudState lined = corner;
+        // THE CORNER ALONE, so its ink can be told apart.
+        HudState cornerOnly;
+        cornerOnly.showCompass = false;
+        cornerOnly.showHealth = false;
+        cornerOnly.timeOfDaySeconds = 20 * 3600;
+        cornerOnly.clockFade = 1.0F;
+        cornerOnly.coin = 120;
+        cornerOnly.purseFade = 1.0F;
+        cornerOnly.standingLabel = "WELL SPOKEN OF";
+        cornerOnly.heatLabel = "HEAT 12  WANTED";
+        Framebuffer corner(size.first, size.second);
+        corner.clear(Rgb{0.10F, 0.12F, 0.14F});
+        drawHud(corner, cornerOnly);
+
+        // THE WHOLE STREET WITH THE CORNER FULL, without and with the line.
+        HudState street = restStreet();
+        street.clockFade = 1.0F;
+        street.purseFade = 1.0F;
+        street.standingLabel = cornerOnly.standingLabel;
+        street.heatLabel = cornerOnly.heatLabel;
+        Framebuffer without(size.first, size.second);
+        without.clear(Rgb{0.10F, 0.12F, 0.14F});
+        drawHud(without, street);
+        HudState lined = street;
         lined.pullLabel = "SW 120  THE DROWNED-NAME WALL  BAND 18";
-        Framebuffer withLine(size.first, size.second);
-        withLine.clear(Rgb{0.10F, 0.12F, 0.14F});
-        drawHud(withLine, lined);
-
-        HudState lineOnly = restStreet();
-        lineOnly.showHealth = false;
-        lineOnly.aimVerb = {};
-        lineOnly.pullLabel = lined.pullLabel;
-        HudState nothing = lineOnly;
-        nothing.pullLabel = {};
-        Framebuffer onlyLine(size.first, size.second);
-        onlyLine.clear(Rgb{0.10F, 0.12F, 0.14F});
-        drawHud(onlyLine, lineOnly);
-        Framebuffer onlyCompass(size.first, size.second);
-        onlyCompass.clear(Rgb{0.10F, 0.12F, 0.14F});
-        drawHud(onlyCompass, nothing);
+        Framebuffer with(size.first, size.second);
+        with.clear(Rgb{0.10F, 0.12F, 0.14F});
+        drawHud(with, lined);
 
         const CentreRect centre = hudCentreRect(size.first, size.second);
         const int scale = hudScale(size.second);
@@ -282,9 +286,9 @@ TEST_CASE("the followed-lead strip is pinned at 320x180 and 1920x1080: whole, un
         int maxX = -1;
         for (int y = 0; y < size.second; ++y) {
             for (int x = 0; x < size.first; ++x) {
-                const std::size_t i = onlyLine.index(x, y);
-                const bool lineDrew = onlyLine.pixels()[i] != onlyCompass.pixels()[i];
-                const bool cornerDrew = withCorner.pixels()[i] != base.pixels()[i];
+                const std::size_t i = with.index(x, y);
+                const bool lineDrew = with.pixels()[i] != without.pixels()[i];
+                const bool cornerDrew = corner.pixels()[i] != bare.pixels()[i];
                 if (!lineDrew) {
                     continue;
                 }
@@ -297,8 +301,6 @@ TEST_CASE("the followed-lead strip is pinned at 320x180 and 1920x1080: whole, un
                 CHECK(y < centre.y0);
                 // ...and never on a pixel the full corner painted.
                 CHECK_FALSE(cornerDrew);
-                // And the frame with both carries the line's own pixel there.
-                CHECK(withLine.pixels()[i] == onlyLine.pixels()[i]);
             }
         }
         CHECK(lineInk > 0);
