@@ -1381,6 +1381,13 @@ void drawBottomBand(Framebuffer& target, const HudState& state, BottomBand& band
     // both be true (a guard raises the hands), so this takes its own slot.
     takeCentred(state.handsLabel, Rgb{0.82F, 0.76F, 0.60F},
                 0.90F * std::clamp(state.handsFade, 0.0F, 1.0F));
+    // KIT BUILD (defence v1). THE TURN, right behind the hands: "COAT TURNS
+    // 2" for a plate's hold after a blow the worn kit softened, in the
+    // blocked-blow wash's own steel-cool ink so the row and the wash read as
+    // one fact. An event, its own slot: a guard, raised hands and a turned
+    // blow can all be true on one step.
+    takeCentred(state.turnLabel, Rgb{0.62F, 0.70F, 0.80F},
+                0.92F * std::clamp(state.turnFade, 0.0F, 1.0F));
     // ACTION-COMBAT BUILD (section 5, channel 2). THE HELD HARD charge row,
     // adjacent to the guard row and in the hot charge register -- the same warm
     // hue the reticle takes at the hard threshold, so the row and the reticle

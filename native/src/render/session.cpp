@@ -4081,6 +4081,12 @@ void Session::step(const sim::MoveInput& input) {
     chargeAnim_.advance();
     // STANCE & ROOM BUILD. THE SAME PER-STEP ADVANCE for the FISTS UP row.
     handsAnim_.advance();
+    // KIT BUILD. THE SAME PER-STEP ADVANCE for the turn row, and its hold
+    // counted down here so a plate's worth of steps is the row's life.
+    turnAnim_.advance();
+    if (turnSteps_ > 0) {
+        --turnSteps_;
+    }
     // HELD-EFFECTS BUILD. THE SAME PER-STEP ADVANCE, ONE PER SLOT.
     for (EasedToggle& anim : effectAnims_) {
         anim.advance();
@@ -4264,12 +4270,15 @@ void Session::step(const sim::MoveInput& input) {
         viewmodelSwingPending_ = 0;
         viewmodelCastPending_ = false;
     }
-    // KIT BUILD -- DEFENCE v1 ON THE ROW. A blow the worn kit softened says
-    // so, once per blow, on the same edge shape the guard's clang rides:
-    // blowsTurned() moving. The piece named is the heaviest DR on the body
-    // (the coat over the hood over the boots), the number is what the blow
-    // lost to it. An EVENT row, never furniture: it is said only when a
-    // blow actually lands and the kit actually turned some of it.
+    // KIT BUILD -- DEFENCE v1 ON ITS OWN ROW. A blow the worn kit softened
+    // says so, once per blow, on the same edge shape the guard's clang
+    // rides: blowsTurned() moving. The piece named is the heaviest DR on the
+    // body (the coat over the hood over the boots), the number is what the
+    // blow lost to it. Its own centred row (hud.turnLabel) with a plate's
+    // hold, not the alert: a bouncer's warning outranks the alert for as
+    // long as the house minds you, which is exactly when blows land. An
+    // EVENT, never furniture: composed only when a blow actually lands and
+    // the kit actually turned some of it.
     if (const std::int32_t turnedNow = tavern_->blowsTurned(); turnedNow > lastBlowsTurned_) {
         std::string piece = "THE KIT";
         std::int32_t best = 0;
@@ -4281,7 +4290,8 @@ void Session::step(const sim::MoveInput& input) {
                 piece = worn->name;
             }
         }
-        say(piece + " TURNS " + std::to_string(tavern_->lastTurned()) + ".");
+        turnLine_ = piece + " TURNS " + std::to_string(tavern_->lastTurned());
+        turnSteps_ = kPlateHoldSteps;
     }
     lastBlowsTurned_ = tavern_->blowsTurned();
     lastPlayerHp_ = hpNow;
@@ -4410,6 +4420,7 @@ void Session::step(const sim::MoveInput& input) {
     clearIfClosed(blockAnim_, blockCache_);
     clearIfClosed(chargeAnim_, chargeCache_);
     clearIfClosed(handsAnim_, handsCache_);
+    clearIfClosed(turnAnim_, turnCache_);
 
     // One engine tick a simulated second. clockScale > 1 makes the world's
     // clock run faster than the body's, which is how a capture reaches a named
@@ -9396,6 +9407,8 @@ void Session::syncPanelAnim() noexcept {
     // STANCE & ROOM BUILD. THE SAME sync() SHAPE for the FISTS UP row, on its
     // own toggle: fighting mode outlives any one guard or swing.
     sync(handsAnim_, handsCache_, handsLine());
+    // KIT BUILD. THE SAME sync() SHAPE for the turn row, on its own toggle.
+    sync(turnAnim_, turnCache_, turnLine());
     // HELD-EFFECTS BUILD. THE SAME sync() SHAPE, one per active-effect slot
     // -- each on its own EasedToggle per the pinned convention, because a
     // warmth lapsing in slot 0 has nothing to do with a tuning arriving in
@@ -9584,6 +9597,10 @@ std::string Session::blockLine() const {
     // tickBrawl actually reads, so this row can never say GUARD UP while a
     // menu has quietly lowered it -- see step()'s own derivation.
     return tavern_->playerBlocking() ? "GUARD UP" : std::string();
+}
+
+std::string Session::turnLine() const {
+    return turnSteps_ > 0 ? turnLine_ : std::string();
 }
 
 std::string Session::chargeLine() const {
@@ -10027,6 +10044,8 @@ FrameStats Session::drawFrame(Framebuffer& target, FramePasses passes) const {
     // STANCE & ROOM BUILD. The FISTS UP row, its own cache and fade.
     hud.handsLabel = std::string_view{handsCache_};
     hud.handsFade = handsAnim_.value();
+    hud.turnLabel = std::string_view{turnCache_};
+    hud.turnFade = turnAnim_.value();
     // HELD-EFFECTS BUILD. The live holds, each reading its own cache and
     // fading on its own toggle -- the identical shape every row above uses.
     for (std::size_t slot = 0; slot < kEffectRows; ++slot) {
@@ -11919,16 +11938,16 @@ void standAtFacing(Session& session, std::int32_t standX, std::int32_t standY,
     // tile's own X on a tile clear of the quay's clutter, then two tiles
     // back, facing it, so the frame has it on the boards.
     session.closeConversation();
-    walkToTile(session, 154, 62);
+    walkToTile(session, 154, 63);
     session.closeConversation();
     if (openKitRow(session, "rope")) {
         session.dropHighlightedKitRow();
     }
     session.closeConversation();
-    standAtFacing(session, 156, 62, 154, 62);
+    standAtFacing(session, 156, 63, 154, 63);
     bool coilDown = false;
     for (const sim::GroundItem& entry : tavern.groundItems()) {
-        if (entry.item == item("rope") && entry.x == 154 && entry.y == 62) {
+        if (entry.item == item("rope") && entry.x == 154 && entry.y == 63) {
             coilDown = true;
         }
     }

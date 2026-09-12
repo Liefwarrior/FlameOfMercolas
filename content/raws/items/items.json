@@ -127,7 +127,7 @@
     { "item": "hood",    "x": 149, "y": 69, "band": 19, "count": 1, "owned": true },
     { "item": "knife",   "x": 156, "y": 73, "band": 19, "count": 1, "owned": true },
     { "item": "rope",    "x": 151, "y": 63, "band": 19, "count": 1, "owned": false },
-    { "item": "boots",   "x": 155, "y": 63, "band": 19, "count": 1, "owned": false }
+    { "item": "boots",   "x": 158, "y": 61, "band": 19, "count": 1, "owned": false }
   ],
   "carried": {
     "Watchman Cull": ["mace", "purse"],

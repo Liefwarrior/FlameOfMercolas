@@ -1099,6 +1099,11 @@ void Tavern::tickBouncers() {
     if (responder == nullptr) {
         // Nobody on the door. The house minds, and can do nothing about it
         // until somebody comes on shift -- which is what a rota is for.
+        // KIT BUILD: and the last man's warning comes off the row -- a dead
+        // bouncer's "THE DOOR." stood on the alert row for the rest of the
+        // evening once the --kit line had put him down; whoever takes the
+        // door next speaks his own.
+        lastWarning_.clear();
         return;
     }
     // WATCH & RHYTHM BUILD -- BOUNCERS REFUSE STEEL (COMBAT-ACTION-SPEC.md

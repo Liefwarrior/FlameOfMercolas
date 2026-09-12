@@ -1832,6 +1832,9 @@ public:
     /// visible, the reticle carries the light one. PUBLIC so a case can pin
     /// what it says and that it stays on its edge, the same as blockLine.
     [[nodiscard]] std::string chargeLine() const;
+    /// KIT BUILD. "COAT TURNS 2" while the turn row's hold is running, else
+    /// empty -- the row the coat's own softening of a blow earns.
+    [[nodiscard]] std::string turnLine() const;
     /// STANCE & ROOM BUILD. "FISTS UP" / "CUDGEL UP" / "THE EVICTOR UP" /
     /// "STEEL UP" exactly while the room's own playerHandsUp() is true, and
     /// empty otherwise -- fighting mode made visible, the ONE presentation
@@ -2527,6 +2530,10 @@ private:
     /// with a guard going up (a guard RAISES the hands, but a swing raises
     /// them too and the guard does not follow), so they do not share one.
     EasedToggle handsAnim_;
+    /// KIT BUILD. The "COAT TURNS 2" row's own EasedToggle, the per-row
+    /// convention: a turned blow has nothing to do with the hands or the
+    /// guard, and it is an EVENT with a hold (turnSteps_), not a state.
+    EasedToggle turnAnim_;
     /// FATIGUE BUILD. The fatigue bar's own visibility ease -- its OWN
     /// EasedToggle per the pinned convention, mirroring the health bar's one
     /// visibility rule (down for the length of a conversation, up otherwise)
@@ -2692,6 +2699,13 @@ private:
     /// STANCE & ROOM BUILD. The fighting-mode row's cache, kept through the
     /// fade-out the identical way blockCache_ is.
     std::string handsCache_;
+    /// KIT BUILD. The turn row's cache and its hold: kPlateHoldSteps from
+    /// the step a blow was softened, counted down in step(); the label is
+    /// composed on that edge (the piece, the number) and held through the
+    /// fade-out the identical way blockCache_ is.
+    std::string turnCache_;
+    std::string turnLine_;
+    std::int32_t turnSteps_ = 0;
     /// HELD-EFFECTS BUILD. One toggle and one cache PER ROW, the pinned
     /// convention: a warmth lapsing has nothing to do with a tuning arriving,
     /// so slot i eases on its own. Slots are table order (oldest hold first);

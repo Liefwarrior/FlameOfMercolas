@@ -95,6 +95,7 @@ namespace {
     row(s.lockLabel, s.lockFade);
     row(s.blockLabel, s.blockFade);
     row(s.handsLabel, s.handsFade);
+    row(s.turnLabel, s.turnFade);
     row(s.caseLabel, s.caseFade);
     row(s.roomLabel, s.roomFade);
     row(s.guildLabel, s.guildFade);

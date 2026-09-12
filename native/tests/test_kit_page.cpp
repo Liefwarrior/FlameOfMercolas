@@ -283,7 +283,7 @@ TEST_CASE("the load slows the legs at the movement seam, and nothing else on the
     CHECK(walked(rich, richX, richY) == lightWalked);
 }
 
-TEST_CASE("the hands row names the thing in the hand, and a turned blow is said once") {
+TEST_CASE("the hands row names the thing in the hand, and the turn row sleeps until a blow is softened") {
     Session session(gullAt(19, sim::gull::kBartenderX, sim::gull::kBarY - 1, sim::gull::kGroundBand));
     sim::Tavern& tavern = session.tavern();
     REQUIRE(tavern.giveItem("knife"));
@@ -296,8 +296,8 @@ TEST_CASE("the hands row names the thing in the hand, and a turned blow is said 
     CHECK(tavern.playerHandsUp());
     CHECK(session.handsLine() == "KNIFE UP");
     session.setBlocking(false);
-    // The row's edge: the room's own counter moving is what says it.
-    CHECK(session.lastMessage().find("TURNS") == std::string::npos);
+    // The turn row is an event: asleep until the room's own counter moves.
+    CHECK(session.turnLine().empty());
 }
 
 // ---------------------------------------------------------------------------
