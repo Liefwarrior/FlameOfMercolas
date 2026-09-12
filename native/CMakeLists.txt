@@ -141,6 +141,12 @@ add_library(granadad-sim STATIC
     # S6 -- the goods, the law that takes them off you, and the radiant work
     # that is the reason to be carrying them in the first place.
     src/sim/contraband.cpp
+    # KIT BUILD -- the item record and what is on the body: the registry off
+    # content/raws/items/items.json (the spellbook's tolerant loader shape),
+    # the Kit (the Stash's dense-count pattern, hashed, byte-encodable), the
+    # ground list's codec and the load rule. Listed BEFORE tavern.cpp because
+    # the taproom is what owns a Kit, the stands and the corpse kits.
+    src/sim/items.cpp
     src/sim/watch.cpp
     # JUSTICE BUILD -- the court: the plea, the priest's weighing and the
     # judgment, rules only, beside watch.cpp (what the paper asks for) and
@@ -707,6 +713,13 @@ if(GRANADAD_BUILD_TESTS)
         # casebook and the keys page already prove, and drawn from counters
         # that were being computed and thrown away every frame before it.
         tests/test_character.cpp
+        # KIT BUILD -- the item record: the raws load and every hand item's
+        # span is its class's, the Kit's codec by id and its hash coverage,
+        # the load budget and the slowdown, THE EVICTOR through the Kit, a
+        # quick slot that is a spell OR an item, TAKE / DROP / WEAR through
+        # the room, THEIRS as a witnessed lift, the corpse search list, and
+        # defence v1's flat DR floored at one.
+        tests/test_kit.cpp
         # #82 -- THE DISTRICT MAP. Daggerfall's own travel map, scaled to one
         # district: known ground, open leads (each with a bearing and a range
         # from where the player is standing) and who among the named will

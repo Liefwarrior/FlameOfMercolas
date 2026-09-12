@@ -376,6 +376,15 @@ Tavern::Tavern(const TileQuery& tiles, std::int32_t timeOfDaySeconds, std::uint6
     // a second load of the owner's file, so the two can never disagree about
     // which faction is index 2.
     nemesis_ = NemesisBook::load(contentDir, dialogue_.factionsShared());
+    // KIT BUILD. The item registry off the same raws tree, the Kit sized to
+    // it, and the raws' stands put on the tiles before anybody has taken a
+    // step. An absent items.json is an empty registry: nothing to take, the
+    // sheet prints IN HAND FISTS, and the game boots exactly as before.
+    items_ = ItemRegistry::load(contentDir);
+    kit_.resize(items_.size());
+    picksItem_ = items_.indexOf("picks");
+    baleItem_ = items_.indexOf("bale");
+    seedStands();
     buildRoster();
     // Tonight's boat, and tonight's work. Both are posted before anybody has
     // taken a step, so a session that opens at ten at night opens on a board
@@ -556,6 +565,11 @@ void Tavern::setPlayer(std::int32_t xQ8, std::int32_t yQ8, std::int32_t band) no
 }
 
 void Tavern::setPlayerCombat(Weapon weapon, Intent intent) noexcept {
+    // KIT BUILD. The sheet that arms a hand DIRECTLY outranks the Kit: the
+    // hand row is bared so playerWeapon() reads the byte set here and not a
+    // cudgel worn an hour ago. The tests and the drives that stage a fight
+    // by class keep reading exactly what they set.
+    kit_.bare(ItemSlot::Hand);
     playerWeapon_ = weapon;
     playerIntent_ = intent;
 }
@@ -565,6 +579,20 @@ bool Tavern::grantPlayerWeapon(std::string_view weaponId) noexcept {
     // not the enum: "fists" is not a thing anyone grants, and Edged arriving
     // through a reward string would put a fight on the LETHAL side of the
     // brawl line by way of a typo-sized diff. See the header.
+    //
+    // KIT BUILD: the id is a registry row first. THE EVICTOR goes into the
+    // Kit and onto the hand as a THING -- weighed, printed, droppable --
+    // past the load rule (a reward that would not fit still fits: a case
+    // beat has no refusal line to speak, and the legs simply slow).
+    if (items_.find(weaponId) != nullptr) {
+        const std::int32_t index = items_.indexOf(weaponId);
+        const ItemDef* item = items_.at(index);
+        if (item == nullptr || item->slot != ItemSlot::Hand || item->fixed) {
+            return false;
+        }
+        kit_.add(index, 1);
+        return kit_.wear(items_, index);
+    }
     if (weaponId == kEvictorWeaponId) {
         playerWeapon_ = Weapon::Evictor;
         return true;
@@ -1192,7 +1220,7 @@ std::vector<Fighter> Tavern::currentFight() const {
     std::vector<Fighter> fighters;
     Fighter player;
     player.actorId = kPlayerActorId;
-    player.weapon = playerWeapon_;
+    player.weapon = playerWeapon();
     player.intent = playerIntent_;
     player.hp = playerHp_;
     player.hpMax = playerHpMax_;
@@ -1244,7 +1272,7 @@ Tavern::PunchResult Tavern::playerPunchNearest() {
         // damage. Same draw, same order; see strike()'s own header.
         const std::int32_t swingTerm = fatigue_.termQ8();
         fatigue_.drain(kPunchFatiguePoints * kFatiguePointFine);
-        result.blow = strike(playerWeapon_, prey, drawForPlayerAction(),
+        result.blow = strike(playerWeapon(), prey, drawForPlayerAction(),
                              meleeDamageBonus(effectiveAttributes().value(AttributeId::Might)),
                              swingTerm);
         rat->setHealth(prey.hp, prey.hpMax);
@@ -1576,7 +1604,7 @@ Tavern::PlayerSwingResult Tavern::playerAttackUp() {
         }
         Fighter prey = rat->asFighter();
         result.blow =
-            strike(playerWeapon_, prey, drawForPlayerAction(), bonus, swingTerm, chargeQ8);
+            strike(playerWeapon(), prey, drawForPlayerAction(), bonus, swingTerm, chargeQ8);
         rat->setHealth(prey.hp, prey.hpMax);
         rat->setActivity(result.blow.downed ? Activity::Downed : Activity::Walking);
         return result;
@@ -1755,6 +1783,23 @@ void Tavern::stepBrawl() noexcept {
                 if (hard) {
                     blockStaggerSteps_ = kBlockStaggerSteps;
                 }
+            }
+            // KIT BUILD -- DEFENCE v1, THE ONE PLACE A BLOW LANDS ON THE
+            // BODY. What is worn turns a flat sum of DR off every landed
+            // blow AFTER the guard has argued (coat over arms, as the
+            // reference orders it), floored at one point through any coat --
+            // blockedDamage's own floor, for its own reason: armour that
+            // could null a blow outright is a wall of kit that turns the
+            // fight OFF. Pure integers, no draw: the same roll lands and the
+            // coat only argues what it is worth. HARNESS trains on a blow the
+            // kit softened, the shieldwall precedent. COMBAT-SPEC's coverage-
+            // weighted AC and per-part wear stay the v2 ceiling.
+            if (const std::int32_t turned = wornDr(); turned > 0 && dmg > 1) {
+                const std::int32_t kept = std::max(1, dmg - turned);
+                lastTurned_ = dmg - kept;
+                dmg = kept;
+                blowsTurned_ = wrap_add(blowsTurned_, 1);
+                dialogue_.skills().use(kHarnessSkill);
             }
             playerHp_ = std::max(floor, playerHp_ - dmg);
             lastBlowBy_ = id;
@@ -1938,7 +1983,7 @@ bool Tavern::violenceInView() const noexcept {
         // stood nearest it would close on the bartender every night.
         return false;
     }
-    if (playerWeapon_ >= kFirstLethalWeapon) {
+    if (playerWeapon() >= kFirstLethalWeapon) {
         // STEEL UP. The stance bit is what the Watch reads (the whole reason
         // the stance is sim state): a blade in a raised hand is cause on its
         // own, before it is swung.
@@ -2027,7 +2072,7 @@ Blow Tavern::landPlayerBlow(Actor& target, bool hard, std::int32_t bonus, std::i
     Fighter victim = target.asFighter();
     const Fighter before = victim;
     // THE ONE DRAW this blow makes, in the order it always made it.
-    Blow blow = strike(playerWeapon_, victim, drawForPlayerAction(), bonus, swingTerm, chargeQ8);
+    Blow blow = strike(playerWeapon(), victim, drawForPlayerAction(), bonus, swingTerm, chargeQ8);
     if (!blow.landed) {
         return blow;
     }
@@ -4351,13 +4396,56 @@ const Spell* Tavern::slotSpell(std::int32_t slot) const noexcept {
         return nullptr;
     }
     const std::string& id = quickSlotIds_[static_cast<std::size_t>(slot)];
-    if (id.empty()) {
+    if (id.empty() || id.rfind(kItemSlotPrefix, 0) == 0) {
         return nullptr;
     }
     return dialogue_.grimoire().find(id);
 }
 
+std::int32_t Tavern::slotItemIndex(std::int32_t slot) const noexcept {
+    if (slot < 0 || slot >= kQuickSlotCount) {
+        return -1;
+    }
+    const std::string& id = quickSlotIds_[static_cast<std::size_t>(slot)];
+    if (id.rfind(kItemSlotPrefix, 0) != 0) {
+        return -1;
+    }
+    return items_.indexOf(std::string_view(id).substr(kItemSlotPrefix.size()));
+}
+
+const ItemDef* Tavern::slotItem(std::int32_t slot) const noexcept {
+    return items_.at(slotItemIndex(slot));
+}
+
+bool Tavern::bindItemToSlot(std::int32_t slot, std::int32_t index) {
+    if (slot < 0 || slot >= kQuickSlotCount) {
+        return false;
+    }
+    const ItemDef* item = items_.at(index);
+    // Only a thing the body could wear: a lantern on the number row would be
+    // a promise the key cannot keep, the grimoire's own rule for a slot.
+    if (item == nullptr || item->slot == ItemSlot::None || item->fixed || kit_.count(index) <= 0) {
+        return false;
+    }
+    quickSlotIds_[static_cast<std::size_t>(slot)] = std::string(kItemSlotPrefix) + item->id;
+    return true;
+}
+
 bool Tavern::equipSlot(std::int32_t slot) {
+    // KIT BUILD: an item slot WEARS the thing it names -- through wearItem,
+    // the one door the Character tile turns -- and a worn thing stays worn
+    // (pressing the slot of the cudgel already in your hand is not a way to
+    // put it down; the tile's own press is). Refused, like an empty slot,
+    // when the thing is no longer carried.
+    if (const std::int32_t index = slotItemIndex(slot); index >= 0) {
+        if (kit_.count(index) <= 0) {
+            return false;
+        }
+        if (kit_.isWorn(index)) {
+            return true;
+        }
+        return wearItem(index).result == ServiceResult::Served;
+    }
     const Spell* spell = slotSpell(slot);
     if (spell == nullptr) {
         return false;
@@ -4692,6 +4780,396 @@ void Tavern::tickSpellwork() {
 // hashing
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// KIT BUILD: the things on the body, on the floor, and on the dead
+// ---------------------------------------------------------------------------
+
+void Tavern::seedStands() {
+    ground_.clear();
+    for (const ItemStand& stand : items_.stands()) {
+        const std::int32_t index = items_.indexOf(stand.item);
+        if (index < 0) {
+            continue;
+        }
+        GroundItem entry;
+        entry.x = stand.x;
+        entry.y = stand.y;
+        entry.band = stand.band;
+        entry.item = index;
+        entry.count = stand.count;
+        entry.owned = stand.owned;
+        ground_.push_back(entry);
+    }
+}
+
+std::int32_t Tavern::loadDrams() const noexcept {
+    // The Kit, then the two stores the Kit only VIEWS: the sack (its own
+    // weights, contraband.hpp's) and the bale on the shoulder (its units at
+    // its good's weight), and the picks on their counter.
+    std::int32_t drams = kit_.weight(items_);
+    const CrimeLedger& crimes = dialogue_.crimes();
+    drams += crimes.stash().weight();
+    if (crimes.carryingBale()) {
+        drams += crimes.baleUnits() * contrabandWeight(crimes.baleGood());
+    }
+    if (const ItemDef* picks = items_.at(picksItem_); picks != nullptr) {
+        drams += picks_ * picks->drams;
+    }
+    return drams;
+}
+
+std::int32_t Tavern::loadBudget() const noexcept {
+    return loadCapDrams(effectiveAttributes().value(AttributeId::Might));
+}
+
+std::int32_t Tavern::loadSpeedQ8() const noexcept {
+    return loadSpeedScaleQ8(loadDrams(), loadBudget());
+}
+
+std::int32_t Tavern::wornDr() const noexcept {
+    return kit_.wornDr(items_);
+}
+
+const ItemDef* Tavern::heldItem() const noexcept {
+    return items_.at(kit_.worn(ItemSlot::Hand));
+}
+
+bool Tavern::loadRefuses(std::int32_t drams) const noexcept {
+    return drams > 0 && loadDrams() + drams > loadBudget();
+}
+
+void Tavern::putOnGround(std::int32_t item, std::int32_t count, bool owned) {
+    const std::int32_t x = q8_tile(playerX_);
+    const std::int32_t y = q8_tile(playerY_);
+    // An unowned stack of the same thing on this tile takes the unit; a
+    // second knife beside the first is one row on the floor, not two.
+    for (GroundItem& entry : ground_) {
+        if (entry.x == x && entry.y == y && entry.band == playerBand_ && entry.item == item &&
+            entry.owned == owned) {
+            entry.count += count;
+            return;
+        }
+    }
+    GroundItem entry;
+    entry.x = x;
+    entry.y = y;
+    entry.band = playerBand_;
+    entry.item = item;
+    entry.count = count;
+    entry.owned = owned;
+    ground_.push_back(entry);
+}
+
+std::int32_t Tavern::groundItemInReach() const noexcept {
+    if (!playerKnown_) {
+        return -1;
+    }
+    std::int32_t best = -1;
+    std::int32_t bestDistance = 0;
+    for (std::size_t i = 0; i < ground_.size(); ++i) {
+        const GroundItem& entry = ground_[i];
+        if (entry.band != playerBand_) {
+            continue;
+        }
+        // The bale's own reach shape: Manhattan Q8 from the tile centre,
+        // inside kReachQ8.
+        const std::int32_t dx = q8_tile_centre(entry.x) - playerX_;
+        const std::int32_t dy = q8_tile_centre(entry.y) - playerY_;
+        const std::int32_t distance = (dx < 0 ? -dx : dx) + (dy < 0 ? -dy : dy);
+        if (distance > kReachQ8) {
+            continue;
+        }
+        if (best < 0 || distance < bestDistance) {
+            best = static_cast<std::int32_t>(i);
+            bestDistance = distance;
+        }
+    }
+    return best;
+}
+
+namespace {
+[[nodiscard]] std::string dramsWord(std::int32_t drams) {
+    return std::to_string(drams) + (drams == 1 ? " DRAM" : " DRAMS");
+}
+}  // namespace
+
+bool Tavern::giveItem(std::string_view id, std::int32_t count) {
+    // One unit of a registry row goes where it lives: the sack for a
+    // contraband row, the picks counter for the picks row, the Kit for the
+    // rest. False when the sack would not take it.
+    const std::int32_t index = items_.indexOf(id);
+    const ItemDef* item = items_.at(index);
+    if (item == nullptr || item->fixed || count <= 0) {
+        return false;
+    }
+    if (loadRefuses(item->drams * count)) {
+        return false;
+    }
+    if (!item->contraband.empty()) {
+        Contraband good = Contraband::Scalp;
+        if (!contrabandFromSymbol(item->contraband, good)) {
+            return false;
+        }
+        return dialogue_.crimes().stash().add(good, count) == count;
+    }
+    if (index == picksItem_) {
+        picks_ = wrap_add(picks_, count);
+        return true;
+    }
+    kit_.add(index, count);
+    return true;
+}
+
+Tavern::StealResult Tavern::takeGroundItem() {
+    StealResult out;
+    const std::int32_t at = groundItemInReach();
+    if (at < 0) {
+        out.result = ServiceResult::TooFar;
+        out.line = "NOTHING HERE TO TAKE.";
+        return out;
+    }
+    GroundItem& entry = ground_[static_cast<std::size_t>(at)];
+    const ItemDef* item = items_.at(entry.item);
+    if (item == nullptr) {
+        out.result = ServiceResult::TooFar;
+        out.line = "NOTHING HERE TO TAKE.";
+        return out;
+    }
+    if (item->fixed) {
+        out.result = ServiceResult::Refused;
+        out.line = "THE " + item->name + " DOES NOT TRAVEL.";
+        return out;
+    }
+    if (loadRefuses(item->drams)) {
+        out.result = ServiceResult::Refused;
+        out.line = "TOO MUCH ON YOU ALREADY. " + std::to_string(loadDrams()) + " OF " +
+                   std::to_string(loadBudget()) + " DRAMS.";
+        return out;
+    }
+    const std::string name = item->name;
+    const std::int32_t drams = item->drams;
+    const bool theirs = entry.owned;
+    if (!giveItem(item->id, 1)) {
+        // The one way giveItem still refuses past the load check: a full
+        // sack. Said in the sack's own words.
+        out.result = ServiceResult::Refused;
+        out.line = "THE SACK IS FULL.";
+        return out;
+    }
+    entry.count -= 1;
+    if (entry.count <= 0) {
+        ground_.erase(ground_.begin() + at);
+    }
+    out.result = ServiceResult::Served;
+    if (!theirs) {
+        out.line = "TAKEN - " + name + ". " + dramsWord(drams) + ".";
+        return out;
+    }
+    // SOMEBODY'S. The same three clauses a hand in a purse is judged by, and
+    // the same four things it moves: the ward's tally, the heat the Watch
+    // heard, the roofs' standing and, through the mirror, the garrison's.
+    // The stance never decides whether this is a crime -- only who noticed.
+    out.seen = witnessCount(kPlayerActorId) > 0;
+    dialogue_.noteCrime(Crime::Lift, out.seen);
+    if (out.seen) {
+        spreadWitness(kPlayerActorId, Deed::Robbed);
+        reportOffence(Offence::Stole);
+    }
+    out.line = "TAKEN - " + name + ". THEIRS" + (out.seen ? ", AND SEEN." : ". NOBODY SAW.");
+    return out;
+}
+
+Tavern::StealResult Tavern::dropItem(std::int32_t index) {
+    StealResult out;
+    const ItemDef* item = items_.at(index);
+    if (item == nullptr || !playerKnown_) {
+        out.result = ServiceResult::Refused;
+        out.line = "NOTHING TO DROP.";
+        return out;
+    }
+    if (!item->contraband.empty() || index == picksItem_ || index == baleItem_) {
+        // The sack is the Watch's business and the bale is the snug's: neither
+        // is put down on a tile by this verb. handleBale puts a bale back.
+        out.result = ServiceResult::Refused;
+        out.line = "THAT STAYS ON YOU.";
+        return out;
+    }
+    if (kit_.count(index) <= 0) {
+        out.result = ServiceResult::Refused;
+        out.line = "NOTHING TO DROP.";
+        return out;
+    }
+    const bool wasHand = kit_.worn(ItemSlot::Hand) == index && kit_.count(index) == 1;
+    kit_.take(index, 1);
+    if (wasHand) {
+        // The hand goes back to fists, whatever the legacy byte last said.
+        playerWeapon_ = Weapon::Fists;
+    }
+    putOnGround(index, 1, false);
+    out.result = ServiceResult::Served;
+    out.line = "DROPPED - " + item->name + ".";
+    return out;
+}
+
+Tavern::StealResult Tavern::wearItem(std::int32_t index) {
+    StealResult out;
+    const ItemDef* item = items_.at(index);
+    if (item == nullptr || kit_.count(index) <= 0) {
+        out.result = ServiceResult::Refused;
+        out.line = "NOTHING TO WEAR.";
+        return out;
+    }
+    if (item->slot == ItemSlot::None || item->fixed) {
+        out.result = ServiceResult::Refused;
+        out.line = "THE " + item->name + " IS NOT WORN.";
+        return out;
+    }
+    if (kit_.isWorn(index)) {
+        kit_.bare(item->slot);
+        if (item->slot == ItemSlot::Hand) {
+            playerWeapon_ = Weapon::Fists;
+        }
+        out.result = ServiceResult::Served;
+        out.line = item->name + " - OFF.";
+        return out;
+    }
+    kit_.wear(items_, index);
+    if (item->slot == ItemSlot::Hand) {
+        // The Kit is the source now; the legacy byte falls back to fists so
+        // baring the hand later reads as fists and not as an old grant.
+        playerWeapon_ = Weapon::Fists;
+    }
+    out.result = ServiceResult::Served;
+    out.line = item->slot == ItemSlot::Hand ? "IN HAND - " + itemSheetLine(*item) + "."
+                                            : item->name + " - ON.";
+    return out;
+}
+
+void Tavern::bareSlot(ItemSlot slot) noexcept {
+    kit_.bare(slot);
+    if (slot == ItemSlot::Hand) {
+        playerWeapon_ = Weapon::Fists;
+    }
+}
+
+const Actor* Tavern::corpseInReach() const noexcept {
+    if (!playerKnown_) {
+        return nullptr;
+    }
+    const Actor* best = nullptr;
+    std::int32_t bestDistance = 0;
+    for (const Actor& actor : actors_) {
+        if (!actor.present() || actor.activity() != Activity::Dead ||
+            actor.band() != playerBand_) {
+            continue;
+        }
+        const std::int32_t distance = actor.distanceTo(playerX_, playerY_);
+        if (distance > kReachQ8) {
+            continue;
+        }
+        if (best == nullptr || distance < bestDistance) {
+            best = &actor;
+            bestDistance = distance;
+        }
+    }
+    return best;
+}
+
+const CorpseKit* Tavern::corpseKitFor(const Actor& actor) const noexcept {
+    if (const CorpseKit* named = items_.carriedBy(actor.name()); named != nullptr) {
+        return named;
+    }
+    return items_.carriedBy(actorRoleName(actor.role()));
+}
+
+std::uint32_t Tavern::corpseTaken(std::int32_t actorId) const noexcept {
+    for (const CorpseLoot& loot : corpseLoot_) {
+        if (loot.actorId == actorId) {
+            return loot.takenMask;
+        }
+    }
+    return 0;
+}
+
+std::vector<Tavern::CorpseRow> Tavern::corpseRows(std::int32_t actorId) const {
+    std::vector<CorpseRow> rows;
+    const Actor* actor = actorById(actorId);
+    if (actor == nullptr || actor->activity() != Activity::Dead) {
+        return rows;
+    }
+    const CorpseKit* kit = corpseKitFor(*actor);
+    if (kit == nullptr) {
+        return rows;
+    }
+    const std::uint32_t taken = corpseTaken(actorId);
+    for (std::size_t i = 0; i < kit->items.size() && i < 32; ++i) {
+        if ((taken & (1U << i)) != 0) {
+            continue;
+        }
+        const std::int32_t index = items_.indexOf(kit->items[i]);
+        if (index < 0) {
+            continue;
+        }
+        CorpseRow row;
+        row.item = index;
+        row.kitRow = static_cast<std::int32_t>(i);
+        rows.push_back(row);
+    }
+    return rows;
+}
+
+Tavern::StealResult Tavern::takeFromCorpse(std::int32_t actorId, std::int32_t kitRow) {
+    StealResult out;
+    const Actor* actor = actorById(actorId);
+    const CorpseKit* kit = actor != nullptr ? corpseKitFor(*actor) : nullptr;
+    if (actor == nullptr || actor->activity() != Activity::Dead || kit == nullptr || kitRow < 0 ||
+        static_cast<std::size_t>(kitRow) >= kit->items.size() || kitRow >= 32) {
+        out.result = ServiceResult::TooFar;
+        out.line = "NOTHING THERE.";
+        return out;
+    }
+    const std::uint32_t bit = 1U << static_cast<std::uint32_t>(kitRow);
+    if ((corpseTaken(actorId) & bit) != 0) {
+        out.result = ServiceResult::OutOfStock;
+        out.line = "ALREADY TAKEN.";
+        return out;
+    }
+    const ItemDef* item = items_.find(kit->items[static_cast<std::size_t>(kitRow)]);
+    if (item == nullptr) {
+        out.result = ServiceResult::TooFar;
+        out.line = "NOTHING THERE.";
+        return out;
+    }
+    if (loadRefuses(item->drams)) {
+        out.result = ServiceResult::Refused;
+        out.line = "TOO MUCH ON YOU ALREADY. " + std::to_string(loadDrams()) + " OF " +
+                   std::to_string(loadBudget()) + " DRAMS.";
+        return out;
+    }
+    if (!giveItem(item->id, 1)) {
+        out.result = ServiceResult::Refused;
+        out.line = "THE SACK IS FULL.";
+        return out;
+    }
+    bool found = false;
+    for (CorpseLoot& loot : corpseLoot_) {
+        if (loot.actorId == actorId) {
+            loot.takenMask |= bit;
+            found = true;
+            break;
+        }
+    }
+    if (!found) {
+        CorpseLoot loot;
+        loot.actorId = actorId;
+        loot.takenMask = bit;
+        corpseLoot_.push_back(loot);
+    }
+    out.result = ServiceResult::Served;
+    out.line = "TAKEN - " + item->name + ". " + dramsWord(item->drams) + ".";
+    return out;
+}
+
 void Tavern::hash_into(HashSink& sink) const {
     // Dense index order, which is id order: actors_ is never reordered.
     sink.put_int(static_cast<std::uint32_t>(actors_.size()));
@@ -4867,6 +5345,33 @@ void Tavern::hash_into(HashSink& sink) const {
         sink.put_int(static_cast<std::uint32_t>(hold.magnitude));
         sink.put_long(static_cast<std::uint64_t>(hold.expiresAt));
     }
+    // KIT BUILD: what is on the body (every count, every worn row), what is
+    // on the floor (the stands less what was taken, plus what was dropped),
+    // what has been taken off the dead, and the blows the kit has turned.
+    // What is on the body decides what the next blow does and how fast the
+    // legs go; what is on the floor decides what the next TAKE picks up --
+    // state the twin-run gate compares or does not protect. THE ONE DECLARED
+    // tavern/gate-workload baseline move of the Kit build, the S13 shape
+    // (the pinned codec goldens hash fixed byte specs, not this struct; the
+    // live gates compare THIS shape against itself); re-blessed ONCE at the
+    // lane's landing. The population baseline never reaches this code.
+    kit_.hashInto(sink);
+    sink.put_int(static_cast<std::uint32_t>(ground_.size()));
+    for (const GroundItem& entry : ground_) {
+        sink.put_int(static_cast<std::uint32_t>(entry.x));
+        sink.put_int(static_cast<std::uint32_t>(entry.y));
+        sink.put_int(static_cast<std::uint32_t>(entry.band));
+        sink.put_int(static_cast<std::uint32_t>(entry.item));
+        sink.put_int(static_cast<std::uint32_t>(entry.count));
+        sink.put_byte(entry.owned ? 1U : 0U);
+    }
+    sink.put_int(static_cast<std::uint32_t>(corpseLoot_.size()));
+    for (const CorpseLoot& loot : corpseLoot_) {
+        sink.put_int(static_cast<std::uint32_t>(loot.actorId));
+        sink.put_int(loot.takenMask);
+    }
+    sink.put_int(static_cast<std::uint32_t>(blowsTurned_));
+    sink.put_int(static_cast<std::uint32_t>(lastTurned_));
     nemesis_.hashInto(sink);
     dialogue_.hashInto(sink);
 }

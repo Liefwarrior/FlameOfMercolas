@@ -1,0 +1,145 @@
+{
+  "schemaVersion": 1,
+  "notes": [
+    "THE KIT. Every thing a Granadad docker could own, one row each. No fantasy loot.",
+    "drams is weight; the base sheet carries 240 of them (loadCapDrams). royals is worth.",
+    "slot is where it is worn: hand / body / head / feet / trinket / none.",
+    "class is the brawl line's own word (brawl.hpp Weapon): fists, improvised, blunt, evictor, edged.",
+    "damage on a hand item is the CLASS's span and is checked at load; write it for the reader, never to change a roll.",
+    "dr is flat damage reduction while worn. heat is what the Watch adds per unit when it finds it on you.",
+    "contraband names the sack good a row is the face for; its count is the sack's, never the Kit's.",
+    "stands put a thing on a tile before anybody moves it; owned means taking it is theft (THEIRS on the crosshair).",
+    "carried is what a roster body has on it when it dies: by name first, then by role."
+  ],
+  "items": [
+    {
+      "id": "cudgel", "name": "CUDGEL", "drams": 40, "royals": 6, "slot": "hand", "class": "blunt",
+      "damage": [7, 9],
+      "desc": "OAK, HANDLE-WORN. EVERY HOUSE KEEPS ONE UNDER THE BAR."
+    },
+    {
+      "id": "the_evictor", "name": "THE EVICTOR", "drams": 44, "royals": 30, "slot": "hand", "class": "evictor",
+      "damage": [7, 9],
+      "desc": "A HEADED CUDGEL MADE FOR PUTTING A MAN OUT, NOT OPEN. THE FLAME'S OWN GIFT."
+    },
+    {
+      "id": "mace", "name": "MACE", "drams": 48, "royals": 22, "slot": "hand", "class": "blunt",
+      "damage": [7, 9],
+      "desc": "AN IRON HEAD ON AN ASH HAFT. A WATCHMAN'S WHOLE ARGUMENT."
+    },
+    {
+      "id": "bottle", "name": "BOTTLE", "drams": 5, "royals": 1, "slot": "hand", "class": "improvised",
+      "damage": [5, 7],
+      "desc": "CORKED AND HALF FULL. SWUNG, IT IS SOMETHING."
+    },
+    {
+      "id": "knife", "name": "KNIFE", "drams": 8, "royals": 4, "slot": "hand", "class": "edged",
+      "damage": [11, 13],
+      "desc": "A GUTTING KNIFE OFF THE STRAND. EVERY DOCKER OWNS ONE. IT IS NOT A BRAWL WEAPON."
+    },
+    {
+      "id": "dagger", "name": "DAGGER", "drams": 12, "royals": 14, "slot": "hand", "class": "edged",
+      "damage": [11, 13],
+      "desc": "A HAND'S LENGTH OF STEEL WITH A GUARD ON IT. THE ROOFS CARRY THESE."
+    },
+    {
+      "id": "cutlass", "name": "CUTLASS", "drams": 36, "royals": 40, "slot": "hand", "class": "edged",
+      "damage": [11, 13],
+      "desc": "SHORT AND HEAVY. THE KESTREL'S CREW WEAR THEM ASHORE AND THE WATCH LETS IT GO."
+    },
+    {
+      "id": "boat_hook", "name": "BOAT-HOOK", "drams": 30, "royals": 5, "slot": "hand", "class": "edged",
+      "damage": [11, 13],
+      "desc": "AN IRON HOOK ON A POLE. THE QUAY'S OWN TOOL, AND IT OPENS A MAN LIKE ONE."
+    },
+    {
+      "id": "coat", "name": "COAT", "drams": 60, "royals": 12, "slot": "body", "class": "fists", "dr": 2,
+      "desc": "OILED WOOL, HEAVY WITH RAIN. IT TURNS THE WEATHER AND A LITTLE ELSE."
+    },
+    {
+      "id": "hood", "name": "HOOD", "drams": 12, "royals": 3, "slot": "head", "class": "fists", "dr": 1,
+      "desc": "TARRED CANVAS OVER THE EARS. WHO YOU ARE STAYS UNDER IT."
+    },
+    {
+      "id": "boots", "name": "BOOTS", "drams": 30, "royals": 8, "slot": "feet", "class": "fists", "dr": 1,
+      "desc": "SEA BOOTS, NEVER QUITE DRY. THE QUAY EATS SHOE LEATHER."
+    },
+    {
+      "id": "purse", "name": "PURSE", "drams": 2, "royals": 2, "slot": "trinket", "class": "fists",
+      "desc": "LEATHER, DRAWSTRING. WHAT A CUTPURSE IS AFTER. THE COIN IS COIN AND WEIGHS NOTHING."
+    },
+    {
+      "id": "lantern", "name": "LANTERN", "drams": 30, "royals": 9, "slot": "none", "class": "fists",
+      "desc": "HORN-PANED, HALF A CANDLE IN IT. THE DOCKS GO DARK EARLY."
+    },
+    {
+      "id": "rope", "name": "ROPE", "drams": 48, "royals": 6, "slot": "none", "class": "fists",
+      "desc": "TEN FATHOMS OF TARRED LINE. HEAVY, AND ALWAYS WANTED BY SOMEBODY."
+    },
+    {
+      "id": "picks", "name": "PICKS", "drams": 1, "royals": 2, "slot": "none", "class": "fists",
+      "desc": "A BENT WIRE AND A TENSION BAR. FINCH SELLS THEM BY THE SET AND ASKS NOTHING."
+    },
+    {
+      "id": "letter", "name": "LETTER", "drams": 1, "royals": 0, "slot": "none", "class": "fists",
+      "desc": "FOLDED PAPER. SOMEBODY'S BUSINESS, AND NOW YOURS."
+    },
+    {
+      "id": "bale", "name": "BALE", "drams": 0, "royals": 0, "slot": "none", "class": "fists",
+      "desc": "THREE OF SOMETHING SEWN INTO SACKING. THE SNUG'S OWN, UNTIL IT IS ON YOUR SHOULDER."
+    },
+    {
+      "id": "strongbox", "name": "STRONGBOX", "drams": 400, "royals": 0, "slot": "none", "class": "fists",
+      "fixed": true,
+      "desc": "IRON-STRAPPED, AT THE BED FOOT. IT DOES NOT TRAVEL. WHAT IS IN IT MIGHT."
+    },
+    {
+      "id": "scalp", "name": "SCALP", "drams": 2, "royals": 4, "slot": "none", "class": "fists",
+      "contraband": "scalp",
+      "desc": "A RAT'S, TAKEN FOR THE WARD'S BOUNTY. THE FLAME SIGNS FOR IT OR NOBODY PAYS."
+    },
+    {
+      "id": "dust", "name": "DUST", "drams": 3, "royals": 16, "slot": "none", "class": "fists", "heat": 9,
+      "contraband": "dust",
+      "desc": "A TWIST OF WHAT COMES OFF A BOAT AND IS NEVER ON THE MANIFEST."
+    },
+    {
+      "id": "moonshine", "name": "QUAYFIRE", "drams": 24, "royals": 7, "slot": "none", "class": "fists", "heat": 4,
+      "contraband": "moonshine",
+      "desc": "A JAR OF SPIRIT THAT NEVER PASSED THE WEIGHHOUSE. A WATCHMAN CAN SEE A JAR."
+    },
+    {
+      "id": "flower", "name": "FLOWER", "drams": 8, "royals": 10, "slot": "none", "class": "fists", "heat": 6,
+      "contraband": "flower",
+      "desc": "THE WARD'S SMOKE, DRIED AND PRESSED. EVERYBODY KNOWS THE SMELL."
+    },
+    {
+      "id": "artifact", "name": "PIECE", "drams": 10, "royals": 24, "slot": "none", "class": "fists", "heat": 12,
+      "contraband": "artifact",
+      "desc": "A PIECE WITH SOMEBODY'S NAME ON IT. IMPOSSIBLE TO EXPLAIN AND WORTH THREE BALES."
+    }
+  ],
+  "stands": [
+    { "item": "cudgel",  "x": 152, "y": 72, "band": 19, "count": 1, "owned": true },
+    { "item": "bottle",  "x": 150, "y": 70, "band": 19, "count": 1, "owned": true },
+    { "item": "lantern", "x": 150, "y": 74, "band": 19, "count": 1, "owned": true },
+    { "item": "coat",    "x": 148, "y": 72, "band": 19, "count": 1, "owned": true },
+    { "item": "hood",    "x": 149, "y": 69, "band": 19, "count": 1, "owned": true },
+    { "item": "knife",   "x": 156, "y": 73, "band": 19, "count": 1, "owned": true },
+    { "item": "rope",    "x": 151, "y": 63, "band": 19, "count": 1, "owned": false },
+    { "item": "boots",   "x": 155, "y": 63, "band": 19, "count": 1, "owned": false }
+  ],
+  "carried": {
+    "Watchman Cull": ["mace", "purse"],
+    "Captain Ivo Wake": ["cutlass", "coat", "purse"],
+    "Finch": ["dagger", "picks", "purse"],
+    "Father Maell": ["hood", "letter"],
+    "Master Venn": ["purse", "lantern"],
+    "bouncer": ["cudgel", "boots"],
+    "bartender": ["knife", "purse"],
+    "innkeeper": ["purse", "lantern"],
+    "patron": ["knife", "purse"],
+    "skyrunner": ["dagger", "purse"],
+    "priest": ["hood"]
+  }
+}
