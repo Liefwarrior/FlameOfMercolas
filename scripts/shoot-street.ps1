@@ -43,9 +43,9 @@ $shots = @(
     # Leg (c): the Watch on the beats gets eyes. A fist or steel within a
     # nearby watchman's own sight (never a hand-fed alarm), played through the
     # real verbs; Session::step's own leg (c) block says the line.
-    @('street-watch-halt',    @('--street-assault=watch-halt')),
-    @('street-watch-sheathe', @('--street-assault=watch-sheathe')),
-    @('street-watch-offence', @('--street-assault=watch-offence'))
+    @('street-watch-halt',    @('--street-assault=watch-halt', '--settle-steps=0')),
+    @('street-watch-sheathe', @('--street-assault=watch-sheathe', '--settle-steps=0')),
+    @('street-watch-offence', @('--street-assault=watch-offence', '--settle-steps=0'))
 )
 
 $failed = 0

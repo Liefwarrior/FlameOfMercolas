@@ -836,7 +836,7 @@ arrests at reach through the Gull's own seam; steel is a demand with a grace and
 ignored one becomes an offence, never an arrest by itself; a presented Wielder is never given
 cause and standing one down stands every closing watchman down; the population twin-runs
 byte-identical under all three), gated on the tree whose GATE-STAMP names it (`native/` digest
-`1a980410bcc2f5ac5443df9e4a3c0f212dfbae91723e09eddd14ea4727696b8a`, ctest cases 1260, 319
+`f5115d84289d76430fc78e1a5bfde7ee79ab506c29c298243ea490cbe63f740b`, ctest cases 1260, 319
 files; `verify-windows.ps1` PASS -- content 71 cases / 902,135 assertions and sim 1179 cases /
 2,167,264 assertions under mingw, content-fingerprint and world-hash reports byte-identical
 linux/gcc vs mingw/windows, the stamp naming this tree), and photographed through the real
