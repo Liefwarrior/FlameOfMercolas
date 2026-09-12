@@ -395,13 +395,23 @@ std::vector<ActorInstance> actorInstances(const render::Session& session,
     const sim::WardPopulation& people = session.people();
     out.reserve(people.actors().size() / 4 + 32);
     for (const sim::WardActor& actor : people.actors()) {
-        if (!actor.visible()) {
+        // STREET SENSES leg (b): a person struck down on the brawl floor, or
+        // slain, is off the board (visible false) and DRAWN where he fell --
+        // floored(), the one other predicate wardSprites reads -- with the
+        // Gull's own clips for it: Recover on the floor, Death for a corpse.
+        // A caught mouse is neither and stays undrawn.
+        const bool down = actor.floored();
+        if (!actor.visible() && !down) {
             continue;
         }
-        const float px = static_cast<float>(actor.prevX) +
-                         static_cast<float>(actor.x - actor.prevX) * slide + 0.5F;
-        const float py = static_cast<float>(actor.prevY) +
-                         static_cast<float>(actor.y - actor.prevY) * slide + 0.5F;
+        // A floored body lies where it fell: no slide off the tile it was
+        // walking from when the blow landed.
+        const float px = down ? static_cast<float>(actor.x) + 0.5F
+                              : static_cast<float>(actor.prevX) +
+                                    static_cast<float>(actor.x - actor.prevX) * slide + 0.5F;
+        const float py = down ? static_cast<float>(actor.y) + 0.5F
+                              : static_cast<float>(actor.prevY) +
+                                    static_cast<float>(actor.y - actor.prevY) * slide + 0.5F;
         const float distance = planarDistance(view, px, py);
         if (distance > params.maxDistance) {
             continue;
@@ -415,8 +425,10 @@ std::vector<ActorInstance> actorInstances(const render::Session& session,
         body.instance.yaw = yawOf(actor.facing);
         body.instance.scale = actorInstanceScale(actor.type);
         body.instance.tint = tintFor(sky, glow.at(actor.x, actor.y, actor.band), render::Rgb{});
-        body.clip = actor.dead ? ActorClip::Death
-                               : wardClip(actor.x != actor.prevX || actor.y != actor.prevY);
+        body.clip = actor.slain ? ActorClip::Death
+                    : down     ? ActorClip::Recover
+                    : actor.dead ? ActorClip::Death
+                                 : wardClip(actor.x != actor.prevX || actor.y != actor.prevY);
         body.clipFrame = actorClipFrame(stepCount, actor.id);
         body.skinned = distance <= params.skinDistance;
         out.push_back(body);

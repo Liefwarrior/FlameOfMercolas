@@ -676,3 +676,224 @@ declared record change behind it** -- the Kit, the ground, the corpse masks
 and the turned-blow counters on the room the tavern hashes. The next lane
 that changes the SHAPE of what the room hashes (a save frame's own fields, the
 attribute derivation D10 still owes) declares it the same way.
+
+---
+
+## STREET SENSES leg (a) -- the crowd flees and cowers for real (2026-09-11)
+
+The STREET SENSES lane (roadmap item 13; Eli's consented one-move-three-legs, given through
+a wizard 2026-09-11: CONSENT to the ONE declared move of the population baseline, ALL THREE
+LEGS, re-blessed per leg with a violence leg in the gate). **Leg (a) is the first of the
+three, and it MOVES this number for real.** 9a shipped `alarm()` and the panic recovery, but
+the population workload had no player and startled nobody -- so the number 9a re-blessed
+(`0x2646C1AAA2BA38DF`) was a district nobody ever frightened compared to itself. Leg (a)
+completes the reaction and adds the violence leg that proves it.
+
+What changed the number, all in `WardPopulation`:
+
+1. **`setPlayer(x, y, band)`**, the mirror of `Tavern::setPlayer`, pushed by the client every
+   step and HASHED -- a frightened body now reads where the player is. Appended to
+   `hash_into` (playerX/Y/band + a known-flag), so a run that never pushes a player moves
+   only by four fixed zero bytes and not by its arithmetic.
+2. **FLEE is an away plan**: `actFlee` steps directly away from the pushed player (the
+   orthogonal step that opens the most Chebyshev distance, draw-free, deterministic
+   tie-break), leash ignored, falling back to 9a's drawn shuffle only with no player pushed
+   (a beast's panic, the gate before its assault) or when boxed -- so the no-player
+   arithmetic is byte-for-byte 9a's.
+3. **`WardPolicy::Cower = 7`**, appended (the Hunt ordinal precedent, a hashed byte): the same
+   FLEE gate, the response the gazetteer's ladder gives shopkeepers and priests ("Serfs flee,
+   Shopkeepers bucket-chain, Priest walks in"). `wardTypeCowers` is Shopkeeper /
+   PriestOfTheFlame / DiscipleOfTheFlame; they hold the tile and face the fright rather than
+   run.
+4. **The loiter shuffle stays direction-blind** (`oneDrawnStep`, shared) so a body merely
+   standing near the player does not back away from him -- the away-vector is a frightened
+   body's alone.
+
+And the **violence leg in the gate**: the population workload registers a
+`StreetAssaultDriver` (TickBegin, before the Actors phase) that throws a scripted blow on the
+Tarwalk at 16:30 -- `setPlayer` + `alarm(Blow)` at the first standing docker's tile, held for
+a window -- so the run the baseline is taken from PROVES the behaviour. The report now shows
+the street scatter on the line the gate compares (`flee=`/`cower=`), where 9a's player-less
+run showed nothing move.
+
+```
+at branch lane/street (STREET SENSES leg (a)),
+granadad-twin-gate --population --population-hour 16 --ticks 7200, 96 walkers
+COMBINED WORLD HASH: 0x2646C1AAA2BA38DF -> 0xF493AF6F939D52D3      <- DECLARED and RE-BLESSED
+```
+
+Recorded directly from `dist\granadad-twin-gate.exe --population --population-hour 16
+--ticks 7200` on Windows/mingw, **two invocations**, each `run A` == `run B` ==
+`0xF493AF6F939D52D3`, report text byte-identical at **19,947 bytes** in all runs (up from 9a's
+18,772: the assault driver adds a system line and its section, and `reportLine` now carries
+`flee=`/`cower=`). On Linux/GCC the same gate ran green in the Docker build (ctest
+`granadad-twin-run-gate-population` PASSED, `run A` == `run B`).
+
+The tavern/gate-workload twin on the same exe is UNMOVED: `--tavern --ticks 900`, `run A` ==
+`run B` == `0x837E94019BC49C25`, two invocations (3,153 bytes) -- leg (a) touched no hashed
+tavern field. The nemesis arc is untouched (no combat/tavern change): `granadad.exe --nemesis`
+reads `beats=7/7 mask=127`, Tarn Wrenhale rising through the same three defeats, and
+`test_nemesis` was re-read and unchanged.
+
+**The population baseline is therefore re-blessed at `0xF493AF6F939D52D3` with one declared
+leg behind it.** The next two legs -- (b) STREET BODIES (a hittable `WardActor` combat sheet,
+the player swing over `people_`, the murder-law path) and (c) THE WATCH (MilitiaWatch `Pursue`
++ arrest through the hearing seam) -- move it again, each declared and re-blessed the same way,
+on the same branch.
+
+Proved by `native/tests/test_street_panic.cpp` (the split by type, the away-vector, the pinned
+panic length, the twin run), gated on the tree whose GATE-STAMP names it (`native/` digest
+`dc56c116a6865b70ca6b4adedb9c5a3ce7ea3d0eb5d20266bbd939b3841af8ca`, ctest cases 1249, 317
+files; `verify-windows.ps1` PASS -- content 71 cases / 902,135 assertions and sim 1168 cases /
+2,164,336 assertions under mingw, content-fingerprint and world-hash reports byte-identical
+linux/gcc vs mingw/windows, the stamp naming this tree), and photographed through the real
+`--street-assault` verb (`docs/frames/street/`).
+
+---
+
+## STREET SENSES leg (b) -- a body to hit (2026-09-11)
+
+The second leg of the same consented move (DECISIONS.md "Street senses, leg (b)"). The gap
+analysis' first finding was that the street had no body to hit: the sightline raycast walked
+the seventeen-body tavern roster only, and a `WardActor` carried no hit points, no floor and
+no death by violence. **Leg (b) MOVES this number for real, and the second time.**
+
+What changed the number, all hashed `WardActor` fields and behaviour:
+
+1. **The combat sheet**, appended to `hash_into`: `hp` (kActorHealth, the Gull's twenty-four),
+   `downedUntil` reused as the brawl floor, `slain` (dead by violence, which also sets `dead`),
+   `fightUntil` and `swingSeq` for a body that swings back.
+2. **`WardPolicy::Brawl = 8`**, appended (the Cower precedent): a struck sailor or thief
+   closing on the pushed player and swinging, one draw per swing on his own key and sequence
+   (`context.draw(id ^ 'SWNG', swingSeq)`) -- the Gull's `npcSwingSeq_` shape, no new stream.
+3. **`sightlineTarget`** on the ward roster: VETO 1's integer projection, line for line, over
+   standing persons on the player's band; `applyStreetBlow`: the floor (six seconds, up at a
+   quarter through `standUp`), the death, the rout (the leg (a) flee plan at the Kill floor),
+   the fight-back, and the crowd alarmed at the tile. The swing itself is the room's
+   (`Tavern::playerAttackUpStreet`, the same head as the roster swing through
+   `armPlayerSwing`, the same one `drawForPlayerAction`, `strike()`, `classifyFight`, the
+   murder law with the street's witness count) -- the tavern roster is never touched.
+
+And the **violence leg in the gate** grew its blow: the `StreetAssaultDriver` now strikes the
+docker it found -- `strike()` on his sheet, a fist a tick on the driver's own system salt,
+until he drops -- then leaves him to lie his six seconds and stand, so the compared report
+shows `downed=` rise and fall, with `brawl=` and `slain=` beside it.
+
+```
+at branch lane/street (STREET SENSES leg (b)),
+granadad-twin-gate --population --population-hour 16 --ticks 7200, 96 walkers
+COMBINED WORLD HASH: 0xF493AF6F939D52D3 -> 0xED0CA90E26DB0F5B      <- DECLARED and RE-BLESSED
+```
+
+Recorded directly from `dist\granadad-twin-gate.exe --population --population-hour 16
+--ticks 7200` on Windows/mingw, **two invocations**, each `run A` == `run B` ==
+`0xED0CA90E26DB0F5B`, report text byte-identical at **21,746 bytes** in all runs (up from leg
+(a)'s 19,947: the driver's blow count and the three new report fields). On Linux/GCC the same
+gate ran green in the Docker build (ctest `granadad-twin-run-gate-population` PASSED, `run A`
+== `run B`).
+
+The tavern/gate-workload twin on the same exe is UNMOVED: `--tavern --ticks 900`, `run A` ==
+`run B` == `0x837E94019BC49C25`, two invocations (3,153 bytes). `armPlayerSwing` is a pure
+factoring of the roster swing (the same operations in the same order), `playerAttackUpStreet`,
+`takeStreetBlow` and `playerSightlineAlong` are never called by the tavern workload, and the
+lull's intent reset is a no-op where the disengage already ran. The nemesis arc is untouched:
+`granadad.exe --nemesis` reads `beats=7/7 mask=127`; `test_nemesis` re-read.
+
+**The population baseline is therefore re-blessed at `0xED0CA90E26DB0F5B` with two declared
+legs behind it.** Leg (c) THE WATCH moves it a third time, declared and re-blessed the same way.
+
+Proved by `native/tests/test_street_bodies.cpp` (the street's ray against the spec's
+projection computed independently; a struck docker down and up; a struck serf routing deeper
+than a bystander and a struck sailor swinging back; a landed street blow scattering the crowd
+in sight; a blow thrown at the player landing through the Gull's own player-side rules; a
+street kill as murder with the witnesses counted, through the client's own attack path; the
+twin run under street blows), gated on the tree whose GATE-STAMP names it (`native/` digest
+`8d54a6a95cc3f42d96855f4496e784c7ce7d09b3197196bbda560d2992ab2b0c`, ctest cases 1256, 318
+files; `verify-windows.ps1` PASS -- content 71 cases / 902,135 assertions and sim 1175 cases /
+2,165,602 assertions under mingw, content-fingerprint and world-hash reports byte-identical
+linux/gcc vs mingw/windows, the stamp naming this tree), and photographed through the real
+`--street-assault=blow|down|up|kill|hearing` verbs (`docs/frames/street/`).
+
+---
+
+## STREET SENSES leg (c) -- the Watch on the beats gets eyes (2026-09-12)
+
+The third and last leg of the consented move (DECISIONS.md "Street senses, leg (c)"). The gap
+analysis' third finding: "THE STREET WATCH IS SCENERY. Thirteen MilitiaWatch WardActors by day
+and seven by night walk beats with no eyes." **Leg (c) MOVES this number for real, the third
+time.**
+
+What changed the number, all in `WardPopulation`:
+
+1. **`WardPolicy::Close = 9`**, appended (the Brawl precedent): a watchman with cause and a
+   clock (`closingUntil`, `closeCause`, `sheatheBy`, all hashed) walks the player down, priced
+   under Brawl (a blow on him makes him a brawler -- `wardTypeFightsBack` now includes
+   MilitiaWatch -- and he fights rather than arrests) and over everything else.
+2. **`alarm()` stopped skipping the Watch outright.** A watchman is now given cause by the same
+   three-clause notice rule everybody else's fright already reads (own sight range, line of
+   sight, never for a presented Wielder), closes, and arrests at reach through the ONE seam the
+   Gull's Cull uses (`Tavern::arrestByStreetWatch` -> the new shared `arrestPlayer`, factored out
+   of `applyArrest` -- one charge sheet, two officers). Steel alone is a DEMAND first
+   (`kSheatheGraceSeconds` 6s), an ignored one an Offence (`kSheatheOffenceHeat` 10, no arrest by
+   itself) -- D5.
+3. **A house's own brawl is not street business.** The gap analysis' own bar-fight rule
+   ("a brawl-class fist fight is the house's law... the Watch has no cause in it") only ever
+   existed for Watchman Cull's separate, already-nuanced watch. Once the street Watch stopped
+   being skipped, `Session::step()`'s PRE-EXISTING per-step alarm (leg (a): room HP falling
+   under an escalated fight, unconditional on indoor/outdoor since it shipped) started reaching
+   a street watchman through the Gull's own open door -- the owner's rule ("a killing at the bar
+   reaches the Tarwalk only through the door") the crowd already leans on, now also read by a
+   beat cop with no jurisdiction over a sanctioned house brawl. Found by
+   `test_scripted_lines.cpp`'s nemesis line (a fresh regression on every one of six walk-length
+   timelines it had held before this leg): a watchman closed on the player mid-brawl and
+   arrested at reach, clearing the room's brawl roster and stalling the arc at its third win,
+   every time. **`onWalkingGround` was tried first and does not help at all -- the Gull's own
+   floor tiles answer yes to it exactly as the street does.** The fix is a fourth hashed field,
+   `playerIndoors_` (`WardPopulation::setPlayerIndoors`, pushed from `Session::step` off
+   `Tavern::playerInside()`, the deference flag's own shape): while true, no watchman is ever
+   given cause, and one already closing stands down -- the ordinary crowd's own door-leak panic
+   (leg a/b, untested and unmoved by this) is completely unaffected, because only the Watch
+   branch reads it.
+4. **The client** (`Session::attackUp`) says the halt, the demand and the offence off the new
+   `content/raws/barks/street_barks.json` (four keys: `street.halt`, `street.sheathe`,
+   `street.offence`, `street.routed`), falling through to the Gull's own `watch.*` rows until
+   each key is authored -- it already is. A struck body that is not a fighter and not the Watch
+   now says `street.routed` once, the moment it is struck and still standing.
+
+```
+at branch lane/street (STREET SENSES leg (c)),
+granadad-twin-gate --population --population-hour 16 --ticks 7200, 96 walkers
+COMBINED WORLD HASH: 0xED0CA90E26DB0F5B -> 0xDD3890042DD2B472      <- DECLARED and RE-BLESSED
+```
+
+Recorded directly from `dist\granadad-twin-gate.exe --population --population-hour 16
+--ticks 7200` on Windows/mingw, **two invocations**, each `run A` == `run B` ==
+`0xDD3890042DD2B472`, report text byte-identical at **22,320 bytes** in all runs (up from leg
+(b)'s 21,746: the Watch's own closing/cause/sheathe state, hashed). On Linux/GCC the same gate
+ran green in the Docker build (ctest `granadad-twin-run-gate-population` PASSED, `run A` ==
+`run B`).
+
+The tavern/gate-workload twin on the same exe is UNMOVED: `--tavern --ticks 900`, `run A` ==
+`run B` == `0x837E94019BC49C25`, two invocations (3,153 bytes) -- leg (c) touched no hashed
+tavern field (`arrestPlayer` is a pure factoring of `applyArrest`'s own body, same operations,
+same order; the tavern workload has no player and never calls it). The nemesis arc, the very
+thing this leg nearly broke, is the sharpest proof available that it did not:
+`granadad.exe --nemesis` (via `--smoke=N --nemesis`, all six of the README's own walk lengths,
+0/40/50/80/100/120) reads `beats=7/7 mask=127` on every one, `Tarn Wrenhale x3`, `Foreman of The
+Ropewalk Gang (7 members, toll 6%) holds THE GULLET` -- the exact leg (b) baseline, re-read
+clean.
+
+**The population baseline is therefore re-blessed at `0xDD3890042DD2B472` with all three
+declared legs behind it.** Street senses is complete.
+
+Proved by `native/tests/test_street_watch.cpp` (a watchman who sees a blow closes, halts, and
+arrests at reach through the Gull's own seam; steel is a demand with a grace and only an
+ignored one becomes an offence, never an arrest by itself; a presented Wielder is never given
+cause and standing one down stands every closing watchman down; the population twin-runs
+byte-identical under all three), gated on the tree whose GATE-STAMP names it (`native/` digest
+`f5115d84289d76430fc78e1a5bfde7ee79ab506c29c298243ea490cbe63f740b`, ctest cases 1260, 319
+files; `verify-windows.ps1` PASS -- content 71 cases / 902,135 assertions and sim 1179 cases /
+2,167,264 assertions under mingw, content-fingerprint and world-hash reports byte-identical
+linux/gcc vs mingw/windows, the stamp naming this tree), and photographed through the real
+`--street-assault=watch-halt|watch-sheathe|watch-offence` verbs and the leg (b) `blow` ending
+re-shot under this tree (`docs/frames/street/`).

@@ -817,6 +817,21 @@ if(GRANADAD_BUILD_TESTS)
         # twin-run byte-identical after an alarm -- the one declared
         # population baseline move of the Oblivion-feel program.
         tests/test_street_panic.cpp
+        # STREET SENSES leg (b) -- A BODY TO HIT. The street's ray is the
+        # Gull's ray (the same integer projection, computed independently);
+        # a struck docker goes down and gets up; a struck sailor swings back
+        # and a struck serf routs; a street blow scatters the crowd; a street
+        # kill is murder with the witnesses counted, through the client's
+        # own attack path; the population twin-runs byte-identical under it.
+        tests/test_street_bodies.cpp
+        # STREET SENSES leg (c) -- THE WATCH ON THE BEATS GETS EYES. A
+        # watchman who sees a blow closes on it and arrests at reach through
+        # the Gull's own seam; steel alone is a demand with a grace, and only
+        # an ignored one becomes an offence, never an arrest by itself; a
+        # presented Wielder is never given cause and standing one down stands
+        # every closing watchman down; the population twin-runs
+        # byte-identical under all three.
+        tests/test_street_watch.cpp
         # #80 -- THE ORIGIN-SELECT AND CUSTOMIZE FLOW. Three cards, a name
         # field, and a real sim::Chargen sheet hosted rather than reinvented
         # -- see creation.hpp's own header on why this reuses

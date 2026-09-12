@@ -1171,6 +1171,10 @@ public:
     /// can never name two different men. Empty when no corpse of the
     /// player's is on the roster. Pure, no draw, reads hashed state only.
     [[nodiscard]] std::string slainName() const;
+    /// STREET SENSES leg (b). Whether the corpse the blood is for lies on the
+    /// STREET (a ward body, Deed::Slew under kWardSpeakerIdBase) rather than
+    /// on this room's boards -- so the reading says where. Pure, no draw.
+    [[nodiscard]] bool slainOnStreet() const noexcept;
 
     /// Which day of the world this is. Monotonic across midnight and across a
     /// night in a cell, because a deadline that wrapped with the wall clock
@@ -1427,6 +1431,12 @@ public:
         bool hard = false;
         bool refused = false;
         bool killed = false;
+        /// STREET SENSES leg (b): the swing landed on the OTHER roster
+        /// (playerAttackUpStreet) -- targetId is a ward id, not a roster id.
+        bool street = false;
+        /// And the class the blow resolved under, for the caller that applies
+        /// it to the street body (Lethal kills; Brawl floors).
+        bool lethal = false;
         /// WATCH & RHYTHM BUILD: the target's guard caught it (blow.blocked),
         /// and what that cost -- a normal swing recoiled the player's arm, a
         /// hard swing broke the guard and staggered the man; a hit inside his
@@ -1452,6 +1462,56 @@ public:
     /// paid. A hard swing while winded is REFUSED (a refusal in the result, no
     /// cost). Returns to RECOVERY. A release outside CHARGING is a no-op result.
     PlayerSwingResult playerAttackUp();
+    /// STREET SENSES leg (b). THE SWING, ON A STREET BODY -- ONE RULE, TWO
+    /// ROSTERS. The client cast the street's ray with the same integer
+    /// projection (WardPopulation::sightlineTarget), found a body nearer along
+    /// it than anybody on this roster (playerSightlineAlong), and hands in its
+    /// sheet as a Fighter (kActorHealth, Fists, Subdue) with the witnesses the
+    /// street counted (WardPopulation::witnessesInSight, before the blow). The
+    /// head of the swing is playerAttackUp's exactly (armPlayerSwing: the
+    /// charge tier, the winded refusal, the recovery, the wind), the ONE roll
+    /// is drawForPlayerAction at the same stream position the roster swing
+    /// would have spent it, strike() resolves it on the sheet, classifyFight
+    /// with this fighter in the fight picks the rules (the Subdue floor and
+    /// the Lethal rules unchanged), intent-by-verb applies, the deed lands on
+    /// the social ledger under kWardSpeakerIdBase + wardId, the offence is
+    /// reported, and a KILLING (lethal, downed, not crowned) goes through the
+    /// murder law: Deed::Slew, and CrimeLedger::markMurderer(witnesses) when
+    /// anybody saw. `sheet.hp` comes back as what strike() left; the caller
+    /// applies it to the WardActor (WardPopulation::applyStreetBlow). The
+    /// tavern roster is never touched -- one person, one roster. `targetId`
+    /// in the result is the WARD id and `street` is set.
+    PlayerSwingResult playerAttackUpStreet(Fighter& sheet, std::int32_t wardId,
+                                           std::string_view name, std::int32_t witnesses);
+    /// STREET SENSES leg (b). The `along` (Q8, down the look-ray) of the body
+    /// on the line on THIS roster, or -1 for an empty line -- so the client can
+    /// pick the nearer of the Gull's target and the street's. Draw-free.
+    [[nodiscard]] std::int64_t playerSightlineAlong() const noexcept;
+    /// STREET SENSES leg (b). A BLOW THROWN AT THE PLAYER by a street body,
+    /// landed on the player's sheet through the Gull's own player-side rules
+    /// (stepBrawl's landing, in one place): strike() with the thrower's own
+    /// roll, the HARD band carved off it (kNpcHardBand256, the same bits an
+    /// NPC swing reads), the held guard softening it (blockedDamage, the
+    /// shieldwall use, the catch wind, a hard swing breaking the guard), the
+    /// floor by class (classifyFight over the player and this fighter -- a
+    /// fists-and-Subdue sailor is a brawl, the player's own steel or intent
+    /// flips it), the hands up, and the defeat seam (applyDefeat with no
+    /// roster winner: floored, the quay revive, NO rise -- a street winner's
+    /// nemesis rise is ceiling, the book keys on the roster). The client has
+    /// already checked reach. Returns whether it landed.
+    bool takeStreetBlow(const Fighter& attacker, std::uint64_t roll);
+    /// STREET SENSES leg (c). A WATCHMAN ON THE BEATS TOOK YOU AT REACH, with a
+    /// blow or a killing behind it (WardPopulation's Close, landed by the
+    /// client): the SAME seam the Gull's Cull uses -- arrestPlayer, cause
+    /// VIOLENCE -- so the charge, the seizure, the paperless fine or the
+    /// hearing (TAKEN TO THE MISSION, the page), the lost contracts and the
+    /// release are one path with two officers. Refused (nothing written) with
+    /// a hearing already open or after the rope.
+    void arrestByStreetWatch(std::string_view officerName);
+    /// STREET SENSES leg (c). D5: an unsheathed blade with no blow, past the
+    /// street Watch's grace, is an OFFENCE -- kSheatheOffenceHeat on the heat
+    /// the Watch keeps, no paper and no arrest by itself.
+    void noteStreetOffence();
     /// Drops a charge with no swing and no cost -- what a cast, a page, a
     /// conversation or a pick does to a raised hand. IDLE and RECOVERY are
     /// untouched. Idempotent.
@@ -1857,6 +1917,12 @@ private:
     [[nodiscard]] bool canSeePlayer(const Actor& actor) const noexcept;
     /// The Watch puts its hands on you. One call site.
     void applyArrest(Actor& officer);
+    /// STREET SENSES leg (c). THE BODY OF THE ARREST, shared by the Gull's
+    /// officer (applyArrest) and the street's (arrestByStreetWatch): the
+    /// charge sheet, the one draw, the paperless fine or the seizure and the
+    /// hearing, the lost contracts, the officer's line, the room's resets,
+    /// and the release the client takes the body on. One seam, two officers.
+    void arrestPlayer(std::string_view officerName, WatchCause cause);
     /// The nearest downed vermin within reach, or nullptr.
     [[nodiscard]] Actor* downedVerminInReach() noexcept;
     /// The nearest rat on its feet within reach, or nullptr.
@@ -1917,6 +1983,16 @@ private:
     /// deeds. `recoiled` / `staggered` report which rule fired.
     Blow landPlayerBlow(Actor& target, bool hard, std::int32_t bonus, std::int32_t swingTerm,
                         std::int32_t chargeQ8, bool& recoiled, bool& staggered);
+    /// STREET SENSES leg (b). THE HEAD OF EVERY PLAYER SWING, in one place so
+    /// the roster swing and the street swing share ONE charge tier, ONE winded
+    /// refusal, ONE recovery and ONE wind cost: from CHARGING, read the tier,
+    /// refuse a hard swing while winded (result.refused, nothing thrown),
+    /// enter recovery, mark the swing committed, raise the hands, read the
+    /// fatigue term and pay the wind. Fills `chargeQ8` and `swingTerm` for the
+    /// strike. Returns false with `result` filled when nothing is thrown (a
+    /// release with no charge, or the refusal).
+    bool armPlayerSwing(PlayerSwingResult& result, std::int32_t& chargeQ8,
+                        std::int32_t& swingTerm);
     /// PATRONS STAND BACK, fired once on the escalation edge (noteEscalation):
     /// every present non-brawler who is not a professional and is within
     /// kStandBackRadiusTiles of the player is sent kStandBackTiles tiles

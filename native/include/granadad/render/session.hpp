@@ -3495,6 +3495,21 @@ struct SmokeRunConfig {
     /// arc, the arrest line on the row).
     bool watchHalt = false;
     std::string watchHaltEnd = "street";
+    /// STREET SENSES (9a completion). PROOF. Stand in a crowd on the Tarwalk
+    /// and raise STEEL -- an Edged weapon in the hand, the hands up, no blow --
+    /// the stance the ward reads as violence (Tavern::violenceInView), so the
+    /// crowd within the blade's radius and line of sight gives him room: serfs
+    /// flee, shopkeepers and priests cower. The drive finds the densest
+    /// Tarwalk spot the hour offers (deterministic, ascending id) and stands
+    /// the player one tile off it, facing in; the SETTLE window then does the
+    /// scattering, so `--street-assault --shot=F.png --settle-steps=N` shoots
+    /// the crowd N sim-steps into the panic (N=0 the blade just up, N=180
+    /// three flee ticks, N=360 scattered). Nothing here reaches into the sim
+    /// sideways -- setPlayerCombat and setBlocking are the same calls the
+    /// weapon grant and the right mouse button make; the alarm fires through
+    /// Session::step's own one call site. WHERE is reserved (unused today).
+    bool streetAssault = false;
+    std::string streetAssaultWhere;
     /// JUSTICE BUILD (HEARING PAGE LANE). Play the court: walk into the Gull
     /// at Cull's hour, lift in his sight until the row reads WANTED, stand
     /// still with steel up until he takes you at reach -- his own line on
@@ -4083,6 +4098,14 @@ struct CaseWatchDrive {
 /// evidence for "a dockhand and a watchman do not sound alike" is a key and a
 /// sentence, not a screenshot.
 StreetLineResult runStreetLine(Session& session, const std::string& who, int topic);
+
+/// STREET SENSES (9a completion). PROOF. Stands the player in the densest
+/// crowd on the Tarwalk and raises steel (an Edged weapon, hands up, no blow),
+/// so the SETTLE window that follows scatters the street. See
+/// SmokeRunConfig::streetAssault. `found` is whether a crowd tile was found;
+/// `actorId` the body the player was stood beside. Exposed for runStreetLine's
+/// reason: a case can drive it and read the ward's Safety directly.
+StreetLineResult runStreetAssault(Session& session, const std::string& where);
 
 /// TIME-AND-TENURE BUILD. Plays the leasehold petition end to end -- see
 /// SmokeRunConfig::petition. Exposed for exactly runStreetLine's reason: the

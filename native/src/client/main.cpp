@@ -1013,6 +1013,19 @@ void print_usage() {
         "  --watch-halt[=WHERE] draw steel in the Gull in Watchman Cull's sight\n"
         "                       and stand there: the halt, the arrest at reach,\n"
         "                       the street. WHERE is halt or street\n"
+        "  --street-assault[=WHERE]\n"
+        "                       stand in the crowd on the Tarwalk at 16:00.\n"
+        "                       WHERE empty: raise steel, the street scatters\n"
+        "                       (pair with --settle-steps=N, 0/180/360). blow: a\n"
+        "                       fist lands on a docker. down: taps until he is on\n"
+        "                       the floor. up: and six seconds on, back on his\n"
+        "                       feet, bloodied, running. kill: steel, hard swings,\n"
+        "                       a corpse and WANTED FOR BLOOD. hearing: the\n"
+        "                       killing, then Cull at ten, the rope hearing page\n"
+        "                       reading the street's own witness count. watch-halt:\n"
+        "                       a fist within a watchman's sight, HALT on his own\n"
+        "                       row. watch-sheathe: steel within his sight, SHEATHE\n"
+        "                       IT. watch-offence: the same held past its grace\n"
         "  --court[=WHERE]      lift in Cull's sight until WANTED, be taken to the\n"
         "                       Mission's bench. WHERE is wanted, cull (his line, his\n"
         "                       hand on you), taken (the plate), page, paper, armed,\n"
@@ -1471,6 +1484,14 @@ void print_usage() {
         } else if (starts_with(arg, "--watch-halt=", &value)) {
             options.smoke.watchHalt = true;
             options.smoke.watchHaltEnd = value;
+        } else if (std::strcmp(arg, "--street-assault") == 0) {
+            // STREET SENSES (9a completion). See SmokeRunConfig::streetAssault.
+            options.smoke.streetAssault = true;
+            options.wantsSmoke = true;
+        } else if (starts_with(arg, "--street-assault=", &value)) {
+            options.smoke.streetAssault = true;
+            options.smoke.streetAssaultWhere = value;
+            options.wantsSmoke = true;
         } else if (std::strcmp(arg, "--court") == 0) {
             // JUSTICE BUILD (HEARING PAGE LANE). See SmokeRunConfig::court.
             options.smoke.court = true;
