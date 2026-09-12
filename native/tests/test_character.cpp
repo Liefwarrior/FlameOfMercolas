@@ -421,8 +421,10 @@ TEST_CASE("ENTER on a carried row wears it or bares it; on a sheet row it does n
     CHECK(session.lastMessage() == "THE ROPE IS NOT WORN.");
     // A sheet row is something to read. Back to row zero exactly, by the
     // cursor's own count rather than a magic constant that would drift
-    // every time the sheet's own row count does.
-    session.moveTopicCursor(-session.topicCursor());
+    // every time the sheet's own row count does. dialogueView().cursor,
+    // not topicCursor() -- the character tile keeps its own cursor
+    // (characterCursor_), and topicCursor_ is a different field entirely.
+    session.moveTopicCursor(-session.dialogueView().cursor);
     CHECK_FALSE(session.highlightedKitRow().has_value());
     const std::string before = session.lastMessage();
     session.chooseTopic(0);
