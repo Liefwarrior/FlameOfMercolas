@@ -36,7 +36,9 @@
 #include "granadad/render/session.hpp"
 #include "granadad/sim/dialogue.hpp"
 #include "granadad/sim/faction.hpp"
+#include "granadad/sim/brawl.hpp"
 #include "granadad/sim/legend.hpp"
+#include "granadad/sim/social.hpp"
 
 using namespace granadad::sim;
 namespace content = granadad::content;
@@ -101,20 +103,22 @@ TEST_CASE("a man who arrived this morning reads NOBODY IN PARTICULAR, not a blan
     CHECK(view.epithet == std::string(kReputationUnremarkable));
 }
 
-TEST_CASE("the character sheet lists all five Legend tracks and the four skills this build levels") {
+TEST_CASE("the character sheet lists all five Legend tracks, the skills the track has moved, and the four attributes") {
     render::Session session = standing();
     session.toggleCharacter();
     REQUIRE(session.characterOpen());
 
     const std::vector<std::string> rows = session.characterRows();
-    // Five tracks, four wired skills, five faction ladders, and
-    // REPUTATION/COIN/HEAT -- seventeen rows, fixed, because the simulation
-    // has exactly this much to say about a player and no item system to pad
-    // it with. See toggleCharacter's own header on why the fifth track's
-    // neighbours are not sixteen more skill rows: the raws carry them,
-    // nothing in this build levels them yet, and a wall of LV 0 would claim
-    // the game is watching a skill it is not.
-    REQUIRE(rows.size() == kLegendTracks + 4 + 5 + 3);
+    // Five tracks, the four always-shown skills (a fresh arrival has moved
+    // none), the four attributes, five faction ladders, and
+    // REPUTATION/COIN/HEAT -- twenty-one rows, fixed, because the simulation
+    // has exactly this much to say about a fresh player and no item system
+    // to pad it with. THE HONEST SHEET (PULL PACK): the skill rows come off
+    // the SkillTrack itself now -- any skill with a level above zero or uses
+    // banked toward one prints, and the sixteen a verb has never touched
+    // stay off, so a wall of LV 0 still cannot claim the game is watching a
+    // skill it is not.
+    REQUIRE(rows.size() == kLegendTracks + 4 + kAttributeCount + 5 + 3);
 
     // THE FIVE TRACKS, IN legend.hpp's OWN ORDER -- Wire, Roofs, Flame, Trade,
     // Law -- each a short name and a rung title, "THE " dropped off the front
@@ -137,17 +141,24 @@ TEST_CASE("the character sheet lists all five Legend tracks and the four skills 
         CHECK(rows[i].find(firstRung) != std::string::npos);
     }
 
-    // THE FOUR SKILLS A VERB IN THIS BUILD ACTUALLY LEVELS, each at LV 0 for a
-    // fresh arrival -- streetlevel, not raws-vocabulary. See sim::kRoofSkill,
-    // kThieverySkill, kHaggleSkill (social.hpp) and kCraftingSkill
-    // (spellforge.hpp): the only four call sites in this build that ever call
-    // SkillTrack::use.
-    CHECK(rows[5].rfind("SKYRUNNING", 0) == 0);
-    CHECK(rows[6].rfind("CRACKSMANSHIP", 0) == 0);
-    CHECK(rows[7].rfind("STREETWISE", 0) == 0);
-    CHECK(rows[8].rfind("LINKCRAFT", 0) == 0);
-    for (std::size_t i = 5; i < 9; ++i) {
-        CHECK(rows[i].find("LV 0") != std::string::npos);
+    // THE FOUR SKILLS THE SHEET ALWAYS SHOWS, each at LV 0 for a fresh
+    // arrival, in the track's own id order (ascending, the raws' discipline)
+    // -- and BARE: what the next level costs prints once a skill has moved
+    // (see the case below), so a fresh sheet's rows stay whole in the
+    // narrowest tile the game draws.
+    CHECK(rows[5] == "CRACKSMANSHIP LV 0");
+    CHECK(rows[6] == "LINKCRAFT LV 0");
+    CHECK(rows[7] == "SKYRUNNING LV 0");
+    CHECK(rows[8] == "STREETWISE LV 0");
+
+    // THE FOUR ATTRIBUTES, with no held delta on a fresh sheet: the chargen
+    // base and the effective read agree, so the row is the bare number.
+    CHECK(rows[9].rfind("MGT ", 0) == 0);
+    CHECK(rows[10].rfind("AGI ", 0) == 0);
+    CHECK(rows[11].rfind("VIG ", 0) == 0);
+    CHECK(rows[12].rfind("WIT ", 0) == 0);
+    for (std::size_t i = 9; i < 13; ++i) {
+        CHECK(rows[i].find("(") == std::string::npos);
     }
 
     // THE FIVE LADDERS, WITH THE NUMBERS ON -- the owner's ruling for this
@@ -158,25 +169,67 @@ TEST_CASE("the character sheet lists all five Legend tracks and the four skills 
     // arrival is on no roll, so every row reads its JOIN cost -- the first
     // rung is earned exactly like every later one, and ranks.json prices
     // them at 8/10/8/10/10 standing.
-    CHECK(rows[9].rfind("DOCKHANDS", 0) == 0);
-    CHECK(rows[10].rfind("MERCHANTS", 0) == 0);
-    CHECK(rows[11].rfind("SKYRUNNERS", 0) == 0);
-    CHECK(rows[12].rfind("TEMPLE", 0) == 0);
-    CHECK(rows[13].rfind("WATCH", 0) == 0);
-    for (std::size_t i = 9; i < 14; ++i) {
+    CHECK(rows[13].rfind("DOCKHANDS", 0) == 0);
+    CHECK(rows[14].rfind("MERCHANTS", 0) == 0);
+    CHECK(rows[15].rfind("SKYRUNNERS", 0) == 0);
+    CHECK(rows[16].rfind("TEMPLE", 0) == 0);
+    CHECK(rows[17].rfind("WATCH", 0) == 0);
+    for (std::size_t i = 13; i < 18; ++i) {
         CHECK(rows[i].find(" 0  JOIN ") != std::string::npos);
     }
-    CHECK(rows[11].find("JOIN 8") != std::string::npos);
-    CHECK(rows[13].find("JOIN 10") != std::string::npos);
+    CHECK(rows[15].find("JOIN 8") != std::string::npos);
+    CHECK(rows[17].find("JOIN 10") != std::string::npos);
 
     // AND WHAT THE WARD AND THE PURSE SAY, always present -- see
     // characterRows' own comment on why a sheet opened on purpose prints a
     // zero rather than dropping the row the way the ambient HUD would.
-    CHECK(rows[14].rfind("REPUTATION", 0) == 0);
-    CHECK(rows[14].find("NOBODY IN PARTICULAR") != std::string::npos);
-    CHECK(rows[15].rfind("COIN", 0) == 0);
-    CHECK(rows[16].rfind("HEAT", 0) == 0);
-    CHECK(rows[16].find("HEAT  0") != std::string::npos);
+    CHECK(rows[18].rfind("REPUTATION", 0) == 0);
+    CHECK(rows[18].find("NOBODY IN PARTICULAR") != std::string::npos);
+    CHECK(rows[19].rfind("COIN", 0) == 0);
+    CHECK(rows[20].rfind("HEAT", 0) == 0);
+    CHECK(rows[20].find("HEAT  0") != std::string::npos);
+}
+
+TEST_CASE("a skill the world has moved appears on the sheet, and a held tuning shows beside the attribute") {
+    // THE HONEST SHEET (PULL PACK). The old sheet was a hand-typed table of
+    // four while the combat build trained shieldwall on every softened blow
+    // and the scalp skill on a take -- two lived skills that never printed.
+    // Now the rows come off the track: one use of shieldwall banks toward
+    // its first level and the row appears, NEXT counting down what is still
+    // owed; a level reads LV n.
+    render::Session session = standing();
+    SkillTrack& skills = session.tavern().dialogue().skills();
+    REQUIRE(skills.find(kBlockSkill) != nullptr);
+    const auto rowFor = [&](std::string_view name) -> std::string {
+        for (const std::string& row : session.characterRows()) {
+            if (row.rfind(name, 0) == 0) {
+                return row;
+            }
+        }
+        return {};
+    };
+    CHECK(rowFor("SHIELDWALL").empty());
+    (void)skills.use(kBlockSkill);
+    const std::string banked = rowFor("SHIELDWALL");
+    INFO("row: ", banked);
+    REQUIRE_FALSE(banked.empty());
+    // "SHIELDWALL LV 0  4 TO NEXT": uses, not standing, so it cannot be read
+    // as the ladders' own NEXT price -- off scaledUsesForLevel (NEGLECTED, 4
+    // x 320 / 256 = 5) less the one banked.
+    CHECK(banked == "SHIELDWALL LV 0  " +
+                        std::to_string(skills.scaledUsesForLevel(kBlockSkill, 0) - 1) + " TO NEXT");
+    while (!skills.use(kBlockSkill)) {
+    }
+    CHECK(rowFor("SHIELDWALL").rfind("SHIELDWALL LV 1  ", 0) == 0);
+    CHECK(rowFor("SHIELDWALL").find(" TO NEXT") != std::string::npos);
+    // The always-shown four stay bare until they move.
+    CHECK(rowFor("SKYRUNNING") == "SKYRUNNING LV 0");
+    // Every skill row still reads as a sentence the font can draw.
+    for (const std::string& row : session.characterRows()) {
+        for (const char c : row) {
+            CHECK(render::isDrawableGlyph(c));
+        }
+    }
 }
 
 TEST_CASE("a joined ladder's sheet row carries the rank title, the standing number and the next rung's price") {
@@ -194,7 +247,7 @@ TEST_CASE("a joined ladder's sheet row carries the rank title, the standing numb
 
     session.toggleCharacter();
     const std::vector<std::string> rows = session.characterRows();
-    const std::string& row = rows[11];
+    const std::string& row = rows[15];
     INFO("row: ", row);
     CHECK(row.rfind("SKYRUNNERS TENANT", 0) == 0);
     // The standing number itself: 40 granted, minus whatever the join and the
@@ -209,13 +262,12 @@ TEST_CASE("the sheet grows an IN HAND row the moment the world arms you, and not
     // UI-REFERENCE-TERMINAL.md) lands here the day something is actually in
     // the player's hand -- and ONLY that day. This build has no item system,
     // so an empty-handed sheet printing IN HAND FISTS would claim an
-    // equipment model nothing simulates; seventeen rows stays the bare
-    // truth, eighteen the armed one. Page arithmetic holds: page two carried
-    // eight rows bare against kTopicPageSize nine, so the new row turns no
-    // page anybody has to go looking for.
+    // equipment model nothing simulates; twenty-one rows stays the bare
+    // truth (the honest sheet's count for a fresh arrival), twenty-two the
+    // armed one.
     render::Session session = standing();
     const std::vector<std::string> bare = session.characterRows();
-    REQUIRE(bare.size() == 17);
+    REQUIRE(bare.size() == 21);
     for (const std::string& row : bare) {
         CHECK(row.rfind("IN HAND", 0) != 0);
     }
@@ -224,15 +276,15 @@ TEST_CASE("the sheet grows an IN HAND row the moment the world arms you, and not
     // authored id -- see Tavern::grantPlayerWeapon.
     REQUIRE(session.tavern().grantPlayerWeapon(kEvictorWeaponId));
     const std::vector<std::string> armed = session.characterRows();
-    REQUIRE(armed.size() == 18);
+    REQUIRE(armed.size() == 22);
     CHECK(armed.back() == "IN HAND  THE EVICTOR 7-9 IMPACT");
 }
 
-TEST_CASE("seventeen rows is two pages, and the character sheet turns like every other list here") {
+TEST_CASE("twenty-one rows is three pages, and the character sheet turns like every other list here") {
     render::Session session = standing();
     session.toggleCharacter();
     REQUIRE(session.characterOpen());
-    REQUIRE(session.characterRows().size() == 17);
+    REQUIRE(session.characterRows().size() == 21);
 
     render::DialogueViewState view = session.dialogueView();
     CHECK(view.page == 0);
@@ -249,7 +301,10 @@ TEST_CASE("seventeen rows is two pages, and the character sheet turns like every
     CHECK(render::topicPageOf(view.cursor) == view.page);
 
     // 0 -- the MORE key -- turns the page directly, same as F1 and the
-    // casebook.
+    // casebook: page two, then round to the first.
+    session.nextTopicPage();
+    view = session.dialogueView();
+    CHECK(view.page == 2);
     session.nextTopicPage();
     view = session.dialogueView();
     CHECK(view.page == 0);
@@ -257,7 +312,7 @@ TEST_CASE("seventeen rows is two pages, and the character sheet turns like every
     // The cursor wraps rather than stopping dead at either end.
     session.moveTopicCursor(-1);
     view = session.dialogueView();
-    CHECK(view.cursor == 16);
+    CHECK(view.cursor == 20);
 }
 
 TEST_CASE("a printed number moves the cursor on the character sheet and does nothing else") {

@@ -128,8 +128,15 @@ enum class CasebookTab : std::uint8_t {
     Leads = 0,
     /// The case itself: the hook, the ward's nerve, and the count.
     Case = 1,
+    /// THE PULL PACK: the CASES shelf -- every book the player has been
+    /// handed and every questline they have started, with where each stands,
+    /// and the commit that fronts one for the page. Oblivion's one
+    /// presentation contribution the reference doc itself endorses (the
+    /// Current/Completed split), and the switcher the code flagged as
+    /// missing twice.
+    Cases = 2,
 };
-inline constexpr int kCasebookTabCount = 2;
+inline constexpr int kCasebookTabCount = 3;
 
 /// Where a lead stands, for drawing. Mirrors sim::LeadState minus Unheard,
 /// which never reaches this page: an unheard lead is not in the book.
@@ -179,6 +186,46 @@ struct CasebookLeadRow {
     /// route to it. False makes the verb say so instead of offering a key that
     /// would do nothing.
     bool routable = false;
+    /// THE PULL PACK: this is the lead the compass carries -- the player's
+    /// own pick, or the newest-heard default standing in for one. The row
+    /// KEEPS its place word and wears the arrowhead motif before it, and
+    /// the badge reads ON THE COMPASS (its own words, not FOLLOWED's stem:
+    /// that one is the book's past tense, this is the street's present).
+    bool followed = false;
+    /// ...and this one the player PICKED (followed, and not by default). The
+    /// nav band's FOLLOW entry reads LET GO only here, because only here does
+    /// the press let go: on the default row the same press HOLDS the lead,
+    /// so the band says FOLLOW there and means it.
+    bool chosen = false;
+};
+
+/// THE PULL PACK: one row of the CASES shelf. Authored titles and formatted
+/// facts, nothing computed. ONLY WHAT IS IN HAND IS LISTED: a book the
+/// player has not been handed is counted in the badge ("1/3 IN HAND") and
+/// never named -- Oblivion's journal never lists an unstarted quest by
+/// name, and neither does this shelf.
+struct CasebookShelfRow {
+    /// "THE BLOODLETTER", "THE DISCIPLE'S OATH".
+    std::string title;
+    /// Where it stands, for the list's value column: "READ 4/9", "CLOSED",
+    /// "STAGE 2/6", "DONE".
+    std::string state;
+    /// The tally alone, for the fact block: "4/9", "ALL", "2/6", "6/6".
+    std::string tally;
+    /// The next thing, worded: an open lead's place, a stage's own label, or
+    /// the close line. Empty is worded by the drawing, never blank.
+    std::string next;
+    /// A book (frontable, followable) rather than a questline (read-only).
+    bool book = false;
+    /// Which book, as a render::CaseBookId ordinal, or -1 for a questline --
+    /// the commit and the FOLLOW verb address the book by this, never by the
+    /// row's position (a shelf that hides unhanded books is not indexed by
+    /// them).
+    int bookId = -1;
+    /// The book the page is reading.
+    bool fronted = false;
+    /// Holds the lead the compass carries.
+    bool followed = false;
 };
 
 /// Everything the page draws. A closed page draws nothing at all.
@@ -204,6 +251,19 @@ struct CasebookPageState {
     std::vector<CasebookLeadRow> rows;
     /// Index into `rows`. Never clamped here: the cursor belongs to the caller.
     int cursor = 0;
+
+    // --- the CASES shelf (THE PULL PACK) -----------------------------------
+    std::vector<CasebookShelfRow> shelf;
+    /// Index into `shelf`, the caller's own, never clamped here.
+    int shelfCursor = 0;
+    /// How many case files ship, for the badge's "1/3 IN HAND" -- the one
+    /// number here the player CAN know without the shelf naming what they
+    /// have not been handed.
+    int shelfBookTotal = 0;
+    /// The FOLLOW verb's key in the live device's vocabulary: "F" on a
+    /// keyboard (a raw page key, the map's own T precedent), the Attack
+    /// half's button on a pad (X). Empty prints no FOLLOW entry.
+    std::string followKey = "F";
 
     // --- the CASE view -----------------------------------------------------
     std::string hook;
@@ -310,6 +370,12 @@ struct CasebookPageMetrics {
 };
 [[nodiscard]] CasebookPageMetrics casebookPageMetrics(const CasebookPageState& state,
                                                       int frameWidth, int frameHeight);
+
+/// THE PULL PACK: what the nav band's F entry says for this state -- "LET
+/// GO" on a CHOSEN lead (the press lets it go), "FOLLOW" everywhere else
+/// (the press holds: a default-followed row included). One function, the
+/// band and a case both read it, so the word and the deed cannot part.
+[[nodiscard]] std::string_view casebookFollowVerb(const CasebookPageState& state) noexcept;
 
 /// Which lead a pixel of the master list lands on, or -1. The inverse of what
 /// was drawn, built out of the same walk -- see panel.hpp's optionListAt on why
