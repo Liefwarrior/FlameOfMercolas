@@ -2049,10 +2049,39 @@ void Session::selectQuickSlot(int slot) {
 
 void Session::showQuickBar() {
     // A couple of seconds past the last touch -- the strip is up exactly
-    // while the wheel or the number row is being used. The ease itself is
-    // quickBarAnim_'s business, driven in syncPanelAnim()/step() like every
-    // other row.
+    // while the wheel or the number row is being used. The countdown's own
+    // decay is quickBarAnim_'s business, driven in syncPanelAnim()/step()
+    // like every other row.
     quickBarShowSteps_ = kQuickBarShowSteps;
+    // KIT FIX PASS. A SLOT-JUST-CHANGED EVENT SNAPS THE STRIP OPEN, THE SAME
+    // WAY say() SNAPS message_ ON RATHER THAN LEAVING IT TO THE NEXT step().
+    //
+    // Before this, opening the strip from a dead stop (quickBarAnim_ never
+    // targeted true before -- true of the very first slot press in a fresh
+    // session) rode EasedToggle::setTarget's own "first tick free" bump
+    // (1/riseSteps_, an eighth) and NOTHING ELSE, because nothing here ever
+    // called advance() -- that only happens once a step(), and most callers
+    // of this function do not take one before the caller returns. A
+    // --settle-steps=0 capture right after a fresh selectQuickSlot() (see
+    // docs/frames/kit/kit-slot-960x540.png, the strip at a bare 0.125 fade)
+    // photographs exactly that one-eighth-open frame and calls it the
+    // feature's own showcase, which is a real defect even though a live
+    // player would never notice eight steps (~130ms) of ramp.
+    //
+    // snapTo(true) FROM A DEAD STOP ONLY -- value() <= 0 is exactly "never
+    // risen at all yet", the case that produced the illegible capture.
+    // Reopening while the strip is already up, or mid-decay after the last
+    // touch, is deliberately left alone: EasedToggle::setTarget's own
+    // header ("reopening mid-close resumes from wherever it had got to")
+    // is the correct feel for that case and this pass has no complaint
+    // against it -- only the very first rise, which had nothing to resume
+    // FROM, needed the guarantee. The CLOSE still eases the ordinary way:
+    // syncPanelAnim()'s quickBarAnim_.setTarget(barWanted) below still owns
+    // the fall once quickBarShowSteps_ runs out, so the strip's one-
+    // transition-grammar veil on the way OUT is untouched.
+    if (quickBarAnim_.value() <= 0.0F) {
+        quickBarAnim_.snapTo(true);
+    }
 }
 
 void Session::jump() {
@@ -10627,11 +10656,20 @@ void climbAndLand(Session& session) {
 /// SOUTH of kStreetY would have quietly cropped the street back out of the box.
 /// Both ends are named, so the box contains the frontage and the body wherever
 /// the opening shot is aimed next.
+///
+/// KIT FIX PASS: the drop beat's own photography spot moved to world x=195/
+/// 196, well past kFootprintX1 -- the quay's wall line stands a full
+/// architectural pillar (not the thin mooring posts elsewhere on it) at
+/// x=155/157, and a fixed prop_crate/barrel pair sits at roughly x=167; the
+/// beat's own camera has to clear BOTH, not just the wall, to find open
+/// boards. +2 no longer reaches that stretch, so it is named for it directly
+/// rather than guessed at again by a second body standing somewhere this box
+/// still cannot route to.
 constexpr sim::TileBox kCaptureRegion{
     sim::gull::kFootprintX0 - 2,
     std::min(sim::gull::kStreetY - 2, sim::docks::kSpawnTileY - 1),
     sim::gull::kGroundBand,
-    sim::gull::kFootprintX1 + 2, sim::gull::kFootprintY1 + 1, sim::gull::kUpperBand};
+    sim::gull::kFootprintX1 + 40, sim::gull::kFootprintY1 + 1, sim::gull::kUpperBand};
 static_assert(kCaptureRegion.x0 <= sim::docks::kSpawnTileX &&
                   sim::docks::kSpawnTileX <= kCaptureRegion.x1 &&
                   kCaptureRegion.y0 <= sim::docks::kSpawnTileY &&
@@ -11937,8 +11975,54 @@ void standAtFacing(Session& session, std::int32_t standX, std::int32_t standY,
     // 9. DROP: out to the Tarwalk in daylight, the coil put down through the
     // tile's own X on a tile clear of the quay's clutter, then a tile back,
     // facing it, so the frame has it on the boards.
+    //
+    // KIT FIX PASS. (154,62)/(155,62) -- this beat's spot one commit back --
+    // stood the camera one tile off a lone timber cell at world (155,61),
+    // one of two PAIRS of them flanking a gap in the quay's own wall line
+    // (world (149,61)/(151,61) and (155,61)/(157,61); see
+    // content/maps/src/docks_surface.tmx's z:+11 group, local (117,29) etc.,
+    // +32/+32/+8 per docks.hpp's own VOID-border rule). A lone timber cell
+    // beside water becomes a thin mooring pile (isPost()+boardedPost(),
+    // docks-pieces.json's "post", thickness 0.13); this one is not beside
+    // water at this reach, so static_pieces.cpp's posts() falls through to
+    // the OTHER branch -- a full architectural PILLAR (PieceRole::Pillar,
+    // "SM_Bld_Base_Pillar_01.gltf"), deliberately scaled to fill its own
+    // cell edge to edge ("fitted to the cell: its shaft the cell's width
+    // plus a hair" -- (1 + 2*thickness) / width, confirmed live at 2.81x
+    // off the catalogue's 0.37 m pillar against a GRANADAD_DEBUG_NEARBY
+    // dump: role=38 pos=(155.50,*,61.50) scale=(2.81,0.99,2.81)) and a full
+    // storey tall. Not a bug in the piece -- it is exactly as wide as its
+    // own cell, on purpose -- but the gap it stands beside is only four
+    // tiles wide, and standing IN that gap (tried at both (154,62) and the
+    // gap's own midpoint (153,62)) never put more than about two tiles
+    // between the camera and whichever of the pair sits ahead of it once
+    // standAtFacing turns west: close enough that the frustum is still
+    // inside the column's own personal space, and the second-attempt frame
+    // read exactly like the first. The ground-item entry was always there
+    // at every one of these spots -- this was never a case of the coil
+    // being off-camera, only of the camera being too close to a piece that
+    // is doing its job.
+    //
+    // So: OFF THE GAP ENTIRELY, onto the long clear reach of the Tarwalk
+    // east of it. The wall line carries nothing at all from world x=158 to
+    // beyond 200 (same tmx group, same row, checked the same way) -- ten
+    // tiles of clearance in every direction is a different problem than the
+    // four-tile gap ever could solve.
+    //
+    // KIT FIX PASS, SECOND CUT. (166,62)/(165,62) still put the quay's own
+    // ambient set dressing dead in frame -- a `prop_crate` (docks-pieces.json,
+    // SM_Gen_Prop_Crate_03.gltf) and its neighbouring barrel sit fixed at
+    // roughly world (167,62), the wall line's own clearance never having
+    // accounted for the loose clutter it carries, only the buildings framing
+    // it. A camera one tile off that pair reads the same as one tile off a
+    // pillar: full-frame and foreground. Walked the boards further east in
+    // fixed-camera surveys (facing 270 from x=170 through x=200) until the
+    // pair fell far enough behind to read as background scenery rather than
+    // an obstruction -- clear by x=195, with nothing else fixed standing in
+    // the stretch immediately ahead of it. (196,62) facing (195,62) keeps
+    // the beat's own shape and stays north of the dockers' own line (63).
     session.closeConversation();
-    walkToTile(session, 154, 62);
+    walkToTile(session, 195, 62);
     session.closeConversation();
     if (openKitRow(session, "rope")) {
         session.dropHighlightedKitRow();
@@ -11947,10 +12031,10 @@ void standAtFacing(Session& session, std::int32_t standX, std::int32_t standY,
     // One tile back, off the dockers' own line down the middle of the quay,
     // so the coil is in reach whatever side of the tile the walk landed on
     // and nobody is standing on it for the frame.
-    standAtFacing(session, 155, 62, 154, 62);
+    standAtFacing(session, 196, 62, 195, 62);
     bool coilDown = false;
     for (const sim::GroundItem& entry : tavern.groundItems()) {
-        if (entry.item == item("rope") && entry.x == 154 && entry.y == 62) {
+        if (entry.item == item("rope") && entry.x == 195 && entry.y == 62) {
             coilDown = true;
         }
     }
