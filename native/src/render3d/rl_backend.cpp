@@ -1251,6 +1251,17 @@ std::unique_ptr<Backend> Backend::open(const BackendConfig& config) {
     // The game owns ESC (it backs out of pages and opens the pause menu);
     // raylib must not close the window on it.
     SetExitKey(KEY_NULL);
+    // VSYNC, HONOURED. FLAG_VSYNC_HINT is a hint: on a driver that ignores
+    // the swap interval for a windowed context (the NVIDIA laptop panel
+    // this ships on ran the loop at ~250 fps with it set) the frame pacing
+    // is the window's alone, so the cap is enforced here as well -- the
+    // panel's own refresh rate as the target, raylib's EndDrawing waiting
+    // out the rest of each frame. The headless build has no panel and no
+    // EndDrawing, and the shutter opens with vsync off; neither is paced.
+    if (config.vsync && !kHeadless) {
+        const int refresh = GetMonitorRefreshRate(GetCurrentMonitor());
+        SetTargetFPS(refresh > 0 ? refresh : 60);
+    }
     // A district is a few hundred tiles across; the default far plane of
     // 4000 wastes depth precision, the default near of 0.05 is fine but
     // stated. The viewmodel lane draws its second pass with its own planes.

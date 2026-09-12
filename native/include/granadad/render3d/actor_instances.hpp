@@ -122,6 +122,23 @@ inline constexpr std::uint32_t kSaltLook = 0x4C4F4F4BU;  // "LOOK"
     return actorRigOf(type);
 }
 
+/// THE NAME'S SAY. Every body in this game has a name the player can read
+/// -- the ward's out of content/raws/names/names.json by id, the Gull's
+/// roster and the Forty authored -- and a name says what it says: Gerta
+/// Saltcotte is a woman, Tarn Wrenhale a man, and a body drawn otherwise
+/// is a defect anybody with the E prompt open can see. So a splitting
+/// kind's body follows its name where the name is on the pools' own lists
+/// (a woman's name -> the townswoman, a man's -> the kind's own rig), and
+/// the id draw decides only where the name says nothing (a wastrel's
+/// nickname, a keeper called Fodder). The name is itself a pure function
+/// of the id and the raws, so this is the same claim as actorRigFor's.
+/// +1 a woman's name, -1 a man's, 0 unlisted -- any word of the name.
+[[nodiscard]] int actorNameSays(std::string_view name) noexcept;
+
+/// The rig for a NAMED body: the name's say first, the id draw after.
+[[nodiscard]] std::uint8_t actorRigFor(sim::WardType type, std::int32_t actorId,
+                                       std::string_view name) noexcept;
+
 // actorRigFile(rig) and actorClipOneShot(clip) -- the two facts the adapter
 // needs about a body -- live on scene.hpp, so the one raylib TU sees them
 // without pulling a sim header in. Defined in actor_instances.cpp.

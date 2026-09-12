@@ -397,7 +397,8 @@ TEST_CASE("an actor is drawn where the simulation says the actor is") {
                 nearly(body.instance.position.z, where.z) &&
                 body.instance.meshId == actorRigMeshId(actorRigOf(actor.type))) {
                 found = true;
-                CHECK(body.rig == actorRigFor(actor.type, actor.id));
+                CHECK(body.rig == actorRigFor(actor.type, actor.id,
+                                              session.people().identity(actor.id).name));
                 CHECK(body.instance.yaw ==
                       doctest::Approx(static_cast<float>(actor.facing) * (2.0F * kTestPi / 65536.0F)));
                 CHECK(body.clip == wardClip(actor.x != actor.prevX || actor.y != actor.prevY));
@@ -436,7 +437,7 @@ TEST_CASE("an actor is drawn where the simulation says the actor is") {
                 nearly(body.instance.position.z, where.z)) {
                 found = true;
                 CHECK(body.rig == actorRigFor(render::figureForRole(actor.role(), actor.id()),
-                                              actor.id()));
+                                              actor.id(), actor.name()));
                 CHECK(body.clip == clipForActivity(actor.activity(), actor.npcSwingSeq()));
                 break;
             }
@@ -655,4 +656,81 @@ TEST_CASE("the rig split is a pure function of kind and id, about half, and neve
     CHECK(women > 0);
     MESSAGE("crowd from the spawn: " << women << " townswoman bodies of " << scene.actors.size()
                                      << ", " << urchinWomen << " of " << urchins << " urchins");
+}
+
+TEST_CASE("a named body follows its name, and the id draw only where the name says nothing") {
+    // THE NAME'S SAY. The roster's and the pools' names read as they read:
+    // a woman's name puts a splitting kind in the townswoman whatever the
+    // id draws, a man's keeps the kind's rig, a title says it for a
+    // notable, and a name on neither list leaves it to the id.
+    CHECK(actorNameSays("Gerta Saltcotte") == 1);
+    CHECK(actorNameSays("Tarn Wrenhale") == -1);
+    CHECK(actorNameSays("Sella Brinewall") == 1);
+    CHECK(actorNameSays("Watchman Cull") == -1);
+    CHECK(actorNameSays("Master Venn") == -1);
+    CHECK(actorNameSays("Widow Annis Netter") == 1);
+    CHECK(actorNameSays("Mother Sethra") == 1);
+    CHECK(actorNameSays("Gullet Mag") == 1);
+    CHECK(actorNameSays("Captain Ivo Wake") == -1);
+    CHECK(actorNameSays("Petra Barnacre") == 1);
+    CHECK(actorNameSays("Fodder") == 0);
+    CHECK(actorNameSays("Sniv") == 0);
+    CHECK(actorNameSays("") == 0);
+    // Whatever the id draws, the name wins for a splitting kind; a kind that
+    // never splits ignores it (a bouncer called Gerta is still the Watch).
+    for (std::int32_t id = 0; id < 64; ++id) {
+        CHECK(actorRigFor(sim::WardType::Serf, id, "Tarn Wrenhale") == actorRigOf(sim::WardType::Serf));
+        CHECK(actorRigFor(sim::WardType::Shopkeeper, id, "Gerta Saltcotte") == kActorRigTownswoman);
+        CHECK(actorRigFor(sim::WardType::Fisher, id, "Sella Brinewall") == kActorRigTownswoman);
+        CHECK(actorRigFor(sim::WardType::MilitiaWatch, id, "Gerta") == actorRigOf(sim::WardType::MilitiaWatch));
+        CHECK(actorRigFor(sim::WardType::Serf, id, "Fodder") == actorRigFor(sim::WardType::Serf, id));
+        CHECK(actorRigFor(sim::WardType::AnimalKeeper, id, "Drover") ==
+              actorRigFor(sim::WardType::AnimalKeeper, id));
+    }
+    // The Gull's roster, in a session: every named patron and keeper wears
+    // the body their name says.
+    render::Session session(morningConfig());
+    const SceneDescription scene = crowdScene(session);
+    int checked = 0;
+    for (const sim::Actor& actor : session.tavern().actors()) {
+        const int says = actorNameSays(actor.name());
+        if (says == 0) {
+            continue;
+        }
+        const sim::WardType figure = render::figureForRole(actor.role(), actor.id());
+        if (!actorKindSplits(figure)) {
+            continue;
+        }
+        const std::uint8_t rig = actorRigFor(figure, actor.id(), actor.name());
+        CHECK(rig == (says > 0 ? kActorRigTownswoman : actorRigOf(figure)));
+        ++checked;
+    }
+    CHECK(checked >= 8);
+    // And the ward: a body whose name the pools call a woman's wears the
+    // townswoman; the crowd still holds both.
+    int women = 0;
+    int men = 0;
+    for (const ActorInstance& body : scene.actors) {
+        if (body.rig == kActorRigTownswoman) {
+            ++women;
+        } else if (body.instance.meshId == actorRigMeshId(actorRigOf(sim::WardType::Serf))) {
+            ++men;
+        }
+    }
+    CHECK(women > 0);
+    CHECK(men > 0);
+    for (const sim::WardActor& actor : session.people().actors()) {
+        if (!actor.visible() || !actorKindSplits(actor.type)) {
+            continue;
+        }
+        const int says = actorNameSays(session.people().identity(actor.id).name);
+        if (says > 0) {
+            CHECK(actorRigFor(actor.type, actor.id, session.people().identity(actor.id).name) ==
+                  kActorRigTownswoman);
+        } else if (says < 0) {
+            CHECK(actorRigFor(actor.type, actor.id, session.people().identity(actor.id).name) ==
+                  actorRigOf(actor.type));
+        }
+    }
+    MESSAGE("crowd from the spawn, by name and draw: " << women << " women, " << men << " serf men");
 }

@@ -172,6 +172,100 @@ std::string_view actorRigFile(std::uint8_t rig) noexcept {
     }
 }
 
+namespace {
+
+/// The women's and the men's given names of content/raws/names/names.json
+/// (the serf, shopkeeper, wastrel and disciple pools, as anybody reads
+/// them), the Gull's roster and the Forty of notables.json, plus the titles
+/// a notable carries that say it for them. Sorted once, searched by word.
+/// A pool name that reads neither way (Wenn, Joss, the animal keepers'
+/// Drover and Fodder, most wastrel nicknames) is on neither list.
+constexpr std::string_view kWomensWords[] = {
+    "Aldis",    "Annis",    "Berta",    "Bettrys",  "Birdie",   "Bodil",     "Brigga",   "Ceffa",
+    "Cressida", "Dagny",    "Dessa",    "Ditta",    "Ebba",     "Edda",      "Elsba",    "Elspet",
+    "Emmeline", "Frieda",   "Gerta",    "Grandmother", "Grette", "Haddie",   "Hedda",    "Herdis",
+    "Hestia",   "Ilsa",     "Inka",     "Isolde",   "Jessa",    "Jocosa",    "Katrin",   "Kessa",
+    "Lavinia",  "Lisbet",   "Mabet",    "Mag",      "Maren",    "Marta",     "Mirabel",  "Mistress",
+    "Moll",     "Mother",   "Nedda",    "Nessa",    "Odalys",   "Odda",      "Odile",    "Onna",
+    "Pernilla", "Petra",    "Quenna",   "Redda",    "Rilla",    "Rosamund",  "Sabeth",   "Salla",
+    "Sanna",    "Sella",    "Sethra",   "Sigga",    "Tama",     "Ulla",      "Ulrika",   "Unna",
+    "Ursel",    "Ursuline", "Vanna",    "Vespera",  "Vetta",    "Wendeline", "Widow",    "Willa",
+    "Winnifred", "Withy",   "Yette",    "Yseult",   "Ysolt",
+};
+constexpr std::string_view kMensWords[] = {
+    "Adric",    "Aldous",   "Ambrus",   "Ansgar",   "Arno",     "Askel",     "Askold",   "Baker",
+    "Benedar",  "Berthold", "Bondsman", "Brakk",    "Bram",     "Brann",     "Bront",    "Calixt",
+    "Captain",  "Carter",   "Casker",   "Caspar",   "Cathal",   "Cobb",      "Colm",     "Cooper",
+    "Cort",     "Corvin",   "Crell",    "Cull",     "Cutter",   "Dain",      "Delvin",   "Demetrian",
+    "Dormund",  "Dovric",   "Dray",     "Elior",    "Evrard",   "Ewald",     "Falk",     "Farold",
+    "Father",   "Fenner",   "Fenwick",  "Ferrin",   "Finch",    "Fintan",    "Flint",    "Folke",
+    "Foreman",  "Garrin",   "Godric",   "Goodman",  "Gorm",     "Gregor",    "Grieve",   "Haldan",
+    "Halvor",   "Harl",     "Hask",     "Hobb",     "Hobbin",   "Hyacinth",  "Ingmar",   "Innocens",
+    "Ivo",      "Jarrick",  "Jek",      "Jerome",   "Jorun",    "Jorvath",   "Kettil",   "Kled",
+    "Kort",     "Kyrill",   "Leofric",  "Lom",      "Luff",     "Lunt",      "Mace",     "Malachy",
+    "Marek",    "Master",   "Merle",    "Mordo",    "Neddry",   "Nils",      "Norrick",  "Norvin",
+    "Ondrey",   "Orin",     "Osric",    "Oswin",    "Ottavan",  "Ottmar",    "Ox",       "Perrin",
+    "Pettar",   "Piet",     "Pike",     "Quarrel",  "Quintus",  "Ragvald",   "Ranulf",   "Rasp",
+    "Rolf",     "Sergeant", "Slavik",   "Squall",   "Stannic",  "Sten",      "Tancred",  "Tarl",
+    "Tarn",     "Theodric", "Tobbin",   "Tolley",   "Tolliver", "Torvald",   "Ulf",      "Ulfric",
+    "Ulwer",    "Valdo",    "Varn",     "Varric",   "Venn",     "Vess",      "Vetch",    "Vidar",
+    "Vinzenz",  "Watchman", "Wick",     "Wilm",     "Wold",     "Wull",      "Yarrow",   "Yohan",
+    "Yorrel",
+};
+
+[[nodiscard]] bool listed(const std::string_view* words, std::size_t count,
+                          std::string_view word) noexcept {
+    // Sorted in the source; a binary search per word.
+    std::size_t lo = 0;
+    std::size_t hi = count;
+    while (lo < hi) {
+        const std::size_t mid = lo + (hi - lo) / 2;
+        if (words[mid] < word) {
+            lo = mid + 1;
+        } else {
+            hi = mid;
+        }
+    }
+    return lo < count && words[lo] == word;
+}
+
+}  // namespace
+
+int actorNameSays(std::string_view name) noexcept {
+    std::size_t at = 0;
+    while (at < name.size()) {
+        std::size_t end = name.find(' ', at);
+        if (end == std::string_view::npos) {
+            end = name.size();
+        }
+        const std::string_view word = name.substr(at, end - at);
+        if (!word.empty()) {
+            if (listed(kWomensWords, sizeof(kWomensWords) / sizeof(kWomensWords[0]), word)) {
+                return 1;
+            }
+            if (listed(kMensWords, sizeof(kMensWords) / sizeof(kMensWords[0]), word)) {
+                return -1;
+            }
+        }
+        at = end + 1;
+    }
+    return 0;
+}
+
+std::uint8_t actorRigFor(sim::WardType type, std::int32_t actorId, std::string_view name) noexcept {
+    if (!actorKindSplits(type)) {
+        return actorRigOf(type);
+    }
+    const int says = actorNameSays(name);
+    if (says > 0) {
+        return kActorRigTownswoman;
+    }
+    if (says < 0) {
+        return actorRigOf(type);
+    }
+    return actorRigFor(type, actorId);
+}
+
 float actorInstanceScale(sim::WardType type) noexcept {
     if (!sim::isPerson(type)) {
         return 1.0F;
@@ -313,8 +407,8 @@ std::vector<ActorInstance> actorInstances(const render::Session& session,
             continue;
         }
         ActorInstance body;
-        // The look by kind and id; the placeholder by kind alone.
-        body.rig = actorRigFor(actor.type, actor.id);
+        // The look by kind, name and id; the placeholder by kind alone.
+        body.rig = actorRigFor(actor.type, actor.id, people.identity(actor.id).name);
         body.instance.meshId = actorRigMeshId(actorRigOf(actor.type));
         body.instance.textureId = 0;
         body.instance.position = toScene(px, py, render::bandSurface(actor.band));
@@ -344,10 +438,9 @@ std::vector<ActorInstance> actorInstances(const render::Session& session,
         }
         const sim::WardType type = render::figureForRole(actor.role(), actor.id());
         ActorInstance body;
-        // The Gull's roster splits by the same draw on the same id: the
-        // roster has names and no sex field, so a named patron's body is
-        // the lot's, said out loud in the README rather than fitted.
-        body.rig = actorRigFor(type, actor.id());
+        // The Gull's roster: named, so the name's say first, the id draw
+        // after (Gerta a woman, Tarn a man, whatever their ids draw).
+        body.rig = actorRigFor(type, actor.id(), actor.name());
         body.instance.meshId = actorRigMeshId(actorRigOf(type));
         body.instance.textureId = 0;
         body.instance.position = toScene(px, py, render::bandSurface(actor.band()));
