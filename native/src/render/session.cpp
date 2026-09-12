@@ -4700,6 +4700,14 @@ void Session::interact() {
             "PAPER. CARRY IT BACK SIGNED.");
         return;
     }
+    // 2a. THE DEAD (KIT BUILD): a corpse in reach, when no living roster
+    // body is NEARER, opens its search list -- ahead of the living for the
+    // person walk's own reason (a body at your feet is the one thing this
+    // press could mean that the man beside it could not also mean), and
+    // behind them when they are closer, so a crowded taproom still talks.
+    if (searchNearestCorpse()) {
+        return;
+    }
     if (!sneaking) {
         // TIME-AND-TENURE BUILD: the director is told what ground the feet
         // are on BEFORE the conversation opens, so a priest's topic list is
@@ -4709,11 +4717,28 @@ void Session::interact() {
         // EVICTION CASE: and the writ's stage, so Maell's own list carries
         // the hire (or the walk-back) the moment his conversation opens.
         syncEvictionTopics();
-        if (tavern_->talkTo() || talkToWard()) {
+        const auto opened = [this]() {
             topicCursor_ = 0;
             haggleOffer_ = 0;
             const sim::DialogueDirector& talk = tavern_->dialogue();
             say(talk.speaker().name + ": " + talk.greeting());
+        };
+        if (tavern_->talkTo()) {
+            opened();
+            return;
+        }
+        // 2b. A THING ON THE GROUND (KIT BUILD) sits between the house's
+        // roster and the street's people: the thing you walked to outranks
+        // a passer-by (and a mouse), and a named lead outranks the thing
+        // (lowerHandsResolves' own rule). After the box chain would have
+        // been the tidier seat, but the street's TALK is inside this walk
+        // and a rope on the Tarwalk must beat it. Upright only: crouched,
+        // the press is a lift or the box chain's TAKE QUIETLY below.
+        if (!leadNamedInReach() && takeNearestItem()) {
+            return;
+        }
+        if (talkToWard()) {
+            opened();
             return;
         }
     } else {
@@ -4722,13 +4747,6 @@ void Session::interact() {
             say(lifted.line);
             return;
         }
-    }
-
-    // 2b. THE DEAD (KIT BUILD): a corpse in reach opens its search list.
-    // Ahead of the fixtures for the person walk's own reason -- a body is
-    // the one thing this press could mean that a box could not also mean.
-    if (searchNearestCorpse()) {
-        return;
     }
 
     // 3. ITEM/FIXTURE: the box (or its lock), the bale, the rat, the wire
@@ -4740,14 +4758,11 @@ void Session::interact() {
         return;
     }
 
-    // 3b. A THING ON THE GROUND (KIT BUILD): the nearest registry item in
-    // reach -- an authored stand or something dropped -- through the room's
-    // own TAKE, which is the lift rule when it is somebody's. After the box
-    // chain so a bed-foot strongbox keeps its stand; before LOWER HANDS so
-    // a knife on the table is picked up and not stared at.
-    // THE LOOK OUTRANKS THE TAKE: a named lead in reach is the investigation
-    // and a knife beside it waits (lowerHandsResolves' own rule).
-    if (!leadNamedInReach() && takeNearestItem()) {
+    // 3b. A THING ON THE GROUND (KIT BUILD), the crouched half: upright the
+    // walk took it at 2b; crouched it comes after the box chain (a bed-foot
+    // strongbox keeps its stand) as TAKE QUIETLY -- the notice rule, never
+    // the verb, is what the stance moves. The look still outranks the take.
+    if (sneaking && !leadNamedInReach() && takeNearestItem()) {
         return;
     }
 
@@ -4788,6 +4803,45 @@ bool Session::lowerHandsResolves() const {
     }
     // The look outranks the lower.
     return !leadNamedInReach();
+}
+
+const sim::Actor* Session::corpseToSearch() const {
+    // The corpse in reach of the BODY, and only when no living roster body
+    // is nearer -- ties to the dead, so standing on him is a search.
+    const sim::Actor* corpse = tavern_->corpseInReachOf(body_->x(), body_->y(), body_->band());
+    if (corpse == nullptr) {
+        return nullptr;
+    }
+    const bool sneaking = stance() == sim::Stance::Crouched;
+    const std::int32_t reach = sneaking ? sim::kLiftReachQ8 : sim::kReachQ8;
+    const sim::Actor* living = tavern_->nearestTo(body_->x(), body_->y(), reach);
+    if (living != nullptr &&
+        living->distanceTo(body_->x(), body_->y()) < corpse->distanceTo(body_->x(), body_->y())) {
+        return nullptr;
+    }
+    return corpse;
+}
+
+bool Session::groundTargetFor(InteractTarget& out) const {
+    if (leadNamedInReach()) {
+        return false;
+    }
+    const std::int32_t at = tavern_->groundItemInReachOf(body_->x(), body_->y(), body_->band());
+    if (at < 0) {
+        return false;
+    }
+    const sim::GroundItem& entry = tavern_->groundItems()[static_cast<std::size_t>(at)];
+    const sim::ItemDef* thing = tavern_->items().at(entry.item);
+    // A fixed thing (the strongbox) is not named here; the box block is.
+    if (thing == nullptr || thing->fixed) {
+        return false;
+    }
+    out = InteractTarget{};
+    out.verb = stance() == sim::Stance::Crouched ? "TAKE QUIETLY" : "TAKE";
+    out.subject = entry.count > 1 ? std::to_string(entry.count) + " " + thing->name : thing->name;
+    out.note = entry.owned ? std::string("THEIRS") : std::to_string(thing->drams) + "DR";
+    out.kind = entry.owned ? AimKind::Owned : AimKind::Thing;
+    return true;
 }
 
 std::string Session::interactPrompt() const {
@@ -4919,6 +4973,17 @@ Session::InteractTarget Session::resolveInteract() const {
         out.kind = AimKind::Place;
         return out;
     }
+    // 2a. THE DEAD (KIT BUILD), mirrored where interact() checks it: the
+    // corpse in reach, when no living roster body is nearer, is a SEARCH,
+    // named, a body's own accent, and DEAD where a living man's trade would
+    // print.
+    if (const sim::Actor* corpse = corpseToSearch(); corpse != nullptr) {
+        out.verb = "SEARCH";
+        out.subject = corpse->name();
+        out.note = "DEAD";
+        out.kind = AimKind::Person;
+        return out;
+    }
     // NAMED IN THE ORDER interact() WOULD REACH THEM. The taproom's own roster
     // is asked first because talkTo() is, so the body the crosshair names is
     // the body the key would actually speak to -- a prompt that named the
@@ -4935,17 +5000,17 @@ Session::InteractTarget Session::resolveInteract() const {
         out.kind = AimKind::Person;
         return out;
     }
-    // 2b. THE DEAD (KIT BUILD), mirrored where interact() checks it: the
-    // corpse in reach is a SEARCH, named, a body's own accent, and DEAD
-    // where a living man's trade would print.
-    if (const sim::Actor* corpse = tavern_->corpseInReach(); corpse != nullptr) {
-        out.verb = "SEARCH";
-        out.subject = corpse->name();
-        out.note = "DEAD";
-        out.kind = AimKind::Person;
-        return out;
-    }
+    // 2b. A THING ON THE GROUND (KIT BUILD), mirrored where interact()
+    // reaches it upright -- between the house's roster and the street's
+    // people: TAKE names the thing, the note is its weight, or THEIRS with
+    // the Owned accent when taking it is theft (the reference's red hand,
+    // before the press). A named lead in reach outranks it. The BODY's own
+    // position, as every other query on this walk. Crouched, the same read
+    // comes after the box (TAKE QUIETLY), where interact() takes it.
     if (!sneaking) {
+        if (InteractTarget thing; groundTargetFor(thing)) {
+            return thing;
+        }
         if (const sim::WardActor* outside = people_->nearestTo(
                 body_->tileX(), body_->tileY(), body_->band(), kWardTalkReachTiles);
             outside != nullptr) {
@@ -4999,23 +5064,11 @@ Session::InteractTarget Session::resolveInteract() const {
         }
     }
 
-    // 3b. A THING ON THE GROUND (KIT BUILD), mirrored where interact()
-    // reaches it: TAKE names the thing (TAKE QUIETLY crouched, the box's own
-    // wording), the note is its weight -- or THEIRS, with the Owned accent,
-    // when taking it is theft: the reference's red hand, before the press.
-    // A fixed thing (the strongbox) is not named here; the box block above
-    // already is.
-    if (const std::int32_t at = tavern_->groundItemInReach(); at >= 0 && !leadNamedInReach()) {
-        const sim::GroundItem& entry = tavern_->groundItems()[static_cast<std::size_t>(at)];
-        const sim::ItemDef* thing = tavern_->items().at(entry.item);
-        if (thing != nullptr && !thing->fixed) {
-            out.verb = sneaking ? "TAKE QUIETLY" : "TAKE";
-            out.subject = entry.count > 1 ? std::to_string(entry.count) + " " + thing->name
-                                          : thing->name;
-            out.note = entry.owned ? std::string("THEIRS")
-                                   : std::to_string(thing->drams) + "DR";
-            out.kind = entry.owned ? AimKind::Owned : AimKind::Thing;
-            return out;
+    // 3b. A THING ON THE GROUND (KIT BUILD), the crouched half: TAKE QUIETLY
+    // after the box's own stand, exactly where interact() takes it crouched.
+    if (sneaking) {
+        if (InteractTarget thing; groundTargetFor(thing)) {
+            return thing;
         }
     }
 
@@ -8909,7 +8962,7 @@ bool Session::searchNearestCorpse() {
         return false;
     }
     syncTavernToBody();
-    const sim::Actor* corpse = tavern_->corpseInReach();
+    const sim::Actor* corpse = corpseToSearch();
     if (corpse == nullptr) {
         return false;
     }
@@ -11577,10 +11630,10 @@ std::string gWatchHaltNote;
 // KIT BUILD: the Kit, played
 // ---------------------------------------------------------------------------
 
-/// THE KIT LINE, through the real verbs, from ten in the morning (the house
-/// empty but for Venn, so a thing on a chair can be named and lifted with
-/// nobody to see it) to two in the afternoon (Ox on the door for the blow
-/// and the body). Ten beats, each an ending:
+/// THE KIT LINE, through the real verbs, from four in the morning (the quay
+/// and the house empty, so a thing on the boards or a chair can be named and
+/// lifted with nobody to see it) to two in the afternoon (Ox on the door for
+/// the blow and the body). Ten beats, each an ending:
 ///   1. take     the crosshair reads TAKE ROPE  48DR over the coil on the
 ///               Tarwalk (nobody's), and the press takes it
 ///   2. drop     the rope put down again through the Character tile's own
@@ -13965,13 +14018,15 @@ int scriptedStartHour(const SmokeRunConfig& config) noexcept {
     if (config.skyrun) {
         return 1;
     }
-    // KIT BUILD. Ten in the morning: the house empty but for Master Venn
-    // in the snug, so the lantern, the knife and the coat can be lifted off
-    // the chairs they lie on with nobody to see it and no bouncer's ladder
-    // started -- the line skips to two in the afternoon for Ox and the coat's
-    // turn, once the Kit is on the body.
+    // KIT BUILD. Four in the morning, the burglar's own hour: the quay
+    // empty of the ward's people (a serf on the Tarwalk at ten outranked
+    // the coil the crosshair was meant to name), the house empty, so the
+    // lantern, the knife and the coat can be lifted off the chairs they lie
+    // on with nobody to see it and no bouncer's ladder started -- the line
+    // skips to two in the afternoon for Ox and the coat's turn, once the
+    // Kit is on the body.
     if (config.kit) {
-        return 10;
+        return 4;
     }
     // Father Maell takes an evening hour in the Gull between seven and half
     // past nine. Eight is the middle of it, which is also the default.

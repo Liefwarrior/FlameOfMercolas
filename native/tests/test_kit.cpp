@@ -724,8 +724,8 @@ TEST_CASE("a corpse's search list is its authored kit less what was taken; the d
     }
     CHECK(tavern.corpseRows(victim).empty());
     // A living man is never a search subject, and a body across the room is
-    // out of reach.
-    room.placeAt(gull::kBartenderX, gull::kBarY - 1, gull::kGroundBand);
+    // out of reach: the quay apron, two tiles clear of the threshold.
+    room.placeAt(gull::kStreetX, gull::kStreetY, gull::kGroundBand);
     CHECK(tavern.corpseInReach() == nullptr);
 }
 

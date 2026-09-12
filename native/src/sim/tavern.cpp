@@ -1032,7 +1032,7 @@ Actor* Tavern::onDutyBouncerNearestPlayer() noexcept {
     std::int32_t bestDistance = 0;
     for (Actor& actor : actors_) {
         if (actor.role() != ActorRole::Bouncer || !actor.present() ||
-            actor.activity() == Activity::Downed) {
+            isFloored(actor.activity())) {
             continue;
         }
         const std::int32_t distance = actor.distanceTo(playerX_, playerY_);
@@ -1085,9 +1085,14 @@ void Tavern::tickBouncers() {
         return;
     }
 
+    // KIT BUILD, a corpse-convention fix found by the --kit line: isFloored,
+    // not Downed alone. A responder the player KILLED was still the
+    // responder here, and the ladder's setActivity below stood him back up
+    // -- a corpse that never stands (COMBAT-ACTION-SPEC 4.4) was standing
+    // at the door again the next second, and could be talked to.
     Actor* responder = respondingBouncerId_ < 0 ? nullptr : mutableActorById(respondingBouncerId_);
     if (responder == nullptr || !responder->present() ||
-        responder->activity() == Activity::Downed) {
+        isFloored(responder->activity())) {
         responder = onDutyBouncerNearestPlayer();
         respondingBouncerId_ = responder == nullptr ? -1 : responder->id();
     }
@@ -4057,7 +4062,7 @@ bool Tavern::takeArrestRelease() noexcept {
 void Tavern::tickVermin() {
     for (Actor& actor : actors_) {
         if (actor.role() != ActorRole::Vermin || !actor.present() ||
-            actor.activity() == Activity::Downed) {
+            isFloored(actor.activity())) {
             continue;
         }
         if (!actor.atDestination()) {
@@ -4086,7 +4091,7 @@ const Actor* Tavern::nearestVerminTo(std::int32_t xQ8, std::int32_t yQ8,
     std::int32_t bestDistance = reachQ8 + 1;
     for (const Actor& actor : actors_) {
         if (actor.role() != ActorRole::Vermin || !actor.present() ||
-            actor.activity() == Activity::Downed) {
+            isFloored(actor.activity())) {
             continue;
         }
         const std::int32_t distance = actor.distanceTo(xQ8, yQ8);
@@ -4864,17 +4869,22 @@ std::int32_t Tavern::groundItemInReach() const noexcept {
     if (!playerKnown_) {
         return -1;
     }
+    return groundItemInReachOf(playerX_, playerY_, playerBand_);
+}
+
+std::int32_t Tavern::groundItemInReachOf(std::int32_t xQ8, std::int32_t yQ8,
+                                         std::int32_t band) const noexcept {
     std::int32_t best = -1;
     std::int32_t bestDistance = 0;
     for (std::size_t i = 0; i < ground_.size(); ++i) {
         const GroundItem& entry = ground_[i];
-        if (entry.band != playerBand_) {
+        if (entry.band != band) {
             continue;
         }
         // The bale's own reach shape: Manhattan Q8 from the tile centre,
         // inside kReachQ8.
-        const std::int32_t dx = q8_tile_centre(entry.x) - playerX_;
-        const std::int32_t dy = q8_tile_centre(entry.y) - playerY_;
+        const std::int32_t dx = q8_tile_centre(entry.x) - xQ8;
+        const std::int32_t dy = q8_tile_centre(entry.y) - yQ8;
         const std::int32_t distance = (dx < 0 ? -dx : dx) + (dy < 0 ? -dy : dy);
         if (distance > kReachQ8) {
             continue;
@@ -5056,14 +5066,18 @@ const Actor* Tavern::corpseInReach() const noexcept {
     if (!playerKnown_) {
         return nullptr;
     }
+    return corpseInReachOf(playerX_, playerY_, playerBand_);
+}
+
+const Actor* Tavern::corpseInReachOf(std::int32_t xQ8, std::int32_t yQ8,
+                                     std::int32_t band) const noexcept {
     const Actor* best = nullptr;
     std::int32_t bestDistance = 0;
     for (const Actor& actor : actors_) {
-        if (!actor.present() || actor.activity() != Activity::Dead ||
-            actor.band() != playerBand_) {
+        if (!actor.present() || actor.activity() != Activity::Dead || actor.band() != band) {
             continue;
         }
-        const std::int32_t distance = actor.distanceTo(playerX_, playerY_);
+        const std::int32_t distance = actor.distanceTo(xQ8, yQ8);
         if (distance > kReachQ8) {
             continue;
         }

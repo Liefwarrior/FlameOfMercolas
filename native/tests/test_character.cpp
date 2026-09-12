@@ -267,10 +267,15 @@ TEST_CASE("twenty-four rows is three pages, and the character sheet turns like e
     CHECK(render::topicPageOf(view.cursor) == view.page);
 
     // 0 -- the MORE key -- turns the page directly, same as F1 and the
-    // casebook.
+    // casebook: page two (the carried rows), then round to the first.
+    session.nextTopicPage();
+    view = session.dialogueView();
+    CHECK(view.page == 2);
+    CHECK(view.cursor == 18);
     session.nextTopicPage();
     view = session.dialogueView();
     CHECK(view.page == 0);
+    CHECK(view.cursor == 0);
 
     // The cursor wraps rather than stopping dead at either end.
     session.moveTopicCursor(-1);
@@ -386,7 +391,10 @@ TEST_CASE("LEFT and RIGHT on a carried row walk its quick slot, and X drops it a
     CHECK(tavern.playerWeapon() == Weapon::Blunt);
     CHECK(session.characterRows()[17] == "IN HAND  CUDGEL 7-9 IMPACT");
     // X: dropped at the feet, the row gone, the hand bare, the slot stale.
-    session.toggleCharacter();
+    // The tile is still up with its cursor on the cudgel's row (the number
+    // key never puts the Menu down).
+    REQUIRE(session.characterOpen());
+    REQUIRE(session.highlightedKitRow().has_value());
     const std::size_t rowsBefore = session.characterRows().size();
     session.dropHighlightedKitRow();
     CHECK(session.lastMessage() == "DROPPED - CUDGEL.");

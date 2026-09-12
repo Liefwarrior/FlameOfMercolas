@@ -23,6 +23,7 @@
 
 #include <doctest/doctest.h>
 
+#include <cctype>
 #include <cmath>
 #include <string>
 #include <vector>
@@ -212,9 +213,11 @@ TEST_CASE("a corpse in reach is SEARCH <NAME>  DEAD, and the press opens his kit
     // The widget wears his name.
     const DialogueViewState view = session.dialogueView();
     CHECK(view.open);
-    const bool named = view.speaker == corpse->name() ||
-                       view.speaker.find(corpse->name().substr(0, 4)) == 0;
-    CHECK(named);
+    std::string shouted = corpse->name();
+    for (char& c : shouted) {
+        c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+    }
+    CHECK(view.speaker == shouted);
     CHECK(view.topics.size() == rows.size());
     // The number takes the first row; the list is one shorter.
     session.chooseGrimoireRow(0);
@@ -350,13 +353,17 @@ TEST_CASE("a thing on a tile is an Item piece off the catalogue, and the placeho
     CHECK(dropped.size() == before.size() + 1);
     // Position from the tile, never from anything the renderer keeps: the
     // knife lies on the body's own tile at the band's surface plus its lift.
+    // (The house has an authored knife on Edda's chair too; the one that is
+    // new is the one on the body's own tile.)
     bool found = false;
     for (const render3d::StaticInstance& piece : dropped) {
-        if (catalogue.itemIds()[catalogue.pieces()[piece.piece].variant] == "knife") {
-            found = true;
-            CHECK(std::abs(piece.position.x - (static_cast<float>(session.body().tileX()) + 0.5F)) < 0.6F);
-            CHECK(std::abs(piece.position.z - (static_cast<float>(session.body().tileY()) + 0.5F)) < 0.6F);
+        if (catalogue.itemIds()[catalogue.pieces()[piece.piece].variant] != "knife") {
+            continue;
         }
+        const bool here =
+            std::abs(piece.position.x - (static_cast<float>(session.body().tileX()) + 0.5F)) < 0.6F &&
+            std::abs(piece.position.z - (static_cast<float>(session.body().tileY()) + 0.5F)) < 0.6F;
+        found = found || here;
     }
     CHECK(found);
     // TAKE (the rope is nearer than the knife or not, either is one fewer).

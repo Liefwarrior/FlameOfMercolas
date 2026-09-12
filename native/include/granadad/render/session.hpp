@@ -2015,6 +2015,14 @@ private:
     /// the investigation outranks a thing on the ground and the lower of the
     /// hands alike. The one three-book walk both rules read.
     [[nodiscard]] bool leadNamedInReach() const;
+    /// KIT BUILD. The corpse the press would SEARCH: the dead body in reach
+    /// of the BODY's own position when no living roster body is nearer --
+    /// the one rule both walks read.
+    [[nodiscard]] const sim::Actor* corpseToSearch() const;
+    /// KIT BUILD. The crosshair's read of the thing on the ground the press
+    /// would TAKE (both walks, both stances): false when nothing is in reach,
+    /// the thing is fixed, or a named lead outranks it.
+    [[nodiscard]] bool groundTargetFor(InteractTarget& out) const;
 
     /// MORROWIND ROUND. Opens/refocuses the tiled Menu on tile `focus`
     /// (kMenuFocusCharacter/Map/Letters/Journal, mod 4): if the Menu is

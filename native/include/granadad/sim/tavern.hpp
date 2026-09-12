@@ -1757,6 +1757,11 @@ public:
     /// band -- an index into groundItems(), or -1. Ties break on list order,
     /// so two runs cannot disagree.
     [[nodiscard]] std::int32_t groundItemInReach() const noexcept;
+    /// The same, asked from a point: the crosshair's read-only walk asks it
+    /// with the BODY's position (which may be a step ahead of the last
+    /// setPlayer), exactly as nearestTo is asked.
+    [[nodiscard]] std::int32_t groundItemInReachOf(std::int32_t xQ8, std::int32_t yQ8,
+                                                   std::int32_t band) const noexcept;
     /// TAKE. Picks up the nearest ground item. Refused past the load ("TOO
     /// MUCH ON YOU"), for a fixed thing, and out of reach (TooFar). Taking
     /// somebody's is theft: the same three-clause witness rule, Crime::Lift,
@@ -1780,6 +1785,9 @@ public:
     /// A DEAD roster body within reach, or nullptr: the SEARCH subject.
     /// Roster only -- the street's people carry nothing (D10).
     [[nodiscard]] const Actor* corpseInReach() const noexcept;
+    /// The same, asked from a point (the crosshair's walk).
+    [[nodiscard]] const Actor* corpseInReachOf(std::int32_t xQ8, std::int32_t yQ8,
+                                               std::int32_t band) const noexcept;
     /// One row of a corpse's kit still on it.
     struct CorpseRow {
         /// Registry index.
