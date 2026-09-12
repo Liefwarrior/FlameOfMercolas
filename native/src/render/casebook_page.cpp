@@ -193,12 +193,8 @@ inline constexpr int kLeadPageRows = 8;
                        : state.tab == CasebookTab::Case ? "CASES"
                                                         : "LEADS";
     const char* commit = state.tab == CasebookTab::Cases ? "READ IT" : "GO TO IT";
-    // THE ONE VERB IS ITS OWN UNDO, and the band says which half it is: on
-    // the lead the compass already carries, F reads LET GO.
-    const int count = static_cast<int>(state.rows.size());
-    const bool onFollowed = state.tab != CasebookTab::Cases && count > 0 &&
-                            state.rows[static_cast<std::size_t>(std::clamp(state.cursor, 0, count - 1))]
-                                .followed;
+    // THE ONE VERB IS ITS OWN UNDO, and the band says which half it is --
+    // casebookFollowVerb: LET GO only on a lead the player CHOSE.
     return {
         PanelOption{std::string(kGlyphUpDown), state.tab == CasebookTab::Cases ? "CASE" : "LEAD",
                     "", accent, InkRole::Dim, false},
@@ -209,7 +205,7 @@ inline constexpr int kLeadPageRows = 8;
         PanelOption{state.commitKey.empty() ? std::string(kGlyphReturn) : state.commitKey, commit,
                     "", accent, InkRole::Dim, false},
         PanelOption{state.followKey.empty() ? std::string("F") : state.followKey,
-                    onFollowed ? "LET GO" : "FOLLOW", "", accent, InkRole::Dim, false},
+                    std::string(casebookFollowVerb(state)), "", accent, InkRole::Dim, false},
         PanelOption{state.closeKey.empty() ? std::string("J") : state.closeKey, "CLOSE", "",
                     accent, InkRole::Dim, false},
     };
@@ -930,8 +926,10 @@ void drawShelfDetail(Framebuffer& target, const PanelRect& detail, const PanelMe
                      ink.dim, alpha);
         return;
     }
+    // (READING) on the book the page already reads -- the list's own word
+    // for it; "(OPEN)" read as "press to open".
     const std::string verb = commit + " - READ IT";
-    const std::string cost = row.fronted ? std::string("(OPEN)") : std::string();
+    const std::string cost = row.fronted ? std::string("(READING)") : std::string();
     drawCommitVerb(target, detail, metric, verb, cost, ink.key, alpha);
     drawCommitPulse(target, detail, metric, verb, cost, accent, alpha, state.commitPulse);
 }
@@ -967,13 +965,22 @@ void drawShelfList(Framebuffer& target, const PanelRect& body, const PanelMetric
         state.commitKey.empty() ? std::string(kGlyphReturn) : state.commitKey;
     if (row.book) {
         const std::string verb = commit + " - READ IT";
-        const std::string cost = row.fronted ? std::string("(OPEN)") : std::string();
+        const std::string cost = row.fronted ? std::string("(READING)") : std::string();
         drawCommitVerb(target, body, metric, verb, cost, ink.key, alpha);
         drawCommitPulse(target, body, metric, verb, cost, accent, alpha, state.commitPulse);
     }
 }
 
 }  // namespace
+
+std::string_view casebookFollowVerb(const CasebookPageState& state) noexcept {
+    const int count = static_cast<int>(state.rows.size());
+    if (state.tab == CasebookTab::Cases || count <= 0) {
+        return "FOLLOW";
+    }
+    const int at = std::clamp(state.cursor, 0, count - 1);
+    return state.rows[static_cast<std::size_t>(at)].chosen ? "LET GO" : "FOLLOW";
+}
 
 CasebookPageScroll casebookPageScroll(const CasebookPageState& state, int frameWidth,
                                       int frameHeight) {

@@ -18,14 +18,17 @@ same drive at `--width=320 --height=180` and `--width=1920 --height=1080`.
   the same arithmetic the casebook page prints, out of one function, so the
   book and the street never disagree. Off your plane it says `BELOW` or
   `ABOVE`. The book keeps the band number, the street cannot see its own.
+  Inside the building a lead is in, the line carries the lead's own short
+  name, `W 6  FLAGSTONES`, not the sign of the house you are standing in.
 - Notches on the ribbon's top rail for discovered named places, on their
   true bearing off a real atan2, not snapped to a compass letter. Bone for a
   place you have stood in or a heard lead has named, amber and wider for the
   lead the compass carries, so you line the fixed mark up on it without
   reading. Behind you the amber one pegs at the nearer rail, so a turn
   always has something to turn toward. Places behind you draw nothing.
-- FOLLOW on the casebook page, F on a keyboard, X on a pad. On the lead the
-  compass already carries the band reads LET GO, and pressing it lets go.
+- FOLLOW on the casebook page, F on a keyboard, X on a pad. On a lead you
+  chose the band reads LET GO, and pressing it lets go. On the default lead
+  it reads FOLLOW, and pressing it holds.
   The page answers in its own header band, `THE COMPASS HOLDS THE
   WEIGHHOUSE.`, `A DEAD END IS NOT A DIRECTION.`, and on the message row
   once the book is down. The default is the newest lead you were told
@@ -75,12 +78,12 @@ Byte identical at every checkpoint. The gate agrees.
 |---|---|---|
 | `ribbon-follow-960.png` | `--trail=mission --follow=weighhouse-ledger --follow-end=street --time=9` | The trail walks to the Mission and reads the body, three leads open, the page follows the ledger and goes down. The ribbon reads `NW 53  THE WEIGHHOUSE`, the amber notch on the top rail sits on the true bearing, the row says `THE COMPASS HOLDS THE WEIGHHOUSE.` |
 | `ribbon-follow-walk-960.png` | the same, `--follow-walk=150` | A hundred and fifty steps of real walking later. `NW 47  THE WEIGHHOUSE  BELOW`. The paces came down and the walk carried the body up a level, so the line says which way the lead is. |
-| `ribbon-weighhouse-960.png` | `--trail=weighhouse --follow=harls-yard --follow-end=street --time=10` | Four leads read, standing at the Weighhouse counter following Harl's Yard. `E 73  HARL'S YARD`, bone notches for the King's Bond, the Outfall and the Mission's door each on its own bearing, the amber one pegged at the east rail. |
+| `ribbon-weighhouse-960.png` | `--trail=weighhouse --follow=harls-yard --follow-end=street --time=10` | Four leads read, standing at the Weighhouse counter following Harl's Yard. `E 73  HARL'S YARD`, bone notches for the King's Bond, the Outfall and the Mission's door each on its own bearing, the amber one pegged at the east rail. Harl's Yard itself draws no bone notch beside the amber. |
 | `ribbon-follow-320.png` | the first drive at `--width=320 --height=180` | The strip pin. The line fits whole under the ribbon at the smallest window the game runs at, with air off the corner. |
 | `ribbon-follow-1920.png` | the first drive at `--width=1920 --height=1080` | The other pin. Same line, same place, the biggest window. |
-| `follow-taken-960.png` | `--trail=mission --follow=weighhouse-ledger --time=9 --settle-steps=0` | FOLLOW taken, the book still up, the band raised. `4 THE LEDGER  >  WEIGHHOUSE` keeps its place word with the arrowhead in the row's air, the badge reads `ON THE COMPASS`, the header band says `THE COMPASS HOLDS THE WEIGHHOUSE.`, the nav band's F reads `LET GO`. `SHOW IT (NW 53)` at the foot, the same NW 53 the ribbon carries. |
-| `follow-refused-960.png` | `--trail=mission --follow=mission-backroom --time=9 --settle-steps=0` | FOLLOW on the lead you already read. The band answers `YOU HAVE BEEN THERE. FOLLOW WHAT IT OPENED.` where it can be read, and the compass does not move. |
-| `shelf-960.png` | `--trail=mission --case-tab=cases --time=9` | The CASES shelf. `THE BLOODLETTER  READING`, `1/3 IN HAND` without naming the two not in hand, `READ  1/4`, `NEXT  MISSION OF THE FLAME`, `COMPASS  ON THIS`, `READ IT (OPEN)` at the foot. One armed cursor. The nav band at rest is keycaps only, F among them. |
+| `follow-taken-960.png` | `--trail=mission --follow=weighhouse-ledger --time=9 --settle-steps=12` | FOLLOW taken, the book still up, the band raised. `4 THE LEDGER  >  WEIGHHOUSE` keeps its place word with the arrowhead in the row's air, the badge reads `ON THE COMPASS`, the header band says `THE COMPASS HOLDS THE WEIGHHOUSE.`, the nav band's F reads `LET GO`. `SHOW IT (NW 53)` at the foot, the same NW 53 the ribbon carries. |
+| `follow-refused-960.png` | `--trail=mission --follow=mission-backroom --time=9 --settle-steps=12` | FOLLOW on the lead you already read. The band answers `YOU HAVE BEEN THERE. FOLLOW WHAT IT OPENED.` where it can be read, and the compass does not move. |
+| `shelf-960.png` | `--trail=mission --case-tab=cases --time=9` | The CASES shelf. `THE BLOODLETTER  READING`, `1/3 IN HAND` without naming the two not in hand, `READ  1/4`, `NEXT  MISSION OF THE FLAME`, `COMPASS  ON THIS`, `READ IT (READING)` at the foot. One armed cursor. The nav band at rest is keycaps only, F among them. |
 | `shelf-320.png` | the same at `--width=320 --height=180` | The shelf where the body is one pane: the split collapsed and the shelf takes the body, rows, facts and the verb. |
 | `toast-fight-960.png` | `--spawn=158,68,19 --block=5 --time=20 --settle-steps=40` | The guard held through five softened blows in the Gull, which is what shieldwall's first level costs. `SHIELDWALL RISES TO 1` top left on a plate that holds its letters, `FISTS UP` and `GUARD UP` under it, the bouncer's warning on the row. In situ, nothing paused. |
 | `toast-climb-960.png` | `--roofs=leap --time=10 --settle-steps=20` | Up the stair, over the north wall, across the alley. The leap's landing is the third use of skyrunning and the toast reads `SKYRUNNING RISES TO 1` over the lead. The ribbon reads `S 43  MISSION OF THE FLAME  BELOW` from up there. |

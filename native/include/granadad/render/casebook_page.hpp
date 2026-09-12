@@ -188,12 +188,15 @@ struct CasebookLeadRow {
     bool routable = false;
     /// THE PULL PACK: this is the lead the compass carries -- the player's
     /// own pick, or the newest-heard default standing in for one. The row
-    /// KEEPS its place word and wears the arrowhead motif before it; the
-    /// badge reads ON THE COMPASS (its own words, not FOLLOWED's stem: that
-    /// one is the book's past tense, this is the street's present); and the
-    /// nav band's FOLLOW entry reads LET GO on it, because the one verb is
-    /// its own undo.
+    /// KEEPS its place word and wears the arrowhead motif before it, and
+    /// the badge reads ON THE COMPASS (its own words, not FOLLOWED's stem:
+    /// that one is the book's past tense, this is the street's present).
     bool followed = false;
+    /// ...and this one the player PICKED (followed, and not by default). The
+    /// nav band's FOLLOW entry reads LET GO only here, because only here does
+    /// the press let go: on the default row the same press HOLDS the lead,
+    /// so the band says FOLLOW there and means it.
+    bool chosen = false;
 };
 
 /// THE PULL PACK: one row of the CASES shelf. Authored titles and formatted
@@ -367,6 +370,12 @@ struct CasebookPageMetrics {
 };
 [[nodiscard]] CasebookPageMetrics casebookPageMetrics(const CasebookPageState& state,
                                                       int frameWidth, int frameHeight);
+
+/// THE PULL PACK: what the nav band's F entry says for this state -- "LET
+/// GO" on a CHOSEN lead (the press lets it go), "FOLLOW" everywhere else
+/// (the press holds: a default-followed row included). One function, the
+/// band and a case both read it, so the word and the deed cannot part.
+[[nodiscard]] std::string_view casebookFollowVerb(const CasebookPageState& state) noexcept;
 
 /// Which lead a pixel of the master list lands on, or -1. The inverse of what
 /// was drawn, built out of the same walk -- see panel.hpp's optionListAt on why

@@ -209,6 +209,24 @@ TEST_CASE("the ribbon reads the followed lead in the page's own bearing, and the
     CHECK(next == session.casebook().nextOpen());
     CHECK(session.pullTarget().lead == next);
     CHECK_FALSE(session.pullTarget().chosen);
+    // TWO LEADS IN ONE BUILDING: the default is the flagstones, six tiles
+    // west inside the Mission the body is standing in, so the street carries
+    // the lead's own short name, not the sign of the house you are in --
+    // while the page keeps the sign on the row.
+    CHECK(session.pullLineNow() == "W 6  FLAGSTONES");
+    {
+        const CasebookPageState fresh = session.casebookPageState();
+        const CasebookLeadRow* flags = rowFor(fresh, "FLAGSTONES");
+        REQUIRE(flags != nullptr);
+        CHECK(flags->place == "MISSION OF THE FLAME");
+        CHECK(flags->followed);
+        // THE DEFAULT ROW IS FOLLOWED, NOT CHOSEN: the band offers FOLLOW on
+        // it (the press holds), never LET GO.
+        CHECK_FALSE(flags->chosen);
+        CasebookPageState onFlags = fresh;
+        onFlags.cursor = static_cast<int>(flags - fresh.rows.data());
+        CHECK(casebookFollowVerb(onFlags) == "FOLLOW");
+    }
 
     // FOLLOW the Outfall: the line is the page's own bearing to it.
     const std::int32_t outfall = raws().indexOf("the-outfall");
@@ -218,8 +236,25 @@ TEST_CASE("the ribbon reads the followed lead in the page's own bearing, and the
     const CasebookLeadRow* row = rowFor(page, "THE OUTFALL");
     REQUIRE(row != nullptr);
     CHECK(row->followed);
+    CHECK(row->chosen);
     CHECK(session.pullLineNow() == pullLine(row->bearing, row->place));
     CHECK(session.pullLineNow() == row->bearing + "  THE OUTFALL");
+    // LET GO only on the chosen row; FOLLOW on every other, the default
+    // included.
+    {
+        CasebookPageState onOutfall = page;
+        onOutfall.cursor = static_cast<int>(row - page.rows.data());
+        CHECK(casebookFollowVerb(onOutfall) == "LET GO");
+        const CasebookLeadRow* flags = rowFor(page, "FLAGSTONES");
+        REQUIRE(flags != nullptr);
+        CHECK_FALSE(flags->followed);
+        CasebookPageState onFlags = page;
+        onFlags.cursor = static_cast<int>(flags - page.rows.data());
+        CHECK(casebookFollowVerb(onFlags) == "FOLLOW");
+        CasebookPageState shelf = page;
+        shelf.tab = CasebookTab::Cases;
+        CHECK(casebookFollowVerb(shelf) == "FOLLOW");
+    }
     // THE VERB ANSWERS WHERE IT CAN BE READ: the page's own band carries the
     // line for the plate's hold, then lets it go.
     CHECK(page.alert == "THE COMPASS HOLDS THE OUTFALL.");
@@ -645,9 +680,20 @@ TEST_CASE("discovered named places tick the ribbon, the followed lead's tick is 
     session.examine();
     session.stepMany(sim::MoveInput{}, 2);
     hud = session.pullHud();
-    // Several leads opened: several named places tick, each a bearing in
-    // 0..65535, and the followed lead's tick is set and points at its site.
-    CHECK(hud.placeTickBams.size() >= 2);
+    // Three leads opened. The Weighhouse ticks. The Outfall is a WAY on the
+    // sign table (the sewer mouth in the seawall), and ways are ground, not
+    // destinations. The Mission -- stood in AND named by the book -- draws
+    // NO bone notch, because the amber notch (the flagstones, inside it)
+    // already points at it: one place, one notch.
+    CHECK(hud.placeTickBams.size() == 1);
+    // Follow the Outfall and the Mission's own bone notch is back beside the
+    // Weighhouse's: the suppression follows the amber, not the place.
+    const std::int32_t outfall = raws().indexOf("the-outfall");
+    REQUIRE(session.followLead(CaseBookId::Bloodletter, outfall));
+    CHECK(session.pullHud().placeTickBams.size() == 2);
+    REQUIRE(session.followLead(CaseBookId::Bloodletter, outfall));  // let go: back to the default
+    hud = session.pullHud();
+    CHECK(hud.placeTickBams.size() == 1);
     for (const std::int32_t bam : hud.placeTickBams) {
         CHECK(bam >= 0);
         CHECK(bam < 65536);

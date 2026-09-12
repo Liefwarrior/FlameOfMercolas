@@ -2426,6 +2426,11 @@ private:
     [[nodiscard]] const sim::CasebookRaws& rawsOf(CaseBookId id) const noexcept;
     /// The CASES shelf rows, for casebookPageState().
     [[nodiscard]] std::vector<CasebookShelfRow> casebookShelfRows() const;
+    /// Which named place (mapPlaces() index) a lead of ANY book stands in, or
+    /// -1 -- mapPlaceForLead's own two rules (the sign's name, then the
+    /// smallest footprint under the site) freed from the active book's index
+    /// space, for the ribbon's notches and its line.
+    [[nodiscard]] int placeIndexOfLead(const sim::Lead& lead) const;
     /// THE CHARACTER TILE'S OWN CURSOR AND PAGE. Read-only (nothing on this
     /// tile is a choice to make), so there is no "entry" to remember.
     int characterCursor_ = 0;

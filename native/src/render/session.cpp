@@ -3233,11 +3233,32 @@ std::string Session::pullLineNow() const {
         return {};
     }
     const sim::Lead& lead = raws.leads()[static_cast<std::size_t>(target.lead)];
+    const bool here = bodyCanLookAt(lead);
+    // TWO LEADS IN ONE BUILDING BOTH WEAR THE BUILDING'S SIGN. Standing in
+    // the Mission, a line reading "W 13  MISSION OF THE FLAME" names the
+    // house you are in; the lead's own short name -- FLAGSTONES -- is the
+    // spot in it. So when the lead's sign is the sign of the place the body
+    // stands in (and the body is not on the lead itself, where HERE and the
+    // crosshair carry it), the line carries the brief.
+    const int under = mapPlaceUnder(body_->tileX(), body_->tileY());
+    const bool sameSign = !here && under >= 0 && !lead.brief.empty() &&
+                          placeIndexOfLead(lead) == under;
     // BELOW / ABOVE on the street: a walking body cannot see its own band
     // number, so the ribbon says which way; the book keeps the number.
-    return pullLine(pullBearing(body_->tileX(), body_->tileY(), body_->band(), lead.site,
-                                bodyCanLookAt(lead), BandWord::Relative),
-                    lead.place);
+    return pullLine(pullBearing(body_->tileX(), body_->tileY(), body_->band(), lead.site, here,
+                                BandWord::Relative),
+                    sameSign ? lead.brief : lead.place);
+}
+
+int Session::placeIndexOfLead(const sim::Lead& lead) const {
+    const std::vector<MapPlace>& places = mapPlaces();
+    const std::string want = shoutName(lead.place);
+    for (std::size_t i = 0; i < places.size(); ++i) {
+        if (shoutName(places[i].name) == want) {
+            return static_cast<int>(i);
+        }
+    }
+    return mapPlaceUnder(lead.site.x, lead.site.y);
 }
 
 std::vector<CasebookShelfRow> Session::casebookShelfRows() const {
@@ -3400,6 +3421,10 @@ void Session::composePullHud(HudState& hud) const {
     // THE FOLLOWED LEAD: the line, and its amber tick.
     hud.pullLabel = std::string_view{pullLineCache_};
     const PullTarget target = pullTarget();
+    // The place the amber notch already points at draws no bone notch of
+    // its own: the two sat a few degrees apart (the site against the door)
+    // and read as two places.
+    int amberPlace = -1;
     if (target.set) {
         const sim::CasebookRaws& raws = rawsOf(target.book);
         if (static_cast<std::size_t>(target.lead) < raws.leads().size()) {
@@ -3409,6 +3434,7 @@ void Session::composePullHud(HudState& hud) const {
                 // a notch belongs on the bearing, not under a letter.
                 hud.pullTickBam = pullTickBam(px, py, lead.site.x, lead.site.y);
             }
+            amberPlace = placeIndexOfLead(lead);
         }
     }
     // THE DISCOVERED NAMED PLACES: known ground (a heard lead in any book
@@ -3428,25 +3454,14 @@ void Session::composePullHud(HudState& hud) const {
             continue;
         }
         for (const std::int32_t index : book.known()) {
-            const sim::Lead& lead = raws.leads()[static_cast<std::size_t>(index)];
-            const std::string want = shoutName(lead.place);
-            int at = -1;
-            for (std::size_t i = 0; i < places.size(); ++i) {
-                if (shoutName(places[i].name) == want) {
-                    at = static_cast<int>(i);
-                    break;
-                }
-            }
-            if (at < 0) {
-                at = mapPlaceUnder(lead.site.x, lead.site.y);
-            }
+            const int at = placeIndexOfLead(raws.leads()[static_cast<std::size_t>(index)]);
             if (at >= 0 && static_cast<std::size_t>(at) < discovered.size()) {
                 discovered[static_cast<std::size_t>(at)] = 1;
             }
         }
     }
     for (std::size_t i = 0; i < discovered.size(); ++i) {
-        if (!discovered[i] || places[i].way) {
+        if (!discovered[i] || places[i].way || static_cast<int>(i) == amberPlace) {
             continue;
         }
         std::int32_t ax = 0;
@@ -3725,6 +3740,7 @@ CasebookPageState Session::casebookPageState() const {
         row.what = lead.what;
         row.close = lead.close;
         row.followed = followed.set && followed.book == fronted && followed.lead == index;
+        row.chosen = row.followed && followed.chosen;
         row.state = what == sim::LeadState::Followed ? CasebookLeadState::Followed
                     : what == sim::LeadState::Cold   ? CasebookLeadState::Cold
                                                      : CasebookLeadState::Open;
