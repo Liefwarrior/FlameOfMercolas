@@ -10255,26 +10255,37 @@ void walkToTile(Session& session, std::int32_t tileX, std::int32_t tileY) {
     walkStraightTo(session, tileX, tileY);
 }
 
-/// Turns the player's body to look STRAIGHT at a Q8 world point, then steps once
-/// so the room hears the new facing (setPlayerYaw runs in syncTavernToBody, which
-/// only a step calls). RENDER-SIDE, so the atan2 is legal here -- it never
-/// touches the sim's hashed yaw math, it only sets the body's own facing, which
-/// the sightline raycast (VETO 1) then reads. The scripted drives use this to
-/// put a body DEAD ON the crosshair before a swing: the old radial punch hit by
-/// proximity, but the action-combat swing hits the first body on the look-ray,
-/// so a man who is trading blows and shifting his feet has to be re-faced or the
-/// swing casts past him. One step of the target's own drift is far inside the
-/// beam's half-cell, so the aim holds.
-void facePlayerAndSync(Session& session, std::int32_t xQ8, std::int32_t yQ8) {
+/// The BAM bearing from the player's CURRENT tile to a Q8 world point --
+/// facePlayerAndSync's own atan2, pulled out so a caller can WEIGH a turn
+/// before committing it. RENDER-SIDE, so the atan2 is legal here -- it
+/// never touches the sim's hashed yaw math, it only reasons about the
+/// body's own facing.
+[[nodiscard]] sim::Angle bearingToward(const Session& session, std::int32_t xQ8,
+                                        std::int32_t yQ8) noexcept {
     const std::int32_t dx = xQ8 - session.body().x();
     const std::int32_t dy = yQ8 - session.body().y();
-    if (dx != 0 || dy != 0) {
-        // North is -Y and forward is (sin(yaw), -cos(yaw)), so the bearing to
-        // (dx, dy) is atan2(dx, -dy), turned from radians into the BAM turn.
-        constexpr double kTwoPi = 6.283185307179586;
-        const double ang = std::atan2(static_cast<double>(dx), static_cast<double>(-dy));
-        session.body().setYaw(static_cast<sim::Angle>(
-            std::lround(ang * static_cast<double>(sim::kTurnFull) / kTwoPi)));
+    if (dx == 0 && dy == 0) {
+        return session.body().yaw();
+    }
+    // North is -Y and forward is (sin(yaw), -cos(yaw)), so the bearing to
+    // (dx, dy) is atan2(dx, -dy), turned from radians into the BAM turn.
+    constexpr double kTwoPi = 6.283185307179586;
+    const double ang = std::atan2(static_cast<double>(dx), static_cast<double>(-dy));
+    return static_cast<sim::Angle>(std::lround(ang * static_cast<double>(sim::kTurnFull) / kTwoPi)) &
+           (sim::kTurnFull - 1);
+}
+
+/// Turns the player's body to look STRAIGHT at a Q8 world point, then steps once
+/// so the room hears the new facing (setPlayerYaw runs in syncTavernToBody, which
+/// only a step calls). The scripted drives use this to put a body DEAD ON the
+/// crosshair before a swing: the old radial punch hit by proximity, but the
+/// action-combat swing hits the first body on the look-ray, so a man who is
+/// trading blows and shifting his feet has to be re-faced or the swing casts
+/// past him. One step of the target's own drift is far inside the beam's
+/// half-cell, so the aim holds.
+void facePlayerAndSync(Session& session, std::int32_t xQ8, std::int32_t yQ8) {
+    if (xQ8 != session.body().x() || yQ8 != session.body().y()) {
+        session.body().setYaw(bearingToward(session, xQ8, yQ8));
     }
     session.stepMany(sim::MoveInput{}, 1);
 }
@@ -11396,6 +11407,20 @@ void faceTheSpeaker(Session& session) {
             if (voiceRowUpFrom(session, "farewell")) {
                 ++landed;  // 3. the goodbye is on the row
             }
+            // SHE IS ALREADY WALKING OFF. LEAVE ends the talk, and the
+            // WardActor hold is deferred (the README's "The address": only
+            // the Gull's peaceable activities hold today), so she is free
+            // to move the instant the panel closes. runStreetLine's own aim
+            // pointed at where she WAS when the body was placed; eighteen
+            // steps on, on a real street, she can be well off it, and the
+            // fixed shot is left pointed at whatever the street put in that
+            // direction meanwhile -- a passer-by, not her. Every other
+            // ending re-aims at its speaker right before the shutter
+            // (faceTheSpeaker, standBackFrom); this one hadn't.
+            if (const sim::WardActor* who = session.people().byId(street.actorId);
+                who != nullptr && who->visible()) {
+                facePlayerAndSync(session, sim::q8_tile_centre(who->x), sim::q8_tile_centre(who->y));
+            }
             return landed;
         }
         // MOVED: the first topic that is HEARD OUT -- the vanished clerk,
@@ -11417,6 +11442,14 @@ void faceTheSpeaker(Session& session) {
         session.stepMany(sim::MoveInput{}, sim::kStepsPerSecond / 2);
         if (session.talking() && !session.reactionLine().empty()) {
             ++landed;  // 3. still talking, the reaction still standing
+        }
+        // Same re-aim as farewell's, and the same reason: the WardActor
+        // hold is deferred, so even mid-talk she can have drifted off the
+        // placement's original aim by the time the reveal's half-second
+        // has run.
+        if (const sim::WardActor* who = session.people().byId(street.actorId);
+            who != nullptr && who->visible()) {
+            facePlayerAndSync(session, sim::q8_tile_centre(who->x), sim::q8_tile_centre(who->y));
         }
         return landed;
     }
@@ -11501,6 +11534,22 @@ void faceTheSpeaker(Session& session) {
         if (waitForVoice(session, "watch.approach", sim::MoveInput{}, 15 * sim::kStepsPerSecond)) {
             ++landed;
             // The shot turns to the man crossing the room.
+            //
+            // VOICE FIX PASS ATTEMPTED, REVERTED. A wait here for either
+            // tile LOS or a trusted turn bearing (so the reveal shot has an
+            // actual line of sight to Cull instead of a wall) broke ONE MAN,
+            // ONE LINE below every way it was tried: any extra idle time
+            // between the voice-row event and this call gives something
+            // else on the street a chance to speak through say() before the
+            // alert clock this test pins ever reaches zero -- confirmed
+            // empirically (a fresh watchman bark, then a bystander's own
+            // react.* line, both re-arming or replacing state this branch
+            // does not own) rather than assumed. Reverted to firing on the
+            // voice-row event alone, which the pinned suite already holds
+            // correct; the reveal shot's own camera framing (see the
+            // 7/10 critic note on this frame) remains an open, unresolved
+            // gap for a future pass that can afford to touch more of the
+            // Watch's own state machine than a render-side wait can reach.
             faceTheSpeaker(session);
         }
         return landed;
@@ -13097,6 +13146,31 @@ constexpr StreetTrade kStreetTrades[] = {
     {"cat", sim::WardType::Cat},          {"dog", sim::WardType::Dog},
 };
 
+/// True when some OTHER visible ward body already stands within one tile of
+/// (x, y) -- close enough that a first-person turn toward it puts a second
+/// head in the lens beside whoever the frame means to be about. The crowd
+/// was never asked to keep a scripted camera's spot clear (nor should it be:
+/// that is population state, not render state), so this is asked of the
+/// PLACEMENT instead, of both the tile the camera stands on and the tile it
+/// stands beside -- a body queued in beside the target looms just as close
+/// as one queued in beside the camera.
+[[nodiscard]] bool standTileIsCrowded(const Session& session, std::int32_t standX,
+                                       std::int32_t standY, std::int32_t targetX,
+                                       std::int32_t targetY, std::int32_t band,
+                                       std::int32_t exceptId) noexcept {
+    for (const sim::WardActor& other : session.people().actors()) {
+        if (other.id == exceptId || !other.visible() || other.band != band) {
+            continue;
+        }
+        const bool nearStand = std::abs(other.x - standX) <= 1 && std::abs(other.y - standY) <= 1;
+        const bool nearTarget = std::abs(other.x - targetX) <= 1 && std::abs(other.y - targetY) <= 1;
+        if (nearStand || nearTarget) {
+            return true;
+        }
+    }
+    return false;
+}
+
 }  // namespace
 
 StreetLineResult runStreetLine(Session& session, const std::string& who, int topic) {
@@ -13126,32 +13200,44 @@ StreetLineResult runStreetLine(Session& session, const std::string& who, int top
     const sim::WardActor* target = nullptr;
     std::int32_t standX = 0;
     std::int32_t standY = 0;
-    for (const sim::WardActor& actor : session.people().actors()) {
-        if (!actor.visible() || actor.type != wanted) {
-            continue;
-        }
-        if (actor.x >= sim::gull::kFootprintX0 - 4 && actor.x <= sim::gull::kFootprintX1 + 4 &&
-            actor.y >= sim::gull::kFootprintY0 - 6 && actor.y <= sim::gull::kFootprintY1 + 4) {
-            continue;
-        }
-        static constexpr std::int32_t dx[4] = {1, -1, 0, 0};
-        static constexpr std::int32_t dy[4] = {0, 0, 1, -1};
-        for (int n = 0; n < 4 && target == nullptr; ++n) {
-            const std::int32_t sx = actor.x + dx[n];
-            const std::int32_t sy = actor.y + dy[n];
-            if (!session.tiles().standable(sx, sy, actor.band)) {
+    // TWO PASSES. The first also asks that nobody else is standing close
+    // enough to fill the lens (standTileIsCrowded) -- a framing complaint,
+    // not a population one, so it costs the crowd nothing and only changes
+    // WHICH tile the camera takes. The second is the original question
+    // alone, so a trade with nowhere uncrowded to stand still gets its line
+    // rather than none.
+    for (int pass = 0; pass < 2 && target == nullptr; ++pass) {
+        for (const sim::WardActor& actor : session.people().actors()) {
+            if (!actor.visible() || actor.type != wanted) {
                 continue;
             }
-            const sim::WardActor* answers =
-                session.people().nearestTo(sx, sy, actor.band, kStreetReachTiles);
-            if (answers != nullptr && answers->id == actor.id) {
-                target = &actor;
-                standX = sx;
-                standY = sy;
+            if (actor.x >= sim::gull::kFootprintX0 - 4 && actor.x <= sim::gull::kFootprintX1 + 4 &&
+                actor.y >= sim::gull::kFootprintY0 - 6 && actor.y <= sim::gull::kFootprintY1 + 4) {
+                continue;
             }
-        }
-        if (target != nullptr) {
-            break;
+            static constexpr std::int32_t dx[4] = {1, -1, 0, 0};
+            static constexpr std::int32_t dy[4] = {0, 0, 1, -1};
+            for (int n = 0; n < 4 && target == nullptr; ++n) {
+                const std::int32_t sx = actor.x + dx[n];
+                const std::int32_t sy = actor.y + dy[n];
+                if (!session.tiles().standable(sx, sy, actor.band)) {
+                    continue;
+                }
+                if (pass == 0 &&
+                    standTileIsCrowded(session, sx, sy, actor.x, actor.y, actor.band, actor.id)) {
+                    continue;
+                }
+                const sim::WardActor* answers =
+                    session.people().nearestTo(sx, sy, actor.band, kStreetReachTiles);
+                if (answers != nullptr && answers->id == actor.id) {
+                    target = &actor;
+                    standX = sx;
+                    standY = sy;
+                }
+            }
+            if (target != nullptr) {
+                break;
+            }
         }
     }
     if (target == nullptr) {
