@@ -117,14 +117,94 @@ inline constexpr std::size_t kViewmodelPartCount = 5;
 /// Every kind's parts into `scene`, idempotent by (id, version).
 void putViewmodelMeshes(SceneDescription& scene);
 
-/// Where the licensed rig's feet go in view space so the eye sits at its
-/// head: the FantasyHero arms are exported at 1 m = 1 tile with the eye
-/// ~1.65 up; the body's eye is 435/256 tiles above its feet. Half a turn so
-/// the glTF +Z front faces the scene's -Z. The two constants a real export
-/// may move, by design in one place.
-inline constexpr Vec3 kViewmodelRigOffset{0.0F, -1.65F, 0.12F};
+/// A half turn faces the glTF +Z front down the scene's -Z; the hands'
+/// pass keeps its own vertical field, whatever the world's slider says.
 inline constexpr float kViewmodelRigYaw = 3.14159265358979323846F;
 inline constexpr float kViewmodelFovyDegrees = 55.0F;
+
+/// THE RIG'S FRAMING. The exported arms are a standing body's (the Malbers
+/// clips hold a guard at the hips, a block at the face, a cast overhead),
+/// and at a true first-person placement -- the eye 1.65 up the rig, the
+/// body under it -- none of that is in a 55-degree frame: the fists sit
+/// fifty degrees below the axis and only a pauldron shows at the edge. So
+/// the rig is FRAMED per kind and per state the way a first-person rig is:
+/// pushed up and forward and leaned back about the eye (rigPitch), so the
+/// forearms enter from the bottom corners, the shoulders stay behind the
+/// near plane, and the fists (or the blade) sit in the lower third. The
+/// numbers were solved off the clips' joint positions and then tuned on
+/// frames; each one is here, in one place, so a re-export moves them once.
+struct ViewmodelRigPlacement {
+    /// The rig's feet in view space before the lean.
+    Vec3 offset;
+    /// Radians clockwise about +Y, the scene's convention, the half turn
+    /// included.
+    float yaw = kViewmodelRigYaw;
+    /// Radians about the eye's X: positive lifts what is in front of the eye
+    /// (the body leans back under the camera).
+    float pitch = 0.0F;
+};
+
+/// The guard: where the arms sit whenever the hands are up and nothing else
+/// is asked of them (Idle up, and the base every other state pushes off).
+[[nodiscard]] ViewmodelRigPlacement viewmodelGuardPlacement(ViewmodelKind kind) noexcept;
+/// The block: the rig pushed toward the eye so the raised forearms (bare)
+/// or the raised blade (a weapon) cover the middle of the frame.
+[[nodiscard]] ViewmodelRigPlacement viewmodelBlockPlacement(ViewmodelKind kind) noexcept;
+/// The cast: the rig dropped and turned so the off hand, thrown overhead in
+/// the spell clip, lands centre-frame with its glow. RAISES THE STANCE by
+/// construction -- a cast with the hands down still poses up here.
+[[nodiscard]] ViewmodelRigPlacement viewmodelCastPlacement(ViewmodelKind kind) noexcept;
+
+/// THE CLIP POLICY: which of the arms glb's eight clips a state plays and
+/// where in it (0..1 over the clip). The export's clip per state index is
+/// a whole third-person clip, and the V lane picks the frames that read
+/// in first person:
+///
+///   Idle, hands up     the BLOCK clip held at its guard frame (both fists
+///                      forward and up); hands down, its first frame (the
+///                      hips) so the raise is the clip's own motion, eased
+///                      over the stance flip.
+///   Charging           the swing clip scrubbed over its cock (the first
+///                      sixth) by the charge fraction; ChargedHard holds
+///                      there.
+///   SwingLight/Hard    the swing clip from the cock to its end over the
+///                      swing's steps. Bare fists alternate the punch clip
+///                      by swing parity (clip 1 right, clip 2 left); a
+///                      weapon plays the hard clip (index 4) for both tiers.
+///   Block              the block clip from the guard frame to its hold,
+///                      eased over the first steps, then held.
+///   Cast               the cast clip through its window.
+///   Hit                the hit clip through its window.
+struct ViewmodelRigClip {
+    std::uint8_t clip = 0;
+    float frame = 0.0F;
+};
+[[nodiscard]] ViewmodelRigClip viewmodelRigClip(ViewmodelKind kind, const ViewmodelPose& pose) noexcept;
+
+/// The guard frame of the block clip (0..1), and its hold frame: the two
+/// the policy above stands on.
+inline constexpr float kViewmodelGuardFrame = 0.13F;
+inline constexpr float kViewmodelBlockHoldFrame = 0.40F;
+/// The sword's guard is later in ITS block clip (H_Block_Axe: the blade
+/// across the chest as the arms come down), and its hold earlier.
+inline constexpr float kViewmodelSwordGuardFrame = 0.56F;
+inline constexpr float kViewmodelSwordBlockHoldFrame = 0.44F;
+/// The cock: how far into a swing clip the wind-up runs before the strike.
+inline constexpr float kViewmodelCockFrame = 0.16F;
+/// A block, and a placement, eases over this many steps.
+inline constexpr std::int32_t kViewmodelEaseSteps = 6;
+
+/// THE WEAPON SOCKET per hand model (scene.hpp's ViewmodelSocket): the
+/// export parents every weapon to Hand_R with no offset, so a blade runs
+/// down the bone's own +Y -- through the wrist. In the FantasyHero hand's
+/// bone frame the fingers run down -X, the palm faces +Y and the thumb
+/// side is -Z, so a hammer grip turns the weapon's +Y onto -Z (a quarter
+/// turn about X the negative way) and slides its grip centre into the
+/// curled fingers, nine centimetres down the hand and three into the palm.
+/// Fists have no socket (zero).
+[[nodiscard]] ViewmodelSocket viewmodelSocket(ViewmodelKind kind) noexcept;
+/// True when the kind's weapon is baked into the arms glb (the sword).
+[[nodiscard]] bool viewmodelWeaponFused(ViewmodelKind kind) noexcept;
 
 /// THE POSE TABLES. Fills `out.parts` (and state/stateSteps/phase/kind) for
 /// a kind and a machine pose -- a pure function, so a test can pose the

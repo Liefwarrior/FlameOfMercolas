@@ -134,20 +134,29 @@ std::string_view actorRigFile(std::uint8_t rig) noexcept {
     if (rig >= kActorRigCount) {
         return {};
     }
+    // The variant looks first: no WardType has these values.
+    if (rig == kActorRigTownswoman) {
+        // The Generic peasant woman: the other half of the working ward.
+        return "townswoman.glb";
+    }
     switch (static_cast<sim::WardType>(rig)) {
         // The Knights soldier: helmet and blue. The bouncer borrows it too.
+        // (knight.glb is exported and unmapped: the sim has no Watch rank.)
         case sim::WardType::MilitiaWatch:
             return "watchman.glb";
         // The FantasyHero preset: the working quay's own build.
         case sim::WardType::Sailor:
         case sim::WardType::Fisher:
         case sim::WardType::Carter:
-        case sim::WardType::Thief:
             return "dockhand.glb";
-        // The Generic peasant: everybody else who walks on two legs.
+        // The Generic prisoner: rags for the ward's poor and its thieves.
+        case sim::WardType::Wastrel:
+        case sim::WardType::Thief:
+            return "wastrel.glb";
+        // The Generic peasant: everybody else who walks on two legs. The
+        // clergy too, until a robed preset is exported (none is).
         case sim::WardType::Serf:
         case sim::WardType::Shopkeeper:
-        case sim::WardType::Wastrel:
         case sim::WardType::Urchin:
         case sim::WardType::PriestOfTheFlame:
         case sim::WardType::DiscipleOfTheFlame:
@@ -161,6 +170,13 @@ std::string_view actorRigFile(std::uint8_t rig) noexcept {
         default:
             return {};
     }
+}
+
+float actorInstanceScale(sim::WardType type) noexcept {
+    if (!sim::isPerson(type)) {
+        return 1.0F;
+    }
+    return render::figureScaleOf(type).heightTiles / kPersonHeightTiles;
 }
 
 std::string_view actorClipName(ActorClip clip) noexcept {
@@ -198,11 +214,11 @@ ActorClip clipForActivity(sim::Activity activity, std::int32_t swingSeq) noexcep
     }
 }
 
-MeshData buildActorPlaceholder(std::uint8_t rig) {
+MeshData buildActorPlaceholder(std::uint8_t kind) {
     MeshData mesh;
-    mesh.id = actorRigMeshId(rig);
+    mesh.id = actorRigMeshId(kind);
     mesh.version = 1;
-    const auto type = static_cast<sim::WardType>(rig < kActorRigCount ? rig : 0);
+    const auto type = static_cast<sim::WardType>(kind < kActorKindCount ? kind : 0);
     const Palette palette = paletteOf(type);
     const render::FigureScale figure = render::figureScaleOf(type);
     if (sim::isPerson(type)) {
@@ -259,12 +275,12 @@ MeshData buildActorPlaceholder(std::uint8_t rig) {
 }
 
 void putActorRigs(SceneDescription& scene) {
-    for (std::uint32_t rig = 0; rig < kActorRigCount; ++rig) {
-        const MeshData* present = scene.findMesh(actorRigMeshId(rig));
+    for (std::uint32_t kind = 0; kind < kActorKindCount; ++kind) {
+        const MeshData* present = scene.findMesh(actorRigMeshId(kind));
         if (present != nullptr && present->version == 1) {
             continue;
         }
-        scene.putMesh(buildActorPlaceholder(static_cast<std::uint8_t>(rig)));
+        scene.putMesh(buildActorPlaceholder(static_cast<std::uint8_t>(kind)));
     }
 }
 
@@ -296,15 +312,14 @@ std::vector<ActorInstance> actorInstances(const render::Session& session,
         if (distance > params.maxDistance) {
             continue;
         }
-        const render::FigureScale figure = render::figureScaleOf(actor.type);
         ActorInstance body;
-        body.rig = actorRigOf(actor.type);
-        body.instance.meshId = actorRigMeshId(body.rig);
+        // The look by kind and id; the placeholder by kind alone.
+        body.rig = actorRigFor(actor.type, actor.id);
+        body.instance.meshId = actorRigMeshId(actorRigOf(actor.type));
         body.instance.textureId = 0;
         body.instance.position = toScene(px, py, render::bandSurface(actor.band));
         body.instance.yaw = yawOf(actor.facing);
-        body.instance.scale =
-            sim::isPerson(actor.type) ? figure.heightTiles / kPersonHeightTiles : 1.0F;
+        body.instance.scale = actorInstanceScale(actor.type);
         body.instance.tint = tintFor(sky, glow.at(actor.x, actor.y, actor.band), render::Rgb{});
         body.clip = actor.dead ? ActorClip::Death
                                : wardClip(actor.x != actor.prevX || actor.y != actor.prevY);
@@ -328,14 +343,16 @@ std::vector<ActorInstance> actorInstances(const render::Session& session,
             continue;
         }
         const sim::WardType type = render::figureForRole(actor.role(), actor.id());
-        const render::FigureScale figure = render::figureScaleOf(type);
         ActorInstance body;
-        body.rig = actorRigOf(type);
-        body.instance.meshId = actorRigMeshId(body.rig);
+        // The Gull's roster splits by the same draw on the same id: the
+        // roster has names and no sex field, so a named patron's body is
+        // the lot's, said out loud in the README rather than fitted.
+        body.rig = actorRigFor(type, actor.id());
+        body.instance.meshId = actorRigMeshId(actorRigOf(type));
         body.instance.textureId = 0;
         body.instance.position = toScene(px, py, render::bandSurface(actor.band()));
         body.instance.yaw = yawOf(actor.facing());
-        body.instance.scale = sim::isPerson(type) ? figure.heightTiles / kPersonHeightTiles : 1.0F;
+        body.instance.scale = actorInstanceScale(type);
         body.instance.tint =
             tintFor(sky, glow.at(actor.tileX(), actor.tileY(), actor.band()),
                     render::dynamicGlowAt(live, actor.tileX(), actor.tileY(), actor.band()));

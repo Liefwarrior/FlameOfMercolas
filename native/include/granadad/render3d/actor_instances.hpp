@@ -13,21 +13,35 @@
 // in the hashed SceneDescription, so two sessions driven by the same script
 // describe the same crowd byte for byte.
 //
-// THE RIG IS THE WARD TYPE. One look per kind of body, sixteen of them, and
-// the taproom's roles borrow a WardType through render::figureForRole -- the
-// same rule the sprite sheet applies, so there is one look for a person in
-// this game rather than two. Each rig has:
+// THE RIG IS THE WARD TYPE, SPLIT BY ID. One placeholder per kind of body,
+// sixteen of them, and the taproom's roles borrow a WardType through
+// render::figureForRole -- the same rule the sprite sheet applies, so there
+// is one look for a person in this game rather than two. The LOOK a body
+// wears on top of that (the rig byte) is a pure function of its kind and
+// its id: the sim carries no sex, so the working kinds split roughly in half
+// between the townsman and the townswoman rig by an id hash (actorRigFor),
+// the ward's poor and its thieves wear the wastrel rig, and a street child
+// is a townsman or a townswoman drawn at the urchin's own height. Each
+// KIND has:
 //
 //   - a PLACEHOLDER mesh, procedural, built here: a box figure (legs, torso,
 //     head, and a nose block on the -Z face so the facing reads) sized off
 //     render::figureScaleOf, shaded per face like the starter cube. This is
 //     what every test and the docker gate draw, since content/art/lot-3d/ is
-//     licensed and absent there. Its id is actorRigMeshId(rig).
-//   - a FILE NAME, actorRigFile(rig): the glb the adapter looks for under
-//     BackendConfig::modelDir at runtime (townsman / dockhand / watchman --
-//     the asset lane's three humanoids; beasts have none yet and keep the
-//     box). Present -> the skinned model is drawn in its place, animated by
-//     clip index; absent -> the placeholder, silently.
+//     licensed and absent there. Its id is actorRigMeshId(kind) and it is
+//     what instance.meshId names WHATEVER the rig byte says: a box crowd does
+//     not split by sex, so the placeholder frame is the same bytes before and
+//     after the split (only the rig byte in the hash moves).
+//   - a FILE NAME per rig, actorRigFile(rig): the glb the adapter looks for
+//     under BackendConfig::modelDir at runtime (townsman / townswoman /
+//     dockhand / wastrel / watchman -- the asset lane's humanoids; beasts have
+//     none yet and keep the box). Present -> the skinned model is drawn in its
+//     place, animated by clip index; absent -> the placeholder, silently.
+//
+// DECLARED, NOT MAPPED: knight.glb is on disk but the sim has no Watch rank
+// to hang it on (every MilitiaWatch body is the watchman); no robed preset
+// was exported, so the Priest and the Disciple of the Flame keep the
+// townsman until one is.
 //
 // THE CLIP TABLE (Activity -> ActorClip) is the one opinion of what a body
 // is seen doing, and clipForActivity / wardClip are pure so a case can pin
@@ -48,17 +62,64 @@ struct Camera;
 
 namespace granadad::render3d {
 
-/// One rig per WardType (sim/ward_actors.hpp), sixteen of them.
-inline constexpr std::uint32_t kActorRigCount = static_cast<std::uint32_t>(sim::kWardTypeCount);
+/// One placeholder rig per WardType (sim/ward_actors.hpp), sixteen of them,
+/// then the export's VARIANT looks, which share a kind's placeholder box.
+inline constexpr std::uint32_t kActorKindCount = static_cast<std::uint32_t>(sim::kWardTypeCount);
+/// The townswoman: the look half the working kinds (and half the urchins)
+/// wear. The one variant rig id today.
+inline constexpr std::uint8_t kActorRigTownswoman = static_cast<std::uint8_t>(kActorKindCount);
+inline constexpr std::uint32_t kActorRigVariantCount = 1;
+inline constexpr std::uint32_t kActorRigCount = kActorKindCount + kActorRigVariantCount;
 
-/// The rig a body is drawn with. Ids in the actor range of scene.hpp.
-[[nodiscard]] constexpr std::uint32_t actorRigMeshId(std::uint32_t rig) noexcept {
-    return kActorMeshIdBase + rig;
+/// The placeholder mesh for a kind of body. Ids in the actor range of
+/// scene.hpp. A variant rig has no mesh of its own: a body wearing one
+/// carries its KIND's placeholder in instance.meshId.
+[[nodiscard]] constexpr std::uint32_t actorRigMeshId(std::uint32_t kind) noexcept {
+    return kActorMeshIdBase + kind;
 }
 
-/// The rig for a kind of body: its WardType value.
+/// The default rig for a kind of body: its WardType value.
 [[nodiscard]] constexpr std::uint8_t actorRigOf(sim::WardType type) noexcept {
     return static_cast<std::uint8_t>(type);
+}
+
+/// THE SPLIT. The named salt every look draw goes through, so a reader can
+/// tell this lot from any other drawn on an actor id.
+inline constexpr std::uint32_t kSaltLook = 0x4C4F4F4BU;  // "LOOK"
+
+/// The id's look draw: a mixed hash of the actor id under the salt, so the
+/// bit it takes is independent of the id's own parity (which
+/// render::figureForRole already spends on the Gull's patrons).
+[[nodiscard]] constexpr std::uint32_t actorLookDraw(std::int32_t actorId) noexcept {
+    std::uint32_t v = static_cast<std::uint32_t>(actorId) * 0x9E3779B1U ^ kSaltLook;
+    v ^= v >> 16;
+    v *= 0x7FEB352DU;
+    v ^= v >> 15;
+    v *= 0x846CA68BU;
+    v ^= v >> 16;
+    return v;
+}
+
+/// True for a kind whose bodies split between the two peasant rigs: the
+/// ward's working folk. Sailors keep the dockhand (a working quay's crew),
+/// the Watch its soldier, the poor and the thieves the wastrel, the clergy
+/// the townsman (no robed preset), beasts their boxes.
+[[nodiscard]] constexpr bool actorKindSplits(sim::WardType type) noexcept {
+    return type == sim::WardType::Serf || type == sim::WardType::Shopkeeper ||
+           type == sim::WardType::AnimalKeeper || type == sim::WardType::Fisher ||
+           type == sim::WardType::Carter || type == sim::WardType::Urchin;
+}
+
+/// THE RIG A BODY WEARS: a pure function of its kind and its id. A splitting
+/// kind takes the townswoman when the look draw's low bit is set (roughly
+/// half of them, by id, never by position or by clock); everything else
+/// wears its kind's own rig. An urchin's townswoman is the same rig at the
+/// urchin's own instance scale.
+[[nodiscard]] constexpr std::uint8_t actorRigFor(sim::WardType type, std::int32_t actorId) noexcept {
+    if (actorKindSplits(type) && (actorLookDraw(actorId) & 1U) != 0U) {
+        return kActorRigTownswoman;
+    }
+    return actorRigOf(type);
 }
 
 // actorRigFile(rig) and actorClipOneShot(clip) -- the two facts the adapter
@@ -93,17 +154,23 @@ inline constexpr std::uint32_t kActorRigCount = static_cast<std::uint32_t>(sim::
     return static_cast<std::uint32_t>(stepCount + static_cast<std::int64_t>(actorId) * 17);
 }
 
-/// The placeholder figure for a rig: a closed box figure standing on y = 0,
+/// The placeholder figure for a kind: a closed box figure standing on y = 0,
 /// centred on the origin in x and z, facing -Z (north) at yaw 0 with a nose
 /// block on the front of the head. People are built 1.875 tiles tall (the
 /// reference figure; Instance::scale carries the type's ratio, as it does for
-/// a glb) and beasts at their own size. id = actorRigMeshId(rig), version 1.
-[[nodiscard]] MeshData buildActorPlaceholder(std::uint8_t rig);
+/// a glb) and beasts at their own size. id = actorRigMeshId(kind), version 1.
+[[nodiscard]] MeshData buildActorPlaceholder(std::uint8_t kind);
 
-/// Puts every rig's placeholder into the description if it is not there
+/// Puts every kind's placeholder into the description if it is not there
 /// already (checked by id + version, so a per-frame call costs sixteen
 /// lookups).
 void putActorRigs(SceneDescription& scene);
+
+/// The instance scale of a person of this kind: the figure table's height
+/// over the reference person's, the same ratio the sprite sheet draws at --
+/// an urchin is 1.30 / 1.875 of a grown body (a child against a 1.8 m adult),
+/// the Watch a shade over one. Beasts scale 1 (no glb to scale against).
+[[nodiscard]] float actorInstanceScale(sim::WardType type) noexcept;
 
 struct ActorSceneParams {
     /// Bodies further than this from the eye (XZ, tiles) are not instanced

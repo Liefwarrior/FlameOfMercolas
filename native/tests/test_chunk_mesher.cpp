@@ -1623,3 +1623,121 @@ TEST_CASE("a roof plane is flat, dressed, and chimneyed over masonry only") {
         }
     }
 }
+
+TEST_CASE("DIAG: the cells round the Gull's door and the hulls, printed") {
+    const sim::TileQuery tiles(docksWorld());
+    const StaticCatalogue& catalogue = shippedCatalogue();
+    const StaticPlacements placed = placeStaticPieces(tiles, catalogue, {});
+    const auto formName = [](content::TileForm f) {
+        switch (f) {
+            case content::TileForm::Wall: return "W";
+            case content::TileForm::Floor: return "F";
+            case content::TileForm::Open: return ".";
+            case content::TileForm::Void: return "#";
+            case content::TileForm::Ramp: return "R";
+            case content::TileForm::Stair: return "S";
+            default: return "?";
+        }
+    };
+    const std::span<const std::string_view> ids = render::materialIds();
+    for (std::int32_t z = 19; z <= 21; ++z) {
+        std::string grid = "z=" + std::to_string(z) + "\n";
+        for (std::int32_t y = 56; y <= 68; ++y) {
+            grid += std::to_string(y) + ": ";
+            for (std::int32_t x = 142; x <= 164; ++x) {
+                grid += formName(tiles.form(x, y, z));
+                const std::uint16_t m = tiles.material(x, y, z);
+                const std::string mat = m < ids.size() ? std::string(ids[m]) : "?";
+                grid += mat.empty() ? '?' : mat[0];
+                grid += cellRoofed(tiles, x, y, z) ? '^' : ' ';
+                grid += ' ';
+            }
+            grid += "\n";
+        }
+        MESSAGE(grid);
+    }
+    // The timber cells on the street band round the door: what each is.
+    for (std::int32_t y = 56; y <= 68; ++y) {
+        for (std::int32_t x = 142; x <= 164; ++x) {
+            if (tiles.form(x, y, 19) != content::TileForm::Wall) {
+                continue;
+            }
+            const std::uint16_t m = tiles.material(x, y, 19);
+            const MaterialRule* r = catalogue.material(m);
+            if (r == nullptr || r->wallClass != WallClass::Timber) {
+                continue;
+            }
+            int walls = 0;
+            for (int s = 0; s < 4; ++s) {
+                const std::int32_t nx = x + (s == 1 ? 1 : (s == 3 ? -1 : 0));
+                const std::int32_t ny = y + (s == 2 ? 1 : (s == 0 ? -1 : 0));
+                walls += tiles.form(nx, ny, 19) == content::TileForm::Wall ? 1 : 0;
+            }
+            std::string roles;
+            for (const StaticPlacement& p : placed.placements) {
+                if (p.lightX == x && p.lightY == y && p.lightZ == 19) {
+                    roles += std::string(pieceRoleName(p.role)) + " ";
+                }
+            }
+            MESSAGE("timber cell (" << x << "," << y << ") material " << (m < ids.size() ? ids[m] : "?")
+                                     << " wallNeighbours=" << walls << " above=" << formName(tiles.form(x, y, 20))
+                                     << " roles: " << roles);
+        }
+    }
+    // Every hull face: its cell, side, and what stands behind it.
+    int hullFaces = 0;
+    int hullRoomBehind = 0;
+    std::string hullNote;
+    for (const StaticPlacement& p : placed.placements) {
+        if (p.role != PieceRole::Hull) {
+            continue;
+        }
+        ++hullFaces;
+        // The face's normal from the yaw: local -Z out... the piece is
+        // across; use the light cell and the position to find the side.
+        const float cx = static_cast<float>(p.lightX) + 0.5F;
+        const float cz = static_cast<float>(p.lightY) + 0.5F;
+        const float dx = p.instance.position.x - cx;
+        const float dz = p.instance.position.z - cz;
+        int sx = 0, sy = 0;
+        if (std::fabs(dx) > std::fabs(dz)) {
+            sx = dx > 0 ? 1 : -1;
+        } else {
+            sy = dz > 0 ? 1 : -1;
+        }
+        const std::int32_t bx = p.lightX - sx;
+        const std::int32_t by = p.lightY - sy;
+        const bool room = (tiles.form(bx, by, p.lightZ) == content::TileForm::Floor) && cellRoofed(tiles, bx, by, p.lightZ);
+        if (room) {
+            ++hullRoomBehind;
+            if (hullNote.size() < 1500) {
+                hullNote += "(" + std::to_string(p.lightX) + "," + std::to_string(p.lightY) + "," +
+                            std::to_string(p.lightZ) + ") behind=" + formName(tiles.form(bx, by, p.lightZ)) +
+                            (cellRoofed(tiles, bx, by, p.lightZ) ? "^" : "") + "; ";
+            }
+        }
+    }
+    MESSAGE("hull faces " << hullFaces << ", with a roofed floor behind " << hullRoomBehind << ": " << hullNote);
+    // Roof cells reachable by a stair or ramp beneath / beside.
+    int roofFlags = 0;
+    for (const StaticPlacement& p : placed.placements) {
+        if (p.role == PieceRole::RoofFlag) {
+            ++roofFlags;
+        }
+    }
+    int stairsUnderRoof = 0;
+    for (std::int32_t z = 19; z < tiles.sizeZ(); ++z) {
+        for (std::int32_t y = 0; y < tiles.sizeY(); ++y) {
+            for (std::int32_t x = 0; x < tiles.sizeX(); ++x) {
+                const content::TileForm f = tiles.form(x, y, z);
+                if (f != content::TileForm::Stair && f != content::TileForm::Ramp) {
+                    continue;
+                }
+                if (tiles.form(x, y, z + 1) == content::TileForm::Open) {
+                    ++stairsUnderRoof;
+                }
+            }
+        }
+    }
+    MESSAGE("roof flag blocks " << roofFlags << ", stairs/ramps with sky over them " << stairsUnderRoof);
+}

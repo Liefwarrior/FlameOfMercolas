@@ -196,9 +196,37 @@ struct HandPose {
     return pose;
 }
 
-/// How far the licensed rig drops in view space with the hands down -- the
-/// glb path's one lever, since its idle clip is the raised Idle_Combat.
-constexpr float kViewmodelLoweredDrop = 0.11F;
+constexpr float kDegToRad = kPi / 180.0F;
+
+/// The framings, solved off the clips' joint positions (the block clip's
+/// guard frame for the fists, its blade-across frame for the sword, the
+/// spell clip's raised off hand for the cast) and tuned on frames. Yaw is
+/// the half turn less the body's own turn to the left: the sword's hip
+/// stance and the cast's thrown hand both come round into frame when the
+/// body faces a little left of the eye's line.
+[[nodiscard]] constexpr ViewmodelRigPlacement placementOf(Vec3 offset, float turnLeftDegrees,
+                                                          float pitchDegrees) noexcept {
+    return ViewmodelRigPlacement{offset, kViewmodelRigYaw - turnLeftDegrees * kDegToRad,
+                                 pitchDegrees * kDegToRad};
+}
+constexpr ViewmodelRigPlacement kFistsGuard = placementOf(Vec3{0.0F, -1.37F, 0.18F}, 0.0F, 40.0F);
+constexpr ViewmodelRigPlacement kFistsBlock = placementOf(Vec3{0.0F, -1.37F, -0.30F}, 0.0F, 35.0F);
+constexpr ViewmodelRigPlacement kSwordGuard = placementOf(Vec3{0.40F, -2.04F, 0.28F}, 10.0F, 70.0F);
+constexpr ViewmodelRigPlacement kSwordBlock = placementOf(Vec3{0.30F, -1.96F, 0.28F}, 10.0F, 75.0F);
+constexpr ViewmodelRigPlacement kCastPlacement = placementOf(Vec3{0.30F, -1.76F, -0.24F}, 20.0F, -10.0F);
+
+[[nodiscard]] ViewmodelRigPlacement lerp(const ViewmodelRigPlacement& a, const ViewmodelRigPlacement& b,
+                                         float t) noexcept {
+    ViewmodelRigPlacement out;
+    out.offset = Vec3{a.offset.x + (b.offset.x - a.offset.x) * t, a.offset.y + (b.offset.y - a.offset.y) * t,
+                      a.offset.z + (b.offset.z - a.offset.z) * t};
+    out.yaw = a.yaw + (b.yaw - a.yaw) * t;
+    out.pitch = a.pitch + (b.pitch - a.pitch) * t;
+    return out;
+}
+
+/// The sword's socket, and the clubs' and the dagger's: the same grip.
+constexpr ViewmodelSocket kHammerGrip{Vec3{-0.09F, 0.03F, -0.10F}, Vec3{-kPi * 0.5F, 0.0F, 0.0F}};
 
 /// How far down the hands are, 0 raised .. 1 hanging: non-zero only in
 /// Idle (every other state has them up by the sim's own rules), easing
@@ -270,6 +298,106 @@ std::string_view viewmodelWeaponFileOf(std::uint8_t kind) noexcept {
                                       : std::string_view{};
 }
 
+ViewmodelSocket viewmodelSocket(ViewmodelKind kind) noexcept {
+    switch (kind) {
+        case ViewmodelKind::Club:
+        case ViewmodelKind::Dagger:
+        case ViewmodelKind::Sword:
+            return kHammerGrip;
+        case ViewmodelKind::Fists:
+        default:
+            return ViewmodelSocket{};
+    }
+}
+
+bool viewmodelWeaponFused(ViewmodelKind kind) noexcept { return kind == ViewmodelKind::Sword; }
+
+ViewmodelSocket viewmodelSocketOf(std::uint8_t kind) noexcept {
+    return kind < kViewmodelKindCount ? viewmodelSocket(static_cast<ViewmodelKind>(kind))
+                                      : ViewmodelSocket{};
+}
+
+bool viewmodelWeaponFusedOf(std::uint8_t kind) noexcept {
+    return kind < kViewmodelKindCount && viewmodelWeaponFused(static_cast<ViewmodelKind>(kind));
+}
+
+ViewmodelRigPlacement viewmodelGuardPlacement(ViewmodelKind kind) noexcept {
+    return kind == ViewmodelKind::Fists ? kFistsGuard : kSwordGuard;
+}
+
+ViewmodelRigPlacement viewmodelBlockPlacement(ViewmodelKind kind) noexcept {
+    return kind == ViewmodelKind::Fists ? kFistsBlock : kSwordBlock;
+}
+
+ViewmodelRigPlacement viewmodelCastPlacement(ViewmodelKind kind) noexcept {
+    (void)kind;
+    return kCastPlacement;
+}
+
+ViewmodelRigClip viewmodelRigClip(ViewmodelKind kind, const ViewmodelPose& pose) noexcept {
+    const bool armed = kind != ViewmodelKind::Fists;
+    const float guard = armed ? kViewmodelSwordGuardFrame : kViewmodelGuardFrame;
+    const float hold = armed ? kViewmodelSwordBlockHoldFrame : kViewmodelBlockHoldFrame;
+    // The striking hand, the placeholder's own rule: a weapon is always in
+    // the right hand; bare fists alternate, the first swing the right.
+    const bool inFlight =
+        pose.state == ViewmodelState::SwingLight || pose.state == ViewmodelState::SwingHard;
+    const std::int32_t swingNumber = inFlight ? pose.swingSeq : pose.swingSeq + 1;
+    const bool rightHand = armed || (swingNumber & 1) != 0;
+    // The clip indices are the export's: 1/2 the two punches (right, left)
+    // for the fists and a charge pose / the sword cut for the sword; 3/4
+    // the same two punches again, or the sword cut and the swipe up. A
+    // weapon's cock and swing are one clip (the swipe up, index 4) so the
+    // strike carries straight on from the hold.
+    const std::uint8_t swingClip = armed ? 4U : (rightHand ? 3U : 4U);
+    const std::uint8_t cockClip = armed ? 4U : (rightHand ? 1U : 2U);
+    const std::int32_t length = render::viewmodelStateSteps(pose.state);
+    const float progress =
+        length > 0 ? clamp01(static_cast<float>(pose.stateSteps) / static_cast<float>(length)) : 0.0F;
+    ViewmodelRigClip out;
+    switch (pose.state) {
+        case ViewmodelState::Idle: {
+            // The guard frame with the hands up, the first frame (the hips)
+            // with them down, the clip's own motion between.
+            out.clip = 5U;
+            out.frame = guard * (1.0F - loweredAmount(pose));
+            break;
+        }
+        case ViewmodelState::Charging: {
+            out.clip = cockClip;
+            out.frame = kViewmodelCockFrame *
+                        clamp01(static_cast<float>(pose.chargeSteps) /
+                                static_cast<float>(sim::kHardSwingHoldSteps));
+            break;
+        }
+        case ViewmodelState::ChargedHard:
+            out.clip = cockClip;
+            out.frame = kViewmodelCockFrame;
+            break;
+        case ViewmodelState::SwingLight:
+        case ViewmodelState::SwingHard:
+            out.clip = swingClip;
+            out.frame = kViewmodelCockFrame + (1.0F - kViewmodelCockFrame) * progress;
+            break;
+        case ViewmodelState::Block: {
+            const float e = smooth(clamp01(static_cast<float>(pose.stateSteps) /
+                                           static_cast<float>(kViewmodelEaseSteps)));
+            out.clip = 5U;
+            out.frame = guard + (hold - guard) * e;
+            break;
+        }
+        case ViewmodelState::Cast:
+            out.clip = 6U;
+            out.frame = progress;
+            break;
+        case ViewmodelState::Hit:
+            out.clip = 7U;
+            out.frame = progress;
+            break;
+    }
+    return out;
+}
+
 MeshData buildViewmodelPart(ViewmodelKind kind, ViewmodelPartId part) {
     MeshData mesh;
     mesh.id = viewmodelMeshId(kind, part);
@@ -330,15 +458,52 @@ void poseViewmodel(ViewmodelInstance& out, ViewmodelKind kind, const ViewmodelPo
     out.state = pose.state;
     out.stateSteps = pose.stateSteps;
     out.fovyDegrees = kViewmodelFovyDegrees;
-    out.rigOffset = kViewmodelRigOffset;
-    // STANCE: the licensed rig drops with the hands (its idle clip is the
-    // raised Idle_Combat; the drop is the glb path's lowered idle).
     const float down = loweredAmount(pose);
-    out.rigOffset.y -= kViewmodelLoweredDrop * down;
-    out.rigYaw = kViewmodelRigYaw;
-    out.rigScale = 1.0F;
     out.tint = tint;
     out.parts.clear();
+
+    // THE GLB PATH: the framing for the state (the guard, pushed to the
+    // block over its ease, swung to the cast and back over its window --
+    // a one-shot returns to the guard by its own end, so the fall back to
+    // Idle lands without a jump), the clip and the frame the policy picks,
+    // the socket the kind's weapon hangs by.
+    {
+        const ViewmodelRigPlacement guard = viewmodelGuardPlacement(kind);
+        ViewmodelRigPlacement at = guard;
+        if (pose.state == ViewmodelState::Block) {
+            const float e = smooth(clamp01(static_cast<float>(pose.stateSteps) /
+                                           static_cast<float>(kViewmodelEaseSteps)));
+            at = lerp(guard, viewmodelBlockPlacement(kind), e);
+        } else if (pose.state == ViewmodelState::Cast) {
+            const std::int32_t window = render::viewmodelStateSteps(pose.state);
+            const float k = window > 0 ? clamp01(static_cast<float>(pose.stateSteps) /
+                                                 static_cast<float>(window))
+                                       : 0.0F;
+            float e = 1.0F;
+            if (k < 0.3F) {
+                e = easeOut(k / 0.3F);
+            } else if (k > 0.6F) {
+                e = 1.0F - smooth((k - 0.6F) / 0.4F);
+            }
+            at = lerp(guard, viewmodelCastPlacement(kind), e);
+        } else if (pose.state == ViewmodelState::Idle) {
+            // The breathing sway, from rest at re-entry, and only with the
+            // hands up (down, the clip has them at the hips, out of frame).
+            const float t = static_cast<float>(pose.stateSteps);
+            at.offset.y += (1.0F - down) * 0.006F * std::sin(t * (2.0F * kPi / 96.0F));
+            at.offset.x += (1.0F - down) * 0.003F * std::sin(t * (2.0F * kPi / 192.0F));
+        }
+        out.rigOffset = at.offset;
+        out.rigYaw = at.yaw;
+        out.rigPitch = at.pitch;
+        out.rigScale = 1.0F;
+        const ViewmodelRigClip clip = viewmodelRigClip(kind, pose);
+        out.rigClip = clip.clip;
+        out.rigFrame = clip.frame;
+        const ViewmodelSocket socket = viewmodelSocket(kind);
+        out.socketOffset = socket.offset;
+        out.socketRotation = socket.rotation;
+    }
 
     // Which hand strikes: bare fists alternate per swing -- the first swing
     // is the right, the second the left -- and a wind-up belongs to the
