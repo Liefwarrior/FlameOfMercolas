@@ -378,17 +378,18 @@ TEST_CASE("closing the casebook wakes the case row briefly -- the recap, then sl
     CHECK_FALSE(session.caseRowWanted());
 }
 
-TEST_CASE("the Q-hold toast rides the first two quick-bar risings and then retires") {
+TEST_CASE("the quick bar's step toast rides the first two risings and then retires") {
     Session session(quietDocks());
     session.stepMany(sim::MoveInput{}, 5);
     REQUIRE_FALSE(session.wheelHintWanted());
 
     // First rising: a number press brings the bar up, and the toast teaches
-    // the hold in the keyboard's own words.
+    // the STEP in the keyboard's own words -- nine and the sticks cut the
+    // QuickWheel hold, so the wheel is what there is to teach.
     session.selectQuickSlot(0);
     session.stepMany(sim::MoveInput{}, 1);
     CHECK(session.wheelHintWanted());
-    CHECK(session.wheelHintLabel() == "Q HOLD - WHEEL");
+    CHECK(session.wheelHintLabel() == "WHEEL - STEP");
 
     // The pair go down together.
     session.stepMany(sim::MoveInput{}, 130);

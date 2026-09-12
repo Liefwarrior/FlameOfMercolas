@@ -1073,14 +1073,25 @@ public:
     /// closes it otherwise -- the same "the key that opened it closes it"
     /// rule Keys, Options and Pause each still have on their own.
     void toggleMenu();
-    /// Steps menuFocus() forward one tile, wrapping Journal -> Character ->
-    /// Map -> Letters -> (back to Journal). Does nothing while the tiled
-    /// Menu is not open -- a bumper press with nothing open is not what
-    /// opens it, and Keys/Options/Pause have no tiles of their own to step
-    /// between.
+    /// NINE AND THE STICKS: THE RING. Steps one page forward through your
+    /// papers -- the four tiles (Character -> Map -> Letters -> Journal),
+    /// then the WARD MAP, then the GRIMOIRE, then round to Character. On a
+    /// pad the ward map and the grimoire are reachable by NO button of their
+    /// own (SELECT is WAIT, the QuickWheel is cut), so this ring is how a
+    /// controller reaches them: NOTES, then the bumpers -- Oblivion's own
+    /// tabbed menu, where the map is a tab. Does nothing while none of the
+    /// three surfaces is open (a bumper with nothing open opens nothing) and
+    /// nothing from Keys/Options/Pause, which are not pages of NOTES.
     void menuPageNext();
-    /// The same cycle, backward.
+    /// The same ring, backward.
     void menuPagePrev();
+    /// WAIT, the verb: opens the hour-select page (openWait(false)) or closes
+    /// it if it is up -- T and SELECT's own toggle; the pause menu's WAIT row
+    /// is the same door.
+    void toggleWait();
+    /// One turn of the paper -- the BookFlip every step of the ring and every
+    /// tile focus change speaks, in one place.
+    void pageTurnSound();
     /// THE POINTER PASS: focus by NAME rather than by cycling -- a hover or a
     /// click landing on a tile, setCasebookCursor's "a printed digit, or a
     /// mouse click" shape. One BookFlip when the focus actually moves; a
@@ -1343,9 +1354,10 @@ public:
     // Pure render-layer reads: nothing here reaches the simulation, nothing
     // is hashed, and the world hash is byte-identical with the page open.
 
-    /// M (or PadBack -- Select -- on a pad). Toggles the ward map; inert
-    /// while talking or picking, exactly like toggleGrimoire, and every
-    /// other overlay stands down when it opens.
+    /// M on a keyboard; on a pad the map is a page of NOTES (the ring, see
+    /// menuPageNext) and has no button of its own. Toggles the ward map;
+    /// inert while talking or picking, exactly like toggleGrimoire, and
+    /// every other overlay stands down when it opens.
     void toggleDistrictMap();
     [[nodiscard]] bool districtMapOpen() const noexcept { return districtMapOpen_; }
 
@@ -1534,11 +1546,11 @@ public:
     void selectQuickSlot(int slot);
     [[nodiscard]] int quickSlot() const noexcept { return quickSlot_; }
     /// Keeps the bottom-centre quick bar strip on screen for a couple of
-    /// seconds -- called by the client when the QuickWheel goes down, and by
-    /// selectQuickSlot itself, so the strip is up exactly while it is being
+    /// seconds -- called by selectQuickSlot itself (every digit, wheel and
+    /// D-pad step lands there), so the strip is up exactly while it is being
     /// used and stands down after (its own EasedToggle does the easing).
     void showQuickBar();
-    /// True while the strip is WANTED (held wheel or recent selection). The
+    /// True while the strip is WANTED (a recent selection). The
     /// drawn alpha is its EasedToggle's business; this is the target a test
     /// can assert on.
     [[nodiscard]] bool quickBarWanted() const noexcept { return quickBarShowSteps_ > 0; }
@@ -1628,13 +1640,11 @@ public:
 
     // --- the Grimoire page (SPELLS BUILD) ------------------------------------
     //
-    // OWNER RULING: QuickWheel + a Grimoire list page, NO new Menu tile. The
-    // page is the same DialogueViewState/drawDialogue panel every other page
-    // is -- one list widget, proven once -- and it opens off the key the
-    // quick bar already owns: a TAP of QuickWheel (held, the key is the
-    // wheel; released inside HoldToggle's own kTapSteps without stepping a
-    // slot, it is this page). No new binding, no new tile, and the one key
-    // that means "craftings" covers both surfaces.
+    // A list page, NO new Menu tile. The page is the same DialogueViewState/
+    // drawDialogue panel every other page is -- one list widget, proven once.
+    // NINE AND THE STICKS: it is a PAGE OF NOTES now -- one bumper past the
+    // ward map in the ring menuPageNext()/menuPagePrev() walk -- since the
+    // QuickWheel tap that used to open it is cut. No binding of its own.
 
     /// Opens or closes the page. Inert while talking or picking, exactly like
     /// toggleKeys; every other overlay stands down when it opens.
@@ -2637,10 +2647,10 @@ private:
     std::string lastGuildSeen_;
     std::string lastObjectiveSeen_;
     bool lastBookOpen_ = false;
-    /// UI-EA (LANE HUD): THE Q-HOLD TUTOR TOAST. The grimoire's tap-vs-hold
-    /// split stays (flow map #9, ruled a kept modern idiom); this is how it
-    /// is taught -- "Q HOLD - WHEEL", through promptLabel so a pad names its
-    /// own button, raised on the quick bar's first TWO risings ever and
+    /// UI-EA (LANE HUD): THE QUICK BAR'S TUTOR TOAST. Nine and the sticks
+    /// cut the QuickWheel hold, so what is taught is the STEP -- "WHEEL -
+    /// STEP", through promptLabel so a pad names its own D-pad halves and a
+    /// rebind re-words it, raised on the quick bar's first TWO risings ever and
     /// riding the strip's own countdown, then retired for the session. Two
     /// exposures because one can land while the player is looking at the
     /// street, and a third is nagging. The band itself is hud.hpp's
@@ -3060,6 +3070,13 @@ private:
 /// What a scripted capture run was asked to do.
 struct SmokeRunConfig {
     SessionConfig session;
+    /// NINE AND THE STICKS: an EXPLICIT settings file for the headless path
+    /// (`--controls=`), applied through the same loadControls/setControls
+    /// pair the window makes at boot, so a capture can be taken under a
+    /// rebound table. Empty leaves the shipped defaults -- the default file
+    /// beside the exe is never read here, which keeps every shipped frame
+    /// byte-stable against a player's own bindings.
+    std::filesystem::path controlsFile;
     /// Movement steps to run before the frame is taken. 0 captures the spawn.
     int steps = 0;
     /// Where the PNG goes. Empty writes nothing.

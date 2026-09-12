@@ -182,33 +182,43 @@ inline constexpr int kLeadPageRows = 8;
     // keys are the keycap motifs (sec. 5): `UP DOWN` and `LEFT RIGHT` retire
     // for arrowheads, worth ten cells a row to the narrowest window.
     const Rgb accent = panelInk().accent;
-    // THE PULL PACK: five entries now, the same five on every view so the
+    // THE PULL PACK: four entries now, the same four on every view so the
     // band's row count -- and with it the frame's foot -- holds still across
     // the tab row (test_casebook_page's "the views swap the detail pane and
     // nothing else"). The second entry names the NEXT view; the third is the
     // commit in the view's own words (READ IT fronts a case off the shelf);
     // the fourth is FOLLOW, live on every view (a lead here, a case's own
-    // next lead on the shelf).
+    // next lead on the shelf). The second entry's key is the state's
+    // device-worded tab key (NINE AND THE STICKS: keyboard reads its own
+    // hint here too, not just a pad's bumpers).
     const char* next = state.tab == CasebookTab::Leads  ? "CASE"
                        : state.tab == CasebookTab::Case ? "CASES"
                                                         : "LEADS";
     const char* commit = state.tab == CasebookTab::Cases ? "READ IT" : "GO TO IT";
     // THE ONE VERB IS ITS OWN UNDO, and the band says which half it is --
     // casebookFollowVerb: LET GO only on a lead the player CHOSE.
-    return {
+    std::vector<PanelOption> out{
         PanelOption{std::string(kGlyphUpDown), state.tab == CasebookTab::Cases ? "CASE" : "LEAD",
                     "", accent, InkRole::Dim, false},
-        PanelOption{std::string(kGlyphLeft) + std::string(kGlyphRight), next, "", accent,
-                    InkRole::Dim, false},
+        PanelOption{state.navTabKeys.empty()
+                        ? std::string(kGlyphLeft) + std::string(kGlyphRight)
+                        : state.navTabKeys,
+                    next, "", accent, InkRole::Dim, false},
         // SHIP NOTE SEAM 3: the confirm is the state's device-worded key, not
         // a hardcoded ENTER -- a pad reads A GO TO IT here, live.
         PanelOption{state.commitKey.empty() ? std::string(kGlyphReturn) : state.commitKey, commit,
                     "", accent, InkRole::Dim, false},
         PanelOption{state.followKey.empty() ? std::string("F") : state.followKey,
                     std::string(casebookFollowVerb(state)), "", accent, InkRole::Dim, false},
-        PanelOption{state.closeKey.empty() ? std::string("J") : state.closeKey, "CLOSE", "",
-                    accent, InkRole::Dim, false},
     };
+    // NINE AND THE STICKS: a fifth slot when the state names the page keys
+    // (a pad in hand) -- the bumpers walk on to the ward map from here.
+    if (!state.navPageKeys.empty()) {
+        out.push_back(PanelOption{state.navPageKeys, "NOTES", "", accent, InkRole::Dim, false});
+    }
+    out.push_back(PanelOption{state.closeKey.empty() ? std::string("J") : state.closeKey, "CLOSE",
+                              "", accent, InkRole::Dim, false});
+    return out;
 }
 
 /// The three views, in tab-row order. ONE list, three call sites (the
@@ -220,10 +230,21 @@ inline constexpr int kLeadPageRows = 8;
 [[nodiscard]] OptionListStyle navStyleOf() {
     OptionListStyle style;
     style.showKeys = true;
-    style.maxColumns = 4;
+    style.maxColumns = 5;
     style.gutterCells = 2;
     style.minRows = 1;
     return style;
+}
+
+/// THE RECT THE NAV BAND IS PLANNED AGAINST -- the band less a cell of air
+/// off the right edge ("PUT IT DOWN|" reads as punctuated). ONE function,
+/// because the composition's overflow check, the metrics a case measures and
+/// the drawing all have to plan the same list against the same width: the
+/// drawing used to narrow the band by a cell on its own, and the fifth entry
+/// a pad's foot carries (LB RB NOTES, nine and the sticks) fitted the wider
+/// rect the composition checked and fell off the narrower one the frame drew.
+[[nodiscard]] PanelRect navRectOf(const PanelRect& navBand, const PanelMetric& metric) {
+    return PanelRect{navBand.x, navBand.y, std::max(0, navBand.w - metric.cellW()), navBand.h};
 }
 
 /// THE TWO HALVES OF THIS BODY ARE NOT THE SAME KIND OF THING, and the
@@ -562,7 +583,8 @@ inline constexpr int kMinBodyRows = 8;
 
     const std::vector<PanelOption> nav = navOptionsFor(state);
     int navRows = 1;
-    if (planOptionList(nav, out.navBand, out.metric, navStyleOf()).overflowed) {
+    if (planOptionList(nav, navRectOf(out.navBand, out.metric), out.metric, navStyleOf())
+            .overflowed) {
         Composition taller = compose(frameWidth, frameHeight, 2, -1, gridCells);
         if (taller.usable) {
             out = taller;
@@ -1018,7 +1040,8 @@ CasebookPageMetrics casebookPageMetrics(const CasebookPageState& state, int fram
     out.masterCells = comp.metric.cellsIn(comp.body.master.w);
     out.detailCells = comp.metric.cellsIn(comp.body.detail.w);
     const std::vector<PanelOption> nav = navOptionsFor(state);
-    const OptionListPlan navPlan = planOptionList(nav, comp.navBand, comp.metric, navStyleOf());
+    const OptionListPlan navPlan =
+        planOptionList(nav, navRectOf(comp.navBand, comp.metric), comp.metric, navStyleOf());
     out.navEntries = static_cast<int>(nav.size());
     out.navShown = std::min(out.navEntries, navPlan.columns * navPlan.rows);
     out.navRows = comp.metric.rowsIn(comp.navBand.h);
@@ -1227,8 +1250,7 @@ void drawCasebookPage(Framebuffer& target, const CasebookPageState& state) {
     // fade; drawn at rest as bare keycaps (UI-EA-SPEC sec. 2). A CELL OF AIR
     // OFF THE RIGHT EDGE -- "PUT IT DOWN|" reads as punctuated.
     const std::vector<PanelOption> nav = navOptionsFor(state);
-    const PanelRect navRect{comp.navBand.x, comp.navBand.y,
-                            std::max(0, comp.navBand.w - metric.cellW()), comp.navBand.h};
+    const PanelRect navRect = navRectOf(comp.navBand, metric);
     const OptionListPlan navPlan = planOptionList(nav, navRect, metric, navStyleOf());
     std::vector<PanelOption> navCaps = nav;
     for (PanelOption& option : navCaps) {

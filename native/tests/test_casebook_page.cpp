@@ -701,6 +701,27 @@ TEST_CASE("the nav band always names the key that closes the book") {
             INFO("at ", size.first, "x", size.second, " nav rows ", geo.navRows, " shown ",
                  geo.navShown, "/", geo.navEntries);
             REQUIRE(geo.usable);
+            // NINE AND THE STICKS: five slots on both hands -- the ring's
+            // keys ride the foot of every page of it.
+            CHECK(geo.navEntries == 5);
+            CHECK(geo.navShown == geo.navEntries);
+        }
+    }
+
+    // And with a pad in hand, LB RB NOTES, the same rule: every entry shown,
+    // at every size, the second row spent where one will not hold five.
+    session.noteInputDevice(InputDevice::Pad);
+    CasebookPageState padPage = session.casebookPageState();
+    REQUIRE(padPage.navPageKeys == "LB RB");
+    REQUIRE(padPage.closeKey == "B");
+    for (const auto& size : {std::pair{320, 180}, std::pair{640, 360}, std::pair{960, 540},
+                             std::pair{1280, 720}, std::pair{1920, 1080}}) {
+        for (const CasebookTab tab : {CasebookTab::Leads, CasebookTab::Case}) {
+            padPage.tab = tab;
+            const CasebookPageMetrics geo = casebookPageMetrics(padPage, size.first, size.second);
+            INFO("pad at ", size.first, "x", size.second, " nav rows ", geo.navRows, " shown ",
+                 geo.navShown, "/", geo.navEntries);
+            REQUIRE(geo.usable);
             CHECK(geo.navEntries == 5);
             CHECK(geo.navShown == geo.navEntries);
         }
