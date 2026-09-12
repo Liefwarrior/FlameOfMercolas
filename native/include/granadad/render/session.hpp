@@ -20,6 +20,7 @@
 // the other side of the district.
 
 #include <array>
+#include <climits>
 #include <cstdint>
 #include <filesystem>
 #include <functional>
@@ -42,6 +43,7 @@
 #include "granadad/render/lamps.hpp"
 #include "granadad/render/map_view.hpp"
 #include "granadad/render/menu_view.hpp"
+#include "granadad/render/pull.hpp"
 #include "granadad/render/viewmodel_machine.hpp"
 #include "granadad/render/world_renderer.hpp"
 #include "granadad/sim/casebook.hpp"
@@ -912,6 +914,65 @@ public:
     /// The whole page, ready to draw. Public for keysPageState()'s own reason:
     /// a case reads it instead of a screenshot.
     [[nodiscard]] CasebookPageState casebookPageState() const;
+
+    // --- THE PULL PACK (render/pull.hpp) --------------------------------------
+    //
+    // THE STREET SAYS WHERE NEXT. One lead the player chose to FOLLOW rides
+    // the compass ribbon as "NE 40  THE WEIGHHOUSE" with the paces running
+    // down as they walk; discovered named places tick the ribbon; a skill
+    // rising toasts in situ; every book change lands on the plate with a
+    // cue; and the casebook page grows a CASES shelf so "follow" means
+    // something across three books. ALL OF IT IS RENDER STATE -- nothing
+    // below is hashed, encoded or read by the simulation -- test_pull.cpp
+    // proves the tavern and world hashes are byte-identical with and without
+    // a followed lead. The marker doctrine (owner ruling D8) is kept by
+    // construction: the line names a PLACE, never a person and never a clue;
+    // the ticks are bearings on the ribbon, never an arrow in the world;
+    // nothing is drawn on the map plan.
+
+    /// The ONE lead the ribbon follows this frame -- the player's pick while
+    /// it is still Open, else the fronted book's authored next lead.
+    [[nodiscard]] PullTarget pullTarget() const noexcept;
+    /// What the player chose, raw. lead < 0 when they chose nothing.
+    [[nodiscard]] const FollowedLead& followedLead() const noexcept { return followedLead_; }
+    /// FOLLOW a lead by book and index. False (and nothing changes) for a
+    /// lead that is not Open in that book -- there is nowhere to go. Picking
+    /// the lead already followed UNFOLLOWS it (back to the authored default),
+    /// so the one verb is its own undo. Speaks a line either way.
+    bool followLead(CaseBookId book, std::int32_t lead);
+    /// THE FOLLOW VERB ON THE CASEBOOK PAGE (F, or the pad's X): on the LEADS
+    /// and THE CASE views, the highlighted lead; on the CASES shelf, the
+    /// highlighted case's own next lead.
+    void followCasebookSelection();
+    /// "NE 40  THE WEIGHHOUSE", or empty. What the ribbon prints.
+    [[nodiscard]] std::string pullLineNow() const;
+    /// Which book the page and the case row are reading -- the player's
+    /// pick from the CASES shelf while that book is begun and has not since
+    /// closed, else the courier chassis's own auto rule (eviction live, then
+    /// courier live, then the Bloodletter).
+    [[nodiscard]] CaseBookId frontedBook() const noexcept;
+    /// FRONT a book for the page (the CASES shelf's commit). False for a book
+    /// the player has not been handed yet.
+    bool frontCase(CaseBookId book);
+    /// The CASES shelf's own cursor -- a row index into
+    /// CasebookPageState::shelf.
+    [[nodiscard]] int casebookShelfCursor() const noexcept { return caseShelfCursor_; }
+    /// The skill-up toast: what it says, and whether it is wanted -- the
+    /// targets test_pull.cpp asserts on, casePlateWanted()'s own shape.
+    [[nodiscard]] std::string_view skillToastLabel() const noexcept {
+        return std::string_view{skillToastText_};
+    }
+    [[nodiscard]] bool skillToastWanted() const noexcept { return skillToastShowSteps_ > 0; }
+    /// The pull's own HUD fields -- the ribbon line, the two kinds of tick,
+    /// the toast -- on an otherwise default HudState, exactly as drawFrame
+    /// composes them. Public so a case reads the ticks instead of a
+    /// screenshot (keysPageState()'s own reason).
+    [[nodiscard]] HudState pullHud() const;
+    /// The combined hash of the engine's world and every registered system
+    /// (the Gull, the ward, the population) plus the three books -- what
+    /// test_pull.cpp compares with and without a followed lead. Reads only;
+    /// public for exactly that proof.
+    [[nodiscard]] std::uint64_t simHash() const;
 
     // --- THE MOMENT LEADS OPEN ------------------------------------------------
     //
@@ -2261,11 +2322,16 @@ private:
     /// then the courier's errand, then the Bloodletter. Still fixed members
     /// in fixed declaration order, still no switcher UI -- the same flagged
     /// scope cut, one book deeper.
+    ///
+    /// THE PULL PACK GAVE IT THE SWITCHER: frontedBook() is the auto rule
+    /// above unless the player picked a book off the casebook page's CASES
+    /// shelf (caseFront_), which is the "no switcher UI" scope cut closed --
+    /// render state, so the world hash cannot see which book the page reads.
     [[nodiscard]] const sim::CasebookRaws& activeCaseRaws() const noexcept {
-        return evictCaseLive() ? evictRaws_ : (sheetCaseLive() ? sheetRaws_ : caseRaws_);
+        return rawsOf(frontedBook());
     }
     [[nodiscard]] const sim::Casebook& activeCasebook() const noexcept {
-        return evictCaseLive() ? evictBook_ : (sheetCaseLive() ? sheetBook_ : casebook_);
+        return bookOf(frontedBook());
     }
     bool keysOpen_ = false;
     /// SPELLS BUILD. The Grimoire page: whether it is up, which crafting the
@@ -2309,6 +2375,50 @@ private:
     /// key IS the pointer, and every notice ends at the same door (the Menu).
     /// One place builds it so six announcement sites cannot drift apart.
     void armCasePlate(std::string news);
+    // --- THE PULL PACK's own state (see the public block above) -------------
+    /// The player's choice. Render state, never hashed -- pull.hpp's header.
+    FollowedLead followedLead_;
+    /// The CASES shelf's pick: -1 for the auto rule. Cleared on the step the
+    /// picked book closes, so the page falls back to whatever is live.
+    int caseFront_ = -1;
+    int caseShelfCursor_ = 0;
+    /// Per-skill level cache the toast diffs against, once a step.
+    SkillRiseWatch skillRise_;
+    /// The toast's own EVENT triple (text held through the fade, countdown,
+    /// ease) -- the case plate's exact shape. A second rise while one is up
+    /// queues behind it rather than overwriting the words mid-fade.
+    std::string skillToastText_;
+    int skillToastShowSteps_ = 0;
+    EasedToggle skillToastAnim_{kPageEaseSteps, kPageEaseSteps};
+    std::vector<std::string> skillToastQueue_;
+    /// The book-change watcher, once a step.
+    BookNewsWatch bookNews_;
+    /// A site armed the plate in its own words THIS step (examine()'s "3 NEW
+    /// LEADS", the courier's "A MISSION SHEET"), so the watcher does not say
+    /// the same change twice. Set by armCasePlate, cleared in stepPull().
+    bool casePlateArmedThisStep_ = false;
+    /// "NE 40  THE WEIGHHOUSE", rebuilt once a step (and on the press that
+    /// changes it) -- the storage HudState::pullLabel points into.
+    std::string pullLineCache_;
+    /// Named places (mapPlaces() indices) the body has stood in -- the other
+    /// half of "discovered" for the ribbon ticks. Render state.
+    std::vector<std::uint8_t> placesStood_;
+    std::int32_t placesStoodTileX_ = INT32_MIN;
+    std::int32_t placesStoodTileY_ = INT32_MIN;
+    /// The three books as pull.hpp sees them, in fixed member order.
+    [[nodiscard]] BookSet bookSet() const noexcept;
+    /// The one step hook: the skill diff, the book news, the toast's
+    /// countdown, the fronted book's close edge, the places stood.
+    void stepPull();
+    /// The one draw hook: the ribbon line, the ticks and the toast onto the
+    /// HudState drawFrame is assembling.
+    void composePullHud(HudState& hud) const;
+    /// The book whose leads the page lists, by id -- activeCasebook() reads
+    /// through this.
+    [[nodiscard]] const sim::Casebook& bookOf(CaseBookId id) const noexcept;
+    [[nodiscard]] const sim::CasebookRaws& rawsOf(CaseBookId id) const noexcept;
+    /// The CASES shelf rows, for casebookPageState().
+    [[nodiscard]] std::vector<CasebookShelfRow> casebookShelfRows() const;
     /// THE CHARACTER TILE'S OWN CURSOR AND PAGE. Read-only (nothing on this
     /// tile is a choice to make), so there is no "entry" to remember.
     int characterCursor_ = 0;
@@ -3178,6 +3288,12 @@ struct SmokeRunConfig {
     /// room's own blowsBlocked() moving) or a bounded wait runs out -- a
     /// brawl whose every swing whiffed leaves nothing on screen to prove.
     bool block = false;
+    /// THE PULL PACK: how many blows the held guard waits to have softened
+    /// before the shutter -- `--block=5`. One is the old drive; five is what
+    /// shieldwall's first level costs (NEGLECTED: 4 x 320 / 256), so the
+    /// skill-up toast is photographed IN the fight it was earned in, through
+    /// the same guard the right mouse button holds.
+    int blockBlows = 1;
     /// FIRST-PERSON COMBAT (S13). VERIFICATION ONLY. One press of Cast --
     /// Session::castEquipped(), the same call C makes -- after whatever the
     /// other flags scripted. Paired with --flame (whose line ends with the
@@ -3398,6 +3514,18 @@ struct SmokeRunConfig {
     std::string caseLead;
     std::string caseTab;
     bool caseRoute = false;
+    /// THE PULL PACK. `--follow=ID` presses FOLLOW on a lead by its
+    /// casebook.json id, through the page's own verbs -- the book opened by
+    /// the Menu key's call, the cursor put on the lead, the FOLLOW verb
+    /// pressed -- and leaves the book up, so the frame is FOLLOWING on the
+    /// row and the badge. `--follow-end=street` puts the book down again,
+    /// so the frame is the ribbon carrying the lead; `--follow-walk=N` then
+    /// walks N steps forward first, so two frames show the paces running
+    /// down. Runs AFTER the trail flags (so `--trail=mission` can have opened
+    /// the lead) and BEFORE the menu flags.
+    std::string follow;
+    std::string followEnd;
+    int followWalk = 0;
 
     /// THE WARD MAP (core action #13), VERIFICATION ONLY: open the district
     /// map through the same Session::toggleDistrictMap() the M key calls,

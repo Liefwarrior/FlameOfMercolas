@@ -128,8 +128,15 @@ enum class CasebookTab : std::uint8_t {
     Leads = 0,
     /// The case itself: the hook, the ward's nerve, and the count.
     Case = 1,
+    /// THE PULL PACK: the CASES shelf -- every book the player has been
+    /// handed and every questline they have started, with where each stands,
+    /// and the commit that fronts one for the page. Oblivion's one
+    /// presentation contribution the reference doc itself endorses (the
+    /// Current/Completed split), and the switcher the code flagged as
+    /// missing twice.
+    Cases = 2,
 };
-inline constexpr int kCasebookTabCount = 2;
+inline constexpr int kCasebookTabCount = 3;
 
 /// Where a lead stands, for drawing. Mirrors sim::LeadState minus Unheard,
 /// which never reaches this page: an unheard lead is not in the book.
@@ -179,6 +186,34 @@ struct CasebookLeadRow {
     /// route to it. False makes the verb say so instead of offering a key that
     /// would do nothing.
     bool routable = false;
+    /// THE PULL PACK: this is the lead the ribbon follows -- the player's own
+    /// pick, or the authored default standing in for one. The value column
+    /// reads FOLLOWING instead of the place and the badge says so, the same
+    /// "state changes the row" rule the three sim states already keep; the
+    /// FOLLOW verb on it reads UNFOLLOW.
+    bool followed = false;
+};
+
+/// THE PULL PACK: one row of the CASES shelf. Authored titles and formatted
+/// facts, nothing computed.
+struct CasebookShelfRow {
+    /// "THE BLOODLETTER", "THE DISCIPLE'S OATH".
+    std::string title;
+    /// Where it stands, in the tallies' own one-word forms: "READ 4/9",
+    /// "CLOSED", "NOT YET", "STAGE 2/6", "DONE".
+    std::string state;
+    /// The next thing, worded: an open lead's place, a stage's own label, or
+    /// the close line. Empty is worded by the drawing, never blank.
+    std::string next;
+    /// A book (frontable, followable) rather than a questline (read-only).
+    bool book = false;
+    /// The book the page is reading.
+    bool fronted = false;
+    /// Holds the lead the ribbon follows.
+    bool followed = false;
+    /// Begun: something to front. A book the player has not been handed
+    /// prints NOT YET and refuses the commit.
+    bool selectable = false;
 };
 
 /// Everything the page draws. A closed page draws nothing at all.
@@ -204,6 +239,15 @@ struct CasebookPageState {
     std::vector<CasebookLeadRow> rows;
     /// Index into `rows`. Never clamped here: the cursor belongs to the caller.
     int cursor = 0;
+
+    // --- the CASES shelf (THE PULL PACK) -----------------------------------
+    std::vector<CasebookShelfRow> shelf;
+    /// Index into `shelf`, the caller's own, never clamped here.
+    int shelfCursor = 0;
+    /// The FOLLOW verb's key in the live device's vocabulary: "F" on a
+    /// keyboard (a raw page key, the map's own T precedent), the Attack
+    /// half's button on a pad (X). Empty prints no FOLLOW entry.
+    std::string followKey = "F";
 
     // --- the CASE view -----------------------------------------------------
     std::string hook;

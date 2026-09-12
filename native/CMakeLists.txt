@@ -359,6 +359,11 @@ add_library(granadad-render STATIC
     # This is the surface the owner's playthrough stalled on: three leads opened
     # at the Weighhouse and nothing on the screen said so. See the header.
     src/render/casebook_page.cpp
+    # THE PULL PACK -- the street says where next: the followed lead's line
+    # and the named-place ticks on the compass ribbon, the skill-up toast,
+    # the book-change watcher. Render state only, never hashed; the marker
+    # doctrine (owner ruling D8) kept by construction. See the header.
+    src/render/pull.cpp
     # JUSTICE BUILD (HEARING PAGE LANE) -- the Flame's bench as a page: the
     # paper laid, the charge off the ledger, the three rows, the priest's
     # weighing in the reference's own four-line check block, the judgment
@@ -741,6 +746,14 @@ if(GRANADAD_BUILD_TESTS)
         # session actually settles into, and the Q-hold tutor toast's
         # two-showings-then-retired life. The diet cannot regress silently.
         tests/test_hud_diet.cpp
+        # THE PULL PACK -- the followed lead is provably outside every hash
+        # (tavern and world byte-identical with and without one), the ribbon
+        # line reads the page's own bearing, the toast fires on a real level
+        # and queues behind itself, the watcher announces the two silent
+        # hears and a stage, the shelf fronts a book, the strip is pinned at
+        # 320x180 and 1920x1080, and the doctrine holds (never a person,
+        # never a clue, nothing on the plan).
+        tests/test_pull.cpp
         # And every scripted line the demo advertises, accepted -- see the file
         # header for the sprint --skyrun spent landing 2 of 9 beats with nothing
         # in the suite to notice.

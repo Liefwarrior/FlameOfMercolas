@@ -88,9 +88,11 @@ enum class SoundId : std::uint8_t {
     AmbienceCoastal,  ///< 6 s loop under the Harbour bed (BedLoop row)
     AmbienceStone,    ///< 6 s loop under the Interior bed (BedLoop row)
     AmbienceOrganic,  ///< registered and held; no bed reads it yet
+    // THE PULL PACK (appended, never interleaved):
+    CaseNews,         ///< the book changed: a lead heard, a stage moved, an errand taken
 };
 
-inline constexpr std::size_t kSoundIdCount = 54;
+inline constexpr std::size_t kSoundIdCount = 55;
 
 [[nodiscard]] constexpr std::size_t soundIndex(SoundId id) noexcept {
     return static_cast<std::size_t>(id);

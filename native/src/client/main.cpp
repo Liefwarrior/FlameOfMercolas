@@ -834,8 +834,10 @@ void print_usage() {
         "                       hold threshold) or the held hard tier (at or\n"
         "                       past it) is on the frame. Pair with\n"
         "                       --settle-steps=0 for an exact count\n"
-        "  --block              VERIFICATION ONLY: pick that same fight, raise\n"
-        "                       the guard, hold it until a blow is softened\n"
+        "  --block[=N]          VERIFICATION ONLY: pick that same fight, raise\n"
+        "                       the guard, hold it until N blows are softened\n"
+        "                       (default 1; 5 earns shieldwall's first level\n"
+        "                       and the SHIELDWALL RISES TO 1 toast mid-fight)\n"
         "  --cast               VERIFICATION ONLY: press the cast key once\n"
         "                       (pair with --flame to have a spell to cast)\n"
         "  --held=ID[,ID]       VERIFICATION ONLY: equip each crafting by id\n"
@@ -1212,6 +1214,7 @@ void print_usage() {
             options.smoke.caseLead = value;
             options.wantsSmoke = true;
         } else if (starts_with(arg, "--case-tab=", &value)) {
+            // THE PULL PACK: `cases` is the third view, the shelf.
             options.smoke.caseTab = value;
             options.wantsSmoke = true;
         } else if (std::strcmp(arg, "--case-route") == 0) {
@@ -1259,6 +1262,21 @@ void print_usage() {
         } else if (std::strcmp(arg, "--block") == 0) {
             // VERIFICATION ONLY. See SmokeRunConfig::block's own header.
             options.smoke.block = true;
+            options.wantsSmoke = true;
+        } else if (starts_with(arg, "--block=", &value)) {
+            // THE PULL PACK. See SmokeRunConfig::blockBlows' own header.
+            options.smoke.block = true;
+            options.smoke.blockBlows = std::max(1, std::atoi(value));
+            options.wantsSmoke = true;
+        } else if (starts_with(arg, "--follow=", &value)) {
+            // THE PULL PACK. See SmokeRunConfig::follow's own header.
+            options.smoke.follow = value;
+            options.wantsSmoke = true;
+        } else if (starts_with(arg, "--follow-end=", &value)) {
+            options.smoke.followEnd = value;
+            options.wantsSmoke = true;
+        } else if (starts_with(arg, "--follow-walk=", &value)) {
+            options.smoke.followWalk = std::max(0, std::atoi(value));
             options.wantsSmoke = true;
         } else if (std::strcmp(arg, "--cast") == 0) {
             // VERIFICATION ONLY. See SmokeRunConfig::cast's own header.
@@ -2091,6 +2109,19 @@ void print_usage() {
             session.commitCasebookLead();
             return true;
         }
+        // THE PULL PACK: FOLLOW. F is a raw page key exactly as the map's T
+        // is, and Attack is the pad's own half of the verb -- X (PadWest),
+        // the one face button unclaimed on this page (A is the commit, B
+        // backs out) -- the map's travel precedent to the letter, keyIsPad
+        // gate included: Attack's keyboard binding is MouseLeft, and a
+        // left-click on the book is already the pointer's select-then-commit.
+        // A verb somebody BINDS to F outranks the convenience (the T rule).
+        if ((key == render::Key::F && action == render::Action::Count) ||
+            (render::keyIsPad(key) && action == render::Action::Attack)) {
+            session.armCommitPulse();
+            session.followCasebookSelection();
+            return true;
+        }
         if (pageKey) {
             // UI-EA-SPEC sec. 4 violation #6: `0` IS MORE WHERE A LIST PAGES,
             // INERT ELSEWHERE -- never BACK. Today the lead list follows its
@@ -2300,6 +2331,17 @@ bool session_pointer(render::Session& session, int frameWidth, int frameHeight, 
         const int at = render::casebookLeadAtPixel(page, frameWidth, frameHeight, px, py);
         if (at < 0) {
             return true;
+        }
+        if (page.tab == render::CasebookTab::Cases) {
+            // THE PULL PACK: the pointer on a LEAD while the shelf is up is
+            // the pointer asking for the leads -- step the view back first,
+            // so the click commits the lead it landed on and not the shelf
+            // row the keyboard cursor happened to be resting on.
+            if (!click) {
+                return true;
+            }
+            session.cycleCasebookTab(static_cast<int>(render::CasebookTab::Leads) -
+                                     static_cast<int>(page.tab));
         }
         session.setCasebookCursor(at);
         if (click) {

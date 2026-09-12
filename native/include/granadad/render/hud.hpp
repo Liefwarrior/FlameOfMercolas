@@ -101,6 +101,7 @@
 #include <cstdint>
 #include <string>
 #include <string_view>
+#include <vector>
 
 #include "granadad/render/anim.hpp"
 #include "granadad/render/framebuffer.hpp"
@@ -568,6 +569,37 @@ struct HudState {
     /// Where the plate is in its own rise, signed. See placePlateDrift: the
     /// identical contract, driven off the identical toggle shape.
     float casePlateDrift = 0.0F;
+
+    // --- THE PULL PACK (render/pull.hpp) --------------------------------------
+    //
+    // THE STREET SAYS WHERE NEXT. Three additions to the top band, every one
+    // of them defaulting to "draw nothing" so every hand-built HudState that
+    // predates them is pixel-identical.
+
+    /// STATE tier: "NE 40  THE WEIGHHOUSE" -- the ONE lead the player chose to
+    /// FOLLOW (or the authored next lead standing in for a choice), on the
+    /// ribbon's own sub-label row, from the same bearing/paces arithmetic the
+    /// casebook page prints. Up every frame while a lead is followed; that is
+    /// the one line the UI-EA rest budget grew by (spec 1.2 #11). Empty draws
+    /// nothing. Never a person, never a clue -- the marker doctrine.
+    std::string_view pullLabel;
+    /// The followed lead's own bearing, BAM 0..65535, or -1: drawn as the
+    /// amber tick on the ribbon, under the strip, so the eye can line the
+    /// fixed mark up on it without reading a word.
+    std::int32_t pullTickBam = -1;
+    /// Bearings of DISCOVERED NAMED PLACES (a heard lead names them, or the
+    /// body has stood in them), BAM 0..65535 each: the bone ticks on the
+    /// ribbon. Only the ones inside the strip's 180-degree window draw.
+    std::vector<std::int32_t> placeTickBams;
+
+    /// EVENT tier: the skill-up toast, top-left -- "SKYRUNNING RISES TO 12" --
+    /// Oblivion's own beat in this HUD's own register. Rises through its
+    /// resting row and fades, on Session's own EasedToggle, in situ (mid-fight,
+    /// mid-climb) and never pausing anything. Empty or zero fade draws nothing.
+    std::string_view skillToast;
+    float skillToastFade = 0.0F;
+    /// Signed drift, the plates' own contract: -1 rising in, +1 drifting out.
+    float skillToastDrift = 0.0F;
 };
 
 /// The size the HUD's own register is drawn at: the compass, the hour, the

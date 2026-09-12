@@ -18,6 +18,7 @@
 
 #include <doctest/doctest.h>
 
+#include <algorithm>
 #include <cctype>
 #include <string>
 #include <string_view>
@@ -25,6 +26,7 @@
 #include "granadad/content/content_dir.hpp"
 #include "granadad/render/framebuffer.hpp"
 #include "granadad/render/hud.hpp"
+#include "granadad/render/pull.hpp"
 #include "granadad/render/session.hpp"
 #include "granadad/sim/angle.hpp"
 #include "granadad/sim/casebook.hpp"
@@ -106,6 +108,12 @@ namespace {
     }
     row(s.placePlate, s.placePlateFade);
     row(s.casePlate, s.casePlateFade);
+    // THE PULL PACK: the followed lead's line is STATE tier (up whenever a
+    // lead is followed, drawn with the compass), the toast is EVENT tier.
+    if (s.showCompass) {
+        row(s.pullLabel, 1.0F);
+    }
+    row(s.skillToast, s.skillToastFade);
     if (s.quickBarFade > 0.0F) {
         words += 10;  // the ten slot digits
         if (s.quickSelected >= 0 &&
@@ -139,6 +147,10 @@ namespace {
     rest.aimVerb = "LOOK";
     return rest;
 }
+
+/// hud.cpp's own kGlyphH, restated: the 4x6 font is six rows tall, and the
+/// ribbon strip is one glyph row plus a scale unit of air plus its shadow.
+constexpr int kGlyphHeightForTests = 6;
 
 SessionConfig quietDocks(int hour = 20) {
     SessionConfig config;
@@ -186,6 +198,113 @@ TEST_CASE("the rest street holds the spec's eight-word budget") {
     INFO("ink awake ", awakeInk, ", asleep ", asleepInk);
     CHECK(awakeInk > asleepInk);  // the three woken rows really draw...
     CHECK(asleepInk > 0);         // ...and the rest frame still has its compass and bars
+}
+
+TEST_CASE("the followed lead is the one line the rest budget grew by, and it is never more than six words") {
+    // UI-EA-SPEC 1.2 #11, amended by the PULL PACK: rest = 8, plus the
+    // followed lead's line -- bearing, paces, the place in the sign's own
+    // words, BAND n off-plane -- while a lead is followed. The longest line
+    // any authored lead can print is pinned here across all three case files
+    // from one fixed spot, so a renamed place cannot quietly grow the street.
+    const sim::CasebookRaws bloodletter = sim::CasebookRaws::load(granadad::content::contentDir());
+    const sim::CasebookRaws courier =
+        sim::CasebookRaws::loadFile(sim::missionSheetRawsPath(granadad::content::contentDir()));
+    const sim::CasebookRaws eviction =
+        sim::CasebookRaws::loadFile(sim::evictionRawsPath(granadad::content::contentDir()));
+    int widest = 0;
+    std::string widestLine;
+    for (const sim::CasebookRaws* file : {&bloodletter, &courier, &eviction}) {
+        for (const sim::Lead& lead : file->leads()) {
+            // From the Mission's back room, on the surface band, so every
+            // off-band lead prints its BAND word too.
+            const std::string line =
+                pullLine(pullBearing(126, 110, 19, lead.site, false), lead.place);
+            INFO("line: ", line);
+            CHECK(wordsIn(line) <= 6);
+            if (static_cast<int>(line.size()) > widest) {
+                widest = static_cast<int>(line.size());
+                widestLine = line;
+            }
+        }
+    }
+    HudState rest = restStreet();
+    rest.pullLabel = widestLine;
+    const int words = hudWordCount(rest);
+    INFO("rest street with the followed lead: ", words, " words (", widestLine, ")");
+    CHECK(words <= 8 + 6);
+    // And with no lead followed the old budget is untouched.
+    CHECK(hudWordCount(restStreet()) <= 8);
+}
+
+TEST_CASE("the followed-lead strip is pinned at 320x180 and 1920x1080: whole, under the ribbon, clear of the corner and the play space") {
+    // The one line the diet put back has to fit where the old sub-label
+    // lived at the two sizes the game runs at the ends of, with the corner
+    // FULL (clock, purse, standing, heat) -- the two are in one band and a
+    // centred line that ran under a right-anchored corner would be the lock
+    // row through the guild row again.
+    for (const auto& size : {std::pair{320, 180}, std::pair{1920, 1080}}) {
+        HudState corner = restStreet();
+        corner.clockFade = 1.0F;
+        corner.purseFade = 1.0F;
+        corner.standingLabel = "WELL SPOKEN OF";
+        corner.heatLabel = "HEAT 12  WANTED";
+        Framebuffer base(size.first, size.second);
+        base.clear(Rgb{0.10F, 0.12F, 0.14F});
+        Framebuffer withCorner(size.first, size.second);
+        withCorner.clear(Rgb{0.10F, 0.12F, 0.14F});
+        drawHud(withCorner, corner);
+
+        HudState lined = corner;
+        lined.pullLabel = "SW 120  THE DROWNED-NAME WALL  BAND 18";
+        Framebuffer withLine(size.first, size.second);
+        withLine.clear(Rgb{0.10F, 0.12F, 0.14F});
+        drawHud(withLine, lined);
+
+        HudState lineOnly = restStreet();
+        lineOnly.showHealth = false;
+        lineOnly.aimVerb = {};
+        lineOnly.pullLabel = lined.pullLabel;
+        HudState nothing = lineOnly;
+        nothing.pullLabel = {};
+        Framebuffer onlyLine(size.first, size.second);
+        onlyLine.clear(Rgb{0.10F, 0.12F, 0.14F});
+        drawHud(onlyLine, lineOnly);
+        Framebuffer onlyCompass(size.first, size.second);
+        onlyCompass.clear(Rgb{0.10F, 0.12F, 0.14F});
+        drawHud(onlyCompass, nothing);
+
+        const CentreRect centre = hudCentreRect(size.first, size.second);
+        const int scale = hudScale(size.second);
+        const int stripBottom = 3 * scale + (kGlyphHeightForTests + 1) * scale + scale;
+        std::size_t lineInk = 0;
+        int minX = size.first;
+        int maxX = -1;
+        for (int y = 0; y < size.second; ++y) {
+            for (int x = 0; x < size.first; ++x) {
+                const std::size_t i = onlyLine.index(x, y);
+                const bool lineDrew = onlyLine.pixels()[i] != onlyCompass.pixels()[i];
+                const bool cornerDrew = withCorner.pixels()[i] != base.pixels()[i];
+                if (!lineDrew) {
+                    continue;
+                }
+                ++lineInk;
+                minX = std::min(minX, x);
+                maxX = std::max(maxX, x);
+                INFO("line ink at ", x, ",", y, " (", size.first, "x", size.second, ")");
+                // Under the ribbon, above the play space...
+                CHECK(y >= stripBottom);
+                CHECK(y < centre.y0);
+                // ...and never on a pixel the full corner painted.
+                CHECK_FALSE(cornerDrew);
+                // And the frame with both carries the line's own pixel there.
+                CHECK(withLine.pixels()[i] == onlyLine.pixels()[i]);
+            }
+        }
+        CHECK(lineInk > 0);
+        // Whole: both ends inside the frame with a margin of air.
+        CHECK(minX >= 6 * scale);
+        CHECK(maxX < size.first - 6 * scale);
+    }
 }
 
 TEST_CASE("the crosshair-prompt surface holds its fourteen-word budget") {
