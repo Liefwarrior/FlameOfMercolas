@@ -339,7 +339,15 @@ std::vector<ActorInstance> actorInstances(const render::Session& session,
         body.instance.tint =
             tintFor(sky, glow.at(actor.tileX(), actor.tileY(), actor.band()),
                     render::dynamicGlowAt(live, actor.tileX(), actor.tileY(), actor.band()));
-        body.clip = clipForActivity(actor.activity(), actor.npcSwingSeq());
+        // VOICE LANE, THE ADDRESS. The one held for the talk is drawn
+        // STANDING, whatever his schedule says he was doing: the hold keeps
+        // his tile and his face to you (tavern.cpp, stepMovement), and a
+        // held man drawn mid-stride in the walk clip, hair over the face,
+        // read as a prop with a panel over it. The clip is the one render
+        // fact the hold owns; the facing is the sim's, read below as ever.
+        body.clip = session.tavern().holdsForTalk(actor)
+                        ? ActorClip::Idle
+                        : clipForActivity(actor.activity(), actor.npcSwingSeq());
         body.clipFrame = actorClipFrame(stepCount, actor.id());
         body.skinned = distance <= params.skinDistance;
         out.push_back(body);

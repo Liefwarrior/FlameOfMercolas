@@ -1,61 +1,61 @@
 {
   "id": "rumor_barks",
-  "notes": "VOICE LANE (lane/voice): rumor.<family> is WHAT THE WARD SAYS in a trade's own mouth. The WardTalk topic resolves rumor.<family> first and the owner's gossip table after it, so the same door in a sailor's mouth is the lanes and in a keeper's is the dogs. The one row that says the learned word is a priest's (rumor.clergy), by the owner's diction rule; no other family's row ever does, and the suite greps for it. Plain ASCII, no dashes.",
+  "notes": "VOICE LANE (lane/voice): rumor.<family> is WHAT THE WARD SAYS in a trade's own mouth -- the ward's NEWS, things that happened this week and who they happened to, never the snatch overheard.* already carries. The WardTalk topic resolves rumor.<family> first and the owner's gossip table after it, so the same door in a sailor's mouth is the lanes and in a keeper's is the dogs. The one row that says the learned word is a priest's (rumor.clergy), by the owner's diction rule; no other family's row ever does, and the suite greps for it. These rows are the panel's (wrapped), not the voice row's. Plain ASCII, no dashes, no colon.",
   "tables": [
     {
       "key": "rumor.serf",
       "rows": [
-        "No Mercian bottom in two quarters. No wage, no penny, and the Duke counts both.",
-        "They pulled another off the strand at the turn of the tide. Third this season.",
-        "The crane line stopped at noon Kingsday and nobody at the Weighhouse said why."
+        "Muster was short again this morning. The foreman took half the names and sent the rest home.",
+        "A crate broke on the crane line Kingsday and a lad went under it. He's at the Mission now.",
+        "The Netters' Duke posted the penny early. Early means she's afraid of something."
       ]
     },
     {
       "key": "rumor.trade",
       "rows": [
-        "The Bond is full and sealed. Whose goods, the harbourmaster will not say.",
-        "Fenner lends at a Royal on four against the penny. Half this row owes him.",
-        "Lamplight under the Hold's doors again. Officially empty for nine years."
+        "The Weighhouse turned a hull away at dawn. No papers, they said. It had papers.",
+        "Somebody cracked Brann's cellar again and took nothing. Took nothing. Think on that.",
+        "Fenner's had the shutters up since Kingsday. A pawnbroker who won't open is a pawnbroker who's owed."
       ]
     },
     {
       "key": "rumor.maritime",
       "rows": [
-        "The Dezdant war has the lanes past the point. No hull goes out and comes back.",
-        "The Kestrel was at sea the night the bodies came up. Wake tells everyone.",
-        "There is a new name at the Wall every week and no storm to blame for it."
+        "Wake's not sailing the Kestrel. Says she needs caulking. She needs a lane.",
+        "The strand gave up a man at low tide and the post wrote him down as drowned. Drowned men don't come up dry.",
+        "There's talk of a bottom lying off the point at night with no lights. Nobody's rowed out to ask."
       ]
     },
     {
       "key": "rumor.watch",
       "rows": [
-        "The sergeant doubled the Rise patrol. With what men, nobody at the post can say.",
-        "Whatever came up off the strand, the post wrote it down and did nothing else.",
-        "The Watch does not go down the Gullet. That is not a rumor. That is the rule."
+        "The sergeant's pulled the night post off the Rise and put it at the Bond. Guarding boxes, not people.",
+        "Two lads on the Tarwalk beat were paid off Kingsday. The paper's still pinned, so nobody's said why.",
+        "There's a name on the post's board that wasn't there yesterday and nobody at the post will read it out."
       ]
     },
     {
       "key": "rumor.wastrel",
       "rows": [
-        "Somebody is asking after the killings. Nobody asks. The Gullet is warned.",
-        "The grate at the Outfall opens at low tide. What comes up it I will not say.",
-        "The crimp works the Bilge on pay night. A hammock there is a berth elsewhere."
+        "The crimp lost a man off the Bilge Kingsday. Lost him. Nobody's fished him up, so he's not lost, he's sold.",
+        "Old Cobb's dog went into the Hold's alley and came out the other side. Dogs don't do that there.",
+        "There's a stranger at the Eel-Pots paying for the names of who works the strand at night. Paying well."
       ]
     },
     {
       "key": "rumor.clergy",
       "rows": [
-        "The docket is one story this season: a war took the sea road, the widows came.",
-        "I wrote three letters to the monastery about the water. None was answered.",
-        "The catechism has a word for what crossed the sea. Bloodletter. Do not say it on the quay."
+        "Father Maell sat up with a drowned man's widow last night and wrote a letter after. He's stopped sealing them.",
+        "Two disciples came back from the strand at dawn and one of them won't go near the water now. Won't say why.",
+        "The catechism has a word for what I think crossed the sea. Bloodletter. I'll say it in here and nowhere else."
       ]
     },
     {
       "key": "rumor.husbandry",
       "rows": [
-        "The dogs will not work the east end. Not for meat, not for the Watch's coin.",
-        "Cobb's terrier refused the Hold's door. A dog does not refuse a door for nothing.",
-        "The goats are off their feed since the tide turned strange. Beasts know."
+        "Cobb's terriers won't take the east end. He walked them there twice this week and they sat down.",
+        "The impound dog howled all Kingsday night at nothing anyone could see. The keeper's lost his voice at it.",
+        "Three goats gone off the Gallows Row pen this quarter. Not stolen. Gone. The gate was shut."
       ]
     }
   ]

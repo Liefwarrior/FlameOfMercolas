@@ -1714,6 +1714,13 @@ public:
     /// VOICE LANE. The one voice channel: what the street said without the
     /// talk key, as the HUD's voice row draws it and the summary reports it.
     [[nodiscard]] const StreetVoice& voice() const noexcept { return voice_; }
+    /// VOICE LANE. The name the alert row is quoting while it is on the
+    /// frame at all ("Watchman Cull" under his halt, its clock or its fade
+    /// still running), or empty.
+    [[nodiscard]] std::string_view alertSpeakerNow() const noexcept {
+        return (messageSteps_ > 0 || alertAnim_.value() > 0.0F) ? alertSpeakerOf(message_)
+                                                                : std::string_view{};
+    }
     /// VOICE LANE, THE ADDRESS. The worded reaction to the last reply that
     /// moved the speaker's disposition -- "(THE FACE SOFTENS A HAIR)" -- for
     /// as long as it stands on the panel's dateline row; empty otherwise.
@@ -2050,6 +2057,10 @@ private:
     /// VOICE LANE. The voice row's toggle, re-read from the channel -- called
     /// from syncPanelAnim and eagerly from the verbs that can say a line.
     void syncVoiceAnim() noexcept;
+    /// VOICE LANE. The name a sim line on the alert row is quoting -- the
+    /// "<name>: " prefix the halt, the join, the flee, the arrest line and
+    /// a reply all carry -- or empty.
+    [[nodiscard]] static std::string_view alertSpeakerOf(std::string_view line) noexcept;
     /// Charges a landing to the body: the skill, the guild's teaching, the hit
     /// points and the roof-run tally, in the one place a landing is resolved.
     void settleLanding(const sim::RoofResult& move);
@@ -3305,7 +3316,9 @@ struct SmokeRunConfig {
     /// (the street line, then a topic that moves them: the worded reaction
     /// on the panel's dateline row), "react" (into the Gull, a tap on the
     /// nearest patron, a witness's line), "watch" (the Watch line to the
-    /// halt, then the approach readback as Cull crosses the room).
+    /// halt, then the approach readback as Cull crosses the room), "hold"
+    /// (the talk key on a drinking patron in the Gull and ten seconds of
+    /// the room running: he holds where the talk found him, facing you).
     bool voice = false;
     std::string voiceEnd = "pass";
     /// JUSTICE BUILD (HEARING PAGE LANE). Play the court: walk into the Gull
@@ -3727,6 +3740,9 @@ struct SmokeRunResult {
     std::string voiceKey;
     std::string voiceSpeaker;
     std::string voiceRow;
+    /// Who the alert row was quoting at the shutter, or empty: the proof
+    /// that a watchman's readback and his halt were never stacked.
+    std::string voiceAlertSpeaker;
     /// JUSTICE BUILD: beats of the court line (--court), by its ending.
     std::int32_t courtBeats = 0;
     /// How many of the six beats of the bounty run landed.

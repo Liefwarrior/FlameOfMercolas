@@ -436,7 +436,11 @@ TEST_CASE("an actor is drawn where the simulation says the actor is") {
                 found = true;
                 CHECK(body.rig == static_cast<std::uint8_t>(
                                       render::figureForRole(actor.role(), actor.id())));
-                CHECK(body.clip == clipForActivity(actor.activity(), actor.npcSwingSeq()));
+                // VOICE LANE: the one held for a talk stands; nobody is
+                // held here, so this is the activity's own clip.
+                CHECK(body.clip == (session.tavern().holdsForTalk(actor)
+                                        ? ActorClip::Idle
+                                        : clipForActivity(actor.activity(), actor.npcSwingSeq())));
                 break;
             }
         }
@@ -564,4 +568,95 @@ TEST_CASE("the clip table follows the activity and the rigs name the asset lane'
     CHECK(actorClipFrame(10, 0) == 10);
     CHECK(actorClipFrame(10, 1) != actorClipFrame(10, 2));
     CHECK(actorClipFrame(11, 3) == actorClipFrame(10, 3) + 1);
+}
+
+TEST_CASE("the one held for a talk is drawn standing and facing you, whatever his schedule was doing") {
+    // VOICE LANE, THE ADDRESS. A patron walking to his stool at seven is in
+    // the walk clip; the talk key on him holds him (Tavern::holdsForTalk) and
+    // the description draws him in the idle clip with his yaw at the player,
+    // for as long as the talk lasts, and the walk clip comes back when it
+    // ends. The critic's frame had the held bartender mid-stride, hair over
+    // the face, three-quarter turned away: a prop with a panel over it.
+    render::SessionConfig config;
+    config.width = 160;
+    config.height = 90;
+    config.timeOfDay = 19 * 3600;  // Wick Hempson and Hobbin Mastwright walk in at seven
+    config.timeOfDayGiven = true;
+    render::Session session(config);
+    // A few seconds so the seven o'clock arrivals are on the boards and walking.
+    session.stepMany(sim::MoveInput{}, 3 * sim::kStepsPerSecond);
+    const sim::Actor* walker = nullptr;
+    for (const sim::Actor& actor : session.tavern().actors()) {
+        if (actor.present() && actor.activity() == sim::Activity::Walking &&
+            actor.role() == sim::ActorRole::Patron) {
+            walker = &actor;
+            break;
+        }
+    }
+    if (walker == nullptr) {
+        // The room's arrivals are the schedule's business; a run where nobody
+        // is mid-walk at this second proves nothing either way and says so.
+        MESSAGE("no patron mid-walk at 19:00:03 -- the hold's clip is proved by the drinking case");
+        return;
+    }
+    const std::int32_t who = walker->id();
+    // Stand beside him and press the key; the nearest body answers, and
+    // the search moves on if the key reached somebody else.
+    bool held = false;
+    const std::int32_t sides[4][2] = {{0, 1}, {0, -1}, {1, 0}, {-1, 0}};
+    for (const auto& side : sides) {
+        const sim::Actor* now = session.tavern().actorById(who);
+        const std::int32_t x = now->tileX() + side[0];
+        const std::int32_t y = now->tileY() + side[1];
+        if (!session.tiles().standable(x, y, now->band())) {
+            continue;
+        }
+        session.placeBodyAt(x, y, now->band());
+        session.stepMany(sim::MoveInput{}, 1);
+        session.interact();
+        if (session.talking() && session.tavern().talkingTo() == who) {
+            held = true;
+            break;
+        }
+        session.closeConversation();
+    }
+    if (!held) {
+        MESSAGE("the key did not reach the walker from any side");
+        return;
+    }
+    const sim::Actor* now = session.tavern().actorById(who);
+    REQUIRE(now != nullptr);
+    CHECK(session.tavern().holdsForTalk(*now));
+    // Held: the walk clip is gone and the yaw is the sim's own facing, which
+    // the hold turns to the player every step.
+    session.stepMany(sim::MoveInput{}, 2 * sim::kStepsPerSecond);
+    now = session.tavern().actorById(who);
+    const auto standsAt = [](const ActorInstance& body, const sim::Actor& actor) {
+        const Vec3 where = toScene(static_cast<float>(actor.x()) / 256.0F,
+                                   static_cast<float>(actor.y()) / 256.0F,
+                                   render::bandSurface(actor.band()));
+        return nearly(body.instance.position.x, where.x) &&
+               nearly(body.instance.position.y, where.y) &&
+               nearly(body.instance.position.z, where.z);
+    };
+    const std::vector<ActorInstance> bodies = actorInstances(session, session.camera());
+    bool drawn = false;
+    for (const ActorInstance& body : bodies) {
+        if (standsAt(body, *now)) {
+            drawn = true;
+            CHECK(body.clip == ActorClip::Idle);
+            CHECK(body.instance.yaw ==
+                  doctest::Approx(static_cast<float>(now->facing()) * (2.0F * kTestPi / 65536.0F)));
+        }
+    }
+    CHECK(drawn);
+    // And the talk over, the clip is the activity's own again.
+    session.closeConversation();
+    now = session.tavern().actorById(who);
+    CHECK_FALSE(session.tavern().holdsForTalk(*now));
+    for (const ActorInstance& body : actorInstances(session, session.camera())) {
+        if (standsAt(body, *now)) {
+            CHECK(body.clip == clipForActivity(now->activity(), now->npcSwingSeq()));
+        }
+    }
 }

@@ -1277,31 +1277,78 @@ void drawBottomBand(Framebuffer& target, const HudState& state, BottomBand& band
     // on, the speaker in the person accent (aimAccent(AimKind::Person),
     // the colour a body already wears under the crosshair) and the row in
     // the panel's dim ink, the court's officer block moved to the street.
-    // Clipped as ONE line against the frame's width, the row first, so a
-    // long sentence loses its tail and never its speaker.
+    //
+    // TWO LINES WHEN ONE WILL NOT DO. A row's turn is its last sentence,
+    // and at 320x180 the minor scale holds fifty-nine cells, so a long row
+    // clipped to one line lost the part the craft is in. A row that does
+    // not fit beside its name breaks at a word onto a second slot, the
+    // name on the first; only when the band has no second slot does it
+    // clip, marked, as the alert does. And A ROW OF AIR above the alert
+    // when both are up, so the two plates never touch.
     if (!state.voiceLine.empty() && state.voiceFade > 0.0F) {
         const float fade = std::clamp(state.voiceFade, 0.0F, 1.0F);
+        if (!state.alert.empty() && state.showAlert) {
+            (void)band.take(1);
+        }
+        const std::string name =
+            state.voiceName.empty() ? std::string() : std::string(state.voiceName) + ":";
+        const int gutter = name.empty() ? 0 : kGlyphAdvance * minor;
+        const int nameW = textWidth(name, minor);
+        const int firstBudget = std::max(0, rowBudget - nameW - gutter);
+        std::string first(state.voiceLine);
+        std::string second;
+        if (textWidth(first, minor) > firstBudget) {
+            // Break at the last space that fits the first line; the rest
+            // is the second, clipped to the full row if it must be.
+            std::size_t cut = std::string::npos;
+            for (std::size_t i = 0; i < first.size(); ++i) {
+                if (first[i] == ' ' && textWidth(std::string_view(first).substr(0, i), minor) <=
+                                           firstBudget) {
+                    cut = i;
+                }
+            }
+            if (cut != std::string::npos && cut > 0) {
+                second = first.substr(cut + 1);
+                first.resize(cut);
+            }
+        }
         const int y = band.take(minor);
         if (y >= 0) {
-            const std::string name =
-                state.voiceName.empty() ? std::string() : std::string(state.voiceName) + ":";
-            const int gutter = name.empty() ? 0 : kGlyphAdvance * minor;
-            const int nameW = textWidth(name, minor);
-            const int lineBudget = std::max(0, rowBudget - nameW - gutter);
-            const std::string line = clipToWidth(state.voiceLine, lineBudget, minor);
-            const int lineW = textWidth(line, minor);
-            const int drawn = nameW + gutter + lineW;
+            int y2 = -1;
+            if (!second.empty()) {
+                y2 = band.take(minor);
+                if (y2 < 0) {
+                    // No second slot: one line, clipped and marked.
+                    first = clipToWidth(state.voiceLine, firstBudget, minor);
+                    second.clear();
+                } else {
+                    second = clipToWidth(second, rowBudget, minor);
+                }
+            } else {
+                first = clipToWidth(first, firstBudget, minor);
+            }
+            const int firstW = nameW + gutter + textWidth(first, minor);
+            const int secondW = textWidth(second, minor);
+            const int drawn = std::max(firstW, secondW);
             const int textX = std::max(margin, (width - drawn) / 2);
             const int padX = minor * 2;
             const int padY = std::max(1, minor / 2);
-            drawTextPlate(target, textX - padX, y - padY, textX + drawn + padX,
-                          y + kGlyphH * minor + padY, std::max(1, minor / 2), fade);
+            // The second slot is ABOVE the first in the band's own order,
+            // so the row reads down: the name and the opening on the upper
+            // line, the turn on the lower.
+            const int top = y2 >= 0 ? y2 : y;
+            const int bottom = y2 >= 0 ? y : y;
+            drawTextPlate(target, textX - padX, top - padY, textX + drawn + padX,
+                          bottom + kGlyphH * minor + padY, std::max(1, minor / 2), fade);
+            const Rgb dim{0.74F, 0.72F, 0.64F};
             if (!name.empty()) {
-                drawText(target, textX, y, name, aimAccent(static_cast<int>(AimKind::Person)),
+                drawText(target, textX, top, name, aimAccent(static_cast<int>(AimKind::Person)),
                          0.95F * fade, minor);
             }
-            drawText(target, textX + nameW + gutter, y, line, Rgb{0.74F, 0.72F, 0.64F},
-                     0.92F * fade, minor);
+            drawText(target, textX + nameW + gutter, top, first, dim, 0.92F * fade, minor);
+            if (y2 >= 0) {
+                drawText(target, textX, bottom, second, dim, 0.92F * fade, minor);
+            }
         }
     }
     // SPELLS BUILD. THE QUICK BAR STRIP, bottom-centre -- the hotbar slot

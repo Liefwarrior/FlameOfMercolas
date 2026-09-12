@@ -180,7 +180,7 @@ TEST_CASE("every voice row draws, fits beside a name, carries no dash, and keeps
         }
     }
     // The lane's own count: pinned so content lost goes red.
-    CHECK(counted >= 330);
+    CHECK(counted >= 370);
     // And the priest does say it, once, so the rule is a rule and not an
     // absence.
     bool priestSaysIt = false;
@@ -193,7 +193,7 @@ TEST_CASE("every voice row draws, fits beside a name, carries no dash, and keeps
 }
 
 TEST_CASE("the table pin: the voice lane's four files are on the sheet and the count moved by exactly them") {
-    // test_dialogue.cpp pins the whole sheet at 521 (393 before this lane);
+    // test_dialogue.cpp pins the whole sheet at 535 (393 before this lane);
     // this counts only the lane's own keys, so a row lost from a voice file
     // is red here by name.
     std::size_t tables = 0;
@@ -202,7 +202,7 @@ TEST_CASE("the table pin: the voice lane's four files are on the sheet and the c
             ++tables;
         }
     }
-    CHECK(tables == 128);
+    CHECK(tables == 142);
 }
 
 // ===========================================================================
@@ -335,7 +335,7 @@ TEST_CASE("the greeting over five conversations reaches a sibling row and the ke
 // SELECTION IS DRAW-FREE
 // ===========================================================================
 
-TEST_CASE("the pick is a pure function of (actor, step, talks), and the ten-second bucket turns the row") {
+TEST_CASE("the pick is a pure function of (actor, step, talks), and the ten-second bucket turns the ROW TEXT on every voice table") {
     REQUIRE(barks().loaded());
     const std::vector<std::string> chain = voiceChain("pass", "", JobFamily::Serf, Attitude::Neutral);
     const render::VoiceLine a = render::pickVoiceLine(barks(), chain, 7, 1200, 0);
@@ -343,14 +343,211 @@ TEST_CASE("the pick is a pure function of (actor, step, talks), and the ten-seco
     CHECK(a.text == b.text);
     CHECK(a.key == "pass.serf");
     CHECK_FALSE(a.text.empty());
-    // Inside one bucket the row holds; across buckets it turns.
+    // Inside one bucket the row holds.
     CHECK(render::voiceRowIndex(7, 1200, 0) == render::voiceRowIndex(7, 1799, 0));
-    CHECK(render::voiceRowIndex(7, 1200, 0) != render::voiceRowIndex(7, 1800, 0));
-    // Two mouths in one bucket are two rows.
-    CHECK(render::voiceRowIndex(7, 1200, 0) != render::voiceRowIndex(8, 1200, 0));
+    // ACROSS BUCKETS IT TURNS, ON THE TEXT, ON EVERY TABLE THIS LANE
+    // AUTHORED. The critic's catch: an index compared instead of a row, on
+    // the very five-row tables where a multiplier of five left the bucket
+    // dead and a body saying one fixed row forever. The bucket is added
+    // now, so the next bucket is the next row whatever the width, and over
+    // `rows` buckets a mouth walks the whole cell.
+    std::size_t tablesChecked = 0;
+    for (const BarkTables::Table& table : barks().tables()) {
+        if (!voiceKey(table.key) || table.rows.size() < 2) {
+            continue;
+        }
+        ++tablesChecked;
+        for (const std::int32_t actorId : {1, 7, 1000012}) {
+            std::set<std::string> seen;
+            for (std::int32_t bucket = 0; bucket < static_cast<std::int32_t>(table.rows.size());
+                 ++bucket) {
+                seen.insert(std::string(
+                    barks().line(table.key, render::voiceRowIndex(actorId, bucket * 600, 0))));
+            }
+            INFO(table.key, " actor ", actorId);
+            CHECK(seen.size() == table.rows.size());
+            // And two consecutive buckets are never the same row.
+            CHECK(barks().line(table.key, render::voiceRowIndex(actorId, 0, 0)) !=
+                  barks().line(table.key, render::voiceRowIndex(actorId, 600, 0)));
+        }
+    }
+    CHECK(tablesChecked >= 120);
+    // Two mouths in one bucket start at different rows on a table wide
+    // enough to tell them apart.
+    std::set<std::string> mouths;
+    for (const std::int32_t actorId : {1, 2, 3, 4, 5, 6}) {
+        mouths.insert(std::string(barks().line("pass.serf", render::voiceRowIndex(actorId, 0, 0))));
+    }
+    CHECK(mouths.size() >= 3);
     // An unauthored chain is nothing, never "...".
     const render::VoiceLine none = render::pickVoiceLine(barks(), {"nothing.authored"}, 1, 0, 0);
     CHECK(none.empty());
+}
+
+TEST_CASE("<victim> is the name the sim recorded, and a row that needs one is skipped when nobody can be named") {
+    CHECK(render::fillVictim("You've killed <victim>. In front of all of us.", "Gerta Saltcotte") ==
+          "You've killed Gerta Saltcotte. In front of all of us.");
+    CHECK(render::fillVictim("Not getting up.", "") == "Not getting up.");
+    CHECK(render::fillVictim("Flame keep <victim>.", "").empty());
+    // Every slew table has at least one row that needs no name, so a
+    // witness always has something to say.
+    for (const BarkTables::Table& table : barks().tables()) {
+        if (!startsWith(table.key, "react.") || table.key.find(".slew") == std::string::npos) {
+            continue;
+        }
+        bool nameless = false;
+        for (const std::string& row : table.rows) {
+            nameless = nameless || row.find("<victim>") == std::string::npos;
+        }
+        INFO(table.key);
+        CHECK(nameless);
+        // And no slew row says "him" or "he" of the corpse: Gerta and Sella
+        // are on the roster.
+        for (const std::string& row : table.rows) {
+            INFO(row);
+            CHECK(row.find(" him") == std::string::npos);
+            CHECK(row.find("He ") == std::string::npos);
+        }
+    }
+}
+
+TEST_CASE("a two-minute walk on the Tarwalk never says a row twice, across mouths") {
+    // THE CRITIC'S OWN MEASURE: thirteen lines and nine distinct on a
+    // hundred and twenty second walk. The channel remembers every row said
+    // inside two minutes and a spent cell falls to the next rung or stays
+    // quiet, so the count of distinct rows IS the count of rows.
+    render::SessionConfig config;
+    config.contentDir = content::contentDir();
+    config.timeOfDay = 16 * 3600;
+    render::Session session(config);
+    // Up and down the Tarwalk, ten seconds each way, so the walk stays in
+    // the crowd instead of drifting into a corner: the critic's own route.
+    sim::MoveInput walk;
+    walk.forward = 1;
+    std::vector<std::string> heard;
+    std::int32_t lastStep = -1;
+    for (int i = 0; i < 120 * kStepsPerSecond; ++i) {
+        if (i % 600 == 0) {
+            session.body().setYaw((i / 600) % 2 == 0 ? sim::kFacingWest : sim::kFacingEast);
+        }
+        session.step(walk);
+        const render::VoiceLine& line = session.voice().current();
+        if (!line.empty() && line.step != lastStep) {
+            heard.push_back(line.text);
+            lastStep = line.step;
+        }
+    }
+    INFO("lines in two minutes: ", heard.size());
+    CHECK(heard.size() >= 4);
+    std::set<std::string> distinct(heard.begin(), heard.end());
+    CHECK(distinct.size() == heard.size());
+    // And the memory itself: a row said is a row the channel refuses for
+    // two minutes and allows after.
+    REQUIRE_FALSE(heard.empty());
+    CHECK(session.voice().saidLately(heard.back(), lastStep));
+    CHECK_FALSE(session.voice().saidLately(heard.back(), lastStep + render::kRowMemorySteps));
+}
+
+TEST_CASE("a Gull actor never draws a street pass row: the stool speaks from pass.room") {
+    render::SessionConfig config;
+    config.contentDir = content::contentDir();
+    config.timeOfDay = 20 * 3600;
+    render::Session session(config);
+    // Into the room and along the bar, past the stools, for a minute.
+    session.placeBodyAt(gull::kBartenderX, gull::kBartenderY + 1, gull::kGroundBand);
+    std::vector<render::VoiceLine> passes;
+    std::int32_t lastStep = -1;
+    sim::MoveInput drift;
+    for (int i = 0; i < 60 * kStepsPerSecond; ++i) {
+        drift.forward = (i / 120) % 2 == 0 ? 1 : 0;
+        drift.turn = (i / 60) % 3 == 0 ? 1 : 0;
+        session.step(drift);
+        const render::VoiceLine& line = session.voice().lastOn(render::VoiceChannel::Pass);
+        if (!line.empty() && line.step != lastStep) {
+            passes.push_back(line);
+            lastStep = line.step;
+        }
+    }
+    INFO("pass lines in the Gull: ", passes.size());
+    CHECK(passes.size() >= 1);
+    for (const render::VoiceLine& line : passes) {
+        INFO(line.name, ": ", line.text, " (", line.key, ")");
+        CHECK(startsWith(line.key, "pass.room"));
+        CHECK(line.actorId < kWardSpeakerIdBase);
+    }
+    // The chain itself: a room chain names no quay cell.
+    for (const std::string& key : voiceChain("pass.room", "", JobFamily::Serf, Attitude::Cold)) {
+        CHECK(startsWith(key, "pass.room"));
+    }
+}
+
+TEST_CASE("an overheard snatch on the street comes from a body standing still beside another") {
+    render::SessionConfig config;
+    config.contentDir = content::contentDir();
+    config.timeOfDay = 16 * 3600;
+    render::Session session(config);
+    std::int32_t heard = 0;
+    std::int32_t lastStep = -1;
+    sim::MoveInput walk;
+    for (int i = 0; i < 120 * kStepsPerSecond; ++i) {
+        walk.forward = i >= 45 * kStepsPerSecond ? 1 : 0;
+        walk.turn = (i / 90) % 4 == 3 ? 1 : 0;
+        session.step(walk);
+        const render::VoiceLine& line = session.voice().lastOn(render::VoiceChannel::Overheard);
+        if (line.empty() || line.step == lastStep) {
+            continue;
+        }
+        lastStep = line.step;
+        if (line.step != static_cast<std::int32_t>(session.body().stepCount())) {
+            continue;  // said on an earlier step; the pair's stance then is gone
+        }
+        ++heard;
+        REQUIRE(line.actorId >= kWardSpeakerIdBase);
+        const WardActor* speaker = session.people().byId(line.actorId - kWardSpeakerIdBase);
+        REQUIRE(speaker != nullptr);
+        CHECK(speaker->prevX == speaker->x);
+        CHECK(speaker->prevY == speaker->y);
+        bool company = false;
+        for (const WardActor& other : session.people().actors()) {
+            if (other.id != speaker->id && other.visible() && isPerson(other.type) &&
+                other.band == speaker->band && std::abs(other.x - speaker->x) <= 1 &&
+                std::abs(other.y - speaker->y) <= 1 && other.prevX == other.x &&
+                other.prevY == other.y) {
+                company = true;
+            }
+        }
+        CHECK(company);
+    }
+    INFO("overheard on the street in two minutes: ", heard);
+    CHECK(heard >= 1);
+}
+
+TEST_CASE("a watchman's notice is split by what his eyes see: fists up is not crouching") {
+    REQUIRE(barks().has("watch.notice.hands"));
+    REQUIRE(barks().has("watch.notice.sneak"));
+    CHECK_FALSE(barks().has("watch.notice"));
+    for (const std::string& row : *barks().rows("watch.notice.sneak")) {
+        INFO(row);
+        CHECK(lower(row).find("lower them") == std::string::npos);
+        CHECK(lower(row).find("hands") == std::string::npos);
+    }
+    for (const std::string& row : *barks().rows("watch.notice.hands")) {
+        INFO(row);
+        CHECK(lower(row).find("crouch") == std::string::npos);
+        CHECK(lower(row).find("stand up") == std::string::npos);
+    }
+    // And the readback names what is actually up.
+    REQUIRE(barks().has("watch.approach.violence.steel"));
+    for (const std::string& row : *barks().rows("watch.approach.violence")) {
+        INFO(row);
+        CHECK(lower(row).find("blade") == std::string::npos);
+        CHECK(lower(row).find("steel") == std::string::npos);
+    }
+    for (const std::string& row : *barks().rows("watch.approach.violence.steel")) {
+        INFO(row);
+        CHECK(lower(row).find("hands down") == std::string::npos);
+        CHECK(lower(row).find("fists") == std::string::npos);
+    }
 }
 
 TEST_CASE("the emitter reads the room through a const reference and moves neither hash") {
@@ -837,14 +1034,32 @@ TEST_CASE("--voice=react: a witness to a tap in the Gull says so, and it is not 
     CHECK(played.voiceChannel == "react");
 }
 
-TEST_CASE("--voice=watch: after the halt, Cull's readback as he crosses the room, in his name") {
+TEST_CASE("--voice=watch: after the halt, Cull's readback as he crosses the room, in his name, and never beside his halt") {
     const render::SmokeRunResult played = playVoice("watch");
     INFO(played.summary);
     CHECK(played.ok);
     CHECK_FALSE(played.scriptFellShort());
     CHECK(played.voiceBeats == 4);
-    CHECK(startsWith(played.voiceKey, "watch.approach"));
+    CHECK(startsWith(played.voiceKey, "watch.approach.violence"));
     CHECK(played.voiceSpeaker == "Watchman Cull");
+    // ONE MAN, ONE LINE: with his readback on the voice row, the alert row
+    // is not quoting him -- the halt left the row before the readback
+    // followed, or stood down the step the readback replaced it (the
+    // summary reads the row after its fade, kPageEaseSteps on).
+    CHECK(played.voiceAlertSpeaker != "Watchman Cull");
+    // And the readback is worded by what is up: the Watch line draws steel,
+    // so it is the steel key, and no "hands down" over a STEEL UP row.
+    CHECK(played.voiceKey == "watch.approach.violence.steel");
+    CHECK(lower(played.voiceRow).find("hands down") == std::string::npos);
+}
+
+TEST_CASE("--voice=hold: the one you talk to in the Gull holds ten seconds and is drawn standing") {
+    const render::SmokeRunResult played = playVoice("hold");
+    INFO(played.summary);
+    CHECK(played.ok);
+    CHECK_FALSE(played.scriptFellShort());
+    CHECK(played.voiceBeats == 2);
+    CHECK(played.talking);
 }
 
 // ===========================================================================

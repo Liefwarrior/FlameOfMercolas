@@ -3681,6 +3681,16 @@ void Session::watchBeatLanded(std::int32_t index, bool ok) {
     recordWatchOp(WatchOpKind::BeatLanded, index, ok);
 }
 
+std::string_view Session::alertSpeakerOf(std::string_view line) noexcept {
+    // The sim quotes a body as "<name>: <row>" on the alert row (the halt,
+    // the join, the flee, the arrest line, a reply); the name is the prefix.
+    const std::size_t colon = line.find(": ");
+    if (colon == std::string_view::npos || colon == 0) {
+        return {};
+    }
+    return line.substr(0, colon);
+}
+
 void Session::step(const sim::MoveInput& input) {
     // CASE WATCH. Recorded with the yaw the body carries INTO the step,
     // because the scripted walker (stepToward) steers by writing yaw directly
@@ -3848,6 +3858,7 @@ void Session::step(const sim::MoveInput& input) {
             // where he took it until the cut. Nothing here touches the sim:
             // the hearing is already open on the ledger.
             say(tavern_->lastArrest().line);
+            (void)voice_.dropIfSpeaker(alertSpeakerOf(tavern_->lastArrest().line));
             takenHold_ = kTakenOfficerSteps + kTakenPlateSteps;
             takenPlate_.clear();
         } else {
@@ -3855,6 +3866,7 @@ void Session::step(const sim::MoveInput& input) {
             awaitingLanding_ = false;
             syncTavernToBody();
             say(tavern_->lastArrest().line);
+            (void)voice_.dropIfSpeaker(alertSpeakerOf(tavern_->lastArrest().line));
         }
     }
     // THE ARREST BEAT, spent once a step. At the cut the plate is written
@@ -4373,17 +4385,24 @@ void Session::step(const sim::MoveInput& input) {
     // the comparison-not-flag shape lastPlayerHp_ keeps, three unhashed
     // strings on this side and nothing new reaching into the simulation. The
     // halt is spoken last so it wins the row when all three land on one step.
+    // VOICE LANE: a sim line landing on the alert row in a name that is on
+    // the voice row takes the voice row down -- the arrest line under a
+    // watchman's readback, a join under a witness's word -- so one man never
+    // says two things at once.
     if (tavern_->lastJoin() != lastJoinSpoken_) {
         lastJoinSpoken_ = tavern_->lastJoin();
         say(lastJoinSpoken_);
+        (void)voice_.dropIfSpeaker(alertSpeakerOf(lastJoinSpoken_));
     }
     if (tavern_->lastFlee() != lastFleeSpoken_) {
         lastFleeSpoken_ = tavern_->lastFlee();
         say(lastFleeSpoken_);
+        (void)voice_.dropIfSpeaker(alertSpeakerOf(lastFleeSpoken_));
     }
     if (tavern_->lastDemand() != lastDemandSpoken_) {
         lastDemandSpoken_ = tavern_->lastDemand();
         say(lastDemandSpoken_);
+        (void)voice_.dropIfSpeaker(alertSpeakerOf(lastDemandSpoken_));
     }
     // VOICE LANE, THE ADDRESS: THE WALK-OFF CLOSE. A conversation on foot
     // ends when you leave it: the reach is re-checked every step while the
@@ -4435,7 +4454,17 @@ void Session::step(const sim::MoveInput& input) {
         scene.wardTalkId = wardTalkId_;
         scene.crouched = tavern_->stance() == sim::Stance::Crouched;
         scene.handsUp = tavern_->playerHandsUp();
+        // Who the alert row is quoting right now, so a watchman's readback
+        // waits for his halt to leave the row instead of stacking under it.
+        scene.alertSpeaker = alertSpeakerNow();
         voice_.step(scene);
+        // ONE MAN, ONE LINE. A readback that REPLACED the halt (the emitter
+        // speaks over a standing halt only at reach, after its second) takes
+        // the halt off the alert row the same step: its clock runs out here
+        // and the row fades under the readback.
+        if (voice_.watchSpokeThisStep(scene.step) && scene.alertSpeaker == voice_.current().name) {
+            messageSteps_ = 0;
+        }
         syncVoiceAnim();
     }
     // VOICE LANE, THE ADDRESS. The worded reaction's own countdown, spent
@@ -9738,7 +9767,13 @@ FrameStats Session::drawFrame(Framebuffer& target, FramePasses passes) const {
     // panel owns the screen (the partner's lines are the panel's).
     hud.voiceName = std::string_view{voice_.current().name};
     hud.voiceLine = std::string_view{voice_.current().text};
-    hud.voiceFade = conversing ? 0.0F : voiceAnim_.value();
+    // A live line FADES under a panel opening over it rather than cutting
+    // to nothing on E: its own toggle is already easing down (the target
+    // drops with conversingNow), and the panel's own rise caps it so the
+    // two cross rather than overprint. The full-page surfaces below zero
+    // it outright, as they do the alert.
+    hud.voiceFade = conversing ? std::min(voiceAnim_.value(), 1.0F - panelAnim_.value())
+                               : voiceAnim_.value();
     // INNOVATION SPRINT ITEM #3. See HudState::alertPulse's own header.
     hud.alertPulse = alertPulse_.value();
     hud.caseLabel = std::string_view{caseCache_};
@@ -9785,6 +9820,7 @@ FrameStats Session::drawFrame(Framebuffer& target, FramePasses passes) const {
         hud.casePlateFade = 0.0F;
         hud.showHealth = false;
         hud.showAlert = false;
+        hud.voiceFade = 0.0F;
         if (warned) {
             // The bouncer's warning outranks a map read -- the same routing
             // the tiled Menu gives its journal tile, below. It takes the
@@ -9886,6 +9922,7 @@ FrameStats Session::drawFrame(Framebuffer& target, FramePasses passes) const {
         hud.casePlateFade = 0.0F;
         hud.showHealth = false;
         hud.showAlert = false;
+        hud.voiceFade = 0.0F;
         if (furniture) {
             drawCasebookPage(target, page);
             drawHud(target, hud);
@@ -9997,6 +10034,7 @@ FrameStats Session::drawFrame(Framebuffer& target, FramePasses passes) const {
         hud.casePlateFade = 0.0F;
         hud.showHealth = false;
         hud.showAlert = false;
+        hud.voiceFade = 0.0F;
         if (furniture) {
             drawHearingPage(target, page);
             drawHud(target, hud);
@@ -11069,7 +11107,12 @@ constexpr std::int32_t kWatchHaltStopBeats = 3;
 /// capture cannot quietly photograph the wrong man (the nemesis line's rule).
 std::string gWatchHaltNote;
 
-[[nodiscard]] int runWatchHaltLine(Session& session, const std::string& ending) {
+/// `farFromCull` picks the patron FARTHEST from Cull with a sight line
+/// instead of the nearest: the voice ending wants him to cross the room, so
+/// his halt has stood its four seconds and his readback follows as he walks;
+/// the Watch line's own frames want his line shortest.
+[[nodiscard]] int runWatchHaltLine(Session& session, const std::string& ending,
+                                   bool farFromCull = false) {
     int landed = 0;
     gWatchHaltNote.clear();
     const sim::Tavern& tavern = session.tavern();
@@ -11100,6 +11143,9 @@ std::string gWatchHaltNote;
         candidates.emplace_back(actor.distanceTo(cull->x(), cull->y()), actor.id());
     }
     std::sort(candidates.begin(), candidates.end());
+    if (farFromCull) {
+        std::reverse(candidates.begin(), candidates.end());
+    }
     std::int32_t markId = -1;
     for (const auto& [distance, id] : candidates) {
         (void)distance;
@@ -11263,7 +11309,7 @@ void faceTheSpeaker(Session& session) {
     if (ending == "watch") {
         return kWatchHaltStopBeats + 1;
     }
-    return 2;  // pass, overheard
+    return 2;  // pass, overheard, hold
 }
 
 /// THE ONE VOICE CHANNEL, played through the real verbs -- the smoke's own
@@ -11408,11 +11454,47 @@ void faceTheSpeaker(Session& session) {
         }
         return landed;
     }
+    if (ending == "hold") {
+        // THE ADDRESS, PHOTOGRAPHED: into the Gull at eight, the talk key on
+        // a drinking patron, ten seconds of the room running, then three
+        // tiles back for the shot with the talk still open. He is where the
+        // talk found him, facing you, drawn standing.
+        walkToTile(session, sim::gull::kBartenderX, sim::gull::kBartenderY + 1);
+        session.closeConversation();
+        std::string name;
+        for (const sim::Actor& actor : session.tavern().actors()) {
+            if (actor.present() && actor.role() == sim::ActorRole::Patron &&
+                actor.activity() == sim::Activity::Drinking &&
+                !session.tavern().isProfessional(actor)) {
+                name = actor.name();
+                break;
+            }
+        }
+        if (name.empty() || !speakTo(session, name)) {
+            return landed;
+        }
+        ++landed;  // 1. the talk opened with him
+        const sim::Actor* held = actorNamed(session, name);
+        if (held == nullptr) {
+            return landed;
+        }
+        const std::int32_t heldId = held->id();
+        const std::int32_t x = held->x();
+        const std::int32_t y = held->y();
+        session.stepMany(sim::MoveInput{}, 10 * sim::kStepsPerSecond);
+        held = session.tavern().actorById(heldId);
+        if (session.talking() && held != nullptr && held->x() == x && held->y() == y &&
+            session.tavern().holdsForTalk(*held)) {
+            ++landed;  // 2. ten seconds on, still talking, still where the talk found him
+        }
+        standBackFrom(session, name);
+        return landed;
+    }
     if (ending == "watch") {
         // THE HALT FIRST, the feel build's own line stopped the step Cull
         // starts Closing (his halt on the alert row), then the readback as
         // he crosses the room: the row off watch.approach.* in his name.
-        landed = runWatchHaltLine(session, "halt");
+        landed = runWatchHaltLine(session, "halt", true);
         if (landed < kWatchHaltStopBeats) {
             return landed;
         }
@@ -13553,7 +13635,7 @@ int scriptedStartHour(const SmokeRunConfig& config) noexcept {
         if (config.voiceEnd == "watch") {
             return 23;
         }
-        return config.voiceEnd == "react" ? 20 : 16;
+        return (config.voiceEnd == "react" || config.voiceEnd == "hold") ? 20 : 16;
     }
     // JUSTICE BUILD. The court line wants Cull on his stool for the arrest
     // (eleven, the Watch line's own hour) -- except the rope, whose killing
@@ -13964,6 +14046,7 @@ SmokeRunResult runSmoke(const SmokeRunConfig& config) {
         result.voiceKey = line.key;
         result.voiceSpeaker = line.name;
         result.voiceRow = line.text;
+        result.voiceAlertSpeaker = std::string(session.alertSpeakerNow());
     }
 
     if (config.court) {
@@ -14625,6 +14708,7 @@ SmokeRunResult runSmoke(const SmokeRunConfig& config) {
                 << " speaker=\"" << result.voiceSpeaker << "\""
                 << " row=\"" << result.voiceRow << "\""
                 << " spoken=" << session.voice().linesSpoken()
+                << " alert=\"" << session.alertSpeakerNow() << "\""
                 << " reaction=\"" << session.reactionLine() << "\""
                 << " talking=" << (session.talking() ? "yes" : "no");
     }
