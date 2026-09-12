@@ -93,6 +93,7 @@ std::string_view wardPolicyName(WardPolicy policy) noexcept {
         case WardPolicy::Pursue: return "pursue";
         case WardPolicy::Loiter: return "loiter";
         case WardPolicy::Hunt: return "hunt";
+        case WardPolicy::Cower: return "cower";
     }
     return "loiter";
 }
@@ -788,8 +789,18 @@ WardPolicy WardPopulation::selectPolicy(const WardActor& actor) const {
 
     // FLEE is a hard gate, not a curve: below CRITICAL and nothing else
     // matters, above it and it is not a consideration at all.
+    //
+    // STREET SENSES (9a completion): the same gate, two responses, split by
+    // type. A shopkeeper, a priest and a disciple COWER -- frightened but
+    // standing -- where everyone else FLEES. The gazetteer's own ladder ("Serfs
+    // flee -> Shopkeepers bucket-chain -> Priest walks in"), and the roadmap's
+    // reaction table verbatim ("shopkeepers and priests cower"). Same priority,
+    // so the type is the whole of the choice; a beast is never here (its Safety
+    // is the hunt's business, and wardTypeCowers is false for it, so a beast
+    // driven under the gate still FLEES the way 9a's mouse always did).
     if (safety < kNeedCritical) {
-        offer(stats.fleePriority, WardPolicy::Flee);
+        offer(stats.fleePriority,
+              wardTypeCowers(actor.type) ? WardPolicy::Cower : WardPolicy::Flee);
     }
 
     // SEEK_FOOD, with the hysteresis: once it has won it keeps winning until
@@ -1201,7 +1212,69 @@ void WardPopulation::actReturnHome(WardActor& actor) {
 }
 
 void WardPopulation::actFlee(WardActor& actor, const TickContext& context) {
-    // One drawn orthogonal step, leash ignored. Panic is not a plan.
+    // One orthogonal step, leash ignored. Panic is not a plan -- there is no
+    // route search, no destination, just AWAY, one tile at a time, and the
+    // needs machinery settles the body when Safety climbs back over the gate.
+    static constexpr std::int32_t dx[4] = {-1, 1, 0, 0};
+    static constexpr std::int32_t dy[4] = {0, 0, -1, 1};
+
+    // STREET SENSES (9a completion): AWAY FROM THE PLAYER, when the client has
+    // pushed where he is (setPlayer) and he is on this body's own band -- the
+    // orthogonal steps ordered by how much each one OPENS the gap, largest
+    // first, so a frightened serf breaks directly away from the knife instead
+    // of in a drawn direction. Draw-free: the order is a pure function of the
+    // offset. Ties (a body dead level with the player on one axis) fall to the
+    // fixed order below them, so two runs cannot disagree.
+    if (playerKnown_ && actor.band == playerBand_) {
+        const std::int32_t ox = actor.x - playerX_;
+        const std::int32_t oy = actor.y - playerY_;
+        // Score each orthogonal step by the increase in Chebyshev distance from
+        // the player it buys; keep the fixed index order as the tie-break.
+        const std::int32_t here = std::max(std::abs(ox), std::abs(oy));
+        int order[4] = {0, 1, 2, 3};
+        std::int32_t gain[4];
+        for (int n = 0; n < 4; ++n) {
+            gain[n] = std::max(std::abs(ox + dx[n]), std::abs(oy + dy[n])) - here;
+        }
+        // A tiny stable insertion sort by descending gain; four elements, no
+        // draw, deterministic tie-break on the original index.
+        for (int i = 1; i < 4; ++i) {
+            const int key = order[i];
+            const std::int32_t keyGain = gain[key];
+            int j = i - 1;
+            while (j >= 0 && gain[order[j]] < keyGain) {
+                order[j + 1] = order[j];
+                --j;
+            }
+            order[j + 1] = key;
+        }
+        for (int i = 0; i < 4; ++i) {
+            const int n = order[i];
+            const std::int32_t nx = actor.x + dx[n];
+            const std::int32_t ny = actor.y + dy[n];
+            const std::int32_t nz = tiles_->stepBand(actor.x, actor.y, actor.band, nx, ny);
+            if (nz != TileQuery::kNoBand && tryEnter(actor, nx, ny, nz)) {
+                actor.route.clear();
+                actor.routeTargetX = -1;
+                actor.facing = facingFromDelta(dx[n], dy[n]);
+                return;
+            }
+        }
+        // Boxed in on every away step: fall through to the drawn shuffle so a
+        // cornered body still mills rather than freezing dead still.
+    }
+
+    // No player pushed (a beast's panic, or a run that never called setPlayer,
+    // which is the gate before its assault leg), or boxed in: the 9a drawn
+    // step. Kept byte-for-byte so the no-player arithmetic is untouched.
+    oneDrawnStep(actor, context);
+}
+
+void WardPopulation::oneDrawnStep(WardActor& actor, const TickContext& context) {
+    // One drawn orthogonal step, leash ignored. The 9a panic step verbatim, and
+    // the loiter shuffle -- direction-blind, so a loiterer near a known player
+    // mills rather than backing away (that away-vector is a frightened body's
+    // alone, in actFlee).
     static constexpr std::int32_t dx[4] = {-1, 1, 0, 0};
     static constexpr std::int32_t dy[4] = {0, 0, -1, 1};
     const std::uint64_t roll = context.draw(cellKey(actor.x, actor.y, actor.band), 7);
@@ -1219,6 +1292,22 @@ void WardPopulation::actFlee(WardActor& actor, const TickContext& context) {
     }
 }
 
+void WardPopulation::actCower(WardActor& actor) {
+    // STREET SENSES (9a completion). Frightened, and STANDING: a shopkeeper does
+    // not bolt his own counter and a priest walks toward the trouble, not away
+    // from it. So a cowering body holds its tile and turns to FACE the fright --
+    // the pushed player, when the client has said where he is. Draw-free, moves
+    // nobody; the recovery rate (decayNeeds) settles him exactly as it settles a
+    // fleeing serf, so a shopkeeper is wary for as long as a serf runs and then
+    // goes back to his counter. A run with no player pushed leaves him facing
+    // where he was, which is the honest thing to do with no fright to face.
+    if (playerKnown_ && actor.band == playerBand_) {
+        actor.facing = facingFromDelta(playerX_ - actor.x, playerY_ - actor.y);
+    }
+    actor.route.clear();
+    actor.routeTargetX = -1;
+}
+
 void WardPopulation::actLoiter(WardActor& actor, const TickContext& context) {
     // Standing about is standing about. One step in eight is a shuffle, so a
     // street of loiterers reads as alive rather than as a row of statues, and
@@ -1226,7 +1315,10 @@ void WardPopulation::actLoiter(WardActor& actor, const TickContext& context) {
     if ((context.draw(static_cast<std::uint64_t>(actor.id), 3) & 7u) != 0) {
         return;
     }
-    actFlee(actor, context);
+    // The shuffle is DIRECTION-BLIND -- the drawn step, never the flee's
+    // away-vector. A body standing about near the player is loitering, not
+    // fleeing, and must not back away from him just for being looked at.
+    oneDrawnStep(actor, context);
 }
 
 // --- #80: the hunt ---------------------------------------------------------
@@ -1679,6 +1771,7 @@ void WardPopulation::tickActor(WardActor& actor, const TickContext& context) {
         case WardPolicy::Pursue: actPursue(actor, context); break;
         case WardPolicy::Loiter: actLoiter(actor, context); break;
         case WardPolicy::Hunt: actHunt(actor); break;
+        case WardPolicy::Cower: actCower(actor); break;
         case WardPolicy::Dead: break;
     }
     // A HUNT THAT STOPPED BEING THE PLAN LETS GO OF ITS PREY. Without this a
@@ -2081,6 +2174,18 @@ std::int32_t WardPopulation::alarm(std::int32_t x, std::int32_t y, std::int32_t 
     return saw;
 }
 
+void WardPopulation::setPlayer(std::int32_t x, std::int32_t y, std::int32_t band) noexcept {
+    // The mirror of Tavern::setPlayer, in whole tiles: the client pushes where
+    // the player stands every step, and a frightened body flees away from it
+    // (actFlee) or turns to face it (actCower). HASHED, so this is the one
+    // declared shape of the move -- see the header on why a policy input the
+    // hash does not cover is a divergence nothing would ever catch.
+    playerX_ = x;
+    playerY_ = y;
+    playerBand_ = band;
+    playerKnown_ = true;
+}
+
 // --- reporting -------------------------------------------------------------
 
 WardCensus WardPopulation::census() const {
@@ -2190,6 +2295,16 @@ std::string WardPopulation::reportLine() const {
     out += " mice=" + content::dec(static_cast<std::uint64_t>(roll.preyUp)) + "/" +
            content::dec(static_cast<std::uint64_t>(roll.prey));
     out += " ate=" + content::dec(static_cast<std::uint64_t>(catches_));
+    // STREET SENSES (9a completion): the street reacting, SHOWN in the line the
+    // gate compares -- flee is a serf running, cower a shopkeeper standing his
+    // ground. A report that shows the crowd scatter under the gate's own
+    // violence leg is worth more than an assertion that it is compared.
+    out += " flee=" +
+           content::dec(static_cast<std::uint64_t>(
+               roll.byPolicy[static_cast<std::size_t>(WardPolicy::Flee)]));
+    out += " cower=" +
+           content::dec(static_cast<std::uint64_t>(
+               roll.byPolicy[static_cast<std::size_t>(WardPolicy::Cower)]));
     out += " hour=" + content::dec(static_cast<std::uint64_t>(secondOfDay_ / 3600)) + "]";
     return out;
 }
@@ -2274,6 +2389,16 @@ void WardPopulation::hash_into(HashSink& sink) const {
     sink.put_long(static_cast<std::uint64_t>(shoves_));
     sink.put_long(static_cast<std::uint64_t>(catches_));
     sink.put_long(static_cast<std::uint64_t>(futileChases_));
+    // STREET SENSES (9a completion): the pushed player position, folded because
+    // actFlee's away-vector and actCower's facing both READ it -- a behaviour
+    // input the hash must cover. THE ONE DECLARED MOVE of this leg: appended,
+    // never inserted, and constant zero in any run that never pushes a player
+    // (the gate's own workload before its assault leg), so those runs move only
+    // by these four fixed bytes and not by their arithmetic.
+    sink.put_int(static_cast<std::uint32_t>(playerX_));
+    sink.put_int(static_cast<std::uint32_t>(playerY_));
+    sink.put_int(static_cast<std::uint32_t>(playerBand_));
+    sink.put_byte(playerKnown_ ? 1u : 0u);
 }
 
 }  // namespace granadad::sim

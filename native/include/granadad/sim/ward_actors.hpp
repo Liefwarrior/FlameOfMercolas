@@ -171,6 +171,24 @@ inline constexpr std::size_t kWardTypeCount = 16;
     return type == WardType::Mouse;
 }
 
+/// WHO STANDS THEIR GROUND WHEN THE STREET GOES BAD, instead of running.
+///
+/// STREET SENSES (9a completion). The gazetteer's own crowd ladder splits the
+/// district in two when a fright crosses it: "Serfs flee -> Shopkeepers
+/// bucket-chain -> ... -> Priest walks in" (DOCKS-GAZETTEER section 4.2's fire
+/// scenario, and the deference table's textures -- a serf "may flee", a
+/// shopkeeper brings the ledger out, the priest has claims ON the ward). The
+/// roadmap's reaction table put it plainly: "Serfs and wastrels flee,
+/// shopkeepers and priests cower." So a shopkeeper, a priest and a disciple
+/// COWER -- frightened but standing, facing the trouble -- where a serf, a
+/// sailor, a fisher, a carter, a wastrel, an urchin or a thief FLEE. The Watch
+/// is neither: it holds by exemption (never alarmed), which is a different rule
+/// (9b's, the street Watch's Respond) and not this one.
+[[nodiscard]] constexpr bool wardTypeCowers(WardType type) noexcept {
+    return type == WardType::Shopkeeper || type == WardType::PriestOfTheFlame ||
+           type == WardType::DiscipleOfTheFlame;
+}
+
 // ---------------------------------------------------------------------------
 // what somebody needs
 // ---------------------------------------------------------------------------
@@ -361,9 +379,19 @@ enum class WardPolicy : std::uint8_t {
     /// the den nibble their wander leg pays, and the mice were a population
     /// nothing ate. This is the Java build's BeastHuntPolicy, ported.
     Hunt = 6,
+    /// STREET SENSES (9a completion). Frightened, but STANDING -- the shape the
+    /// gazetteer's crowd ladder gives a shopkeeper and a priest ("Shopkeepers
+    /// bucket-chain -> ... -> Priest walks in", DOCKS-GAZETTEER section 4.1 /
+    /// 4.2's fire scenario), against the serf's and the wastrel's FLEE. Same
+    /// gate as Flee (Safety under kNeedCritical), the OTHER response: face the
+    /// fright and hold, rather than run from it. APPENDED, not inserted -- the
+    /// ordinal is a hashed byte (hash_into's put_byte(policy)), so putting it
+    /// anywhere but the end would renumber every policy the world hash has ever
+    /// recorded, exactly the Hunt precedent above.
+    Cower = 7,
 };
 
-inline constexpr std::size_t kWardPolicyCount = 7;
+inline constexpr std::size_t kWardPolicyCount = 8;
 
 [[nodiscard]] std::string_view wardPolicyName(WardPolicy policy) noexcept;
 
@@ -935,6 +963,21 @@ public:
     std::int32_t alarm(std::int32_t x, std::int32_t y, std::int32_t band,
                        std::int32_t radiusTiles, AlarmSeverity severity) noexcept;
 
+    /// STREET SENSES (9a completion). WHERE THE PLAYER IS, in whole tiles,
+    /// pushed by the client every step the way Tavern::setPlayer is -- so a
+    /// frightened body FLEES AWAY FROM HIM rather than in a drawn direction
+    /// (actFlee reads it), and the street Watch (9b) has somewhere to close on.
+    /// HASHED, because a policy reads it: a scalar behaviour depends on that the
+    /// hash does not cover is a divergence nothing would ever see (hash_into's
+    /// own standing note). A run that never calls this -- the gate's own
+    /// population workload before its assault leg, a session that never syncs --
+    /// leaves the player UNKNOWN, and every body then flees exactly as 9a's
+    /// drawn step did, so the no-player arithmetic is untouched by construction.
+    void setPlayer(std::int32_t x, std::int32_t y, std::int32_t band) noexcept;
+    /// Whether a player position has been pushed at all. Off until the first
+    /// setPlayer; the flee-away vector needs a FROM before it means anything.
+    [[nodiscard]] bool playerKnown() const noexcept { return playerKnown_; }
+
     [[nodiscard]] std::int32_t secondOfDay() const noexcept { return secondOfDay_; }
     [[nodiscard]] std::int64_t currentTick() const noexcept { return tick_; }
 
@@ -1070,6 +1113,16 @@ private:
     void actPursue(WardActor& actor, const TickContext& context);
     void actLoiter(WardActor& actor, const TickContext& context);
     void actFlee(WardActor& actor, const TickContext& context);
+    /// One DRAWN orthogonal step -- the 9a panic step, and the loiter shuffle.
+    /// Shared so the loiter shuffle stays direction-blind while actFlee's own
+    /// away-vector (STREET SENSES) is the frightened body's alone: a loiterer
+    /// near a known player mills, it does not back away from him.
+    void oneDrawnStep(WardActor& actor, const TickContext& context);
+    /// STREET SENSES (9a completion). Frightened and STANDING: face the fright
+    /// (the pushed player, when known) and hold the tile. Draw-free, moves
+    /// nobody -- the whole difference between a shopkeeper and a serf when the
+    /// street goes bad. See wardTypeCowers.
+    void actCower(WardActor& actor);
     void actHunt(WardActor& actor);
 
     /// The throttled prey probe: an ascending scan of the MICE ONLY -- see
@@ -1153,6 +1206,14 @@ private:
     std::int64_t clockOffset_ = 0;
     std::int64_t tick_ = 0;
     std::int64_t lastProvisionDay_ = -1;
+
+    /// STREET SENSES (9a completion). The player's tile, pushed by setPlayer and
+    /// read by actFlee for its away-vector (and by the street Watch, 9b). Whole
+    /// tiles, integer, hashed. Unknown until the first push -- see setPlayer.
+    std::int32_t playerX_ = 0;
+    std::int32_t playerY_ = 0;
+    std::int32_t playerBand_ = 0;
+    bool playerKnown_ = false;
 
     WardTypeTable types_;
     std::vector<WardActor> actors_;

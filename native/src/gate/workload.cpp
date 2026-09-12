@@ -395,6 +395,112 @@ private:
 };
 
 // ---------------------------------------------------------------------------
+// street assault -- phase tick-begin (STREET SENSES, the violence leg)
+// ---------------------------------------------------------------------------
+//
+// THE NUMBER HAS TO PROVE THE BEHAVIOUR. The population workload had no player
+// and called nothing that frightened anybody, so 9a's street panic -- built,
+// hashed and re-blessed -- moved NOTHING in the one run the population baseline
+// is taken from: the gate compared a district nobody ever startled to itself.
+// The lane brief's own words: "a scripted street assault so the new number
+// proves the new behaviour (a blow on the Tarwalk at 16:00 scatters the crowd
+// within 8 tiles and LOS)."
+//
+// So this driver throws one. It runs in the SAME phase and the SAME shape as
+// the tavern driver above -- TickBegin, before the Actors phase decides, so the
+// crowd reacts to the fright the same tick -- and it does through the REAL
+// verbs (setPlayer + alarm), never a back door: a fixed point on the Tarwalk,
+// found once by the roster's own order, held for a window so the scatter is
+// sustained and legible in the twin run. Draw-free and deterministic: the point
+// is the first standing body on the quay by ascending id, and the window is
+// absolute ticks, so run A and run B assault the same tile on the same ticks.
+//
+// It fires only for a run long enough to have settled first (the ward walks to
+// its posts over the first minutes), which the population baseline's 7200 ticks
+// always is; a short population run never reaches the window and is untouched.
+
+class StreetAssaultDriver final : public sim::SimulationSystem {
+public:
+    explicit StreetAssaultDriver(const sim::WardPopulation* people) noexcept
+        : people_(const_cast<sim::WardPopulation*>(people)) {}
+
+    [[nodiscard]] const sim::SystemId& id() const noexcept override { return id_; }
+    [[nodiscard]] sim::TickPhase phase() const noexcept override {
+        return sim::TickPhase::TickBegin;
+    }
+
+    void tick(const sim::TickContext& context) override {
+        (void)context;
+        ++ticks_;
+        if (ticks_ < kFromTick || ticks_ > kToTick) {
+            return;
+        }
+        // The point, found ONCE and held: the first person standing on the
+        // Tarwalk on walking ground, ascending id -- a docker where the day
+        // trades are, deterministic and draw-free. Latched, so the fright's
+        // origin stays where the blow landed while the crowd breaks away from
+        // it (actFlee reads exactly that vector).
+        if (!located_) {
+            for (const sim::WardActor& actor : people_->actors()) {
+                if (!actor.visible() || !sim::isPerson(actor.type) ||
+                    actor.type == sim::WardType::MilitiaWatch) {
+                    continue;
+                }
+                if (actor.x < sim::wardplaces::kTarwalkX0 ||
+                    actor.x > sim::wardplaces::kTarwalkX1 ||
+                    actor.y < sim::wardplaces::kTarwalkY0 ||
+                    actor.y > sim::wardplaces::kTarwalkY1) {
+                    continue;
+                }
+                if (!people_->onWalkingGround(actor.x, actor.y, actor.band)) {
+                    continue;
+                }
+                x_ = actor.x;
+                y_ = actor.y;
+                band_ = actor.band;
+                located_ = true;
+                break;
+            }
+        }
+        if (!located_) {
+            return;
+        }
+        // THE BLOW ON THE TARWALK, re-asserted every tick of the window the way
+        // the client re-asserts a raised blade once a second: the player stands
+        // where the blow landed, and everyone who can SEE it (same band, in
+        // range, line of sight -- the ward's own rule) is driven under the FLEE
+        // gate. A BLOW is the widest of the three tiers a bar-fight punch would
+        // never reach past the door; here it is a punch on the open quay.
+        people_->setPlayer(x_, y_, band_);
+        people_->alarm(x_, y_, band_, sim::alarmRadius(sim::AlarmSeverity::Blow),
+                       sim::AlarmSeverity::Blow);
+    }
+
+    void hash_into(sim::HashSink& sink) const override {
+        // Its own tick count only: the fright it caused is the population's
+        // state to hash, and two systems folding the same numbers would make one
+        // divergence look like two. The tavern driver's own rule.
+        sink.put_long(static_cast<std::uint64_t>(ticks_));
+    }
+
+private:
+    /// 16:30 on a 16:00-start run: past the minutes the ward spends walking to
+    /// its posts, so the crowd is on the Tarwalk to be scattered.
+    static constexpr std::int64_t kFromTick = 1800;
+    /// Six minutes of it -- longer than a BLOW's ~80 s panic, so the scatter is
+    /// sustained across the window and the recovery is visible after it.
+    static constexpr std::int64_t kToTick = 2160;
+
+    sim::SystemId id_ = sim::SystemId::of("street.assault", "STAS");
+    sim::WardPopulation* people_;
+    std::int64_t ticks_ = 0;
+    std::int32_t x_ = 0;
+    std::int32_t y_ = 0;
+    std::int32_t band_ = 0;
+    bool located_ = false;
+};
+
+// ---------------------------------------------------------------------------
 // ledger -- phase tick-end
 // ---------------------------------------------------------------------------
 
@@ -515,6 +621,12 @@ RunResult run_workload(const WorkloadConfig& config) {
             *tiles, config.population_start_second, config.seed, content::contentDir());
         people_view = people.get();
         engine.register_system(std::move(people));
+        // STREET SENSES, the violence leg: the scripted assault, registered
+        // right after the people it frightens. TickBegin, so it lands the fright
+        // before the Actors phase decides that tick -- and it moves the number
+        // the population baseline is taken from, which 9a's panic never did in a
+        // player-less run. See StreetAssaultDriver.
+        engine.register_system(std::make_unique<StreetAssaultDriver>(people_view));
     }
 
     const sim::Tavern* tavern_view = nullptr;

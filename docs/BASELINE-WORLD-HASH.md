@@ -621,3 +621,75 @@ the Condemned rung, and the workload's arrests are paperless. Read again off the
 `--tavern --ticks 900` `run A` == `run B` == `0x837E94019BC49C25` (3,153 bytes);
 `--population --population-hour 16 --ticks 7200` `run A` == `run B` == `0x2646C1AAA2BA38DF`
 (18,772 bytes). The gate stamp and the counts are in the commit that carries this note.
+
+---
+
+## STREET SENSES leg (a) -- the crowd flees and cowers for real (2026-09-11)
+
+The STREET SENSES lane (roadmap item 13; Eli's consented one-move-three-legs, given through
+a wizard 2026-09-11: CONSENT to the ONE declared move of the population baseline, ALL THREE
+LEGS, re-blessed per leg with a violence leg in the gate). **Leg (a) is the first of the
+three, and it MOVES this number for real.** 9a shipped `alarm()` and the panic recovery, but
+the population workload had no player and startled nobody -- so the number 9a re-blessed
+(`0x2646C1AAA2BA38DF`) was a district nobody ever frightened compared to itself. Leg (a)
+completes the reaction and adds the violence leg that proves it.
+
+What changed the number, all in `WardPopulation`:
+
+1. **`setPlayer(x, y, band)`**, the mirror of `Tavern::setPlayer`, pushed by the client every
+   step and HASHED -- a frightened body now reads where the player is. Appended to
+   `hash_into` (playerX/Y/band + a known-flag), so a run that never pushes a player moves
+   only by four fixed zero bytes and not by its arithmetic.
+2. **FLEE is an away plan**: `actFlee` steps directly away from the pushed player (the
+   orthogonal step that opens the most Chebyshev distance, draw-free, deterministic
+   tie-break), leash ignored, falling back to 9a's drawn shuffle only with no player pushed
+   (a beast's panic, the gate before its assault) or when boxed -- so the no-player
+   arithmetic is byte-for-byte 9a's.
+3. **`WardPolicy::Cower = 7`**, appended (the Hunt ordinal precedent, a hashed byte): the same
+   FLEE gate, the response the gazetteer's ladder gives shopkeepers and priests ("Serfs flee,
+   Shopkeepers bucket-chain, Priest walks in"). `wardTypeCowers` is Shopkeeper /
+   PriestOfTheFlame / DiscipleOfTheFlame; they hold the tile and face the fright rather than
+   run.
+4. **The loiter shuffle stays direction-blind** (`oneDrawnStep`, shared) so a body merely
+   standing near the player does not back away from him -- the away-vector is a frightened
+   body's alone.
+
+And the **violence leg in the gate**: the population workload registers a
+`StreetAssaultDriver` (TickBegin, before the Actors phase) that throws a scripted blow on the
+Tarwalk at 16:30 -- `setPlayer` + `alarm(Blow)` at the first standing docker's tile, held for
+a window -- so the run the baseline is taken from PROVES the behaviour. The report now shows
+the street scatter on the line the gate compares (`flee=`/`cower=`), where 9a's player-less
+run showed nothing move.
+
+```
+at branch lane/street (STREET SENSES leg (a)),
+granadad-twin-gate --population --population-hour 16 --ticks 7200, 96 walkers
+COMBINED WORLD HASH: 0x2646C1AAA2BA38DF -> 0xF493AF6F939D52D3      <- DECLARED and RE-BLESSED
+```
+
+Recorded directly from `dist\granadad-twin-gate.exe --population --population-hour 16
+--ticks 7200` on Windows/mingw, **two invocations**, each `run A` == `run B` ==
+`0xF493AF6F939D52D3`, report text byte-identical at **19,947 bytes** in all runs (up from 9a's
+18,772: the assault driver adds a system line and its section, and `reportLine` now carries
+`flee=`/`cower=`). On Linux/GCC the same gate ran green in the Docker build (ctest
+`granadad-twin-run-gate-population` PASSED, `run A` == `run B`).
+
+The tavern/gate-workload twin on the same exe is UNMOVED: `--tavern --ticks 900`, `run A` ==
+`run B` == `0x837E94019BC49C25`, two invocations (3,153 bytes) -- leg (a) touched no hashed
+tavern field. The nemesis arc is untouched (no combat/tavern change): `granadad.exe --nemesis`
+reads `beats=7/7 mask=127`, Tarn Wrenhale rising through the same three defeats, and
+`test_nemesis` was re-read and unchanged.
+
+**The population baseline is therefore re-blessed at `0xF493AF6F939D52D3` with one declared
+leg behind it.** The next two legs -- (b) STREET BODIES (a hittable `WardActor` combat sheet,
+the player swing over `people_`, the murder-law path) and (c) THE WATCH (MilitiaWatch `Pursue`
++ arrest through the hearing seam) -- move it again, each declared and re-blessed the same way,
+on the same branch.
+
+Proved by `native/tests/test_street_panic.cpp` (the split by type, the away-vector, the pinned
+panic length, the twin run), gated on the tree whose GATE-STAMP names it (`native/` digest
+`dc56c116a6865b70ca6b4adedb9c5a3ce7ea3d0eb5d20266bbd939b3841af8ca`, ctest cases 1249, 317
+files; `verify-windows.ps1` PASS -- content 71 cases / 902,135 assertions and sim 1168 cases /
+2,164,336 assertions under mingw, content-fingerprint and world-hash reports byte-identical
+linux/gcc vs mingw/windows, the stamp naming this tree), and photographed through the real
+`--street-assault` verb (`docs/frames/street/`).

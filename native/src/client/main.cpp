@@ -963,6 +963,11 @@ void print_usage() {
         "  --watch-halt[=WHERE] draw steel in the Gull in Watchman Cull's sight\n"
         "                       and stand there: the halt, the arrest at reach,\n"
         "                       the street. WHERE is halt or street\n"
+        "  --street-assault     stand in the crowd on the Tarwalk at 16:00 and\n"
+        "                       raise steel: the street scatters (serfs flee,\n"
+        "                       shopkeepers and priests cower). Pair with\n"
+        "                       --shot and --settle-steps=N to catch the panic N\n"
+        "                       sim-steps in (0 blade up, 180/360 scattered)\n"
         "  --court[=WHERE]      lift in Cull's sight until WANTED, be taken to the\n"
         "                       Mission's bench. WHERE is wanted, cull (his line, his\n"
         "                       hand on you), taken (the plate), page, paper, armed,\n"
@@ -1389,6 +1394,14 @@ void print_usage() {
         } else if (starts_with(arg, "--watch-halt=", &value)) {
             options.smoke.watchHalt = true;
             options.smoke.watchHaltEnd = value;
+        } else if (std::strcmp(arg, "--street-assault") == 0) {
+            // STREET SENSES (9a completion). See SmokeRunConfig::streetAssault.
+            options.smoke.streetAssault = true;
+            options.wantsSmoke = true;
+        } else if (starts_with(arg, "--street-assault=", &value)) {
+            options.smoke.streetAssault = true;
+            options.smoke.streetAssaultWhere = value;
+            options.wantsSmoke = true;
         } else if (std::strcmp(arg, "--court") == 0) {
             // JUSTICE BUILD (HEARING PAGE LANE). See SmokeRunConfig::court.
             options.smoke.court = true;

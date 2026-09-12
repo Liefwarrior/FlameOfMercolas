@@ -4323,6 +4323,13 @@ void Session::step(const sim::MoveInput& input) {
     // only through the door. people_ is null in a session without a district
     // (the tavern fixture), and then the street is nobody.
     if (people_ != nullptr) {
+        // STREET SENSES (9a completion). WHERE THE PLAYER IS, pushed to the
+        // district every step the way syncTavernToBody pushes it to the room --
+        // so a frightened body flees AWAY from him (actFlee) and cowers FACING
+        // him (actCower), instead of in a drawn direction. Whole tiles; the
+        // ward interpolates nothing off it. This is the client side of the ONE
+        // declared population field; the sim hashes it, the client only feeds it.
+        people_->setPlayer(body_->tileX(), body_->tileY(), body_->band());
         std::int32_t roomHp = 0;
         std::int32_t corpses = 0;
         bool flooredInReach = false;
@@ -12750,6 +12757,99 @@ StreetLineResult runStreetLine(Session& session, const std::string& who, int top
     return out;
 }
 
+StreetLineResult runStreetAssault(Session& session, const std::string& where) {
+    (void)where;  // reserved; the drive finds the densest Tarwalk spot itself
+    StreetLineResult out;
+
+    // THE FULLEST STRETCH OF THE TARWALK the hour offers: the visible non-Watch
+    // person with the most people in SIGHT within the blade's radius, and a
+    // standable tile beside them to stand the player on -- the same
+    // (same band, in range, line of sight) rule the alarm keeps, computed here
+    // so the frame is a picture of a crowd rather than of the spawn tile.
+    // Deterministic (ascending id, first standable neighbour), draw-free.
+    const sim::WardActor* best = nullptr;
+    std::int32_t bestSeen = -1;
+    std::int32_t standX = 0;
+    std::int32_t standY = 0;
+    std::int32_t standBand = 0;
+    static constexpr std::int32_t dx[4] = {1, -1, 0, 0};
+    static constexpr std::int32_t dy[4] = {0, 0, 1, -1};
+    for (const sim::WardActor& centre : session.people().actors()) {
+        if (!centre.visible() || !sim::isPerson(centre.type) ||
+            centre.type == sim::WardType::MilitiaWatch) {
+            continue;
+        }
+        if (centre.x < sim::wardplaces::kTarwalkX0 || centre.x > sim::wardplaces::kTarwalkX1 ||
+            centre.y < sim::wardplaces::kTarwalkY0 || centre.y > sim::wardplaces::kTarwalkY1) {
+            continue;
+        }
+        for (int n = 0; n < 4; ++n) {
+            const std::int32_t sx = centre.x + dx[n];
+            const std::int32_t sy = centre.y + dy[n];
+            if (!session.tiles().standable(sx, sy, centre.band)) {
+                continue;
+            }
+            std::int32_t seen = 0;
+            for (const sim::WardActor& other : session.people().actors()) {
+                if (other.id == centre.id || !other.visible() || !sim::isPerson(other.type) ||
+                    other.band != centre.band) {
+                    continue;
+                }
+                if (std::max(std::abs(other.x - sx), std::abs(other.y - sy)) >
+                    sim::kAlarmRadiusSteel) {
+                    continue;
+                }
+                if ((other.x != sx || other.y != sy) &&
+                    !session.tiles().lineOfSight(other.x, other.y, sx, sy, centre.band)) {
+                    continue;
+                }
+                ++seen;
+            }
+            if (seen > bestSeen) {
+                bestSeen = seen;
+                best = &centre;
+                standX = sx;
+                standY = sy;
+                standBand = centre.band;
+            }
+            break;  // the first standable neighbour is the stand tile
+        }
+    }
+    if (best == nullptr) {
+        return out;
+    }
+    out.found = true;
+    out.actorId = best->id;
+
+    // THE ONE PLACEMENT (runStreetLine's own move and its reasons): stand a
+    // tile off the crowd, facing in, so the shutter looks at the street.
+    session.placeBodyAt(standX, standY, standBand);
+    {
+        const std::int32_t toX = best->x - standX;
+        const std::int32_t toY = best->y - standY;
+        sim::Angle look = sim::kFacingNorth;
+        if (std::abs(toX) >= std::abs(toY)) {
+            look = toX > 0 ? sim::kFacingEast : sim::kFacingWest;
+        } else {
+            look = toY > 0 ? sim::kFacingSouth : sim::kFacingNorth;
+        }
+        session.body().setYaw(look);
+    }
+
+    // STEEL UP, NO BLOW. An Edged weapon in the hand and the hands raised (a
+    // held guard raises them without violence, the stance's own rule) -- the
+    // exact cause Tavern::violenceInView reads, and the exact shape
+    // test_street_panic's "steel up on the Tarwalk" drives. The alarm that
+    // scatters the crowd fires from Session::step's one call site while the
+    // settle window runs; nothing here alarms anybody by hand.
+    session.tavern().setPlayerCombat(sim::Weapon::Edged, sim::Intent::Subdue);
+    session.setBlocking(true);
+    // One step so the room learns the new position and the hands come up before
+    // the settle window's ticks carry the first alarm.
+    session.stepMany(sim::MoveInput{}, 1);
+    return out;
+}
+
 namespace {
 
 /// DISTRICT PHASE D. ONE AUTHORED CROSSING: a pair of world tiles either side
@@ -13183,6 +13283,13 @@ int scriptedStartHour(const SmokeRunConfig& config) noexcept {
     if (config.watchHalt) {
         return 23;
     }
+    // STREET SENSES (9a completion). The street assault wants the Tarwalk at
+    // its fullest: the day trades start at seven and work the quay through the
+    // afternoon. Sixteen, the panic tests' and the gate's violence leg's own
+    // hour -- a crowd to scatter.
+    if (config.streetAssault) {
+        return 16;
+    }
     // JUSTICE BUILD. The court line wants Cull on his stool for the arrest
     // (eleven, the Watch line's own hour) -- except the rope, whose killing
     // is made at eight before he arrives and waits for him through the wait
@@ -13577,6 +13684,15 @@ SmokeRunResult runSmoke(const SmokeRunConfig& config) {
         // "halt" stops on the third beat by design; it owes three, not five.
         result.scriptedWanted += config.watchHaltEnd == "halt" ? kWatchHaltStopBeats : kWatchHaltBeats;
         result.scriptedLanded += landed;
+    }
+
+    if (config.streetAssault) {
+        // STREET SENSES (9a completion). PROOF. Stand in the crowd, raise
+        // steel; the settle window below scatters the street. Landed = a crowd
+        // tile was found and the player was stood in it.
+        const StreetLineResult assault = runStreetAssault(session, config.streetAssaultWhere);
+        result.scriptedWanted += 1;
+        result.scriptedLanded += assault.found ? 1 : 0;
     }
 
     if (config.court) {
