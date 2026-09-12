@@ -4406,7 +4406,14 @@ void Session::step(const sim::MoveInput& input) {
                         who->distanceTo(body_->x(), body_->y()) > kTalkWalkOffTiles * sim::kSubOne;
         }
         if (walkedOff) {
-            endTalk(true);
+            // WHO LEFT. The word thrown after you is for the one who walks
+            // off mid-sentence; a body that walked away from YOU (the ward's
+            // hold is deferred, so a patrol keeps its beat) ends the talk
+            // with its ordinary goodbye instead -- said as it goes.
+            const bool playerLeft =
+                std::max(std::abs(body_->tileX() - talkOpenTileX_),
+                         std::abs(body_->tileY() - talkOpenTileY_)) > kWardTalkReachTiles;
+            endTalk(playerLeft);
         }
     }
     // VOICE LANE. THE ONE VOICE CHANNEL, stepped here and nowhere else: after
@@ -4649,6 +4656,10 @@ void Session::interact() {
         if (tavern_->talkTo() || talkToWard()) {
             topicCursor_ = 0;
             haggleOffer_ = 0;
+            // VOICE LANE, THE ADDRESS: where the talk was opened from, so
+            // the walk-off close can tell who left -- see step().
+            talkOpenTileX_ = body_->tileX();
+            talkOpenTileY_ = body_->tileY();
             const sim::DialogueDirector& talk = tavern_->dialogue();
             say(talk.speaker().name + ": " + talk.greeting());
             return;
@@ -5341,6 +5352,13 @@ void Session::chooseTopic(std::size_t index) {
                                  tavern_->dialogue().speaker().actorId,
                                  static_cast<std::int32_t>(body_->stepCount()));
             syncVoiceAnim();
+            // And the goodbye is the LAST thing they said -- endTalk's own
+            // rule, for the panel LEAVE closed from inside: their greeting
+            // or reply still on the alert row's clock stands down rather
+            // than resurfacing under the goodbye.
+            if (message_.rfind(tavern_->dialogue().speaker().name + ": ", 0) == 0) {
+                messageSteps_ = 0;
+            }
         } else {
             say(tavern_->dialogue().speaker().name + ": " + reply.line);
         }

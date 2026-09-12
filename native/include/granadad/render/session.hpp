@@ -2741,6 +2741,12 @@ private:
     /// state, never hashed: the disposition it describes already is.
     std::string reactionLine_;
     std::int32_t reactionSteps_ = 0;
+    /// VOICE LANE, THE ADDRESS. The tile the open conversation was started
+    /// from, so the walk-off close can tell the player leaving (the word
+    /// thrown after you) from the body leaving (its ordinary goodbye, said
+    /// as it goes). Pure UI state, never hashed.
+    std::int32_t talkOpenTileX_ = 0;
+    std::int32_t talkOpenTileY_ = 0;
     static constexpr std::int32_t kReactionHoldSteps = 4 * sim::kStepsPerSecond;
     /// VOICE LANE, THE ADDRESS. Tiles past which a conversation on foot is
     /// over -- five: more than twice the talk reach, so a body that shifts a

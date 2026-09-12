@@ -402,7 +402,15 @@ bool StreetVoice::stepReact(const VoiceScene& scene) {
         return false;
     }
     const sim::Speaker who = room.speakerFor(*chosen);
-    const std::string deed(reactDeedKey(chosenWitness->deed));
+    std::string deed(reactDeedKey(chosenWitness->deed));
+    if (deed == "struck" &&
+        (room.escalated() ||
+         (room.playerHandsUp() && room.playerWeapon() >= sim::kFirstLethalWeapon))) {
+        // A blow landed with steel out is seen as the steel: the flip and
+        // the blow can land on one step and the ledger keeps the last deed
+        // written, but what the witness is looking at is the blade.
+        deed = "steel";
+    }
     const std::string family(sim::jobFamilyKey(who.family));
     VoiceLine line = pickVoiceLine(room.dialogue().barks(),
                                    {"react." + family + "." + deed, "react." + deed},
