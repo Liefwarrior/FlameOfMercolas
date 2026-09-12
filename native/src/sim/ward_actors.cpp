@@ -10,6 +10,7 @@
 #include "granadad/content/ascii.hpp"
 #include "granadad/sim/docks.hpp"
 #include "granadad/sim/engine_error.hpp"
+#include "granadad/sim/fixed.hpp"
 
 namespace granadad::sim {
 
@@ -94,6 +95,7 @@ std::string_view wardPolicyName(WardPolicy policy) noexcept {
         case WardPolicy::Loiter: return "loiter";
         case WardPolicy::Hunt: return "hunt";
         case WardPolicy::Cower: return "cower";
+        case WardPolicy::Brawl: return "brawl";
     }
     return "loiter";
 }
@@ -803,6 +805,14 @@ WardPolicy WardPopulation::selectPolicy(const WardActor& actor) const {
               wardTypeCowers(actor.type) ? WardPolicy::Cower : WardPolicy::Flee);
     }
 
+    // STREET SENSES leg (b). A MAN IN A FIGHT IS IN THE FIGHT: while his clock
+    // runs and the player is known, BRAWL out-scores everything -- the fright
+    // gate included, since a sailor who has decided to swing does not also
+    // run. Priced above the whole band so nothing needs re-tuning under it.
+    if (actor.fightUntil > tick_ && playerKnown_) {
+        offer(2000, WardPolicy::Brawl);
+    }
+
     // SEEK_FOOD, with the hysteresis: once it has won it keeps winning until
     // the reserve is RECOVERED, not merely until it stops being LOW.
     if (isPerson(actor.type)) {
@@ -1308,6 +1318,72 @@ void WardPopulation::actCower(WardActor& actor) {
     actor.routeTargetX = -1;
 }
 
+void WardPopulation::actBrawl(WardActor& actor, const TickContext& context) {
+    // STREET SENSES leg (b). Only ever selected with fightUntil > tick_ and a
+    // player pushed (selectPolicy's own gate).
+    if (actor.band == playerBand_ &&
+        chebyshev(actor.x, actor.y, playerX_, playerY_) <= kStreetReachTiles) {
+        // IN REACH: face him and SWING. ONE draw, on this body's own key and
+        // its own monotonic sequence -- the Gull's npcSwingSeq_ shape, so two
+        // bodies swinging on one tick never share a roll and the order they
+        // tick in cannot matter. The key is the actor id under its own salt
+        // word so it can never collide with the loiter gate's (id, 3). The roll
+        // goes to the mailbox and the client lands it on the player's sheet
+        // (Tavern::takeStreetBlow) after its own Q8 reach check -- a player
+        // who stepped back is whiffed at, never cancelled on, and the roll is
+        // spent either way. The population never sees his hit points.
+        actor.facing = facingFromDelta(playerX_ - actor.x, playerY_ - actor.y);
+        const std::uint64_t roll =
+            context.draw(static_cast<std::uint64_t>(actor.id) ^ 0x53574E47u, actor.swingSeq);
+        actor.swingSeq = wrap_add(actor.swingSeq, 1);
+        pendingBlows_.push_back(StreetBlow{actor.id, roll});
+        actor.route.clear();
+        actor.routeTargetX = -1;
+        return;
+    }
+    // OUT OF REACH: close on him, by the same route step every other plan
+    // walks (the leash is nobody's business in a fight). A player on another
+    // band or off the walking ground is simply not reached, and the clock runs
+    // the fight out.
+    (void)stepToward(actor, playerX_, playerY_, playerBand_);
+}
+
+bool WardPopulation::standUp(WardActor& actor) {
+    // STREET SENSES leg (b). Up off the floor: his own tile if it is free, else
+    // the first free standable neighbour in the fixed order -- deterministic,
+    // no draw -- else not yet (the caller lies him down a little longer, the
+    // den-full rule). prev* is snapped with the tile so the renderer does not
+    // slide him up off the ground from where he was drawn lying.
+    static constexpr std::int32_t dx[9] = {0, -1, 1, 0, 0, -1, 1, -1, 1};
+    static constexpr std::int32_t dy[9] = {0, 0, 0, -1, 1, -1, -1, 1, 1};
+    for (int n = 0; n < 9; ++n) {
+        const std::int32_t tx = actor.x + dx[n];
+        const std::int32_t ty = actor.y + dy[n];
+        const std::int32_t tz =
+            n == 0 ? actor.band : tiles_->stepBand(actor.x, actor.y, actor.band, tx, ty);
+        if (tz == TileQuery::kNoBand) {
+            continue;
+        }
+        if (occupancy_.at(cellKey(tx, ty, tz)) != 0) {
+            continue;
+        }
+        actor.x = tx;
+        actor.y = ty;
+        actor.band = tz;
+        actor.prevX = tx;
+        actor.prevY = ty;
+        actor.prevBand = tz;
+        occupancy_.add(cellKey(tx, ty, tz), actor.id);
+        actor.downedUntil = -1;
+        // A quarter of the sheet, the Gull's stand-at-quarter rule.
+        actor.hp = static_cast<std::int16_t>(kStreetStandHp);
+        actor.route.clear();
+        actor.routeTargetX = -1;
+        return true;
+    }
+    return false;
+}
+
 void WardPopulation::actLoiter(WardActor& actor, const TickContext& context) {
     // Standing about is standing about. One step in eight is a shuffle, so a
     // street of loiterers reads as alive rather than as a row of statues, and
@@ -1772,6 +1848,7 @@ void WardPopulation::tickActor(WardActor& actor, const TickContext& context) {
         case WardPolicy::Loiter: actLoiter(actor, context); break;
         case WardPolicy::Hunt: actHunt(actor); break;
         case WardPolicy::Cower: actCower(actor); break;
+        case WardPolicy::Brawl: actBrawl(actor, context); break;
         case WardPolicy::Dead: break;
     }
     // A HUNT THAT STOPPED BEING THE PLAN LETS GO OF ITS PREY. Without this a
@@ -1796,6 +1873,10 @@ void WardPopulation::tickActor(WardActor& actor, const TickContext& context) {
 void WardPopulation::tick(const TickContext& context) {
     tick_ = context.tick();
     secondOfDay_ = static_cast<std::int32_t>((tick_ + clockOffset_) % kSecondsPerDay);
+    // STREET SENSES leg (b): the mailbox holds THIS tick's blows only. A
+    // consumer that did not drain last tick's has let them whiff, which is the
+    // mailbox contract and keeps it bounded.
+    pendingBlows_.clear();
     runDailyProvision();
     for (WardActor& actor : actors_) {
         if (actor.dead) {
@@ -1809,9 +1890,15 @@ void WardPopulation::tick(const TickContext& context) {
             if (tick_ < actor.downedUntil) {
                 continue;
             }
-            if (!revivePrey(actor)) {
-                // The den is full. Wait rather than stack: one body per square
-                // is the owner's rule and a revive is not an exception to it.
+            // STREET SENSES leg (b): the same latch, two revivals. A PERSON on
+            // the brawl floor STANDS UP where he fell (standUp); a mouse in a
+            // stomach comes back out of the den (revivePrey). Both wait rather
+            // than stack when their square is taken.
+            const bool up = isPerson(actor.type) ? standUp(actor) : revivePrey(actor);
+            if (!up) {
+                // The den is full, or the street is. Wait rather than stack:
+                // one body per square is the owner's rule and a revive is not
+                // an exception to it.
                 actor.downedUntil = tick_ + kSensePeriodTicks;
                 continue;
             }
@@ -2186,6 +2273,143 @@ void WardPopulation::setPlayer(std::int32_t x, std::int32_t y, std::int32_t band
     playerKnown_ = true;
 }
 
+// --- STREET SENSES leg (b): a body to hit ------------------------------------
+
+const WardActor* WardPopulation::sightlineTarget(std::int32_t playerXQ8, std::int32_t playerYQ8,
+                                                  std::int32_t band, Angle yaw,
+                                                  std::int64_t* alongOut) const noexcept {
+    // VETO 1, THE SAME RULE ON THE OTHER ROSTER. Tavern::sightlineTarget's
+    // projection, line for line: the forward vector angle.hpp owns, along and
+    // perp in Q16 >> 16, on the line iff ahead within reach and within half a
+    // cell of the ray, smallest along wins, strictly-less so a tie is the lower
+    // id on every machine (actors_ is id order). A body's Q8 position is its
+    // tile centre -- the ward walks in whole tiles. Draw-free.
+    const std::int64_t fx = forward_x_q16(yaw);
+    const std::int64_t fy = forward_y_q16(yaw);
+    const WardActor* best = nullptr;
+    std::int64_t bestAlong = static_cast<std::int64_t>(kMeleeReach) + 1;
+    for (const WardActor& actor : actors_) {
+        // Standing persons on the player's band: a floored body is not a
+        // target, a beast is not on the street's ray in v1, and a body one
+        // floor up is not on the line whatever its (x, y) says.
+        if (!actor.visible() || !isPerson(actor.type) || actor.band != band) {
+            continue;
+        }
+        const std::int64_t dx = static_cast<std::int64_t>(q8_tile_centre(actor.x)) - playerXQ8;
+        const std::int64_t dy = static_cast<std::int64_t>(q8_tile_centre(actor.y)) - playerYQ8;
+        const std::int64_t along = (fx * dx + fy * dy) >> 16;
+        if (along <= 0 || along > kMeleeReach) {
+            continue;
+        }
+        const std::int64_t perp = (-fy * dx + fx * dy) >> 16;
+        if (perp > kBodyHalfWidth || perp < -kBodyHalfWidth) {
+            continue;
+        }
+        if (along < bestAlong) {
+            bestAlong = along;
+            best = &actor;
+        }
+    }
+    if (alongOut != nullptr) {
+        *alongOut = best != nullptr ? bestAlong : -1;
+    }
+    return best;
+}
+
+std::int32_t WardPopulation::witnessesInSight(std::int32_t x, std::int32_t y, std::int32_t band,
+                                              std::int32_t radiusTiles,
+                                              std::int32_t exceptId) const noexcept {
+    // alarm()'s three clauses, asked of everybody STANDING -- the Watch
+    // included (a watchman who saw a killing saw it; that he does not run is
+    // a different rule) -- with the victim left out. Dead men tell no tales
+    // and a body on the floor is not a witness: both are !visible().
+    std::int32_t seen = 0;
+    for (const WardActor& actor : actors_) {
+        if (actor.id == exceptId || !actor.visible() || !isPerson(actor.type)) {
+            continue;
+        }
+        if (actor.band != band) {
+            continue;
+        }
+        if (chebyshev(actor.x, actor.y, x, y) > radiusTiles) {
+            continue;
+        }
+        if ((actor.x != x || actor.y != y) && !tiles_->lineOfSight(actor.x, actor.y, x, y, band)) {
+            continue;
+        }
+        ++seen;
+    }
+    return seen;
+}
+
+bool WardPopulation::applyStreetBlow(std::int32_t actorId, std::int32_t hpAfter, const Blow& blow,
+                                     bool lethal) noexcept {
+    if (actorId < 0 || static_cast<std::size_t>(actorId) >= actors_.size()) {
+        return false;
+    }
+    WardActor& actor = actors_[static_cast<std::size_t>(actorId)];
+    if (!actor.visible() || !isPerson(actor.type)) {
+        return false;
+    }
+    // The sheet strike() left, written back. A whiff wrote nothing and
+    // changes nothing here -- the roll was spent by the caller, which is the
+    // whole of a whiff.
+    actor.hp = static_cast<std::int16_t>(std::max(0, hpAfter));
+    if (!blow.landed) {
+        return false;
+    }
+    bool died = false;
+    if (blow.downed) {
+        // OFF THE BOARD, the tile freed: the corpse's rule and the caught
+        // mouse's, for the same reason (a body on the ground must not seal a
+        // street). A fight he was in is over for him.
+        occupancy_.remove(cellKey(actor.x, actor.y, actor.band));
+        actor.route.clear();
+        actor.routeTargetX = -1;
+        actor.fightUntil = 0;
+        if (lethal && !blow.crowned) {
+            // A KILLING BLOW under lethal rules. slain says why, dead does the
+            // rest (never ticks, policy Dead, never stands). The crowned
+            // Evictor blow is the one exception the Gull keeps: it puts a man
+            // OUT, not open, even here.
+            actor.slain = true;
+            actor.dead = true;
+            actor.policy = WardPolicy::Dead;
+            actor.downedUntil = -1;
+            actor.hp = 0;
+            died = true;
+        } else {
+            // THE BRAWL FLOOR: down for kStreetFloorSeconds, then standUp.
+            actor.downedUntil = tick_ + kStreetFloorSeconds;
+            actor.hp = 0;
+        }
+    } else if (wardTypeFightsBack(actor.type)) {
+        // A SAILOR OR A THIEF SWINGS BACK: the fight clock, the Brawl policy.
+        actor.fightUntil = tick_ + kStreetFightSeconds;
+    } else if (actor.type != WardType::MilitiaWatch) {
+        // STRUCK AND STANDING, and not a fighter: he ROUTS -- the leg (a) flee
+        // plan, driven deeper than a bystander's fright. The Watch holds (leg
+        // (c) is what it does instead).
+        if (actor.needs[static_cast<std::size_t>(Need::Safety)] > kStruckPanicFloor) {
+            actor.needs[static_cast<std::size_t>(Need::Safety)] =
+                static_cast<std::int16_t>(kStruckPanicFloor);
+        }
+    }
+    // THE CROWD. A blow that landed on the open street alarms it at the tile
+    // -- a bar-fight punch is the house's business and reaches nobody outside,
+    // but a docker beaten in front of the fish market is exactly the scene the
+    // owner described. Kill for a killing (the widest, longest), Blow for a blow.
+    const AlarmSeverity severity = died ? AlarmSeverity::Kill : AlarmSeverity::Blow;
+    (void)alarm(actor.x, actor.y, actor.band, alarmRadius(severity), severity);
+    return died;
+}
+
+std::vector<StreetBlow> WardPopulation::takeStreetBlows() {
+    std::vector<StreetBlow> out;
+    out.swap(pendingBlows_);
+    return out;
+}
+
 // --- reporting -------------------------------------------------------------
 
 WardCensus WardPopulation::census() const {
@@ -2215,16 +2439,26 @@ WardCensus WardPopulation::census() const {
             ++out.prey;
         }
         if (actor.dead) {
-            ++out.starved;
-            if (labouring) {
-                ++out.serfsStarved;
+            // STREET SENSES leg (b): a killing is not a famine. The balance
+            // bar is written against starvation and must not read a murdered
+            // docker as a food economy failing.
+            if (actor.slain) {
+                ++out.slain;
+            } else {
+                ++out.starved;
+                if (labouring) {
+                    ++out.serfsStarved;
+                }
             }
             continue;
         }
         ++out.alive;
         if (actor.downedUntil >= 0) {
-            // Caught, and not yet back out of the den. Alive, on the roll, and
-            // not on the board.
+            // Caught, and not yet back out of the den -- or, leg (b), a person
+            // on the brawl floor. Alive, on the roll, and not on the board.
+            if (isPerson(actor.type)) {
+                ++out.downed;
+            }
             continue;
         }
         if (isPrey(actor.type)) {
@@ -2305,6 +2539,13 @@ std::string WardPopulation::reportLine() const {
     out += " cower=" +
            content::dec(static_cast<std::uint64_t>(
                roll.byPolicy[static_cast<std::size_t>(WardPolicy::Cower)]));
+    // STREET SENSES leg (b): the violence, SHOWN -- a man on the floor, a man
+    // fighting back, a man dead by a blow -- on the line the gate compares.
+    out += " downed=" + content::dec(static_cast<std::uint64_t>(roll.downed));
+    out += " brawl=" +
+           content::dec(static_cast<std::uint64_t>(
+               roll.byPolicy[static_cast<std::size_t>(WardPolicy::Brawl)]));
+    out += " slain=" + content::dec(static_cast<std::uint64_t>(roll.slain));
     out += " hour=" + content::dec(static_cast<std::uint64_t>(secondOfDay_ / 3600)) + "]";
     return out;
 }
@@ -2377,6 +2618,15 @@ void WardPopulation::hash_into(HashSink& sink) const {
         sink.put_long(static_cast<std::uint64_t>(actor.legRetryUntil));
         sink.put_long(static_cast<std::uint64_t>(actor.downedUntil));
         sink.put_byte(actor.homeOnTheRoof ? 1u : 0u);
+        // STREET SENSES leg (b): THE COMBAT SHEET, appended -- the second
+        // declared move of the program. Every one is read by behaviour: hp
+        // decides bloodied and downed, slain decides a corpse, fightUntil
+        // decides Brawl, swingSeq decides the next roll. Same rule as every
+        // scalar above it: what a policy reads, the hash covers.
+        sink.put_short(static_cast<std::uint32_t>(actor.hp));
+        sink.put_byte(actor.slain ? 1u : 0u);
+        sink.put_long(static_cast<std::uint64_t>(actor.fightUntil));
+        sink.put_int(static_cast<std::uint32_t>(actor.swingSeq));
     }
     for (const Home& home : homes_) {
         sink.put_int(static_cast<std::uint32_t>(home.larder));

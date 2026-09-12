@@ -430,8 +430,13 @@ public:
     }
 
     void tick(const sim::TickContext& context) override {
-        (void)context;
         ++ticks_;
+        // STREET SENSES leg (b): the mailbox of blows thrown at the phantom
+        // player is drained every tick -- the gate has no sheet to land them
+        // on, and a mailbox nobody reads is the one thing this file must not
+        // leave growing. Drained BEFORE the window check so a fight that
+        // outlives the window is drained too.
+        (void)people_->takeStreetBlows();
         if (ticks_ < kFromTick || ticks_ > kToTick) {
             return;
         }
@@ -458,6 +463,7 @@ public:
                 x_ = actor.x;
                 y_ = actor.y;
                 band_ = actor.band;
+                victimId_ = actor.id;
                 located_ = true;
                 break;
             }
@@ -474,13 +480,42 @@ public:
         people_->setPlayer(x_, y_, band_);
         people_->alarm(x_, y_, band_, sim::alarmRadius(sim::AlarmSeverity::Blow),
                        sim::AlarmSeverity::Blow);
+
+        // STREET SENSES leg (b): AND THE BLOW LANDS ON HIM. The docker the point
+        // was found on takes a fist a tick -- the Gull's own strike() on his
+        // sheet, the brawl class (Fists, Subdue: nobody dies), one draw per
+        // blow on this driver's own salt (the gate's stand-in for the swing's
+        // drawForPlayerAction, said out loud) -- until he goes down. Then he is
+        // left alone, lies his kStreetFloorSeconds and STANDS UP at a quarter,
+        // and the report shows downed= rise and fall. That is the number
+        // proving "a docker struck goes down and gets up", not asserting it.
+        if (!downedOnce_) {
+            const sim::WardActor* victim = people_->byId(victimId_);
+            if (victim != nullptr && victim->downedUntil >= 0) {
+                downedOnce_ = true;
+            } else if (victim != nullptr && victim->visible()) {
+                sim::Fighter sheet;
+                sheet.actorId = victimId_;
+                sheet.weapon = sim::Weapon::Fists;
+                sheet.intent = sim::Intent::Subdue;
+                sheet.hp = victim->hp;
+                sheet.hpMax = sim::kActorHealth;
+                const std::uint64_t roll =
+                    context.draw(static_cast<std::uint64_t>(victimId_), blows_);
+                blows_ = sim::wrap_add(blows_, 1);
+                const sim::Blow blow = sim::strike(sim::Weapon::Fists, sheet, roll);
+                (void)people_->applyStreetBlow(victimId_, sheet.hp, blow, /*lethal=*/false);
+            }
+        }
     }
 
     void hash_into(sim::HashSink& sink) const override {
-        // Its own tick count only: the fright it caused is the population's
-        // state to hash, and two systems folding the same numbers would make one
-        // divergence look like two. The tavern driver's own rule.
+        // Its own tick count and blow count only: the fright and the floor it
+        // caused are the population's state to hash, and two systems folding
+        // the same numbers would make one divergence look like two. The tavern
+        // driver's own rule.
         sink.put_long(static_cast<std::uint64_t>(ticks_));
+        sink.put_int(static_cast<std::uint32_t>(blows_));
     }
 
 private:
@@ -498,6 +533,11 @@ private:
     std::int32_t y_ = 0;
     std::int32_t band_ = 0;
     bool located_ = false;
+    /// STREET SENSES leg (b): the docker the point was found on, the fists
+    /// thrown at him (the draw index), and whether he has been put down once.
+    std::int32_t victimId_ = -1;
+    std::int32_t blows_ = 0;
+    bool downedOnce_ = false;
 };
 
 // ---------------------------------------------------------------------------

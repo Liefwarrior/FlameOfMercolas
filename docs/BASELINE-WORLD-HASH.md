@@ -693,3 +693,68 @@ files; `verify-windows.ps1` PASS -- content 71 cases / 902,135 assertions and si
 2,164,336 assertions under mingw, content-fingerprint and world-hash reports byte-identical
 linux/gcc vs mingw/windows, the stamp naming this tree), and photographed through the real
 `--street-assault` verb (`docs/frames/street/`).
+
+---
+
+## STREET SENSES leg (b) -- a body to hit (2026-09-11)
+
+The second leg of the same consented move (DECISIONS.md "Street senses, leg (b)"). The gap
+analysis' first finding was that the street had no body to hit: the sightline raycast walked
+the seventeen-body tavern roster only, and a `WardActor` carried no hit points, no floor and
+no death by violence. **Leg (b) MOVES this number for real, and the second time.**
+
+What changed the number, all hashed `WardActor` fields and behaviour:
+
+1. **The combat sheet**, appended to `hash_into`: `hp` (kActorHealth, the Gull's twenty-four),
+   `downedUntil` reused as the brawl floor, `slain` (dead by violence, which also sets `dead`),
+   `fightUntil` and `swingSeq` for a body that swings back.
+2. **`WardPolicy::Brawl = 8`**, appended (the Cower precedent): a struck sailor or thief
+   closing on the pushed player and swinging, one draw per swing on his own key and sequence
+   (`context.draw(id ^ 'SWNG', swingSeq)`) -- the Gull's `npcSwingSeq_` shape, no new stream.
+3. **`sightlineTarget`** on the ward roster: VETO 1's integer projection, line for line, over
+   standing persons on the player's band; `applyStreetBlow`: the floor (six seconds, up at a
+   quarter through `standUp`), the death, the rout (the leg (a) flee plan at the Kill floor),
+   the fight-back, and the crowd alarmed at the tile. The swing itself is the room's
+   (`Tavern::playerAttackUpStreet`, the same head as the roster swing through
+   `armPlayerSwing`, the same one `drawForPlayerAction`, `strike()`, `classifyFight`, the
+   murder law with the street's witness count) -- the tavern roster is never touched.
+
+And the **violence leg in the gate** grew its blow: the `StreetAssaultDriver` now strikes the
+docker it found -- `strike()` on his sheet, a fist a tick on the driver's own system salt,
+until he drops -- then leaves him to lie his six seconds and stand, so the compared report
+shows `downed=` rise and fall, with `brawl=` and `slain=` beside it.
+
+```
+at branch lane/street (STREET SENSES leg (b)),
+granadad-twin-gate --population --population-hour 16 --ticks 7200, 96 walkers
+COMBINED WORLD HASH: 0xF493AF6F939D52D3 -> 0xED0CA90E26DB0F5B      <- DECLARED and RE-BLESSED
+```
+
+Recorded directly from `dist\granadad-twin-gate.exe --population --population-hour 16
+--ticks 7200` on Windows/mingw, **two invocations**, each `run A` == `run B` ==
+`0xED0CA90E26DB0F5B`, report text byte-identical at **21,746 bytes** in all runs (up from leg
+(a)'s 19,947: the driver's blow count and the three new report fields). On Linux/GCC the same
+gate ran green in the Docker build (ctest `granadad-twin-run-gate-population` PASSED, `run A`
+== `run B`).
+
+The tavern/gate-workload twin on the same exe is UNMOVED: `--tavern --ticks 900`, `run A` ==
+`run B` == `0x837E94019BC49C25`, two invocations (3,153 bytes). `armPlayerSwing` is a pure
+factoring of the roster swing (the same operations in the same order), `playerAttackUpStreet`,
+`takeStreetBlow` and `playerSightlineAlong` are never called by the tavern workload, and the
+lull's intent reset is a no-op where the disengage already ran. The nemesis arc is untouched:
+`granadad.exe --nemesis` reads `beats=7/7 mask=127`; `test_nemesis` re-read.
+
+**The population baseline is therefore re-blessed at `0xED0CA90E26DB0F5B` with two declared
+legs behind it.** Leg (c) THE WATCH moves it a third time, declared and re-blessed the same way.
+
+Proved by `native/tests/test_street_bodies.cpp` (the street's ray against the spec's
+projection computed independently; a struck docker down and up; a struck serf routing deeper
+than a bystander and a struck sailor swinging back; a landed street blow scattering the crowd
+in sight; a blow thrown at the player landing through the Gull's own player-side rules; a
+street kill as murder with the witnesses counted, through the client's own attack path; the
+twin run under street blows), gated on the tree whose GATE-STAMP names it (`native/` digest
+`8d54a6a95cc3f42d96855f4496e784c7ce7d09b3197196bbda560d2992ab2b0c`, ctest cases 1256, 318
+files; `verify-windows.ps1` PASS -- content 71 cases / 902,135 assertions and sim 1175 cases /
+2,165,602 assertions under mingw, content-fingerprint and world-hash reports byte-identical
+linux/gcc vs mingw/windows, the stamp naming this tree), and photographed through the real
+`--street-assault=blow|down|up|kill|hearing` verbs (`docs/frames/street/`).

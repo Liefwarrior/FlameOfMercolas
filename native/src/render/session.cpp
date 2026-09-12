@@ -4366,6 +4366,34 @@ void Session::step(const sim::MoveInput& input) {
         }
         lastRoomHpForAlarm_ = roomHp;
         lastCorpsesForAlarm_ = corpses;
+        // STREET SENSES leg (b) -- THE STREET SWINGS BACK. The blows fighting-
+        // back bodies threw at the player on the ward's tick just taken, read
+        // off the mailbox and landed on his sheet through the Gull's own
+        // player-side rules (Tavern::takeStreetBlow: the hard band off the
+        // thrower's roll, the guard, the floor by class, the defeat seam).
+        // The reach is re-checked HERE in Q8 -- Actor::distanceTo's own
+        // Chebyshev against kMeleeReach, same band -- so a player who stepped
+        // back off the tile is whiffed at, never cancelled on: the roll was
+        // spent on the ward's side either way, the Gull's committed-swing
+        // rule. The hp watch above this block does the wash and the sound.
+        for (const sim::StreetBlow& thrown : people_->takeStreetBlows()) {
+            const sim::WardActor* attacker = people_->byId(thrown.attackerId);
+            if (attacker == nullptr || !attacker->visible() || attacker->band != body_->band()) {
+                continue;
+            }
+            const std::int32_t dx = sim::q8_tile_centre(attacker->x) - body_->x();
+            const std::int32_t dy = sim::q8_tile_centre(attacker->y) - body_->y();
+            if (std::max(std::abs(dx), std::abs(dy)) > sim::kMeleeReach) {
+                continue;  // stepped back: a swing at air
+            }
+            sim::Fighter sheet;
+            sheet.actorId = sim::kWardSpeakerIdBase + attacker->id;
+            sheet.weapon = sim::Weapon::Fists;
+            sheet.intent = sim::Intent::Subdue;
+            sheet.hp = attacker->hp;
+            sheet.hpMax = sim::kActorHealth;
+            (void)tavern_->takeStreetBlow(sheet, thrown.roll);
+        }
     }
     // BARKS LANE (feel/build). WHAT THE ROOM SAID THIS STEP, on the alert
     // row: the watchman's halt (or his contraband demand -- lastDemand was
@@ -6289,7 +6317,44 @@ void Session::attackUp() {
         return;
     }
     const WatchDepthGuard watchGuard(watchDepth_);
-    const sim::Tavern::PlayerSwingResult result = tavern_->playerAttackUp();
+    // STREET SENSES leg (b) -- THE STREET PICK, the one client hook in the
+    // attack path. ONE RULE, TWO ROSTERS: the street's ray is cast with the
+    // identical integer projection the Gull's is (WardPopulation::
+    // sightlineTarget), and the nearer body ALONG the ray takes the blow --
+    // a docker a tile in front of you is hit before a patron three tiles
+    // behind him through the Gull's door. The swing itself is the room's
+    // (playerAttackUpStreet: the same head, the same one roll, strike(),
+    // classifyFight, the deeds, the murder law); the street only supplies the
+    // sheet and takes the answer back (applyStreetBlow: the floor, the death,
+    // the rout, the fight-back, the crowd). Witnesses are counted BEFORE the
+    // body drops, at the Gull's own witness range, so N SAW IT at the bench
+    // is the count of who could see it -- the Watch included.
+    sim::Tavern::PlayerSwingResult result;
+    const sim::WardActor* street = nullptr;
+    std::int64_t streetAlong = -1;
+    if (people_ != nullptr) {
+        street = people_->sightlineTarget(body_->x(), body_->y(), body_->band(), body_->yaw(),
+                                          &streetAlong);
+    }
+    const std::int64_t roomAlong = tavern_->playerSightlineAlong();
+    if (street != nullptr && (roomAlong < 0 || streetAlong < roomAlong)) {
+        const std::int32_t wardId = street->id;
+        sim::Fighter sheet;
+        sheet.actorId = sim::kWardSpeakerIdBase + wardId;
+        sheet.weapon = sim::Weapon::Fists;
+        sheet.intent = sim::Intent::Subdue;
+        sheet.hp = street->hp;
+        sheet.hpMax = sim::kActorHealth;
+        const std::int32_t witnesses = people_->witnessesInSight(
+            street->x, street->y, street->band, sim::kWatchSightTiles, wardId);
+        result = tavern_->playerAttackUpStreet(sheet, wardId, people_->identity(wardId).name,
+                                               witnesses);
+        if (result.swung && result.targetId >= 0) {
+            (void)people_->applyStreetBlow(wardId, sheet.hp, result.blow, result.lethal);
+        }
+    } else {
+        result = tavern_->playerAttackUp();
+    }
     if (result.refused) {
         // A hard swing the wind would not buy. A winded TAP still swings (its
         // fatigue whiff band is the penalty), so a refusal is only ever the
@@ -6983,8 +7048,10 @@ HearingPageState Session::hearingPageState() const {
                " LAYS THE PAPER ON THE TABLE.";
     if (sheet.blood) {
         const std::string slain = tavern_->slainName();
+        // STREET SENSES leg (b): WHERE. A killing on the quay is read as the
+        // street, not the Gull's boards.
         out.charge = "THE WARD SAYS YOU PUT " + (slain.empty() ? std::string("A MAN") : upperAscii(slain)) +
-                     " DOWN IN THE GILDED GULL.";
+                     (tavern_->slainOnStreet() ? " DOWN IN THE STREET." : " DOWN IN THE GILDED GULL.");
         if (sheet.witnesses > 0) {
             out.charge += " " + countWord(sheet.witnesses) + " SAW IT.";
         }
@@ -8173,7 +8240,13 @@ std::vector<SpriteInstance> Session::wardSprites(const Camera& view) const {
         // board. sim::WardActor::visible answers both in one place, which is
         // what stops a caught mouse being drawn standing in its own den for
         // three hours of ward time.
-        if (!actor.visible()) {
+        // STREET SENSES leg (b): AND THE MAN ON THE GROUND. A person struck
+        // down on the brawl floor, or slain, is off the board (visible false)
+        // and DRAWN FLAT where he fell -- floored(), the one other predicate
+        // this loop reads -- the Gull's own Downed presentation (wide, low)
+        // on a street body. A caught mouse is neither.
+        const bool down = actor.floored();
+        if (!actor.visible() && !down) {
             continue;
         }
         // Shaded by the light where they STAND. Without this a figure in an
@@ -8184,10 +8257,14 @@ std::vector<SpriteInstance> Session::wardSprites(const Camera& view) const {
                   std::min(1.15F, sky.ambient.g + baked.g),
                   std::min(1.15F, sky.ambient.b + baked.b)};
 
-        const float px = static_cast<float>(actor.prevX) +
-                         static_cast<float>(actor.x - actor.prevX) * slide + 0.5F;
-        const float py = static_cast<float>(actor.prevY) +
-                         static_cast<float>(actor.y - actor.prevY) * slide + 0.5F;
+        // A floored body lies where it fell: no slide from the tile it was
+        // walking off when the blow landed.
+        const float px = down ? static_cast<float>(actor.x) + 0.5F
+                              : static_cast<float>(actor.prevX) +
+                                    static_cast<float>(actor.x - actor.prevX) * slide + 0.5F;
+        const float py = down ? static_cast<float>(actor.y) + 0.5F
+                              : static_cast<float>(actor.prevY) +
+                                    static_cast<float>(actor.y - actor.prevY) * slide + 0.5F;
         const float floorZ = bandSurface(actor.band);
 
         // Which way they are looking, against where the eye is. The same
@@ -8220,6 +8297,13 @@ std::vector<SpriteInstance> Session::wardSprites(const Camera& view) const {
         // two texels above the street.
         sprite.halfHeight = scale.heightTiles * 0.5F;
         sprite.halfWidth = scale.widthTiles * 0.5F * (inkCols / inkRows);
+        if (down) {
+            // Flat out on the quay: wide instead of tall, and low enough that
+            // somebody standing over him reads as standing over him -- the
+            // Gull's own Downed numbers (actorSprites).
+            sprite.halfHeight = 0.22F;
+            sprite.halfWidth = scale.heightTiles * 0.5F;
+        }
         sprite.z = floorZ + sprite.halfHeight;
         sprite.colour = light;
         sprite.glow = 0.0F;
@@ -11140,7 +11224,7 @@ constexpr std::int32_t kCourtNewManBeats = 7;
     if (ending == "serve") {
         return kCourtServeBeats;
     }
-    if (ending == "ropepage") {
+    if (ending == "ropepage" || ending == "streetblood") {
         return kCourtRopePageBeats;
     }
     if (ending == "rope") {
@@ -11153,9 +11237,14 @@ constexpr std::int32_t kCourtNewManBeats = 7;
 }
 
 /// The endings whose line is the killing's: the tag it leaves, the rope
-/// hearing, the rope, and the new man after it.
+/// hearing, the rope, and the new man after it. STREET SENSES leg (b):
+/// "streetblood" is the rope hearing for a killing ALREADY on the record --
+/// the street's (--street-assault=hearing makes it on the Tarwalk first) --
+/// so the line skips the Gull's own killing and reads the blood the street
+/// counted.
 [[nodiscard]] bool courtEndingHangs(const std::string& ending) {
-    return ending == "bloodtag" || ending == "ropepage" || ending == "rope" || ending == "newman";
+    return ending == "bloodtag" || ending == "ropepage" || ending == "rope" || ending == "newman" ||
+           ending == "streetblood";
 }
 
 /// What the court line found, for the summary -- the nemesis line's rule: a
@@ -11296,7 +11385,19 @@ std::string gCourtNote;
         gCourtNote += " oath=sworn";
     }
 
-    if (hangs) {
+    if (hangs && ending == "streetblood") {
+        // STREET SENSES leg (b): THE KILLING WAS ON THE STREET, already on the
+        // record (runStreetAssault's own hard swings on a docker in the
+        // crowd). Nothing to kill here; the corpse lies on the quay and the
+        // ward knows whose hand.
+        if (!crimes.murderer()) {
+            gCourtNote += " kill=none";
+            return landed;
+        }
+        gCourtNote += " slew=" + tavern.slainName() + " saw=" + std::to_string(crimes.slewWitnesses()) +
+                      (tavern.slainOnStreet() ? " where=street" : " where=gull");
+        ++landed;  // 1: a corpse on the street, the ward knows whose hand
+    } else if (hangs) {
         // THE KILLING, BEFORE THE WATCH DRINKS: the line starts at eight, the
         // room full and Cull not yet on his stool, so the corpse is made in
         // front of the room and not under a watchman's hand mid-swing. The
@@ -11343,15 +11444,22 @@ std::string gCourtNote;
             }
             return landed;
         }
+    }
+    if (hangs) {
         // THE WAIT: the wait page's own jump to the hour the Watch drinks,
         // the body out of the fight's reach first (skipToHour is refused
         // with fists up) and the heat cooling honestly through the hours --
-        // a murder's sixty is still paper at ten.
+        // a murder's sixty is still paper at ten. STREET SENSES leg (b): a
+        // street killing made at four has cooled past the paper by ten, and
+        // that is honest -- the blood never cools (murderer_ stands), Cull
+        // closes on the steel in your hand, and the sheet asks for the rope
+        // off the blood whether or not the paper is out. So the paper check
+        // is the Gull line's alone.
         session.tavern().lowerPlayerHands();
         session.tavern().setPlayerCombat(sim::Weapon::Fists, sim::Intent::Subdue);
         session.skipToHour(22);
         session.stepMany(sim::MoveInput{}, sim::kStepsPerSecond);
-        if (!crimes.warrant()) {
+        if (!crimes.warrant() && ending != "streetblood") {
             gCourtNote += " paper=lapsed";
             return landed;
         }
@@ -11504,9 +11612,11 @@ std::string gCourtNote;
         if (ending == "plea" || ending == "deny" || ending == "hand") {
             return landed;
         }
-        if (ending == "ropepage") {
+        if (ending == "ropepage" || ending == "streetblood") {
             // THE ROPE HEARING PAGE: the blood reading, THE ROPE on the
-            // badge, THE DROP offered and not taken.
+            // badge, THE DROP offered and not taken. For streetblood the
+            // reading names the docker and the street, and the count the
+            // street took.
             if (hearing.judgment != sim::Judgment::TheRope) {
                 gCourtNote += " rope=no";
             }
@@ -12758,15 +12868,26 @@ StreetLineResult runStreetLine(Session& session, const std::string& who, int top
 }
 
 StreetLineResult runStreetAssault(Session& session, const std::string& where) {
-    (void)where;  // reserved; the drive finds the densest Tarwalk spot itself
     StreetLineResult out;
+    // THE ENDINGS. Empty (or "steel"): the blade up, no blow -- leg (a)'s
+    // panic. "blow": fists, one tap that lands on a docker. "down": taps until
+    // he is on the floor. "up": the same, then his six seconds, so he is on
+    // his feet again, bloodied and running. "kill": steel meaning it, hard
+    // swings until he is a corpse -- WANTED FOR BLOOD on the row. "hearing":
+    // the killing, then the Gull at the hour the Watch drinks, taken at reach
+    // with steel up, and the rope hearing page reading the street's own
+    // count. Every blow is the Attack key's own down and up.
+    const bool kills = where == "kill" || where == "hearing";
+    const bool blows = where == "blow" || where == "down" || where == "up" || kills;
 
     // THE FULLEST STRETCH OF THE TARWALK the hour offers: the visible non-Watch
     // person with the most people in SIGHT within the blade's radius, and a
     // standable tile beside them to stand the player on -- the same
     // (same band, in range, line of sight) rule the alarm keeps, computed here
     // so the frame is a picture of a crowd rather than of the spawn tile.
-    // Deterministic (ascending id, first standable neighbour), draw-free.
+    // Deterministic (ascending id, first standable neighbour), draw-free. A
+    // blow ending stands beside a SERF: he routs rather than swings back, so
+    // the floor and the stand-up are the frame and not a fist fight.
     const sim::WardActor* best = nullptr;
     std::int32_t bestSeen = -1;
     std::int32_t standX = 0;
@@ -12777,6 +12898,9 @@ StreetLineResult runStreetAssault(Session& session, const std::string& where) {
     for (const sim::WardActor& centre : session.people().actors()) {
         if (!centre.visible() || !sim::isPerson(centre.type) ||
             centre.type == sim::WardType::MilitiaWatch) {
+            continue;
+        }
+        if (blows && centre.type != sim::WardType::Serf) {
             continue;
         }
         if (centre.x < sim::wardplaces::kTarwalkX0 || centre.x > sim::wardplaces::kTarwalkX1 ||
@@ -12836,17 +12960,138 @@ StreetLineResult runStreetAssault(Session& session, const std::string& where) {
         session.body().setYaw(look);
     }
 
-    // STEEL UP, NO BLOW. An Edged weapon in the hand and the hands raised (a
-    // held guard raises them without violence, the stance's own rule) -- the
-    // exact cause Tavern::violenceInView reads, and the exact shape
-    // test_street_panic's "steel up on the Tarwalk" drives. The alarm that
-    // scatters the crowd fires from Session::step's one call site while the
-    // settle window runs; nothing here alarms anybody by hand.
-    session.tavern().setPlayerCombat(sim::Weapon::Edged, sim::Intent::Subdue);
-    session.setBlocking(true);
-    // One step so the room learns the new position and the hands come up before
-    // the settle window's ticks carry the first alarm.
+    if (!blows) {
+        // STEEL UP, NO BLOW. An Edged weapon in the hand and the hands raised
+        // (a held guard raises them without violence, the stance's own rule)
+        // -- the exact cause Tavern::violenceInView reads, and the exact
+        // shape test_street_panic's "steel up on the Tarwalk" drives. The
+        // alarm that scatters the crowd fires from Session::step's one call
+        // site while the settle window runs; nothing here alarms anybody by
+        // hand.
+        session.tavern().setPlayerCombat(sim::Weapon::Edged, sim::Intent::Subdue);
+        session.setBlocking(true);
+        // One step so the room learns the new position and the hands come up
+        // before the settle window's ticks carry the first alarm.
+        session.stepMany(sim::MoveInput{}, 1);
+        return out;
+    }
+
+    // STREET SENSES leg (b): THE BLOW. Fists for a docker beaten (a brawl,
+    // nobody dies); steel meaning it for a killing (Lethal by B1 and B2).
+    session.tavern().setPlayerCombat(kills ? sim::Weapon::Edged : sim::Weapon::Fists,
+                                     kills ? sim::Intent::Kill : sim::Intent::Subdue);
     session.stepMany(sim::MoveInput{}, 1);
+    const std::int32_t markId = best->id;
+
+    // ONE SWING AT HIM -- re-stood beside him and re-faced first (a struck man
+    // moves), then the Attack key DOWN, held past the hard threshold for a
+    // killing and not for a beating, and UP: the sightline picks him (the
+    // street's ray, the nearer along), the room resolves it, the street takes
+    // the answer. Returns whether the blow LANDED (his sheet moved).
+    const auto swingAt = [&](bool hard) {
+        const sim::WardActor* mark = session.people().byId(markId);
+        if (mark == nullptr || !mark->visible()) {
+            return false;
+        }
+        std::int32_t sx = mark->x;
+        std::int32_t sy = mark->y;
+        bool stood = false;
+        for (int n = 0; n < 4 && !stood; ++n) {
+            sx = mark->x + dx[n];
+            sy = mark->y + dy[n];
+            if (session.tiles().standable(sx, sy, mark->band) &&
+                session.people().nearestTo(sx, sy, mark->band, 0) == nullptr) {
+                stood = true;
+            }
+        }
+        if (!stood) {
+            return false;
+        }
+        const std::int32_t hpBefore = mark->hp;
+        session.placeBodyAt(sx, sy, mark->band);
+        {
+            const std::int32_t toX = mark->x - sx;
+            const std::int32_t toY = mark->y - sy;
+            sim::Angle look = sim::kFacingNorth;
+            if (std::abs(toX) >= std::abs(toY)) {
+                look = toX > 0 ? sim::kFacingEast : sim::kFacingWest;
+            } else {
+                look = toY > 0 ? sim::kFacingSouth : sim::kFacingNorth;
+            }
+            session.body().setYaw(look);
+        }
+        session.stepMany(sim::MoveInput{}, 1);
+        session.attackDown();
+        session.stepMany(sim::MoveInput{}, hard ? sim::kHardSwingHoldSteps + 1 : 1);
+        session.attackUp();
+        const sim::WardActor* after = session.people().byId(markId);
+        const bool landed = after != nullptr && (after->hp < hpBefore || after->slain);
+        // The recovery lockout, through real steps, so the next press is not
+        // dropped.
+        session.stepMany(sim::MoveInput{},
+                         (hard ? sim::kHardSwingRecoverySteps : sim::kSwingRecoverySteps) + 1);
+        return landed;
+    };
+
+    if (where == "blow") {
+        // The blow LANDING: the first tap that connects (the die whiffs one in
+        // eight), and the frame right after it -- the wash, the crowd turning.
+        bool landed = false;
+        for (int tap = 0; tap < 6 && !landed; ++tap) {
+            landed = swingAt(false);
+        }
+        out.opened = landed;
+        return out;
+    }
+    if (where == "down" || where == "up") {
+        // Taps until he drops: 3-5 a tap against 24, the brawl floor, off the
+        // board where he fell.
+        bool floored = false;
+        for (int tap = 0; tap < 16 && !floored; ++tap) {
+            (void)swingAt(false);
+            const sim::WardActor* mark = session.people().byId(markId);
+            floored = mark != nullptr && mark->downedUntil >= 0;
+        }
+        if (where == "up" && floored) {
+            // HIS SIX SECONDS, and up at a quarter -- on his feet, bloodied,
+            // and running (struck, he routs). Two extra ticks so the stand
+            // and the first flee step are both on the frame.
+            session.stepMany(sim::MoveInput{},
+                             static_cast<int>(sim::kStreetFloorSeconds + 2) * sim::kStepsPerSecond);
+            const sim::WardActor* mark = session.people().byId(markId);
+            out.opened = mark != nullptr && mark->visible() && mark->hp == sim::kStreetStandHp;
+            return out;
+        }
+        out.opened = floored;
+        return out;
+    }
+    // A KILLING: hard swings with steel until he is a corpse.
+    bool slain = false;
+    for (int swing = 0; swing < 8 && !slain; ++swing) {
+        (void)swingAt(true);
+        const sim::WardActor* mark = session.people().byId(markId);
+        slain = mark != nullptr && mark->slain;
+    }
+    if (!slain) {
+        return out;
+    }
+    if (where == "kill") {
+        // The corpse on the quay and WANTED FOR BLOOD on the row, the row's
+        // own ease fully up.
+        session.stepMany(sim::MoveInput{}, 16);
+        out.opened = session.tavern().dialogue().crimes().murderer();
+        return out;
+    }
+    // THE HEARING. The body to the Gull's own street tile (the one placement,
+    // said out loud: the court line's router is that building and the street
+    // in front of it, and the Tarwalk's far end is not), then the court line
+    // for a killing already on the record: the wait to the hour the Watch
+    // drinks, taken at reach with steel up, the rope hearing page.
+    session.placeBodyAt(sim::gull::kStreetX, sim::gull::kStreetY, sim::gull::kGroundBand);
+    session.stepMany(sim::MoveInput{}, 1);
+    const int beats = runCourtLine(session, "streetblood");
+    out.opened = beats >= kCourtRopePageBeats;
+    out.line = gCourtNote;
     return out;
 }
 
@@ -13687,12 +13932,16 @@ SmokeRunResult runSmoke(const SmokeRunConfig& config) {
     }
 
     if (config.streetAssault) {
-        // STREET SENSES (9a completion). PROOF. Stand in the crowd, raise
-        // steel; the settle window below scatters the street. Landed = a crowd
-        // tile was found and the player was stood in it.
+        // STREET SENSES. PROOF. Stand in the crowd and raise steel (the settle
+        // window below scatters the street), or -- leg (b) -- put a docker
+        // down, up, or dead, or take the killing to the bench. Landed = a
+        // crowd tile was found and stood in, and the ending's own beat came
+        // true (a blow that landed, a man floored, a man up, a corpse, the
+        // rope hearing page).
         const StreetLineResult assault = runStreetAssault(session, config.streetAssaultWhere);
+        const bool steelOnly = config.streetAssaultWhere.empty() || config.streetAssaultWhere == "steel";
         result.scriptedWanted += 1;
-        result.scriptedLanded += assault.found ? 1 : 0;
+        result.scriptedLanded += (assault.found && (steelOnly || assault.opened)) ? 1 : 0;
     }
 
     if (config.court) {

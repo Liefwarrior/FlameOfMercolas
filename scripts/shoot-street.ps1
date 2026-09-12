@@ -25,12 +25,20 @@ $log = Join-Path $OutDir 'shoot-street.log'
 if (Test-Path $log) { Remove-Item $log }
 
 # name, then the line's own arguments (the size and the screenshot are added).
-# The three settle counts are the panic strip: 0 the blade just up and the
-# crowd intact, 180 three flee ticks in, 360 six ticks in and scattered.
+# Leg (a): the three settle counts are the panic strip -- 0 the blade just up
+# and the crowd intact, 180 three flee ticks in, 360 six ticks in and
+# scattered. Leg (b): the blow landing on a docker, the docker on the floor,
+# the docker up again, the corpse with WANTED FOR BLOOD, and the rope hearing
+# page reading the street's own witness count.
 $shots = @(
-    @('street-panic-0',   @('--street-assault', '--settle-steps=0')),
-    @('street-panic-180', @('--street-assault', '--settle-steps=180')),
-    @('street-panic-360', @('--street-assault', '--settle-steps=360'))
+    @('street-panic-0',    @('--street-assault', '--settle-steps=0')),
+    @('street-panic-180',  @('--street-assault', '--settle-steps=180')),
+    @('street-panic-360',  @('--street-assault', '--settle-steps=360')),
+    @('street-blow',       @('--street-assault=blow', '--settle-steps=0')),
+    @('street-down',       @('--street-assault=down', '--settle-steps=0')),
+    @('street-up',         @('--street-assault=up', '--settle-steps=0')),
+    @('street-kill',       @('--street-assault=kill', '--settle-steps=0')),
+    @('street-hearing',    @('--street-assault=hearing'))
 )
 
 $failed = 0
