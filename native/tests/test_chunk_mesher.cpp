@@ -1313,10 +1313,11 @@ TEST_CASE("the roof finish keys on the building top, whatever its tile says") {
         }
         if (p.role == PieceRole::RoofBatten) {
             ++battens;
-            // Thin, in the roof's dark, on the surface, along a
-            // north-south module line inside the plane (never its edge).
-            CHECK(p.instance.tint.r == knobs.roofFillTint.r);
-            CHECK(p.instance.tint.b == knobs.roofFillTint.b);
+            // Thin, in the roof tint (a shade over the fill: a lead roll
+            // catches the light), on the surface, along a north-south
+            // module line inside the plane (never its edge).
+            CHECK(p.instance.tint.r == knobs.roofTint.r);
+            CHECK(p.instance.tint.b == knobs.roofTint.b);
             CHECK(p.instance.scale.x < 0.5F);
             CHECK(p.instance.position.y > render::bandSurface(20));
             CHECK(p.instance.position.y < render::bandSurface(20) + 0.1F);
@@ -1874,30 +1875,61 @@ TEST_CASE("a timber wall with a roofed room behind it is a building, not a hull"
             house.put(x, y, 20, content::TileForm::Floor, materialId("trudgeon_wood"));
         }
     }
-    // The hull: a timber run at x = 6, rows 23..25, open air behind it
-    // (the deck is a floor, but nothing roofs it).
+    // The hull: a timber run at x = 6, rows 23..25, the way a moored ship
+    // is built -- its lower boards at 18 over the water with a roofed hold
+    // of air behind them, the deck a floor at 19 over that, and the gunwale
+    // at 19 standing on the boards with the open deck behind it.
     for (std::int32_t y = 23; y <= 25; ++y) {
+        house.put(6, y, 18, content::TileForm::Wall, materialId("trudgeon_wood"));
+        house.put(7, y, 18, content::TileForm::Open, materialId("dirt"));
         house.put(6, y, 19, content::TileForm::Wall, materialId("trudgeon_wood"));
         house.put(7, y, 19, content::TileForm::Floor, materialId("trudgeon_wood"));
+        for (std::int32_t x = 4; x <= 5; ++x) {
+            house.put(x, y, 18, content::TileForm::Open, materialId("dirt"));
+            house.world.shortLane(content::kFluidLane)[house.tiles.index(x, y, 18)] = 3;
+        }
+    }
+    // And a fenced yard on piles: a timber wall at x = 6, rows 26..27, over
+    // the water (nothing under it) with an open floor behind it and no
+    // hull under it -- a building's wall, not a ship's.
+    for (std::int32_t y = 26; y <= 27; ++y) {
+        house.put(6, y, 18, content::TileForm::Open, materialId("dirt"));
+        house.put(6, y, 19, content::TileForm::Wall, materialId("trudgeon_wood"));
+        house.put(7, y, 19, content::TileForm::Floor, materialId("trudgeon_wood"));
+        house.put(4, y, 19, content::TileForm::Open, materialId("dirt"));
+        house.put(5, y, 19, content::TileForm::Open, materialId("dirt"));
+        house.world.shortLane(content::kFluidLane)[house.tiles.index(4, y, 19)] = 3;
+        house.world.shortLane(content::kFluidLane)[house.tiles.index(5, y, 19)] = 3;
     }
     const StaticPlacements placed = placeStaticPieces(house.tiles, catalogue, {});
     std::size_t shedHull = 0;
     std::size_t shedBoards = 0;
     std::size_t hullBoards = 0;
+    std::size_t gunwaleBoards = 0;
+    std::size_t yardHull = 0;
+    std::size_t yardBoards = 0;
     for (const StaticPlacement& p : placed.placements) {
         const bool shedWest = p.lightX == 6 && p.lightY >= 18 && p.lightY <= 20 && p.lightZ == 19;
-        const bool hullWest = p.lightX == 6 && p.lightY >= 23 && p.lightY <= 25 && p.lightZ == 19;
+        const bool hullWest = p.lightX == 6 && p.lightY >= 23 && p.lightY <= 25 && p.lightZ == 18;
+        const bool gunwaleWest = p.lightX == 6 && p.lightY >= 23 && p.lightY <= 25 && p.lightZ == 19;
+        const bool yardWest = p.lightX == 6 && p.lightY >= 26 && p.lightY <= 27 && p.lightZ == 19;
         if (p.role == PieceRole::Hull) {
             shedHull += shedWest ? 1 : 0;
             hullBoards += hullWest ? 1 : 0;
+            gunwaleBoards += gunwaleWest ? 1 : 0;
+            yardHull += yardWest ? 1 : 0;
         }
-        if (p.role == PieceRole::WallTimber && shedWest && p.instance.position.x < 6.5F) {
-            ++shedBoards;
+        if (p.role == PieceRole::WallTimber && p.instance.position.x < 6.5F) {
+            shedBoards += shedWest ? 1 : 0;
+            yardBoards += yardWest ? 1 : 0;
         }
     }
     CHECK(shedHull == 0);
     CHECK(shedBoards > 0);
     CHECK(hullBoards > 0);
+    CHECK(gunwaleBoards > 0);
+    CHECK(yardHull == 0);
+    CHECK(yardBoards > 0);
 }
 
 TEST_CASE("a timber post beside a door gap hangs the shop sign") {

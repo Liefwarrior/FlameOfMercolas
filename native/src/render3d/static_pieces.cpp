@@ -533,12 +533,22 @@ private:
 
     /// A hull face: a timber wall (not a lone post) with the harbour beside
     /// it on this level, or standing on a timber wall with the harbour
-    /// beside THAT (the gunwale over a hull) -- and NO roofed room against
-    /// it: a timber building at the water's edge is a building, boarded
-    /// upright like any other, not a ship's side.
+    /// beside THAT (the gunwale over a hull) -- and a BUILDING'S wall is
+    /// never one, boarded upright like any other: a roofed room against
+    /// it (a shed on the quay), or an open floor behind it while it stands
+    /// on no hull (a fenced yard on piles, a boathouse's deck). A moored
+    /// hull has a roofed hold of air behind its lower boards and its open
+    /// deck behind a gunwale that stands on those boards.
     [[nodiscard]] bool hullFace(std::int32_t x, std::int32_t y, std::int32_t z,
                                 int side) const noexcept {
         if (wallClassAt(x, y, z) != WallClass::Timber || isPost(x, y, z) || roomBeside(x, y, z)) {
+            return false;
+        }
+        const bool onHull = isWall(tiles_, x, y, z - 1) && wallClassAt(x, y, z - 1) == WallClass::Timber;
+        const std::int32_t bx = x - kSideDx[side];
+        const std::int32_t by = y - kSideDy[side];
+        const bool deckBehind = isWalkableForm(tiles_, bx, by, z) && !cellRoofed(tiles_, bx, by, z);
+        if (deckBehind && !onHull) {
             return false;
         }
         const std::int32_t nx = x + kSideDx[side];
@@ -546,8 +556,7 @@ private:
         if (harbourAt(nx, ny, z)) {
             return true;
         }
-        return isWall(tiles_, x, y, z - 1) && wallClassAt(x, y, z - 1) == WallClass::Timber &&
-               harbourAt(nx, ny, z - 1);
+        return onHull && harbourAt(nx, ny, z - 1);
     }
 
     /// A storey's piece is fitted to the band less a centimetre, so its top
