@@ -644,20 +644,22 @@ void drawCompass(Framebuffer& target, const HudState& state) {
         delta = ((delta + 32768) & 65535) - 32768;
         return x + stripW / 2 + static_cast<int>(static_cast<float>(delta) * pixelsPerBam);
     };
+    // A tick at the strip's very edge (a place dead abeam) is clipped to the
+    // strip rather than dropped: half a notch at the rail still says "there,
+    // just off the arc", which is exactly the fact a body turning wants.
     const int tickY = y + stripH - scale;
-    for (const std::int32_t bam : state.placeTickBams) {
-        const int px = tickX(bam);
-        if (px < x || px + scale > x + stripW) {
-            continue;
+    const auto notch = [&](int px, int halfWidth, const Rgb& ink, float alpha) {
+        const int x0 = std::max(x, px - halfWidth);
+        const int x1 = std::min(x + stripW, px + halfWidth + scale);
+        if (x1 > x0) {
+            target.fillRect(x0, tickY, x1 - x0, 2 * scale, ink, alpha);
         }
-        target.fillRect(px, tickY, scale, 2 * scale, Rgb{0.78F, 0.74F, 0.62F}, 0.80F);
+    };
+    for (const std::int32_t bam : state.placeTickBams) {
+        notch(tickX(bam), scale / 2, Rgb{0.90F, 0.87F, 0.78F}, 0.95F);
     }
     if (state.pullTickBam >= 0) {
-        const int px = tickX(state.pullTickBam);
-        if (px - scale >= x && px + 2 * scale <= x + stripW) {
-            target.fillRect(px - scale, tickY, 3 * scale, 2 * scale, Rgb{0.95F, 0.80F, 0.35F},
-                            1.0F);
-        }
+        notch(tickX(state.pullTickBam), scale, Rgb{0.95F, 0.80F, 0.35F}, 1.0F);
     }
 
     // UI-EA (LANE HUD): THE SUB-LABEL ROW WAS EMPTIED. The place name used

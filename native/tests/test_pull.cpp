@@ -465,7 +465,24 @@ TEST_CASE("the CASES shelf lists the three books, fronts one the player has, ref
     CHECK(page.shelf[2].state == "NOT YET");
     CHECK_FALSE(session.frontCase(CaseBookId::Courier));
     CHECK(session.frontedBook() == CaseBookId::Bloodletter);
+    // BOTH DEVICES: F on a keyboard (a raw page key, the map's T precedent),
+    // the Attack half's button on a pad -- X -- through promptLabel, and the
+    // nav band prints whichever hand holds the machine.
     CHECK(page.followKey == "F");
+    session.noteInputDevice(InputDevice::Pad);
+    const CasebookPageState padPage = session.casebookPageState();
+    CHECK(padPage.followKey == "X");
+    CHECK(padPage.commitKey == "A");
+    Framebuffer keyboard(960, 540);
+    CasebookPageState drawnKb = page;
+    drawnKb.openAmount = 1.0F;
+    drawCasebookPage(keyboard, drawnKb);
+    Framebuffer pad(960, 540);
+    CasebookPageState drawnPad = padPage;
+    drawnPad.openAmount = 1.0F;
+    drawCasebookPage(pad, drawnPad);
+    CHECK(keyboard.pixels() != pad.pixels());
+    session.noteInputDevice(InputDevice::KeyboardMouse);
 
     // The courier arrives: the auto rule fronts the errand, and the shelf
     // says READ 0/1 for it.
