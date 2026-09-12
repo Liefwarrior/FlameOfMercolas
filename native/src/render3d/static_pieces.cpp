@@ -1122,21 +1122,32 @@ private:
             // The leaves: one on each jamb, hinged at the jamb's inner
             // edge, swung inward to lie along the reveal.
             if (leaf != nullptr) {
+                const float leafLength = std::max(0.1F, leaf->maxX - leaf->minX);
                 for (int end = 0; end < 2; ++end) {
                     // The hinge: just inside the jamb's edge, a little off
                     // the reveal, at the facade plane.
                     const float a = end == 0 ? lo + jambW + kLeafOffReveal : hi - jambW - kLeafOffReveal;
-                    const Vec3 hinge{r.baseX + kTangentX[r.side] * a - kNormalX[r.side] * kLeafOffFacade,
-                                     yBase + leaf->lift,
-                                     r.baseZ + kTangentZ[r.side] * a - kNormalZ[r.side] * kLeafOffFacade};
+                    Vec3 hinge{r.baseX + kTangentX[r.side] * a - kNormalX[r.side] * kLeafOffFacade,
+                               yBase + leaf->lift,
+                               r.baseZ + kTangentZ[r.side] * a - kNormalZ[r.side] * kLeafOffFacade};
                     // The leaf's local +X runs from the hinge along the
                     // leaf: a quarter turn from the facade's tangent, into
-                    // the building. For the far jamb the leaf is mirrored
-                    // so its face turns the same way.
-                    const float yaw = yawOf(r.side) + kHalfPi;
+                    // the building. The far jamb's leaf is TURNED a half
+                    // turn and hung from its far end rather than mirrored:
+                    // a mirrored piece is drawn both-sided, and the back
+                    // faces of the leaf's edge showed as a red seam from
+                    // the street. Turned, it is culled like everything
+                    // else and shows its other face, which a swung-open
+                    // pair does anyway.
+                    float yaw = yawOf(r.side) + kHalfPi;
+                    if (end == 1) {
+                        yaw += kPi;
+                        hinge.x -= kNormalX[r.side] * leafLength;
+                        hinge.z -= kNormalZ[r.side] * leafLength;
+                    }
                     pointPiece(PieceRole::DoorLeaf, *leaf, hinge, yaw, end == 0 ? gap.x : farX,
-                               end == 0 ? gap.y : farY, gap.z, outTint,
-                               Vec3{1.0F, 1.0F, end == 0 ? 1.0F : -1.0F}, false, 2.5F);
+                               end == 0 ? gap.y : farY, gap.z, outTint, Vec3{1.0F, 1.0F, 1.0F}, false,
+                               2.5F);
                 }
             }
         }

@@ -36,7 +36,7 @@
     "wall_door":   { "pack": "PolygonGeneric", "file": "SM_Bld_Base_Wall_Door_Double_01.gltf", "width": 2.5, "height": 3.0057, "thickness": 0.288, "front": "-z", "cutX": 0.17, "cutY": 2.029 },
     "door_inside": { "pack": "PolygonGeneric", "file": "SM_Bld_Base_Wall_Thin_01.gltf",        "width": 2.5, "height": 3.0, "thickness": 0.0, "front": "+z" },
     "wall_plaster":{ "pack": "PolygonGeneric", "file": "SM_Bld_Base_Wall_Thin_01.gltf",        "width": 2.5, "height": 3.0, "thickness": 0.0, "standoff": 0.225, "front": "+z" },
-    "door_leaf":   { "pack": "PolygonGeneric", "file": "SM_Bld_Base_Door_01.gltf",             "lift": 0.01, "maxDistance": 40 },
+    "door_leaf":   { "pack": "PolygonGeneric", "file": "SM_Bld_Base_Door_01.gltf",             "extent": [-0.0014, -0.1236, 1.0014, 0.1236], "lift": 0.01, "maxDistance": 40 },
     "gate_post":   { "pack": "PolygonKnights", "file": "SM_Prop_Beam_01.gltf",                 "height": 2.488, "scale": 1.3, "maxDistance": 64 },
     "roof_edge":   { "pack": "PolygonGeneric", "file": "SM_Bld_Base_Wall_Trim_01.gltf",        "width": 2.5, "height": 0.0, "standoff": 0.114, "lift": -0.2347, "front": "+z" },
     "parapet":     { "pack": "PolygonGeneric", "file": "SM_Bld_Base_Wall_Half_01.gltf",        "width": 2.5, "height": 1.5057, "thickness": 0.225, "front": "-z", "maxDistance": 80 },

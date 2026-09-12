@@ -792,6 +792,24 @@ TEST_CASE("a door tile places the door frame") {
     }
     CHECK(behind == 3);
     CHECK(countRole(placed.placements, PieceRole::DoorLeaf) == 2);
+    // Neither leaf is mirrored (a mirrored piece draws both-sided and its
+    // back faces showed as a red seam); the far one is turned a half turn
+    // from the near one instead, hung from its far end.
+    {
+        std::vector<const StaticPlacement*> leaves;
+        for (const StaticPlacement& p : placed.placements) {
+            if (p.role == PieceRole::DoorLeaf) {
+                leaves.push_back(&p);
+            }
+        }
+        REQUIRE(leaves.size() == 2);
+        for (const StaticPlacement* p : leaves) {
+            CHECK(p->instance.scale.z > 0.0F);
+            CHECK(p->mode == kDrawShaded);
+        }
+        const float turned = std::fabs(leaves[0]->instance.yaw - leaves[1]->instance.yaw);
+        CHECK(std::fabs(turned - 3.14159265F) < 0.01F);
+    }
     // The house's interior is roofed now, so its inner faces wear plaster:
     // the thin one-sided plaster quad, turned half a turn so its face
     // looks into the room -- checked on the north wall's south face, which
