@@ -428,7 +428,7 @@ TEST_CASE("the same walk, run twice, says exactly the same things") {
 // THE STREET IS NOT A WALL OF TEXT
 // ===========================================================================
 
-TEST_CASE("two pass lines are never closer than the channel's cooldown, and one mouth waits a minute") {
+TEST_CASE("two pass lines are never closer than the channel's cooldown, and one mouth waits two minutes") {
     render::SessionConfig config;
     config.contentDir = content::contentDir();
     config.timeOfDay = 16 * 3600;

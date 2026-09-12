@@ -627,27 +627,28 @@ bool StreetVoice::stepPass(const VoiceScene& scene) {
     }
 
     // THE ONE LINE AS YOU PASS, from the nearest mouth that has not spoken
-    // to you lately. Only the nearest: if that one is on cooldown the street
-    // stays quiet this step rather than reaching past it for a second, which
-    // is how a crowd would sound.
+    // to you lately: standing in a crowd gets each neighbour once, and a
+    // crowd that has all had its say goes quiet.
     if (!channelFree(VoiceChannel::Pass, scene.step)) {
         return false;
     }
-    const Candidate& who = near.front();
-    if (!speakerFree(who.speakerId, scene.step, kPassSpeakerCooldownSteps)) {
-        return false;
+    for (const Candidate& who : near) {
+        if (!speakerFree(who.speakerId, scene.step, kPassSpeakerCooldownSteps)) {
+            continue;
+        }
+        const sim::Attitude attitude = attitudeToward(ledger, who.speakerId);
+        VoiceLine line = pickVoiceLine(room.dialogue().barks(),
+                                       sim::voiceChain("pass", who.typeKey, who.family, attitude),
+                                       who.speakerId, scene.step, talksWith(ledger, who.speakerId));
+        if (line.empty()) {
+            return false;
+        }
+        line.name = who.name;
+        line.channel = VoiceChannel::Pass;
+        say(std::move(line));
+        return true;
     }
-    const sim::Attitude attitude = attitudeToward(ledger, who.speakerId);
-    VoiceLine line = pickVoiceLine(room.dialogue().barks(),
-                                   sim::voiceChain("pass", who.typeKey, who.family, attitude),
-                                   who.speakerId, scene.step, talksWith(ledger, who.speakerId));
-    if (line.empty()) {
-        return false;
-    }
-    line.name = who.name;
-    line.channel = VoiceChannel::Pass;
-    say(std::move(line));
-    return true;
+    return false;
 }
 
 // --- overheard ---------------------------------------------------------------

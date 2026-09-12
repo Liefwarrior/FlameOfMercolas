@@ -46,8 +46,8 @@
 // cooldown per channel and per speaker; an event line (react, watch,
 // farewell) replaces an ambient one (pass, overheard) and an ambient line
 // waits for an event line to finish and then a breath more. A body says one
-// unprompted thing to you a minute, the room says one thing about a fight
-// every four seconds, and a killing is not talked over by the weather.
+// unprompted thing to you in two minutes, the room says one thing about a
+// fight every four seconds, and a killing is not talked over by the weather.
 //
 // THE HONEST BOUND. The player's swing reaches the Gilded Gull's roster
 // today and nothing else (COMBAT-ACTION-SPEC.md section 10 defers WardActor
@@ -115,11 +115,12 @@ inline constexpr std::int32_t kVoiceHoldMaxSteps = 540;
 inline constexpr std::int32_t kVoiceHoldPerGlyphSteps = 4;
 
 /// PASS. Steps between two pass lines on the channel (twelve seconds), and
-/// steps before the SAME body says another unprompted thing to you (a
-/// minute). Walking a crowded Tarwalk gets a line every dozen seconds from a
-/// different mouth each time; standing beside one shopkeeper gets one line.
+/// steps before the SAME body says another unprompted thing to you (two
+/// minutes). Walking a crowded Tarwalk gets a line every dozen seconds from
+/// a different mouth each time; standing beside one shopkeeper gets one
+/// line, and standing in a crowd gets each neighbour once.
 inline constexpr std::int32_t kPassCooldownSteps = 720;
-inline constexpr std::int32_t kPassSpeakerCooldownSteps = 3600;
+inline constexpr std::int32_t kPassSpeakerCooldownSteps = 7200;
 /// A body has to be THIS close to speak as it passes: the talk reach, so the
 /// one who speaks to you is one you could answer.
 inline constexpr std::int32_t kPassReachTiles = 2;
