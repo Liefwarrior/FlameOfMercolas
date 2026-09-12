@@ -1,7 +1,7 @@
 # The street talks
 
 Every frame in here is the real `dist\granadad.exe` on the gated Windows build (branch
-`lane/voice`, commit `1e5208c3`), playing the voice channel through the real verbs. Nothing
+`lane/voice`, commit `36411ac4`), playing the voice channel through the real verbs. Nothing
 is staged. Each run prints a summary line next to the picture
 (`voice end=... beats=n/N ... key=... speaker="..." row="..."`) and the exact line that shot
 each frame is in the table. A run that fell short says so and can't pass as one that didn't.
@@ -45,7 +45,7 @@ Five channels, ranked. A higher one replaces a lower one on the row. A lower one
 | watch | a watchman's eyes on you crouched or with your hands up, a watchman passing somebody the post has heard of (heat 24 and up) or has paper on, the deference table to a presented Wielder, and the readback as a Closing watchman crosses the room after his halt | `watch.notice` `watch.heat` `watch.paper` `watch.wielder` `watch.approach.<violence\|paper\|goods>` | 5 s on the channel, 20 s per watchman. The readback fires 45 steps after the halt and again at reach |
 | react | a witness's memory moving with Struck, DrewSteel or Slew on it (`SocialLedger::witness`, read by comparing public state, same shape as `lastPlayerHp_`). Never the man in the fight, never a bouncer (his ladder speaks for him), never the Closing watchman (his halt does) | `react.<family>.<struck\|steel\|slew>` | 4 s on the channel, 15 s per witness. A witness who couldn't get the row keeps the right for 4 s |
 | farewell | LEAVE by its topic, the back key, or walking off past five tiles mid talk | `farewell.<type>.<attitude>` and `farewell.away.<family>` | none, it's an event |
-| pass | the nearest body within two tiles, once | `pass.<type>.<attitude>` | 12 s on the channel, 60 s per mouth |
+| pass | the nearest body within two tiles that hasn't spoken to you lately, once | `pass.<type>.<attitude>` | 12 s on the channel, 2 min per mouth |
 | overheard | two bodies standing together within six tiles and a sight line. The room when you're inside, the street when you're out | `overheard.<family>` | 24 s on the channel, 90 s per mouth |
 
 Ambient lines (pass, overheard) also wait eight seconds past the end of any event line. A line
