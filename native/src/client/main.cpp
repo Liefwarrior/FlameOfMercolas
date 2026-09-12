@@ -2118,6 +2118,33 @@ void print_usage() {
             session.toggleOptions();
             return true;
         }
+        // KIT BUILD. THE CHARACTER TILE'S THREE PRESSES OVER A CARRIED ROW,
+        // and only there: LEFT/RIGHT walk the row's quick slot (the
+        // Grimoire's own cycle, D-pad-reachable for the same reason), and X
+        // -- the keyboard's own unbound X, or the pad's X, which is the
+        // Attack binding wearing the tile's clothes exactly as PageNext
+        // wears the haggle's -- DROPS it at the feet. ENTER already wears it
+        // through chooseTopic. A sheet row takes none of these, so the
+        // tiled Menu's own bumper/tab grammar is untouched everywhere else.
+        // CONTROLS LANE: the X prompt on this tile is the one to re-key if
+        // the pad's X leaves Attack.
+        if (session.casebookOpen() && session.menuFocus() == render::kMenuFocusCharacter &&
+            session.highlightedKitRow().has_value()) {
+            if (leftward) {
+                session.adjustKitSlot(-1);
+                return true;
+            }
+            if (rightward) {
+                session.adjustKitSlot(1);
+                return true;
+            }
+            if ((key == render::Key::X && action == render::Action::Count) ||
+                action == render::Action::Attack) {
+                session.armCommitPulse();  // contract (b): a drop commits
+                session.dropHighlightedKitRow();
+                return true;
+            }
+        }
         if (up) {
             session.moveTopicCursor(-1);
             return true;

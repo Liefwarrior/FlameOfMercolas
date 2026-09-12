@@ -956,6 +956,12 @@ constexpr Rgb kAimNote{0.60F, 0.58F, 0.52F};
             // this reason; a player has to be able to tell "this is the
             // investigation" from "this is a door" without reading.
             return Rgb{0.76F, 0.58F, 0.88F};
+        case AimKind::Owned:
+            // KIT BUILD. SOMEBODY'S. The reference's red hand, in this HUD's
+            // own ink: warm enough to read as a warning before the THEIRS
+            // note is, and nothing else on the frame wears it -- the brawl
+            // washes are alpha blends, not an accent.
+            return Rgb{0.92F, 0.46F, 0.40F};
         case AimKind::Nothing:
         default:
             return Rgb{0.74F, 0.72F, 0.66F};

@@ -10,12 +10,15 @@
 // computed and thrown away every single frame with nowhere on screen to read
 // them.
 //
-// WHAT THIS IS NOT. There is no item and no equipment-slot model in this
-// build -- session.hpp's own quick-bar comment says so (#77's own
-// VERIFICATION GAP) -- so this is not a paper doll and it draws no armour
-// rating. It is the state the simulation actually has, laid out where a
-// player can look themselves up: five derived standings and the four skills a
-// verb in this build actually levels.
+// WHAT THIS IS NOT. Still no paper doll and no armour rating. KIT BUILD
+// (D10): there IS an item and an equipment-slot model now (sim/items.hpp),
+// and the sheet carries it in words -- IN HAND always, a worn slot only when
+// the raws hold an item for it, the LOAD line, and every carried row with
+// its weight and worth -- after the five derived standings and the four
+// skills a verb in this build actually levels, which are unchanged. The
+// bare sheet is twenty-four rows now: the seventeen, IN HAND FISTS, the
+// four worn slots the shipped raws populate (back, head, feet, belt), LOAD,
+// and the five picks every body starts with.
 //
 // WHAT IS AND IS NOT TESTED HERE. Session owns toggleCharacter/characterRows,
 // and dialogueView()'s characterOpen_ branch, and none of it touches SDL, so
@@ -31,6 +34,7 @@
 #include <vector>
 
 #include "granadad/content/content_dir.hpp"
+#include "granadad/render/controls.hpp"
 #include "granadad/render/hud.hpp"
 #include "granadad/render/menu_view.hpp"
 #include "granadad/render/session.hpp"
@@ -114,7 +118,8 @@ TEST_CASE("the character sheet lists all five Legend tracks and the four skills 
     // neighbours are not sixteen more skill rows: the raws carry them,
     // nothing in this build levels them yet, and a wall of LV 0 would claim
     // the game is watching a skill it is not.
-    REQUIRE(rows.size() == kLegendTracks + 4 + 5 + 3);
+    // KIT BUILD: +7 -- IN HAND, four worn slots, LOAD, the starting picks.
+    REQUIRE(rows.size() == kLegendTracks + 4 + 5 + 3 + 7);
 
     // THE FIVE TRACKS, IN legend.hpp's OWN ORDER -- Wire, Roofs, Flame, Trade,
     // Law -- each a short name and a rung title, "THE " dropped off the front
@@ -204,35 +209,48 @@ TEST_CASE("a joined ladder's sheet row carries the rank title, the standing numb
     CHECK(row.find("NEXT 22/LV5") != std::string::npos);
 }
 
-TEST_CASE("the sheet grows an IN HAND row the moment the world arms you, and not before") {
-    // EVICTOR BUILD. The reference sheet's w slot ("cane 1-6 Impact",
-    // UI-REFERENCE-TERMINAL.md) lands here the day something is actually in
-    // the player's hand -- and ONLY that day. This build has no item system,
-    // so an empty-handed sheet printing IN HAND FISTS would claim an
-    // equipment model nothing simulates; seventeen rows stays the bare
-    // truth, eighteen the armed one. Page arithmetic holds: page two carried
-    // eight rows bare against kTopicPageSize nine, so the new row turns no
-    // page anybody has to go looking for.
+TEST_CASE("IN HAND is always printed once the Kit exists: FISTS bare, THE EVICTOR when the world arms you") {
+    // EVICTOR BUILD, re-ruled by D10 (KIT BUILD): the reference sheet's w
+    // slot ("cane 1-6 Impact", UI-REFERENCE-TERMINAL.md) is ALWAYS here now,
+    // because fists are a real state once an equipment model exists -- the
+    // old "no furniture claiming a state we do not simulate" rule is what
+    // the Kit retired. The grant puts THE EVICTOR in the Kit as a THING, so
+    // the sheet gains a carried row for it too: twenty-four bare, twenty-five
+    // armed, the IN HAND row itself in the same seat both times.
     render::Session session = standing();
     const std::vector<std::string> bare = session.characterRows();
-    REQUIRE(bare.size() == 17);
-    for (const std::string& row : bare) {
-        CHECK(row.rfind("IN HAND", 0) != 0);
-    }
+    REQUIRE(bare.size() == 24);
+    CHECK(bare[17] == "IN HAND  FISTS 3-5 IMPACT");
+    CHECK(bare[18] == "ON THE BACK  NOTHING");
+    CHECK(bare[19] == "ON THE HEAD  NOTHING");
+    CHECK(bare[20] == "ON THE FEET  NOTHING");
+    CHECK(bare[21] == "AT THE BELT  NOTHING");
+    CHECK(bare[22].rfind("LOAD  ", 0) == 0);
+    CHECK(bare[22].find(" / 240 DRAMS") != std::string::npos);
+    CHECK(bare[23].rfind("5 PICKS", 0) == 0);
 
     // The same grant seam the eviction case's close beat calls, by the same
     // authored id -- see Tavern::grantPlayerWeapon.
     REQUIRE(session.tavern().grantPlayerWeapon(kEvictorWeaponId));
     const std::vector<std::string> armed = session.characterRows();
-    REQUIRE(armed.size() == 18);
-    CHECK(armed.back() == "IN HAND  THE EVICTOR 7-9 IMPACT");
+    REQUIRE(armed.size() == 25);
+    CHECK(armed[17] == "IN HAND  THE EVICTOR 7-9 IMPACT");
+    bool carried = false;
+    for (const std::string& row : armed) {
+        if (row.rfind("THE EVICTOR  44DR  30C  IN HAND", 0) == 0) {
+            carried = true;
+        }
+    }
+    CHECK(carried);
+    // And the load moved by the cudgel's own drams.
+    CHECK(armed[22].rfind("LOAD  49 / 240 DRAMS", 0) == 0);
 }
 
-TEST_CASE("seventeen rows is two pages, and the character sheet turns like every other list here") {
+TEST_CASE("twenty-four rows is three pages, and the character sheet turns like every other list here") {
     render::Session session = standing();
     session.toggleCharacter();
     REQUIRE(session.characterOpen());
-    REQUIRE(session.characterRows().size() == 17);
+    REQUIRE(session.characterRows().size() == 24);
 
     render::DialogueViewState view = session.dialogueView();
     CHECK(view.page == 0);
@@ -257,7 +275,126 @@ TEST_CASE("seventeen rows is two pages, and the character sheet turns like every
     // The cursor wraps rather than stopping dead at either end.
     session.moveTopicCursor(-1);
     view = session.dialogueView();
-    CHECK(view.cursor == 16);
+    CHECK(view.cursor == 23);
+}
+
+// ---------------------------------------------------------------------------
+// KIT BUILD: the Kit on the tile
+// ---------------------------------------------------------------------------
+
+TEST_CASE("a carried row prints its weight, its worth and its marks; a worn slot names what is on it") {
+    render::Session session = standing();
+    Tavern& tavern = session.tavern();
+    REQUIRE(tavern.giveItem("coat"));
+    REQUIRE(tavern.giveItem("cudgel"));
+    REQUIRE(tavern.giveItem("rope"));
+    REQUIRE(tavern.giveItem("dust", 2));
+    const std::int32_t coat = tavern.items().indexOf("coat");
+    const std::int32_t cudgel = tavern.items().indexOf("cudgel");
+    REQUIRE(tavern.wearItem(coat).result == ServiceResult::Served);
+    REQUIRE(tavern.wearItem(cudgel).result == ServiceResult::Served);
+    REQUIRE(tavern.bindItemToSlot(2, cudgel));
+
+    const std::vector<std::string> rows = session.characterRows();
+    // Twenty-four bare, plus four carried rows (the picks were already one).
+    REQUIRE(rows.size() == 28);
+    CHECK(rows[17] == "IN HAND  CUDGEL 7-9 IMPACT");
+    CHECK(rows[18] == "ON THE BACK  COAT  DR 2");
+    CHECK(rows[22] == "LOAD  " + std::to_string(tavern.loadDrams()) + " / 240 DRAMS");
+    // Registry order: the cudgel, the coat, the rope, the picks, the dust.
+    CHECK(rows[23] == "CUDGEL  40DR  6C  IN HAND  SLOT 3");
+    CHECK(rows[24] == "COAT  60DR  12C  WORN");
+    CHECK(rows[25] == "ROPE  48DR  6C");
+    CHECK(rows[26] == "5 PICKS  5DR  10C");
+    CHECK(rows[27] == "2 DUST  6DR  32C  HOT");
+    CHECK(session.loadLine() == rows[22]);
+    CHECK(session.characterKitOffset() == 23);
+    // The composed list behind the rows: the Kit's own rows are the only
+    // ones a verb can act on.
+    const std::vector<render::Session::KitRow> kit = session.kitRows();
+    REQUIRE(kit.size() == 5);
+    CHECK(kit[0].inKit);
+    CHECK(kit[2].inKit);
+    CHECK_FALSE(kit[3].inKit);  // the picks
+    CHECK_FALSE(kit[4].inKit);  // the sack
+}
+
+TEST_CASE("ENTER on a carried row wears it or bares it; on a sheet row it does nothing") {
+    render::Session session = standing();
+    Tavern& tavern = session.tavern();
+    REQUIRE(tavern.giveItem("coat"));
+    REQUIRE(tavern.giveItem("rope"));
+    session.toggleCharacter();
+    REQUIRE(session.characterOpen());
+    // Walk the cursor onto the coat: offset 23, the coat is the first
+    // carried row (registry order puts it before the rope and the picks).
+    const int coatRow = static_cast<int>(session.characterKitOffset());
+    for (int i = 0; i < coatRow; ++i) {
+        session.moveTopicCursor(1);
+    }
+    REQUIRE(session.highlightedKitRow().has_value());
+    CHECK(session.highlightedKitRow()->item == tavern.items().indexOf("coat"));
+    // The tile says what the press does, in the keyboard's own words.
+    const std::string enter(render::promptConfirmKey(render::InputDevice::KeyboardMouse));
+    CHECK(session.dialogueView().epithet == enter + " WEAR  LEFT RIGHT SLOT  X DROP");
+    session.chooseTopic(static_cast<std::size_t>(session.topicCursor()));
+    CHECK(tavern.kit().isWorn(tavern.items().indexOf("coat")));
+    CHECK(session.lastMessage() == "COAT - ON.");
+    CHECK(session.dialogueView().epithet == enter + " BARE  LEFT RIGHT SLOT  X DROP");
+    session.chooseTopic(0);
+    CHECK_FALSE(tavern.kit().isWorn(tavern.items().indexOf("coat")));
+    CHECK(session.lastMessage() == "COAT - OFF.");
+    // The rope: not worn, said so, and its epithet offers only the drop.
+    session.moveTopicCursor(1);
+    CHECK(session.highlightedKitRow()->item == tavern.items().indexOf("rope"));
+    CHECK(session.dialogueView().epithet == "X DROP");
+    session.chooseTopic(0);
+    CHECK(session.lastMessage() == "THE ROPE IS NOT WORN.");
+    // A sheet row is something to read.
+    session.moveTopicCursor(-30);
+    CHECK_FALSE(session.highlightedKitRow().has_value());
+    const std::string before = session.lastMessage();
+    session.chooseTopic(0);
+    CHECK(session.lastMessage() == before);
+}
+
+TEST_CASE("LEFT and RIGHT on a carried row walk its quick slot, and X drops it at the feet") {
+    render::Session session = standing();
+    Tavern& tavern = session.tavern();
+    REQUIRE(tavern.giveItem("cudgel"));
+    session.toggleCharacter();
+    const int row = static_cast<int>(session.characterKitOffset());
+    for (int i = 0; i < row; ++i) {
+        session.moveTopicCursor(1);
+    }
+    REQUIRE(session.highlightedKitRow().has_value());
+    const std::int32_t cudgel = tavern.items().indexOf("cudgel");
+    session.adjustKitSlot(1);
+    CHECK(tavern.slotItemIndex(0) == cudgel);
+    CHECK(session.lastMessage() == "CUDGEL -- SLOT 1.");
+    session.adjustKitSlot(1);
+    CHECK(tavern.slotItemIndex(0) == -1);
+    CHECK(tavern.slotItemIndex(1) == cudgel);
+    session.adjustKitSlot(-2);
+    CHECK(tavern.slotItemIndex(1) == -1);
+    CHECK(session.lastMessage() == "CUDGEL -- NO SLOT.");
+    // The strip and the number key read the item slot: bind to 3, press 3.
+    session.adjustKitSlot(3);
+    CHECK(tavern.slotItemIndex(2) == cudgel);
+    session.selectQuickSlot(2);
+    CHECK(session.lastMessage() == "SLOT 3 - CUDGEL.");
+    CHECK(tavern.playerWeapon() == Weapon::Blunt);
+    CHECK(session.characterRows()[17] == "IN HAND  CUDGEL 7-9 IMPACT");
+    // X: dropped at the feet, the row gone, the hand bare, the slot stale.
+    session.toggleCharacter();
+    const std::size_t rowsBefore = session.characterRows().size();
+    session.dropHighlightedKitRow();
+    CHECK(session.lastMessage() == "DROPPED - CUDGEL.");
+    CHECK(session.characterRows().size() == rowsBefore - 1);
+    CHECK(tavern.playerWeapon() == Weapon::Fists);
+    CHECK(tavern.groundItemInReach() >= 0);
+    session.selectQuickSlot(2);
+    CHECK(session.lastMessage() == "SLOT 3 - CUDGEL. NOT ON YOU.");
 }
 
 TEST_CASE("a printed number moves the cursor on the character sheet and does nothing else") {

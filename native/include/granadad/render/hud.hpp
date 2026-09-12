@@ -624,6 +624,10 @@ enum class AimKind : int {
     /// this one and a player who cannot tell it from a doorway is the player
     /// who thought the Bloodletter trail ended at the Weighhouse.
     Clue = 4,
+    /// KIT BUILD. SOMEBODY'S THING: taking it is theft, and the crosshair
+    /// says so before the press -- the reference's red hand. Its own
+    /// accent, and the THEIRS note beside the name.
+    Owned = 5,
 };
 
 /// THE ONE REGION OF THE PLAY SPACE THE HUD MAY ENTER, and it is a clamp

@@ -720,6 +720,11 @@ if(GRANADAD_BUILD_TESTS)
         # the room, THEIRS as a witnessed lift, the corpse search list, and
         # defence v1's flat DR floored at one.
         tests/test_kit.cpp
+        # KIT BUILD, the screen half -- the crosshair naming a thing on the
+        # ground with THEIRS before the press, a named lead outranking it,
+        # the corpse's SEARCH list on the Grimoire widget, the load slowing
+        # the legs at the one movement seam, the hands row naming the item.
+        tests/test_kit_page.cpp
         # #82 -- THE DISTRICT MAP. Daggerfall's own travel map, scaled to one
         # district: known ground, open leads (each with a bearing and a range
         # from where the player is standing) and who among the named will

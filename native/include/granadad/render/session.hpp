@@ -24,6 +24,7 @@
 #include <filesystem>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -1206,15 +1207,22 @@ public:
     // menu_view.hpp's drawMenuTiles() rather than filling the whole
     // conversation surface the way it did as one of #85's six pages.
     //
-    // NO PAPER DOLL AND NO ARMOUR RATING, ON PURPOSE. There is no item and no
-    // equipment-slot model in this build -- the quick bar's own comment says so
-    // (VERIFICATION GAP #77, above) -- so a screen that drew ten empty slots
-    // would be furniture claiming a state the simulation does not have. What
-    // the simulation DOES have is five derived standings and four skills
-    // actually wired to a verb (SKYRUNNING, CRACKSMANSHIP, STREETWISE,
-    // LINKCRAFT -- the other sixteen entries in content/raws/skills/skills.json
-    // are authored vocabulary with nothing in this build that levels them yet),
-    // and this page is exactly that, no more.
+    // NO PAPER DOLL AND NO ARMOUR RATING, STILL. KIT BUILD (D10): there IS
+    // an item and an equipment-slot model now -- sim/items.hpp, owned by the
+    // Tavern -- and this tile is where it lives (Oblivion's own Inventory and
+    // Character are two tabs of one screen; the four-tile Morrowind layout
+    // stays as ruled). So the sheet grows, in the reference's own worded
+    // grammar and never as a doll: IN HAND is ALWAYS printed once the Kit
+    // exists (fists are a real state then), a worn slot prints ONLY when the
+    // raws hold at least one item for it, then the LOAD line against the
+    // budget off MIGHT, then every carried row with its weight and its worth
+    // and its WORN / IN HAND / SLOT marks. The five derived standings and the
+    // four wired skills stay exactly what they were above it.
+    //
+    // THE VERBS ON A ROW, through the Menu's own grammar and nothing new:
+    // ENTER/A on a carried row WEARS it (or bares it), LEFT/RIGHT walk which
+    // quick slot it rides (the Grimoire's own cycle), and X drops it at the
+    // feet. The tile's epithet says so in the device's own words.
     void toggleCharacter();
     /// True while the tiled Menu is open -- the same bool casebookOpen() is;
     /// see that accessor's own note.
@@ -1225,8 +1233,61 @@ public:
     /// title, standing, next-rung cost -- the owner's numbers-on-the-sheet
     /// ruling; NPCs still talk in words only), and what the ward and the
     /// purse currently say -- one row a line, built fresh from the same
-    /// counters the HUD's corner rows read.
+    /// counters the HUD's corner rows read. KIT BUILD: then the equipment
+    /// block, the load line and the carried rows (kitRows()).
     [[nodiscard]] std::vector<std::string> characterRows() const;
+
+    // --- THE KIT on the tile (KIT BUILD) ------------------------------------
+
+    /// One carried row of the composed list: the Kit's own rows, the sack's
+    /// (contraband.hpp's counts, viewed), the bale on the shoulder and the
+    /// picks, all in the registry's document order, every row with a count
+    /// above zero. `inKit` is a row the Kit itself holds -- the only kind
+    /// WEAR, DROP and a quick slot can act on.
+    struct KitRow {
+        std::int32_t item = -1;
+        std::int32_t count = 0;
+        bool inKit = false;
+    };
+    [[nodiscard]] std::vector<KitRow> kitRows() const;
+    /// How many rows the sheet prints BEFORE the carried list (the standings,
+    /// the equipment block, the load line): the cursor offset the tile's
+    /// verbs subtract.
+    [[nodiscard]] std::size_t characterKitOffset() const;
+    /// The carried row under the Character tile's cursor, or nullopt on a
+    /// sheet row.
+    [[nodiscard]] std::optional<KitRow> highlightedKitRow() const;
+    /// ENTER on the Character tile: WEAR the highlighted row in its slot, or
+    /// bare it if worn. Refusals are said out loud in the room's own words.
+    void wearHighlightedKitRow();
+    /// X on the Character tile: DROP one of the highlighted row at the feet.
+    void dropHighlightedKitRow();
+    /// LEFT/RIGHT on the Character tile: walk which quick slot the
+    /// highlighted row is bound to, NONE and 1..10 round, the Grimoire's own
+    /// cycle -- a slot is a spell OR an item, so binding an item clears a
+    /// crafting from that slot exactly as a crafting would clear it.
+    void adjustKitSlot(int delta);
+    /// The load line: "LOAD  212 / 240 DRAMS".
+    [[nodiscard]] std::string loadLine() const;
+
+    // --- THE SEARCH LIST (KIT BUILD) ----------------------------------------
+    //
+    // A dead roster body in reach opens a list of what he carried -- the
+    // authored corpse kit for his name or his role, less what was taken --
+    // on the ONE list widget every page is, wearing the Grimoire page's own
+    // flag: grimoireOpen_ with searchActorId_ set is the search list, and
+    // every stand-down that puts the Grimoire away puts this away, so no
+    // fifteenth page flag was added and no new key was spent. A row is TAKE
+    // (the printed number, ENTER); the last row is TAKE ALL.
+
+    /// Opens the list over the dead body in reach. False with nobody dead
+    /// in reach. Refused in custody, while talking or picking.
+    bool searchNearestCorpse();
+    /// True while the Grimoire widget is showing a corpse's kit.
+    [[nodiscard]] bool searchOpen() const noexcept {
+        return grimoireOpen_ && searchActorId_ >= 0;
+    }
+    [[nodiscard]] std::int32_t searchActorId() const noexcept { return searchActorId_; }
 
     // --- #82: the district map ------------------------------------------------
     //
@@ -1945,6 +2006,15 @@ private:
     /// final attempt was anything other than TooFar, which is interact()'s
     /// cue to fall through to the investigation look instead.
     bool stealNearestThing();
+    /// KIT BUILD. The nearest registry thing on the ground within reach,
+    /// through Tavern::takeGroundItem -- the interact walk's 3b. Says the
+    /// line itself and answers whether anything was in reach at all, the
+    /// stealNearestThing contract.
+    bool takeNearestItem();
+    /// True when one of the three books has a heard lead under the look:
+    /// the investigation outranks a thing on the ground and the lower of the
+    /// hands alike. The one three-book walk both rules read.
+    [[nodiscard]] bool leadNamedInReach() const;
 
     /// MORROWIND ROUND. Opens/refocuses the tiled Menu on tile `focus`
     /// (kMenuFocusCharacter/Map/Letters/Journal, mod 4): if the Menu is
@@ -2694,6 +2764,13 @@ private:
     /// its two siblings.
     ImpactPulse blockPulse_;
     std::int32_t lastBlowsBlocked_ = 0;
+    /// KIT BUILD. The blowsTurned edge: a blow the worn kit softened says
+    /// so once on the row ("COAT TURNS 2."), the blocked-blow shape.
+    std::int32_t lastBlowsTurned_ = 0;
+    /// KIT BUILD. The corpse whose kit the Grimoire widget is showing, or
+    /// -1 (the widget is the Grimoire). UI state, never hashed: what he
+    /// carries is the Tavern's corpseRows(), a pure function of hashed state.
+    std::int32_t searchActorId_ = -1;
     /// STREET PANIC BUILD (feel/build, 9a). What the room looked like last
     /// step, so step() can tell the street what just happened to it: the sum
     /// of every non-vermin hp on the tavern roster (a drop under lethal rules
