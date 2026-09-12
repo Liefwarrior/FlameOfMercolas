@@ -11574,6 +11574,302 @@ std::string gWatchHaltNote;
 
 
 // ---------------------------------------------------------------------------
+// KIT BUILD: the Kit, played
+// ---------------------------------------------------------------------------
+
+/// THE KIT LINE, through the real verbs, from ten in the morning (the house
+/// empty but for Venn, so a thing on a chair can be named and lifted with
+/// nobody to see it) to two in the afternoon (Ox on the door for the blow
+/// and the body). Ten beats, each an ending:
+///   1. take     the crosshair reads TAKE ROPE  48DR over the coil on the
+///               Tarwalk (nobody's), and the press takes it
+///   2. drop     the rope put down again through the Character tile's own
+///               X, the body stepped back to look at it on the boards --
+///               the 3D frame; then taken up again
+///   3. theirs   in the house, the lantern on Hobbin's table: TAKE LANTERN
+///               THEIRS in the Owned accent, then the knife on Edda's and
+///               the coat on Colm's chair, each a lift under the witness rule
+///   4. sheet    the Character tile open on the carried rows: IN HAND FISTS,
+///               the four worn slots at NOTHING, LOAD n / 240 DRAMS, the
+///               rows with their weights and worths
+///   5. equip    the coat WORN and the knife IN HAND by the tile's own press
+///   6. slot     the knife bound to slot 3 by LEFT/RIGHT, the number pressed,
+///               the strip up with KNIFE on it
+///   7. dr       the knife bared, fists on Ox Gullbane, his blow turned by the
+///               coat -- COAT TURNS n on the row
+///   8. search   the knife back in hand, Ox put down for good, SEARCH OX
+///               GULLBANE  DEAD on the crosshair and his kit on the list
+///   9. load     everything off him and the bottle and the hood off the
+///               tables: the body near its budget, the legs at half
+///  10. done     the tile open again on the full load (the default)
+constexpr std::int32_t kKitBeats = 10;
+
+[[nodiscard]] std::int32_t kitBeatsFor(const std::string& ending) {
+    if (ending == "take") {
+        return 1;
+    }
+    if (ending == "drop") {
+        return 2;
+    }
+    if (ending == "theirs") {
+        return 3;
+    }
+    if (ending == "sheet") {
+        return 4;
+    }
+    if (ending == "equip") {
+        return 5;
+    }
+    if (ending == "slot") {
+        return 6;
+    }
+    if (ending == "dr") {
+        return 7;
+    }
+    if (ending == "search") {
+        return 8;
+    }
+    if (ending == "load") {
+        return 9;
+    }
+    return kKitBeats;
+}
+
+/// What the Kit line saw, for the summary.
+std::string gKitNote;
+
+/// Opens the tiled Menu on the Character tile and walks its cursor onto the
+/// carried row for `itemId`. False when the row is not on the tile.
+[[nodiscard]] bool openKitRow(Session& session, std::string_view itemId) {
+    if (!session.characterOpen()) {
+        session.toggleCharacter();
+    } else {
+        session.setMenuFocus(kMenuFocusCharacter);
+    }
+    const std::int32_t index = session.tavern().items().indexOf(itemId);
+    const std::vector<Session::KitRow> rows = session.kitRows();
+    for (std::size_t i = 0; i < rows.size(); ++i) {
+        if (rows[i].item != index) {
+            continue;
+        }
+        const int target = static_cast<int>(session.characterKitOffset() + i);
+        // Walk, never jump: the same wrap the arrows make.
+        for (int guard = 0; guard < 64; ++guard) {
+            const std::optional<Session::KitRow> at = session.highlightedKitRow();
+            if (at.has_value() && at->item == index) {
+                return true;
+            }
+            const int cursor = session.dialogueView().cursor;
+            session.moveTopicCursor(cursor < target ? 1 : -1);
+        }
+        return false;
+    }
+    return false;
+}
+
+/// Walks to a tile and faces a neighbouring tile, so the crosshair reads
+/// what lies there.
+void standAtFacing(Session& session, std::int32_t standX, std::int32_t standY,
+                   std::int32_t faceX, std::int32_t faceY) {
+    walkToTile(session, standX, standY);
+    session.closeConversation();
+    facePlayerAndSync(session, sim::q8_tile_centre(faceX), sim::q8_tile_centre(faceY));
+}
+
+[[nodiscard]] int runKitLine(Session& session, const std::string& ending) {
+    int landed = 0;
+    gKitNote.clear();
+    const sim::Tavern& tavern = session.tavern();
+    if (!tavern.items().loaded()) {
+        gKitNote = " items=unloaded";
+        return landed;
+    }
+    const auto item = [&](std::string_view id) { return tavern.items().indexOf(id); };
+    const auto carried = [&](std::string_view id) {
+        return tavern.kit().count(item(id)) > 0;
+    };
+
+    // 1. TAKE. The rope at (151,63), from the tile east of it, facing west.
+    standAtFacing(session, 152, 63, 151, 63);
+    Session::InteractTarget aim = session.interactTarget();
+    gKitNote += " take=" + aim.verb + (aim.subject.empty() ? "" : ":" + aim.subject) +
+                (aim.note.empty() ? "" : "/" + aim.note);
+    if (ending == "take") {
+        return aim.verb == "TAKE" && aim.subject == "ROPE" ? 1 : 0;
+    }
+    session.interact();
+    if (aim.verb == "TAKE" && aim.subject == "ROPE" && carried("rope")) {
+        ++landed;  // 1
+    }
+
+    // 2. DROP, through the tile, then step back and look at it.
+    if (openKitRow(session, "rope")) {
+        session.dropHighlightedKitRow();
+    }
+    session.closeConversation();
+    const bool dropped = !carried("rope") && tavern.groundItemInReach() >= 0;
+    if (dropped) {
+        ++landed;  // 2
+    }
+    if (ending == "drop") {
+        // A tile back, facing the coil, so the frame has it on the boards.
+        standAtFacing(session, 153, 63, 152, 63);
+        return landed;
+    }
+    // Taken up again.
+    standAtFacing(session, 153, 63, 152, 63);
+    if (tavern.groundItemInReach() < 0) {
+        walkToTile(session, 152, 63);
+    }
+    session.interact();
+
+    // 3. THEIRS. Into the house: the lantern on Hobbin's table from Maell's
+    // chair (empty until seven), then the knife and the coat.
+    standAtFacing(session, 149, 74, 150, 74);
+    aim = session.interactTarget();
+    gKitNote += " theirs=" + aim.verb + (aim.subject.empty() ? "" : ":" + aim.subject) +
+                (aim.note.empty() ? "" : "/" + aim.note);
+    const bool theirsCue = aim.verb == "TAKE" && aim.subject == "LANTERN" && aim.note == "THEIRS" &&
+                           aim.kind == AimKind::Owned;
+    if (ending == "theirs") {
+        return landed + (theirsCue ? 1 : 0);
+    }
+    session.interact();
+    standAtFacing(session, 155, 73, 156, 73);
+    session.interact();  // the knife
+    walkToTile(session, 148, 72);
+    session.closeConversation();
+    session.interact();  // the coat, underfoot
+    if (theirsCue && carried("lantern") && carried("knife") && carried("coat")) {
+        ++landed;  // 3
+    }
+    gKitNote += " lifts=" + std::to_string(tavern.dialogue().crimes().tally(sim::Crime::Lift));
+
+    // 4. THE SHEET, on the carried rows.
+    const bool sheet = openKitRow(session, "knife");
+    if (sheet) {
+        ++landed;  // 4
+    }
+    if (ending == "sheet") {
+        return landed;
+    }
+
+    // 5. EQUIP: the coat, then the knife, by the tile's own press.
+    if (openKitRow(session, "coat")) {
+        session.chooseTopic(0);
+    }
+    if (openKitRow(session, "knife")) {
+        session.chooseTopic(0);
+    }
+    if (tavern.kit().isWorn(item("coat")) && tavern.playerWeapon() == sim::Weapon::Edged) {
+        ++landed;  // 5
+    }
+    if (ending == "equip") {
+        return landed;
+    }
+
+    // 6. SLOT: the knife to slot 3 by three presses of RIGHT, then the key.
+    if (openKitRow(session, "knife")) {
+        session.adjustKitSlot(3);
+    }
+    session.closeConversation();
+    session.selectQuickSlot(2);
+    if (tavern.slotItemIndex(2) == item("knife")) {
+        ++landed;  // 6
+    }
+    if (ending == "slot") {
+        return landed;
+    }
+
+    // 7. DR: knife bared (the tile's press again), the clock to two when Ox
+    // is on the door, fists on him, his blow turned by the coat.
+    if (openKitRow(session, "knife")) {
+        session.chooseTopic(0);
+    }
+    session.closeConversation();
+    session.skipToHour(14);
+    session.stepMany(sim::MoveInput{}, sim::kStepsPerSecond);
+    const sim::Actor* ox = actorNamed(session, "Ox Gullbane");
+    const std::int32_t oxId = ox != nullptr ? ox->id() : -1;
+    const std::int32_t turnedBefore = tavern.blowsTurned();
+    if (oxId >= 0 && tavern.playerWeapon() == sim::Weapon::Fists) {
+        (void)swingOnceAt(session, oxId, 8);
+        for (int second = 0; second < 20 && tavern.blowsTurned() == turnedBefore; ++second) {
+            (void)closeOnAndFace(session, oxId);
+            session.stepMany(sim::MoveInput{}, sim::kStepsPerSecond);
+        }
+    }
+    gKitNote += " turned=" + std::to_string(tavern.blowsTurned() - turnedBefore) +
+                " last=" + std::to_string(tavern.lastTurned());
+    if (tavern.blowsTurned() > turnedBefore) {
+        ++landed;  // 7
+    }
+    if (ending == "dr") {
+        return landed;
+    }
+
+    // 8. SEARCH: the knife back in hand off its slot, Ox put down for good,
+    // the crosshair over him, the list.
+    session.selectQuickSlot(2);
+    bool dead = false;
+    if (oxId >= 0 && tavern.playerWeapon() == sim::Weapon::Edged) {
+        for (int swings = 0; swings < 24 && !dead; ++swings) {
+            if (!closeOnAndFace(session, oxId)) {
+                break;
+            }
+            session.attackDown();
+            session.stepMany(sim::MoveInput{}, sim::kHardSwingHoldSteps + 1);
+            session.attackUp();
+            session.stepMany(sim::MoveInput{}, sim::kHardSwingRecoverySteps + 2);
+            const sim::Actor* struck = tavern.actorById(oxId);
+            dead = struck != nullptr && struck->activity() == sim::Activity::Dead;
+        }
+    }
+    if (dead) {
+        const sim::Actor* corpse = tavern.actorById(oxId);
+        walkToTile(session, corpse->tileX(), corpse->tileY());
+        session.closeConversation();
+        session.stepMany(sim::MoveInput{}, 1);
+        aim = session.interactTarget();
+        gKitNote += " search=" + aim.verb + (aim.subject.empty() ? "" : ":" + aim.subject);
+        session.interact();
+    }
+    if (dead && session.searchOpen() && !session.grimoireRows().empty()) {
+        ++landed;  // 8
+    }
+    if (ending == "search") {
+        return landed;
+    }
+
+    // 9. LOAD: everything off him (TAKE ALL is the last row), the bottle and
+    // the hood off the tables, the body near its budget.
+    if (session.searchOpen()) {
+        session.chooseGrimoireRow(static_cast<int>(session.grimoireRows().size()) - 1);
+    }
+    session.closeConversation();
+    standAtFacing(session, 150, 69, 150, 70);  // Bram's chair: the bottle on Wick's
+    session.interact();
+    walkToTile(session, 149, 69);  // the hood on Bram's own
+    session.closeConversation();
+    session.interact();
+    gKitNote += " load=" + std::to_string(tavern.loadDrams()) + "/" +
+                std::to_string(tavern.loadBudget()) + " legs=" + std::to_string(tavern.loadSpeedQ8()) +
+                "/256";
+    if (tavern.loadSpeedQ8() < 256 && tavern.loadDrams() * 4 >= tavern.loadBudget() * 3) {
+        ++landed;  // 9
+    }
+    if (ending == "load") {
+        return landed;
+    }
+
+    // 10. The tile again, on the full load.
+    if (openKitRow(session, "coat")) {
+        ++landed;  // 10
+    }
+    return landed;
+}
+
+// ---------------------------------------------------------------------------
 // JUSTICE BUILD (HEARING PAGE LANE): the court, played
 // ---------------------------------------------------------------------------
 
@@ -13669,6 +13965,14 @@ int scriptedStartHour(const SmokeRunConfig& config) noexcept {
     if (config.skyrun) {
         return 1;
     }
+    // KIT BUILD. Ten in the morning: the house empty but for Master Venn
+    // in the snug, so the lantern, the knife and the coat can be lifted off
+    // the chairs they lie on with nobody to see it and no bouncer's ladder
+    // started -- the line skips to two in the afternoon for Ox and the coat's
+    // turn, once the Kit is on the body.
+    if (config.kit) {
+        return 10;
+    }
     // Father Maell takes an evening hour in the Gull between seven and half
     // past nine. Eight is the middle of it, which is also the default.
     if (config.flame) {
@@ -14086,6 +14390,16 @@ SmokeRunResult runSmoke(const SmokeRunConfig& config) {
         result.watchHaltBeats = landed;
         // "halt" stops on the third beat by design; it owes three, not five.
         result.scriptedWanted += config.watchHaltEnd == "halt" ? kWatchHaltStopBeats : kWatchHaltBeats;
+        result.scriptedLanded += landed;
+    }
+
+    if (config.kit) {
+        // KIT BUILD. The Kit, played through the real verbs -- see
+        // runKitLine. Each ending owes its own count.
+        const std::int32_t landed =
+            static_cast<std::int32_t>(runKitLine(session, config.kitEnd));
+        result.kitBeats = landed;
+        result.scriptedWanted += kitBeatsFor(config.kitEnd);
         result.scriptedLanded += landed;
     }
 
@@ -14734,6 +15048,12 @@ SmokeRunResult runSmoke(const SmokeRunConfig& config) {
                         ? sim::watchCauseName(session.tavern().lastArrest().cause)
                         : "no")
                 << gWatchHaltNote << " row=\"" << session.lastMessage() << '"';
+    }
+    if (config.kit) {
+        summary << " | kit beats=" << result.kitBeats << '/' << kitBeatsFor(config.kitEnd)
+                << gKitNote << " hand=" << sim::weaponName(session.tavern().playerWeapon())
+                << " dr=" << session.tavern().wornDr()
+                << " ground=" << session.tavern().groundItems().size();
     }
     if (config.court) {
         summary << " | court beats=" << result.courtBeats << '/' << courtBeatsFor(config.courtEnd)

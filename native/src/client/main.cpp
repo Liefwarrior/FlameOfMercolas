@@ -970,6 +970,15 @@ void print_usage() {
         "                       plea, deny, hand (the Skyrunners' oath first), serve,\n"
         "                       bloodtag, ropepage, rope or newman (--flame first to\n"
         "                       have what you gave at the door weighed)\n"
+        "  --kit[=WHERE]        play the Kit: name and take the coil on the\n"
+        "                       Tarwalk, put it down and look at it, lift the\n"
+        "                       house's lantern, knife and coat (THEIRS), open\n"
+        "                       the Character tile on the carried rows, wear the\n"
+        "                       coat and the knife, slot the knife, take Ox's\n"
+        "                       blow on the coat, put him down and search him,\n"
+        "                       load up to the budget. WHERE is take, drop,\n"
+        "                       theirs, sheet, equip, slot, dr, search, load or\n"
+        "                       empty for the whole line\n"
         "  --nemesis[=WHERE]    lose a fist fight to a named laborer three\n"
         "                       times and watch him rise: a rung, a guild\n"
         "                       with members in it, a permanent cut of the\n"
@@ -1396,6 +1405,12 @@ void print_usage() {
         } else if (starts_with(arg, "--court=", &value)) {
             options.smoke.court = true;
             options.smoke.courtEnd = value;
+        } else if (std::strcmp(arg, "--kit") == 0) {
+            // KIT BUILD. See SmokeRunConfig::kit.
+            options.smoke.kit = true;
+        } else if (starts_with(arg, "--kit=", &value)) {
+            options.smoke.kit = true;
+            options.smoke.kitEnd = value;
             options.wantsSmoke = true;
         } else if (std::strcmp(arg, "--nemesis") == 0) {
             options.smoke.nemesis = true;

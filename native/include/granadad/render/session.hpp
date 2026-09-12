@@ -3350,6 +3350,16 @@ struct SmokeRunConfig {
     /// waits for Cull through the wait page and THE DOOR is weighed.
     bool court = false;
     std::string courtEnd = "page";
+    /// KIT BUILD. Play the Kit: the coil on the Tarwalk named and taken,
+    /// put down through the tile and looked at, the house's lantern named
+    /// THEIRS and lifted with the knife and the coat, the Character tile on
+    /// the carried rows, the coat worn and the knife in hand by the tile's
+    /// press, the knife on slot 3 and the strip, the coat turning Ox's blow
+    /// (COAT TURNS n), Ox put down and SEARCHed, everything off him and the
+    /// legs at half. WHERE is take, drop, theirs, sheet, equip, slot, dr,
+    /// search, load, or empty for the whole line (the tile on the full load).
+    bool kit = false;
+    std::string kitEnd;
     /// S9. Play a burglary: crouch, cross a dark taproom unseen, lift a purse
     /// off somebody who does not feel it, up the stair, wire into a guest's
     /// strongbox, work the pins, and empty it. WHERE is "box" (standing over
@@ -3741,6 +3751,8 @@ struct SmokeRunResult {
     std::int32_t watchHaltBeats = 0;
     /// JUSTICE BUILD: beats of the court line (--court), by its ending.
     std::int32_t courtBeats = 0;
+    /// KIT BUILD: beats of the Kit line (--kit), by its ending.
+    std::int32_t kitBeats = 0;
     /// How many of the six beats of the bounty run landed.
     std::int32_t contractBeats = 0;
     /// How many of the seven beats of the nemesis arc landed.
