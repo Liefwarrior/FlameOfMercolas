@@ -20,9 +20,11 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <set>
 #include <span>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 #include "granadad/content/content_dir.hpp"
@@ -843,9 +845,11 @@ TEST_CASE("a door tile places the door frame") {
     CHECK(countRole(lit.placements, PieceRole::LampPost) == 1);
     CHECK(countRole(lit.placements, PieceRole::Brazier) == 1);
     CHECK(countRole(lit.placements, PieceRole::Ember) == 1);
-    // Every lamp but the post (its glass is its own) carries a crossed pair
-    // of flame quads, drawn as their own light.
-    CHECK(countRole(lit.placements, PieceRole::Flame) == 4);
+    // Every lamp but the post (its glass is its own) carries ONE flame
+    // quad, drawn as its own light and turned to the eye by the world
+    // scene (a billboard about its centre): never a crossed pair, whose
+    // edge-on quad was a bright bar at arm's length.
+    CHECK(countRole(lit.placements, PieceRole::Flame) == 2);
     for (const StaticPlacement& p : lit.placements) {
         if (p.role == PieceRole::LampWall) {
             // On the door-side wall's south face (z = 16), hung from its
@@ -865,6 +869,12 @@ TEST_CASE("a door tile places the door frame") {
             CHECK(p.instance.mode == kDrawHalo);
             CHECK(p.instance.gradientTo == doctest::Approx(catalogue.piece(PieceRole::Flame)->width));
             CHECK(p.instance.gradientToZ == doctest::Approx(catalogue.piece(PieceRole::Flame)->height));
+            // A billboard, anchored on the flame's centre: the quad's
+            // origin is half its width and height off the anchor.
+            CHECK(p.billboard);
+            CHECK(p.anchor.y == doctest::Approx(p.instance.position.y +
+                                                0.5F * catalogue.piece(PieceRole::Flame)->height *
+                                                    p.instance.scale.y));
         }
         // A lamp is its own light and stays flat; a thing with volume (the
         // door leaves) is shaded by its normals.
@@ -882,7 +892,80 @@ TEST_CASE("a door tile places the door frame") {
             CHECK(p.instance.position.y - render::bandSurface(19) > 1.0F * stand->scale);
         }
     }
-    CHECK(lit.placements.size() == placed.placements.size() + 4 + 4 + 1);
+    CHECK(lit.placements.size() == placed.placements.size() + 3 + 3 + 1);
+}
+
+TEST_CASE("a flame's halo faces the eye from wherever the eye is") {
+    // THE BILLBOARD, through the world scene: the same lantern described
+    // from two eyes yaws its one quad toward each, about the same centre,
+    // so a body walking past never sees it edge-on. And the description
+    // stays a pure function of the eye: the same eye twice is the same
+    // yaw and the same hash.
+    HouseWorld house;
+    const StaticCatalogue& catalogue = shippedCatalogue();
+    std::vector<render::Lamp> lamps(1);
+    lamps[0].name = "lamp_street";
+    lamps[0].x = 20;
+    lamps[0].y = 19;
+    lamps[0].z = 19;
+    lamps[0].warmth = render::LampWarmth::Lantern;
+    // A wall to hang it on, north of the lamp's tile.
+    house.put(20, 18, 19, content::TileForm::Wall, materialId("granite"));
+    const render::LampGlow glow = render::LampGlow::build(house.tiles, lamps);
+    WorldScene scene(house.tiles, proceduralAtlas(), &glow, &catalogue, &lamps);
+    WorldSceneParams params;
+    params.timeOfDaySeconds = 21 * 3600;
+    const auto describe = [&](float ex, float ey) {
+        render::Camera eye;
+        eye.x = ex;
+        eye.y = ey;
+        eye.z = render::bandSurface(19) + 1.7F;
+        eye.yaw = std::atan2(20.5F - ex, -(19.5F - ey));
+        eye.pitch = 0.0F;
+        eye.hfovTan = 1.0F;
+        SceneDescription out;
+        scene.refresh(out, eye, 16.0F / 9.0F, params);
+        return out;
+    };
+    const SceneDescription fromSouth = describe(20.5F, 23.5F);
+    const SceneDescription fromEast = describe(24.5F, 19.5F);
+    const SceneDescription fromSouthAgain = describe(20.5F, 23.5F);
+    CHECK(sceneHash(fromSouth) == sceneHash(fromSouthAgain));
+    const auto flameOf = [&](const SceneDescription& d) -> const StaticInstance* {
+        for (const StaticInstance& at : d.statics) {
+            if (at.mode == kDrawHalo) {
+                return &at;
+            }
+        }
+        return nullptr;
+    };
+    const StaticInstance* south = flameOf(fromSouth);
+    const StaticInstance* east = flameOf(fromEast);
+    REQUIRE(south != nullptr);
+    REQUIRE(east != nullptr);
+    // A quarter turn between the two eyes, the quad turned with them (a
+    // two-sided quad: the turn is read modulo a half turn).
+    const float turned = std::fmod(std::fabs(south->yaw - east->yaw), 3.14159265F);
+    CHECK(std::fabs(turned - 3.14159265F * 0.5F) < 0.02F);
+    // The centre held: the origin is half a width along the quad's own +X
+    // from it, so the two origins differ but their centres agree.
+    const PieceSpec* flame = catalogue.piece(PieceRole::Flame);
+    REQUIRE(flame != nullptr);
+    const auto centreOf = [flame](const StaticInstance& at) {
+        const float w = flame->width * at.scale.x;
+        return Vec3{at.position.x + 0.5F * w * std::cos(at.yaw), at.position.y,
+                    at.position.z + 0.5F * w * std::sin(at.yaw)};
+    };
+    const Vec3 a = centreOf(*south);
+    const Vec3 b = centreOf(*east);
+    CHECK(std::fabs(a.x - b.x) < 0.01F);
+    CHECK(std::fabs(a.z - b.z) < 0.01F);
+    CHECK(std::fabs(a.y - b.y) < 0.01F);
+    // And the quad's normal (-sin, cos) lies along the line to the eye.
+    const float dx = 20.5F - a.x;
+    const float dz = 23.5F - a.z;
+    const float along = -std::sin(south->yaw) * dx + std::cos(south->yaw) * dz;
+    CHECK(std::fabs(along) > 0.99F * std::sqrt(dx * dx + dz * dz));
 }
 
 TEST_CASE("placement is a deterministic function of the tile map") {
@@ -1288,19 +1371,32 @@ TEST_CASE("the roof finish keys on the building top, whatever its tile says") {
     const RuleKnobs& knobs = catalogue.knobs();
     std::size_t flags = 0;
     std::size_t roofLips = 0;
+    std::size_t battens = 0;
     for (const StaticPlacement& p : placed.placements) {
         if (p.lightZ != 20) {
             continue;
         }
         // No street cobbles in the sky: the brick floor's own piece never
-        // lands on the top; the roof flag does, at its own module (a whole
-        // 3 x 3 block), in the roof tint, over the roof's dark fill.
+        // lands on the top. Nothing climbs to this top, so it is LEAD: the
+        // dark fill and the batten seams, and no flag (paving is for a
+        // deck a stair arrives on).
         CHECK(p.role != PieceRole::FloorCobble);
         if (p.role == PieceRole::RoofFlag) {
             ++flags;
-            CHECK(std::fabs(p.instance.scale.x) == doctest::Approx(3.0F / 2.9125F).epsilon(0.01F));
-            CHECK(p.instance.tint.r == knobs.roofTint.r);
-            CHECK(p.instance.tint.b == knobs.roofTint.b);
+        }
+        if (p.role == PieceRole::RoofBatten) {
+            ++battens;
+            // Thin, in the roof's dark, on the surface, along a
+            // north-south module line inside the plane (never its edge).
+            CHECK(p.instance.tint.r == knobs.roofFillTint.r);
+            CHECK(p.instance.tint.b == knobs.roofFillTint.b);
+            CHECK(p.instance.scale.x < 0.5F);
+            CHECK(p.instance.position.y > render::bandSurface(20));
+            CHECK(p.instance.position.y < render::bandSurface(20) + 0.1F);
+            const float line = p.instance.position.x;
+            CHECK(std::fabs(line - std::round(line)) < 0.001F);
+            CHECK(line > 8.0F);
+            CHECK(line < 16.0F);
         }
         if (p.role == PieceRole::FloorFill) {
             CHECK(p.instance.tint.r == knobs.roofFillTint.r);
@@ -1313,8 +1409,39 @@ TEST_CASE("the roof finish keys on the building top, whatever its tile says") {
             CHECK(p.instance.tint.g == knobs.roofFillTint.g);
         }
     }
-    CHECK(flags == 4);
+    CHECK(flags == 0);
+    // Seven interior lines (x = 9..15) over the 8 x 8 top, one batten run
+    // each: the whole plane is lead with seams every metre.
+    CHECK(battens == 7);
     CHECK(roofLips > 0);
+    // A HATCH: a stair in the room under the terrace's middle makes the
+    // roof round it a deck, and the deck keeps its flags (a whole 3 x 3
+    // block at the flag's own module, in the roof tint) with no batten
+    // across it; the rest of the top stays lead.
+    house.put(12, 12, 19, content::TileForm::Stair, materialId("oak"));
+    const StaticPlacements decked = placeStaticPieces(house.tiles, catalogue, {});
+    std::size_t deckFlags = 0;
+    std::size_t deckBattens = 0;
+    for (const StaticPlacement& p : decked.placements) {
+        if (p.lightZ != 20) {
+            continue;
+        }
+        if (p.role == PieceRole::RoofFlag) {
+            ++deckFlags;
+            CHECK(std::fabs(p.instance.scale.x) == doctest::Approx(3.0F / 2.9125F).epsilon(0.01F));
+            CHECK(p.instance.tint.r == knobs.roofTint.r);
+            CHECK(p.instance.tint.b == knobs.roofTint.b);
+            CHECK(std::abs(p.lightX - 12) <= 3);
+            CHECK(std::abs(p.lightY - 12) <= 3);
+        }
+        if (p.role == PieceRole::RoofBatten) {
+            ++deckBattens;
+        }
+    }
+    CHECK(deckFlags >= 1);
+    CHECK(deckFlags <= 4);
+    CHECK(deckBattens > 0);
+    CHECK(deckBattens < battens + 8);
     // The street stays a street: cobbles on the brick at 19, no roof flag.
     bool cobbles = false;
     for (const StaticPlacement& p : placed.placements) {
@@ -1568,7 +1695,7 @@ TEST_CASE("a lantern's room gets tables and a hearth") {
     CHECK(hearth->instance.position.z > 11.0F);
     CHECK(hearth->instance.position.z < 12.5F);
     CHECK(hearth->instance.yaw == doctest::Approx(0.0F));
-    CHECK(countRole(placed.placements, PieceRole::Flame) >= 2 + 2);
+    CHECK(countRole(placed.placements, PieceRole::Flame) >= 1 + 1);
 }
 
 TEST_CASE("a roof plane is flat, dressed, and chimneyed over masonry only") {
@@ -1740,4 +1867,197 @@ TEST_CASE("DIAG: the cells round the Gull's door and the hulls, printed") {
         }
     }
     MESSAGE("roof flag blocks " << roofFlags << ", stairs/ramps with sky over them " << stairsUnderRoof);
+}
+
+TEST_CASE("a timber wall with a roofed room behind it is a building, not a hull") {
+    // THE HULL EXCLUSION. Two timber walls beside the harbour: one closes a
+    // roofed shed (a floor behind it with a slab over it) and wears the
+    // upright boards of any building; the other stands before open air --
+    // a moored hull -- and wears the tarred boards across, with the
+    // gunwale beam along its open top.
+    HouseWorld house;
+    const StaticCatalogue& catalogue = shippedCatalogue();
+    // Water along x = 4..5 at rows 18..25, one band down and at 19.
+    for (std::int32_t y = 18; y <= 25; ++y) {
+        for (std::int32_t x = 4; x <= 5; ++x) {
+            house.put(x, y, 19, content::TileForm::Open, materialId("dirt"));
+            house.world.shortLane(content::kFluidLane)[house.tiles.index(x, y, 19)] = 3;
+        }
+    }
+    // The shed: a timber ring at x 6..8, rows 18..20, an oak floor inside,
+    // a plank slab over the whole of it.
+    for (std::int32_t y = 18; y <= 20; ++y) {
+        for (std::int32_t x = 6; x <= 8; ++x) {
+            const bool ring = x == 6 || x == 8 || y == 18 || y == 20;
+            house.put(x, y, 19, ring ? content::TileForm::Wall : content::TileForm::Floor,
+                      ring ? materialId("trudgeon_wood") : materialId("oak"));
+            house.put(x, y, 20, content::TileForm::Floor, materialId("trudgeon_wood"));
+        }
+    }
+    // The hull: a timber run at x = 6, rows 23..25, open air behind it
+    // (the deck is a floor, but nothing roofs it).
+    for (std::int32_t y = 23; y <= 25; ++y) {
+        house.put(6, y, 19, content::TileForm::Wall, materialId("trudgeon_wood"));
+        house.put(7, y, 19, content::TileForm::Floor, materialId("trudgeon_wood"));
+    }
+    const StaticPlacements placed = placeStaticPieces(house.tiles, catalogue, {});
+    std::size_t shedHull = 0;
+    std::size_t shedBoards = 0;
+    std::size_t hullBoards = 0;
+    for (const StaticPlacement& p : placed.placements) {
+        const bool shedWest = p.lightX == 6 && p.lightY >= 18 && p.lightY <= 20 && p.lightZ == 19;
+        const bool hullWest = p.lightX == 6 && p.lightY >= 23 && p.lightY <= 25 && p.lightZ == 19;
+        if (p.role == PieceRole::Hull) {
+            shedHull += shedWest ? 1 : 0;
+            hullBoards += hullWest ? 1 : 0;
+        }
+        if (p.role == PieceRole::WallTimber && shedWest && p.instance.position.x < 6.5F) {
+            ++shedBoards;
+        }
+    }
+    CHECK(shedHull == 0);
+    CHECK(shedBoards > 0);
+    CHECK(hullBoards > 0);
+}
+
+TEST_CASE("a timber post beside a door gap hangs the shop sign") {
+    // THE POST'S JOB. Two lone timber cells flank a door gap on the street:
+    // the one before the gap along its line carries the shop sign on its
+    // street face, its bracket out over the street at sign height; the
+    // other stays a plain pier. A post beside no gap hangs nothing.
+    HouseWorld house;
+    const StaticCatalogue& catalogue = shippedCatalogue();
+    // The house's own door: cells (11, 15) and (12, 15) are already the
+    // gap in the south wall (HouseWorld). Posts on the street a row south
+    // of the jambs, at x = 10 and x = 13, row 16 -- lone timber cells.
+    house.put(10, 16, 19, content::TileForm::Wall, materialId("trudgeon_wood"));
+    house.put(13, 16, 19, content::TileForm::Wall, materialId("trudgeon_wood"));
+    const StaticPlacements without = placeStaticPieces(house.tiles, catalogue, {});
+    // Beside no gap (the gap's cells are (11..12, 15); the posts touch
+    // (11, 16) and (12, 16), street): no sign.
+    CHECK(countRole(without.placements, PieceRole::ShopSign) == 0);
+    // Now posts directly beside the gap: the jamb cells themselves are
+    // granite; put lone timber posts in the street cells flanking the gap
+    // row's mouth by making a two-wide timber pair the gap's own sides --
+    // simplest: move the gap. A gap between two timber posts on the street:
+    // a wall line along row 22 with a two-cell gap at x 12..13, a roofed
+    // room to its north (rows 19..21 floored and roofed).
+    for (std::int32_t y = 19; y <= 21; ++y) {
+        for (std::int32_t x = 9; x <= 16; ++x) {
+            house.put(x, y, 19, content::TileForm::Floor, materialId("oak"));
+            house.put(x, y, 20, content::TileForm::Floor, materialId("thatch"));
+        }
+    }
+    for (std::int32_t x = 9; x <= 16; ++x) {
+        house.put(x, 22, 19, content::TileForm::Wall, materialId("granite"));
+        house.put(x, 22, 20, content::TileForm::Floor, materialId("thatch"));
+    }
+    house.put(12, 22, 19, content::TileForm::Floor, materialId("brick"));
+    house.put(13, 22, 19, content::TileForm::Floor, materialId("brick"));
+    house.put(12, 22, 20, content::TileForm::Open, materialId("thatch"));
+    house.put(13, 22, 20, content::TileForm::Open, materialId("thatch"));
+    // The timber posts ARE the jambs: (11, 22) and (14, 22) timber, lone
+    // in class terms (their granite neighbours are another class).
+    house.put(11, 22, 19, content::TileForm::Wall, materialId("trudgeon_wood"));
+    house.put(14, 22, 19, content::TileForm::Wall, materialId("trudgeon_wood"));
+    const StaticPlacements placed = placeStaticPieces(house.tiles, catalogue, {});
+    REQUIRE(placed.stats.doorGaps >= 1);
+    std::size_t signs = 0;
+    for (const StaticPlacement& p : placed.placements) {
+        if (p.role != PieceRole::ShopSign) {
+            continue;
+        }
+        ++signs;
+        // On the post before the gap (x = 11), on its south (street) face,
+        // out over the street, at sign height, half the kit's size.
+        CHECK(p.lightX == 11);
+        CHECK(p.lightY == 22);
+        CHECK(p.instance.position.z > 23.0F);
+        CHECK(p.instance.position.x == doctest::Approx(11.5F));
+        CHECK(p.instance.position.y == doctest::Approx(render::bandSurface(19) + 2.35F));
+        CHECK(p.instance.scale.x == doctest::Approx(0.55F / catalogue.piece(PieceRole::ShopSign)->scale));
+        CHECK(p.mode == kDrawShaded);
+        // The bracket's +X points south, out from the face: a clockwise
+        // yaw of a quarter turn.
+        CHECK(p.instance.yaw == doctest::Approx(3.14159265F * 0.5F));
+    }
+    CHECK(signs == 1);
+    // The posts are still pillars.
+    std::size_t pillars = 0;
+    for (const StaticPlacement& p : placed.placements) {
+        if (p.role == PieceRole::Pillar && p.lightY == 22 && (p.lightX == 11 || p.lightX == 14)) {
+            ++pillars;
+        }
+    }
+    CHECK(pillars == 2);
+}
+
+TEST_CASE("the one-wide cobble leftovers along a frontage wear setts") {
+    // THE STRIP. A cobbled street three cells wide along a wall: the 2 x 2
+    // blocks take two of the rows and the third, against the frontage,
+    // was the flat fill alone. Now every such cell wears the flag piece
+    // fitted to the one cell, its stones a third of their size -- a sett
+    // strip -- over the fill, in the material's floor tint, turned by
+    // hash; and never on a roof.
+    HouseWorld house;
+    const StaticCatalogue& catalogue = shippedCatalogue();
+    // Everything on the street band is brick already (HouseWorld); a
+    // three-wide brick street x 20..22 over rows 4..27 is the default. Fence
+    // it: walls at x = 19 and x = 23 so the cobble merge is bounded to it.
+    for (std::int32_t y = 4; y <= 27; ++y) {
+        house.put(19, y, 19, content::TileForm::Wall, materialId("granite"));
+        house.put(23, y, 19, content::TileForm::Wall, materialId("granite"));
+        for (std::int32_t x = 24; x <= 27; ++x) {
+            house.put(x, y, 19, content::TileForm::Floor, materialId("dirt"));
+        }
+    }
+    const StaticPlacements placed = placeStaticPieces(house.tiles, catalogue, {});
+    std::size_t strips = 0;
+    std::size_t cobbles = 0;
+    for (const StaticPlacement& p : placed.placements) {
+        if (p.lightZ != 19 || p.lightX < 20 || p.lightX > 22) {
+            continue;
+        }
+        if (p.role == PieceRole::FloorCobble) {
+            ++cobbles;
+        }
+        if (p.role == PieceRole::FloorStrip) {
+            ++strips;
+            const PieceSpec* spec = catalogue.piece(PieceRole::FloorStrip);
+            REQUIRE(spec != nullptr);
+            // One cell: the 3 m piece at a third.
+            CHECK(std::fabs(p.instance.scale.x) == doctest::Approx(1.0F / (spec->maxX - spec->minX)).epsilon(0.01F));
+            CHECK(std::fabs(p.instance.scale.z) == doctest::Approx(1.0F / (spec->maxZ - spec->minZ)).epsilon(0.01F));
+            const MaterialRule* brick = catalogue.materialByName("brick");
+            REQUIRE(brick != nullptr);
+            CHECK(p.instance.tint.r == brick->floorTint.r);
+            CHECK(p.bilinear);
+        }
+    }
+    CHECK(cobbles > 0);
+    // Three wide, twenty-four long: the 2 x 2 merge leaves one row of
+    // singles (or more where the merge could not pair), every one dressed.
+    CHECK(strips >= 12);
+    // No strip in the sky, and none where a block already stands: a cell
+    // carries a cobble block or a strip, never both.
+    std::set<std::pair<std::int32_t, std::int32_t>> stripCells;
+    for (const StaticPlacement& p : placed.placements) {
+        if (p.role == PieceRole::FloorStrip) {
+            CHECK(p.lightZ == 19);
+            stripCells.emplace(p.lightX, p.lightY);
+        }
+    }
+    for (const StaticPlacement& p : placed.placements) {
+        if (p.role == PieceRole::FloorCobble && p.lightZ == 19) {
+            const std::int32_t x0 = std::min(p.lightX, p.endBX);
+            const std::int32_t x1 = std::max(p.lightX, p.endBX);
+            const std::int32_t y0 = std::min(p.lightY, p.endBY);
+            const std::int32_t y1 = std::max(p.lightY, p.endBY);
+            for (std::int32_t y = y0; y < y1; ++y) {
+                for (std::int32_t x = x0; x < x1; ++x) {
+                    CHECK(stripCells.count({x, y}) == 0);
+                }
+            }
+        }
+    }
 }

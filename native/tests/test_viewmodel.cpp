@@ -915,7 +915,8 @@ TEST_CASE("the weapon socket, the framing and the clip policy are pure per kind 
     pose.chargeSteps = sim::kHardSwingHoldSteps / 2;
     clip = viewmodelRigClip(ViewmodelKind::Fists, pose);
     CHECK(clip.clip == 1U);  // the right punch: the first swing is the right
-    CHECK(clip.frame == doctest::Approx(kViewmodelCockFrame * 0.5F));
+    CHECK(clip.frame == doctest::Approx(kViewmodelCockFrame * static_cast<float>(pose.chargeSteps) /
+                                        static_cast<float>(sim::kHardSwingHoldSteps)));
     pose.swingSeq = 1;       // the second swing will be the left
     clip = viewmodelRigClip(ViewmodelKind::Fists, pose);
     CHECK(clip.clip == 2U);
