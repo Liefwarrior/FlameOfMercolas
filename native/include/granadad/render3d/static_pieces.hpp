@@ -259,8 +259,12 @@ enum class PieceRole : std::uint8_t {
     /// The one-wide strip a cobbled street leaves along a frontage, where
     /// no 2 x 2 block fits: the flag piece at a third, its stones as setts.
     FloorStrip,
+    /// The rail between a PAIR of lone timber posts two cells apart on a
+    /// street: a hitching rail at hip height, the job that makes two
+    /// metre-square piers a rail and not a gate to nowhere.
+    PostRail,
 };
-inline constexpr std::size_t kPieceRoleCount = 55;
+inline constexpr std::size_t kPieceRoleCount = 56;
 
 /// The JSON key of a role ("wall", "wall_corner", ...), and back. None for
 /// an unknown key.

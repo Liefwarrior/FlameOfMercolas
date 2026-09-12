@@ -1884,9 +1884,12 @@ TEST_CASE("a timber post beside a door gap hangs the shop sign") {
     house.put(12, 22, 20, content::TileForm::Open, materialId("thatch"));
     house.put(13, 22, 20, content::TileForm::Open, materialId("thatch"));
     // The timber posts ARE the jambs: (11, 22) and (14, 22) timber, lone
-    // in class terms (their granite neighbours are another class).
+    // in class terms (their granite neighbours are another class), and
+    // out in the open (nothing over them).
     house.put(11, 22, 19, content::TileForm::Wall, materialId("trudgeon_wood"));
     house.put(14, 22, 19, content::TileForm::Wall, materialId("trudgeon_wood"));
+    house.put(11, 22, 20, content::TileForm::Open, materialId("thatch"));
+    house.put(14, 22, 20, content::TileForm::Open, materialId("thatch"));
     const StaticPlacements placed = placeStaticPieces(house.tiles, catalogue, {});
     REQUIRE(placed.stats.doorGaps >= 1);
     std::size_t signs = 0;
@@ -1971,7 +1974,9 @@ TEST_CASE("the one-wide cobble leftovers along a frontage wear setts") {
     for (const StaticPlacement& p : placed.placements) {
         if (p.role == PieceRole::FloorStrip) {
             CHECK(p.lightZ == 19);
-            stripCells.emplace(p.lightX, p.lightY);
+            // A turned piece's first corner point is any of the cell's
+            // four; the cell is the least corner.
+            stripCells.emplace(std::min(p.lightX, p.endBX), std::min(p.lightY, p.endBY));
         }
     }
     for (const StaticPlacement& p : placed.placements) {
@@ -2037,10 +2042,6 @@ TEST_CASE("a flame's halo faces the eye from wherever the eye is") {
     const StaticInstance* east = flameOf(fromEast);
     REQUIRE(south != nullptr);
     REQUIRE(east != nullptr);
-    // A quarter turn between the two eyes, the quad turned with them (a
-    // two-sided quad: the turn is read modulo a half turn).
-    const float turned = std::fmod(std::fabs(south->yaw - east->yaw), 3.14159265F);
-    CHECK(std::fabs(turned - 3.14159265F * 0.5F) < 0.02F);
     // The centre held: the origin is half a width along the quad's own +X
     // from it, so the two origins differ but their centres agree.
     const PieceSpec* flame = catalogue.piece(PieceRole::Flame);
@@ -2055,9 +2056,61 @@ TEST_CASE("a flame's halo faces the eye from wherever the eye is") {
     CHECK(std::fabs(a.x - b.x) < 0.01F);
     CHECK(std::fabs(a.z - b.z) < 0.01F);
     CHECK(std::fabs(a.y - b.y) < 0.01F);
-    // And the quad's normal (-sin, cos) lies along the line to the eye.
-    const float dx = 20.5F - a.x;
-    const float dz = 23.5F - a.z;
-    const float along = -std::sin(south->yaw) * dx + std::cos(south->yaw) * dz;
-    CHECK(std::fabs(along) > 0.99F * std::sqrt(dx * dx + dz * dz));
+    // And from each eye the quad's normal (-sin, cos) lies along the line
+    // from the centre to that eye: never edge-on, wherever the eye is.
+    const auto faces = [](const StaticInstance& at, const Vec3& centre, float ex, float ez) {
+        const float dx = ex - centre.x;
+        const float dz = ez - centre.z;
+        const float along = -std::sin(at.yaw) * dx + std::cos(at.yaw) * dz;
+        return std::fabs(along) > 0.99F * std::sqrt(dx * dx + dz * dz);
+    };
+    CHECK(faces(*south, a, 20.5F, 23.5F));
+    CHECK(faces(*east, b, 24.5F, 19.5F));
+    CHECK_FALSE(faces(*south, a, 24.5F, 19.5F));
+    CHECK(south->yaw != east->yaw);
 }
+
+TEST_CASE("a pair of lone posts two cells apart on a street carries a hitching rail") {
+    // THE PAIR'S JOB. HouseWorld's street post at (20, 20) gets a twin at
+    // (22, 20): one rail from the first's east face to the second's west
+    // face at hip height, in the beam piece at its catalogue section, lit
+    // by the cell between. A post with no twin (the pilaster, the indoor
+    // table) carries none, and a pair under a roof carries none.
+    HouseWorld house;
+    const StaticCatalogue& catalogue = shippedCatalogue();
+    house.put(22, 20, 19, content::TileForm::Wall, materialId("trudgeon_wood"));
+    // And a pair down a column at x = 25: rows 22 and 24.
+    house.put(25, 22, 19, content::TileForm::Wall, materialId("trudgeon_wood"));
+    house.put(25, 24, 19, content::TileForm::Wall, materialId("trudgeon_wood"));
+    const StaticPlacements placed = placeStaticPieces(house.tiles, catalogue, {});
+    const PieceSpec* rail = catalogue.piece(PieceRole::PostRail);
+    REQUIRE(rail != nullptr);
+    std::size_t rails = 0;
+    bool acrossRow = false;
+    bool downColumn = false;
+    for (const StaticPlacement& p : placed.placements) {
+        if (p.role != PieceRole::PostRail) {
+            continue;
+        }
+        ++rails;
+        CHECK(p.instance.position.y == doctest::Approx(render::bandSurface(19) + 1.05F + rail->lift));
+        CHECK(p.instance.scale.x == doctest::Approx(rail->scale));
+        // One metre long: from face to face across the cell between.
+        CHECK(p.instance.scale.z == doctest::Approx(1.0F / 5.0F));
+        if (p.lightX == 21 && p.lightY == 20) {
+            acrossRow = true;
+            CHECK(p.instance.position.x == doctest::Approx(21.0F));
+            CHECK(p.instance.position.z == doctest::Approx(20.5F));
+        }
+        if (p.lightX == 25 && p.lightY == 23) {
+            downColumn = true;
+            CHECK(p.instance.position.x == doctest::Approx(25.5F));
+            CHECK(p.instance.position.z == doctest::Approx(23.0F));
+        }
+    }
+    CHECK(rails == 2);
+    CHECK(acrossRow);
+    CHECK(downColumn);
+    CHECK(countRole(placed.placements, PieceRole::Pillar) >= 5);
+}
+

@@ -34,7 +34,7 @@ constexpr std::string_view kRoleNames[kPieceRoleCount] = {
     "barrel_rack", "fireplace",    "pillar",      "post",         "parapet",     "roof_tile",
     "rowboat",     "crane",        "gunwale",     "window_timber", "rope",
     "hull",        "wall_plaster", "stool",       "quay_wall",     "roof_flag",
-    "roof_batten", "shop_sign",    "floor_strip",
+    "roof_batten", "shop_sign",    "floor_strip",  "post_rail",
 };
 
 // ---------------------------------------------------------------------------
@@ -156,6 +156,8 @@ constexpr std::int32_t kDeckReach = 2;
 /// kit's own (its bracket is 1.9 m long at one).
 constexpr float kSignLift = 2.35F;
 constexpr float kSignScale = 0.55F;
+/// A hitching rail between a pair of posts runs at this height.
+constexpr float kRailLift = 1.05F;
 
 [[nodiscard]] constexpr float yawOf(int side) noexcept {
     return static_cast<float>(side) * kHalfPi;
@@ -1747,6 +1749,7 @@ private:
                     pointPiece(PieceRole::Pillar, *pillar, centre, 0.0F, x, y, z, tint,
                                Vec3{s, heightScale(*pillar), s}, false, 3.0F);
                     signOnPost(x, y, z, indoors);
+                    railBetweenPosts(x, y, z, indoors);
                 }
             }
         }
@@ -1786,6 +1789,37 @@ private:
                                      kSignScale / std::max(0.01F, sign->scale)},
                        false, 2.5F);
             return;
+        }
+    }
+
+    /// A PAIR OF POSTS ON A STREET IS A HITCHING RAIL. Two lone timber
+    /// cells two apart on a row or a column, out of doors, with a walkable
+    /// cell between them (the Tarwalk's pairs before the Gull): the rail
+    /// beam runs from face to face at hip height, placed once, from the
+    /// lower post of the pair. Indoors (the taproom's tables) nothing.
+    void railBetweenPosts(std::int32_t x, std::int32_t y, std::int32_t z, bool indoors) {
+        const PieceSpec* rail = catalogue_.piece(PieceRole::PostRail);
+        if (rail == nullptr || indoors) {
+            return;
+        }
+        for (int axis = 0; axis < 2; ++axis) {
+            const std::int32_t dx = axis == 0 ? 1 : 0;
+            const std::int32_t dy = axis == 0 ? 0 : 1;
+            const std::int32_t px = x + 2 * dx;
+            const std::int32_t py = y + 2 * dy;
+            if (!lonePost(px, py, z) || !isWalkableForm(tiles_, x + dx, y + dy, z) ||
+                cellRoofed(tiles_, px, py, z)) {
+                continue;
+            }
+            // Along the pair's own line, read east or south, from this
+            // post's far face to the other's near face.
+            FaceRun r;
+            r.z = z;
+            r.side = axis == 0 ? kNorth : kEast;
+            setBase(r, axis == 0 ? static_cast<float>(y) + 0.5F : static_cast<float>(x) + 0.5F);
+            const float a0 = (axis == 0 ? static_cast<float>(x) : static_cast<float>(y)) + 1.0F;
+            beamAlong(r, a0, a0 + 1.0F, render::bandSurface(z) + kRailLift, 0.0F, Rgba8{},
+                      runLight(x + dx, y + dy, 0, 0, 1, 0.0F, 1.0F), z, PieceRole::PostRail);
         }
     }
 
