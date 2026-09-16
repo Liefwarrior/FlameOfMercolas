@@ -42,7 +42,7 @@ The quiet-HUD program (section 2). At rest the street is nearly wordless; plates
 
 | # | Surface | Was | Budget | What goes at rest |
 |---|---|---:|---:|---|
-| 11 | Rest | 24 | **8** | Clock/temp, street label, case row, room, objective/guild all sleep (each wakes on its own change, sec. 2); `GRANADAD 0.10.0` stamp **deleted from the HUD** — it rides the pause title rule instead. Compass stays. |
+| 11 | Rest | 24 | **8** (+ the followed lead, ≤ 7) | Clock/temp, street label, case row, room, objective/guild all sleep (each wakes on its own change, sec. 2); `GRANADAD 0.10.0` stamp **deleted from the HUD** — it rides the pause title rule instead. Compass stays. **PULL PACK (owner ruling D8):** while a lead is followed, ONE line rides the ribbon's sub-label row — `NE 40  THE WEIGHHOUSE` — bearing, paces, the place in the sign's own words, `BELOW` / `ABOVE` off-plane (the book keeps `BAND n`; the street cannot see its own band); at most seven words (2 + a four-word place + 1), pinned in test_hud_diet over every authored lead from a body on three bands. It is the one line the street grew by, and it earns its place by moving: the paces run down as you walk. Never a person, never a clue. The named-place ticks on the ribbon cost zero words. |
 | 12 | Busiest | 54 | **36** | Cast 4, stealth 4, message 13, room 4 stay (they are the context); rank 6→3; case row asleep; stamp gone; clock 3 woken by the activity. |
 | 13 | Crosshair prompt | 25 | **14** | Actor plate 3 + rank 3 + verb + compass; case/clock/street asleep. |
 | 14 | Threshold | 34 | **20** | Plate, prompt, stealth, room, compass; the rest sleeps. |
@@ -119,7 +119,7 @@ Options, wait, and grimoire leave the HUD strip for the composed master/detail c
 **Text prints when it changes, when it is aimed at, or when the player hesitates — never merely because it is true.** Three tiers, all on existing machinery (EasedToggle + countdown = the quickBar pattern `session.cpp:6653`; edge detection = the `lastPlaceName_` pattern `:6687`; device change = `noteInputDevice`):
 
 - **STATE** — always up at rest: compass, health/fatigue bars, the active tab row, list rows, the highlighted row's detail, stealth while indoors and nontrivial.
-- **EVENT** — rises on its edge, holds ~2.5s, eases down: place plate, case plate, clock on any time charge or hour tick, purse on coin delta, room on entry, objective/guild/rank on change, message-row narration (~4s hold). The plate announces; the reference row sleeps.
+- **EVENT** — rises on its edge, holds ~2.5s, eases down: place plate, case plate (every book change now: leads heard, a sheet or writ handed over, a stage moved on, an errand taken — one plate, one `CaseNews` cue), the skill-up toast, clock on any time charge or hour tick, purse on coin delta, room on entry, objective/guild/rank on change, message-row narration (~4s hold). The plate announces; the reference row sleeps.
 - **TUTOR** — nav bands, key legends, instruction copy. Raised in full for ~3s on page open, on device change, on any unrecognized press, and after ~5s of idle on a page (hesitation is the request for help). At rest: **keycaps only** (`TAB  M`), no verb words. On the street at rest: nothing.
 
 Per-row HUD table (LANE HUD, one target-condition line each in `syncPanelAnim`):
@@ -130,6 +130,8 @@ Per-row HUD table (LANE HUD, one target-condition line each in `syncPanelAnim`):
 | clock/temp | asleep | hour tick, time charge, any priced page open |
 | purse | asleep | coin delta |
 | street label under compass | **deleted** | placePlate already announces crossings |
+| followed lead under compass (PULL PACK) | up while a lead is followed | STATE tier: the ONE lead the player chose to FOLLOW (default: the authored next lead); the line changes every step you walk |
+| skill-up toast, top-left (PULL PACK) | asleep | a skill level rising (`SKYRUNNING RISES TO 12`), EVENT hold, queues behind itself |
 | case row | asleep | beat/lead change, casebook close (2.5s) |
 | room | asleep | room entry, loudness change |
 | objective / guild | asleep | change |

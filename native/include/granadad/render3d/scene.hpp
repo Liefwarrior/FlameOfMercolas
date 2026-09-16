@@ -158,15 +158,17 @@ enum class ActorClip : std::uint8_t { Idle, Walk, PunchLeft, PunchRight, Block, 
 inline constexpr std::size_t kActorClipCount = 8;
 
 /// ONE BODY, DRAWN. The A lane's unit: a placeholder-or-rig instance plus
-/// what it is doing. `instance.meshId` is always the rig's PLACEHOLDER mesh
-/// (actorRigMeshId(rig), which the core puts into the description), so a
+/// what it is doing. `instance.meshId` is always the KIND's PLACEHOLDER mesh
+/// (actorRigMeshId(kind), which the core puts into the description), so a
 /// build without the licensed glb files -- every test, the docker gate --
 /// draws a box figure through the generic mesh path; the adapter swaps in
 /// the skinned model by the rig's file name when it has one.
 struct ActorInstance {
     Instance instance;
-    /// The rig index: the sim's WardType value (0..15), one look per kind of
-    /// body. actorRigMeshId(rig) == instance.meshId; actorRigFile(rig) is
+    /// The rig index: the sim's WardType value (0..15) for a kind's own look,
+    /// or a variant look above that (the townswoman, 16) -- a pure function
+    /// of the kind and the actor id (actor_instances.hpp, actorRigFor).
+    /// instance.meshId stays the kind's placeholder; actorRigFile(rig) is
     /// the glb the adapter looks for.
     std::uint8_t rig = 0;
     ActorClip clip = ActorClip::Idle;
@@ -183,7 +185,8 @@ struct ActorInstance {
 /// The glb file (no directory) the adapter loads for this rig, or empty for
 /// a rig that only has its placeholder (every beast, today). The names are
 /// the asset lane's: content/art/lot-3d/characters/<name>.glb, one skin,
-/// animations 0..7 in ActorClip order. Defined in actor_instances.cpp.
+/// animations 0..7 in ActorClip order (8 and 9, a sword swing and a spell
+/// blast, ride along unused). Defined in actor_instances.cpp.
 [[nodiscard]] std::string_view actorRigFile(std::uint8_t rig) noexcept;
 
 /// True for a clip that plays once and holds its last frame (a corpse stays
@@ -199,6 +202,13 @@ struct ActorInstance {
 /// header. Defined in viewmodel.cpp beside their typed twins.
 [[nodiscard]] std::string_view viewmodelRigFileOf(std::uint8_t kind) noexcept;
 [[nodiscard]] std::string_view viewmodelWeaponFileOf(std::uint8_t kind) noexcept;
+
+/// V LANE. True for a kind whose weapon is FUSED into the arms glb's one
+/// skin (the sword: the export parents SM_Wep_Sword_01 to Hand_R and bakes
+/// it into the mesh), so the socket below is applied to those vertices
+/// once at load rather than to a hung model per frame. Defined in
+/// viewmodel.cpp.
+[[nodiscard]] bool viewmodelWeaponFusedOf(std::uint8_t kind) noexcept;
 
 /// V LANE. ONE PART OF THE PLAYER'S OWN HANDS, IN VIEW SPACE: +X right, +Y
 /// up, -Z forward, the eye at the origin -- the frame the adapter's second
@@ -240,15 +250,49 @@ struct ViewmodelInstance {
     /// Vertical field of view of the second pass, degrees. Fixed, so the
     /// hands frame the same whatever the world's FOV slider says.
     float fovyDegrees = 55.0F;
-    /// Where a rig's origin (its feet) sits in view space, its yaw about +Y
-    /// (radians, scene convention) and its scale -- the glb path's placement.
+    /// THE RIG'S PLACEMENT, the glb path's framing: its origin (the feet)
+    /// at rigOffset in view space, turned rigYaw about +Y (radians, the
+    /// scene's clockwise convention; a half turn faces the glTF front down
+    /// -Z), scaled rigScale, and the whole of it then pitched rigPitch
+    /// about the EYE's own X axis (radians, positive lifts what is in front
+    /// of the eye) -- the lean-back that brings a body's forearms up from
+    /// the bottom of the frame the way a first-person rig is framed, since
+    /// the clips are a standing body's and its guard is at its hips. The
+    /// adapter composes scale, yaw, offset, pitch in that order.
     Vec3 rigOffset;
     float rigYaw = 0.0F;
     float rigScale = 1.0F;
+    float rigPitch = 0.0F;
+    /// WHICH CLIP the adapter plays and WHERE in it, 0..1 over the clip's
+    /// keyframes: the V lane's own choice per state (a guard held on one
+    /// frame of the block clip, a punch scrubbed from its cock, the swing
+    /// from there to its end), never the raw state index. Decided in
+    /// viewmodel.cpp, so a case can pin it without a renderer.
+    std::uint8_t rigClip = 0;
+    float rigFrame = 0.0F;
+    /// THE WEAPON SOCKET for this kind: where the held weapon's origin sits
+    /// in the Hand_R bone's own frame (metres along the bone's axes) and
+    /// how it is turned there (radians about the bone's X, then Y, then Z),
+    /// so a blade lies across the closed fingers and points out of the
+    /// thumb side of the fist instead of hanging down the wrist. Applied by
+    /// the adapter to a hung weapon per frame and to a fused one once at
+    /// load. A pure function of the kind (viewmodelSocketOf), carried here
+    /// so the hash covers what is drawn.
+    Vec3 socketOffset;
+    Vec3 socketRotation;
     /// The light where the body stands, as a tint over every part.
     Rgba8 tint;
     std::vector<ViewmodelPart> parts;
 };
+
+/// V LANE. The weapon socket for a kind byte -- see ViewmodelInstance --
+/// declared here so the one raylib TU can apply it to a fused blade at load
+/// without the description in hand. Defined in viewmodel.cpp.
+struct ViewmodelSocket {
+    Vec3 offset;
+    Vec3 rotation;
+};
+[[nodiscard]] ViewmodelSocket viewmodelSocketOf(std::uint8_t kind) noexcept;
 
 /// S LANE. One row of the static-piece table: the glTF file (pack directory
 /// and file name, "PolygonGeneric/SM_Bld_Base_Wall_01.gltf") the adapter

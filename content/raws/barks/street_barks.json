@@ -1,0 +1,46 @@
+{
+  "id": "street_barks",
+  "notes": "STREET SENSES (lane/street), legs (b) and (c). Four keys the street needed and the Gull's own files could not honestly lend it, in the salted city-folk register and never a borrowed line from anybody else's game. NOTHING in the code writes a spoken line: Session::step says these off the ward's own events and falls through to the Gull's watch.* rows until each key is on the sheet. street.halt is what a watchman on the beats says the second he SEES a blow land or a body drop on the open street (he is Closing; the arrest follows at reach, through the same hearing Cull's does). street.sheathe is the demand a raised blade gets first, with its six seconds of grace (D5). street.offence is what he says when the six run out with the blade still up (heat, no arrest by itself). street.routed is a struck docker who has just decided to run. Common folk, common words: nobody here names the thing by its learned name.",
+  "tables": [
+    {
+      "key": "street.halt",
+      "rows": [
+        "Stand where you are. I saw that.",
+        "Hold. The Watch has you, and the street saw it.",
+        "Hands where I can see them. You are done for today.",
+        "That is the ward's business now. Stand still.",
+        "You. Stop. I have your face and I have the man you hit."
+      ]
+    },
+    {
+      "key": "street.sheathe",
+      "rows": [
+        "Put the steel away. I will not say it twice.",
+        "Sheathe it. Now, and slow.",
+        "Blade down, friend. There is no fight here yet.",
+        "That comes out again and it goes on the paper.",
+        "Six breaths. Put it away."
+      ]
+    },
+    {
+      "key": "street.offence",
+      "rows": [
+        "Then it goes on the paper. I have your face.",
+        "Suit yourself. The ward will remember the blade.",
+        "Right. Your name and the steel, both written down.",
+        "You were told. It is on the sheet now.",
+        "I gave you the chance. The Watch will know you."
+      ]
+    },
+    {
+      "key": "street.routed",
+      "rows": [
+        "Not me. Not for this.",
+        "Watch! Somebody call the Watch!",
+        "Get off me. Get off me.",
+        "I am done. Let me be.",
+        "Flame keep me. Run."
+      ]
+    }
+  ]
+}

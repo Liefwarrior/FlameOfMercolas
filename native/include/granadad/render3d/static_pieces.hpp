@@ -246,11 +246,35 @@ enum class PieceRole : std::uint8_t {
     Stool,
     /// The stone face of a quay wall at the harbour band, coping to water.
     QuayWall,
-    /// The finish every building top with sky over it wears, whatever its
-    /// tile material: the flagstone piece at its own module, as slates.
+    /// The paved deck a roof keeps only where a stair or a ramp arrives on
+    /// it: the flagstone piece at its own module. Every other building top
+    /// is lead -- the dark fill with battens.
     RoofFlag,
+    /// The batten seams of a lead roof: the kit beam laid thin along every
+    /// module line of a roof plane, in the roof's own dark.
+    RoofBatten,
+    /// A shop sign hung on a timber post beside a door gap: the job that
+    /// makes a lone post a signpost.
+    ShopSign,
+    /// The one-wide strip a cobbled street leaves along a frontage, where
+    /// no 2 x 2 block fits: the flag piece at a third, its stones as setts.
+    FloorStrip,
+    /// The rail between a PAIR of lone timber posts two cells apart on a
+    /// street: a hitching rail at hip height, the job that makes two
+    /// metre-square piers a rail and not a gate to nowhere.
+    PostRail,
+    /// KIT BUILD. A THING ON A TILE: an item of the player's registry
+    /// (sim/items.hpp) lying where the room says it lies -- a dropped
+    /// knife, the cudgel under the bar, the four strongboxes, the snug's
+    /// bale -- as the Synty static the catalogue's `items` table names for
+    /// that item id, one variant per id. NOT placed by placeStaticPieces
+    /// (which is pure over the tile bytes): the ground list is SIM STATE,
+    /// so the instances are written per frame by groundItemInstances()
+    /// off the room's hashed list, and the renderer never removes one --
+    /// TAKE does, in the sim, and the next frame simply has fewer.
+    Item,
 };
-inline constexpr std::size_t kPieceRoleCount = 52;
+inline constexpr std::size_t kPieceRoleCount = 57;
 
 /// The JSON key of a role ("wall", "wall_corner", ...), and back. None for
 /// an unknown key.
@@ -318,6 +342,10 @@ struct PieceSpec {
     float lift = 0.0F;
     /// Radians added to the rule's yaw.
     float yawOffset = 0.0F;
+    /// KIT BUILD. Radians about the piece's own X (StaticInstance::pitch):
+    /// what lays a sword, authored point-up, flat on the boards. Read by
+    /// the item path only.
+    float pitch = 0.0F;
     /// A uniform scale on top of the fit (a crate shrunk a little).
     float scale = 1.0F;
     /// Multiplies the light; 255 = the piece's own colours.
@@ -430,6 +458,12 @@ public:
     [[nodiscard]] int pieceIndex(PieceRole role, std::uint8_t variant = 0) const noexcept;
     /// How many variants a role has (0 when absent).
     [[nodiscard]] std::uint8_t variantCount(PieceRole role) const noexcept;
+    /// KIT BUILD. The Item row for a registry item id, or null when the
+    /// `items` table does not dress it (the placeholder rule: nothing is
+    /// drawn, the sim's list is untouched).
+    [[nodiscard]] const PieceSpec* itemPiece(std::string_view itemId) const noexcept;
+    /// The item ids the table dresses, in the variant order the rows carry.
+    [[nodiscard]] const std::vector<std::string>& itemIds() const noexcept { return itemIds_; }
     /// The material rule for a registry material id (render::materialIds()
     /// order), or null for a material the catalogue does not dress.
     [[nodiscard]] const MaterialRule* material(std::uint16_t materialId) const noexcept;
@@ -458,6 +492,8 @@ public:
 private:
     std::vector<PieceSpec> pieces_;
     std::vector<MaterialRule> materials_;
+    /// KIT BUILD. itemIds_[v] is the item id of the Item row with variant v.
+    std::vector<std::string> itemIds_;
     std::int32_t minBand_ = 0;
     RuleKnobs knobs_;
     std::string error_;
@@ -517,6 +553,12 @@ struct StaticPlacement {
     /// The adapter's draw mode (scene.hpp): plain, a halo, or shaded by
     /// the mesh's own normals.
     std::uint8_t mode = 0;
+    /// A billboard (a flame's halo): one quad turned to face the eye every
+    /// frame by the world scene, about `anchor` (its centre) -- so a halo
+    /// is never seen edge-on as a bright bar. The instance's yaw and
+    /// position are rewritten at refresh; the placement keeps the centre.
+    bool billboard = false;
+    Vec3 anchor;
 };
 
 struct StaticPlacementStats {

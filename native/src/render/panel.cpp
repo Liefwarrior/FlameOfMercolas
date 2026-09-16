@@ -88,59 +88,12 @@ void blitMotif(Framebuffer& target, int x, int y, const MotifGlyph& glyph, const
     }
 }
 
-/// blitMotif without the drop shadow -- for a motif knocked out of an inverted
-/// fill, where the shadow is a second dark copy of the mark one pixel out
-/// (drawCellTextKnockout's whole reason to exist, and the same fix here).
-void blitMotifInk(Framebuffer& target, int x, int y, const MotifGlyph& glyph, const Rgb& colour,
-                  float alpha, int scale) {
-    for (int row = 0; row < kGlyphRows; ++row) {
-        for (int col = 0; col < 4; ++col) {
-            const bool on = (glyph.rows[static_cast<std::size_t>(row)] >> (3 - col)) & 1U;
-            if (on) {
-                target.fillRect(x + col * scale, y + row * scale, scale, scale, colour, alpha);
-            }
-        }
-    }
-}
-
-/// The sentinel table, one place. See panel.hpp's contract note.
-[[nodiscard]] const MotifGlyph* sentinelGlyph(char c) noexcept {
-    switch (c) {
-        case kSentinelArrowUp:
-            return &kArrowUp;
-        case kSentinelArrowDown:
-            return &kArrowDown;
-        case kSentinelArrowLeft:
-            return &kArrowLeft;
-        case kSentinelArrowRight:
-            return &kArrowRight;
-        case kSentinelReturn:
-            return &kReturn;
-        case kSentinelCross:
-            return &kCross;
-        default:
-            return nullptr;
-    }
-}
-
-/// The sentinel overlay every text drawer runs after drawText: the font drew
-/// nothing for a sentinel byte and advanced one cell, so the motif lands in
-/// exactly the blank the run left for it. `shadow` false for knocked-out runs.
-void overlaySentinels(Framebuffer& target, int x, int y, std::string_view text, const Rgb& colour,
-                      float alpha, int scale, bool shadow) {
-    for (std::size_t i = 0; i < text.size(); ++i) {
-        const MotifGlyph* glyph = sentinelGlyph(text[i]);
-        if (glyph == nullptr) {
-            continue;
-        }
-        const int cx = x + static_cast<int>(i) * kAdvance * scale;
-        if (shadow) {
-            blitMotif(target, cx, y, *glyph, colour, alpha, scale);
-        } else {
-            blitMotifInk(target, cx, y, *glyph, colour, alpha, scale);
-        }
-    }
-}
+// THE KEYCAP SENTINELS ARE GLYPHS OF THE FONT NOW (hud.cpp's kGlyphs carries
+// the six bitmaps above under the bytes controls.hpp declares), so drawText
+// draws them in every run -- the panel drawers below no longer overlay them
+// after the fact, and the knockout pass picks them up through its own mask
+// exactly as it does every other glyph. The border-motif table keeps the same
+// bitmaps for the frames it draws (see Motif::ArrowUp .. Motif::Cross).
 
 /// Uppercased, because the font draws lowercase as uppercase anyway and every
 /// surface in this build prints in caps. Doing it here means a caller can pass
@@ -610,9 +563,8 @@ int drawCellText(Framebuffer& target, const PanelRect& rect, const PanelMetric& 
     const std::string cut = clipToWidth(shout(text), metric.widthOf(cells), metric.scale);
     const int x = rect.x + cell * metric.cellW();
     const int y = rect.y + row * metric.cellH();
+    // The keycap motifs are glyphs of the font -- drawText draws them.
     drawText(target, x, y, cut, colour, alpha, metric.scale);
-    // The keycap motifs land in the blanks the font left for their sentinels.
-    overlaySentinels(target, x, y, cut, colour, alpha, metric.scale, true);
     return cellsOf(cut);
 }
 
@@ -711,9 +663,8 @@ int drawCellTextKnockout(Framebuffer& target, const PanelRect& rect, const Panel
             target.fillRect(originX + px, originY + py, 1, 1, colour, alpha);
         }
     }
-    // Sentinels left blanks in the scratch pass (the font has no glyph for
-    // them); their motifs draw here shadowless, same as the rest of the run.
-    overlaySentinels(target, originX, originY, cut, colour, alpha, scale, false);
+    // The keycap motifs came through the mask with the rest of the run: they
+    // are glyphs of the font now, so the scratch pass drew them in white too.
     return cellsOf(cut);
 }
 

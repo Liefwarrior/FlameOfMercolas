@@ -37,8 +37,8 @@ open on the right. It is eight in the morning and the street has people on it: b
 eighteen and thirty of the ward's six hundred and sixty-one are drawn in that first frame,
 depending on the hour. You have a case open and one lead in it: a body came up against the
 outfall grate at low tide. `E` talks to anybody standing in front of you, in the street or in
-the taproom. `Q` looks at what is in front of you, `J` opens your casebook, `F1` lists
-every key and `F2` rebinds them. The trail is twelve leads long, two of them dead ends that
+the taproom. `MOUSE1` swings at whoever is in front of you, `J` opens your notes, `M` the ward
+map, and PAUSE lists every key and rebinds them. The trail is twelve leads long, two of them dead ends that
 are the point, and it runs from the Mission's back room to the doors of a warehouse that has
 been condemned for nine years.
 

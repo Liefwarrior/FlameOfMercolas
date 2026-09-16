@@ -56,6 +56,7 @@
 #include "granadad/sim/engine.hpp"
 #include "granadad/sim/path_finder.hpp"
 #include "granadad/sim/tile_query.hpp"
+#include "granadad/sim/watch.hpp"
 #include "granadad/sim/world_hash.hpp"
 
 namespace granadad::sim {
@@ -169,6 +170,42 @@ inline constexpr std::size_t kWardTypeCount = 16;
 
 [[nodiscard]] constexpr bool isPrey(WardType type) noexcept {
     return type == WardType::Mouse;
+}
+
+/// WHO STANDS THEIR GROUND WHEN THE STREET GOES BAD, instead of running.
+///
+/// STREET SENSES (9a completion). The gazetteer's own crowd ladder splits the
+/// district in two when a fright crosses it: "Serfs flee -> Shopkeepers
+/// bucket-chain -> ... -> Priest walks in" (DOCKS-GAZETTEER section 4.2's fire
+/// scenario, and the deference table's textures -- a serf "may flee", a
+/// shopkeeper brings the ledger out, the priest has claims ON the ward). The
+/// roadmap's reaction table put it plainly: "Serfs and wastrels flee,
+/// shopkeepers and priests cower." So a shopkeeper, a priest and a disciple
+/// COWER -- frightened but standing, facing the trouble -- where a serf, a
+/// sailor, a fisher, a carter, a wastrel, an urchin or a thief FLEE. The Watch
+/// is neither: it holds by exemption (never alarmed), which is a different rule
+/// (9b's, the street Watch's Respond) and not this one.
+[[nodiscard]] constexpr bool wardTypeCowers(WardType type) noexcept {
+    return type == WardType::Shopkeeper || type == WardType::PriestOfTheFlame ||
+           type == WardType::DiscipleOfTheFlame;
+}
+
+/// WHO SWINGS BACK WHEN STRUCK, instead of routing.
+///
+/// STREET SENSES leg (b). The lane brief's own line: "a struck body that is
+/// not a professional routs; a Thief or a Sailor swings back through the same
+/// brawl rules; no second ladder." A sailor off a Long Quay hull and a
+/// cutpurse who works the dark are the ward's two trades that answer a fist
+/// with a fist. Everybody else who is struck panics and breaks away (the leg
+/// (a) flee plan, deeper); the Watch is neither -- it holds, and what it does
+/// instead is leg (c)'s.
+[[nodiscard]] constexpr bool wardTypeFightsBack(WardType type) noexcept {
+    // STREET SENSES leg (c): and the Watch. A blow on a watchman makes him a
+    // brawler (D6, the Gull's own rule for a blow on the closing Cull) -- he
+    // fights, he does not arrest, and his blows can kill (the client lands
+    // them with Intent::Kill, Lethal by B2). Killing him is murder like
+    // anybody else's.
+    return type == WardType::Sailor || type == WardType::Thief || type == WardType::MilitiaWatch;
 }
 
 // ---------------------------------------------------------------------------
@@ -361,9 +398,30 @@ enum class WardPolicy : std::uint8_t {
     /// the den nibble their wander leg pays, and the mice were a population
     /// nothing ate. This is the Java build's BeastHuntPolicy, ported.
     Hunt = 6,
+    /// STREET SENSES (9a completion). Frightened, but STANDING -- the shape the
+    /// gazetteer's crowd ladder gives a shopkeeper and a priest ("Shopkeepers
+    /// bucket-chain -> ... -> Priest walks in", DOCKS-GAZETTEER section 4.1 /
+    /// 4.2's fire scenario), against the serf's and the wastrel's FLEE. Same
+    /// gate as Flee (Safety under kNeedCritical), the OTHER response: face the
+    /// fright and hold, rather than run from it. APPENDED, not inserted -- the
+    /// ordinal is a hashed byte (hash_into's put_byte(policy)), so putting it
+    /// anywhere but the end would renumber every policy the world hash has ever
+    /// recorded, exactly the Hunt precedent above.
+    Cower = 7,
+    /// STREET SENSES leg (b). FIGHTING BACK: a struck sailor or thief closing
+    /// on the player and swinging, under the brawl rules, until his clock runs
+    /// out or he is floored. Wins over everything while it runs -- a man in a
+    /// fight is not hungry. APPENDED for the same reason Cower was.
+    Brawl = 8,
+    /// STREET SENSES leg (c). THE WATCH CLOSING: a watchman who SAW cause --
+    /// steel up, a blow, a killing -- walking the player down for
+    /// kWatchClosingSeconds, the halt in his mouth, the arrest at reach. Below
+    /// Brawl (a blow on him makes him a brawler, and he fights rather than
+    /// arrests) and above everything else. APPENDED.
+    Close = 9,
 };
 
-inline constexpr std::size_t kWardPolicyCount = 7;
+inline constexpr std::size_t kWardPolicyCount = 10;
 
 [[nodiscard]] std::string_view wardPolicyName(WardPolicy policy) noexcept;
 
@@ -527,6 +585,52 @@ struct WardActor {
     WardPolicy policy = WardPolicy::Loiter;
     bool dead = false;
 
+    /// --- STREET SENSES leg (b): the combat sheet ---------------------------
+    ///
+    /// THE MINIMAL SHEET, and every field is a hashed one: hit points, the
+    /// brawl floor (downedUntil, REUSED -- the prey's revive latch is the same
+    /// absolute-tick shape a struck man's floor needs), death by violence, and
+    /// the two scalars a body that swings back keeps. kActorHealth for
+    /// everybody, the Gull's own number; a docker and a Gull patron are the
+    /// same twenty-four points under the same strike(). Beasts carry the sheet
+    /// and are never on the ray (persons only in v1, said out loud).
+    std::int16_t hp = static_cast<std::int16_t>(kActorHealth);
+    /// DEAD BY VIOLENCE. Sets `dead` as well (the tile is freed, the policy is
+    /// Dead, the body never ticks again -- starvation's own machinery), and
+    /// this bit says WHY, so the census and the murder law can tell a killing
+    /// from a famine. Never cleared: a corpse is a Downed that never stands.
+    bool slain = false;
+    /// A body that FIGHTS BACK keeps swinging until this absolute tick (0 = not
+    /// fighting). Set on a blow landing on a wardTypeFightsBack type; cleared
+    /// by the clock, a floor, or a death.
+    std::int64_t fightUntil = 0;
+    /// Its own monotonic swing-draw sequence: ONE draw per street swing, keyed
+    /// on the actor (context.draw(actorId, swingSeq)), exactly the shape the
+    /// Gull's npcSwingSeq_ keeps -- order-independent across bodies, no shared
+    /// index, no new stream.
+    std::int32_t swingSeq = 0;
+
+    /// --- STREET SENSES leg (c): the Watch's eyes ---------------------------
+    ///
+    /// For a MilitiaWatch body only, and every field an absolute tick or a
+    /// byte, hashed. The Gull's tickWatch keeps the same three facts on the
+    /// room (noticedAtTick_, watchCause_, the stance); here they live on the
+    /// watchman, since there are thirteen of him.
+    ///
+    /// THE 12 s GIVE-UP LATCH: he is Closing while this is ahead of the clock
+    /// (kWatchClosingSeconds from the cause he saw, refreshed by a cause seen
+    /// again); out of his sight is out of it at once (actClose). 0 = not
+    /// closing.
+    std::int64_t closingUntil = 0;
+    /// WHY: 0 none, else 1 + AlarmSeverity (Steel 1, Blow 2, Kill 3). A blow
+    /// or a killing is arrested at reach; steel alone is a DEMAND with a
+    /// grace.
+    std::uint8_t closeCause = 0;
+    /// THE SHEATHE GRACE (D5, kSheatheGraceSeconds): a blade seen up buys the
+    /// player this long to put it away. Past it with the blade still out and
+    /// it is an Offence (heat, no arrest by itself), fired once. 0 = none.
+    std::int64_t sheatheBy = 0;
+
     /// DERIVED AND NOT HASHED: the cached route and where along it the body is.
     /// Reproducible from (position, target, world) by construction -- the
     /// search is pure -- so hashing it would only pin an optimisation.
@@ -548,6 +652,19 @@ struct WardActor {
     /// for anyone to see, which is the one way being eaten could go on hurting
     /// a street after the mouse is gone.
     [[nodiscard]] bool visible() const noexcept { return !dead && downedUntil < 0; }
+    /// STREET SENSES leg (b). A PERSON LYING ON THE STREET -- struck down on
+    /// the brawl floor, or slain -- who is off the board (holds no tile, sees
+    /// nothing, is nobody's target) and is DRAWN FLAT where he fell. The one
+    /// predicate the renderer reads beside visible(); a caught mouse is off
+    /// the board and NOT drawn (it is in a stomach), and a starved body is
+    /// gone the way it always was.
+    [[nodiscard]] bool floored() const noexcept {
+        return isPerson(type) && (slain || (!dead && downedUntil >= 0));
+    }
+    /// Bloodied at or under a quarter of the sheet, the Gull's own line.
+    [[nodiscard]] bool bloodied() const noexcept {
+        return isBloodied(static_cast<std::int32_t>(hp), kActorHealth);
+    }
     /// Home is a ROOM, not a bed, and the difference is load-bearing.
     ///
     /// A household is one to five people and one home cell, and only one body
@@ -818,6 +935,109 @@ static_assert(kAlarmRadiusSteel <= kAlarmRadiusBlow && kAlarmRadiusBlow <= kAlar
 [[nodiscard]] std::string_view alarmSeverityName(AlarmSeverity severity) noexcept;
 
 // ---------------------------------------------------------------------------
+// STREET SENSES leg (b): a body to hit
+// ---------------------------------------------------------------------------
+//
+// The gap analysis' first finding, verbatim: "THE STREET HAS NO BODY TO HIT.
+// A swing on the Tarwalk hits nobody because the sightline raycast walks the
+// 17-body tavern roster only." Leg (b) puts the district's people on the ray
+// and gives them the Gull's own sheet -- kActorHealth, strike(), classifyFight,
+// the Subdue floor and the Lethal rules -- through the SAME roll the swing
+// already owns. Nothing here draws: the sightline is the S9 draw-free
+// projection, the blow's roll is the Tavern's drawForPlayerAction, and a body
+// that swings back draws exactly once per swing on its own key, the Gull's
+// npcSwingSeq_ shape. The tavern roster is never touched (one person, one
+// roster -- SHIP-NOTE's promotion alternative is refused).
+
+/// Seconds a struck man lies on the brawl floor before he stands. The Gull's
+/// downed rule is +1 hp/s and stand at a quarter: six seconds from nothing to
+/// six points, so the street gets the same six.
+inline constexpr std::int64_t kStreetFloorSeconds = 6;
+/// What he stands up with: a quarter of the sheet, the Gull's own line.
+inline constexpr std::int32_t kStreetStandHp = kActorHealth / 4;
+/// Seconds a body that FIGHTS BACK keeps swinging after the last blow it took.
+/// Twenty is a fight, not a grudge: long enough to close and land, short enough
+/// that a player who walks off is not followed across the district.
+inline constexpr std::int64_t kStreetFightSeconds = 20;
+/// Where a STRUCK non-fighter's Safety is driven: the Kill floor -- the lane
+/// brief's "routs ... with a longer panic". A bystander who saw the blow runs
+/// ~78 s (kPanicSafetyBlow); the man who took it runs ~105 s.
+inline constexpr std::int32_t kStruckPanicFloor = kPanicSafetyKill;
+/// Reach for a street swing at the player, in tiles: adjacent. The ward walks
+/// in whole tiles, so the Gull's kMeleeReach (a tile and a quarter, Q8) is one
+/// tile of Chebyshev here; the client re-checks the Q8 reach before the blow
+/// lands (a swing thrown at a player who stepped back whiffs, the Gull's rule).
+inline constexpr std::int32_t kStreetReachTiles = 1;
+
+static_assert(kStreetStandHp > 0, "a man cannot stand up dead");
+static_assert(kStruckPanicFloor <= kPanicSafetyBlow,
+              "the man who took the blow must run at least as long as the man who saw it");
+
+/// One blow a fighting-back body threw AT THE PLAYER this tick: who, and the
+/// ONE roll he drew for it. The client resolves it on the player's sheet
+/// through the Gull's own player-side rules (Tavern::takeStreetBlow) -- the
+/// population never sees the player's hit points, and the Gull never sees
+/// the ward's draw stream.
+struct StreetBlow {
+    std::int32_t attackerId = -1;
+    std::uint64_t roll = 0;
+};
+
+// ---------------------------------------------------------------------------
+// STREET SENSES leg (c): the Watch on the beats gets eyes
+// ---------------------------------------------------------------------------
+//
+// The gap analysis' third finding: "THE STREET WATCH IS SCENERY. Thirteen
+// MilitiaWatch WardActors by day and seven by night walk beats with no eyes."
+// Leg (c) gives them the Gull's own Watch, on the street's terms: a watchman
+// who SEES cause (the same three-clause notice rule, at kWatchSightTiles --
+// the number the Gull's canSeePlayer and the room's witnessCount are held to
+// by static_assert) goes Closing, walks the player down with the halt in his
+// mouth, gives it up at kWatchClosingSeconds or the moment the player is out
+// of his sight (the Gull's own two rules, the roofs' whole counterplay), and
+// ARRESTS AT REACH through the ONE seam the Gull's Cull uses (the client
+// lands it: Tavern::arrestByStreetWatch -> CrimeLedger::charge /
+// seizeAtArrest / openHearing, TAKEN TO THE MISSION, the hearing). Steel seen
+// up is a DEMAND first (SHEATHE IT, kSheatheGraceSeconds), and only an
+// Offence (kSheatheOffenceHeat, no arrest by itself) if it stays out -- D5.
+// Deference is absolute: a presented Wielder is never closed on (D6). Nothing
+// here draws.
+
+/// Seconds a watchman gives a raised blade before it goes on the paper. D5's
+/// "6 s sheathe grace".
+inline constexpr std::int64_t kSheatheGraceSeconds = 6;
+/// What ignoring it costs: D5's "heat +10 for ignoring it; an unsheathed blade
+/// with no blow is an Offence". Heat, not paper -- ten is a sixth of a
+/// warrant, and the Watch heard it.
+inline constexpr std::int32_t kSheatheOffenceHeat = 10;
+/// Reach for a street arrest, in tiles: adjacent, the same tile-reach a street
+/// swing has (the ward walks in whole tiles).
+inline constexpr std::int32_t kStreetArrestReachTiles = kStreetReachTiles;
+
+static_assert(kSheatheGraceSeconds < kWatchClosingSeconds,
+              "a blade must be given its grace before the chase it started runs out");
+
+/// What a closing watchman did this tick, for the client to say and to land.
+enum class WatchEventKind : std::uint8_t {
+    /// He started Closing on a blow or a killing: the halt line.
+    Halt = 0,
+    /// He started Closing on steel: the SHEATHE IT demand, the grace running.
+    Sheathe = 1,
+    /// The grace ran out with the blade still up: an Offence, heat, no arrest.
+    Offence = 2,
+    /// He reached the player with a blow or a killing behind it: the arrest,
+    /// landed by the client through the Gull's own seam.
+    Arrest = 3,
+};
+
+struct WatchEvent {
+    std::int32_t watchmanId = -1;
+    WatchEventKind kind = WatchEventKind::Halt;
+    /// The cause he closed on, 1 + AlarmSeverity, for the arrest's own record.
+    std::uint8_t cause = 0;
+};
+
+// ---------------------------------------------------------------------------
 // the system
 // ---------------------------------------------------------------------------
 
@@ -828,6 +1048,10 @@ struct WardCensus {
     std::int32_t beasts = 0;
     std::int32_t alive = 0;
     std::int32_t starved = 0;
+    /// STREET SENSES leg (b). Dead by violence (not counted in `starved`), and
+    /// persons lying on the brawl floor right now (alive, off the board).
+    std::int32_t slain = 0;
+    std::int32_t downed = 0;
     std::int32_t byType[kWardTypeCount] = {};
     std::int32_t byPolicy[kWardPolicyCount] = {};
     /// The labouring trades, and how many of them the ward failed to feed.
@@ -934,6 +1158,106 @@ public:
     /// alarmRadius(severity), which is the three tiers.
     std::int32_t alarm(std::int32_t x, std::int32_t y, std::int32_t band,
                        std::int32_t radiusTiles, AlarmSeverity severity) noexcept;
+
+    /// STREET SENSES (9a completion). WHERE THE PLAYER IS, in whole tiles,
+    /// pushed by the client every step the way Tavern::setPlayer is -- so a
+    /// frightened body FLEES AWAY FROM HIM rather than in a drawn direction
+    /// (actFlee reads it), and the street Watch (9b) has somewhere to close on.
+    /// HASHED, because a policy reads it: a scalar behaviour depends on that the
+    /// hash does not cover is a divergence nothing would ever see (hash_into's
+    /// own standing note). A run that never calls this -- the gate's own
+    /// population workload before its assault leg, a session that never syncs --
+    /// leaves the player UNKNOWN, and every body then flees exactly as 9a's
+    /// drawn step did, so the no-player arithmetic is untouched by construction.
+    void setPlayer(std::int32_t x, std::int32_t y, std::int32_t band) noexcept;
+    /// Whether a player position has been pushed at all. Off until the first
+    /// setPlayer; the flee-away vector needs a FROM before it means anything.
+    [[nodiscard]] bool playerKnown() const noexcept { return playerKnown_; }
+
+    // --- STREET SENSES leg (b): a body to hit ------------------------------
+
+    /// THE SAME RAY, THIS ROSTER. The first PERSON the crosshair passes through
+    /// among the district's people, by the identical integer projection
+    /// Tavern::sightlineTarget casts (COMBAT-ACTION-SPEC.md section 2.1):
+    /// along = (fx*dx + fy*dy) >> 16, perp = (-fy*dx + fx*dy) >> 16, on the line
+    /// iff 0 < along <= kMeleeReach and |perp| <= kBodyHalfWidth, the smallest
+    /// `along` wins, ties to the lower id. A body's Q8 position is its tile's
+    /// centre (it walks in whole tiles). Standing persons only: a floored body
+    /// is not a target, a beast is not on the street's ray in v1. Draw-free.
+    /// `alongOut` (optional) receives the winner's along so the client can pick
+    /// the nearer of this roster and the Gull's -- one rule, two rosters.
+    [[nodiscard]] const WardActor* sightlineTarget(std::int32_t playerXQ8,
+                                                   std::int32_t playerYQ8, std::int32_t band,
+                                                   Angle yaw,
+                                                   std::int64_t* alongOut = nullptr) const noexcept;
+
+    /// WHO SAW IT. Standing persons -- the Watch included, `exceptId` excluded
+    /// -- who can see (x, y) on `band` from within `radiusTiles` by the three
+    /// clauses alarm() keeps (same band, Chebyshev range, line of sight). The
+    /// murder law's own N SAW IT for a street killing, counted BEFORE the body
+    /// drops, exactly as Tavern::slayActor counts the room. Draw-free, const.
+    [[nodiscard]] std::int32_t witnessesInSight(std::int32_t x, std::int32_t y,
+                                                std::int32_t band, std::int32_t radiusTiles,
+                                                std::int32_t exceptId) const noexcept;
+
+    /// A BLOW LANDED on a street body -- resolved by the caller on the Gull's
+    /// own strike() (the sheet handed over as a Fighter, the roll the swing
+    /// already owned), and applied here: `hpAfter` is what strike() left, `blow`
+    /// what it did, `lethal` the class it landed under. Downed under BRAWL is
+    /// the floor (downedUntil, kStreetFloorSeconds, stands at kStreetStandHp);
+    /// downed under LETHAL is death (slain + dead, the tile freed, never
+    /// stands) -- except a crowned Evictor blow, which only ever puts a man
+    /// out. A struck fighter-back type starts swinging (fightUntil); anybody
+    /// else struck is driven to kStruckPanicFloor and routs through the leg
+    /// (a) flee plan. And the CROWD is alarmed at the tile -- Kill for a
+    /// killing, Blow for a blow. Answers whether the body died. The tavern
+    /// roster is never touched.
+    bool applyStreetBlow(std::int32_t actorId, std::int32_t hpAfter, const Blow& blow,
+                         bool lethal) noexcept;
+
+    /// The blows fighting-back bodies threw AT THE PLAYER this tick (one draw
+    /// each, on the thrower's own key), read-and-clear. A MAILBOX, not state:
+    /// produced inside tick() and consumed by the client the same step (or
+    /// drained by the gate's driver), so it is deliberately not hashed -- no
+    /// ward behaviour ever reads it. The client resolves each on the player's
+    /// sheet through Tavern::takeStreetBlow after its own reach check.
+    [[nodiscard]] std::vector<StreetBlow> takeStreetBlows();
+
+    // --- STREET SENSES leg (c): the Watch --------------------------------------
+
+    /// DEFERENCE (D6, absolute). Pushed by the client beside setPlayer from
+    /// Tavern::playerPresentsAsWielder(): while true no watchman is ever given
+    /// cause, and one already Closing stands down. HASHED -- it decides what
+    /// the Watch does.
+    void setPlayerPresentsAsWielder(bool presents) noexcept;
+    [[nodiscard]] bool playerPresentsAsWielder() const noexcept { return playerWielder_; }
+    /// A HOUSE'S OWN BRAWL IS NOT STREET BUSINESS (found chasing
+    /// test_scripted_lines.cpp's nemesis line). Pushed by the client beside
+    /// setPlayer from Tavern::playerInside(): the Gull's ground floor and the
+    /// open Tarwalk share a band (both 19) and alarm()'s own line-of-sight
+    /// deliberately crosses an open door -- the owner's rule, "a killing at
+    /// the bar reaches the Tarwalk only through the door" -- so the ordinary
+    /// crowd still panics at a fight it heard through the door exactly as leg
+    /// (a)/(b) shipped. The WATCH is a different question: a sanctioned house
+    /// brawl is Watchman Cull's jurisdiction, through the Gull's own separate
+    /// watch (WatchCause, violenceInView), never a beat cop's on the strength
+    /// of what leaked past the threshold. While true no watchman is ever given
+    /// cause. HASHED -- it decides what the Watch does, same as the deference
+    /// flag beside it.
+    void setPlayerIndoors(bool indoors) noexcept;
+    [[nodiscard]] bool playerIndoors() const noexcept { return playerIndoors_; }
+    /// What the Watch did this tick -- halts, demands, offences and arrests at
+    /// reach -- read-and-clear, the blows' own mailbox rule (unhashed; the
+    /// client says the lines and lands the arrest through the Gull's seam; the
+    /// gate's driver drains and counts).
+    [[nodiscard]] std::vector<WatchEvent> takeWatchEvents();
+    /// Whether this watchman is Closing right now (the latch ahead of the
+    /// clock). For the HUD's mark and the cases.
+    [[nodiscard]] bool watchmanClosing(std::int32_t actorId) const noexcept;
+    /// The three-clause notice rule asked of ONE body about the pushed player:
+    /// standing, same band, within kWatchSightTiles, line of sight. The same
+    /// question the Gull's canSeePlayer asks of its roster, on this one.
+    [[nodiscard]] bool canSeePlayer(const WardActor& actor) const noexcept;
 
     [[nodiscard]] std::int32_t secondOfDay() const noexcept { return secondOfDay_; }
     [[nodiscard]] std::int64_t currentTick() const noexcept { return tick_; }
@@ -1070,6 +1394,31 @@ private:
     void actPursue(WardActor& actor, const TickContext& context);
     void actLoiter(WardActor& actor, const TickContext& context);
     void actFlee(WardActor& actor, const TickContext& context);
+    /// One DRAWN orthogonal step -- the 9a panic step, and the loiter shuffle.
+    /// Shared so the loiter shuffle stays direction-blind while actFlee's own
+    /// away-vector (STREET SENSES) is the frightened body's alone: a loiterer
+    /// near a known player mills, it does not back away from him.
+    void oneDrawnStep(WardActor& actor, const TickContext& context);
+    /// STREET SENSES (9a completion). Frightened and STANDING: face the fright
+    /// (the pushed player, when known) and hold the tile. Draw-free, moves
+    /// nobody -- the whole difference between a shopkeeper and a serf when the
+    /// street goes bad. See wardTypeCowers.
+    void actCower(WardActor& actor);
+    /// STREET SENSES leg (b). FIGHTING BACK: close on the pushed player (a
+    /// route step toward his tile) and, in reach, throw ONE blow -- one draw on
+    /// this body's own key and sequence, posted to the mailbox for the client
+    /// to land on the player's sheet. Ends when the clock runs out.
+    void actBrawl(WardActor& actor, const TickContext& context);
+    /// STREET SENSES leg (b). A struck man gets up: a quarter of the sheet, on
+    /// his own tile if it is free, else the first free standable neighbour in
+    /// the fixed order, else he lies a little longer (the den-full rule).
+    /// Answers whether he stood.
+    bool standUp(WardActor& actor);
+    /// STREET SENSES leg (c). THE WATCH CLOSING: out of sight is out of it;
+    /// else face him, close (the route step), and at reach arrest (a blow or a
+    /// killing behind it) or hold the demand (steel), firing the Offence once
+    /// when the grace runs out. Draw-free.
+    void actClose(WardActor& actor);
     void actHunt(WardActor& actor);
 
     /// The throttled prey probe: an ascending scan of the MICE ONLY -- see
@@ -1153,6 +1502,25 @@ private:
     std::int64_t clockOffset_ = 0;
     std::int64_t tick_ = 0;
     std::int64_t lastProvisionDay_ = -1;
+
+    /// STREET SENSES (9a completion). The player's tile, pushed by setPlayer and
+    /// read by actFlee for its away-vector (and by the street Watch, 9b). Whole
+    /// tiles, integer, hashed. Unknown until the first push -- see setPlayer.
+    std::int32_t playerX_ = 0;
+    std::int32_t playerY_ = 0;
+    std::int32_t playerBand_ = 0;
+    bool playerKnown_ = false;
+
+    /// STREET SENSES leg (b). The mailbox of blows thrown at the player this
+    /// tick -- see takeStreetBlows. Not hashed, by design (its own note).
+    std::vector<StreetBlow> pendingBlows_;
+    /// STREET SENSES leg (c). The Watch's own mailbox (takeWatchEvents), the
+    /// same rule; and the deference flag, HASHED (the Watch reads it).
+    std::vector<WatchEvent> pendingWatch_;
+    bool playerWielder_ = false;
+    /// A house's own brawl is not street business -- see setPlayerIndoors.
+    /// HASHED, the deference flag's own reason.
+    bool playerIndoors_ = false;
 
     WardTypeTable types_;
     std::vector<WardActor> actors_;

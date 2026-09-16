@@ -498,6 +498,25 @@ void WorldScene::refresh(SceneDescription& scene, const render::Camera& camera, 
             at.tint4 = slots[3];
             at.pane = slots[4];
             at.mode = p.mode;
+            if (p.billboard && p.instance.piece < specs.size()) {
+                // A halo faces the eye: its quad's normal (local +Z, which
+                // a clockwise yaw takes to (-sin, cos) in XZ) along the
+                // line to the eye, and its origin -- the bottom-left corner
+                // of a quad `w` wide and `h` tall -- half a width back
+                // along its own +X from the anchor, half a height down.
+                // Two-sided, so which way along the line is all one.
+                const PieceSpec& spec = specs[p.instance.piece];
+                const float dx = eye.x - p.anchor.x;
+                const float dz = eye.z - p.anchor.z;
+                const float yaw = (dx * dx + dz * dz) > 1.0e-6F ? std::atan2(-dx, dz) : 0.0F;
+                const float w = spec.width * at.scale.x;
+                const float h = spec.height * at.scale.y;
+                const float c = std::cos(yaw);
+                const float s = std::sin(yaw);
+                at.yaw = yaw < 0.0F ? yaw + 2.0F * kPi : yaw;
+                at.position = Vec3{p.anchor.x - 0.5F * w * c, p.anchor.y - 0.5F * h + spec.lift,
+                                   p.anchor.z - 0.5F * w * s};
+            }
             scene.statics.push_back(at);
             ++stats_.piecesInstanced;
         }

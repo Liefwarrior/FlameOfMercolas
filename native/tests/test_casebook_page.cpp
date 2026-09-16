@@ -513,7 +513,11 @@ TEST_CASE("the two views swap the detail pane and nothing else") {
     CHECK(session.casebookTab() == CasebookTab::Case);
     Framebuffer theCase(960, 540);
     drawCasebookPage(theCase, session.casebookPageState());
-    // Wraps back.
+    // THE PULL PACK: a third view, the CASES shelf, and then the wrap.
+    session.cycleCasebookTab(1);
+    CHECK(session.casebookTab() == CasebookTab::Cases);
+    Framebuffer shelf(960, 540);
+    drawCasebookPage(shelf, session.casebookPageState());
     session.cycleCasebookTab(1);
     CHECK(session.casebookTab() == CasebookTab::Leads);
 
@@ -540,6 +544,39 @@ TEST_CASE("the two views swap the detail pane and nothing else") {
         }
     }
     CHECK(movedInDetail > 200);
+    // THE SHELF KEEPS THE SAME LIST TOO -- the same rows in the same cells
+    // -- but with NO ROW FILLED: on the shelf its own highlight is the one
+    // armed cursor, so the only pixels that move in the list are the
+    // highlighted row's own fill (the first row: the cursor is on it).
+    std::size_t shelfMovedOutsideCursorRow = 0;
+    std::size_t shelfMovedInCursorRow = 0;
+    std::size_t shelfMovedInDetail = 0;
+    // The fill carries a hairline of its accent one scaled pixel above and
+    // below the row (drawInvertedFill's own eye candy), so the band is the
+    // row plus that hairline each side.
+    const int cursorRowY0 = geo.master.y - geo.metric.scale;
+    const int cursorRowY1 = geo.master.y + geo.metric.cellH() + geo.metric.scale;
+    for (int y = geo.master.y; y < geo.master.y + geo.master.h; ++y) {
+        for (int x = geo.master.x; x < geo.master.x + geo.master.w; ++x) {
+            if (leads.pixels()[leads.index(x, y)] != shelf.pixels()[shelf.index(x, y)]) {
+                if (y >= cursorRowY0 && y < cursorRowY1) {
+                    ++shelfMovedInCursorRow;
+                } else {
+                    ++shelfMovedOutsideCursorRow;
+                }
+            }
+        }
+    }
+    for (int y = geo.detail.y; y < geo.detail.y + geo.detail.h; ++y) {
+        for (int x = geo.detail.x; x < geo.detail.x + geo.detail.w; ++x) {
+            if (leads.pixels()[leads.index(x, y)] != shelf.pixels()[shelf.index(x, y)]) {
+                ++shelfMovedInDetail;
+            }
+        }
+    }
+    CHECK(shelfMovedOutsideCursorRow == 0);
+    CHECK(shelfMovedInCursorRow > 0);
+    CHECK(shelfMovedInDetail > 200);
 }
 
 TEST_CASE("the composed casebook is what the Menu draws on its Journal tile") {
@@ -654,15 +691,39 @@ TEST_CASE("the nav band always names the key that closes the book") {
 
     for (const auto& size : {std::pair{320, 180}, std::pair{640, 360}, std::pair{960, 540},
                              std::pair{1280, 720}, std::pair{1920, 1080}}) {
-        // BOTH VIEWS, because the second entry's label changes with the tab and
-        // a wider label is a narrower column.
-        for (const CasebookTab tab : {CasebookTab::Leads, CasebookTab::Case}) {
+        // ALL THREE VIEWS, because the second and third entries' labels
+        // change with the tab and a wider label is a narrower column. SIX
+        // entries since the PULL PACK merged with NINE AND THE STICKS: LEAD,
+        // the next view, the commit, FOLLOW, NOTES, CLOSE.
+        for (const CasebookTab tab : {CasebookTab::Leads, CasebookTab::Case, CasebookTab::Cases}) {
             page.tab = tab;
             const CasebookPageMetrics geo = casebookPageMetrics(page, size.first, size.second);
             INFO("at ", size.first, "x", size.second, " nav rows ", geo.navRows, " shown ",
                  geo.navShown, "/", geo.navEntries);
             REQUIRE(geo.usable);
-            CHECK(geo.navEntries == 4);
+            // NINE AND THE STICKS: the ring's keys ride the foot of every
+            // page of it, on both hands -- plus the PULL PACK's own FOLLOW
+            // slot, riding along on every view too.
+            CHECK(geo.navEntries == 6);
+            CHECK(geo.navShown == geo.navEntries);
+        }
+    }
+
+    // And with a pad in hand, LB RB NOTES, the same rule: every entry shown,
+    // at every size, the second row spent where one will not hold six.
+    session.noteInputDevice(InputDevice::Pad);
+    CasebookPageState padPage = session.casebookPageState();
+    REQUIRE(padPage.navPageKeys == "LB RB");
+    REQUIRE(padPage.closeKey == "B");
+    for (const auto& size : {std::pair{320, 180}, std::pair{640, 360}, std::pair{960, 540},
+                             std::pair{1280, 720}, std::pair{1920, 1080}}) {
+        for (const CasebookTab tab : {CasebookTab::Leads, CasebookTab::Case}) {
+            padPage.tab = tab;
+            const CasebookPageMetrics geo = casebookPageMetrics(padPage, size.first, size.second);
+            INFO("pad at ", size.first, "x", size.second, " nav rows ", geo.navRows, " shown ",
+                 geo.navShown, "/", geo.navEntries);
+            REQUIRE(geo.usable);
+            CHECK(geo.navEntries == 6);
             CHECK(geo.navShown == geo.navEntries);
         }
     }
@@ -890,6 +951,7 @@ TEST_CASE("the tab row answers the mouse: LEADS and THE CASE are findable, order
 
     int leadsX = -1;
     int caseX = -1;
+    int shelfX = -1;
     int rowY = -1;
     for (int py = 0; py < geo.master.y; py += 2) {
         for (int px = 0; px < 960; px += 2) {
@@ -909,11 +971,16 @@ TEST_CASE("the tab row answers the mouse: LEADS and THE CASE are findable, order
             if (at == 1 && caseX < 0) {
                 caseX = px;
             }
+            if (at == 2 && shelfX < 0) {
+                shelfX = px;
+            }
         }
     }
     REQUIRE(leadsX >= 0);
     REQUIRE(caseX >= 0);
+    REQUIRE(shelfX >= 0);
     CHECK(leadsX < caseX);
+    CHECK(caseX < shelfX);
     CHECK(rowY < geo.master.y);
     // The master list still answers as itself -- the tab row took nothing
     // from the lead hit-test.

@@ -114,7 +114,7 @@ std::uint64_t sceneHash(const SceneDescription& scene) noexcept {
     Fnv1a64 h;
     // A format tag first, so a future field added to the byte image cannot
     // collide with an old image by accident.
-    h.mixU32(0x53434E34U);  // "SCN4" -- the static pieces were appended by the S lane
+    h.mixU32(0x53434E35U);  // "SCN5" -- the rig's pitch, clip, frame and socket joined the hands
 
     mixVec3(h, scene.camera.position);
     mixVec3(h, scene.camera.target);
@@ -190,6 +190,11 @@ std::uint64_t sceneHash(const SceneDescription& scene) noexcept {
     mixVec3(h, hands.rigOffset);
     h.mixF32(hands.rigYaw);
     h.mixF32(hands.rigScale);
+    h.mixF32(hands.rigPitch);
+    h.mixU8(hands.rigClip);
+    h.mixF32(hands.rigFrame);
+    mixVec3(h, hands.socketOffset);
+    mixVec3(h, hands.socketRotation);
     mixRgba(h, hands.tint);
     h.mixU64(static_cast<std::uint64_t>(hands.parts.size()));
     for (const ViewmodelPart& part : hands.parts) {

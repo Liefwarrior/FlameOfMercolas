@@ -10,6 +10,7 @@
 #include "granadad/content/ascii.hpp"
 #include "granadad/sim/docks.hpp"
 #include "granadad/sim/engine_error.hpp"
+#include "granadad/sim/fixed.hpp"
 
 namespace granadad::sim {
 
@@ -93,6 +94,9 @@ std::string_view wardPolicyName(WardPolicy policy) noexcept {
         case WardPolicy::Pursue: return "pursue";
         case WardPolicy::Loiter: return "loiter";
         case WardPolicy::Hunt: return "hunt";
+        case WardPolicy::Cower: return "cower";
+        case WardPolicy::Brawl: return "brawl";
+        case WardPolicy::Close: return "close";
     }
     return "loiter";
 }
@@ -788,8 +792,34 @@ WardPolicy WardPopulation::selectPolicy(const WardActor& actor) const {
 
     // FLEE is a hard gate, not a curve: below CRITICAL and nothing else
     // matters, above it and it is not a consideration at all.
+    //
+    // STREET SENSES (9a completion): the same gate, two responses, split by
+    // type. A shopkeeper, a priest and a disciple COWER -- frightened but
+    // standing -- where everyone else FLEES. The gazetteer's own ladder ("Serfs
+    // flee -> Shopkeepers bucket-chain -> Priest walks in"), and the roadmap's
+    // reaction table verbatim ("shopkeepers and priests cower"). Same priority,
+    // so the type is the whole of the choice; a beast is never here (its Safety
+    // is the hunt's business, and wardTypeCowers is false for it, so a beast
+    // driven under the gate still FLEES the way 9a's mouse always did).
     if (safety < kNeedCritical) {
-        offer(stats.fleePriority, WardPolicy::Flee);
+        offer(stats.fleePriority,
+              wardTypeCowers(actor.type) ? WardPolicy::Cower : WardPolicy::Flee);
+    }
+
+    // STREET SENSES leg (b). A MAN IN A FIGHT IS IN THE FIGHT: while his clock
+    // runs and the player is known, BRAWL out-scores everything -- the fright
+    // gate included, since a sailor who has decided to swing does not also
+    // run. Priced above the whole band so nothing needs re-tuning under it.
+    if (actor.fightUntil > tick_ && playerKnown_) {
+        offer(2000, WardPolicy::Brawl);
+    }
+    // STREET SENSES leg (c). THE WATCH CLOSING: a watchman with cause and a
+    // clock walks the player down. Under Brawl -- a blow on him makes him a
+    // brawler and he fights rather than arrests -- and over everything else;
+    // never for a presented Wielder (deference, absolute).
+    if (actor.type == WardType::MilitiaWatch && actor.closingUntil > tick_ && playerKnown_ &&
+        !playerWielder_) {
+        offer(1900, WardPolicy::Close);
     }
 
     // SEEK_FOOD, with the hysteresis: once it has won it keeps winning until
@@ -1201,7 +1231,69 @@ void WardPopulation::actReturnHome(WardActor& actor) {
 }
 
 void WardPopulation::actFlee(WardActor& actor, const TickContext& context) {
-    // One drawn orthogonal step, leash ignored. Panic is not a plan.
+    // One orthogonal step, leash ignored. Panic is not a plan -- there is no
+    // route search, no destination, just AWAY, one tile at a time, and the
+    // needs machinery settles the body when Safety climbs back over the gate.
+    static constexpr std::int32_t dx[4] = {-1, 1, 0, 0};
+    static constexpr std::int32_t dy[4] = {0, 0, -1, 1};
+
+    // STREET SENSES (9a completion): AWAY FROM THE PLAYER, when the client has
+    // pushed where he is (setPlayer) and he is on this body's own band -- the
+    // orthogonal steps ordered by how much each one OPENS the gap, largest
+    // first, so a frightened serf breaks directly away from the knife instead
+    // of in a drawn direction. Draw-free: the order is a pure function of the
+    // offset. Ties (a body dead level with the player on one axis) fall to the
+    // fixed order below them, so two runs cannot disagree.
+    if (playerKnown_ && actor.band == playerBand_) {
+        const std::int32_t ox = actor.x - playerX_;
+        const std::int32_t oy = actor.y - playerY_;
+        // Score each orthogonal step by the increase in Chebyshev distance from
+        // the player it buys; keep the fixed index order as the tie-break.
+        const std::int32_t here = std::max(std::abs(ox), std::abs(oy));
+        int order[4] = {0, 1, 2, 3};
+        std::int32_t gain[4];
+        for (int n = 0; n < 4; ++n) {
+            gain[n] = std::max(std::abs(ox + dx[n]), std::abs(oy + dy[n])) - here;
+        }
+        // A tiny stable insertion sort by descending gain; four elements, no
+        // draw, deterministic tie-break on the original index.
+        for (int i = 1; i < 4; ++i) {
+            const int key = order[i];
+            const std::int32_t keyGain = gain[key];
+            int j = i - 1;
+            while (j >= 0 && gain[order[j]] < keyGain) {
+                order[j + 1] = order[j];
+                --j;
+            }
+            order[j + 1] = key;
+        }
+        for (int i = 0; i < 4; ++i) {
+            const int n = order[i];
+            const std::int32_t nx = actor.x + dx[n];
+            const std::int32_t ny = actor.y + dy[n];
+            const std::int32_t nz = tiles_->stepBand(actor.x, actor.y, actor.band, nx, ny);
+            if (nz != TileQuery::kNoBand && tryEnter(actor, nx, ny, nz)) {
+                actor.route.clear();
+                actor.routeTargetX = -1;
+                actor.facing = facingFromDelta(dx[n], dy[n]);
+                return;
+            }
+        }
+        // Boxed in on every away step: fall through to the drawn shuffle so a
+        // cornered body still mills rather than freezing dead still.
+    }
+
+    // No player pushed (a beast's panic, or a run that never called setPlayer,
+    // which is the gate before its assault leg), or boxed in: the 9a drawn
+    // step. Kept byte-for-byte so the no-player arithmetic is untouched.
+    oneDrawnStep(actor, context);
+}
+
+void WardPopulation::oneDrawnStep(WardActor& actor, const TickContext& context) {
+    // One drawn orthogonal step, leash ignored. The 9a panic step verbatim, and
+    // the loiter shuffle -- direction-blind, so a loiterer near a known player
+    // mills rather than backing away (that away-vector is a frightened body's
+    // alone, in actFlee).
     static constexpr std::int32_t dx[4] = {-1, 1, 0, 0};
     static constexpr std::int32_t dy[4] = {0, 0, -1, 1};
     const std::uint64_t roll = context.draw(cellKey(actor.x, actor.y, actor.band), 7);
@@ -1219,6 +1311,153 @@ void WardPopulation::actFlee(WardActor& actor, const TickContext& context) {
     }
 }
 
+void WardPopulation::actCower(WardActor& actor) {
+    // STREET SENSES (9a completion). Frightened, and STANDING: a shopkeeper does
+    // not bolt his own counter and a priest walks toward the trouble, not away
+    // from it. So a cowering body holds its tile and turns to FACE the fright --
+    // the pushed player, when the client has said where he is. Draw-free, moves
+    // nobody; the recovery rate (decayNeeds) settles him exactly as it settles a
+    // fleeing serf, so a shopkeeper is wary for as long as a serf runs and then
+    // goes back to his counter. A run with no player pushed leaves him facing
+    // where he was, which is the honest thing to do with no fright to face.
+    if (playerKnown_ && actor.band == playerBand_) {
+        actor.facing = facingFromDelta(playerX_ - actor.x, playerY_ - actor.y);
+    }
+    actor.route.clear();
+    actor.routeTargetX = -1;
+}
+
+void WardPopulation::actBrawl(WardActor& actor, const TickContext& context) {
+    // STREET SENSES leg (b). Only ever selected with fightUntil > tick_ and a
+    // player pushed (selectPolicy's own gate).
+    if (actor.band == playerBand_ &&
+        chebyshev(actor.x, actor.y, playerX_, playerY_) <= kStreetReachTiles) {
+        // IN REACH: face him and SWING. ONE draw, on this body's own key and
+        // its own monotonic sequence -- the Gull's npcSwingSeq_ shape, so two
+        // bodies swinging on one tick never share a roll and the order they
+        // tick in cannot matter. The key is the actor id under its own salt
+        // word so it can never collide with the loiter gate's (id, 3). The roll
+        // goes to the mailbox and the client lands it on the player's sheet
+        // (Tavern::takeStreetBlow) after its own Q8 reach check -- a player
+        // who stepped back is whiffed at, never cancelled on, and the roll is
+        // spent either way. The population never sees his hit points.
+        actor.facing = facingFromDelta(playerX_ - actor.x, playerY_ - actor.y);
+        const std::uint64_t roll =
+            context.draw(static_cast<std::uint64_t>(actor.id) ^ 0x53574E47u, actor.swingSeq);
+        actor.swingSeq = wrap_add(actor.swingSeq, 1);
+        pendingBlows_.push_back(StreetBlow{actor.id, roll});
+        actor.route.clear();
+        actor.routeTargetX = -1;
+        return;
+    }
+    // OUT OF REACH: close on him, by the same route step every other plan
+    // walks (the leash is nobody's business in a fight). A player on another
+    // band or off the walking ground is simply not reached, and the clock runs
+    // the fight out.
+    (void)stepToward(actor, playerX_, playerY_, playerBand_);
+}
+
+bool WardPopulation::standUp(WardActor& actor) {
+    // STREET SENSES leg (b). Up off the floor: his own tile if it is free, else
+    // the first free standable neighbour in the fixed order -- deterministic,
+    // no draw -- else not yet (the caller lies him down a little longer, the
+    // den-full rule). prev* is snapped with the tile so the renderer does not
+    // slide him up off the ground from where he was drawn lying.
+    static constexpr std::int32_t dx[9] = {0, -1, 1, 0, 0, -1, 1, -1, 1};
+    static constexpr std::int32_t dy[9] = {0, 0, 0, -1, 1, -1, -1, 1, 1};
+    for (int n = 0; n < 9; ++n) {
+        const std::int32_t tx = actor.x + dx[n];
+        const std::int32_t ty = actor.y + dy[n];
+        const std::int32_t tz =
+            n == 0 ? actor.band : tiles_->stepBand(actor.x, actor.y, actor.band, tx, ty);
+        if (tz == TileQuery::kNoBand) {
+            continue;
+        }
+        if (occupancy_.at(cellKey(tx, ty, tz)) != 0) {
+            continue;
+        }
+        actor.x = tx;
+        actor.y = ty;
+        actor.band = tz;
+        actor.prevX = tx;
+        actor.prevY = ty;
+        actor.prevBand = tz;
+        occupancy_.add(cellKey(tx, ty, tz), actor.id);
+        actor.downedUntil = -1;
+        // A quarter of the sheet, the Gull's stand-at-quarter rule.
+        actor.hp = static_cast<std::int16_t>(kStreetStandHp);
+        actor.route.clear();
+        actor.routeTargetX = -1;
+        return true;
+    }
+    return false;
+}
+
+bool WardPopulation::canSeePlayer(const WardActor& actor) const noexcept {
+    // The Gull's canSeePlayer, asked of a street body: standing, the player's
+    // band, within kWatchSightTiles (the room's own eight), and a line to him.
+    // The same three clauses alarm() and witnessesInSight keep.
+    if (!playerKnown_ || !actor.visible() || actor.band != playerBand_) {
+        return false;
+    }
+    if (chebyshev(actor.x, actor.y, playerX_, playerY_) > kWatchSightTiles) {
+        return false;
+    }
+    if (actor.x == playerX_ && actor.y == playerY_) {
+        return true;
+    }
+    return tiles_->lineOfSight(actor.x, actor.y, playerX_, playerY_, playerBand_);
+}
+
+void WardPopulation::actClose(WardActor& actor) {
+    // STREET SENSES leg (c). Only ever selected with closingUntil ahead of the
+    // clock, a player pushed, and no deference (selectPolicy's own gate).
+    //
+    // OUT OF HIS SIGHT IS OUT OF IT -- the Gull's own first rule, the whole
+    // counterplay and the reason the roofs are worth having. The 12 s clock is
+    // the second rule and runs on its own (closingUntil).
+    if (!canSeePlayer(actor)) {
+        actor.closingUntil = 0;
+        actor.closeCause = 0;
+        actor.sheatheBy = 0;
+        actor.route.clear();
+        actor.routeTargetX = -1;
+        return;
+    }
+    actor.facing = facingFromDelta(playerX_ - actor.x, playerY_ - actor.y);
+    const bool inReach = actor.band == playerBand_ &&
+                         chebyshev(actor.x, actor.y, playerX_, playerY_) <= kStreetArrestReachTiles;
+    if (actor.closeCause == 1 + static_cast<std::uint8_t>(AlarmSeverity::Steel)) {
+        // STEEL ALONE IS A DEMAND, NOT AN ARREST (D5). He closes and holds at
+        // reach with SHEATHE IT in his mouth; past the grace with the blade
+        // still up it is an Offence -- heat, once, no arrest by itself -- and
+        // he keeps standing there for as long as the blade keeps him closing.
+        if (actor.sheatheBy > 0 && tick_ >= actor.sheatheBy) {
+            actor.sheatheBy = 0;
+            pendingWatch_.push_back(
+                WatchEvent{actor.id, WatchEventKind::Offence, actor.closeCause});
+        }
+        if (!inReach) {
+            (void)stepToward(actor, playerX_, playerY_, playerBand_);
+        }
+        return;
+    }
+    if (inReach) {
+        // AT REACH, WITH A BLOW OR A KILLING BEHIND IT: the arrest, landed by
+        // the client through the Gull's one seam. The latch is spent on it --
+        // the man is taken, or the client refused (custody, the rope), and
+        // either way this chase is over; the next cause seen starts another.
+        pendingWatch_.push_back(WatchEvent{actor.id, WatchEventKind::Arrest, actor.closeCause});
+        actor.closingUntil = 0;
+        actor.closeCause = 0;
+        actor.sheatheBy = 0;
+        actor.route.clear();
+        actor.routeTargetX = -1;
+        return;
+    }
+    (void)stepToward(actor, playerX_, playerY_, playerBand_);
+}
+
 void WardPopulation::actLoiter(WardActor& actor, const TickContext& context) {
     // Standing about is standing about. One step in eight is a shuffle, so a
     // street of loiterers reads as alive rather than as a row of statues, and
@@ -1226,7 +1465,10 @@ void WardPopulation::actLoiter(WardActor& actor, const TickContext& context) {
     if ((context.draw(static_cast<std::uint64_t>(actor.id), 3) & 7u) != 0) {
         return;
     }
-    actFlee(actor, context);
+    // The shuffle is DIRECTION-BLIND -- the drawn step, never the flee's
+    // away-vector. A body standing about near the player is loitering, not
+    // fleeing, and must not back away from him just for being looked at.
+    oneDrawnStep(actor, context);
 }
 
 // --- #80: the hunt ---------------------------------------------------------
@@ -1679,6 +1921,9 @@ void WardPopulation::tickActor(WardActor& actor, const TickContext& context) {
         case WardPolicy::Pursue: actPursue(actor, context); break;
         case WardPolicy::Loiter: actLoiter(actor, context); break;
         case WardPolicy::Hunt: actHunt(actor); break;
+        case WardPolicy::Cower: actCower(actor); break;
+        case WardPolicy::Brawl: actBrawl(actor, context); break;
+        case WardPolicy::Close: actClose(actor); break;
         case WardPolicy::Dead: break;
     }
     // A HUNT THAT STOPPED BEING THE PLAN LETS GO OF ITS PREY. Without this a
@@ -1703,6 +1948,12 @@ void WardPopulation::tickActor(WardActor& actor, const TickContext& context) {
 void WardPopulation::tick(const TickContext& context) {
     tick_ = context.tick();
     secondOfDay_ = static_cast<std::int32_t>((tick_ + clockOffset_) % kSecondsPerDay);
+    // STREET SENSES leg (b): the mailbox holds THIS tick's blows only. A
+    // consumer that did not drain last tick's has let them whiff, which is the
+    // mailbox contract and keeps it bounded. Leg (c): the Watch's mailbox, the
+    // same rule.
+    pendingBlows_.clear();
+    pendingWatch_.clear();
     runDailyProvision();
     for (WardActor& actor : actors_) {
         if (actor.dead) {
@@ -1716,9 +1967,15 @@ void WardPopulation::tick(const TickContext& context) {
             if (tick_ < actor.downedUntil) {
                 continue;
             }
-            if (!revivePrey(actor)) {
-                // The den is full. Wait rather than stack: one body per square
-                // is the owner's rule and a revive is not an exception to it.
+            // STREET SENSES leg (b): the same latch, two revivals. A PERSON on
+            // the brawl floor STANDS UP where he fell (standUp); a mouse in a
+            // stomach comes back out of the den (revivePrey). Both wait rather
+            // than stack when their square is taken.
+            const bool up = isPerson(actor.type) ? standUp(actor) : revivePrey(actor);
+            if (!up) {
+                // The den is full, or the street is. Wait rather than stack:
+                // one body per square is the owner's rule and a revive is not
+                // an exception to it.
                 actor.downedUntil = tick_ + kSensePeriodTicks;
                 continue;
             }
@@ -2044,12 +2301,9 @@ std::int32_t WardPopulation::alarm(std::int32_t x, std::int32_t y, std::int32_t 
     std::int32_t saw = 0;
     for (WardActor& actor : actors_) {
         // THE TAPROOM'S REFUSALS, IN THE STREET'S TERMS. A corpse is not a
-        // witness and neither is a body in a stomach (visible), a beast is not
-        // asked (witnessesAround's own rule), and THE WATCH HOLDS: a watchman
-        // who ran from a drawn knife would be the wrong reaction, and the right
-        // one -- Respond, 9b -- sequences after the justice build. He stands
-        // where he is, exactly as a bouncer holds the door against steel.
-        if (!actor.visible() || !isPerson(actor.type) || actor.type == WardType::MilitiaWatch) {
+        // witness and neither is a body in a stomach (visible), and a beast is
+        // not asked (witnessesAround's own rule).
+        if (!actor.visible() || !isPerson(actor.type)) {
             continue;
         }
         // SAME BAND. The taproom's witness filter learned this the hard way
@@ -2058,8 +2312,66 @@ std::int32_t WardPopulation::alarm(std::int32_t x, std::int32_t y, std::int32_t 
         if (actor.band != band) {
             continue;
         }
+        const std::int32_t distance = chebyshev(actor.x, actor.y, x, y);
+        if (actor.type == WardType::MilitiaWatch) {
+            // STREET SENSES leg (c): THE WATCH HAS EYES. He is not frightened
+            // -- he holds, as 9a left him -- he is given CAUSE, if he can see
+            // it at his own sight range (kWatchSightTiles, the Gull's eight,
+            // never further than the alarm carries) with a line to it, and
+            // never for a presented Wielder (deference, absolute). A blow or
+            // a killing is closed on and arrested at reach; steel alone is a
+            // demand with its grace. A cause seen again refreshes his clock;
+            // a bigger one escalates it and halts again.
+            //
+            // A HOUSE'S OWN BRAWL IS NOT STREET BUSINESS. The Gull's ground
+            // floor shares its band with the open Tarwalk outside it (both
+            // 19), and the line-of-sight clause below crosses an open door on
+            // purpose -- the owner's own rule, "a killing at the bar reaches
+            // the Tarwalk only through the door" -- so the ordinary crowd
+            // still panics at a fight it heard through the door exactly as
+            // leg (a)/(b) shipped (onWalkingGround was tried here first and
+            // proved no help at all: the Gull's own floor tiles answer yes to
+            // it same as the street does). The WATCH is a different
+            // question: policing a sanctioned house brawl is Watchman Cull's
+            // jurisdiction, through the Gull's own separate watch (WatchCause,
+            // violenceInView), never a beat cop's on the strength of what
+            // leaked past the threshold. Found by test_scripted_lines.cpp's
+            // nemesis line: Session::step's pre-existing per-step alarm (room
+            // HP falling under an escalated fight, unconditional on
+            // indoor/outdoor since leg (a)) was already reaching a watchman
+            // through the open door once the Watch stopped being skipped
+            // outright -- closing on the player mid-fight and arresting at
+            // reach (raw Chebyshev, the same "no wall" shape this alarm
+            // already lives with), clearing the room's brawl roster and
+            // ending the fight the arc was mid-way through. playerIndoors_ is
+            // the one fact Tavern::playerInside() can hand this file that the
+            // ward's own geometry cannot answer for itself.
+            if (playerWielder_ || playerIndoors_ ||
+                distance > std::min(radiusTiles, kWatchSightTiles)) {
+                continue;
+            }
+            if ((actor.x != x || actor.y != y) &&
+                !tiles_->lineOfSight(actor.x, actor.y, x, y, band)) {
+                continue;
+            }
+            const std::uint8_t cause = 1 + static_cast<std::uint8_t>(severity);
+            const bool wasClosing = actor.closingUntil > tick_;
+            actor.closingUntil = tick_ + kWatchClosingSeconds;
+            if (severity == AlarmSeverity::Steel) {
+                if (!wasClosing) {
+                    actor.closeCause = cause;
+                    actor.sheatheBy = tick_ + kSheatheGraceSeconds;
+                    pendingWatch_.push_back(WatchEvent{actor.id, WatchEventKind::Sheathe, cause});
+                }
+            } else if (!wasClosing || actor.closeCause < cause) {
+                actor.closeCause = cause;
+                actor.sheatheBy = 0;
+                pendingWatch_.push_back(WatchEvent{actor.id, WatchEventKind::Halt, cause});
+            }
+            continue;
+        }
         // WITHIN RANGE. Chebyshev, the metric witnessesAround already uses.
-        if (chebyshev(actor.x, actor.y, x, y) > radiusTiles) {
+        if (distance > radiusTiles) {
             continue;
         }
         // LINE OF SIGHT, the clause witnessesAround lacks and the street needs
@@ -2079,6 +2391,202 @@ std::int32_t WardPopulation::alarm(std::int32_t x, std::int32_t y, std::int32_t 
         }
     }
     return saw;
+}
+
+void WardPopulation::setPlayer(std::int32_t x, std::int32_t y, std::int32_t band) noexcept {
+    // The mirror of Tavern::setPlayer, in whole tiles: the client pushes where
+    // the player stands every step, and a frightened body flees away from it
+    // (actFlee) or turns to face it (actCower). HASHED, so this is the one
+    // declared shape of the move -- see the header on why a policy input the
+    // hash does not cover is a divergence nothing would ever catch.
+    playerX_ = x;
+    playerY_ = y;
+    playerBand_ = band;
+    playerKnown_ = true;
+}
+
+// --- STREET SENSES leg (b): a body to hit ------------------------------------
+
+const WardActor* WardPopulation::sightlineTarget(std::int32_t playerXQ8, std::int32_t playerYQ8,
+                                                  std::int32_t band, Angle yaw,
+                                                  std::int64_t* alongOut) const noexcept {
+    // VETO 1, THE SAME RULE ON THE OTHER ROSTER. Tavern::sightlineTarget's
+    // projection, line for line: the forward vector angle.hpp owns, along and
+    // perp in Q16 >> 16, on the line iff ahead within reach and within half a
+    // cell of the ray, smallest along wins, strictly-less so a tie is the lower
+    // id on every machine (actors_ is id order). A body's Q8 position is its
+    // tile centre -- the ward walks in whole tiles. Draw-free.
+    const std::int64_t fx = forward_x_q16(yaw);
+    const std::int64_t fy = forward_y_q16(yaw);
+    const WardActor* best = nullptr;
+    std::int64_t bestAlong = static_cast<std::int64_t>(kMeleeReach) + 1;
+    for (const WardActor& actor : actors_) {
+        // Standing persons on the player's band: a floored body is not a
+        // target, a beast is not on the street's ray in v1, and a body one
+        // floor up is not on the line whatever its (x, y) says.
+        if (!actor.visible() || !isPerson(actor.type) || actor.band != band) {
+            continue;
+        }
+        const std::int64_t dx = static_cast<std::int64_t>(q8_tile_centre(actor.x)) - playerXQ8;
+        const std::int64_t dy = static_cast<std::int64_t>(q8_tile_centre(actor.y)) - playerYQ8;
+        const std::int64_t along = (fx * dx + fy * dy) >> 16;
+        if (along <= 0 || along > kMeleeReach) {
+            continue;
+        }
+        const std::int64_t perp = (-fy * dx + fx * dy) >> 16;
+        if (perp > kBodyHalfWidth || perp < -kBodyHalfWidth) {
+            continue;
+        }
+        if (along < bestAlong) {
+            bestAlong = along;
+            best = &actor;
+        }
+    }
+    if (alongOut != nullptr) {
+        *alongOut = best != nullptr ? bestAlong : -1;
+    }
+    return best;
+}
+
+std::int32_t WardPopulation::witnessesInSight(std::int32_t x, std::int32_t y, std::int32_t band,
+                                              std::int32_t radiusTiles,
+                                              std::int32_t exceptId) const noexcept {
+    // alarm()'s three clauses, asked of everybody STANDING -- the Watch
+    // included (a watchman who saw a killing saw it; that he does not run is
+    // a different rule) -- with the victim left out. Dead men tell no tales
+    // and a body on the floor is not a witness: both are !visible().
+    std::int32_t seen = 0;
+    for (const WardActor& actor : actors_) {
+        if (actor.id == exceptId || !actor.visible() || !isPerson(actor.type)) {
+            continue;
+        }
+        if (actor.band != band) {
+            continue;
+        }
+        if (chebyshev(actor.x, actor.y, x, y) > radiusTiles) {
+            continue;
+        }
+        if ((actor.x != x || actor.y != y) && !tiles_->lineOfSight(actor.x, actor.y, x, y, band)) {
+            continue;
+        }
+        ++seen;
+    }
+    return seen;
+}
+
+bool WardPopulation::applyStreetBlow(std::int32_t actorId, std::int32_t hpAfter, const Blow& blow,
+                                     bool lethal) noexcept {
+    if (actorId < 0 || static_cast<std::size_t>(actorId) >= actors_.size()) {
+        return false;
+    }
+    WardActor& actor = actors_[static_cast<std::size_t>(actorId)];
+    if (!actor.visible() || !isPerson(actor.type)) {
+        return false;
+    }
+    // The sheet strike() left, written back. A whiff wrote nothing and
+    // changes nothing here -- the roll was spent by the caller, which is the
+    // whole of a whiff.
+    actor.hp = static_cast<std::int16_t>(std::max(0, hpAfter));
+    if (!blow.landed) {
+        return false;
+    }
+    bool died = false;
+    if (blow.downed) {
+        // OFF THE BOARD, the tile freed: the corpse's rule and the caught
+        // mouse's, for the same reason (a body on the ground must not seal a
+        // street). A fight he was in is over for him.
+        occupancy_.remove(cellKey(actor.x, actor.y, actor.band));
+        actor.route.clear();
+        actor.routeTargetX = -1;
+        actor.fightUntil = 0;
+        if (lethal && !blow.crowned) {
+            // A KILLING BLOW under lethal rules. slain says why, dead does the
+            // rest (never ticks, policy Dead, never stands). The crowned
+            // Evictor blow is the one exception the Gull keeps: it puts a man
+            // OUT, not open, even here.
+            actor.slain = true;
+            actor.dead = true;
+            actor.policy = WardPolicy::Dead;
+            actor.downedUntil = -1;
+            actor.hp = 0;
+            died = true;
+        } else {
+            // THE BRAWL FLOOR: down for kStreetFloorSeconds, then standUp.
+            actor.downedUntil = tick_ + kStreetFloorSeconds;
+            actor.hp = 0;
+        }
+    } else if (wardTypeFightsBack(actor.type)) {
+        // A SAILOR OR A THIEF SWINGS BACK: the fight clock, the Brawl policy.
+        actor.fightUntil = tick_ + kStreetFightSeconds;
+    } else if (actor.type != WardType::MilitiaWatch) {
+        // STRUCK AND STANDING, and not a fighter: he ROUTS -- the leg (a) flee
+        // plan, driven deeper than a bystander's fright. The Watch holds (leg
+        // (c) is what it does instead).
+        if (actor.needs[static_cast<std::size_t>(Need::Safety)] > kStruckPanicFloor) {
+            actor.needs[static_cast<std::size_t>(Need::Safety)] =
+                static_cast<std::int16_t>(kStruckPanicFloor);
+        }
+    }
+    // THE CROWD. A blow that landed on the open street alarms it at the tile
+    // -- a bar-fight punch is the house's business and reaches nobody outside,
+    // but a docker beaten in front of the fish market is exactly the scene the
+    // owner described. Kill for a killing (the widest, longest), Blow for a blow.
+    const AlarmSeverity severity = died ? AlarmSeverity::Kill : AlarmSeverity::Blow;
+    (void)alarm(actor.x, actor.y, actor.band, alarmRadius(severity), severity);
+    return died;
+}
+
+std::vector<StreetBlow> WardPopulation::takeStreetBlows() {
+    std::vector<StreetBlow> out;
+    out.swap(pendingBlows_);
+    return out;
+}
+
+// --- STREET SENSES leg (c): the Watch -------------------------------------------
+
+void WardPopulation::setPlayerPresentsAsWielder(bool presents) noexcept {
+    playerWielder_ = presents;
+    if (!presents) {
+        return;
+    }
+    // DEFERENCE IS ABSOLUTE: a watchman already closing stands down, exactly as
+    // the Gull's tickWatch drops its stance for a presented Wielder.
+    for (WardActor& actor : actors_) {
+        if (actor.type == WardType::MilitiaWatch && actor.closingUntil > 0) {
+            actor.closingUntil = 0;
+            actor.closeCause = 0;
+            actor.sheatheBy = 0;
+        }
+    }
+}
+
+void WardPopulation::setPlayerIndoors(bool indoors) noexcept {
+    playerIndoors_ = indoors;
+    if (!indoors) {
+        return;
+    }
+    // A watchman already closing on a fight that has gone indoors stands
+    // down, the same shape as deference: whatever leaked through the door
+    // stops being his business the moment there is a wall in the way of the
+    // rest of it.
+    for (WardActor& actor : actors_) {
+        if (actor.type == WardType::MilitiaWatch && actor.closingUntil > 0) {
+            actor.closingUntil = 0;
+            actor.closeCause = 0;
+            actor.sheatheBy = 0;
+        }
+    }
+}
+
+std::vector<WatchEvent> WardPopulation::takeWatchEvents() {
+    std::vector<WatchEvent> out;
+    out.swap(pendingWatch_);
+    return out;
+}
+
+bool WardPopulation::watchmanClosing(std::int32_t actorId) const noexcept {
+    const WardActor* actor = byId(actorId);
+    return actor != nullptr && actor->type == WardType::MilitiaWatch && actor->closingUntil > tick_;
 }
 
 // --- reporting -------------------------------------------------------------
@@ -2110,16 +2618,26 @@ WardCensus WardPopulation::census() const {
             ++out.prey;
         }
         if (actor.dead) {
-            ++out.starved;
-            if (labouring) {
-                ++out.serfsStarved;
+            // STREET SENSES leg (b): a killing is not a famine. The balance
+            // bar is written against starvation and must not read a murdered
+            // docker as a food economy failing.
+            if (actor.slain) {
+                ++out.slain;
+            } else {
+                ++out.starved;
+                if (labouring) {
+                    ++out.serfsStarved;
+                }
             }
             continue;
         }
         ++out.alive;
         if (actor.downedUntil >= 0) {
-            // Caught, and not yet back out of the den. Alive, on the roll, and
-            // not on the board.
+            // Caught, and not yet back out of the den -- or, leg (b), a person
+            // on the brawl floor. Alive, on the roll, and not on the board.
+            if (isPerson(actor.type)) {
+                ++out.downed;
+            }
             continue;
         }
         if (isPrey(actor.type)) {
@@ -2190,6 +2708,27 @@ std::string WardPopulation::reportLine() const {
     out += " mice=" + content::dec(static_cast<std::uint64_t>(roll.preyUp)) + "/" +
            content::dec(static_cast<std::uint64_t>(roll.prey));
     out += " ate=" + content::dec(static_cast<std::uint64_t>(catches_));
+    // STREET SENSES (9a completion): the street reacting, SHOWN in the line the
+    // gate compares -- flee is a serf running, cower a shopkeeper standing his
+    // ground. A report that shows the crowd scatter under the gate's own
+    // violence leg is worth more than an assertion that it is compared.
+    out += " flee=" +
+           content::dec(static_cast<std::uint64_t>(
+               roll.byPolicy[static_cast<std::size_t>(WardPolicy::Flee)]));
+    out += " cower=" +
+           content::dec(static_cast<std::uint64_t>(
+               roll.byPolicy[static_cast<std::size_t>(WardPolicy::Cower)]));
+    // STREET SENSES leg (b): the violence, SHOWN -- a man on the floor, a man
+    // fighting back, a man dead by a blow -- on the line the gate compares.
+    out += " downed=" + content::dec(static_cast<std::uint64_t>(roll.downed));
+    out += " brawl=" +
+           content::dec(static_cast<std::uint64_t>(
+               roll.byPolicy[static_cast<std::size_t>(WardPolicy::Brawl)]));
+    out += " slain=" + content::dec(static_cast<std::uint64_t>(roll.slain));
+    // STREET SENSES leg (c): the Watch closing, SHOWN on the compared line.
+    out += " close=" +
+           content::dec(static_cast<std::uint64_t>(
+               roll.byPolicy[static_cast<std::size_t>(WardPolicy::Close)]));
     out += " hour=" + content::dec(static_cast<std::uint64_t>(secondOfDay_ / 3600)) + "]";
     return out;
 }
@@ -2262,6 +2801,21 @@ void WardPopulation::hash_into(HashSink& sink) const {
         sink.put_long(static_cast<std::uint64_t>(actor.legRetryUntil));
         sink.put_long(static_cast<std::uint64_t>(actor.downedUntil));
         sink.put_byte(actor.homeOnTheRoof ? 1u : 0u);
+        // STREET SENSES leg (b): THE COMBAT SHEET, appended -- the second
+        // declared move of the program. Every one is read by behaviour: hp
+        // decides bloodied and downed, slain decides a corpse, fightUntil
+        // decides Brawl, swingSeq decides the next roll. Same rule as every
+        // scalar above it: what a policy reads, the hash covers.
+        sink.put_short(static_cast<std::uint32_t>(actor.hp));
+        sink.put_byte(actor.slain ? 1u : 0u);
+        sink.put_long(static_cast<std::uint64_t>(actor.fightUntil));
+        sink.put_int(static_cast<std::uint32_t>(actor.swingSeq));
+        // STREET SENSES leg (c): THE WATCH'S EYES, appended -- the third
+        // declared move. The latch decides Close, the cause decides arrest or
+        // demand, the grace decides the offence: all read by behaviour.
+        sink.put_long(static_cast<std::uint64_t>(actor.closingUntil));
+        sink.put_byte(static_cast<std::uint32_t>(actor.closeCause));
+        sink.put_long(static_cast<std::uint64_t>(actor.sheatheBy));
     }
     for (const Home& home : homes_) {
         sink.put_int(static_cast<std::uint32_t>(home.larder));
@@ -2274,6 +2828,21 @@ void WardPopulation::hash_into(HashSink& sink) const {
     sink.put_long(static_cast<std::uint64_t>(shoves_));
     sink.put_long(static_cast<std::uint64_t>(catches_));
     sink.put_long(static_cast<std::uint64_t>(futileChases_));
+    // STREET SENSES (9a completion): the pushed player position, folded because
+    // actFlee's away-vector and actCower's facing both READ it -- a behaviour
+    // input the hash must cover. THE ONE DECLARED MOVE of this leg: appended,
+    // never inserted, and constant zero in any run that never pushes a player
+    // (the gate's own workload before its assault leg), so those runs move only
+    // by these four fixed bytes and not by their arithmetic.
+    sink.put_int(static_cast<std::uint32_t>(playerX_));
+    sink.put_int(static_cast<std::uint32_t>(playerY_));
+    sink.put_int(static_cast<std::uint32_t>(playerBand_));
+    sink.put_byte(playerKnown_ ? 1u : 0u);
+    // STREET SENSES leg (c): deference, folded because the Watch reads it.
+    sink.put_byte(playerWielder_ ? 1u : 0u);
+    // A house's own brawl is not street business -- folded for the same
+    // reason: the Watch reads it too.
+    sink.put_byte(playerIndoors_ ? 1u : 0u);
 }
 
 }  // namespace granadad::sim

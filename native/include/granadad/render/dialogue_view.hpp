@@ -245,6 +245,10 @@ struct DialogueViewState {
     /// drops the clause -- the pad has no L, and its B BACK already names
     /// the way out.
     std::string letterDownLine = "L PUTS IT DOWN";
+    /// Whether the topic rows print their digits ("6 PICK THEIR POCKET"). A
+    /// keyboard's digits pick a row outright; a pad has none, walks the list
+    /// on the D-pad and confirms on A, so its rows print the words alone.
+    bool showDigits = true;
 };
 
 /// The topic grid, AS IT WAS AUTHORED AND AS IT IS NO LONGER DRAWN.
@@ -375,7 +379,8 @@ struct TopicRow {
 /// function is therefore a case over the drawing path, and the mutation that
 /// shipped green in S4 empties the vector it returns.
 [[nodiscard]] std::vector<TopicRow> topicRowsFor(const std::vector<std::string>& topics, int page,
-                                                 int cursor, int capacity);
+                                                 int cursor, int capacity,
+                                                 bool showDigits = true);
 
 /// WHAT THE BOTTOM BAND WILL ACTUALLY DRAW, at this frame size, with no
 /// framebuffer involved.

@@ -202,18 +202,22 @@ countdown row in the top-right stack. Recasting refreshes the clock; sleeping
 runs it out. The warmth rows still refuse honestly: nothing in the ward reads
 heat on a body yet, and a success toast over a no-op is a lie.
 
-Four keys are the rest of the game:
+Nine verbs are the rest of the game, and the pad has the same nine (`docs/design/CONTROLS-SPEC.md` is the whole table):
 
 | | |
 |---|---|
-| **`Q`** | **look at what is here.** The investigation verb. |
-| **`E`** | **talk to whoever is in front of you.** Anyone, anywhere. |
-| **`J`** | **your casebook.** The Chart tile inside it is the *investigation's* map — known ground, open leads with a bearing from where you are actually standing, and who among the named will talk to you. |
-| **`M`** | **the ward map.** New: a full-screen top-down plan of the whole district — streets, walls, the harbour, and every authored door and way name placed on the ground where it belongs. Your own position and facing are the light wedge. `M` or `ESC` closes it. On a pad it is the Select button. |
-| **`C`** | **your character sheet.** |
-| **`F1`** | **every key**, in the game, paged. |
+| **`MOUSE1`** | **swing.** Hands down, one press brings them up and hits whoever is in front of you. Hold it to swing hard. `RT` on a pad. |
+| **`MOUSE2`** | **guard.** Held. `LT` on a pad. |
+| **`C`** | **cast** what the grimoire has readied. `RB` on a pad. |
+| **`E`** | **use whatever is in reach.** Talk, open, lift, pick, rob, look, by your stance and what you face. Fists up and nothing in reach, it lowers them. `A` on a pad. |
+| **`LCTRL`** | **sneak.** Tap or hold. `B` on a pad, and `B` backs out of every page. |
+| **`SPACE`** | **jump.** `Y` on a pad. |
+| **`LSHIFT`** | **run.** The stick does it on a pad. |
+| **`J`** | **your notes.** The sheet, the chart (the *investigation's* map, with bearings from where you stand), the letters, the casebook. `[` and `]` page on past them to the ward map and the grimoire. `D-pad up` on a pad, `LB` `RB` to page. |
+| **`ESC`** | **pause.** Resume, wait, controls, settings, quit. `START` on a pad. |
+| **`M`** | **the ward map.** A full-screen top-down plan of the whole district. Your own position and facing are the light wedge. `M` or `ESC` closes it. On a pad it is a page of your notes, one `RB` past the casebook. |
 
-`F2` rebinds any of them, saved to `granadad-controls.cfg` beside the exe.
+The controls page (PAUSE, then CONTROLS) lists every key, and SETTINGS rebinds any of them, saved to `granadad-controls.cfg` beside the exe. `T` or `SELECT` opens the wait page straight off; the digits ready a quick slot; the wheel or `D-pad` left and right step the bar.
 
 **The ward map, because the owner asked for it in as many words** — "It's
 too difficult to locate places like the mission, let's give the player a map

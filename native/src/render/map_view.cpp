@@ -589,44 +589,60 @@ constexpr int kMinMapCells = 30;
 /// exactly what twenty-four did.
 constexpr int kMinDetailCells = 22;
 
-[[nodiscard]] std::string_view tabName(MapTab tab) noexcept {
-    switch (tab) {
-        case MapTab::People:
-            return "PEOPLE";
-        case MapTab::Index:
-            return "INDEX";
-        case MapTab::Legend:
-            return "LEGEND";
-        case MapTab::Overview:
-        default:
-            return "OVERVIEW";
-    }
-}
-
 /// The four verbs along the foot of the page, in their RAISED (tutor) form --
 /// the form the band is planned against, so its geometry holds still while the
 /// words fade (UI-EA-SPEC sec. 2: at rest the band is bare keycaps and the
 /// zoom rung; the verb words ride at state.tutor's strength). Built in one
 /// place because the COMPOSITION has to know how wide the band is before it
 /// can decide how many rows to give it -- see navRowsFor.
+/// The compass point spelled out: the reticle's "E" is a keycap on this
+/// page, so the FACE IT bearing says EAST. Sixteen-point words, nine and
+/// the sticks' one copy fix on this page.
+[[nodiscard]] std::string compassWord(std::string_view point) {
+    struct Word {
+        std::string_view point;
+        const char* word;
+    };
+    static constexpr Word kWords[] = {
+        {"N", "NORTH"},     {"NE", "NORTHEAST"}, {"E", "EAST"},      {"SE", "SOUTHEAST"},
+        {"S", "SOUTH"},     {"SW", "SOUTHWEST"}, {"W", "WEST"},      {"NW", "NORTHWEST"},
+    };
+    for (const Word& row : kWords) {
+        if (row.point == point) {
+            return row.word;
+        }
+    }
+    return std::string(point);
+}
+
 [[nodiscard]] std::vector<PanelOption> navOptions(const DistrictMapState& state) {
     // SHIP NOTE MOVE 3: the keys arrive on the state, worded for whichever
-    // device last spoke -- see DistrictMapState's own note.
-    return {
+    // device last spoke -- see DistrictMapState's own note. NINE AND THE
+    // STICKS: a fifth slot, NOTES, when the state names the page keys -- the
+    // map is a page of the notes and the bumpers leave it for its
+    // neighbours; an empty navPageKeys (every hand-built state) draws the
+    // four-slot band it always drew.
+    std::vector<PanelOption> out{
         PanelOption{state.navMoveKeys, "PLACE", "", kCursorTone, InkRole::Dim, false},
-        PanelOption{state.navTabKeys, std::string(tabName(state.tab)), "", kCursorTone,
-                    InkRole::Dim, false},
+        // The STEP, not the view you are on -- the tab row above already
+        // lights the current view; "LT RT OVERVIEW" read as a key that
+        // opens OVERVIEW, which is the one thing it does not do.
+        PanelOption{state.navTabKeys, "VIEW", "", kCursorTone, InkRole::Dim, false},
         PanelOption{state.navZoomKeys, "ZOOM",
                     std::to_string(state.zoom + 1) + "/" + std::to_string(mapZoomSteps()),
                     kCursorTone, InkRole::Dim, false},
-        PanelOption{state.navCloseKey, "CLOSE", "", kCursorTone, InkRole::Dim, false},
     };
+    if (!state.navPageKeys.empty()) {
+        out.push_back(PanelOption{state.navPageKeys, "NOTES", "", kCursorTone, InkRole::Dim, false});
+    }
+    out.push_back(PanelOption{state.navCloseKey, "CLOSE", "", kCursorTone, InkRole::Dim, false});
+    return out;
 }
 
 [[nodiscard]] OptionListStyle navListStyle() {
     OptionListStyle style;
     style.showKeys = true;
-    style.maxColumns = 4;
+    style.maxColumns = 5;
     style.gutterCells = 2;
     // NO minRows: the BAND decides the height, and navRowsFor decides the band.
     style.minRows = 0;
@@ -652,9 +668,9 @@ constexpr int kMinDetailCells = 22;
 [[nodiscard]] int navRowsFor(const DistrictMapState& state, const PanelRect& interior,
                              const PanelMetric& metric) {
     const PanelRect oneRow{interior.x, interior.y, interior.w, metric.cellH()};
-    const OptionListPlan plan =
-        planOptionList(navOptions(state), oneRow, metric, navListStyle());
-    return plan.columns * plan.rows >= 4 ? 1 : 2;
+    const std::vector<PanelOption> options = navOptions(state);
+    const OptionListPlan plan = planOptionList(options, oneRow, metric, navListStyle());
+    return plan.columns * plan.rows >= static_cast<int>(options.size()) ? 1 : 2;
 }
 
 }  // namespace
@@ -834,12 +850,19 @@ namespace {
 /// off the same function, so the row a click hits is the row that was drawn
 /// -- the second-description-of-a-layout defect, avoided the way the
 /// composition itself avoids pixel constants.
-[[nodiscard]] const std::vector<PanelTab>& mapViewTabs() {
-    static const std::vector<PanelTab> tabs{
+[[nodiscard]] const std::vector<PanelTab>& mapViewTabs(bool showDigits) {
+    // The digits are a keyboard's (they pick a view outright); a pad's tab
+    // row is the four names and the triggers step them. Both lists are the
+    // ONE order mapTabAtPixel inverts.
+    static const std::vector<PanelTab> keyed{
         PanelTab{"1", "OVERVIEW"}, PanelTab{"2", "PEOPLE"},
         PanelTab{"3", "INDEX"},    PanelTab{"4", "LEGEND"},
     };
-    return tabs;
+    static const std::vector<PanelTab> bare{
+        PanelTab{"", "OVERVIEW"}, PanelTab{"", "PEOPLE"},
+        PanelTab{"", "INDEX"},    PanelTab{"", "LEGEND"},
+    };
+    return showDigits ? keyed : bare;
 }
 
 /// A tiny filled triangle, for the one wedge this page draws. Edge functions
@@ -943,7 +966,8 @@ int mapTabAtPixel(const DistrictMapState& state, int frameWidth, int frameHeight
     const PanelRect band{layout.interior.x,
                          layout.interior.y + layout.metric.heightOf(layout.tabRow),
                          layout.interior.w, layout.metric.cellH()};
-    return tabRowTabAt(band, layout.metric, "", mapViewTabs(), static_cast<int>(state.tab),
+    return tabRowTabAt(band, layout.metric, "", mapViewTabs(state.showDigits),
+                       static_cast<int>(state.tab),
                        state.readout, px, py);
 }
 
@@ -1000,7 +1024,7 @@ void drawDistrictMap(Framebuffer& target, const DistrictMapState& state) {
     } else {
         // mapViewTabs() is the ONE list -- mapTabAtPixel inverts the same row,
         // so the row a click hits is the row that was drawn (FLOW, sec. 4 #8).
-        drawTabRow(target, frame.band(layout.tabRow, 1), metric, "", mapViewTabs(),
+        drawTabRow(target, frame.band(layout.tabRow, 1), metric, "", mapViewTabs(state.showDigits),
                    static_cast<int>(state.tab), state.readout, kCursorTone, alpha);
     }
 
@@ -1371,7 +1395,9 @@ void drawDistrictMap(Framebuffer& target, const DistrictMapState& state) {
         const std::int32_t dy = ay - py;
         const std::int32_t paces = static_cast<std::int32_t>(std::lround(
             std::sqrt(static_cast<double>(dx) * dx + static_cast<double>(dy) * dy)));
-        const std::string way(sim::compass_point(sim::bearingTo(px, py, ax, ay)));
+        // THE WHOLE WORD. "(E)" after FACE IT read as a keycap -- the E key
+        // -- one letter from the verb's own keycap; EAST is a bearing.
+        const std::string way(compassWord(sim::compass_point(sim::bearingTo(px, py, ax, ay))));
         const bool standingIn = place.contains(px, py);
         // THE ZERO-PACES PREDICATE (UI-EA-SPEC sec. 4 #12, SHIP-NOTE's top
         // polish item): within two paces of the landing, the ward stops

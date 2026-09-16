@@ -417,7 +417,13 @@ TEST_CASE("the viewmodel is described from the sim's own hand and hashes") {
     CHECK(downRight.x > 0.0F);
     CHECK(downLeft.x < 0.0F);
     CHECK(partOf(hands, ViewmodelPartId::Weapon) == nullptr);
-    CHECK(hands.rigOffset.y < kViewmodelRigOffset.y);
+    // The glb path with the hands down: the block clip at its first frame
+    // (the hips), at the guard framing -- the clip's own motion lowers them.
+    CHECK(hands.rigClip == 5U);
+    CHECK(hands.rigFrame == doctest::Approx(0.0F));
+    CHECK(hands.rigPitch == doctest::Approx(viewmodelGuardPlacement(ViewmodelKind::Fists).pitch));
+    // And the rig itself sunk under the frame's bottom edge.
+    CHECK(hands.rigOffset.y < viewmodelGuardPlacement(ViewmodelKind::Fists).offset.y - 0.5F);
 
     // THE RAISED REST: the pose tables' own idle with the hands up, at
     // re-entry -- what a hand-built pose is (handsUp defaults to up, the
@@ -425,7 +431,9 @@ TEST_CASE("the viewmodel is described from the sim's own hand and hashes") {
     ViewmodelPose raised;
     ViewmodelInstance rest;
     poseViewmodel(rest, ViewmodelKind::Fists, raised, Rgba8{});
-    CHECK(rest.rigOffset.y == kViewmodelRigOffset.y);
+    CHECK(rest.rigOffset.y == doctest::Approx(viewmodelGuardPlacement(ViewmodelKind::Fists).offset.y));
+    CHECK(rest.rigClip == 5U);
+    CHECK(rest.rigFrame == doctest::Approx(kViewmodelGuardFrame));
     REQUIRE(partOf(rest, ViewmodelPartId::RightFist) != nullptr);
     REQUIRE(partOf(rest, ViewmodelPartId::LeftFist) != nullptr);
     const Vec3 restRight = partOf(rest, ViewmodelPartId::RightFist)->position;
@@ -450,7 +458,8 @@ TEST_CASE("the viewmodel is described from the sim's own hand and hashes") {
     hands = viewmodelInstance(session);
     REQUIRE(partOf(hands, ViewmodelPartId::RightFist) != nullptr);
     CHECK(std::fabs(partOf(hands, ViewmodelPartId::RightFist)->position.y - restRight.y) < 0.02F);
-    CHECK(hands.rigOffset.y == kViewmodelRigOffset.y);
+    CHECK(hands.rigFrame == doctest::Approx(kViewmodelGuardFrame));
+    CHECK(std::fabs(hands.rigOffset.y - viewmodelGuardPlacement(ViewmodelKind::Fists).offset.y) < 0.01F);
     session.tavern().lowerPlayerHands();
     session.step(sim::MoveInput{});
     CHECK_FALSE(session.viewmodel().handsUp);
@@ -465,7 +474,7 @@ TEST_CASE("the viewmodel is described from the sim's own hand and hashes") {
     hands = viewmodelInstance(session);
     REQUIRE(partOf(hands, ViewmodelPartId::RightFist) != nullptr);
     CHECK(partOf(hands, ViewmodelPartId::RightFist)->position.y < restRight.y - 0.08F);
-    CHECK(hands.rigOffset.y < kViewmodelRigOffset.y);
+    CHECK(hands.rigFrame == doctest::Approx(0.0F));
 
     // The hash covers the hands: the same session twice is the same digest,
     // one step of a charge is another.
@@ -820,4 +829,226 @@ TEST_CASE("the washes are overlay pixels over the 3D frame") {
     CHECK(report.worstPartial <= 2);
     // And the composite moved under the wash at the open patch.
     CHECK(pixelAt(composite, px, py) != pixelAt(world, px, py));
+}
+
+TEST_CASE("the weapon socket, the framing and the clip policy are pure per kind and state") {
+    // THE SOCKET PER CLASS. Bare fists hold nothing: zero. Every weapon --
+    // the club, the dagger and the sword -- hangs by one hammer grip in the
+    // Hand_R bone's own frame: a quarter turn the negative way about X, so
+    // the weapon's +Y (its blade, its head) leaves along the bone's -Z (the
+    // thumb side of the fist) instead of down +Y (the wrist), and a slide of
+    // nine centimetres down the fingers, three into the palm, ten along the
+    // grip so the grip's centre lies in the curled fingers. The byte-keyed
+    // twins the adapter calls agree with the typed ones, and only the sword
+    // is fused into its arms glb.
+    const ViewmodelSocket none = viewmodelSocket(ViewmodelKind::Fists);
+    CHECK(none.offset.x == 0.0F);
+    CHECK(none.offset.y == 0.0F);
+    CHECK(none.offset.z == 0.0F);
+    CHECK(none.rotation.x == 0.0F);
+    for (const ViewmodelKind kind : {ViewmodelKind::Club, ViewmodelKind::Dagger, ViewmodelKind::Sword}) {
+        const ViewmodelSocket socket = viewmodelSocket(kind);
+        CHECK(socket.rotation.x == doctest::Approx(-3.14159265358979323846F * 0.5F));
+        CHECK(socket.rotation.y == 0.0F);
+        CHECK(socket.rotation.z == 0.0F);
+        CHECK(socket.offset.x == doctest::Approx(-0.09F));
+        CHECK(socket.offset.y == doctest::Approx(0.03F));
+        CHECK(socket.offset.z == doctest::Approx(-0.10F));
+        const ViewmodelSocket byByte = viewmodelSocketOf(static_cast<std::uint8_t>(kind));
+        CHECK(byByte.offset.x == socket.offset.x);
+        CHECK(byByte.rotation.x == socket.rotation.x);
+    }
+    CHECK(viewmodelWeaponFused(ViewmodelKind::Sword));
+    CHECK_FALSE(viewmodelWeaponFused(ViewmodelKind::Club));
+    CHECK_FALSE(viewmodelWeaponFused(ViewmodelKind::Fists));
+    CHECK(viewmodelWeaponFusedOf(3));
+    CHECK_FALSE(viewmodelWeaponFusedOf(200));
+    CHECK(viewmodelSocketOf(200).offset.x == 0.0F);
+
+    // THE FRAMING. The guard leans the rig back about the eye (a positive
+    // pitch: what is in front lifts) with its feet below and a little
+    // behind the eye for the fists, and further below, turned a hair left,
+    // for the sword, whose guard is the blade across the chest. The block
+    // pushes the fists' rig toward the eye; the cast drops and turns it so
+    // the thrown off hand lands centre-frame. Each is its own place.
+    const ViewmodelRigPlacement fistsGuard = viewmodelGuardPlacement(ViewmodelKind::Fists);
+    CHECK(fistsGuard.pitch > 0.5F);
+    CHECK(fistsGuard.offset.y < -1.0F);
+    CHECK(fistsGuard.yaw <= kViewmodelRigYaw);
+    CHECK(fistsGuard.yaw > kViewmodelRigYaw - 0.3F);
+    const ViewmodelRigPlacement fistsBlock = viewmodelBlockPlacement(ViewmodelKind::Fists);
+    CHECK(fistsBlock.offset.z < fistsGuard.offset.z - 0.3F);
+    // The punch steps the rig back and levels it; a weapon keeps its guard.
+    const ViewmodelRigPlacement fistsPunch = viewmodelSwingPlacement(ViewmodelKind::Fists);
+    CHECK(fistsPunch.offset.z > fistsGuard.offset.z + 0.2F);
+    CHECK(fistsPunch.pitch < fistsGuard.pitch);
+    CHECK(viewmodelSwingPlacement(ViewmodelKind::Sword).pitch ==
+          doctest::Approx(viewmodelGuardPlacement(ViewmodelKind::Sword).pitch));
+    const ViewmodelRigPlacement swordGuard = viewmodelGuardPlacement(ViewmodelKind::Sword);
+    CHECK(swordGuard.pitch > fistsGuard.pitch);
+    CHECK(swordGuard.offset.y < fistsGuard.offset.y);
+    CHECK(swordGuard.yaw < kViewmodelRigYaw);
+    const ViewmodelRigPlacement cast = viewmodelCastPlacement(ViewmodelKind::Fists);
+    CHECK(cast.yaw < kViewmodelRigYaw);
+    CHECK(cast.offset.y < -1.5F);
+    CHECK(viewmodelGuardPlacement(ViewmodelKind::Club).offset.y ==
+          viewmodelGuardPlacement(ViewmodelKind::Sword).offset.y);
+
+    // THE CLIP POLICY, state by state, off hand-built poses. Idle up holds
+    // the block clip's guard frame; Idle down its first frame (the hips);
+    // half way through a stance flip, half way between. A charge scrubs the
+    // punch's cock by the real charge fraction and the hold sits at the
+    // cock; the swing runs from the cock to the clip's end over its own
+    // steps; the block eases from the guard frame to the hold; a cast and
+    // a hit play their own clips through. Bare fists alternate the two
+    // punches by swing parity; a weapon's cock and swing are the one
+    // swipe-up clip.
+    ViewmodelPose pose;
+    ViewmodelRigClip clip = viewmodelRigClip(ViewmodelKind::Fists, pose);
+    CHECK(clip.clip == 5U);
+    CHECK(clip.frame == doctest::Approx(kViewmodelGuardFrame));
+    pose.handsUp = false;
+    clip = viewmodelRigClip(ViewmodelKind::Fists, pose);
+    CHECK(clip.clip == 5U);
+    CHECK(clip.frame == doctest::Approx(0.0F));
+    pose.stanceSteps = ViewmodelMachine::kStanceSteps / 2;
+    clip = viewmodelRigClip(ViewmodelKind::Fists, pose);
+    CHECK(clip.frame > 0.0F);
+    CHECK(clip.frame < kViewmodelGuardFrame);
+    pose = ViewmodelPose{};
+    clip = viewmodelRigClip(ViewmodelKind::Sword, pose);
+    CHECK(clip.clip == 5U);
+    CHECK(clip.frame == doctest::Approx(kViewmodelSwordGuardFrame));
+
+    pose.state = ViewmodelState::Charging;
+    pose.chargeSteps = sim::kHardSwingHoldSteps / 2;
+    clip = viewmodelRigClip(ViewmodelKind::Fists, pose);
+    CHECK(clip.clip == 1U);  // the right punch: the first swing is the right
+    CHECK(clip.frame == doctest::Approx(kViewmodelCockFrame * static_cast<float>(pose.chargeSteps) /
+                                        static_cast<float>(sim::kHardSwingHoldSteps)));
+    pose.swingSeq = 1;       // the second swing will be the left
+    clip = viewmodelRigClip(ViewmodelKind::Fists, pose);
+    CHECK(clip.clip == 2U);
+    pose.state = ViewmodelState::ChargedHard;
+    clip = viewmodelRigClip(ViewmodelKind::Fists, pose);
+    CHECK(clip.frame == doctest::Approx(kViewmodelCockFrame));
+    clip = viewmodelRigClip(ViewmodelKind::Sword, pose);
+    CHECK(clip.clip == 4U);
+    CHECK(clip.frame == doctest::Approx(kViewmodelCockFrame));
+
+    pose = ViewmodelPose{};
+    pose.state = ViewmodelState::SwingLight;
+    pose.swingSeq = 1;  // in flight: this IS the first (right) swing
+    pose.stateSteps = 0;
+    clip = viewmodelRigClip(ViewmodelKind::Fists, pose);
+    CHECK(clip.clip == 3U);
+    CHECK(clip.frame == doctest::Approx(kViewmodelCockFrame));
+    pose.stateSteps = ViewmodelMachine::kSwingSteps;
+    clip = viewmodelRigClip(ViewmodelKind::Fists, pose);
+    CHECK(clip.frame == doctest::Approx(1.0F));
+    pose.swingSeq = 2;
+    clip = viewmodelRigClip(ViewmodelKind::Fists, pose);
+    CHECK(clip.clip == 4U);
+    pose.state = ViewmodelState::SwingHard;
+    clip = viewmodelRigClip(ViewmodelKind::Sword, pose);
+    CHECK(clip.clip == 4U);
+    CHECK(clip.frame == doctest::Approx(1.0F));
+
+    pose = ViewmodelPose{};
+    pose.state = ViewmodelState::Block;
+    clip = viewmodelRigClip(ViewmodelKind::Fists, pose);
+    CHECK(clip.clip == 5U);
+    CHECK(clip.frame == doctest::Approx(kViewmodelGuardFrame));
+    pose.stateSteps = kViewmodelEaseSteps;
+    clip = viewmodelRigClip(ViewmodelKind::Fists, pose);
+    CHECK(clip.frame == doctest::Approx(kViewmodelBlockHoldFrame));
+    clip = viewmodelRigClip(ViewmodelKind::Sword, pose);
+    CHECK(clip.frame == doctest::Approx(kViewmodelSwordBlockHoldFrame));
+
+    pose = ViewmodelPose{};
+    pose.state = ViewmodelState::Cast;
+    pose.stateSteps = ViewmodelMachine::kCastSteps / 2;
+    clip = viewmodelRigClip(ViewmodelKind::Fists, pose);
+    CHECK(clip.clip == 6U);
+    CHECK(clip.frame == doctest::Approx(0.5F));
+    pose.state = ViewmodelState::Hit;
+    pose.stateSteps = ViewmodelMachine::kHitSteps;
+    clip = viewmodelRigClip(ViewmodelKind::Fists, pose);
+    CHECK(clip.clip == 7U);
+    CHECK(clip.frame == doctest::Approx(1.0F));
+
+    // THE CAST RAISES THE STANCE: posed with the hands DOWN, a cast at its
+    // middle still sits at the cast framing, not at the guard, and a cast
+    // at its end has come back to the guard so Idle lands without a jump.
+    ViewmodelPose castDown;
+    castDown.handsUp = false;
+    castDown.state = ViewmodelState::Cast;
+    castDown.stateSteps = ViewmodelMachine::kCastSteps / 2;
+    ViewmodelInstance mid;
+    poseViewmodel(mid, ViewmodelKind::Fists, castDown, Rgba8{});
+    CHECK(mid.rigOffset.y == doctest::Approx(cast.offset.y));
+    CHECK(mid.rigYaw == doctest::Approx(cast.yaw));
+    CHECK(mid.rigPitch == doctest::Approx(cast.pitch));
+    CHECK(mid.rigClip == 6U);
+    castDown.stateSteps = ViewmodelMachine::kCastSteps;
+    ViewmodelInstance end;
+    poseViewmodel(end, ViewmodelKind::Fists, castDown, Rgba8{});
+    CHECK(end.rigOffset.y == doctest::Approx(fistsGuard.offset.y));
+    CHECK(end.rigPitch == doctest::Approx(fistsGuard.pitch));
+
+    // A charge eases the rig to the swing placement, the hold sits there,
+    // and a swing comes back to the guard over its last third.
+    ViewmodelPose charging;
+    charging.state = ViewmodelState::Charging;
+    charging.stateSteps = kViewmodelEaseSteps;
+    ViewmodelInstance cocked;
+    poseViewmodel(cocked, ViewmodelKind::Fists, charging, Rgba8{});
+    CHECK(cocked.rigOffset.z == doctest::Approx(fistsPunch.offset.z));
+    CHECK(cocked.rigPitch == doctest::Approx(fistsPunch.pitch));
+    ViewmodelPose swinging;
+    swinging.state = ViewmodelState::SwingLight;
+    swinging.swingSeq = 1;
+    swinging.stateSteps = ViewmodelMachine::kSwingSteps / 2;
+    ViewmodelInstance flying;
+    poseViewmodel(flying, ViewmodelKind::Fists, swinging, Rgba8{});
+    CHECK(flying.rigOffset.z == doctest::Approx(fistsPunch.offset.z));
+    swinging.stateSteps = ViewmodelMachine::kSwingSteps;
+    ViewmodelInstance landed;
+    poseViewmodel(landed, ViewmodelKind::Fists, swinging, Rgba8{});
+    CHECK(landed.rigOffset.z == doctest::Approx(fistsGuard.offset.z));
+    CHECK(landed.rigPitch == doctest::Approx(fistsGuard.pitch));
+
+    // The block's push eases in over its steps and the socket rides every
+    // pose of an armed kind.
+    ViewmodelPose blocking;
+    blocking.state = ViewmodelState::Block;
+    blocking.stateSteps = kViewmodelEaseSteps;
+    ViewmodelInstance held;
+    poseViewmodel(held, ViewmodelKind::Sword, blocking, Rgba8{});
+    CHECK(held.rigOffset.y == doctest::Approx(viewmodelBlockPlacement(ViewmodelKind::Sword).offset.y));
+    CHECK(held.socketRotation.x == doctest::Approx(-3.14159265358979323846F * 0.5F));
+    CHECK(held.socketOffset.x == doctest::Approx(-0.09F));
+    ViewmodelInstance bare;
+    poseViewmodel(bare, ViewmodelKind::Fists, blocking, Rgba8{});
+    CHECK(bare.socketRotation.x == 0.0F);
+    CHECK(bare.rigOffset.z == doctest::Approx(fistsBlock.offset.z));
+
+    // And the hash reads all of it: a pitch, a clip, a frame or a socket
+    // moved is a different digest.
+    SceneDescription scene;
+    scene.viewmodel = held;
+    const std::uint64_t base = sceneHash(scene);
+    scene.viewmodel.rigPitch += 0.01F;
+    CHECK(sceneHash(scene) != base);
+    scene.viewmodel = held;
+    scene.viewmodel.rigClip = 6U;
+    CHECK(sceneHash(scene) != base);
+    scene.viewmodel = held;
+    scene.viewmodel.rigFrame += 0.01F;
+    CHECK(sceneHash(scene) != base);
+    scene.viewmodel = held;
+    scene.viewmodel.socketOffset.z += 0.01F;
+    CHECK(sceneHash(scene) != base);
+    scene.viewmodel = held;
+    CHECK(sceneHash(scene) == base);
 }

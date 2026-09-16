@@ -275,11 +275,11 @@ TEST_CASE("dieted empty states stay at six words or fewer") {
     // The chart and letters tiles.
     session.toggleCasebook();
     REQUIRE(session.casebookOpen());
-    session.menuPageNext();  // Journal -> Character
-    session.menuPageNext();  // Character -> Map
+    session.menuPagePrev();  // Journal -> Letters
+    CHECK(dietWords(session.dialogueView().emptyLine) <= 6);
+    session.menuPagePrev();  // Letters -> Map
     CHECK(dietWords(session.dialogueView().emptyLine) <= 6);
     session.menuPageNext();  // Map -> Letters
-    CHECK(dietWords(session.dialogueView().emptyLine) <= 6);
     session.menuPageNext();  // Letters -> Journal: the waiting sentence is gone
     CHECK(session.dialogueView().emptyLine.empty());
 }

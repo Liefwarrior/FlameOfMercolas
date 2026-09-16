@@ -117,31 +117,37 @@ TEST_CASE("Menu opens all four tiles at once, and the key that opened it closes 
     CHECK_FALSE(session.lettersOpen());
 }
 
-TEST_CASE("PagePrev/PageNext step which tile has focus, and wrap both ways, without closing any tile") {
+TEST_CASE("the page step walks the four tiles without closing any, and leaves the tiles "
+          "only at the ring's two ends") {
     Session session(onTheStreet());
     session.toggleMenu();
     REQUIRE(session.casebookOpen());
     REQUIRE(session.menuFocus() == kMenuFocusJournal);
 
-    // FORWARD, ALL FOUR, BACK TO THE START. All four tiles stay open
-    // throughout -- there is no "page" left to close, only which one is
-    // reading the keyboard right now.
-    session.menuPageNext();
+    // NINE AND THE STICKS: the tiles are four of the six pages of NOTES. From
+    // the Journal (the last tile) the ring goes ON to the ward map and the
+    // grimoire, and comes round to Character -- see test_controls' ring
+    // case. Inside the four, all stay open throughout: there is no "page"
+    // to close, only which one is reading the keyboard right now.
+    session.menuPagePrev();
+    CHECK(session.menuFocus() == kMenuFocusLetters);
+    CHECK(session.casebookOpen());  // the Journal tile is STILL open
+    session.menuPagePrev();
+    CHECK(session.menuFocus() == kMenuFocusMap);
+    CHECK(session.mapOpen());
+    session.menuPagePrev();
     CHECK(session.menuFocus() == kMenuFocusCharacter);
     CHECK(session.characterOpen());
-    CHECK(session.casebookOpen());  // the Journal tile is STILL open
 
+    // FORWARD AGAIN, THE SAME THREE STEPS BACK TO THE JOURNAL.
     session.menuPageNext();
     CHECK(session.menuFocus() == kMenuFocusMap);
-
     session.menuPageNext();
     CHECK(session.menuFocus() == kMenuFocusLetters);
-
-    // WRAPS FORWARD, BACK TO THE JOURNAL.
     session.menuPageNext();
     CHECK(session.menuFocus() == kMenuFocusJournal);
 
-    // AND WRAPS BACKWARD, THE OTHER WAY, LANDING ON LETTERS FIRST.
+    // AND BACKWARD ONCE MORE, LANDING ON LETTERS FIRST.
     session.menuPagePrev();
     CHECK(session.menuFocus() == kMenuFocusLetters);
     session.menuPagePrev();
@@ -198,15 +204,17 @@ TEST_CASE("Pause stays a separate system from Menu, per controls.hpp's own note"
     CHECK_FALSE(session.pauseOpen());
 
     // MORROWIND ROUND: OPTIONS AND KEYS NO LONGER LIVE ON THE TILED MENU'S
-    // OWN CYCLE. PagePrev/PageNext only step which of the FOUR TILES has
-    // focus now -- Options and Keys have no tile to land on, so cycling
-    // never reaches either.
+    // OWN CYCLE. The page step walks the six pages of NOTES (four tiles, the
+    // ward map, the grimoire -- nine and the sticks) and never reaches
+    // Options or Keys: six steps from the Journal is one full lap, back on
+    // the Journal tile.
     for (int i = 0; i < 6; ++i) {
         session.menuPageNext();
+        CHECK_FALSE(session.optionsOpen());
+        CHECK_FALSE(session.keysOpen());
     }
-    CHECK_FALSE(session.optionsOpen());
-    CHECK_FALSE(session.keysOpen());
     CHECK(session.casebookOpen());
+    CHECK(session.menuFocus() == kMenuFocusJournal);
     session.toggleMenu();
     CHECK_FALSE(session.menuOpen());
 
@@ -261,8 +269,8 @@ TEST_CASE("the tiles that ship empty say what they are waiting for, in room the 
     // purpose"; the hook still opens a fresh book.
     CHECK(book.emptyLine.empty());
 
-    session.menuPageNext();  // Journal -> Character
-    session.menuPageNext();  // Character -> Map
+    session.menuPagePrev();  // Journal -> Letters
+    session.menuPagePrev();  // Letters -> Map
     REQUIRE(session.menuFocus() == kMenuFocusMap);
     const DialogueViewState chart = session.dialogueView();
     REQUIRE(chart.speaker == "THE CHART");

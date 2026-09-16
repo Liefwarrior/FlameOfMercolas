@@ -470,16 +470,22 @@ MenuTileLayout menuTileLayout(int width, int height) {
 
     // THE BOTTOM BAND (Journal) TAKES ROUGHLY A THIRD -- 9/25 of the interior,
     // the same 36 percent the pre-conversion layout gave it, so the two
-    // frames of this screen agree about where the Journal lives.
+    // frames of this screen agree about where the Journal lives. NINE AND
+    // THE STICKS: two rows under it are the foot -- a rule and the nav band
+    // that names the ring, the casebook page's own shape.
     const std::vector<PanelRect> bands = splitRows(interior, out.metric,
                                                    {
                                                        spanWeight(16),  // the three tiles
                                                        spanCells(1),    // the rule
                                                        spanWeight(9),   // the Journal
+                                                       spanCells(1),    // the foot's rule
+                                                       spanCells(1),    // the nav band
                                                    });
     out.topRows = out.metric.rowsIn(bands[0].h);
     out.ruleRow = (bands[1].y - interior.y) / out.metric.cellH();
     out.journal = bands[2];
+    out.footRuleRow = (bands[3].y - interior.y) / out.metric.cellH();
+    out.nav = bands[4];
 
     // Three columns over the top band, split by two one-cell dividers that
     // the shared frame draws in step with its own edges.
@@ -578,6 +584,7 @@ void drawMenuTiles(Framebuffer& target, const MenuTileState& state) {
     style.groundAlpha = kPageGroundAlpha;
     PanelFrame frame(target, comp.bounds, comp.metric, style);
     frame.addRule(comp.ruleRow);
+    frame.addRule(comp.footRuleRow);
     frame.addDivider(comp.dividerCellA, 0, comp.topRows);
     frame.addDivider(comp.dividerCellB, 0, comp.topRows);
     frame.draw();
@@ -605,6 +612,26 @@ void drawMenuTiles(Framebuffer& target, const MenuTileState& state) {
              state.lettersFocus, fade, false, kParchmentInk, modeFor(kMenuFocusLetters));
     drawTile(target, comp.journal, comp.metric, state.journal, state.focus == kMenuFocusJournal,
              state.journalFocus, fade, true, ink.accent, modeFor(kMenuFocusJournal));
+
+    // THE FOOT: the ring, learnable from the hub itself. Bare keycaps with
+    // their words -- the hub is where a stranger learns them, so the words
+    // stay; a page a player has learned is the casebook page, whose foot
+    // fades its words on the tutor tier.
+    const std::vector<PanelOption> nav{
+        PanelOption{state.navMoveKeys, "ROW", "", ink.accent, InkRole::Dim, false},
+        PanelOption{state.navPageKeys, "NOTES", "", ink.accent, InkRole::Dim, false},
+        PanelOption{state.confirmKey, "PICK", "", ink.accent, InkRole::Dim, false},
+        PanelOption{state.closeKey, "CLOSE", "", ink.accent, InkRole::Dim, false},
+    };
+    OptionListStyle navStyle;
+    navStyle.showKeys = true;
+    navStyle.maxColumns = 4;
+    navStyle.gutterCells = 2;
+    navStyle.minRows = 1;
+    const PanelRect navRect{comp.nav.x, comp.nav.y, std::max(0, comp.nav.w - comp.metric.cellW()),
+                            comp.nav.h};
+    const OptionListPlan navPlan = planOptionList(nav, navRect, comp.metric, navStyle);
+    drawOptionListPlanned(target, navRect, comp.metric, nav, -1, navPlan, fade);
 }
 
 }  // namespace granadad::render

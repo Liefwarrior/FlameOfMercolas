@@ -117,6 +117,22 @@ struct MenuTileState {
     /// time it is asked to.
     float phase = 0.0F;
 
+    // --- nine and the sticks: the foot, in the device's own keycaps ------
+    //
+    // The hub had no foot at all, so the one thing a pad player had to learn
+    // to leave it -- the bumpers page on to the ward map and the grimoire --
+    // was printed nowhere. Four slots, the casebook page's own shape: the
+    // cursor, the page ring, the pick, the close. THE DEFAULTS ARE THE
+    // KEYBOARD'S LITERALS, so a hand-built state draws a keyboard foot.
+    /// "\x02\x03" (the up/down triangles) or the d-pad cross.
+    std::string navMoveKeys = "\x02\x03";
+    /// "< >" or "LB RB" -- the ring (controls.hpp's promptPageKeys).
+    std::string navPageKeys = "< >";
+    /// The return motif, or "A".
+    std::string confirmKey = "\x01";
+    /// "J" (the live NOTES binding), or "B".
+    std::string closeKey = "J";
+
     // --- INNOVATION SPRINT (item #2): the focus swap eases, not snaps -----
     //
     // Each tile carries its OWN 0 (not focused) .. 1 (focused) amount, eased
@@ -158,6 +174,10 @@ struct MenuTileLayout {
     int topRows = 0;
     /// The interior row the horizontal rule between the bands sits on.
     int ruleRow = 0;
+    /// NINE AND THE STICKS: the foot -- the interior row of the rule under
+    /// the Journal, and the one-row nav band under that.
+    int footRuleRow = 0;
+    PanelRect nav;
     /// The interior cell columns the two vertical dividers sit on.
     int dividerCellA = 0;
     int dividerCellB = 0;
