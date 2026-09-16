@@ -897,3 +897,72 @@ files; `verify-windows.ps1` PASS -- content 71 cases / 902,135 assertions and si
 linux/gcc vs mingw/windows, the stamp naming this tree), and photographed through the real
 `--street-assault=watch-halt|watch-sheathe|watch-offence` verbs and the leg (b) `blow` ending
 re-shot under this tree (`docs/frames/street/`).
+
+---
+
+## Crowd flow -- a blocked body sidesteps instead of gluing into a column (2026-09-16)
+
+A critic pass reviewing lane/3d2's Docks screenshots (door-leaf and deck-classification fixes,
+unrelated) flagged something incidental at every location it looked: NPCs converging on a
+doorway or a chokepoint jammed into a rigid single-file line and just stood there, instead of
+spreading into the open ground beside it. The cause was `WardPopulation::stepToward` -- a
+blocked body's ONLY move was the one cell dead ahead of its cached route; facing a taken tile it
+just waited and rolled for a shove (`kPushCooldownTicks` 36, and only against the exact occupant
+of that one cell). A dozen bodies converging on the same door therefore queued in an exact
+column, glued directly behind one another, because nothing ever looked sideways. **This moves
+the population number for real, DECLARED and RE-BLESSED.**
+
+`WardPopulation::sidestep()` (`ward_actors.hpp/.cpp`) is the look sideways: when the planned hop
+is taken, a blocked body tries the other seven neighbours, in a per-actor rotated order (the same
+`routeJitterHash` the route search itself is jittered with -- two bodies wedged at one corner give
+way to different sides), and takes the first that is standable, empty, not a cut corner
+(PathFinder's own rule), not the tile it just left, and no farther from its real target than it
+already stands. A genuine one-wide bottleneck -- every flank a wall or another body -- still
+finds nothing here and queues exactly as it always did; this only ever spends slack a crowd
+actually has. A new hashed counter, `sidesteps()`, is appended after `shoves_` in `hash_into` and
+the report line, the same precedent `shoves_`/`catches_`/`futileChases_` set: a plain log, not a
+policy input.
+
+**A real, pre-existing test timing assumption was exposed, not caused, and is fixed on the
+record.** `test_street_bodies.cpp`'s "a street kill is murder with the witnesses counted" scans
+the whole population for anybody geometrically in the corpse's Kill-radius/line-of-sight after
+the kill and asserts each was frightened. `alarm()` fires synchronously inside `attackUp()`, off
+who could see the tile at that instant -- but the scan itself used to run after the killing tap's
+own trailing `stepMany(kHardSwingRecoverySteps + 1)`, real ward-time nobody needed once the loop
+was about to exit. Under the old wait-or-shove-only movement a nearby body spent that window
+either standing still or queued behind one that was; with sidestep landed, the same window was
+enough for somebody who never saw the blow to walk into the corpse's own witness geometry on
+perfectly ordinary business, which the scan then wrongly counted as a witness. Fixed by skipping
+that trailing `stepMany` once the kill has already landed -- nothing downstream needs it, and the
+census now reads the instant `alarm()` itself fired rather than one recovery animation later.
+
+```
+at branch lane/crowd-flow,
+granadad-twin-gate --population --population-hour 16 --ticks 7200, 96 walkers
+COMBINED WORLD HASH: 0xDD3890042DD2B472 -> 0xC45435FE8EBBB41E      <- DECLARED and RE-BLESSED
+```
+
+Recorded directly from `dist\granadad-twin-gate.exe --population --population-hour 16
+--ticks 7200` on Windows/mingw, **two invocations**, each `run A` == `run B` ==
+`0xC45435FE8EBBB41E`, report text byte-identical at **23,458 bytes** in both runs (up from leg
+(c)'s 22,320: the new `sidesteps=` report field, and the crowd itself behaving differently). On
+Linux/GCC the same gate ran green in the Docker build (ctest `granadad-twin-run-gate-population`
+PASSED, `run A` == `run B`, 365.84 s).
+
+The tavern/gate-workload twin on the same exe is UNMOVED: `--tavern --ticks 900`, `run A` ==
+`run B` == `0x63F354D02A6B600F` (3,153 bytes) -- `sidestep()`/`sidesteps_` live entirely on
+`WardPopulation`; the tavern workload has no ward and never calls it.
+
+**The population baseline is therefore re-blessed at `0xC45435FE8EBBB41E`, a real crowd-movement
+change behind it.**
+
+Proved by a new case in `native/tests/test_ward_actors.cpp`, "crowds sidestep instead of gluing
+into a column at a chokepoint" (the morning commute records `sidesteps() > 0` -- the mechanism
+actually fires under a real rush, not just compiles -- while the one-body-per-cell invariant
+still holds), gated on the tree whose GATE-STAMP names it (`native/` digest
+`33ad6ba87c64de06b88d5b75a2b52dd761869b75dd2e9dd330b44d0779b0aeb1`, 328 files, ctest cases 1319
+(floor 537), 99/99 ctest suites green including `granadad-twin-run-gate-population` and
+`granadad-twin-run-gate-tavern`; `verify-windows.ps1` PASS -- 1,238 sim doctest cases /
+2,428,266 assertions under mingw, 0 failed, content-fingerprint and world-hash reports
+byte-identical linux/gcc vs mingw/windows, the stamp naming this tree), and confirmed visually
+against fresh screenshots at the Docks locations the critic flagged (`docs/frames/crowd-flow/`).
