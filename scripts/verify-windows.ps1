@@ -1,8 +1,12 @@
 <#
 Granadad: The Darkstreets -- the half of the build gate that only Windows can run.
 
-    docker compose run --rm --build build      <- compiles, and proves Linux/GCC
+    .\scripts\gate.ps1                         <- compiles, and proves Linux/GCC
     .\scripts\verify-windows.ps1               <- proves mingw/Windows, and compares
+
+(gate.ps1 is `docker compose run --rm --build build` with the commit stamped
+into dist\GATE-STAMP.txt; the bare compose command works too and stamps
+`unknown`.)
 
 or both halves as one command, which is the point of -Build:
 
@@ -148,16 +152,13 @@ Write-Host "  dist dir:    $DistDir"
 
 if ($Build) {
     Write-Host ''
-    Write-Host '--- 0. docker compose run --rm --build build'
-    Push-Location $repoRoot
-    try {
-        # `run`, not `up`: up exits 0 when the container inside it exits 1.
-        # See the long comment in docker-compose.yml.
-        docker compose run --rm --build build
-        $buildExit = $LASTEXITCODE
-    } finally {
-        Pop-Location
-    }
+    Write-Host '--- 0. scripts\gate.ps1  (docker compose run --rm --build build, revision stamped)'
+    # gate.ps1 is the compose command run from the repo root with
+    # GRANADAD_REVISION set to the commit, so the stamp names the tree.
+    # `run`, not `up`: up exits 0 when the container inside it exits 1.
+    # See the long comment in docker-compose.yml.
+    & (Join-Path $PSScriptRoot 'gate.ps1')
+    $buildExit = $LASTEXITCODE
     Write-Host "    exit code: $buildExit"
     if ($buildExit -ne 0) { Fail "the docker build failed (exit $buildExit); nothing downstream of it is worth running." $buildExit }
 }
