@@ -1041,7 +1041,80 @@ namespace {
     return chebyshev(actor.x, actor.y, tx, ty) + std::abs(actor.band - tband) * 4;
 }
 
+/// The same measure as legDistance, from an arbitrary cell rather than an
+/// actor's own -- what a SIDESTEP candidate is scored against, since the body
+/// has not stood there yet.
+[[nodiscard]] std::int32_t distanceFrom(std::int32_t x, std::int32_t y, std::int32_t band,
+                                        std::int32_t tx, std::int32_t ty,
+                                        std::int32_t tband) noexcept {
+    return chebyshev(x, y, tx, ty) + std::abs(band - tband) * 4;
+}
+
 }  // namespace
+
+bool WardPopulation::sidestep(WardActor& actor, std::int32_t tx, std::int32_t ty,
+                              std::int32_t tband) {
+    // THE ROUTE'S NEXT HOP IS SOMEBODY ELSE'S TILE, and until this the cached
+    // route was a body's whole world: the one cell dead ahead was the only
+    // move it ever considered, so it waited there and rolled for a shove.
+    // A dozen bodies converging on the same doorway from the same street
+    // therefore queued in an exact single-file column -- glued directly
+    // behind one another, never shifting into the open ground beside the
+    // line -- because nothing here ever looked sideways.
+    //
+    // This is the look sideways. The same eight neighbours a fresh route
+    // search would offer, walked in a PER-ACTOR ROTATED ORDER --
+    // routeJitterHash again, the same reason the route search itself is
+    // jittered: two bodies wedged shoulder to shoulder at one corner give way
+    // to different sides rather than both reaching for the same open tile.
+    // A candidate only qualifies if it is standable, empty, not the tile the
+    // body just came from (no flicker-stepping back and forth), does not cut
+    // a solid corner (PathFinder's own rule, kept in step so a sidestep can
+    // never wedge a body into a pocket a route could not have planned it out
+    // of), and leaves it NO FARTHER from (tx, ty, tband) than it already
+    // stands. That last clause is the whole difference between spreading and
+    // wandering: a body may only ever sidestep level or closer, so a real
+    // crowd fans out and keeps closing rather than milling on the spot, and a
+    // genuine one-wide bottleneck -- every flank a wall or another body --
+    // finds nothing here and falls through to the ordinary wait-or-shove
+    // exactly as it always did.
+    static constexpr std::int32_t dx[8] = {-1, 1, 0, 0, -1, 1, -1, 1};
+    static constexpr std::int32_t dy[8] = {0, 0, -1, 1, -1, -1, 1, 1};
+    const std::int32_t here = distanceFrom(actor.x, actor.y, actor.band, tx, ty, tband);
+    const std::uint32_t rot = routeJitterHash(static_cast<std::uint32_t>(actor.id) + 1u,
+                                              cellKey(actor.x, actor.y, actor.band)) &
+                              7u;
+    for (int i = 0; i < 8; ++i) {
+        const int n = (static_cast<int>(rot) + i) & 7;
+        const std::int32_t nx = actor.x + dx[n];
+        const std::int32_t ny = actor.y + dy[n];
+        if (nx == actor.prevX && ny == actor.prevY && actor.band == actor.prevBand) {
+            continue;
+        }
+        const std::int32_t nz = tiles_->stepBand(actor.x, actor.y, actor.band, nx, ny);
+        if (nz == TileQuery::kNoBand) {
+            continue;
+        }
+        if (n >= 4 &&
+            (tiles_->stepBand(actor.x, actor.y, actor.band, nx, actor.y) == TileQuery::kNoBand ||
+             tiles_->stepBand(actor.x, actor.y, actor.band, actor.x, ny) == TileQuery::kNoBand)) {
+            continue;  // never cut a solid corner -- PathFinder's own rule
+        }
+        if (occupancy_.at(cellKey(nx, ny, nz)) >= kMaxOccupantsPerCell) {
+            continue;
+        }
+        if (distanceFrom(nx, ny, nz, tx, ty, tband) > here) {
+            continue;
+        }
+        tryEnter(actor, nx, ny, nz);  // the occupancy check above means this cannot fail
+        actor.route.clear();
+        actor.routeTargetX = -1;
+        actor.facing = facingFromDelta(nx - actor.prevX, ny - actor.prevY);
+        ++sidesteps_;
+        return true;
+    }
+    return false;
+}
 
 bool WardPopulation::stepToward(WardActor& actor, std::int32_t tx, std::int32_t ty,
                                 std::int32_t tband) {
@@ -1128,12 +1201,14 @@ bool WardPopulation::stepToward(WardActor& actor, std::int32_t tx, std::int32_t 
         }
     }
     const PathStep next = actor.route[static_cast<std::size_t>(actor.routeIndex)];
-    if (!tryEnter(actor, next.x, next.y, next.band)) {
-        return false;
+    if (tryEnter(actor, next.x, next.y, next.band)) {
+        ++actor.routeIndex;
+        actor.facing = facingFromDelta(next.x - actor.prevX, next.y - actor.prevY);
+        return true;
     }
-    ++actor.routeIndex;
-    actor.facing = facingFromDelta(next.x - actor.prevX, next.y - actor.prevY);
-    return true;
+    // The planned hop is taken. See sidestep()'s own comment for why this is
+    // not simply "return false" any more.
+    return sidestep(actor, tx, ty, tband);
 }
 
 void WardPopulation::chargeStall(WardActor& actor, bool moved, bool closer) {
@@ -2695,6 +2770,7 @@ std::string WardPopulation::reportLine() const {
     out += " athome=" + content::dec(static_cast<std::uint64_t>(roll.atHome));
     out += " hungry=" + content::dec(static_cast<std::uint64_t>(roll.hungry));
     out += " shoves=" + content::dec(static_cast<std::uint64_t>(shoves_));
+    out += " sidesteps=" + content::dec(static_cast<std::uint64_t>(sidesteps_));
     out += " food=" + content::dec(static_cast<std::uint64_t>(foodHeld()));
     // #80. THE TWO NEW FACTS, printed where every gate and every --selftest can
     // read them. `roof` is how many beds are on a deck and how many bodies are
@@ -2826,6 +2902,7 @@ void WardPopulation::hash_into(HashSink& sink) const {
     sink.put_long(static_cast<std::uint64_t>(ledger_.coinMinted));
     sink.put_long(static_cast<std::uint64_t>(ledger_.coinSunk));
     sink.put_long(static_cast<std::uint64_t>(shoves_));
+    sink.put_long(static_cast<std::uint64_t>(sidesteps_));
     sink.put_long(static_cast<std::uint64_t>(catches_));
     sink.put_long(static_cast<std::uint64_t>(futileChases_));
     // STREET SENSES (9a completion): the pushed player position, folded because

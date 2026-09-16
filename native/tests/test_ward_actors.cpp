@@ -160,6 +160,37 @@ TEST_CASE("one body per square, and it holds while six hundred of them walk") {
     CHECK(std::adjacent_find(cells.begin(), cells.end()) == cells.end());
 }
 
+TEST_CASE("crowds sidestep instead of gluing into a column at a chokepoint") {
+    // Companion to the reading just above, on the same ward: the morning
+    // commute (the day trades open at seven) is when a compound's whole
+    // household funnels toward one door at once, and until sidestep()
+    // existed the tile dead ahead was the only move a blocked body ever
+    // tried -- so a dozen bodies converging on the same doorway queued in an
+    // exact single-file column, glued directly behind one another, and never
+    // shifted into open ground beside the line. sidesteps() is zero if that
+    // mechanism never actually fires under a real rush and nonzero the
+    // moment a real body steps around one that is in its way; a busy hour
+    // with none recorded at all would mean the fix compiles but never runs.
+    const sim::WardPopulation& run = wardAt(7, 900);
+    INFO("sidesteps recorded by 900 ticks past seven: ", run.sidesteps());
+    CHECK(run.sidesteps() > 0);
+
+    // And the invariant it must never spend to get there -- the same measure
+    // "one body per square, and it holds while six hundred of them walk"
+    // takes above, read again on this reading.
+    std::vector<std::uint64_t> cells;
+    for (const sim::WardActor& actor : run.actors()) {
+        if (!actor.visible()) {
+            continue;
+        }
+        cells.push_back((static_cast<std::uint64_t>(actor.band) << 40) |
+                        (static_cast<std::uint64_t>(actor.y) << 20) |
+                        static_cast<std::uint64_t>(actor.x));
+    }
+    std::sort(cells.begin(), cells.end());
+    CHECK(std::adjacent_find(cells.begin(), cells.end()) == cells.end());
+}
+
 TEST_CASE("no guard pile-ups: a watchman never shoves a watchman on duty") {
     // The Java build's own etiquette gate, and the reason the patrol yield is
     // the resolution mechanism instead of two watchmen wrestling in a doorway
