@@ -1557,13 +1557,14 @@ void drawBottomBand(Framebuffer& target, const HudState& state, BottomBand& band
     // clipped to one line lost the part the craft is in. A row that does
     // not fit beside its name breaks at a word onto a second slot, the
     // name on the first; only when the band has no second slot does it
-    // clip, marked, as the alert does. And A ROW OF AIR above the alert
-    // when both are up, so the two plates never touch.
+    // clip, marked, as the alert does. The row of air between this plate
+    // and the alert's is the one the alert already spends above (the KIT
+    // FIX PASS slot): this row used to buy a second, and with the two the
+    // band at 960x540 ran out under a bouncer's shout -- the witness's
+    // line was dropped off the top of the band, the one row the react
+    // frame exists to show.
     if (!state.voiceLine.empty() && state.voiceFade > 0.0F) {
         const float fade = std::clamp(state.voiceFade, 0.0F, 1.0F);
-        if (!state.alert.empty() && state.showAlert) {
-            (void)band.take(1);
-        }
         const std::string name =
             state.voiceName.empty() ? std::string() : std::string(state.voiceName) + ":";
         const int gutter = name.empty() ? 0 : kGlyphAdvance * minor;

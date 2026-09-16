@@ -4026,6 +4026,13 @@ struct SmokeRunResult {
     /// Who the alert row was quoting at the shutter, or empty: the proof
     /// that a watchman's readback and his halt were never stacked.
     std::string voiceAlertSpeaker;
+    /// Whether the speaker the row names was IN THE FRAME at the shutter --
+    /// inside the field of view, with a clear lens line to where it is
+    /// drawn -- and how far off, in tenths of a tile (-1 with nobody named).
+    /// The proof a composed shot owes: a frame of a line is a frame of its
+    /// speaker, or the summary says it is not.
+    bool voiceSpeakerInView = false;
+    std::int32_t voiceSpeakerTenths = -1;
     /// JUSTICE BUILD: beats of the court line (--court), by its ending.
     std::int32_t courtBeats = 0;
     /// KIT BUILD: beats of the Kit line (--kit), by its ending.
@@ -4179,6 +4186,22 @@ struct CaseWatchDrive {
 /// evidence for "a dockhand and a watchman do not sound alike" is a key and a
 /// sentence, not a screenshot.
 StreetLineResult runStreetLine(Session& session, const std::string& who, int topic);
+
+/// VOICE LANE. Whether the LENS at one Q8 point has a clear line to a body
+/// at another -- the composed shots' own question, and NOT the one
+/// sim::TileQuery::lineOfSight answers: that is a walk between two TILE
+/// CENTRES that lets a ray through a lattice corner when only one of the two
+/// cells it grazes is solid (the right rule between people; a camera at a
+/// Q8 point, drawing every solid cell as a block, sees the block). A grid
+/// walk from the exact eye to the exact body, every cell entered asked of
+/// solid(), a corner shut if EITHER grazed cell is, run down the middle and
+/// a quarter tile either side: `whole` wants all three (a stand is composed
+/// on it), without it the middle and either side will do ("can you see
+/// them"). Exposed so a case can hold the two rules against each other on
+/// the taproom table that made the watch reveal a picture of a wall.
+[[nodiscard]] bool cameraSightClear(const sim::TileQuery& tiles, std::int32_t fromXQ8,
+                                    std::int32_t fromYQ8, std::int32_t toXQ8, std::int32_t toYQ8,
+                                    std::int32_t band, bool whole = true) noexcept;
 
 /// STREET SENSES (9a completion). PROOF. Stands the player in the densest
 /// crowd on the Tarwalk and raises steel (an Edged weapon, hands up, no blow),

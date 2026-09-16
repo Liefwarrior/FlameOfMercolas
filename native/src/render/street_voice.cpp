@@ -363,6 +363,11 @@ bool StreetVoice::dropIfSpeaker(std::string_view name) noexcept {
     return true;
 }
 
+void StreetVoice::standDown() noexcept {
+    holdSteps_ = 0;
+    current_ = VoiceLine{};
+}
+
 void StreetVoice::speakFarewell(std::string name, std::string line, std::string key,
                                 std::int32_t actorId, std::int32_t step) {
     if (line.empty()) {

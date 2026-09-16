@@ -293,6 +293,12 @@ public:
     /// -- the arrest line landing under a watchman's readback -- so one man
     /// never says two things at once. True when a line was dropped.
     bool dropIfSpeaker(std::string_view name) noexcept;
+    /// Takes the row down for good, no fade: the body was PLACED somewhere
+    /// else (a travel, a waking, a scripted stand) and what somebody said
+    /// within reach of the old feet is not on the row over the new ones.
+    /// The channel's clocks and its memory of who spoke are untouched -- a
+    /// journey is not an amnesty for a mouth's two minutes.
+    void standDown() noexcept;
 
     /// True when the line said THIS step is on the Watch channel -- the edge
     /// Session stands the halt down on when the readback replaced it.

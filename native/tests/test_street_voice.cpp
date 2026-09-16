@@ -31,6 +31,13 @@
 //                               watch each land every beat they owe, through
 //                               the real verbs, so a frame cannot pass as a
 //                               picture of a line that was not on it.
+//   THE FRAME IS OF THE SPEAKER at the shutter of every composed ending the
+//                               body the frame is about is in the field of
+//                               view, with a clear lens line and nobody
+//                               drawn in the way -- the lens's own rule
+//                               (cameraSightClear), held against the sim's
+//                               corner-grazing one on the taproom table that
+//                               made the watch reveal a picture of a wall.
 
 #include <doctest/doctest.h>
 
@@ -993,6 +1000,11 @@ TEST_CASE("--voice=pass: a body passing on the Tarwalk says its one line, off a 
     CHECK(startsWith(played.voiceKey, "pass"));
     CHECK_FALSE(played.voiceSpeaker.empty());
     CHECK_FALSE(played.voiceRow.empty());
+    // THE FRAME IS OF THE SPEAKER: the walk turned to whoever spoke, and
+    // they are in the lens, within the talk reach the emitter used.
+    CHECK(played.voiceSpeakerInView);
+    CHECK(played.voiceSpeakerTenths >= 0);
+    CHECK(played.voiceSpeakerTenths <= 10 * (render::kPassReachTiles + 1));
 }
 
 TEST_CASE("--voice=overheard: two bodies standing together are overheard, off an overheard key") {
@@ -1002,6 +1014,7 @@ TEST_CASE("--voice=overheard: two bodies standing together are overheard, off an
     CHECK_FALSE(played.scriptFellShort());
     CHECK(played.voiceBeats == 2);
     CHECK(startsWith(played.voiceKey, "overheard"));
+    CHECK(played.voiceSpeakerInView);
 }
 
 TEST_CASE("--voice=farewell: the street line, then LEAVE, and the goodbye on the row as the panel closes") {
@@ -1012,6 +1025,13 @@ TEST_CASE("--voice=farewell: the street line, then LEAVE, and the goodbye on the
     CHECK(played.voiceBeats == 3);
     CHECK(startsWith(played.voiceKey, "farewell"));
     CHECK_FALSE(played.talking);
+    // THE FRAME IS OF THE ONE WHO SAID GOODBYE, and from far enough to be a
+    // person and not a hairline: the composed stand is never the tile beside
+    // them (the lens in their hair, the critic's rope-hand frames) -- a tile
+    // and a half at the least, the talk reach at the most.
+    CHECK(played.voiceSpeakerInView);
+    CHECK(played.voiceSpeakerTenths >= 14);
+    CHECK(played.voiceSpeakerTenths <= 29);
 }
 
 TEST_CASE("--voice=moved: a reply that moved them shows a worded reaction on the panel") {
@@ -1022,6 +1042,11 @@ TEST_CASE("--voice=moved: a reply that moved them shows a worded reaction on the
     CHECK(played.voiceBeats == 3);
     CHECK(played.talking);
     CHECK(played.summary.find("reaction=\"(") != std::string::npos);
+    // With the panel open the frame is about the one you are talking to:
+    // in the lens, at a talking distance.
+    CHECK(played.voiceSpeakerInView);
+    CHECK(played.voiceSpeakerTenths >= 14);
+    CHECK(played.voiceSpeakerTenths <= 29);
 }
 
 TEST_CASE("--voice=react: a witness to a tap in the Gull says so, and it is not the man hit") {
@@ -1032,9 +1057,11 @@ TEST_CASE("--voice=react: a witness to a tap in the Gull says so, and it is not 
     CHECK(played.voiceBeats == 3);
     CHECK(startsWith(played.voiceKey, "react."));
     CHECK(played.voiceChannel == "react");
+    // The shot turned to the witness, and he is in it.
+    CHECK(played.voiceSpeakerInView);
 }
 
-TEST_CASE("--voice=watch: after the halt, Cull's readback as he crosses the room, in his name, and never beside his halt") {
+TEST_CASE("--voice=watch: steel across the room from Cull, his halt, and his readback as he crosses it, in his name and never beside his halt") {
     const render::SmokeRunResult played = playVoice("watch");
     INFO(played.summary);
     CHECK(played.ok);
@@ -1047,10 +1074,91 @@ TEST_CASE("--voice=watch: after the halt, Cull's readback as he crosses the room
     // followed, or stood down the step the readback replaced it (the
     // summary reads the row after its fade, kPageEaseSteps on).
     CHECK(played.voiceAlertSpeaker != "Watchman Cull");
-    // And the readback is worded by what is up: the Watch line draws steel,
-    // so it is the steel key, and no "hands down" over a STEEL UP row.
+    // And the readback is worded by what is up: the blade is drawn, so it is
+    // the steel key, and no "hands down" over a STEEL UP row.
     CHECK(played.voiceKey == "watch.approach.violence.steel");
     CHECK(lower(played.voiceRow).find("hands down") == std::string::npos);
+    // THE REVEAL IS OF HIM. The stand was chosen across the room (three
+    // tiles from his stool at the least -- the summary prints it) and the
+    // lens has him at the shutter: in the field of view, a clear line, nobody
+    // in the way. The two earlier passes at this frame turned the camera
+    // onto the west face of the table at (151,69); see the case below on why
+    // the sim's own line of sight said otherwise.
+    CHECK(played.voiceSpeakerInView);
+    const bool acrossTheRoom = played.summary.find(" apart=5") != std::string::npos ||
+                               played.summary.find(" apart=4") != std::string::npos ||
+                               played.summary.find(" apart=3") != std::string::npos;
+    CHECK(acrossTheRoom);
+}
+
+TEST_CASE("the lens's line is not the sim's: the taproom table at (151,69) lets Cull see past its corner and stops a camera dead") {
+    // The watch reveal's own defect, held still. The pocket at (150,69)
+    // between the tables at (148,69) and (151,69) is where the feel build's
+    // Watch line stands the player (beside Wick Hempson's stool at (150,70)),
+    // and Cull's stool is at (152,68). TileQuery::lineOfSight walks tile
+    // centres and passes a lattice corner when only one grazed cell is solid
+    // -- so Cull SEES the player there, which is the right rule between
+    // people. The camera at the tile's centre looking at his, drawing every
+    // solid cell as a block, looks into the table's west face -- and
+    // cameraSightClear says so. Both rules are pinned; the second is the
+    // one a composed shot has to ask.
+    render::SessionConfig config;
+    config.contentDir = content::contentDir();
+    config.timeOfDay = 23 * 3600;
+    render::Session session(config);
+    const sim::TileQuery& tiles = session.tiles();
+    REQUIRE(tiles.solid(151, 69, gull::kGroundBand));
+    REQUIRE_FALSE(tiles.solid(150, 68, gull::kGroundBand));
+    REQUIRE_FALSE(tiles.solid(151, 68, gull::kGroundBand));
+    CHECK(tiles.lineOfSight(152, 68, 150, 69, gull::kGroundBand));
+    CHECK_FALSE(render::cameraSightClear(tiles, q8_tile_centre(150), q8_tile_centre(69),
+                                         q8_tile_centre(152), q8_tile_centre(68),
+                                         gull::kGroundBand));
+    // Along the open row north of the tables the two agree: the reveal's own
+    // stand at (147,67) has him in the clear, whole body, all the way to his
+    // stool at (152,68).
+    CHECK(tiles.lineOfSight(152, 68, 147, 67, gull::kGroundBand));
+    CHECK(render::cameraSightClear(tiles, q8_tile_centre(147), q8_tile_centre(67),
+                                   q8_tile_centre(152), q8_tile_centre(68), gull::kGroundBand));
+    // Symmetric, as a line is, and a point sees itself.
+    CHECK(render::cameraSightClear(tiles, q8_tile_centre(152), q8_tile_centre(68),
+                                   q8_tile_centre(147), q8_tile_centre(67), gull::kGroundBand));
+    CHECK(render::cameraSightClear(tiles, q8_tile_centre(147), q8_tile_centre(67),
+                                   q8_tile_centre(147), q8_tile_centre(67), gull::kGroundBand));
+    // And a body walking along a wall is seen by the half rule where the
+    // whole rule loses a shoulder: straight along the north wall's face,
+    // from (147,67) to (155,67), the middle and the room side are clear.
+    CHECK(render::cameraSightClear(tiles, q8_tile_centre(147), q8_tile_centre(67),
+                                   q8_tile_centre(155), q8_tile_centre(67), gull::kGroundBand,
+                                   false));
+}
+
+TEST_CASE("a placed body leaves the street's last word behind it: the voice row stands down on a relocation") {
+    // A line is what a body within reach said; a jump (a travel, a waking, a
+    // scripted stand) leaves it with the street it was said on. The channel's
+    // memory of who spoke and when survives the jump -- a journey is not an
+    // amnesty for a mouth's two minutes.
+    render::SessionConfig config;
+    config.contentDir = content::contentDir();
+    config.timeOfDay = 16 * 3600;
+    render::Session session(config);
+    sim::MoveInput input;
+    input.forward = 1;
+    bool spoke = false;
+    for (int i = 0; i < 90 * kStepsPerSecond && !spoke; ++i) {
+        input.turn = (i / 90) % 4 == 3 ? 1 : 0;
+        session.step(input);
+        spoke = session.voice().up();
+    }
+    REQUIRE(spoke);
+    const render::VoiceLine before = session.voice().current();
+    const std::int32_t said = session.voice().linesSpoken();
+    session.placeBodyAt(39, 75, docks::kBandQuayside);
+    CHECK_FALSE(session.voice().up());
+    CHECK(session.voice().current().empty());
+    CHECK(session.voice().linesSpoken() == said);
+    // The row's last word on its channel is still on record.
+    CHECK(session.voice().lastOn(before.channel).text == before.text);
 }
 
 TEST_CASE("--voice=hold: the one you talk to in the Gull holds ten seconds and is drawn standing") {
