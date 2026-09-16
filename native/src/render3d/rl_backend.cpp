@@ -1374,6 +1374,14 @@ SceneStats Backend::drawScene(const SceneDescription& scene) {
         impl.drawStaticMesh(*late.model, late.mesh, late.transform, late.tints, late.mirrored, stats);
     }
     impl.deferred.clear();
+    // WEATHER: the veils, last of all inside the pass -- translucent shells
+    // round the eye through the same mesh path as any instance (vertex
+    // alpha, straight over, the depth test still on), so what stands inside
+    // a shell is clear of it and what stands beyond is seen through it.
+    // After the people and the glass so a body in the fog is in the fog.
+    for (const Instance& veil : scene.veils) {
+        impl.drawInstance(veil, stats);
+    }
     EndMode3D();
     // The hands, last, in their own pass over everything.
     impl.drawViewmodel(scene.viewmodel, stats);

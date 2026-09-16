@@ -43,6 +43,15 @@ void SceneDescription::putMesh(MeshData mesh) {
     meshes.push_back(std::move(mesh));
 }
 
+void SceneDescription::removeMesh(std::uint32_t id) {
+    for (auto it = meshes.begin(); it != meshes.end(); ++it) {
+        if (it->id == id) {
+            meshes.erase(it);
+            return;
+        }
+    }
+}
+
 void SceneDescription::putTexture(TextureData texture) {
     for (TextureData& existing : textures) {
         if (existing.id == texture.id) {
@@ -114,7 +123,7 @@ std::uint64_t sceneHash(const SceneDescription& scene) noexcept {
     Fnv1a64 h;
     // A format tag first, so a future field added to the byte image cannot
     // collide with an old image by accident.
-    h.mixU32(0x53434E35U);  // "SCN5" -- the rig's pitch, clip, frame and socket joined the hands
+    h.mixU32(0x53434E36U);  // "SCN6" -- the weather's veils joined the description
 
     mixVec3(h, scene.camera.position);
     mixVec3(h, scene.camera.target);
@@ -232,6 +241,12 @@ std::uint64_t sceneHash(const SceneDescription& scene) noexcept {
         h.mixF32(piece.gradientToZ);
         mixRgba(h, piece.pane);
         h.mixU8(piece.mode);
+    }
+    // The veils: the weather's own instances, last in the pass and last in
+    // the image. A fog that thickened by a shade is a different picture.
+    h.mixU64(static_cast<std::uint64_t>(scene.veils.size()));
+    for (const Instance& veil : scene.veils) {
+        mixInstance(veil);
     }
     return h.value();
 }

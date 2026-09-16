@@ -22,6 +22,7 @@
 //            saturating union with a weighted-average colour.
 
 #include <cstdint>
+#include <string_view>
 #include <vector>
 
 #include "granadad/render/framebuffer.hpp"
@@ -47,10 +48,106 @@ struct SkyState {
     float fogDistance = 26.0F;
     /// 0 at midnight, 1 at noon. Drives the lamp mix.
     float daylight = 0.0F;
+    /// WEATHER. The fog the 3D pass draws as a veil round the eye
+    /// (render3d/world_scene.hpp, buildVeil), as an e-folding DENSITY per
+    /// tile (1 / tiles) OVER the clear day's own fogDistance. The 3D pass has
+    /// never drawn the clear day's fog -- the district reads sharp to its far
+    /// end there, by that lane's own note -- so this is only ever what the
+    /// weather ADDS, and a clear frame stays what it was. Zero in clear
+    /// weather; the software pass ignores it (its fog is fogDistance).
+    float veil = 0.0F;
+    /// WEATHER. A multiplier on every flame's halo and glow: 1 in still air,
+    /// under 1 when the wind is up and the lanterns gutter.
+    float haloScale = 1.0F;
 };
 
-/// The sky at a time of day, in seconds since midnight.
+// ---------------------------------------------------------------------------
+// WEATHER (roadmap 21a; D15 ruled it yes, render-only)
+// ---------------------------------------------------------------------------
+//
+// Four states and an intensity, computed from (world seed, calendar day,
+// clock) and NOTHING ELSE: no RNG stream, no wall clock, no sim field. It is a
+// pure function, so two runs at one seed and one hour draw one sky, and the
+// sim never reads it -- schedules, sight, prices and the twin-gate's hashes
+// do not know the fog is there. Weather that touched a schedule or any hashed
+// field would be a declared baseline move, and it is not this.
+//
+// A day has two to four PERIODS, drawn per day and cut at hashed minutes. Each
+// period has one kind and one peak; its intensity eases in over its first
+// hour and out over its last, so the fog rolls in and lifts rather than
+// snapping at the top of the hour, and at a period's edge every kind is at
+// zero -- where every kind IS clear -- so a period change is never a cut.
+// The periods run through midnight: the last period of one day is the first
+// of the next, so nothing resets at 00:00.
+//
+// The kind is biased by the hour the period sits in. Harbour fog rolls off
+// the water at dawn, at dusk and through the night and is the most common
+// thing that is not clear; overcast favours the day; wind the afternoon.
+
+enum class WeatherKind : std::uint8_t {
+    Clear = 0,
+    Overcast = 1,
+    /// Harbour fog off the water: the district swallowed to a few tiles,
+    /// milky by day and a cold grey-blue at night.
+    Fog = 2,
+    /// Clear-ish and blustery: the wind bed up, the lanterns guttering.
+    Wind = 3,
+};
+inline constexpr int kWeatherKindCount = 4;
+
+struct Weather {
+    WeatherKind kind = WeatherKind::Clear;
+    /// How much of it, 0..1. Always 0 for Clear; a pinned state (--weather=)
+    /// is 1.
+    float intensity = 0.0F;
+
+    /// True when this draws exactly the clear sky: Clear, or any kind at zero.
+    [[nodiscard]] bool clear() const noexcept {
+        return kind == WeatherKind::Clear || intensity <= 0.0F;
+    }
+    /// The audio wind bed's multiplier: 1 as authored, over 2 at a full blow,
+    /// under 1 in a still fog. The mixer still caps the layer at one.
+    [[nodiscard]] float windGain() const noexcept;
+
+    [[nodiscard]] bool operator==(const Weather&) const = default;
+};
+
+/// One weather period, as weatherFor sees it: where it starts and ends in
+/// MINUTES from the asked day's midnight (the start may be negative and the
+/// end past 1440 -- periods run through midnight), what it is and how strong
+/// it gets. Exposed so a test can pin the day's shape.
+struct WeatherPeriod {
+    std::int32_t startMinute = 0;
+    std::int32_t endMinute = 1440;
+    WeatherKind kind = WeatherKind::Clear;
+    float peak = 0.0F;
+};
+
+/// The period covering `timeOfDaySeconds` of `day` at `worldSeed`. Pure.
+[[nodiscard]] WeatherPeriod weatherPeriodAt(std::uint64_t worldSeed, std::int32_t day,
+                                            int timeOfDaySeconds) noexcept;
+
+/// THE WEATHER, as a pure function of the seed, the calendar day and the
+/// clock. Same inputs, same answer, on every machine and every run.
+[[nodiscard]] Weather weatherFor(std::uint64_t worldSeed, std::int32_t day,
+                                 int timeOfDaySeconds) noexcept;
+
+/// "clear", "overcast", "fog", "wind" -- what --weather= takes and what the
+/// capture summary prints.
+[[nodiscard]] std::string_view weatherKindName(WeatherKind kind) noexcept;
+/// The reverse. False (and `out` untouched) for anything else.
+[[nodiscard]] bool parseWeatherKind(std::string_view name, WeatherKind& out) noexcept;
+
+/// The sky at a time of day, in seconds since midnight. THE CLEAR SKY: this is
+/// skyAt(t, Weather{}) byte for byte, and every frame pinned before the
+/// weather lane was drawn under it.
 [[nodiscard]] SkyState skyAt(int timeOfDaySeconds);
+
+/// The sky at a time of day under this weather. A clear Weather (any kind at
+/// zero) returns exactly what skyAt(t) returns; anything else starts from it
+/// and moves the fog, the sky band, the ambient and the daylight by the
+/// intensity, so a state easing in eases the picture in with it.
+[[nodiscard]] SkyState skyAt(int timeOfDaySeconds, const Weather& weather);
 
 /// Additive glow at one cell from a HANDFUL of lights that are not in the baked
 /// field: a tavern hearth that is banked at three in the morning, the candles

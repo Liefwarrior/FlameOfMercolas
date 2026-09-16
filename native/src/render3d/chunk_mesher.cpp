@@ -234,7 +234,17 @@ std::uint32_t chunkVersion(std::uint32_t rebuildCount, const ChunkLighting& ligh
     // dynamic lamp key is folded in above the minute -- it never touches the
     // low twelve bits, so the result stays non-zero whatever the key.
     const std::uint32_t base = (rebuildCount << 12) + static_cast<std::uint32_t>(minute) + 1U;
-    return base ^ (lighting.lampKey << 20);
+    // WEATHER: the kind and the intensity to a hundredth, spread above the
+    // minute the same way (zero for clear, so a clear version is what it
+    // always was). Weather is a function of the minute in a live session,
+    // but a version that SAYS so cannot go stale if that ever changes.
+    const std::uint32_t weatherKey =
+        lighting.weather.clear()
+            ? 0U
+            : (static_cast<std::uint32_t>(lighting.weather.kind) << 8) +
+                  static_cast<std::uint32_t>(
+                      std::clamp(lighting.weather.intensity, 0.0F, 1.0F) * 100.0F + 0.5F);
+    return base ^ (lighting.lampKey << 20) ^ ((weatherKey * 0x9E37U) << 12);
 }
 
 // ---------------------------------------------------------------------------
@@ -466,7 +476,7 @@ MeshData colourChunk(const ChunkGeometry& geometry, const ChunkLighting& lightin
 
     const std::size_t vertices = geometry.vertexCount();
     mesh.colours.resize(vertices * 4U);
-    const render::SkyState sky = render::skyAt(lighting.timeOfDaySeconds);
+    const render::SkyState sky = render::skyAt(lighting.timeOfDaySeconds, lighting.weather);
     const bool hasDynamic = lighting.dynamicLamps != nullptr && !lighting.dynamicLamps->empty();
 
     // Light is a fact about the CELL, so it is computed once per face and

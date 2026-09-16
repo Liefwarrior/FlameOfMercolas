@@ -156,6 +156,10 @@ struct SpriteInstance {
 struct RenderSettings {
     /// Seconds since midnight. Drives ambient, fog and whether lamps carry.
     int timeOfDay = 20 * 3600;
+    /// WEATHER. The sky is skyAt(timeOfDay, weather); a clear Weather (the
+    /// default) is the sky every frame before the weather lane was drawn
+    /// under. Session::drawFrame fills it from Session::weather().
+    Weather weather;
     /// How far the DDA walks before giving up and calling it sky, in tiles.
     /// Fog closes well inside this, so raising it alone buys very little —
     /// kept proportional to lighting.cpp's own fogDistance ceiling.

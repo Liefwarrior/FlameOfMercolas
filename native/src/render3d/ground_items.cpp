@@ -111,7 +111,8 @@ std::vector<StaticInstance> groundItemInstances(const render::Session& session,
     }
     const sim::Tavern& tavern = session.tavern();
     const sim::ItemRegistry& items = tavern.items();
-    const render::SkyState sky = render::skyAt(session.timeOfDay());
+    // WEATHER: the session's own sky, as the chunks and the people read it.
+    const render::SkyState sky = session.sky();
     const std::vector<render::Lamp> live = session.tavernLights();
 
     // --- the room's list: stands and drops, in its own order -------------
