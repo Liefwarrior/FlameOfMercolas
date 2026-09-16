@@ -1947,8 +1947,25 @@ public:
     /// wrapCursorAndPage's nine-key arithmetic included -- so every input
     /// path lands where it always did; only the drawing changed register.
     [[nodiscard]] CreationPage stripCard() const;
-    /// Which topic the cursor is on. An index into the WHOLE list.
+    /// Which topic the cursor is on. An index into the WHOLE list -- the
+    /// CONVERSATION's list, and only that one: this is topicCursor_, the
+    /// field the arrows move while somebody is talking. The tiled Menu's
+    /// tiles and the keys page keep their own cursors (moveTopicCursor
+    /// routes by focus); a caller reading this under one of them is reading
+    /// the wrong list. menuCursor(), right below, is the one that follows
+    /// the focus.
     [[nodiscard]] int topicCursor() const noexcept { return topicCursor_; }
+    /// KIT POLISH. The row the cursor is on, on WHICHEVER list has the keys
+    /// -- routed exactly as moveTopicCursor() routes the arrows: the keys
+    /// page's caseCursor_, then the tiled Menu's own per-tile cursor
+    /// (characterCursor_, mapCursor_, lettersCursor_, the Journal's
+    /// caseCursor_), then the conversation's topicCursor_. The same number
+    /// dialogueView().cursor answers, without composing the panel to get
+    /// it. This is what ENTER hands chooseTopic(): main.cpp used to hand it
+    /// topicCursor() on the tiled Menu, which the Character tile got away
+    /// with (its press reads its own cursor and ignores the index) and the
+    /// Letters tile did not (it OPENS the index it is given).
+    [[nodiscard]] int menuCursor() const noexcept;
     /// Which page of the list is showing.
     [[nodiscard]] int topicPage() const noexcept { return topicPage_; }
     void moveTopicCursor(int delta);
