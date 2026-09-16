@@ -494,7 +494,20 @@ TEST_CASE("a street kill is murder with the witnesses counted") {
         session.stepMany(sim::MoveInput{}, sim::kHardSwingHoldSteps + 1);
         session.attackUp();
         killed = session.people().byId(id)->slain;
-        session.stepMany(sim::MoveInput{}, sim::kHardSwingRecoverySteps + 1);
+        if (!killed) {
+            // Only the NEXT tap needs the swing animation clear; the kill
+            // needs no more ward-time at all, and letting it elapse anyway
+            // used to be free -- every nearby body was either standing still
+            // or glued in a queue behind one that was. Now that a blocked
+            // body can sidestep, this window is enough real ward-time for
+            // somebody who never saw the blow to walk into the corpse's own
+            // witness geometry on perfectly ordinary business, which the
+            // "frightened" scan below would then wrongly count as a
+            // witness. alarm() already fired, inside attackUp(), off exactly
+            // who could see the tile at that instant -- that is the moment
+            // this test means to check, not one recovery animation later.
+            session.stepMany(sim::MoveInput{}, sim::kHardSwingRecoverySteps + 1);
+        }
     }
     REQUIRE_MESSAGE(killed, "twelve hard swings with steel did not kill a docker");
 
