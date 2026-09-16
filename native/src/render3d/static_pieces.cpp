@@ -13,6 +13,7 @@
 #include "granadad/render/atlas.hpp"
 #include "granadad/render/vertical.hpp"
 #include "granadad/render/voxel_classify.hpp"
+#include "granadad/sim/docks_signs_generated.hpp"
 #include "granadad/sim/tile_query.hpp"
 
 namespace granadad::render3d {
@@ -34,7 +35,7 @@ constexpr std::string_view kRoleNames[kPieceRoleCount] = {
     "barrel_rack", "fireplace",    "pillar",      "post",         "parapet",     "roof_tile",
     "rowboat",     "crane",        "gunwale",     "window_timber", "rope",
     "hull",        "wall_plaster", "stool",       "quay_wall",     "roof_flag",
-    "roof_batten", "shop_sign",    "floor_strip",  "post_rail",    "item",
+    "roof_batten", "shop_sign",    "floor_strip",  "post_rail",    "pane_timber", "item",
 };
 
 // ---------------------------------------------------------------------------
@@ -68,13 +69,16 @@ constexpr std::uint32_t kSaltRoofProp = 0x524F4F46U;  // "ROOF"
 constexpr std::uint32_t kSaltBoat = 0x424F4154U;      // "BOAT"
 constexpr std::uint32_t kSaltCrane = 0x4352414EU;     // "CRAN"
 constexpr std::uint32_t kSaltRope = 0x524F5045U;      // "ROPE"
-constexpr std::uint32_t kSaltPane = 0x50414E45U;      // "PANE"
 constexpr std::uint32_t kSaltStool = 0x53544F4CU;     // "STOL"
-/// One window in this many is dark at night whatever the room (a bed made,
-/// a candle out).
-constexpr std::uint32_t kPaneDarkEvery = 3U;
+constexpr std::uint32_t kSaltHouse = 0x484F5553U;     // "HOUS"
 /// One hull cell in this many hangs a mooring line.
 constexpr std::uint32_t kRopeEvery = 3U;
+/// A room walk stops here: no building in the ward comes near it, and a
+/// roofed floor that does is not one household.
+constexpr std::size_t kRoomCellsMax = 8192;
+/// A named house's sign covers its ground band and this many storeys over
+/// it (the Gull's oak storey stands over its granite one).
+constexpr std::int32_t kSignStoreys = 2;
 
 /// The harbour's FLUID lane runs 1..7 (tile_query.hpp); the water rule asks
 /// each depth for its own surface height.
@@ -126,6 +130,16 @@ constexpr float kWindowMinLength = 1.8F;
 /// A hung timber window's sill height, and a shelf's.
 constexpr float kTimberWindowLift = 1.15F;
 constexpr float kShelfLift = 1.55F;
+/// The pane quad set in the hung timber window's frame
+/// (SM_Bld_House_Window_04): the frame's opening between its jambs runs
+/// 0.34 m either side of its centre and from 0.19 m over its sill to 0.98
+/// m, and its two panels sit at 0.08..0.01 m behind the frame's origin, so
+/// the quad stands 0.02 m in front of that origin -- over the panels,
+/// inside the sill and the hood, which reach 0.06 and 0.13 m out.
+constexpr float kTimberPaneHalfWidth = 0.34F;
+constexpr float kTimberPaneSill = 0.19F;
+constexpr float kTimberPaneHeight = 0.79F;
+constexpr float kTimberPaneOut = 0.02F;
 /// The door leaf's clearance off the reveal it hangs open against, and off
 /// the facade plane.
 constexpr float kLeafOffReveal = 0.14F;
@@ -557,6 +571,127 @@ private:
             return true;
         }
         return onHull && harbourAt(nx, ny, z - 1);
+    }
+
+    // --- the light law's households -----------------------------------------
+
+    /// A cell of a room: a roofed floor.
+    [[nodiscard]] bool roomCell(std::int32_t x, std::int32_t y, std::int32_t z) const noexcept {
+        return isWalkableForm(tiles_, x, y, z) && cellRoofed(tiles_, x, y, z);
+    }
+
+    /// The anchor of the room a cell belongs to -- every room cell joined
+    /// to it across cell sides on its own level, and of those the lowest
+    /// (the least y, then the least x) -- walked once and remembered for
+    /// every cell of the room, so every window on one room asks for the
+    /// same cell and draws the same lot. False when the cell is no room.
+    [[nodiscard]] bool roomAnchor(std::int32_t x, std::int32_t y, std::int32_t z, std::int32_t& ax,
+                                  std::int32_t& ay) {
+        if (!roomCell(x, y, z)) {
+            return false;
+        }
+        const auto known = roomAnchorOf_.find(cellKey(z, 0, x, y));
+        if (known != roomAnchorOf_.end()) {
+            ax = known->second.first;
+            ay = known->second.second;
+            return true;
+        }
+        std::vector<std::pair<std::int32_t, std::int32_t>> room;
+        room.emplace_back(x, y);
+        roomAnchorOf_.emplace(cellKey(z, 0, x, y), std::make_pair(x, y));
+        for (std::size_t i = 0; i < room.size() && room.size() < kRoomCellsMax; ++i) {
+            const auto [cx, cy] = room[i];
+            for (int s = 0; s < 4; ++s) {
+                const std::int32_t nx = cx + kSideDx[s];
+                const std::int32_t ny = cy + kSideDy[s];
+                if (!roomCell(nx, ny, z) || roomAnchorOf_.count(cellKey(z, 0, nx, ny)) != 0) {
+                    continue;
+                }
+                roomAnchorOf_.emplace(cellKey(z, 0, nx, ny), std::make_pair(nx, ny));
+                room.emplace_back(nx, ny);
+            }
+        }
+        ax = room.front().first;
+        ay = room.front().second;
+        for (const auto& [cx, cy] : room) {
+            if (cy < ay || (cy == ay && cx < ax)) {
+                ax = cx;
+                ay = cy;
+            }
+        }
+        for (const auto& [cx, cy] : room) {
+            roomAnchorOf_[cellKey(z, 0, cx, cy)] = std::make_pair(ax, ay);
+        }
+        return true;
+    }
+
+    /// What the law's lists make of a sign's name: lit all night, kept
+    /// dark, or neither (a household).
+    [[nodiscard]] HouseKind namedKind(std::string_view place) const noexcept {
+        const RuleKnobs& knobs = catalogue_.knobs();
+        for (const std::string& name : knobs.litAllNight) {
+            if (name == place) {
+                return HouseKind::Lit;
+            }
+        }
+        for (const std::string& name : knobs.keptDark) {
+            if (name == place) {
+                return HouseKind::Dark;
+            }
+        }
+        return HouseKind::Household;
+    }
+
+    /// The named house a wall cell stands in: the ward's own sign table
+    /// (sim/docks_signs_generated.hpp), a door sign's footprint on its band
+    /// and the storeys over it, matched against the law's lists by the
+    /// sign's `place` text. Where signs nest (a house inside its compound)
+    /// the smallest listed footprint wins. A way's rect is a street, never
+    /// a house; a world the table does not describe matches nothing.
+    [[nodiscard]] HouseKind namedHouse(std::int32_t x, std::int32_t y, std::int32_t z) const noexcept {
+        HouseKind kind = HouseKind::Household;
+        std::int64_t best = INT64_MAX;
+        for (const sim::docks::Sign& sign : sim::docks::kSigns) {
+            if (sign.kind != sim::docks::SignKind::Door || z < sign.band || z > sign.band + kSignStoreys ||
+                x < sign.x0 || x > sign.x1 || y < sign.y0 || y > sign.y1) {
+                continue;
+            }
+            const HouseKind named = namedKind(sign.place);
+            if (named == HouseKind::Household) {
+                continue;
+            }
+            const std::int64_t area = static_cast<std::int64_t>(sign.x1 - sign.x0 + 1) *
+                                      static_cast<std::int64_t>(sign.y1 - sign.y0 + 1);
+            if (area < best) {
+                best = area;
+                kind = named;
+            }
+        }
+        return kind;
+    }
+
+    /// The household behind a window in the wall cell (wx, wy, z) with the
+    /// room cell (ix, iy, z) behind it: the room's lot and what the law
+    /// makes of the house, written onto the pane's placement. No room (a
+    /// yard, a deck, a parapet behind the wall) leaves the pane dark but
+    /// for a lamp.
+    void houseOf(StaticPlacement& p, std::int32_t wx, std::int32_t wy, std::int32_t ix, std::int32_t iy,
+                 std::int32_t z) {
+        p.hasInside = true;
+        p.insideX = ix;
+        p.insideY = iy;
+        p.insideZ = z;
+        std::int32_t ax = 0;
+        std::int32_t ay = 0;
+        if (!roomAnchor(ix, iy, z, ax, ay)) {
+            p.homely = false;
+            p.house = HouseKind::None;
+            p.houseLot = 0;
+            return;
+        }
+        p.homely = true;
+        p.house = namedHouse(wx, wy, z);
+        p.houseLot = cellHash(ax, ay, z, kSaltHouse);
     }
 
     /// A storey's piece is fitted to the band less a centimetre, so its top
@@ -1211,6 +1346,7 @@ private:
         const PieceSpec* timber = catalogue_.piece(PieceRole::WallTimber);
         const PieceSpec* hullSpec = catalogue_.piece(PieceRole::Hull);
         const PieceSpec* timberWindow = catalogue_.piece(PieceRole::WindowTimber);
+        const PieceSpec* timberPane = catalogue_.piece(PieceRole::PaneTimber);
         const PieceSpec* plasterQuad = catalogue_.piece(PieceRole::WallPlaster);
         const PieceSpec* quayWall = catalogue_.piece(PieceRole::QuayWall);
         const RuleKnobs& knobs = catalogue_.knobs();
@@ -1500,14 +1636,10 @@ private:
                 }
                 facePiece(r, role, *spec, qa0, qa1, o);
                 if (role == PieceRole::WallWindow) {
-                    StaticPlacement& p = out_.placements.back();
-                    p.hasInside = true;
-                    p.insideX = lx - kSideDx[r.side];
-                    p.insideY = ly - kSideDy[r.side];
-                    p.insideZ = r.z;
-                    p.homely = isWalkableForm(tiles_, p.insideX, p.insideY, r.z) &&
-                               cellRoofed(tiles_, p.insideX, p.insideY, r.z) &&
-                               cellHash(p.insideX, p.insideY, r.z, kSaltPane) % kPaneDarkEvery != 0U;
+                    // The pane knows its household: the light law reads it
+                    // off the hour at relight.
+                    houseOf(out_.placements.back(), lx, ly, lx - kSideDx[r.side], ly - kSideDy[r.side],
+                            r.z);
                 }
                 // A hung window on a timber storey, on the same rhythm.
                 if (timberWindowOk && rhythm && roomBehind) {
@@ -1519,13 +1651,23 @@ private:
                     // Its front is on +Z: turned to face out.
                     pointPiece(PieceRole::WindowTimber, *timberWindow, at, yawOf(r.side) + kPi, lx,
                                ly, r.z, Rgba8{}, Vec3{1.0F, 1.0F, 1.0F}, false, 2.0F);
-                    StaticPlacement& p = out_.placements.back();
-                    p.hasInside = true;
-                    p.insideX = lx - kSideDx[r.side];
-                    p.insideY = ly - kSideDy[r.side];
-                    p.insideZ = r.z;
-                    p.facing = (r.side == kNorth || r.side == kSouth) ? render::kFacingY
-                                                                      : render::kFacingX;
+                    out_.placements.back().facing =
+                        (r.side == kNorth || r.side == kSouth) ? render::kFacingY : render::kFacingX;
+                    // The frame has no glass of its own: the pane quad is
+                    // set in its opening, a hair in front of its panels,
+                    // and it is the pane that carries the household.
+                    if (timberPane != nullptr) {
+                        FaceOpts po;
+                        po.frontOut = true;
+                        po.standoff = out + kTimberPaneOut;
+                        po.yBase = o.yBase + kTimberWindowLift + kTimberPaneSill;
+                        po.height = kTimberPaneHeight;
+                        po.light = cellLight(lx, ly);
+                        facePiece(r, PieceRole::PaneTimber, *timberPane, mid - kTimberPaneHalfWidth,
+                                  mid + kTimberPaneHalfWidth, po);
+                        houseOf(out_.placements.back(), lx, ly, lx - kSideDx[r.side],
+                                ly - kSideDy[r.side], r.z);
+                    }
                 }
             }
             // The gunwale: a beam along a hull run's open top, and the
@@ -3404,6 +3546,9 @@ private:
     std::vector<std::uint8_t> covered_;
     std::vector<DoorGap> doors_;
     std::map<std::uint64_t, std::size_t> gapOf_;
+    /// Every room cell a window has asked about, by cellKey(z, 0, x, y),
+    /// to its room's anchor cell.
+    std::map<std::uint64_t, std::pair<std::int32_t, std::int32_t>> roomAnchorOf_;
     StaticPlacements out_;
 };
 
@@ -3481,6 +3626,28 @@ StaticCatalogue StaticCatalogue::fromJson(std::string_view json) {
         k.roofTint = tintFromJson(rules.contains("roofTint") ? rules["roofTint"] : nlohmann::json(), k.roofTint);
         k.roofFillTint =
             tintFromJson(rules.contains("roofFillTint") ? rules["roofFillTint"] : nlohmann::json(), k.roofFillTint);
+        // The light law: the dusk gate, the households' hours and shares,
+        // and the houses it names.
+        k.paneDuskBelow = floatOf(rules, "paneDuskBelow", k.paneDuskBelow);
+        k.houseCandlePercent = intOf(rules, "houseCandlePercent", k.houseCandlePercent);
+        k.houseBedtimeFrom = floatOf(rules, "houseBedtimeFrom", k.houseBedtimeFrom);
+        k.houseBedtimeTo = floatOf(rules, "houseBedtimeTo", k.houseBedtimeTo);
+        k.houseRisingFrom = floatOf(rules, "houseRisingFrom", k.houseRisingFrom);
+        k.houseRisingTo = floatOf(rules, "houseRisingTo", k.houseRisingTo);
+        k.houseOwlPercent = intOf(rules, "houseOwlPercent", k.houseOwlPercent);
+        k.storeLampPercent = intOf(rules, "storeLampPercent", k.storeLampPercent);
+        const auto namesOf = [&rules](const char* key, std::vector<std::string>& names) {
+            if (!rules.contains(key) || !rules[key].is_array()) {
+                return;
+            }
+            for (const nlohmann::json& name : rules[key]) {
+                if (name.is_string()) {
+                    names.push_back(name.get<std::string>());
+                }
+            }
+        };
+        namesOf("litAllNight", k.litAllNight);
+        namesOf("keptDark", k.keptDark);
     }
 
     // Pieces in role order, whatever order the file lists them in; a row
@@ -3815,7 +3982,62 @@ std::uint64_t StaticCatalogue::digest() const noexcept {
     h.mixU8(knobs_.roofFillTint.r);
     h.mixU8(knobs_.roofFillTint.g);
     h.mixU8(knobs_.roofFillTint.b);
+    h.mixF32(knobs_.paneDuskBelow);
+    h.mixI32(knobs_.houseCandlePercent);
+    h.mixF32(knobs_.houseBedtimeFrom);
+    h.mixF32(knobs_.houseBedtimeTo);
+    h.mixF32(knobs_.houseRisingFrom);
+    h.mixF32(knobs_.houseRisingTo);
+    h.mixI32(knobs_.houseOwlPercent);
+    h.mixI32(knobs_.storeLampPercent);
+    h.mixU32(static_cast<std::uint32_t>(knobs_.litAllNight.size()));
+    for (const std::string& name : knobs_.litAllNight) {
+        h.mix(name.data(), name.size());
+    }
+    h.mixU32(static_cast<std::uint32_t>(knobs_.keptDark.size()));
+    for (const std::string& name : knobs_.keptDark) {
+        h.mix(name.data(), name.size());
+    }
     return h.value();
+}
+
+// ---------------------------------------------------------------------------
+// the light law
+// ---------------------------------------------------------------------------
+
+bool paneGlows(HouseKind house, std::uint32_t lot, float hour, const RuleKnobs& knobs) noexcept {
+    switch (house) {
+        case HouseKind::None:
+            return false;
+        case HouseKind::Lit:
+            return true;
+        case HouseKind::Dark:
+            // A store's watchman's lamp, in one room in so many.
+            return static_cast<std::int32_t>(lot % 100U) < knobs.storeLampPercent;
+        case HouseKind::Household:
+            break;
+    }
+    // Each lot off its own byte of the room's hash, so no two draws share.
+    if (static_cast<std::int32_t>(lot % 100U) >= knobs.houseCandlePercent) {
+        return false;  // no candle in this house
+    }
+    if (static_cast<std::int32_t>((lot >> 8) % 100U) < knobs.houseOwlPercent) {
+        return true;  // a night owl: never put out
+    }
+    if (knobs.houseBedtimeTo <= knobs.houseBedtimeFrom) {
+        return true;  // no bedtime: up all night
+    }
+    // The night runs from noon to noon (12..36) so the small hours follow
+    // the evening and a bedtime past midnight is simply a later number.
+    const float h = hour < 12.0F ? hour + 24.0F : hour;
+    const float bedtime = knobs.houseBedtimeFrom +
+                          (knobs.houseBedtimeTo - knobs.houseBedtimeFrom) *
+                              static_cast<float>((lot >> 16) % 256U) / 256.0F;
+    const float rising = 24.0F + knobs.houseRisingFrom +
+                         (knobs.houseRisingTo - knobs.houseRisingFrom) *
+                             static_cast<float>((lot >> 24) % 256U) / 256.0F;
+    const bool abed = h >= bedtime && h < rising;
+    return !abed;
 }
 
 // ---------------------------------------------------------------------------

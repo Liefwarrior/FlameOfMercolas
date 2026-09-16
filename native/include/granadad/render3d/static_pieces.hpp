@@ -53,7 +53,23 @@
 //                  extend by the wall's thickness so the two faces' pieces
 //                  close the corner between them.
 //   WINDOWS        on outdoor masonry runs, every third stretched piece (by
-//                  tile hash) is the window-wall piece instead.
+//                  tile hash) is the window-wall piece instead. A timber
+//                  storey hangs the timber window on the same rhythm and
+//                  sets a PANE quad in its frame, since the hung frame has
+//                  no glass of its own to light.
+//   THE LIGHT LAW  after dark a pane glows by its HOUSEHOLD, never by
+//                  itself: the roofed room behind it is walked once and
+//                  every window on that room draws one lot off the room's
+//                  anchor cell -- the family is up or it is not. A house
+//                  keeps a candle two nights in three, puts it out at its
+//                  own hashed bedtime, and lights it again at its own
+//                  rising hour; one house in so many never puts it out.
+//                  The ward's signs name the exceptions: the houses that
+//                  keep their lights all night (the tavern, the Mission,
+//                  the watch) and the stores kept dark but for a watchman's
+//                  lamp. The knobs are the catalogue's `rules`; the lot is
+//                  read off the hour at relight (world_scene.cpp), so the
+//                  placement stays pure over the tiles.
 //   DOORS          a gap of two or three walkable tiles in a wall line, open
 //                  on both sides, one side roofed and one not, with the wall
 //                  continuing two tiles past either jamb: the double door
@@ -263,6 +279,12 @@ enum class PieceRole : std::uint8_t {
     /// street: a hitching rail at hip height, the job that makes two
     /// metre-square piers a rail and not a gate to nowhere.
     PostRail,
+    /// The pane set in a hung timber window's frame: the thin quad, fitted
+    /// to the frame's opening a hair in front of its panels, dark by day
+    /// and warm after dark by the light law. The hung frame itself has no
+    /// glass mesh, so without this a timber storey could never show a
+    /// light.
+    PaneTimber,
     /// KIT BUILD. A THING ON A TILE: an item of the player's registry
     /// (sim/items.hpp) lying where the room says it lies -- a dropped
     /// knife, the cudgel under the bar, the four strongboxes, the snug's
@@ -274,7 +296,7 @@ enum class PieceRole : std::uint8_t {
     /// TAKE does, in the sim, and the next frame simply has fewer.
     Item,
 };
-inline constexpr std::size_t kPieceRoleCount = 57;
+inline constexpr std::size_t kPieceRoleCount = 58;
 
 /// The JSON key of a role ("wall", "wall_corner", ...), and back. None for
 /// an unknown key.
@@ -435,7 +457,55 @@ struct RuleKnobs {
     /// under it, on every building top with sky over it.
     Rgba8 roofTint{255, 255, 255, 255};
     Rgba8 roofFillTint{255, 255, 255, 255};
+
+    /// THE LIGHT LAW (paneGlows()). A pane can glow once the sky's daylight
+    /// (0 at midnight, 1 at noon) is under `paneDuskBelow`: last light,
+    /// not full dark. Of the households, `houseCandlePercent` keep a candle
+    /// at all; each puts it out at its own bedtime, hashed between
+    /// `houseBedtimeFrom` and `houseBedtimeTo` (hours; past 24 for the
+    /// small hours, and an empty window is no bedtime), and lights it again
+    /// at its rising hour between `houseRisingFrom` and `houseRisingTo`;
+    /// `houseOwlPercent` of them never put it out. A house the law names
+    /// dark keeps a watchman's lamp in `storeLampPercent` of its rooms. The
+    /// defaults are the old rule: two panes in three, up all night.
+    float paneDuskBelow = 0.42F;
+    std::int32_t houseCandlePercent = 67;
+    float houseBedtimeFrom = 0.0F;
+    float houseBedtimeTo = 0.0F;
+    float houseRisingFrom = 0.0F;
+    float houseRisingTo = 0.0F;
+    std::int32_t houseOwlPercent = 0;
+    std::int32_t storeLampPercent = 0;
+    /// The houses the law names, by their sign's `place` text
+    /// (sim/docks_signs_generated.hpp): those that keep their lights all
+    /// night, and those kept dark. A name no sign carries names nothing.
+    std::vector<std::string> litAllNight;
+    std::vector<std::string> keptDark;
 };
+
+/// What stands behind a window, decided at placement (the roofed room and
+/// the ward's signs) so the pane's night state is read off the hour alone.
+enum class HouseKind : std::uint8_t {
+    /// No room behind the pane (a yard, a deck, a parapet): dark unless a
+    /// lamp reaches the cell.
+    None = 0,
+    /// A household: up from dusk, abed at its own bedtime, stirring at its
+    /// own rising hour.
+    Household,
+    /// A house that keeps its lights whatever the hour: the tavern, the
+    /// Mission, the watch.
+    Lit,
+    /// A store, a shed, a yard: kept dark but for a watchman's lamp.
+    Dark,
+};
+
+/// THE LIGHT LAW for one pane: whether it glows at `hour` (0..24, the
+/// minute as a fraction) given the household behind it and the lot its
+/// room drew (StaticPlacement::houseLot). The sky's dusk gate
+/// (RuleKnobs::paneDuskBelow) and a lamp's own glow are the caller's.
+/// Pure: the same lot, hour and knobs answer the same on every machine.
+[[nodiscard]] bool paneGlows(HouseKind house, std::uint32_t lot, float hour,
+                             const RuleKnobs& knobs) noexcept;
 
 /// THE CATALOGUE. Loaded from JSON, queried by role and by material.
 class StaticCatalogue {
@@ -537,13 +607,17 @@ struct StaticPlacement {
     /// the average of the cells that meet there, blended bilinearly by the
     /// adapter -- so two blocks that share a corner share its light.
     bool bilinear = false;
-    /// A window: the cell behind it, whose light says whether the room is
-    /// lit (the pane goes warm at night). `homely` says the room behind is
-    /// a roofed floor and the tile hash keeps a candle in it: the pane goes
-    /// warm at night whether or not a lamp reaches the cell, two windows
-    /// in three, so the ward is not dead after dark.
+    /// A window (the kit window wall, or the pane quad in a hung timber
+    /// frame): the cell behind it, whose light says whether a lamp reaches
+    /// the room (the pane goes warm at night). `homely` says a household
+    /// stands behind it -- the cell is a roofed floor -- and `house` says
+    /// what the light law makes of it, `houseLot` the lot its whole room
+    /// drew (the hash of the room's anchor cell, one for every window on
+    /// the room), read against the hour at relight by paneGlows().
     bool hasInside = false;
     bool homely = false;
+    HouseKind house = HouseKind::None;
+    std::uint32_t houseLot = 0;
     std::int32_t insideX = 0, insideY = 0, insideZ = 0;
     /// The piece keeps its catalogue tint through the relight.
     bool selfLit = false;
