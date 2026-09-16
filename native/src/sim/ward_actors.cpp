@@ -900,6 +900,15 @@ bool WardPopulation::tryEnter(WardActor& actor, std::int32_t nx, std::int32_t ny
     if (occupancy_.at(cellKey(nx, ny, nband)) >= kMaxOccupantsPerCell) {
         return false;
     }
+    // THE PLAYER HOLDS HIS OWN TILE. He is not in the occupancy index -- he is
+    // not a WardActor -- so without this a body's ordinary route could target
+    // his exact cell same as any other, and nothing here would ever refuse it.
+    // A watchman's arrest and a brawler's swing both reach him at ADJACENCY
+    // (kStreetReachTiles, kStreetArrestReachTiles), never by standing where he
+    // stands, so refusing his own tile costs no policy anything it needed.
+    if (playerKnown_ && nx == playerX_ && ny == playerY_ && nband == playerBand_) {
+        return false;
+    }
     occupancy_.remove(cellKey(actor.x, actor.y, actor.band));
     actor.x = nx;
     actor.y = ny;
@@ -963,6 +972,9 @@ bool WardPopulation::tryPush(WardActor& pusher, std::int32_t cx, std::int32_t cy
         }
         if (occupancy_.at(cellKey(tx, ty, tz)) != 0) {
             continue;
+        }
+        if (playerKnown_ && tx == playerX_ && ty == playerY_ && tz == playerBand_) {
+            continue;  // never shove a body onto the player's own tile
         }
         occupancy_.remove(cellKey(cx, cy, cband));
         occupant->x = tx;
@@ -1103,10 +1115,14 @@ bool WardPopulation::sidestep(WardActor& actor, std::int32_t tx, std::int32_t ty
         if (occupancy_.at(cellKey(nx, ny, nz)) >= kMaxOccupantsPerCell) {
             continue;
         }
+        if (playerKnown_ && nx == playerX_ && ny == playerY_ && nz == playerBand_) {
+            continue;  // his tile too -- tryEnter's own rule, checked here so
+                       // this loop's "cannot fail" stays true
+        }
         if (distanceFrom(nx, ny, nz, tx, ty, tband) > here) {
             continue;
         }
-        tryEnter(actor, nx, ny, nz);  // the occupancy check above means this cannot fail
+        tryEnter(actor, nx, ny, nz);  // the occupancy and player checks above mean this cannot fail
         actor.route.clear();
         actor.routeTargetX = -1;
         actor.facing = facingFromDelta(nx - actor.prevX, ny - actor.prevY);

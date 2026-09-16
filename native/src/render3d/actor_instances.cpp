@@ -50,6 +50,34 @@ struct Palette {
     }
 }
 
+/// A SMALL, STABLE, PER-ACTOR nudge within a body's own tile. Purely visual:
+/// nothing here is hashed, and it never moves a body off the sim's own
+/// one-tile grid -- the sim's one-per-cell rule is the only thing that says
+/// where a body IS, and this reads that position and never writes it back.
+/// It exists because the placeholder figure's shoulders are wider than the
+/// ~0.9 m tile it stands on, so two bodies the sim has legitimately placed on
+/// ADJACENT tiles -- exactly what WardPopulation::sidestep now does far more
+/// often, on purpose -- could still read as one fused silhouette from some
+/// angles. Offsetting each body toward a different point in its own tile, by
+/// an id-keyed hash so two neighbours do not happen to lean toward each
+/// other, buys real clearance for an orthogonally-adjacent pair without ever
+/// contradicting where the sim says either of them is standing.
+[[nodiscard]] std::uint32_t personalSpaceHash(std::int32_t actorId) noexcept {
+    std::uint32_t h = static_cast<std::uint32_t>(actorId) * 0x9E3779B1u + 0x68E31DA4u;
+    h ^= h >> 15;
+    h *= 0x85EBCA6Bu;
+    h ^= h >> 13;
+    return h;
+}
+
+constexpr float kPersonalSpaceTiles = 0.3F;
+
+void personalSpaceNudge(std::int32_t actorId, float& px, float& py) noexcept {
+    const std::uint32_t h = personalSpaceHash(actorId);
+    px += (static_cast<float>(h & 0xFFu) / 255.0F - 0.5F) * kPersonalSpaceTiles;
+    py += (static_cast<float>((h >> 8) & 0xFFu) / 255.0F - 0.5F) * kPersonalSpaceTiles;
+}
+
 /// Per-face shade of the placeholder: a fixed key light from above and a
 /// little from the east, baked into the vertex colours (rlsw has no
 /// shader). The light where the body STANDS goes into Instance::tint.
@@ -406,12 +434,13 @@ std::vector<ActorInstance> actorInstances(const render::Session& session,
         }
         // A floored body lies where it fell: no slide off the tile it was
         // walking from when the blow landed.
-        const float px = down ? static_cast<float>(actor.x) + 0.5F
-                              : static_cast<float>(actor.prevX) +
-                                    static_cast<float>(actor.x - actor.prevX) * slide + 0.5F;
-        const float py = down ? static_cast<float>(actor.y) + 0.5F
-                              : static_cast<float>(actor.prevY) +
-                                    static_cast<float>(actor.y - actor.prevY) * slide + 0.5F;
+        float px = down ? static_cast<float>(actor.x) + 0.5F
+                        : static_cast<float>(actor.prevX) +
+                              static_cast<float>(actor.x - actor.prevX) * slide + 0.5F;
+        float py = down ? static_cast<float>(actor.y) + 0.5F
+                        : static_cast<float>(actor.prevY) +
+                              static_cast<float>(actor.y - actor.prevY) * slide + 0.5F;
+        personalSpaceNudge(actor.id, px, py);
         const float distance = planarDistance(view, px, py);
         if (distance > params.maxDistance) {
             continue;
