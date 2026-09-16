@@ -1,10 +1,13 @@
 # The street talks
 
 Every frame in here is the real `dist\granadad.exe` on the gated Windows build (branch
-`lane/voice`, commit `36411ac4`), playing the voice channel through the real verbs. Nothing
-is staged. Each run prints a summary line next to the picture
-(`voice end=... beats=n/N ... key=... speaker="..." row="..."`) and the exact line that shot
-each frame is in the table. A run that fell short says so and can't pass as one that didn't.
+`lane/voice`, commit `b18c58de`, with wip's street senses, kit and pull pack merged under it),
+playing the voice channel through the real verbs. Nothing is staged. Each run prints a summary
+line next to the picture (`voice end=... beats=n/N ... key=... speaker="..." row="..."
+inview=yes|no apart=T.T`) and the exact line that shot each frame is in the table. A run that
+fell short says so and can't pass as one that didn't. `inview` is the frame's own proof: the
+body the frame is about is inside the field of view at the shutter, with a clear lens line and
+nobody drawn in the way; `apart` is how far off it is, in tiles. The suite pins both.
 
 You said it on the 10th. "I'd expect the watch and crowd to react appropriately to the violence
 they're witnessing." And the Oblivion thing where talking to somebody feels like talking to a
@@ -22,12 +25,12 @@ commit `fdbd177b`). They aren't part of this set and they weren't reshot.
 
 | frame | line | what it shows |
 | --- | --- | --- |
-| `voice-pass-960x540.png` | `--voice=pass` | A serf walks by on the Tarwalk at four in the afternoon. The smoke's own walk west from the spawn until somebody passes within talk reach, then the walk turns to look at her. `PETRA BARNACRE: CRANE LINE IS MOVING. STAND CLEAR OF IT.` sits on the voice row above the health bar, her name in the body accent and the row in dim ink, on one plate. Nobody pressed E. The crosshair still names her (`PETRA BARNACRE  SERF  E - TALK`) so the line and the prompt agree on who spoke. |
-| `voice-overheard-960x540.png` | `--voice=overheard` | Two bodies talking to each other, overheard from the street. Held at the spawn, then walked, until two people standing together within six tiles and a sight line get heard, and the walk turns to look at them. Three serfs by the Eel-Pots, and one side of the exchange in the speaker's own trade. `QUENNA GROYNE: ...BONDSWORN BY THE SPRING IF THE LANES STAY SHUT. MARK ME...` (`overheard.serf`). |
-| `voice-farewell-960x540.png` | `--voice=farewell` | The goodbye. The `--street` placement beside a rope hand, the talk key, then LEAVE by its own topic. The panel closes and `LISBET HEMPSON: GO ON. THE CRANE LINE WILL NOT WAIT FOR EITHER OF US.` is on the voice row (`farewell.serf`). Her greeting has stood down off the alert row, so the goodbye is the last thing she said. |
-| `voice-moved-960x540.png` | `--voice=moved` | The worded reaction. Same placement, then THE VANISHED CLERK heard out, which warms her a hair. The panel's dateline row reads `(THE FACE SOFTENS A HAIR)` under her reply, dim, for four seconds. Never a number. She holds still and faces you for the talk. |
-| `voice-react-960x540.png` | `--voice=react` | A witness to a tap in the Gull at eight. Walk to the bar, tap the nearest patron until it connects (the `--punch` beat), and the room says what it saw. The one you hit joins the fight on the alert row in his own words (`brawl.join`, from the feel build). A patron who saw it (the sim's three clause witness rule put `Struck` on his memory) speaks on the voice row in his own trade's mouth. `CAPTAIN IVO WAKE: KNIVES CHECKED AT THE DOOR, AND STILL THIS.` (`react.maritime.struck`). The shot turns to the witness. Bouncers never take this row, their ladder speaks for them. |
-| `voice-watch-960x540.png` | `--voice=watch` | The Watch approach readback. The feel build's `--watch-halt=halt` line up to the halt (steel up in Cull's sight, a swing at a patron, Cull Closing on VIOLENCE with `watch.halt` on the alert row), then his next word on the voice row a breath later as he crosses the room. `WATCHMAN CULL: PUT YOUR HANDS DOWN. DOWN. I WILL NOT SAY IT A THIRD TIME.` (`watch.approach.violence`). The halt is still up under it. It's the halt, extended. |
+| `voice-pass-960x540.png` | `--voice=pass` | A serf walks by on the Tarwalk at four in the afternoon. The smoke's own walk west from the spawn until somebody passes within talk reach, then the walk turns to look at her. `PETRA BARNACRE: QUARTER-DAY'S KINGSDAY. DON'T REMIND ME.` sits on the voice row above the health bar, her name in the body accent and the row in dim ink, on one plate. Nobody pressed E. The crosshair still names her (`PETRA BARNACRE  SERF  E - TALK`) so the line and the prompt agree on who spoke. |
+| `voice-overheard-960x540.png` | `--voice=overheard` | Two bodies talking to each other, overheard from the street. Held at the spawn, then walked, until two people standing together within six tiles and a sight line get heard, and the walk turns to look at them. A pair of serfs by the sacks on the Tarwalk, and one side of the exchange in the speaker's own trade. `JESSA GUTTERLINE: ...NO SHIPMENTS, NO SHIFTS. NO SHIFTS, NO PENNY. THAT'S THE SUM...` (`overheard.serf`). |
+| `voice-farewell-960x540.png` | `--voice=farewell` | The goodbye. The `--street` placement by a rope hand at her pitch on the Quayside, the talk key, then LEAVE by its own topic. The panel closes and `WENN BOLLARD: BACK TO THE ROPES. MIND THE PLANKS.` is on the voice row (`farewell.serf`). Her greeting has stood down off the alert row, so the goodbye is the last thing she said. She is two and three quarter tiles off, head and shoulders in the frame, her crew at the pitch behind her, nobody in the lens. |
+| `voice-moved-960x540.png` | `--voice=moved` | The worded reaction. Same placement, then THE VANISHED CLERK heard out, which warms her a hair. The panel's dateline row reads `(THE FACE SOFTENS A HAIR)` under her reply, dim, for four seconds. Never a number. She is standing at her post because that is her work, not because the talk holds her: the WardActor hold is still deferred (below). |
+| `voice-react-960x540.png` | `--voice=react` | A witness to a tap in the Gull at eight. Walk to the bar, tap the nearest patron until it connects (the `--punch` beat), and the room says what it saw. The one you hit joins the fight on the alert row in his own words (`brawl.join`, from the feel build). A patron who saw it (the sim's three clause witness rule put `Struck` on his memory) speaks on the voice row in his own trade's mouth. `CAPTAIN IVO WAKE: STEADY. STEADY. THAT'S A PERSON, NOT A BALE.` (`react.maritime.struck`). The shot turns to the witness, three tiles off in the middle of the frame. Bouncers never take this row, their ladder speaks for them. |
+| `voice-watch-960x540.png` | `--voice=watch` | The Watch approach readback, and the reveal. Into the Gull at eleven, across the taproom from Cull's stool -- five tiles, the far end of the row north of the tables, a stand chosen so the lens has him and the floor he will cross -- and the blade drawn (one tap of the Attack key with nobody in reach: steel in a raised hand, cause on its own, no swing). He goes Closing on VIOLENCE with `watch.halt` on the alert row, walks the row at you, and at reach his readback REPLACES the halt: `WATCHMAN CULL: DROP IT. YOU'RE DONE WITH IT, WHETHER YOU KNOW THAT YET OR NOT.` (`watch.approach.violence.steel`, the steel key because steel is up). The lens is on him the step the row lands and again after its fade: he is under three tiles off, centred, coming. STEEL UP on the stance row, the blade across the frame. One man, one line: the halt is gone the step the readback took the row. |
 
 ## The channel
 
@@ -42,7 +45,7 @@ Five channels, ranked. A higher one replaces a lower one on the row. A lower one
 
 | channel | what fires it | keys | cooldown |
 | --- | --- | --- | --- |
-| watch | a watchman's eyes on you crouched or with your hands up, a watchman passing somebody the post has heard of (heat 24 and up) or has paper on, the deference table to a presented Wielder, and the readback as a Closing watchman crosses the room after his halt | `watch.notice` `watch.heat` `watch.paper` `watch.wielder` `watch.approach.<violence\|paper\|goods>` | 5 s on the channel, 20 s per watchman. The readback fires 45 steps after the halt and again at reach |
+| watch | a watchman's eyes on you crouched or with your hands up, a watchman passing somebody the post has heard of (heat 24 and up) or has paper on, the deference table to a presented Wielder, and the readback as a Closing watchman crosses the room after his halt | `watch.notice` `watch.heat` `watch.paper` `watch.wielder` `watch.approach.<violence\|paper\|goods>` | 5 s on the channel, 20 s per watchman. The readback waits for his halt to leave the alert row, or replaces it at reach (two tiles) once the halt has had its second |
 | react | a witness's memory moving with Struck, DrewSteel or Slew on it (`SocialLedger::witness`, read by comparing public state, same shape as `lastPlayerHp_`). Never the man in the fight, never a bouncer (his ladder speaks for him), never the Closing watchman (his halt does) | `react.<family>.<struck\|steel\|slew>` | 4 s on the channel, 15 s per witness. A witness who couldn't get the row keeps the right for 4 s |
 | farewell | LEAVE by its topic, the back key, or walking off past five tiles mid talk | `farewell.<type>.<attitude>` and `farewell.away.<family>` | none, it's an event |
 | pass | the nearest body within two tiles that hasn't spoken to you lately, once | `pass.<type>.<attitude>` | 12 s on the channel, 2 min per mouth |
@@ -80,15 +83,18 @@ met him.
 
 ## The honest bound
 
-Your swing only reaches the Gilded Gull's roster today. WardActor combat sheets are deferred by
-ruling (COMBAT-ACTION-SPEC.md section 10), so a street body has no blow to witness. `react.*` is
-proven on the Gull's witnesses and the street half is declared. The same tables and the same
-emitter fire the day a street body can be hit, which is the STREET SENSES lane's declared
-population move. Two more things aren't built here, said plainly. `watch.notice`, `watch.heat` and
-`watch.paper` are a street watchman's word as you pass, and nothing follows them on the street
-because the street Watch has no arrest by ruling. `rumor.<family>` stocks WHAT THE WARD SAYS in a
-trade's own mouth, but no hashed event ring feeds it yet (roadmap item 17), so it's authored
-breadth, not the world's news. And a third, the critic's own catch: `overheard`'s street bodies
+Your swing reaches a street body now (STREET SENSES leg (b), merged under this lane) and the
+street Watch closes on a blow he sees and arrests at reach (leg (c)) -- and the street's own
+reaction to a blow is that lane's, on the alert row: the scatter, `street.routed`, the watchman's
+`street.halt`. `react.*` on the voice row still reads the Gull's ledger and nothing else: a
+street witness has no memory row for the emitter to compare, so the witness's WORD is proven on
+the Gull's roster and the street half of it is declared, the same tables and the same emitter
+the day the ward carries a ledger. Two more things aren't built here, said plainly.
+`watch.notice`, `watch.heat` and `watch.paper` are a street watchman's word as you pass, before
+anything; what follows on the street is leg (c)'s -- a demand for a raised blade with its grace,
+the close on a blow -- not these rows'. `rumor.<family>` stocks WHAT THE WARD SAYS in a trade's
+own mouth, but no hashed event ring feeds it yet (roadmap item 17), so it's authored breadth, not
+the world's news. And a third, the critic's own catch: `overheard`'s street bodies
 share `paletteOf(sim::WardType)` (`native/src/render/session.cpp`), which colours a coat, trousers
 and skin by TYPE and not by the actor -- three serfs standing together are three copies of the
 same serf. There is no per-body knob to turn; fixing it means threading an actor id through
@@ -96,33 +102,72 @@ same serf. There is no per-body knob to turn; fixing it means threading an actor
 themselves, which is a wider change than a camera-and-placement pass should carry. Declared here
 rather than patched around.
 
-Two more, found by this same critic's round and tried, not fixed. Said plainly rather than
-papered over: **the `watch` showcase's reveal shot.** `voice-watch-960x540.png`'s own line lands
-clean (four beats, the right key, the right words), but the camera turning to Cull as he crosses
-the room can end up looking into a wall-mounted shelf (`render3d/static_pieces.cpp`'s hash-placed
-decor, not in the tile-solidity grid `TileQuery::lineOfSight` reads) instead of at him. A tile-LOS
-wait was tried, then a measured bearing-arc wait in its place; both broke the pinned "ONE MAN, ONE
-LINE" invariant (`test_street_voice.cpp`'s watch case) instead of fixing the shot -- any extra idle
-time between the voice-row event and the turn gives the street a chance to speak through `say()`
-again before the halt's own alert clock this test pins ever reaches zero, confirmed empirically (a
-fresh bark, then a bystander's own `react.*` line, both stepping on state this branch doesn't own)
-rather than assumed. Reverted to firing the turn on the voice-row event alone, which is what the
-suite already holds correct; the reveal shot's own framing stays open for a pass that can afford to
-touch more of the Watch's state machine than a render-side wait can reach.
+Two more the critic's round found, and this pass ran to ground rather than around. Both were
+"the frame is not of the speaker", and both had been tried twice from the camera's side and
+declared. Neither was a camera problem.
 
-**Near-camera clipping at the outdoor "rope hand" placement.** `voice-farewell`, `voice-moved`, and
-(less severely) `voice-pass` all place the camera on a working stretch of the Tarwalk where dockers
-walk close together -- a second body's head can pass close enough to the lens to fill the bottom of
-the frame. A two-pass crowding filter at PLACEMENT time (`standTileIsCrowded`, rejects a stand tile
-with another visible body within a tile of it) and a re-aim at the target's CURRENT position right
-before the shot (instead of the stale aim taken at placement, which could be tens of steps stale by
-the time farewell/moved's own beats land) were both tried. Neither closed it: a fresh capture after
-both fixes still shows the same clipped head in the same frames. This reads as a structural
-property of a genuinely busy street corner, not a placement bug this pass's tools can isolate --
-`voice-pass` shows a milder version of the same thing without ever having been flagged, which
-suggests the corridor itself, not any one body's position, is what wants a wider fix (a different
-stand tile entirely, or a minimum-radius push against ALL bodies rather than a two-pass filter that
-only checks the moment of placement). Declared here rather than patched around a second time.
+**The watch reveal was a picture of a table, not a shelf.** The old drive borrowed the feel
+build's `--watch-halt` placement (stand beside a patron and swing) with the mark "farthest from
+Cull with his line of sight", and in a room this size that was Wick Hempson's stool at (150,70):
+the pocket between the taproom's two tables, (148,69) and (151,69), two tiles from Cull. The
+turn to Cull looked into the west face of the table at (151,69). The sim had said he could see
+the player from there, and the sim was right by its own rule: `TileQuery::lineOfSight` walks
+between two TILE CENTRES and lets a ray through a lattice corner when only one of the two cells
+it grazes is solid -- the right rule between people. A camera sits at a Q8 point and draws every
+solid cell as a block, and the block was in the way. The two rules are now two functions:
+`render::cameraSightClear` (`session.cpp`) walks the exact segment from the eye to the body,
+every cell it enters asked of `solid()`, a corner shut if EITHER grazed cell is, down the middle
+and a quarter tile either side. `test_street_voice.cpp` holds the two against each other on that
+table: the sim says seen, the lens says wall. And the reveal has its own drive now
+(`runWatchRevealLine`): every free floor cell of the taproom Cull can see by his rule and the
+lens can see him from -- and can see the last three tiles of the route the room's own router
+draws from his stool to it -- ranked farthest first. Five tiles, the far end of the row north of
+the tables. Steel up there, no mark to swing at (a blade in a raised hand is cause on its own,
+`Tavern::violenceInView`'s own sentence), and he crosses the room. The turn goes the step the
+readback lands and again after its fade -- the same two steps the row-then-turn order spent, so
+the ONE MAN, ONE LINE window the suite pins is exactly as wide as it was, and nothing else gets
+a step to speak into. The `--watch-halt` line itself is untouched; it wanted the arrest, and its
+mark beside Cull is right for that.
+
+**The rope hand's frames were the lens in her hair, and then the corridor.** Three things,
+found with the sim's own numbers rather than guessed. First, the stand was the tile BESIDE her,
+and at one tile a person is under the frame: the eye stands a tile and three quarters up
+(`kEyeHeightTilesQ8`), a serf's crown is a tile and a third or so, so at one tile the crown is
+a hand and a half under the horizon and the rest of her is under the bottom edge. Second, a
+ward body is DRAWN on a slide from its last tile to its current one over the second
+(`actor_instances.cpp`, the same fraction `wardSprites` uses), and the placement asked only
+where she IS; a body sliding out of the very tile the camera took was drawn through the lens.
+Third, `--street`'s search ran
+before the population had ticked once, when every body in the ward reads as standing still --
+no last tile, no leg drawn -- so "nobody near" was true of a stream of dockers about to walk
+through the stand. The old rope-hand tile, (54,65), was a one-wide lane along the crane post at
+(56-57,65) with Norrick Hookbourne's beat coming down it. `runStreetLine` now lets the crowd walk
+two seconds before it asks, and composes the stand: any standable, empty tile within the talk
+reach (two tiles) from which the key reaches THAT body and the lens has her whole, the farther
+the better; the body standing (last tile is this tile, and no leg to somewhere else); nobody
+else drawn within two tiles of the stand, their tile or the one they slide from, walkers counted
+two tiles further out for the breath between the placement and the shutter; under the open sky
+before under a storey. Four passes from that down to the bare question, so a trade with nowhere
+composed to stand still gets its line. Wenn Bollard at her pitch on the Quayside, two and three
+quarter tiles off, is what the composed pass found. And a body placed somewhere else leaves the
+street's last word behind it now: `Session::placeBodyAt` stands the voice row down with the
+crosshair and the room name (`snapViewAfterRelocation`), which a travel wanted as much as a
+placement -- the row over the new feet had been quoting the old street.
+
+**Declared, not built, and the next declared population moves.** Both of those are the frame's
+business, and the frame is right now. Two things under them are the ward's, and this lane does
+not move the population baseline (`0xDD3890042DD2B472` after the street senses' three consented
+legs): (a) THE CROWD WALKS THROUGH THE PLAYER. `WardPopulation`'s occupancy index is one body
+per cell and the player's cell is not in it, so a docker's beat goes through you on a one-wide
+quay; the composed stand keeps it out of these frames and nothing keeps it out of play. The fix
+is `tryEnter` refusing the pushed player's cell (`setPlayer` already carries it, hashed), with
+the blocked-step yield doing what it does behind any other body -- a hashed change to the gate's
+own violence leg, so a declared move with its twin run, not a hidden one. (b) THE WARD HOLD FOR
+THE TALK, as the Gull's roster has it (`Tavern::holdsForTalk`): the one you press E on stands
+and faces you until you leave. The walk-off close covers the body that walks; the Oblivion
+thing is that they don't. Same shape: a hold id pushed by the client, the held body skipping its
+step and facing the player, declared and re-blessed. Either belongs to the lane that next
+touches a `WardActor`.
 
 ## What the suite pins
 
@@ -131,9 +176,15 @@ dash in it. The learned word is in one priest's mouth and nobody else's (grepped
 the right way. The pick is pure and the emitter moves neither hash. LEAVE carries a goodbye out of
 a farewell table, the back key says one, and walking off throws one after you. The one you talk
 to in the Gull holds still. The worded reaction is never a number. Two pass lines are never closer
-than the cooldown. All six `--voice=` endings land every beat they owe. A hand built HudState
-without the row draws pixel identical. `test_dialogue.cpp` pins the sheet at 521 tables (393
-before this lane, plus the 128 listed below).
+than the cooldown. All six `--voice=` endings land every beat they owe, AND THE FRAME IS OF THE
+SPEAKER: at the shutter of every composed ending the body the frame is about is in the field of
+view with a clear lens line and nobody drawn in the way (`inview=yes` in the summary), the
+farewell and moved stands a diagonal off at the least (never the tile beside) and the talk
+reach at the most, the watch reveal's stand three tiles from Cull's stool at the least. The lens's line and the sim's
+are held against each other on the table at (151,69). A placed body leaves the street's last
+word behind it. A hand built HudState without the row draws pixel identical. `test_dialogue.cpp`
+pins the sheet at 539 tables (393 before this lane, the 142 listed below, and the street
+senses' 4).
 
 
 ## Every row, for the redline
