@@ -282,6 +282,22 @@ constexpr sv kCaseNewsKenney[] = {
 constexpr sv kSkillUpKenney[] = {
     "Interface Sounds/Audio/bong_001.ogg",
 };
+// THE RUNG PLATE. LegendRung: a Legend rung rising wants a cue heavier than
+// the toast's chime, and the vendored trees were searched before anything
+// was added -- the one low bell either of them holds is the Kenney heavy
+// bell the harbour's own sparse rows already ring (kHarbourBell, five
+// strikes). Reused here as a single strike on the World bus, which reads as
+// a toll and not as the weather. NO LOT ROW ON PURPOSE: the LOT tree's only
+// candidates are the skill-up's chime and the case-closed sting, and a rung
+// that sounded like a case closing on one checkout and like a bell on the
+// gate would be two cues for one moment. No new art.
+constexpr sv kLegendRungKenney[] = {
+    "Impact Sounds/Audio/impactBell_heavy_000.ogg",
+    "Impact Sounds/Audio/impactBell_heavy_001.ogg",
+    "Impact Sounds/Audio/impactBell_heavy_002.ogg",
+    "Impact Sounds/Audio/impactBell_heavy_003.ogg",
+    "Impact Sounds/Audio/impactBell_heavy_004.ogg",
+};
 
 // ---------------------------------------------------------------------------
 // THE LOT PASS: the second root (kLotAudioRootRel = content/art/lot/audio).
@@ -578,6 +594,7 @@ std::span<const std::string_view> soundPaths(SoundId id) noexcept {
         case SoundId::CaseClosed: return asSpan(kCaseClosedKenney);
         case SoundId::CaseNews: return asSpan(kCaseNewsKenney);
         case SoundId::SkillUp: return asSpan(kSkillUpKenney);
+        case SoundId::LegendRung: return asSpan(kLegendRungKenney);
         case SoundId::PlayerHurt:
         case SoundId::PlayerDown:
         case SoundId::AmbienceCoastal:
@@ -692,6 +709,7 @@ Bus busFor(SoundId id) noexcept {
         case SoundId::CaseClosed:
         case SoundId::CaseNews:
         case SoundId::SkillUp:
+        case SoundId::LegendRung:
             return Bus::World;
         case SoundId::KnifeDraw:
         case SoundId::KnifeSlice:

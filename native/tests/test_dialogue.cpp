@@ -112,11 +112,13 @@ TEST_CASE("the owner's bark tables load, all of them") {
     // and the 3 in combat_barks.json (feel/build, the Barks lane: watch.halt,
     // brawl.join, crowd.flee) beside it, and the 4 in street_barks.json
     // (lane/street: street.halt, street.sheathe, street.offence,
-    // street.routed -- the street Watch's mouth and a routed docker's) --
+    // street.routed -- the street Watch's mouth and a routed docker's), and
+    // the 21 in legend_barks.json (lane/rung: legend.<track>.<rung>, one row
+    // per rung per track for the rung plate, plus legend.top) --
     // each sprint adds a SECOND file rather than editing 59KB of canon, and
     // BarkTables::load reads the whole directory. Pinned: content added should
     // be a visible change here, and content LOST should be red.
-    CHECK(barks().tableCount() == 397);
+    CHECK(barks().tableCount() == 418);
     CHECK(barks().rowCount() > 500);
     // Sorted by key, which is what makes lookup a binary search rather than a
     // hash whose iteration order is the standard library's business.

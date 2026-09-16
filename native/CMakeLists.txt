@@ -370,6 +370,11 @@ add_library(granadad-render STATIC
     # the book-change watcher. Render state only, never hashed; the marker
     # doctrine (owner ruling D8) kept by construction. See the header.
     src/render/pull.cpp
+    # THE RUNG PLATE (roadmap 21b) -- a Legend rung rising gets its moment:
+    # the watch that diffs the five rungs once a step (the toast's own
+    # shape), the plate's text off the authored sheet, and the plate itself
+    # in the terminal register, centred high. Render state, never hashed.
+    src/render/rung_plate.cpp
     # JUSTICE BUILD (HEARING PAGE LANE) -- the Flame's bench as a page: the
     # paper laid, the charge off the ledger, the three rows, the priest's
     # weighing in the reference's own four-line check block, the judgment
@@ -776,6 +781,14 @@ if(GRANADAD_BUILD_TESTS)
         # 320x180 and 1920x1080, and the doctrine holds (never a person,
         # never a clue, nothing on the plan).
         tests/test_pull.cpp
+        # THE RUNG PLATE -- the watch seeds silently and reports a rise per
+        # track (never a fall), every legend.* key resolves for every track
+        # and rung and draws whole at 320x180, the plate holds and sleeps,
+        # queues behind itself, outranks the toast, is dismissed by a page
+        # and by a bouncer's warning and waits behind them, moves neither
+        # the room's nor the ward's digest, stays out of the reticle's fence
+        # at three sizes, and --rung= lands its two beats on all five tracks.
+        tests/test_rung_plate.cpp
         # And every scripted line the demo advertises, accepted -- see the file
         # header for the sprint --skyrun spent landing 2 of 9 beats with nothing
         # in the suite to notice.

@@ -1041,6 +1041,14 @@ void print_usage() {
         "                       the budget, put the coil down and look at it.\n"
         "                       WHERE is take, theirs, sheet, equip, slot, dr,\n"
         "                       search, load, drop or empty for the whole line\n"
+        "  --rung=TRACK         raise a Legend rung on TRACK through the real\n"
+        "                       verbs and stop on the plate, fully up. TRACK\n"
+        "                       is wire (a guest's box cracked at two), roofs\n"
+        "                       (the lead and the alley leapt), flame (the\n"
+        "                       Mission's two leads read), trade (the ward's\n"
+        "                       bounty paid) or law (the Watch stood drinks).\n"
+        "                       Pair with --settle-steps=0 for the plate at\n"
+        "                       its first held frame\n"
         "  --nemesis[=WHERE]    lose a fist fight to a named laborer three\n"
         "                       times and watch him rise: a rung, a guild\n"
         "                       with members in it, a permanent cut of the\n"
@@ -1504,6 +1512,10 @@ void print_usage() {
         } else if (starts_with(arg, "--kit=", &value)) {
             options.smoke.kit = true;
             options.smoke.kitEnd = value;
+            options.wantsSmoke = true;
+        } else if (starts_with(arg, "--rung=", &value)) {
+            // THE RUNG PLATE. See SmokeRunConfig::rung.
+            options.smoke.rung = value;
             options.wantsSmoke = true;
         } else if (std::strcmp(arg, "--nemesis") == 0) {
             options.smoke.nemesis = true;
