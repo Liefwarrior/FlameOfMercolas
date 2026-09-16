@@ -35,7 +35,7 @@ otherwise.
 |---|---|---|---|
 | 1 | raw atlas showing through (the Gull's ceiling, the quay, the pier lip) | every dressed wall standing over an open cell gets the plaster quad under it, in the room's own ceiling tint (`ceilings()`, the second pass). Every floor slab edge that faces air gets a lip quad the slab's own height, planks on timber and tinted plaster on stone (`lips()`). Steel has a rule now, so the quay's odd patch is dressed. | 13, 14, 08, 17 |
 | 2 | brick facing into plastered rooms behind the door frame | the thin plaster quad stands behind the header and both jambs, cut round the opening, plus two returns over the frame's ends in the reveal planes (`doors()`). Plaster faces in general are the one-sided thin quad now (`WallPlaster`), so a corner has no brick back and no brick end. | 14, 23 |
-| 3 | lamps with no light in them, no lit windows | lanterns are `SM_Prop_Camp_Lantern_01` on a bracket arm with a warm translucent halo (two crossed quads, their own light, brighter after dark). Fires keep the brazier and get an ember tray in the cage and a flame over it. A window pane goes warm at night when the room behind it is lit by a lamp, or when the tile hash keeps a candle in a roofed room (two windows in three), so the ward is not dead after dark. | 10, 15, 16, 19 |
+| 3 | lamps with no light in them, no lit windows | lanterns are `SM_Prop_Camp_Lantern_01` on a bracket arm with a warm translucent halo (two crossed quads then, one billboard since -- see "The halo, from under it" below; their own light, brighter after dark). Fires keep the brazier and get an ember tray in the cage and a flame over it. A window pane goes warm at night when the room behind it is lit by a lamp, or when the tile hash keeps a candle in a roofed room (two windows in three), so the ward is not dead after dark. | 10, 15, 16, 19 |
 | 4 | the Gull an empty box | joists across every room ceiling on the odd grid lines. Tables with benches and mugs on a lattice round the indoor lantern where a clear 3x3 of floor allows. Shelves with bottles on the indoor masonry faces. Barrel racks against walls. The free-standing two-cell masonry block is a hearth and wears the fireplace with a fire in it. The lone timber cells inside are square plastered pillars with a stool each side (`furniture()`, `posts()`). | 07, 21, 22 |
 | 5 | floorboard roofs, chimneys on fences | roof planes wear the flagstone piece as dark slates over a slate fill, loose tiles scattered by hash, an upstand along every edge cell (brick over masonry, boards over timber), chimneys one in twelve over masonry walls only in three variants, the odd crate or barrel at the edge (`roofs()`). Still flat, see below. | 05, 06, 19 |
 | 6 | hulls as sheds, 1x1 posts as boarded pillars | a timber wall with the harbour beside it is a hull. Its boards run across and lean outward nine degrees, tarred, with a gunwale beam along the open top and mooring lines down the side. Rowboats moor along quay edges one cell in seven, cranes stand one cell back from a pier head. A lone timber cell out of doors is a tarred core with a banded timber post at each corner. The chunk box is still a metre square, that is the sim's cell. | 08, 17, 18, 20 |
@@ -166,8 +166,10 @@ one line once the tiles say so.
   Gull's tables are these, in the sim's terms), so the dressing keeps the
   footprint and makes it a pillar or a post cluster rather than pretending
   it is thin.
-- The lantern halo is two crossed translucent quads with a radial falloff.
-  It reads as a glow; walk through one and the crossing shows.
+- The lantern halo is one translucent quad with a radial falloff, turned to
+  the eye in three dimensions and floated a hand's breadth toward it (see
+  "The halo, from under it" below). It reads as a glow; walk into one and it
+  fills the view, as a glow does.
 - The roof flags land on whole 3x3 blocks at their own module. A roof strip
   narrower than three stays the plain dark fill, lead rather than slate.
 - The hull stands plumb. A lean is a knob (`hullFlareDegrees`) but a leaning
@@ -177,6 +179,73 @@ one line once the tiles say so.
   and a body walks through a table.
 - Some crowd bodies render white in daylight (a rig's embedded texture does
   not load). That is the rig export, not this lane.
+
+## The halo, from under it (2026-09-16)
+
+The placement critic's one open minor: "the halo's edge-on quad shows at
+arm's length". Measured first on the gated exe of wip `d23ba091` (dist
+digest `6ea17fc2`), which already had the crossed pair collapsed to one quad
+yawed to the eye (`55cefc2c`; frame 15 above is the OLD crossed pair, its
+seam plain down the ring). What the one yawed quad still did, shot at the
+Gull's door lantern (`lamp_gull_door`, hung on the jamb west of the door at
+about x 152.7, y 65.58, band 19):
+
+- Straight on at arm's length and from 45 degrees it read as a soft glow,
+  no seam. The yaw was doing its job along the street.
+- From under it -- stand on the tile in front of the jamb and look up --
+  the quad stood plumb whatever the eye did, so at 66 degrees of pitch it
+  was foreshortened to a bar and the lantern's base hid what was left.
+  The glow was gone from beneath. From a roof it was the same sliver, the
+  other way up.
+- From beside it, against the sky, the glow was centred on the RING, a
+  hand above the glass. `kLanternFlameDrop` measured 0.66 from the piece's
+  origin, taken for the top ring; the origin is the top of the lantern's
+  hanging rod, 0.4 above the ring, and the glass is 0.8 to 1.0 down.
+- By noon an eighth of the alpha (`kFlameDayAlpha`) is nothing you can
+  see against a daylit wall, from any angle. No square.
+
+What changed, code in `native/src/render3d/`:
+
+- `world_scene.cpp`, the billboard block: the quad is a SPHERE'S billboard
+  now. Its normal follows the whole line to the eye -- the yaw as before,
+  then a pitch about the quad's own X (`StaticInstance::pitch`, which the
+  adapter applies before the yaw), down to an eye under the lamp, up to
+  one on the roof -- so there is no angle it is edge-on from. The origin
+  is re-derived so the centre holds. And the centre floats toward the eye
+  along the eye's own ray, half the quad's height (`kHaloForward`, 0.29 m
+  on a lantern, never more than four tenths of the way to the eye): the
+  same pixel as the flame, but the plane clears the lantern's cap, cage
+  and base from every side beyond 0.72 m, so the body never slices the
+  glow along a line that walks with the eye. The glow is drawn over the
+  lamp and the lamp reads through it. Nearer than that the cap wins and
+  the base's rim comes through (the last row of the table).
+- `rl_backend.cpp`, `drawStaticMesh`: a `kDrawHalo` mesh is depth-tested
+  (the cage and the wall stand in front of it where they should) but
+  never depth-WRITTEN, so the clear corners of its square cannot cut a
+  hole through a halo or a pane drawn after it. It was writing depth.
+- `static_pieces.cpp`: `kLanternFlameDrop` 0.66 to 0.9, the glass. The
+  brazier and the hearth flames are untouched and ride the same billboard.
+- The world-scene test "a flame's halo faces the eye from wherever the
+  eye is" now looks from under the lamp and from the roof as well, checks
+  the normal in three dimensions, and picks the lantern's flame (the
+  house's hearth has one too, placed first).
+
+Reshoot on the next gated exe, from the repo root, `--smoke=40 --hold` on
+each as in the table:
+
+| what | command (after `dist\granadad.exe --smoke=40 --hold`) | should show |
+|---|---|---|
+| night, straight on, arm's length (1.1 m) | `--spawn=152,64,19 --yaw=180 --pitch=15 --fov=60 --time=22 --screenshot=halo-front.png` | a soft round glow centred on the lantern's glass, the cage and cap read through it, no edge anywhere, the wall lit warm behind |
+| night, 45 degrees | `--spawn=151,64,19 --yaw=132 --pitch=10 --fov=60 --time=22 --screenshot=halo-45.png` | the same disc, the same size, no seam or bar; the door's light and the window beside it unbroken by it |
+| night, beside it, against the sky | `--spawn=151,65,19 --yaw=94 --pitch=14 --fov=60 --time=22 --screenshot=halo-beside.png` | a round glow on the GLASS, not the ring, soft against the black sky; the rod and ring above it barely touched |
+| night, from under it (0.37 m) | `--spawn=152,65,19 --yaw=112 --pitch=54 --fov=60 --time=22 --screenshot=halo-below.png` | a glow, round, filling much of the view at this range, the lantern's base a warm dark shape inside it; no bar, no sliver. This close the float is capped short of the eye (four tenths of the way, so the quad stays off the near plane) and the base's own rim stands in front of the glow's plane: the underside of a lamp is dark, its rim comes through the glow. Step back a tile and the plane clears the whole body |
+| noon, straight on | `--spawn=152,64,19 --yaw=180 --pitch=15 --fov=60 --time=12 --screenshot=halo-noon.png` | the lantern and its wall in daylight, the glow an eighth of its night alpha -- nothing you can point to, and no square |
+| noon, from under it | `--spawn=152,65,19 --yaw=112 --pitch=54 --fov=60 --time=12 --screenshot=halo-noon-below.png` | the same: the base and the wall, no bar |
+
+The scene hash moves (every halo carries a pitch and a float now); the
+tavern and population baselines do not (render only). Two runs of any line
+above must still be byte-identical: nothing in the turn reads a clock or a
+die, only the eye and the anchor.
 
 ## Numbers
 

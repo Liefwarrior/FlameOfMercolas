@@ -2099,10 +2099,14 @@ TEST_CASE("the one-wide cobble leftovers along a frontage wear setts") {
 
 TEST_CASE("a flame's halo faces the eye from wherever the eye is") {
     // THE BILLBOARD, through the world scene: the same lantern described
-    // from two eyes yaws its one quad toward each, about the same centre,
-    // so a body walking past never sees it edge-on. And the description
-    // stays a pure function of the eye: the same eye twice is the same
-    // yaw and the same hash.
+    // from four eyes turns its one quad toward each -- yawed to an eye
+    // along the street, PITCHED to an eye under the lamp or on the roof
+    // over it -- about the same centre, so a body walking past, standing
+    // under it or looking down on it never sees it edge-on. A yaw alone
+    // left the quad plumb, a bar to an eye beneath it: the placement
+    // critic's "edge at arm's length". And the description stays a pure
+    // function of the eye: the same eye twice is the same turn and the
+    // same hash.
     HouseWorld house;
     const StaticCatalogue& catalogue = shippedCatalogue();
     std::vector<render::Lamp> lamps(1);
@@ -2117,25 +2121,54 @@ TEST_CASE("a flame's halo faces the eye from wherever the eye is") {
     WorldScene scene(house.tiles, proceduralAtlas(), &glow, &catalogue, &lamps);
     WorldSceneParams params;
     params.timeOfDaySeconds = 21 * 3600;
-    const auto describe = [&](float ex, float ey) {
+    const auto describe = [&](float ex, float ey, float height, float look) {
         render::Camera eye;
         eye.x = ex;
         eye.y = ey;
-        eye.z = render::bandSurface(19) + 1.7F;
+        eye.z = render::bandSurface(19) + height;
         eye.yaw = std::atan2(20.5F - ex, -(19.5F - ey));
-        eye.pitch = 0.0F;
+        eye.pitch = look;
         eye.hfovTan = 1.0F;
         SceneDescription out;
         scene.refresh(out, eye, 16.0F / 9.0F, params);
         return out;
     };
-    const SceneDescription fromSouth = describe(20.5F, 23.5F);
-    const SceneDescription fromEast = describe(24.5F, 19.5F);
-    const SceneDescription fromSouthAgain = describe(20.5F, 23.5F);
+    const SceneDescription fromSouth = describe(20.5F, 23.5F, 1.7F, 0.0F);
+    const SceneDescription fromEast = describe(24.5F, 19.5F, 1.7F, 0.0F);
+    const SceneDescription fromSouthAgain = describe(20.5F, 23.5F, 1.7F, 0.0F);
+    // Under the lamp, a hand's breadth off plumb, looking up: the lantern
+    // hangs 0.42 out from the wall's face over the lamp's own tile, so
+    // the eye stands a tenth east of it and a hair north.
+    const SceneDescription fromBelow = describe(20.6F, 19.5F, 1.7F, 1.2F);
+    // Two storeys up and a tile south, looking down: the roof's edge.
+    const SceneDescription fromAbove = describe(20.5F, 20.5F, 7.7F, -1.2F);
     CHECK(sceneHash(fromSouth) == sceneHash(fromSouthAgain));
+    // THE LANTERN'S flame -- the house's hearth across the street has one
+    // too, placed first -- by the lamp cell it is lit from; its anchor is
+    // the flame's own point, in the lantern's glass, over the eye of a
+    // body on the street and under one on the roof.
+    const PieceSpec* flame = catalogue.piece(PieceRole::Flame);
+    REQUIRE(flame != nullptr);
+    const StaticPlacements placed = placeStaticPieces(house.tiles, catalogue, lamps);
+    const StaticPlacement* hung = nullptr;
+    for (const StaticPlacement& p : placed.placements) {
+        if (p.role == PieceRole::Flame && p.lightX == 20 && p.lightY == 19) {
+            hung = &p;
+        }
+    }
+    REQUIRE(hung != nullptr);
+    REQUIRE(hung->billboard);
+    const Vec3 anchor = hung->anchor;
+    CHECK(anchor.y > render::bandSurface(19) + 1.7F);
+    CHECK(anchor.y < render::bandSurface(19) + 2.5F);
+    // In a description: the halo whose origin lies within a metre of that
+    // anchor (the hearth's is ten tiles off).
     const auto flameOf = [&](const SceneDescription& d) -> const StaticInstance* {
         for (const StaticInstance& at : d.statics) {
-            if (at.mode == kDrawHalo) {
+            const float dx = at.position.x - anchor.x;
+            const float dy = at.position.y - anchor.y;
+            const float dz = at.position.z - anchor.z;
+            if (at.mode == kDrawHalo && dx * dx + dy * dy + dz * dz < 1.0F) {
                 return &at;
             }
         }
@@ -2143,34 +2176,77 @@ TEST_CASE("a flame's halo faces the eye from wherever the eye is") {
     };
     const StaticInstance* south = flameOf(fromSouth);
     const StaticInstance* east = flameOf(fromEast);
+    const StaticInstance* below = flameOf(fromBelow);
+    const StaticInstance* above = flameOf(fromAbove);
     REQUIRE(south != nullptr);
     REQUIRE(east != nullptr);
-    // The centre held: the origin is half a width along the quad's own +X
-    // from it, so the two origins differ but their centres agree.
-    const PieceSpec* flame = catalogue.piece(PieceRole::Flame);
-    REQUIRE(flame != nullptr);
+    REQUIRE(below != nullptr);
+    REQUIRE(above != nullptr);
+    // The centre: the origin is half a width along the quad's own +X and
+    // half a height along its own +Y from it -- the +Y tipped by the pitch
+    // to (0, cos, sin) and both turned by the yaw, the adapter's own order.
+    // From every eye it sits ON THAT EYE'S OWN RAY through the flame,
+    // floated toward the eye by no more than half the quad's height and
+    // never past the eye: the same pixel as the flame from wherever it is
+    // looked at, its plane clear of the lantern's body.
     const auto centreOf = [flame](const StaticInstance& at) {
         const float w = flame->width * at.scale.x;
-        return Vec3{at.position.x + 0.5F * w * std::cos(at.yaw), at.position.y,
-                    at.position.z + 0.5F * w * std::sin(at.yaw)};
+        const float h = flame->height * at.scale.y;
+        const float c = std::cos(at.yaw);
+        const float s = std::sin(at.yaw);
+        const float cp = std::cos(at.pitch);
+        const float sp = std::sin(at.pitch);
+        return Vec3{at.position.x + 0.5F * w * c - 0.5F * h * sp * s, at.position.y + 0.5F * h * cp,
+                    at.position.z + 0.5F * w * s + 0.5F * h * sp * c};
     };
-    const Vec3 a = centreOf(*south);
-    const Vec3 b = centreOf(*east);
-    CHECK(std::fabs(a.x - b.x) < 0.01F);
-    CHECK(std::fabs(a.z - b.z) < 0.01F);
-    CHECK(std::fabs(a.y - b.y) < 0.01F);
-    // And from each eye the quad's normal (-sin, cos) lies along the line
-    // from the centre to that eye: never edge-on, wherever the eye is.
-    const auto faces = [](const StaticInstance& at, const Vec3& centre, float ex, float ez) {
+    const auto onTheRay = [&](const StaticInstance& at, float ex, float ey, float ez) {
+        const Vec3 centre = centreOf(at);
+        const float h = flame->height * at.scale.y;
+        // From the anchor: toward the eye, and how far.
+        const float rx = ex - anchor.x, ry = ey - anchor.y, rz = ez - anchor.z;
+        const float reach = std::sqrt(rx * rx + ry * ry + rz * rz);
+        const float fx = centre.x - anchor.x, fy = centre.y - anchor.y, fz = centre.z - anchor.z;
+        const float floated = std::sqrt(fx * fx + fy * fy + fz * fz);
+        const float along = (fx * rx + fy * ry + fz * rz) / reach;
+        CHECK(floated > 0.05F);
+        CHECK(floated < 0.5F * h + 0.01F);
+        CHECK(floated < 0.5F * reach);
+        // On the ray: the whole float lies along it.
+        CHECK(along > 0.999F * floated);
+        return centre;
+    };
+    const float street = render::bandSurface(19) + 1.7F;
+    const Vec3 a = onTheRay(*south, 20.5F, street, 23.5F);
+    const Vec3 b = onTheRay(*east, 24.5F, street, 19.5F);
+    const Vec3 u = onTheRay(*below, 20.6F, street, 19.5F);
+    const Vec3 o = onTheRay(*above, 20.5F, render::bandSurface(19) + 7.7F, 20.5F);
+    // And from each eye the quad's normal -- local +Z, which the pitch
+    // takes to (0, -sin, cos) and the yaw to (-sin cos, -sin, cos cos) --
+    // lies along the line from the centre to that eye IN THREE
+    // DIMENSIONS: never edge-on, wherever the eye is, under it included.
+    const auto faces = [](const StaticInstance& at, const Vec3& centre, float ex, float ey, float ez) {
         const float dx = ex - centre.x;
+        const float dy = ey - centre.y;
         const float dz = ez - centre.z;
-        const float along = -std::sin(at.yaw) * dx + std::cos(at.yaw) * dz;
-        return std::fabs(along) > 0.99F * std::sqrt(dx * dx + dz * dz);
+        const float nx = -std::sin(at.yaw) * std::cos(at.pitch);
+        const float ny = -std::sin(at.pitch);
+        const float nz = std::cos(at.yaw) * std::cos(at.pitch);
+        const float along = nx * dx + ny * dy + nz * dz;
+        return std::fabs(along) > 0.99F * std::sqrt(dx * dx + dy * dy + dz * dz);
     };
-    CHECK(faces(*south, a, 20.5F, 23.5F));
-    CHECK(faces(*east, b, 24.5F, 19.5F));
-    CHECK_FALSE(faces(*south, a, 24.5F, 19.5F));
+    CHECK(faces(*south, a, 20.5F, street, 23.5F));
+    CHECK(faces(*east, b, 24.5F, street, 19.5F));
+    CHECK(faces(*below, u, 20.6F, street, 19.5F));
+    CHECK(faces(*above, o, 20.5F, render::bandSurface(19) + 7.7F, 20.5F));
+    CHECK_FALSE(faces(*south, a, 24.5F, street, 19.5F));
+    CHECK_FALSE(faces(*south, a, 20.6F, street, 19.5F));
     CHECK(south->yaw != east->yaw);
+    // Along the street the quad stands nearly plumb (a few degrees up to
+    // a lamp over head height); under the lamp it tips hard toward the
+    // ground, and on the roof it tips the other way, toward the sky.
+    CHECK(std::fabs(south->pitch) < 0.2F);
+    CHECK(below->pitch > 1.0F);
+    CHECK(above->pitch < -0.8F);
 }
 
 TEST_CASE("a pair of lone posts two cells apart on a street carries a hitching rail") {

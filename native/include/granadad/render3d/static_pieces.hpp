@@ -554,9 +554,12 @@ struct StaticPlacement {
     /// the mesh's own normals.
     std::uint8_t mode = 0;
     /// A billboard (a flame's halo): one quad turned to face the eye every
-    /// frame by the world scene, about `anchor` (its centre) -- so a halo
-    /// is never seen edge-on as a bright bar. The instance's yaw and
-    /// position are rewritten at refresh; the placement keeps the centre.
+    /// frame by the world scene, in yaw AND pitch, about `anchor` (the
+    /// flame's own point) and floated a little toward the eye along the
+    /// eye's ray -- so a halo is never seen edge-on as a bright bar, from
+    /// under the lamp or over it, and its plane never cuts the lamp's own
+    /// body. The instance's yaw, pitch and position are rewritten at
+    /// refresh; the placement keeps the flame.
     bool billboard = false;
     Vec3 anchor;
 };
