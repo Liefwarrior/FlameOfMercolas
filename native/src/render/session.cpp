@@ -6113,6 +6113,29 @@ void Session::moveTopicCursor(int delta) {
                        static_cast<int>(tavern_->dialogue().topics().size()));
 }
 
+int Session::menuCursor() const noexcept {
+    // KIT POLISH. THE SAME ROUTE moveTopicCursor() TAKES, read instead of
+    // moved -- see the header. Kept beside it on purpose: a list this
+    // router learns to move is a list this has to learn to read.
+    if (keysOpen_) {
+        return caseCursor_;
+    }
+    if (casebookOpen_) {
+        switch (menuFocus_) {
+            case kMenuFocusCharacter:
+                return characterCursor_;
+            case kMenuFocusMap:
+                return mapCursor_;
+            case kMenuFocusLetters:
+                return lettersCursor_;
+            case kMenuFocusJournal:
+            default:
+                return caseCursor_;
+        }
+    }
+    return topicCursor_;
+}
+
 void Session::nextTopicPage() {
     if (optionsOpen_) {
         const int pages = topicPageCount(optionRows().size());
