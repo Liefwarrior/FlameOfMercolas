@@ -12780,6 +12780,28 @@ void standAtFacing(Session& session, std::int32_t standX, std::int32_t standY,
     facePlayerAndSync(session, sim::q8_tile_centre(faceX), sim::q8_tile_centre(faceY));
 }
 
+/// KIT POLISH. Tilts the eye onto the boards one tile ahead -- what a body
+/// does to look at a thing it has just put down, or is about to pick up.
+/// The look down IS the beat, the same mouse a player's own hand makes; the
+/// roof line and the lock line already set their frames' pitch this way.
+///
+/// THE GEOMETRY, so nobody reaches for the item table again: the eye is
+/// 1.70 tiles up (kEyeHeightTilesQ8), TAKE reaches two tiles (kReachQ8,
+/// Manhattan from the tile's centre, and the walker lands up to an eighth
+/// of a tile off centre -- so the stand is one tile back, not two). One
+/// tile ahead a thing on the floor is 59.5 degrees below the horizon; the
+/// 90-degree lens at 16:9 sees 29.4 degrees down. No scale, lift or pitch
+/// of the MESH closes that gap -- a coil would have to stand 1.14 tiles
+/// tall to break the frame's bottom edge, and a floor item is not inside a
+/// level frame until it is three tiles off, past the reach that puts TAKE
+/// on the crosshair. Fifty degrees down puts the coil just under the
+/// reticle and its prompt, clear of the hands hanging at the foot of the
+/// frame (measured on the baseline with --pitch: -40 hides it behind the
+/// fist, -45 crowds it against the fist, -60 prints the prompt over it).
+void lookDownAtBoards(Session& session) {
+    session.body().setPitch(sim::angle_from_degrees(-50));
+}
+
 [[nodiscard]] int runKitLine(Session& session, const std::string& ending) {
     int landed = 0;
     gKitNote.clear();
@@ -12805,6 +12827,10 @@ void standAtFacing(Session& session, std::int32_t standX, std::int32_t standY,
     Session::InteractTarget aim = session.interactTarget();
     noteAim("take", aim);
     if (ending == "take") {
+        // KIT POLISH: the frame is of the coil, so the eye goes onto it --
+        // on this ending only, since the line's next stop is a lantern on a
+        // table at eye height. See lookDownAtBoards for the geometry.
+        lookDownAtBoards(session);
         return aim.verb == "TAKE" && aim.subject == "ROPE" ? 1 : 0;
     }
     session.interact();
@@ -13018,6 +13044,14 @@ void standAtFacing(Session& session, std::int32_t standX, std::int32_t standY,
     // so the coil is in reach whatever side of the tile the walk landed on
     // and nobody is standing on it for the frame.
     standAtFacing(session, 196, 62, 195, 62);
+    // KIT POLISH: and the eye down onto it. "Stepped back to look at it on
+    // the boards" was only half true -- the crosshair named the coil (TAKE
+    // is by reach, not by the look-ray) while the mesh sat sixty degrees
+    // under a level frame, and the critic found it only at a --pitch of
+    // -40. Looking at it means looking down: the mouse follows what the
+    // hand put down. See lookDownAtBoards for the numbers and why no
+    // change to the mesh could have done this instead.
+    lookDownAtBoards(session);
     bool coilDown = false;
     for (const sim::GroundItem& entry : tavern.groundItems()) {
         if (entry.item == item("rope") && entry.x == 195 && entry.y == 62) {
