@@ -88,6 +88,20 @@ constexpr float kHaloForwardCap = 0.4F;
 /// reaches it -- or the light law says the household is up (paneGlows()).
 constexpr float kPaneLitAbove = 0.12F;
 
+/// THE CRITIC'S SECOND: a lit timber pane's own two-stop gradient. The
+/// law's own knobs.litPane (255, 198, 118 shipped) is already the hot
+/// core -- it stands on the sill-side band (StaticPlacement::paneCore,
+/// static_pieces.cpp) unchanged, the same tint a WallWindow pane has
+/// always worn. This is the cooler glass toward the pane's own head, on
+/// the rest of it, so a lit window reads as a candle behind glass and not
+/// a flat wash the size of the frame.
+constexpr Rgba8 kPaneEdgeLit{217, 140, 64, 255};
+
+/// THE CRITIC'S THIRD: how far a lit hung window's own frame (WindowTimber)
+/// leans from its ambient tint toward the law's own warm one -- mixed, not
+/// replaced, so the timber still reads as timber.
+constexpr float kFrameWarmMix = 0.4F;
+
 /// THE LANTERN'S GLASS AFTER DARK: near white-amber, at its own full value,
 /// and NOT lit by the sky at all -- a lamp is its own light (p.selfLit), so
 /// this tint goes to the pane slot verbatim and stays hot in the dark. It
@@ -558,17 +572,55 @@ void WorldScene::relightPieces(const ChunkLighting& lighting) {
         // warm and bright, its own light -- lit by a lamp that reaches the
         // room, or because the light law has the household up at this
         // hour (the whole room's lot, so a house's windows agree).
+        //
+        // Named `paneUp`, not `lit`: `lit` above this is already the
+        // per-corner light lambda every branch above uses.
+        bool paneUp = false;
         if (p.hasInside && night) {
             const render::Rgb room = glowAt(p.insideX, p.insideY, p.insideZ);
-            if (std::max(room.r, std::max(room.g, room.b)) > kPaneLitAbove ||
-                paneGlows(p.house, p.houseLot, hour, knobs)) {
+            paneUp = std::max(room.r, std::max(room.g, room.b)) > kPaneLitAbove ||
+                    paneGlows(p.house, p.houseLot, hour, knobs);
+            if (paneUp) {
                 slots[4] = litPaneTint;
             }
         }
         // The pane quad in a hung timber frame IS its pane: the whole quad
-        // wears what a glass pane would, dark by day, warm when the room is.
+        // wears what a glass pane would, dark by day, warm when the room
+        // is -- and, lit, the head-side band (not paneCore) cools toward
+        // kPaneEdgeLit, the sill-side band keeping the law's own hot core
+        // unchanged, so the two stacked placements read as one gradient
+        // pane rather than one flat one. Dark, both stay the same dark
+        // pane they always were.
         if (p.role == PieceRole::PaneTimber) {
+            if (paneUp && !p.paneCore) {
+                slots[4] = kPaneEdgeLit;
+            }
             slots[0] = slots[1] = slots[2] = slots[3] = slots[4];
+        }
+        // THE CRITIC'S THIRD: no spill. A hung window's own timber frame
+        // carries its pane's household now (static_pieces.cpp), so a lit
+        // pane warms its own reveal instead of standing as dark as a wall
+        // five tiles off -- the cheapest honest wash a static piece can
+        // give without registering the pane as a dynamic lamp (that would
+        // want a Lamp in ChunkLighting::dynamicLamps, at a ~1.5 m radius
+        // through dynamicGlowAt(), lighting.cpp -- past this pass's reach
+        // without a build to prove the chunk-mesh side of it). Mixed
+        // toward the law's own warm tint, not replaced by it, so the wood
+        // still reads as wood and not as a second pane.
+        if (p.role == PieceRole::WindowTimber && paneUp) {
+            const auto warmed = [&](const Rgba8& tint) {
+                const auto mix = [](std::uint8_t c, std::uint8_t hot) {
+                    const float v = static_cast<float>(c) +
+                                    (static_cast<float>(hot) - static_cast<float>(c)) * kFrameWarmMix;
+                    return static_cast<std::uint8_t>(std::clamp(v, 0.0F, 255.0F) + 0.5F);
+                };
+                return Rgba8{mix(tint.r, litPaneTint.r), mix(tint.g, litPaneTint.g),
+                            mix(tint.b, litPaneTint.b), tint.a};
+            };
+            slots[0] = warmed(slots[0]);
+            slots[1] = warmed(slots[1]);
+            slots[2] = warmed(slots[2]);
+            slots[3] = warmed(slots[3]);
         }
     }
     ++stats_.piecesRelit;

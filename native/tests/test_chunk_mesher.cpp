@@ -34,6 +34,7 @@
 #include "granadad/render/atlas.hpp"
 #include "granadad/render/lamps.hpp"
 #include "granadad/render/lighting.hpp"
+#include "granadad/render/session.hpp"
 #include "granadad/render/vertical.hpp"
 #include "granadad/render/world_renderer.hpp"
 #include "granadad/render3d/chunk_mesher.hpp"
@@ -2834,7 +2835,16 @@ TEST_CASE("the light law on the Docks: up at ten, abed at three, and the Gull ne
     }
     const std::size_t timberPanes = countRole(first.placements, PieceRole::PaneTimber);
     CHECK(timberPanes > 10);
-    CHECK(timberPanes == countRole(first.placements, PieceRole::WindowTimber));
+    // THE CRITIC'S SECOND: two stacked bands per opening now, never one --
+    // see StaticPlacement::paneCore.
+    CHECK(timberPanes == 2 * countRole(first.placements, PieceRole::WindowTimber));
+    std::size_t timberCoreBands = 0;
+    for (const StaticPlacement& p : first.placements) {
+        if (p.role == PieceRole::PaneTimber && p.paneCore) {
+            ++timberCoreBands;
+        }
+    }
+    CHECK(timberCoreBands == timberPanes / 2);
     CHECK(households >= 40);
     CHECK(litHouses >= 4);
     CHECK(darkHouses >= 4);
@@ -2932,5 +2942,132 @@ TEST_CASE("the light law on the Docks: up at ten, abed at three, and the Gull ne
     params.timeOfDaySeconds = 12 * 3600;
     worldA.refresh(sceneA, eye, 16.0F / 9.0F, params);
     CHECK(warmSeen(sceneA) == 0);
+}
+
+TEST_CASE("a session's own clock relights the ward with no session.step() between the two reads") {
+    // THE CRITIC'S FIRST. A --time capture spends no session.step() between
+    // the Session's construction and the shutter (--settle-steps=0 is
+    // exactly zero of them), and a sleep or a fast travel jumps the clock
+    // the same way -- Session::skipToHour(), through syncClockAfterSkip()'s
+    // own tail, sets timeOfDay_ synchronously and never touches step(). Both
+    // are the identical wiring SceneRig::refresh() (native/src/client/
+    // main.cpp) takes at every shutter: params.timeOfDaySeconds =
+    // session.timeOfDay(), straight into WorldScene::refresh(). The case
+    // above this one proves the law's pure function answers the hour and
+    // proves the render bucket moves the hash; this one proves the THIRD
+    // link -- a real Session's own clock, read with no step() in between --
+    // by counting the ward's lit household panes the way "the light law on
+    // the Docks" does, off the relit OUTPUT a session's clock actually
+    // produced rather than off paneGlows() called by hand.
+    render::SessionConfig config;
+    config.timeOfDay = 22 * 3600;
+    config.timeOfDayGiven = true;
+    render::Session session(config);
+    REQUIRE(session.timeOfDay() == 22 * 3600);
+
+    const StaticCatalogue& catalogue = shippedCatalogue();
+    const Rgba8 warm = catalogue.knobs().litPane;
+    WorldScene world(session.tiles(), session.atlas(), &session.renderer().glow(), &catalogue,
+                     &session.renderer().lamps());
+    SceneDescription scene;
+    WorldSceneParams params;
+    params.timeOfDaySeconds = session.timeOfDay();
+    params.weather = session.weather();
+    params.dynamicLamps = session.tavernLights();
+    world.refresh(scene, session.camera(), 320.0F / 180.0F, params);
+    CHECK(world.stats().piecesRelit == 1);
+
+    const auto litHouseholds = [&] {
+        std::size_t n = 0;
+        for (std::size_t i = 0; i < world.placements().size(); ++i) {
+            const StaticPlacement& p = world.placements()[i];
+            if (!windowPane(p.role) || p.house != HouseKind::Household) {
+                continue;
+            }
+            const Rgba8 pane = world.relitPaneTint(i);
+            n += (pane.r == warm.r && pane.g == warm.g && pane.b == warm.b) ? 1 : 0;
+        }
+        return n;
+    };
+    const std::size_t litAt22 = litHouseholds();
+    CHECK(litAt22 >= 20);
+
+    // TRAVEL/SLEEP LANE: the same clock jump a sleep or a fast travel takes.
+    // No session.step() runs between the two reads.
+    session.skipToHour(2);
+    REQUIRE(session.timeOfDay() == 2 * 3600);
+    params.timeOfDaySeconds = session.timeOfDay();
+    params.weather = session.weather();
+    params.dynamicLamps = session.tavernLights();
+    world.refresh(scene, session.camera(), 320.0F / 180.0F, params);
+    CHECK(world.stats().piecesRelit == 2);
+
+    const std::size_t litAt02 = litHouseholds();
+    MESSAGE("Ward households lit through a real session, no step(): " << litAt22 << " at ten, "
+                                                                       << litAt02 << " at two");
+    CHECK(litAt02 < litAt22);
+}
+
+TEST_CASE("a lit timber pane reads as two stops, not one flat wash") {
+    // THE CRITIC'S SECOND. Every hung timber window is two stacked
+    // placements now (StaticPlacement::paneCore, static_pieces.cpp),
+    // emitted core then edge with nothing between them (placeStaticPieces
+    // never reorders). This checks what a relight actually gives them: lit,
+    // the sill-side band and the head-side band differ -- a hotter core and
+    // a cooler edge, not one colour worn twice, and the core keeps the
+    // law's own tint unchanged from before the lane split the pane; dark,
+    // the two bands agree, the same dark glass a single pane always was.
+    const sim::TileQuery tiles(docksWorld());
+    const StaticCatalogue& catalogue = shippedCatalogue();
+    const std::vector<render::Lamp> lamps =
+        render::loadLamps(content::contentDir(), sim::docks::kWorldName);
+    WorldScene world(tiles, proceduralAtlas(), nullptr, &catalogue, &lamps);
+    SceneDescription scene;
+    WorldSceneParams params;
+    params.timeOfDaySeconds = 22 * 3600;
+    world.refresh(scene, spawnCamera(), 320.0F / 180.0F, params);
+
+    std::size_t pairsChecked = 0;
+    std::size_t pairsLit = 0;
+    for (std::size_t i = 0; i + 1 < world.placements().size(); ++i) {
+        const StaticPlacement& core = world.placements()[i];
+        if (core.role != PieceRole::PaneTimber || !core.paneCore) {
+            continue;
+        }
+        const StaticPlacement& edge = world.placements()[i + 1];
+        REQUIRE(edge.role == PieceRole::PaneTimber);
+        REQUIRE_FALSE(edge.paneCore);
+        REQUIRE(edge.house == core.house);
+        REQUIRE(edge.houseLot == core.houseLot);
+        ++pairsChecked;
+        const Rgba8 coreTint = world.relitPaneTint(i);
+        const Rgba8 edgeTint = world.relitPaneTint(i + 1);
+        if (coreTint.r < 60 && edgeTint.r < 60) {
+            continue;  // dark: nothing to check about the gradient here.
+        }
+        ++pairsLit;
+        CHECK((coreTint.r != edgeTint.r || coreTint.g != edgeTint.g || coreTint.b != edgeTint.b));
+        CHECK(coreTint.r == catalogue.knobs().litPane.r);
+        CHECK(coreTint.g == catalogue.knobs().litPane.g);
+        CHECK(coreTint.b == catalogue.knobs().litPane.b);
+    }
+    MESSAGE("Timber pane pairs: " << pairsChecked << " checked, " << pairsLit << " lit at ten");
+    CHECK(pairsChecked > 10);
+    CHECK(pairsLit >= 4);
+
+    // At noon every pane -- core and edge alike -- is the same dark glass.
+    params.timeOfDaySeconds = 12 * 3600;
+    world.refresh(scene, spawnCamera(), 320.0F / 180.0F, params);
+    for (std::size_t i = 0; i + 1 < world.placements().size(); ++i) {
+        const StaticPlacement& core = world.placements()[i];
+        if (core.role != PieceRole::PaneTimber || !core.paneCore) {
+            continue;
+        }
+        const Rgba8 coreTint = world.relitPaneTint(i);
+        const Rgba8 edgeTint = world.relitPaneTint(i + 1);
+        CHECK(coreTint.r == edgeTint.r);
+        CHECK(coreTint.g == edgeTint.g);
+        CHECK(coreTint.b == edgeTint.b);
+    }
 }
 
