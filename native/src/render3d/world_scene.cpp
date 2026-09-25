@@ -63,8 +63,10 @@ constexpr float kLightClamp = 1.15F;
 /// A flame's halo keeps this much of its alpha at full daylight.
 constexpr float kFlameDayAlpha = 0.12F;
 
-/// A flame's halo floats toward the eye along the line of sight by this
-/// much of its own height (0.29 m on a lantern's 0.58): a point moved along
+/// A flame's halo floats toward the eye along the line of sight by this many
+/// METRES (it was half the quad's own height, which was the same 0.29 back
+/// when the quad was the flame; the disc is four times that wide now and the
+/// float has no business growing with it): a point moved along
 /// the eye's own ray lands on the same pixel, so the glow stays centred on
 /// the flame, but its plane now clears the lantern's cap, cage and base
 /// (all within 0.26 m of the flame) from every side, so the body never
@@ -78,7 +80,7 @@ constexpr float kFlameDayAlpha = 0.12F;
 /// base's rim stands in front of the plane -- the underside of a lamp is
 /// dark, its rim comes through the glow -- which is the honest limit of a
 /// depth-tested sprite against an opaque body.
-constexpr float kHaloForward = 0.5F;
+constexpr float kHaloForward = 0.29F;
 constexpr float kHaloForwardCap = 0.4F;
 
 /// A window pane goes warm after dark (the sky under the catalogue's
@@ -99,6 +101,27 @@ constexpr Rgba8 kPaneEdgeLit{217, 140, 64, 255};
 /// leans from its ambient tint toward the law's own warm one -- mixed, not
 /// replaced, so the timber still reads as timber.
 constexpr float kFrameWarmMix = 0.4F;
+
+/// THE LANTERN'S GLASS AFTER DARK: near white-amber, at its own full value,
+/// and NOT lit by the sky at all -- a lamp is its own light (p.selfLit), so
+/// this tint goes to the pane slot verbatim and stays hot in the dark. It
+/// was darkPane() of the lamp's own tint, which is a quarter of it with a
+/// blue lean: flat grey-olive, dimmer than the copper cap over it and far
+/// dimmer than the door panel a metre below, which is the critic's third
+/// note and dead right. A lantern's brightest element is its glass.
+///
+/// By day the glass goes back to darkPane(): plain glass on a cold lamp.
+/// The mechanism is the pane slot the light law already uses (slots[4],
+/// drawn on any sub-mesh the adapter classes as glass) -- nothing in
+/// paneGlows() or the window rule is touched to get it.
+constexpr Rgba8 kLampGlassNight{255, 217, 140, 255};
+
+/// True for the lamp bodies that HAVE a glass: the hung lantern and the
+/// street post. The bracket and the chain are not self-lit, the flame is a
+/// glow and not a lamp.
+[[nodiscard]] bool hasLampGlass(PieceRole role) noexcept {
+    return role == PieceRole::LampWall || role == PieceRole::LampPost;
+}
 
 /// The glass of an unlit window: a third of the light, blue-grey -- a dark
 /// pane, not a wash over the wall the chunk mesh puts behind it.
@@ -469,13 +492,18 @@ void WorldScene::relightPieces(const ChunkLighting& lighting) {
         const StaticPlacement& p = placements_.placements[i];
         Rgba8* slots = &litTints_[i * kLitSlots];
         const auto lit = [&p, &sky](const render::Rgb& glow, const Rgba8& tint) {
+            // The lamp's share, SHAPED (render::pooledGlow): the far field
+            // pulled down so a lantern pools on the plaster instead of
+            // washing the whole street at one value. The raw glow is what
+            // the light law reads below -- this is the surface's copy.
+            const render::Rgb pool = render::pooledGlow(glow);
             const auto ch = [&p](float ambient, float g, std::uint8_t t) {
                 const float light = std::min(kLightClamp, ambient + g) * p.facing;
                 return static_cast<std::uint8_t>(
                     std::clamp(light * static_cast<float>(t), 0.0F, 255.0F) + 0.5F);
             };
-            return Rgba8{ch(sky.ambient.r, glow.r, tint.r), ch(sky.ambient.g, glow.g, tint.g),
-                         ch(sky.ambient.b, glow.b, tint.b), tint.a};
+            return Rgba8{ch(sky.ambient.r, pool.r, tint.r), ch(sky.ambient.g, pool.g, tint.g),
+                         ch(sky.ambient.b, pool.b, tint.b), tint.a};
         };
         if (p.selfLit) {
             // A lamp is its own light. A flame's halo (a translucent quad)
@@ -490,7 +518,8 @@ void WorldScene::relightPieces(const ChunkLighting& lighting) {
                 own.a = static_cast<std::uint8_t>(std::clamp(glowAlpha, 0.0F, 255.0F) + 0.5F);
             }
             slots[0] = slots[1] = slots[2] = slots[3] = own;
-            slots[4] = darkPane(own);
+            // The glass, hot after dark and plain by day (kLampGlassNight).
+            slots[4] = night && hasLampGlass(p.role) ? kLampGlassNight : darkPane(own);
         } else if (p.gradient) {
             // A run piece: lit at each end AT THE BOUNDARY, blended across
             // by the adapter. The piece's local X runs from the a0 end
@@ -767,13 +796,15 @@ void WorldScene::refresh(SceneDescription& scene, const render::Camera& camera, 
                 // holds on the anchor's ray whichever way the quad tips.
                 // The centre itself floats toward the eye along that ray
                 // (kHaloForward), clear of the lamp's own body. Facing the
-                // eye, the quad lies across the ray and reaches its own
-                // half-diagonal (0.37 m on a lantern) from the centre;
-                // the flame stands 0.42 m off its wall and the body's own
-                // radius keeps the eye 0.35 m off it, so the float never
-                // carries the centre more than a few centimetres nearer
-                // the plaster and the quad never touches it. Two-sided,
-                // so which way along the line is all one.
+                // eye, the disc lies across the ray and reaches its own
+                // radius (0.55 m on a lantern's 1.1 m halo) from the
+                // centre, which is wider than the 0.42 m the flame stands
+                // off its wall -- so seen from ALONG the wall the far arc
+                // does sink into the plaster and the depth test cuts it.
+                // That is why the fan's alpha is zero at the rim
+                // (haloFanMesh): the cut falls where there is nothing left
+                // to cut. Two-sided, so which way along the line is all
+                // one.
                 const PieceSpec& spec = specs[p.instance.piece];
                 const float dx = eye.x - p.anchor.x;
                 const float dy = eye.y - p.anchor.y;
@@ -792,7 +823,7 @@ void WorldScene::refresh(SceneDescription& scene, const render::Camera& camera, 
                 const float sp = std::sin(pitch);
                 // The float toward the eye, as a fraction of the way there.
                 const float forward =
-                    len > 1.0e-3F ? std::min(kHaloForward * h, kHaloForwardCap * len) / len : 0.0F;
+                    len > 1.0e-3F ? std::min(kHaloForward, kHaloForwardCap * len) / len : 0.0F;
                 const Vec3 centre{p.anchor.x + dx * forward, p.anchor.y + dy * forward,
                                   p.anchor.z + dz * forward};
                 at.yaw = yaw < 0.0F ? yaw + 2.0F * kPi : yaw;

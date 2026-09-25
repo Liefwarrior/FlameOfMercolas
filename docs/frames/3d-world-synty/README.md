@@ -250,6 +250,92 @@ tavern and population baselines do not (render only). Two runs of any line
 above must still be byte-identical: nothing in the turn reads a clock or a
 die, only the eye and the anchor.
 
+### Second pass (2026-09-25)
+
+The critic gave the first pass 6/10 and named three things, all fair.
+
+1. "The glow throws nothing." The wall above the cap read the same as the far
+   corner and the wall two lamp-widths off was untouched, so the halo agreed
+   with no light cast on anything.
+2. "The flame is a hard axis-aligned square." A pale rectangle with corners,
+   sitting in the glass.
+3. "The glass is darker than the paintwork." Flat grey-olive, dimmer than the
+   copper cap over it and far dimmer than the lit door panel a metre below.
+
+Number 2 is the one that explains the other two, and it is a backend split we
+had not caught. The falloff lived in the GL 3.3 blend shader (`pieceMode == 1`,
+a radial alpha). rlsw has no shaders. So the shipped exe drew a disc and the
+headless twin drew a flat rectangle, and every frame the critic was reading
+came off the software path. The two backends have to agree, and on this they
+did not.
+
+What changed, code in `native/src/render3d/` unless said:
+
+- `scene.cpp`, `haloFanMesh()`: the halo is GEOMETRY now. A unit disc, 24
+  wedges over 5 rings, white, the falloff in the alpha channel. Two stops: the
+  core ring sits at full alpha at 0.22 of the radius (about 0.12 m on a
+  lantern, the flame itself), then a smooth `(1 - t)^2` skirt to exactly zero
+  at the rim. Zero at the rim is load-bearing, see the width below. Both
+  rasterizers carry vertex colours verbatim, so both draw the same glow.
+- `rl_backend.cpp`, `drawHaloFan()`: a `kDrawHalo` piece no longer draws its
+  own mesh at all. The adapter fits the fan to the piece's local span with a
+  matrix and puts it through the piece's own transform, through the default
+  material, no shader. Depth-tested, never depth-written, two-sided, as
+  before. The `pieceMode == 1` branch is gone from both shaders.
+- `static_pieces.cpp`: the halo went 0.46 x 0.58 to 1.1 x 1.1, better than
+  three times the lamp's body, and square so it comes out round. That is wider
+  than the 0.42 m the lamp stands off its wall, so from along the wall the far
+  arc does sink into the plaster and the depth test cuts it. It does not show,
+  because the fan is at alpha 0 out there. A brazier's is 0.9 for the same
+  reason in the other direction: it burns lower and its skirt would scrape the
+  cobbles.
+- `world_scene.cpp`, `relightPieces()`: the lantern's GLASS is hot after dark.
+  It was `darkPane()` of the lamp's own tint, which is a quarter of it with a
+  blue lean, which is exactly the grey-olive the critic called out. It is
+  (255, 217, 140) at full value now, and because a lamp is `selfLit` the sky
+  never touches it, so it stays hot in the dark. By day it goes back to plain
+  glass. This rides the pane slot the light law already fills, so nothing in
+  `paneGlows()` or the window rule was touched to get it.
+- `lighting.hpp`, `pooledGlow()`: THE POOL. A lamp's falloff is
+  `peak * (1 - d^2/r^2)^2` over four to five and a half tiles, which is barely
+  a falloff at all: four tiles out still keeps a fifth of the lamp. Ambient
+  under it, the surface clamp over it, and a whole street of plaster comes out
+  at one value. That is note 1, word for word. So a surface now scales the
+  lamp's glow by its own strength, full where the lamp is strong and down to
+  0.15 of itself where it is nearly gone. One more power of the falloff with
+  the peak and the radius left where they were: nothing gets brighter, the far
+  field gets darker, and that is what makes the near field read as a pool.
+  Applied in `world_scene.cpp` (kit pieces) and `chunk_mesher.cpp` (walls and
+  cobbles), and NOWHERE ELSE. The glow field itself is untouched, so the light
+  law behind the panes, the 2D renderer and the stealth model all read the
+  numbers they always read.
+- `render/controls.hpp`: `kMinFov` 60 to 40. `--fov=45` was silently clamped
+  and handed back the same frame as 60 while 75 obeyed, because `Session`
+  takes the flag straight off the run config and then calls `sanitise()`. 40
+  is a long lens, which is what you want when the subject is 30 cm of lantern
+  glass. One number for the flag and the slider both, per #77.
+
+Reshoot, from the repo root, `--smoke=40 --hold` on each:
+
+| what | command (after `dist\granadad.exe --smoke=40 --hold`) | should show |
+|---|---|---|
+| night, straight on, arm's length (1.1 m) | `--spawn=152,64,19 --yaw=180 --pitch=15 --fov=45 --time=22 --screenshot=halo2-front.png` | the glass the brightest thing in the frame, white-amber, hotter than the copper cap and hotter than the door panel below it. A round glow round it, soft, three times the lamp across. The plaster within a couple of metres clearly warmer than the plaster at the frame's edge |
+| night, 45 degrees | `--spawn=151,64,19 --yaw=132 --pitch=10 --fov=45 --time=22 --screenshot=halo2-45.png` | the same disc, the same size, no seam and no bar; the door's light and the window beside it unbroken by it |
+| night, beside it, against the sky | `--spawn=151,65,19 --yaw=94 --pitch=14 --fov=45 --time=22 --screenshot=halo2-beside.png` | a round glow on the GLASS, not the ring, soft against the black sky, no corners anywhere on it |
+| night, from under it (0.37 m) | `--spawn=152,65,19 --yaw=112 --pitch=54 --fov=60 --time=22 --screenshot=halo2-below.png` | a glow, round, filling much of the view at this range, the base a warm dark shape inside it. The cobbles under the lamp clearly warmer than the cobbles a few tiles off |
+| night, from the Gull's roof, down the street | `--spawn=153,72,21 --yaw=225 --pitch=-18 --time=22 --screenshot=halo2-roof.png` | lamps as pools, not as a wash: each lantern a bright disc with warm plaster and cobble under it and the street between them dark |
+| noon, straight on | `--spawn=152,64,19 --yaw=180 --pitch=15 --fov=45 --time=12 --screenshot=halo2-noon.png` | the lantern and its wall in daylight, plain glass, the glow an eighth of its night alpha. Nothing you can point to, and no square |
+| noon, from under it | `--spawn=152,65,19 --yaw=112 --pitch=54 --fov=60 --time=12 --screenshot=halo2-noon-below.png` | the same: the base and the wall, no bar, no square |
+
+Still fixed and has to stay fixed: no seam or bar from any angle, and no
+square at noon. There is no square anywhere any more, at any hour, because
+there is no quad.
+
+The scene hash moves again (the halo's span, the lamp's pane tint and every
+surface a lamp reaches). The tavern and population baselines do not: all of
+this is render. Two runs of any line above must still be byte-identical.
+
+
 ## Numbers
 
 Gate stamp `624164ad`, native digest

@@ -525,9 +525,16 @@ MeshData colourChunk(const ChunkGeometry& geometry, const ChunkLighting& lightin
             const render::Rgb live = hasDynamic
                                          ? render::dynamicGlowAt(*lighting.dynamicLamps, x, y, z)
                                          : render::Rgb{};
-            surface = render::Rgb{sky.ambient.r + std::max(baked.r, live.r),
-                                  sky.ambient.g + std::max(baked.g, live.g),
-                                  sky.ambient.b + std::max(baked.b, live.b)};
+            // The lamp's share, SHAPED (render::pooledGlow): a lantern pools
+            // on the cobbles under it and the plaster behind it instead of
+            // washing a whole street at one value. Surfaces only -- the glow
+            // field itself is untouched, and so is the light law that reads
+            // it.
+            const render::Rgb pool = render::pooledGlow(render::Rgb{std::max(baked.r, live.r),
+                                                                    std::max(baked.g, live.g),
+                                                                    std::max(baked.b, live.b)});
+            surface = render::Rgb{sky.ambient.r + pool.r, sky.ambient.g + pool.g,
+                                  sky.ambient.b + pool.b};
             lastX = x;
             lastY = y;
             lastZ = z;

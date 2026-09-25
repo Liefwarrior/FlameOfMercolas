@@ -38,7 +38,7 @@ constexpr std::string_view kRoleNames[kPieceRoleCount] = {
     "rowboat",     "crane",        "gunwale",     "window_timber", "rope",
     "hull",        "wall_plaster", "stool",       "quay_wall",     "roof_flag",
     "roof_batten", "shop_sign",    "floor_strip",  "post_rail",    "door_post",
-    "pane_timber", "item",
+    "pane_timber", "lintel",       "item",
 };
 
 // ---------------------------------------------------------------------------
@@ -87,12 +87,32 @@ constexpr std::int32_t kSignStoreys = 2;
 /// each depth for its own surface height.
 constexpr int kWaterMaxDepth = 7;
 
-/// A flame quad's size, a lantern's and a fire's: the warm square a lamp
-/// draws inside its cage, in metres.
-constexpr float kLanternFlameWidth = 0.46F;
-constexpr float kLanternFlameHeight = 0.58F;
-constexpr float kFireFlameWidth = 0.34F;
-constexpr float kFireFlameHeight = 0.42F;
+/// A FLAME'S HALO, ACROSS: the extent the adapter's fan fills (haloFanMesh,
+/// scene.hpp), the same in both axes so the disc comes out ROUND in the
+/// world, in metres. The lantern's was 0.46 x 0.58 -- a patch barely past
+/// the lamp's own body, which is why the critic could find no glow that
+/// agreed with any light cast on the wall or the cobbles. It is 1.1 m now,
+/// better than three times the body, and the fan's own hot core is still
+/// only a quarter of that across (kHaloCoreFraction), so the flame still
+/// reads as a flame and the rest is skirt.
+///
+/// Wider than the 0.42 m the lamp stands off its wall, on purpose: the fan
+/// goes to alpha 0 at its rim, so the arc the plaster cuts out of a tipped
+/// disc is an arc of nothing. A brazier's is a little smaller because it
+/// burns a metre and a half up off the cobbles and its skirt would
+/// otherwise scrape them.
+///
+/// THESE ARE METRES IN THE WORLD and not a factor on anything. A brazier's
+/// halo used to be fitted to the stand's own scale (0.6 on the Docks cage),
+/// which is right for a flame quad living INSIDE a cage and wrong for the
+/// glow round it: it left the Tarwalk's braziers on 0.54 m, the very patch
+/// the critic could find no light behind, standing next to lanterns on 1.1.
+/// The fan's hot core is a fraction of the span (kHaloCoreFraction), so the
+/// fire still burns in its cage at whatever size the cage is.
+constexpr float kLanternFlameWidth = 1.1F;
+constexpr float kLanternFlameHeight = 1.1F;
+constexpr float kFireFlameWidth = 0.9F;
+constexpr float kFireFlameHeight = 0.9F;
 /// Where the flame sits in a lantern hung from `lift` (the lantern's origin
 /// is the top of its hanging rod, 0.4 above the ring; the cap is 0.7 to 0.8
 /// down and the glass 0.8 to 1.0, so the flame sits at 0.9 -- at 0.66 the
@@ -1014,11 +1034,13 @@ private:
         const Vec3 at{centre.x - 0.5F * w * c, centre.y - 0.5F * h, centre.z - 0.5F * w * s};
         pointPiece(PieceRole::Flame, spec, at, yaw, lx, ly, lz, tint, Vec3{sx, sy, -1.0F}, true,
                    1.5F);
-        // A halo: its alpha falls off radially over the quad, whose local X
-        // spans its width and local Y its height (the adapter reads the Z
-        // span as Y for this mode). A billboard: the world scene turns it
-        // to the eye about its centre every frame, so it is never seen
-        // edge-on as a bright bar at arm's length.
+        // A halo: the adapter draws its own vertex-coloured fan over this
+        // local extent instead of the piece's mesh -- local X spans the
+        // width and local Y the height (the adapter reads the Z span as Y
+        // for this mode) -- so the falloff is geometry and the rlsw twin
+        // and the GL exe draw the same disc. A billboard: the world scene
+        // turns it to the eye about its centre every frame, so it is never
+        // seen edge-on as a bright bar at arm's length.
         StaticPlacement& p = out_.placements.back();
         p.mode = kDrawHalo;
         p.instance.mode = kDrawHalo;
@@ -1381,7 +1403,7 @@ private:
         if (beam == nullptr || doors_.empty()) {
             return;
         }
-        const PieceSpec* lintel = catalogue_.piece(PieceRole::Joist);
+        const PieceSpec* lintel = catalogue_.piece(PieceRole::Lintel);
         const PieceSpec* wall = catalogue_.piece(PieceRole::Wall);
         // How far the frontage's finish stands out from the cell's own
         // boundary plane: the wall piece's standoff plus half its thickness,
@@ -1442,7 +1464,7 @@ private:
                                              gap.w, 0.0F, static_cast<float>(gap.w), true, true);
             const MaterialRule* m = rule(faceX, faceY, gap.z);
             beamAlong(r, lo - section, hi + section, yBase + kDoorHeadHeight + half, proud,
-                      m != nullptr ? m->tint : Rgba8{}, light, gap.z);
+                      m != nullptr ? m->tint : Rgba8{}, light, gap.z, PieceRole::Lintel);
         }
     }
 
@@ -3642,8 +3664,12 @@ private:
                               static_cast<float>(lamp.y) + 0.5F};
             if (lamp.warmth == render::LampWarmth::Fire) {
                 // A brazier: the stand, the ember tray in its cage, the
-                // flame over it -- the tray and the flame at the stand's
-                // own scale, so a small brazier keeps its fire in its cage.
+                // halo over it. The tray and the FLAME'S HEIGHT ride the
+                // stand's own scale, so a small brazier keeps its fire in
+                // its cage -- the halo does not, because a glow is a thing
+                // in the street and not a thing in the cage, and a cage
+                // scaled to 0.6 was handing the Tarwalk a 0.54 m patch
+                // beside a lantern's 1.1 m disc.
                 const float bs = brazier != nullptr ? brazier->scale : 1.0F;
                 if (brazier != nullptr) {
                     pointPiece(PieceRole::Brazier, *brazier, centre, 0.0F, lamp.x, lamp.y, lamp.z);
@@ -3656,8 +3682,8 @@ private:
                                static_cast<float>((lamp.x + lamp.y) & 1) * kHalfPi, lamp.x, lamp.y, lamp.z,
                                Rgba8{}, fit, true);
                 }
-                flameAt(Vec3{centre.x, centre.y + kFireFlameLift * bs, centre.z}, kFireFlameWidth * bs,
-                        kFireFlameHeight * bs, knobs.fireFlame, lamp.x, lamp.y, lamp.z);
+                flameAt(Vec3{centre.x, centre.y + kFireFlameLift * bs, centre.z}, kFireFlameWidth,
+                        kFireFlameHeight, knobs.fireFlame, lamp.x, lamp.y, lamp.z);
                 continue;
             }
             // The wall it hangs on: the wall beside the lamp's tile, or --

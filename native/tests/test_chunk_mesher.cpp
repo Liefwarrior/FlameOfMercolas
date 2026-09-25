@@ -884,9 +884,29 @@ TEST_CASE("a door tile places the door frame") {
         if (p.role == PieceRole::Flame) {
             CHECK(p.selfLit);
             CHECK(p.instance.scale.z < 0.0F);
-            // A halo: its alpha falls off over the quad's own extent.
+            // A halo: the adapter draws its own fan over this extent
+            // (haloFanMesh) instead of the flame model's quad, so the
+            // falloff is geometry and the rlsw twin and the GL exe agree.
             CHECK(p.mode == kDrawHalo);
             CHECK(p.instance.mode == kDrawHalo);
+            // SQUARE IN METRES, so the fan comes out round in the world,
+            // and better than three times the lamp's own body across: the
+            // old 0.46 x 0.58 patch barely cleared the cage, which is why
+            // the critic could find no glow that agreed with any light on
+            // the plaster.
+            const PieceSpec* flameSpec = catalogue.piece(PieceRole::Flame);
+            const float across = flameSpec->width * p.instance.scale.x;
+            const float up = flameSpec->height * p.instance.scale.y;
+            CHECK(across == doctest::Approx(up));
+            CHECK(across > 0.85F);
+            // AND IT IS METRES IN THE STREET, not a factor on the model it
+            // stands over: the hung lantern's disc is 1.1 across and the
+            // brazier's on the square is its own 0.9. The brazier's used to
+            // be fitted to the stand's scale as the ember tray is, which
+            // put a 0.54 m patch (0.9 of a 0.6 cage) next to a lantern's
+            // 1.1 -- the cage keeps its fire, the street gets the glow.
+            const bool overFire = p.lightX == 6 && p.lightY == 5;
+            CHECK(across == doctest::Approx(overFire ? 0.9F : 1.1F));
             CHECK(p.instance.gradientTo == doctest::Approx(catalogue.piece(PieceRole::Flame)->width));
             CHECK(p.instance.gradientToZ == doctest::Approx(catalogue.piece(PieceRole::Flame)->height));
             // A billboard, anchored on the flame's centre: the quad's
@@ -904,12 +924,20 @@ TEST_CASE("a door tile places the door frame") {
         if (p.role == PieceRole::DoorLeaf) {
             CHECK(p.mode == kDrawShaded);
         }
-        // The brazier's tray and flame sit inside its cage at the stand's
-        // own scale.
-        if (p.role == PieceRole::Ember || (p.role == PieceRole::Flame && p.lightX == 6 && p.lightY == 5)) {
+        // The brazier's tray sits inside its cage at the stand's own scale,
+        // and so does its FIRE -- which is the anchor, the flame's own
+        // point, and not the halo quad's bottom corner: the disc round it
+        // is a metre of street either way, so its corner hangs below the
+        // cage by design and always did.
+        if (p.role == PieceRole::Ember) {
             const PieceSpec* stand = catalogue.piece(PieceRole::Brazier);
             CHECK(p.instance.position.y - render::bandSurface(19) < 1.9F * stand->scale);
             CHECK(p.instance.position.y - render::bandSurface(19) > 1.0F * stand->scale);
+        }
+        if (p.role == PieceRole::Flame && p.lightX == 6 && p.lightY == 5) {
+            const PieceSpec* stand = catalogue.piece(PieceRole::Brazier);
+            CHECK(p.anchor.y - render::bandSurface(19) < 1.9F * stand->scale);
+            CHECK(p.anchor.y - render::bandSurface(19) > 1.0F * stand->scale);
         }
     }
     CHECK(lit.placements.size() == placed.placements.size() + 3 + 3 + 1);
@@ -2277,7 +2305,7 @@ TEST_CASE("a door wears two jambs, on the cells that flank it, slim and cut to t
     const float half = 0.5F * (lintel->maxX - lintel->minX) * lintel->scale;
     std::size_t heads = 0;
     for (const StaticPlacement& p : placed.placements) {
-        if (p.role == PieceRole::Joist && p.lightZ == 19 &&
+        if (p.role == PieceRole::Lintel && p.lightZ == 19 &&
             p.instance.position.z == doctest::Approx(16.0F + proud)) {
             ++heads;
             CHECK(p.instance.position.y ==

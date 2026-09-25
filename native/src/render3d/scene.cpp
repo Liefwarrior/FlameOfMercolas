@@ -14,6 +14,67 @@ constexpr float kPi = 3.14159265358979323846F;
 }  // namespace
 
 // ---------------------------------------------------------------------------
+// the halo's fan
+// ---------------------------------------------------------------------------
+
+MeshData haloFanMesh() {
+    // See scene.hpp: a unit disc, white, the falloff in the alpha channel so
+    // both rasterizers draw the same glow with no shader between them.
+    MeshData fan;
+    const int segments = kHaloFanSegments;
+    const int rings = kHaloFanRings;
+    const auto push = [&fan](float x, float y, std::uint8_t alpha) {
+        fan.positions.push_back(x);
+        fan.positions.push_back(y);
+        fan.positions.push_back(0.0F);
+        fan.texcoords.push_back(0.0F);
+        fan.texcoords.push_back(0.0F);
+        constexpr std::uint8_t kFull = 255;
+        fan.colours.push_back(kFull);
+        fan.colours.push_back(kFull);
+        fan.colours.push_back(kFull);
+        fan.colours.push_back(alpha);
+    };
+    push(0.0F, 0.0F, std::uint8_t{255});
+    for (int ring = 0; ring < rings; ++ring) {
+        // Ring 0 is the edge of the flat hot core; ring rings-1 is the rim,
+        // at nothing.
+        const float t = static_cast<float>(ring) / static_cast<float>(rings - 1);
+        const float radius = kHaloCoreFraction + (1.0F - kHaloCoreFraction) * t;
+        const float skirt = (1.0F - t) * (1.0F - t);
+        const auto alpha = static_cast<std::uint8_t>(skirt * 255.0F + 0.5F);
+        for (int seg = 0; seg < segments; ++seg) {
+            const float angle =
+                2.0F * kPi * static_cast<float>(seg) / static_cast<float>(segments);
+            push(radius * std::cos(angle), radius * std::sin(angle), alpha);
+        }
+    }
+    const auto index = [](int ring, int seg, int segs) {
+        return static_cast<std::uint16_t>(1 + ring * segs + (seg % segs));
+    };
+    for (int seg = 0; seg < segments; ++seg) {
+        fan.indices.push_back(std::uint16_t{0});
+        fan.indices.push_back(index(0, seg, segments));
+        fan.indices.push_back(index(0, seg + 1, segments));
+    }
+    for (int ring = 0; ring + 1 < rings; ++ring) {
+        for (int seg = 0; seg < segments; ++seg) {
+            const std::uint16_t a = index(ring, seg, segments);
+            const std::uint16_t b = index(ring + 1, seg, segments);
+            const std::uint16_t c = index(ring + 1, seg + 1, segments);
+            const std::uint16_t d = index(ring, seg + 1, segments);
+            fan.indices.push_back(a);
+            fan.indices.push_back(b);
+            fan.indices.push_back(c);
+            fan.indices.push_back(a);
+            fan.indices.push_back(c);
+            fan.indices.push_back(d);
+        }
+    }
+    return fan;
+}
+
+// ---------------------------------------------------------------------------
 // SceneDescription
 // ---------------------------------------------------------------------------
 

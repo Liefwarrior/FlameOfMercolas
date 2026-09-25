@@ -266,14 +266,16 @@ constexpr float kViewmodelDepthSpan = 0.2F;
 /// instead of one patch. A run piece passes an empty Z span (its factor
 /// 0), a point piece both. GL 3.3 only; the software rasterizer has no
 /// shaders and never has the licensed files to draw with it anyway.
-/// Two more things the same shader does, by `pieceMode` (scene.hpp): a
-/// HALO (1) takes its alpha to nothing at the edge of the quad, radially
-/// over the piece's local XY (the span uniform then carries X and Y), so a
-/// flame's glow is a soft disc and not a square; a SHADED piece (2) darkens
-/// faces that look down (to half) and lifts faces that look up (by an
-/// eighth) from the mesh's own normals, the vertical faces untouched: the
-/// volume a prop needs when nothing lights it, and the difference between
-/// a rowboat and a dome.
+/// One more thing the same shader does, by `pieceMode` (scene.hpp): a
+/// SHADED piece (2) darkens faces that look down (to half) and lifts faces
+/// that look up (by an eighth) from the mesh's own normals, the vertical
+/// faces untouched: the volume a prop needs when nothing lights it, and the
+/// difference between a rowboat and a dome.
+/// A HALO (1) is NOT here any more, and that is the point of it: its
+/// falloff used to be a radial alpha in this fragment shader, which rlsw
+/// has not got, so the headless twin drew a flat pale rectangle where the
+/// exe drew a disc. It is vertex-coloured fan geometry now (haloFanMesh,
+/// scene.hpp) and both rasterizers draw the same glow.
 constexpr const char* kBlendVertexShader =
     "#version 330\n"
     "in vec3 vertexPosition;\n"
@@ -290,18 +292,12 @@ constexpr const char* kBlendVertexShader =
     "uniform int pieceMode;\n"
     "out vec2 fragTexCoord;\n"
     "out vec4 fragColor;\n"
-    "out vec2 haloUV;\n"
     "void main() {\n"
     "    float tx = clamp((vertexPosition.x - tintSpan.x) * tintSpan.y, 0.0, 1.0);\n"
     "    float tz = clamp((vertexPosition.z - tintSpan.z) * tintSpan.w, 0.0, 1.0);\n"
     "    fragTexCoord = vertexTexCoord;\n"
     "    vec4 tint = mix(mix(tintA, tintB, tx), mix(tintC, tintD, tx), tz);\n"
-    "    haloUV = vec2(0.0, 0.0);\n"
-    "    if (pieceMode == 1) {\n"
-    "        tint = tintA;\n"
-    "        haloUV = vec2((vertexPosition.x - tintSpan.x) * tintSpan.y * 2.0 - 1.0,\n"
-    "                      (vertexPosition.y - tintSpan.z) * tintSpan.w * 2.0 - 1.0);\n"
-    "    } else if (pieceMode == 2) {\n"
+    "    if (pieceMode == 2) {\n"
     "        vec3 n = normalize(vec3(matNormal * vec4(vertexNormal, 0.0)));\n"
     "        float f = n.y < 0.0 ? 1.0 + 0.5 * n.y : 1.0 + 0.125 * n.y;\n"
     "        tint.rgb *= f;\n"
@@ -313,7 +309,6 @@ constexpr const char* kBlendFragmentShader =
     "#version 330\n"
     "in vec2 fragTexCoord;\n"
     "in vec4 fragColor;\n"
-    "in vec2 haloUV;\n"
     "uniform sampler2D texture0;\n"
     "uniform vec4 colDiffuse;\n"
     "uniform int pieceMode;\n"
@@ -321,10 +316,6 @@ constexpr const char* kBlendFragmentShader =
     "void main() {\n"
     "    vec4 texelColor = texture(texture0, fragTexCoord);\n"
     "    finalColor = texelColor * colDiffuse * fragColor;\n"
-    "    if (pieceMode == 1) {\n"
-    "        float fall = max(0.0, 1.0 - dot(haloUV, haloUV));\n"
-    "        finalColor.a *= fall * fall;\n"
-    "    }\n"
     "}\n";
 #endif
 
@@ -438,6 +429,13 @@ struct Backend::Impl {
     }
     Material material{};
     bool materialLoaded = false;
+    /// THE HALO'S FAN (scene.hpp haloFanMesh): one unit disc, uploaded the
+    /// first time a flame is drawn and fitted to each halo's own local span
+    /// by a matrix. Never in the mesh cache -- it has no id in the
+    /// description and no version to move, because it is the same disc for
+    /// every lamp in the district.
+    Mesh haloFan{};
+    bool haloFanReady = false;
     Texture2D defaultTexture{};
     Texture2D overlay{};
     int overlayWidth = 0;
@@ -452,6 +450,13 @@ struct Backend::Impl {
             material = LoadMaterialDefault();
             defaultTexture = material.maps[MATERIAL_MAP_DIFFUSE].texture;
             materialLoaded = true;
+        }
+    }
+
+    void ensureHaloFan() {
+        if (!haloFanReady) {
+            haloFan = uploadMesh(haloFanMesh());
+            haloFanReady = true;
         }
     }
 
@@ -631,8 +636,17 @@ struct Backend::Impl {
         tints.toZ = piece.gradientToZ;
         tints.pane = colourOf(piece.pane);
         tints.mode = piece.mode;
-        // A translucent instance (a flame's halo, its tint alpha under 255)
-        // is held back whole, like a pane of glass.
+        // A halo is ONE fan standing in for whatever the flame model holds,
+        // held back with the glass so it draws over the lantern's own pane
+        // and over the people: one deferred entry, never one per sub-mesh.
+        if (tints.mode == kDrawHalo) {
+            deferred.push_back(DeferredMesh{model, 0, full, tints, mirrored});
+            ++stats.staticsDrawn;
+            ++stats.instancesDrawn;
+            return;
+        }
+        // A translucent instance (a lit pane, the water) is held back whole,
+        // like a pane of glass.
         const bool seeThrough = piece.tint.a < 255;
         for (int i = 0; i < model->model.meshCount; ++i) {
             if (model->translucent[static_cast<std::size_t>(i)] || seeThrough) {
@@ -645,18 +659,62 @@ struct Backend::Impl {
         ++stats.instancesDrawn;
     }
 
+    /// S LANE. A FLAME'S GLOW: the unit fan (haloFanMesh, scene.hpp) fitted
+    /// to the piece's own local span and then put through the piece's own
+    /// transform, so it lands where the flame quad used to and turns with
+    /// the billboard the world scene aimed. Its alpha is the fan's -- flat
+    /// hot core, smooth skirt, nothing at the rim -- times the lamp's own,
+    /// which already carries the day fade and the weather's share off
+    /// relightPieces.
+    ///
+    /// Drawn through the backend's OWN default material and no shader: a
+    /// glow is light, it does not wear the quad's atlas, and the rlsw frame
+    /// and the GL frame come out the same disc. Two-sided, because a
+    /// billboard is light from either face. Depth-TESTED and never written,
+    /// the rule the halo has had since it stopped being a bar.
+    void drawHaloFan(const Matrix& transform, const PieceTints& tints, SceneStats& stats) {
+        const float halfW = 0.5F * (tints.to - tints.from);
+        const float halfH = 0.5F * (tints.toZ - tints.fromZ);
+        if (halfW <= 0.0F || halfH <= 0.0F) {
+            return;
+        }
+        ensureMaterial();
+        ensureHaloFan();
+        const Matrix fit = MatrixMultiply(MatrixScale(halfW, halfH, 1.0F),
+                                          MatrixTranslate(0.5F * (tints.from + tints.to),
+                                                          0.5F * (tints.fromZ + tints.toZ), 0.0F));
+        const Color glow = averageColour(tints);
+        const Rgba8 tint{glow.r, glow.g, glow.b, glow.a};
+        material.maps[MATERIAL_MAP_DIFFUSE].texture = defaultTexture;
+        material.maps[MATERIAL_MAP_DIFFUSE].color = glow;
+        rlDisableDepthMask();
+        rlDisableBackfaceCulling();
+        DrawMesh(tinted(haloFan, tint), material, MatrixMultiply(fit, transform));
+        rlEnableBackfaceCulling();
+        rlEnableDepthMask();
+        material.maps[MATERIAL_MAP_DIFFUSE].color = WHITE;
+        stats.trianglesDrawn += static_cast<std::size_t>(haloFan.triangleCount);
+    }
+
     void drawStaticMesh(StaticModel& model, int i, const Matrix& transform, const PieceTints& tints,
                         bool mirrored, SceneStats& stats) {
+        // A halo does not draw the piece's mesh at all: the fan stands in
+        // for it, once, whatever the flame model's own sub-meshes are.
+        if (tints.mode == kDrawHalo) {
+            drawHaloFan(transform, tints, stats);
+            return;
+        }
         const int m = model.model.meshMaterial[i];
         if (m < 0 || m >= model.model.materialCount) {
             return;
         }
         // The blend: the four tints over the piece when the shader is there
-        // and they differ -- or the piece asks for a halo or shading, which
-        // only the shader does -- their average when it is not (the
-        // software path) or they do not.
+        // and they differ -- or the piece asks for shading, which only the
+        // shader does -- their average when it is not (the software path)
+        // or they do not. A halo never gets here.
         const bool spanned = tints.to > tints.from || tints.toZ > tints.fromZ;
-        const bool blended = blend.id != 0 && ((spanned && !tints.uniform()) || tints.mode != kDrawPlain);
+        const bool blended =
+            blend.id != 0 && ((spanned && !tints.uniform()) || tints.mode == kDrawShaded);
         const Color tint = blended ? Color{255, 255, 255, tints.a.a} : averageColour(tints);
         const Color base = model.baseColour[static_cast<std::size_t>(m)];
         const auto ch = [](unsigned char a, unsigned char b) {
@@ -674,18 +732,9 @@ struct Backend::Impl {
         if (mirrored) {
             rlDisableBackfaceCulling();
         }
-        // A halo is light, not a thing: it is tested against the depth
-        // buffer (the lantern's own cage and the wall stand in front of
-        // it where they should) but never written to it, so the clear
-        // corners of its square cannot cut a hole through the next halo
-        // or pane drawn behind them -- a lit window seen past a door lamp,
-        // the bar lamp's glow seen through the door beside the door
-        // lamp's. Every other piece, the panes and the water included,
-        // writes its depth as it always did.
-        const bool halo = tints.mode == kDrawHalo;
-        if (halo) {
-            rlDisableDepthMask();
-        }
+        // (The halo's own depth rule -- tested, never written, so the soft
+        // rim of one glow cannot cut a hole through the next halo or a lit
+        // pane behind it -- lives in drawHaloFan now, with the fan.)
         Material& material = model.model.materials[m];
         const Shader keep = material.shader;
         if (blended && !glass) {
@@ -710,9 +759,6 @@ struct Backend::Impl {
         }
         DrawMesh(model.model.meshes[i], material, transform);
         material.shader = keep;
-        if (halo) {
-            rlEnableDepthMask();
-        }
         if (mirrored) {
             rlEnableBackfaceCulling();
         }
@@ -1199,6 +1245,11 @@ struct Backend::Impl {
         }
         statics.clear();
         deferred.clear();
+        if (haloFanReady) {
+            UnloadMesh(haloFan);
+            haloFan = Mesh{};
+            haloFanReady = false;
+        }
         if (blend.id != 0) {
             UnloadShader(blend);
             blend = Shader{};

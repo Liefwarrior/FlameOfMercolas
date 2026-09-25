@@ -539,7 +539,15 @@ inline constexpr std::int32_t kSensitivityStep = 2;
 
 /// Bounds the field of view, in horizontal degrees. 90 is the default; 65 is
 /// cinematic and 130 is a fishbowl, and both are legitimate things to want.
-inline constexpr std::int32_t kMinFov = 60;
+///
+/// The floor was 60, and that was a trap rather than a bound: Session's
+/// constructor takes --fov straight off the run config and then calls
+/// sanitise(), so `--fov=45` came out 60 and the shutter quietly handed back
+/// the same frame as `--fov=60` while `--fov=75` obeyed. Nobody was told.
+/// 40 is a long lens, which is exactly what a reviewer wants when the thing
+/// under review is 30 cm of lantern glass, and it is one number for both the
+/// flag and the slider because #77 says those two must never disagree.
+inline constexpr std::int32_t kMinFov = 40;
 inline constexpr std::int32_t kMaxFov = 130;
 inline constexpr std::int32_t kFovStep = 5;
 
