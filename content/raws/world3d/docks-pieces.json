@@ -24,7 +24,7 @@
     "boatEvery": 14,
     "hullFlareDegrees": 0,
     "hullTint": [104, 92, 78],
-    "lanternFlame": [255, 216, 150, 150],
+    "lanternFlame": [255, 224, 168, 210],
     "fireFlame": [255, 148, 60, 230],
     "litPane": [255, 198, 118],
     "roofTint": [108, 112, 122],

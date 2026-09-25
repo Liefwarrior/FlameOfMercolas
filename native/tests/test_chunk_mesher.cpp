@@ -883,9 +883,21 @@ TEST_CASE("a door tile places the door frame") {
         if (p.role == PieceRole::Flame) {
             CHECK(p.selfLit);
             CHECK(p.instance.scale.z < 0.0F);
-            // A halo: its alpha falls off over the quad's own extent.
+            // A halo: the adapter draws its own fan over this extent
+            // (haloFanMesh) instead of the flame model's quad, so the
+            // falloff is geometry and the rlsw twin and the GL exe agree.
             CHECK(p.mode == kDrawHalo);
             CHECK(p.instance.mode == kDrawHalo);
+            // SQUARE IN METRES, so the fan comes out round in the world,
+            // and better than three times the lamp's own body across: the
+            // old 0.46 x 0.58 patch barely cleared the cage, which is why
+            // the critic could find no glow that agreed with any light on
+            // the plaster.
+            const PieceSpec* flameSpec = catalogue.piece(PieceRole::Flame);
+            const float across = flameSpec->width * p.instance.scale.x;
+            const float up = flameSpec->height * p.instance.scale.y;
+            CHECK(across == doctest::Approx(up));
+            CHECK(across > 0.85F);
             CHECK(p.instance.gradientTo == doctest::Approx(catalogue.piece(PieceRole::Flame)->width));
             CHECK(p.instance.gradientToZ == doctest::Approx(catalogue.piece(PieceRole::Flame)->height));
             // A billboard, anchored on the flame's centre: the quad's
