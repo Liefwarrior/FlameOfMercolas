@@ -1,7 +1,7 @@
 # The street talks
 
 Every frame in here is the real `dist\granadad.exe` on the gated Windows build (branch
-`lane/voice`, commit `c2f2e7e9`, with wip's street senses, kit and pull pack merged under it),
+`lane/voice`, commit `8435c2f2`, with wip's street senses, kit and pull pack merged under it),
 playing the voice channel through the real verbs. Nothing is staged. Each run prints a summary
 line next to the picture (`voice end=... beats=n/N ... key=... speaker="..." row="..."
 inview=yes|no off=Ndeg apart=T.T`) and the exact line that shot each frame is in the table. A run
@@ -214,18 +214,33 @@ both halves: a witness to a landed blow ends up facing the player, and the memor
 lane's.** The critic's own first question of any frame -- can I tell who is talking -- and half
 the set failed it.
 
-THE PLATE WAS ON THE FACE. The crosshair's name plate is drawn at the middle of the frame and
-runs to the right of it, so a body composed DEAD CENTRE wears it: `pass`, `react` and
-`overheard` all had "<SOMEBODY> SERF / E - TALK" printed across the speaker's eyes and mouth,
-and because the prompt names the nearest body in REACH rather than the one you are looking at,
-two of them named somebody else while doing it. The prompt's rule is not this lane's to change
-(every verb in the game reads it, and a look-based prompt is the crosshair's own pass), but
-where this lane stands its camera is: every composed look now puts its subject a sixth of the
-frame off centre -- twelve degrees at ninety of view, the thirds a photographer would use --
-and the plate lands on the wall behind them. The overheard shot carries half the angle the pair
-opens plus a body's width beside it, because a pair on the street is rarely just a pair and the
-third serf who stopped to listen wore the label. `off` has a floor in the suite now as well as
-a ceiling: a frame that drifts back to centre goes red.
+THE PLATE WAS ON THE FACE, AND THEN IT WAS ON EVERYBODY ELSE'S. The crosshair's name plate is
+drawn at the middle of the frame and runs to the right of it, so a body composed DEAD CENTRE
+wears it: `pass`, `react` and `overheard` all had "<SOMEBODY> SERF / E - TALK" printed across
+the speaker's eyes and mouth, and because the prompt names the nearest body in REACH rather
+than the one you are looking at, two of them named somebody else while doing it. The prompt's
+rule is not this lane's to change (every verb in the game reads it, and a look-based prompt is
+the crosshair's own pass), but where this lane stands its camera is.
+
+The first answer was a constant twelve degrees to the left, and it solved the wrong half: the
+speaker came out from under the label and three bystanders went under it instead -- the `pass`
+frame printed a name across three serfs at the end of the street, one who was not in the
+picture at all. Whether a label lands on a face is a question about the LENS, not about a
+bearing, so `composeYawOffset` asks it that way: it walks candidate turns out from the smallest
+that clears the plate, both sides -- and the two sides do not want the same clearance, because
+the plate runs rightward from the middle, so a subject to the LEFT need only clear the middle
+by its own shoulder while one to the RIGHT has to clear the whole width of the label (the draft
+that guarded only the left case promptly chose the right one and printed the name across the
+face it was composing) -- and takes the turn that leaves the fewest faces under the label,
+nearest counted worst. In a room as full as the Gull no turn clears everybody: the guarantee is
+that the SPEAKER is never under it, and that what is, is the furthest body the corner allows.
+
+And it is all FRACTIONS OF THE FRAME, not counts of degrees, because the field of view is a
+slider on the options page. Twelve degrees is a sixth of a ninety-degree frame and most of the
+way out of a seventy-degree one: the constant pushed the overheard trio clean off a `--fov=70`
+frame, which the summary's own `inview=no` caught and no case did. `test_street_voice.cpp` now
+plays every composed ending at seventy, ninety and a hundred and ten and asks for the speaker
+in the frame, off the plate, at each.
 
 AND THE ROOM GETS A SECOND AND A HALF. `react` fired the shutter the step the row landed and
 caught a bouncer crossing the lens half in frame, his head wider at that range than the
@@ -283,10 +298,10 @@ to in the Gull holds still. The worded reaction is never a number. Two pass line
 than the cooldown. All seven `--voice=` endings land every beat they owe, AND THE FRAME IS OF THE
 SPEAKER: at the shutter of every composed ending the body the frame is about is in the field of
 view with a clear lens line and nobody drawn in the way (`inview=yes`), and OFF THE PLATE but
-inside the frame -- at least a tenth of the frame off centre so the crosshair's own label does
-not land on the speaker's face, and at most a third of it so nobody is heading for the edge
-(further out again for the overheard group, which has to clear three bodies, and between ten and
-twenty-five degrees for the watch reveal, which stands Cull clear of the drawn blade on purpose).
+inside the frame -- AT SEVENTY, NINETY AND A HUNDRED AND TEN DEGREES OF VIEW, every composed
+ending, because the composition is a fraction of the frame and a case that only ever asked at
+ninety would not know. The watch reveal keeps its own ten-to-twenty-five degrees, which was
+always about standing Cull clear of the drawn blade rather than the plate.
 The farewell and moved stands sit a
 diagonal off at the least (never the tile beside) and the talk reach at the most; the watch
 reveal's stand is three tiles from Cull's stool at the least. The lens's line and the sim's
