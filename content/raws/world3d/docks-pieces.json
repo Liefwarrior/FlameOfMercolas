@@ -61,8 +61,6 @@
     "lip_plank":   { "pack": "PolygonGeneric", "file": "SM_Bld_Base_Floor_01.gltf",       "extent": [0.0, 0.0, 2.5, 2.5], "width": 2.5, "thickness": 0.01, "upright": true, "front": "-z", "maxDistance": 48 },
     "lip_stone":   { "pack": "PolygonGeneric", "file": "SM_Bld_Base_Ceiling_01.gltf",     "extent": [0.0, 0.0, 2.5, 2.5], "width": 2.5, "thickness": 0.01, "upright": true, "twoSided": true, "front": "-z", "maxDistance": 48 },
     "joist":       { "pack": "PolygonGeneric", "file": "SM_Gen_Bld_Beam_01.gltf",         "extent": [-0.1843, 0.0, 0.1843, 5.0], "scale": 0.75, "maxDistance": 40 },
-
-    "lintel":      { "pack": "PolygonGeneric", "file": "SM_Gen_Bld_Beam_01.gltf",         "extent": [-0.1843, 0.0, 0.1843, 5.0], "scale": 0.75, "maxDistance": 40 },
     "gunwale":     { "pack": "PolygonGeneric", "file": "SM_Gen_Bld_Beam_01.gltf",         "extent": [-0.1843, 0.0, 0.1843, 5.0], "scale": 0.8, "tint": [150, 128, 104], "maxDistance": 64 },
     "water":       { "pack": "PolygonDungeonRealms", "file": "SM_Generic_Water_Plane_01.gltf", "extent": [0.0, 0.0, 5.0, 5.0],           "minBlock": 1, "maxBlock": 10, "lift": 0.09, "maxDistance": 140 },
     "prop_barrel": { "pack": "PolygonGeneric", "file": "SM_Gen_Prop_Barrel_Wood_01.gltf", "thickness": 0.37, "lift": 0.04, "maxDistance": 40 },
@@ -99,7 +97,8 @@
     "post_rail":   { "pack": "PolygonGeneric", "file": "SM_Gen_Bld_Beam_01.gltf",         "extent": [-0.1843, 0.0, 0.1843, 5.0], "scale": 0.4, "tint": [150, 128, 104], "maxDistance": 48 },
     "door_post":   { "pack": "PolygonKnights", "file": "SM_Prop_Beam_01.gltf",            "width": 0.261, "height": 2.488, "thickness": 0.02, "maxDistance": 48 },
     "window_timber":{ "pack": "PolygonKnights", "file": "SM_Bld_House_Window_04.gltf",     "front": "+z", "standoff": 0.19, "maxDistance": 48 },
-    "pane_timber": { "pack": "PolygonGeneric", "file": "SM_Bld_Base_Wall_Thin_01.gltf",        "width": 2.5, "height": 3.0, "thickness": 0.0, "front": "+z", "maxDistance": 48 }
+    "pane_timber": { "pack": "PolygonGeneric", "file": "SM_Bld_Base_Wall_Thin_01.gltf",        "width": 2.5, "height": 3.0, "thickness": 0.0, "front": "+z", "maxDistance": 48 },
+    "lintel":      { "pack": "PolygonGeneric", "file": "SM_Gen_Bld_Beam_01.gltf",         "extent": [-0.1843, 0.0, 0.1843, 5.0], "scale": 0.75, "maxDistance": 40 }
   },
   "items": {
     "cudgel":       { "pack": "PolygonDungeonRealms", "file": "SM_Prop_Camp_Plank_01.gltf", "scale": 0.55, "lift": 0.05, "tint": [150, 118, 80], "maxDistance": 32 },

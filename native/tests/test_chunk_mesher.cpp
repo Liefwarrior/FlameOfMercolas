@@ -2276,7 +2276,7 @@ TEST_CASE("a door wears two jambs, on the cells that flank it, slim and cut to t
     const float half = 0.5F * (lintel->maxX - lintel->minX) * lintel->scale;
     std::size_t heads = 0;
     for (const StaticPlacement& p : placed.placements) {
-        if (p.role == PieceRole::Joist && p.lightZ == 19 &&
+        if (p.role == PieceRole::Lintel && p.lightZ == 19 &&
             p.instance.position.z == doctest::Approx(16.0F + proud)) {
             ++heads;
             CHECK(p.instance.position.y ==
