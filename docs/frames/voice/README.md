@@ -227,13 +227,20 @@ speaker came out from under the label and three bystanders went under it instead
 frame printed a name across three serfs at the end of the street, one who was not in the
 picture at all. Whether a label lands on a face is a question about the LENS, not about a
 bearing, so `composeYawOffset` asks it that way: it walks candidate turns out from the smallest
-that clears the plate, both sides -- and the two sides do not want the same clearance, because
-the plate runs rightward from the middle, so a subject to the LEFT need only clear the middle
-by its own shoulder while one to the RIGHT has to clear the whole width of the label (the draft
-that guarded only the left case promptly chose the right one and printed the name across the
-face it was composing) -- and takes the turn that leaves the fewest faces under the label,
-nearest counted worst. In a room as full as the Gull no turn clears everybody: the guarantee is
-that the SPEAKER is never under it, and that what is, is the furthest body the corner allows.
+that clears the plate and takes the one that leaves the fewest faces under the label, nearest
+counted worst. In a room as full as the Gull no turn clears everybody: the guarantee is that
+the SPEAKER is never under it, and that what is, is the furthest body the corner allows.
+
+AND THE SUBJECT ALWAYS STANDS LEFT OF IT, which is worth saying because the code asks both
+sides and only one can ever answer. The plate runs RIGHTWARD from the middle of the frame, so a
+subject to the left clears it by its own shoulder while one to the right has to clear the whole
+width of the label -- and that width is over half the half-frame at every lens the options page
+offers (`atan(0.46 tan h) / h` is 0.55 at sixty degrees of view and 0.80 at a hundred and
+thirty), which is past the point where a body is falling off the edge. So the right-hand branch
+is a guard, not a choice: it is what stops the search composing a frame with the name printed
+across the face it is composing, which is exactly what the draft before it did. The frames are
+all left-handed on purpose, and a lens wide enough to make the other side reachable would be a
+lens nobody plays at.
 
 And it is all FRACTIONS OF THE FRAME, not counts of degrees, because the field of view is a
 slider on the options page. Twelve degrees is a sixth of a ninety-degree frame and most of the
@@ -265,6 +272,35 @@ quietly left:
   which cannot reach the play space does not get one. The priority order is the UI-EA spec's
   argument (an event outranks a state, and a raised fist is also visible in the hand), so
   re-ordering it is that spec's pass and not this lane's.
+
+**Where the critic left it: 8 of 10, and the list he would want for a 9.** Five rounds, each one
+scored against "10 is a fully complete AAA game on launch"; the fifth says five of the six frames
+would sit inside a AAA vertical slice without embarrassment, that the lens regression is dead (he
+could find no field of view, resolution or settle count where the frame loses its speaker -- he
+went to sixty and a hundred and thirty, the real clamp, past the three this suite plays), and
+that the sixth frame would not. Four things stand, named here rather than left for the next
+reader to find:
+
+- **THE WATCH REVEAL HAS TWO OF HIM IN IT.** Cull's face is clear above the blade at every lens,
+  but the right half of the frame is a second bearded man in the same red tunic, the same hair
+  and the same lunge, and nothing in the picture says which one is the Watch. The cause is two
+  declared gaps above (rigged by ROLE, coloured by TYPE) but the stand and the turn are this
+  lane's, and a corner without a twin in it was available. The shot to take is one that refuses
+  a candidate whose frame draws a second body of the subject's own rig.
+- **THE PLATE CONSTANT IS MEASURED SHORT.** `kPlateHalfWidths` is 0.46 of the half-frame, taken
+  off "PETRA BARNACRE SERF"; the Gull prints "GERTA SALTCOTTE BARTENDER", which measures 0.561
+  at 960 wide. Bodies between the two are never counted as under the label. The honest fix is to
+  derive the width from the HUD's own `hudAimRect` rather than measure it off a frame, which
+  means this file linking a layout it deliberately does not link today.
+- **THE SUITE PINS A NUMBER OF DEGREES WHERE THE COMPOSER PINS THE PLATE.** The lens case asks
+  for six degrees off centre at every view angle, which is a count of degrees -- the very tool
+  this lane threw away -- and six degrees is nowhere near the plate's own edge. It catches a
+  frame that drifts back to dead centre and nothing finer. The case that would earn the point
+  asks the speaker's own angular extent to clear `atan(kPlateHalfWidths * hfovTan)`, and plays
+  sixty and a hundred and thirty as well as the three it plays now.
+- **`moved` AND `farewell` ARE ONE STAND.** Six frames, five compositions, and the one that
+  differs shows no voice row at all (the panel owns the screen). A second stand for `moved` --
+  another body, another hour -- would make the set six pictures instead of five and a variation.
 
 One of the seven endings is NOT composed this way and says so: `--voice=hold` (the address's own
 proof -- the Gull man you talk to holds where the talk found him for ten seconds) still stands back
