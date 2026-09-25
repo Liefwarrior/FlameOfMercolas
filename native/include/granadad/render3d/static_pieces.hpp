@@ -266,11 +266,21 @@ enum class PieceRole : std::uint8_t {
     /// street: a hitching rail at hip height, the job that makes two
     /// metre-square piers a rail and not a gate to nowhere.
     PostRail,
-    /// A timber post WITH A JOB ON THE STREET -- a jamb or a hitching post
-    /// within two cells of a door gap, or one half of a pair that carries
-    /// a rail -- out of doors and clear of the water: the kit's strapped
-    /// timber post fitted to the cell, not the concrete pillar. A lone
-    /// pier with no door and no partner stays the pillar.
+    /// The kit's strapped timber post, worn two ways.
+    ///
+    /// A JAMB: one on each side of a door opening, on the wall cell hard
+    /// against it (render3d/door_jambs.hpp names the cell), at the piece's
+    /// OWN section -- a quarter of a metre -- from the ground to the head,
+    /// straddling the frontage's finish, with a beam across the two heads.
+    /// The chunk mesher leaves those cells' boxes out under the head, which
+    /// is what lets the beam be thin. Exactly two per door; a gate has none
+    /// (it keeps its own GatePost and beam).
+    ///
+    /// STREET FURNITURE: a lone timber cell out of doors and clear of the
+    /// water with a job -- the hitching post within two cells of a door,
+    /// one half of a pair that carries a rail -- wears the same post FITTED
+    /// TO ITS CELL, because that cell's box is still standing round it. A
+    /// lone pier with no door and no partner stays the pillar.
     DoorPost,
     /// KIT BUILD. A THING ON A TILE: an item of the player's registry
     /// (sim/items.hpp) lying where the room says it lies -- a dropped

@@ -13,6 +13,7 @@
 #include "granadad/render/atlas.hpp"
 #include "granadad/render/vertical.hpp"
 #include "granadad/render/voxel_classify.hpp"
+#include "granadad/render3d/door_jambs.hpp"
 #include "granadad/sim/tile_query.hpp"
 
 namespace granadad::render3d {
@@ -159,10 +160,12 @@ constexpr float kSignLift = 2.35F;
 constexpr float kSignScale = 0.55F;
 /// A hitching rail between a pair of posts runs at this height.
 constexpr float kRailLift = 1.05F;
-/// A timber post this many cells (Chebyshev) from a door gap's cell is a
-/// door post: the jamb itself, or the hitching post against the wall
-/// beside the door.
+/// A timber post this many cells (Chebyshev) from a door gap's cell has a
+/// job on the street: the hitching post against the wall beside the door.
 constexpr std::int32_t kDoorReach = 2;
+/// How far a frontage's finish stands out from the cell boundary when the
+/// catalogue has no wall piece to ask: the kit wall's own 0.225.
+constexpr float kJambProudFallback = 0.225F;
 
 [[nodiscard]] constexpr float yawOf(int side) noexcept {
     return static_cast<float>(side) * kHalfPi;
@@ -395,6 +398,7 @@ public:
         posts();
         roofEdges();
         doors();
+        jambs();
         floors();
         lips();
         wallCaps();
@@ -513,14 +517,19 @@ private:
     }
 
     /// A timber post WITH A JOB ON THE STREET, out of doors and clear of
-    /// the water: within kDoorReach cells of a door gap's cell (the jamb
-    /// itself, the hitching post against the wall beside the door), or one
-    /// half of a pair two cells apart with a walkable cell between and sky
-    /// over both -- the pair railBetweenPosts() rails, read from either
-    /// end. Such a post is the strapped timber post fitted to its cell
-    /// (posts()); a lone pier with neither is the pillar. The caller has
-    /// already asked isPost().
-    [[nodiscard]] bool doorPostAt(std::int32_t x, std::int32_t y, std::int32_t z) const noexcept {
+    /// the water: within kDoorReach cells of a door gap's cell (the hitching
+    /// post against the wall beside the door), or one half of a pair two
+    /// cells apart with a walkable cell between and sky over both -- the
+    /// pair railBetweenPosts() rails, read from either end. Such a post is
+    /// the strapped timber post fitted to its cell (posts()); a lone pier
+    /// with neither is the pillar. The caller has already asked isPost().
+    ///
+    /// NOT the jamb. The jamb is the wall cell hard against the opening,
+    /// and it is doorPostAt() in door_jambs.hpp that names it -- the test
+    /// the chunk mesher reads too, so the box comes out from under the
+    /// beam. This one is street furniture standing in a cell of its own,
+    /// with the cell's box still round it, so it stays fitted to the cell.
+    [[nodiscard]] bool streetPostAt(std::int32_t x, std::int32_t y, std::int32_t z) const noexcept {
         if (cellRoofed(tiles_, x, y, z) || boardedPost(x, y, z)) {
             return false;
         }
@@ -1195,6 +1204,95 @@ private:
         }
     }
 
+    /// THE JAMBS, 2026-09-25. A door has exactly two of them and they are
+    /// the two wall cells the door rule already demands: the cell hard
+    /// against the left of the opening and the cell hard against its right.
+    /// Each carries the kit's strapped timber post AT ITS OWN SECTION -- a
+    /// quarter of a metre, not the metre the cell is -- standing on the
+    /// ground, cut off at the head, its section straddling the frontage's
+    /// finish so it reads proud of the plaster and never floats off a thin
+    /// timber wall. A beam lies across the two heads. No cap, no plinth,
+    /// no capital: a squared oak jamb with two straps, the height of the
+    /// door and no more.
+    ///
+    /// This is the half the 2026-09-16 pass deferred. The chunk mesher
+    /// takes the same two cells' boxes out under the head (door_jambs.hpp
+    /// is the one test both read), which is what lets the beam be thin.
+    /// Every other face of those cells is still drawn -- the frontage
+    /// panel, the plaster inside, the reveal into the opening, the wall
+    /// above the head, the threshold below -- so nothing is see-through.
+    /// A GATE keeps its own posts and beam (doors()): four cells of mouth
+    /// is not a door frame.
+    void jambs() {
+        const PieceSpec* beam = catalogue_.piece(PieceRole::DoorPost);
+        if (beam == nullptr || doors_.empty()) {
+            return;
+        }
+        const PieceSpec* lintel = catalogue_.piece(PieceRole::Joist);
+        const PieceSpec* wall = catalogue_.piece(PieceRole::Wall);
+        // How far the frontage's finish stands out from the cell's own
+        // boundary plane: the wall piece's standoff plus half its thickness,
+        // the same sum doors() takes its reveal returns from.
+        const float proud =
+            wall != nullptr
+                ? (wall->standoffSet ? wall->standoff : wall->thickness * 0.5F) + wall->thickness * 0.5F
+                : kJambProudFallback;
+        const float section = std::max(0.01F, beam->width * beam->scale);
+        const float sy = kDoorHeadHeight / std::max(0.01F, beam->height);
+        for (const DoorGap& gap : doors_) {
+            if (gap.gate()) {
+                continue;
+            }
+            float lo = 0.0F, hi = 0.0F;
+            std::int32_t faceX = 0, faceY = 0;
+            const FaceRun r = gapFace(gap, lo, hi, faceX, faceY);
+            std::int32_t gdx = 0, gdy = 0;
+            runStep(gap.side, gdx, gdy);
+            const bool forward = gdx + gdy > 0;
+            const std::int32_t farX = gap.x + (gap.alongX ? gap.w - 1 : 0);
+            const std::int32_t farY = gap.y + (gap.alongX ? 0 : gap.w - 1);
+            // The cell before the opening in the facade's own a-order (the
+            // lo end) and the cell after it (the hi end).
+            const std::int32_t cellX[2] = {(forward ? gap.x : farX) - gdx,
+                                           (forward ? farX : gap.x) + gdx};
+            const std::int32_t cellY[2] = {(forward ? gap.y : farY) - gdy,
+                                           (forward ? farY : gap.y) + gdy};
+            const float yBase = render::bandSurface(gap.z);
+            int stood = 0;
+            for (int end = 0; end < 2; ++end) {
+                const std::int32_t cx = cellX[end];
+                const std::int32_t cy = cellY[end];
+                if (!doorPostAt(tiles_, cx, cy, gap.z)) {
+                    // The mesher left this cell's box standing, so a thin
+                    // beam would hide in it: nothing goes here.
+                    continue;
+                }
+                ++stood;
+                // Hard against the edge of the opening, its whole section
+                // inside the jamb cell.
+                const float a = end == 0 ? lo - 0.5F * section : hi + 0.5F * section;
+                const MaterialRule* m = rule(cx, cy, gap.z);
+                const Vec3 at{r.baseX + kTangentX[r.side] * a + kNormalX[r.side] * proud, yBase,
+                              r.baseZ + kTangentZ[r.side] * a + kNormalZ[r.side] * proud};
+                pointPiece(PieceRole::DoorPost, *beam, at, yawOf(r.side), cx, cy, gap.z,
+                           m != nullptr ? m->tint : Rgba8{}, Vec3{1.0F, sy, 1.0F}, false, 2.5F);
+            }
+            if (lintel == nullptr || stood == 0) {
+                continue;
+            }
+            // The head beam: from the outer face of one jamb to the outer
+            // face of the other, its underside ON the head, so the two
+            // posts and the beam are one frame. No jambs, no head: a beam
+            // on its own is a bar across a doorway.
+            const float half = 0.5F * (lintel->maxX - lintel->minX) * lintel->scale;
+            const FaceLight light = runLight(forward ? gap.x : farX, forward ? gap.y : farY, gdx, gdy,
+                                             gap.w, 0.0F, static_cast<float>(gap.w), true, true);
+            const MaterialRule* m = rule(faceX, faceY, gap.z);
+            beamAlong(r, lo - section, hi + section, yBase + kDoorHeadHeight + half, proud,
+                      m != nullptr ? m->tint : Rgba8{}, light, gap.z);
+        }
+    }
+
     /// A beam laid along a face run at [a0, a1] on the run's plane
     /// (`standoff` out), its centre at `y`: a gate's lintel, a gunwale.
     void beamAlong(const FaceRun& r, float a0, float a1, float y, float standoff, Rgba8 tint,
@@ -1767,12 +1865,13 @@ private:
     /// boarded core keeps its boards (walls()) and one pile is driven
     /// through it, its head over the top. Out of doors WITH A JOB -- within
     /// two cells of a door gap, or one of a pair that carries a rail
-    /// (doorPostAt()) -- it is the strapped timber post fitted to the cell
-    /// the same way: a door frame's own timber, not a concrete column,
-    /// beside the Gull's door. The cell stays a metre square and a storey
-    /// tall whatever stands in it -- that is the sim's own wall cell, and
-    /// the chunk box inside it is drawn whatever the catalogue says -- so
-    /// the post is fitted to it edge to edge like the pillar, never thin.
+    /// (streetPostAt()) -- it is the strapped timber post fitted to the cell
+    /// the same way: a hitching post and a sign frame in timber, not a
+    /// concrete column, on the quay before the Gull. Such a cell still has
+    /// its chunk box round it, so the post is fitted to it edge to edge
+    /// like the pillar, never thin. THE JAMB IS NOT HERE: a jamb is a cell
+    /// of the frontage, jambs() stands the slim beam on it, and the mesher
+    /// takes the box out from under that one.
     void posts() {
         const PieceSpec* pillar = catalogue_.piece(PieceRole::Pillar);
         const PieceSpec* pile = catalogue_.piece(PieceRole::Post);
@@ -1806,8 +1905,19 @@ private:
                     }
                     const MaterialRule* r = rule(x, y, z);
                     const bool indoors = cellRoofed(tiles_, x, y, z);
-                    if (doorPost != nullptr && doorPostAt(x, y, z)) {
-                        // THE DOOR POST. The kit's strapped timber post
+                    if (doorPostAt(tiles_, x, y, z)) {
+                        // A JAMB. jambs() stands the slim beam on it and
+                        // the mesher cuts the box out from under that.
+                        // Nothing fitted to the cell goes here -- that is
+                        // the metre-square block the beam is meant to have
+                        // replaced -- but the cell's own jobs stand: the
+                        // Gull's board still hangs off this face.
+                        signOnPost(x, y, z, indoors);
+                        railBetweenPosts(x, y, z, indoors);
+                        continue;
+                    }
+                    if (doorPost != nullptr && streetPostAt(x, y, z)) {
+                        // THE STREET POST. The kit's strapped timber post
                         // fitted to the cell as the pillar is (its section
                         // the cell's width plus a hair, so the chunk box is
                         // inside it), the storey tall, turned by cell, in

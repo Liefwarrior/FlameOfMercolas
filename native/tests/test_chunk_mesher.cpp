@@ -37,6 +37,7 @@
 #include "granadad/render/vertical.hpp"
 #include "granadad/render/world_renderer.hpp"
 #include "granadad/render3d/chunk_mesher.hpp"
+#include "granadad/render3d/door_jambs.hpp"
 #include "granadad/render3d/scene.hpp"
 #include "granadad/render3d/static_pieces.hpp"
 #include "granadad/render3d/world_scene.hpp"
@@ -998,8 +999,9 @@ TEST_CASE("placement is a deterministic function of the tile map") {
     CHECK(stats.byRole[static_cast<std::size_t>(PieceRole::Fireplace)] > 0);
     CHECK(stats.byRole[static_cast<std::size_t>(PieceRole::Pillar)] > 0);
     CHECK(stats.byRole[static_cast<std::size_t>(PieceRole::Post)] > 0);
-    // The Tarwalk's two pairs before the Gull and its hitching post, the
-    // yard's rail grid: door posts, while the taproom's tables and the
+    // Two jambs on every door in the district (gates keep their own posts),
+    // plus the Tarwalk's two pairs before the Gull, its hitching post and
+    // the yard's rail grid as street posts; the taproom's tables and the
     // lone piers stay pillars.
     CHECK(stats.byRole[static_cast<std::size_t>(PieceRole::DoorPost)] > 4);
     CHECK(stats.byRole[static_cast<std::size_t>(PieceRole::QuayWall)] > 0);
@@ -2064,9 +2066,18 @@ TEST_CASE("a timber post with a job on the street is the strapped door post, a l
     const StaticPlacements placed = placeStaticPieces(house.tiles, catalogue, {});
     const Rgba8 timber = catalogue.materialByName("trudgeon_wood")->tint;
     std::size_t doorPosts = 0;
+    std::size_t jambs = 0;
     bool farPillar = false;
     bool streetPillar = false;
     for (const StaticPlacement& p : placed.placements) {
+        // The house's own door at (11..12, 15) wears the two JAMBS on its
+        // flank cells -- a different dress of the same piece, slim and cut
+        // to the head. They are not this rule and are counted apart.
+        if (p.role == PieceRole::DoorPost && p.lightY == 15) {
+            ++jambs;
+            CHECK((p.lightX == 10 || p.lightX == 13));
+            continue;
+        }
         if (p.role == PieceRole::DoorPost) {
             ++doorPosts;
             CHECK(p.lightX == 13);
@@ -2100,6 +2111,7 @@ TEST_CASE("a timber post with a job on the street is the strapped door post, a l
         }
     }
     CHECK(doorPosts == 1);
+    CHECK(jambs == 2);
     CHECK(farPillar);
     CHECK(streetPillar);
     CHECK(countRole(placed.placements, PieceRole::Post) == 1);
@@ -2107,10 +2119,16 @@ TEST_CASE("a timber post with a job on the street is the strapped door post, a l
     // adjacent to a gap cell, and this one is diagonal to the mouth.
     CHECK(countRole(placed.placements, PieceRole::ShopSign) == 0);
     // Under a roof the same cell is a plastered pier again, whatever door
-    // stands near it.
+    // stands near it. The door's own two jambs are untouched: they are
+    // cells of the frontage, not street furniture.
     house.put(13, 16, 20, content::TileForm::Floor, materialId("thatch"));
     const StaticPlacements roofed = placeStaticPieces(house.tiles, catalogue, {});
-    CHECK(countRole(roofed.placements, PieceRole::DoorPost) == 0);
+    CHECK(countRole(roofed.placements, PieceRole::DoorPost) == 2);
+    for (const StaticPlacement& p : roofed.placements) {
+        if (p.role == PieceRole::DoorPost) {
+            CHECK(p.lightY == 15);
+        }
+    }
     bool pier = false;
     for (const StaticPlacement& p : roofed.placements) {
         if (p.role == PieceRole::Pillar && p.lightX == 13 && p.lightY == 16) {
@@ -2119,6 +2137,168 @@ TEST_CASE("a timber post with a job on the street is the strapped door post, a l
         }
     }
     CHECK(pier);
+}
+
+TEST_CASE("a door wears two jambs, on the cells that flank it, slim and cut to the head") {
+    // THE JAMBS. The critic's line on the first pass: metre-square,
+    // storey-tall boxes that frame no door. They stood on lone timber cells
+    // NEAR a door, fitted to the cell because the chunk box was still in
+    // it. Now the rule names the two cells the door rule already demands --
+    // the wall hard against the left of the opening and the wall hard
+    // against its right -- and the beam stands there at its OWN section,
+    // from the ground to the head, with a beam laid across the two heads.
+    HouseWorld house;
+    const StaticCatalogue& catalogue = shippedCatalogue();
+    const PieceSpec* spec = catalogue.piece(PieceRole::DoorPost);
+    REQUIRE(spec != nullptr);
+    const PieceSpec* wallSpec = catalogue.piece(PieceRole::Wall);
+    REQUIRE(wallSpec != nullptr);
+    const PieceSpec* lintel = catalogue.piece(PieceRole::Joist);
+    REQUIRE(lintel != nullptr);
+    // The frontage's finish: the wall piece's standoff plus half its
+    // thickness out from the cell's own boundary plane.
+    const float proud =
+        (wallSpec->standoffSet ? wallSpec->standoff : wallSpec->thickness * 0.5F) +
+        wallSpec->thickness * 0.5F;
+    // The door rule itself, read on the two cells and on nothing else along
+    // that wall.
+    CHECK(doorPostAt(house.tiles, 10, 15, 19));
+    CHECK(doorPostAt(house.tiles, 13, 15, 19));
+    CHECK_FALSE(doorPostAt(house.tiles, 9, 15, 19));
+    CHECK_FALSE(doorPostAt(house.tiles, 14, 15, 19));
+    CHECK_FALSE(doorPostAt(house.tiles, 8, 15, 19));
+    // The gap cells themselves are floor, not wall: never jambs.
+    CHECK_FALSE(doorPostAt(house.tiles, 11, 15, 19));
+    CHECK_FALSE(doorPostAt(house.tiles, 12, 15, 19));
+
+    const StaticPlacements placed = placeStaticPieces(house.tiles, catalogue, {});
+    REQUIRE(placed.stats.doorGaps == 1);
+    // Two, one per flank cell, and no third.
+    CHECK(countRole(placed.placements, PieceRole::DoorPost) == 2);
+    std::size_t west = 0;
+    std::size_t east = 0;
+    for (const StaticPlacement& p : placed.placements) {
+        if (p.role != PieceRole::DoorPost) {
+            continue;
+        }
+        CHECK(p.lightY == 15);
+        CHECK(p.lightZ == 19);
+        CHECK(p.mode == kDrawShaded);
+        // SLIM: the piece at its own section, a quarter of a metre across,
+        // not the metre the cell is. This is the whole point.
+        CHECK(p.instance.scale.x == doctest::Approx(spec->scale));
+        CHECK(p.instance.scale.z == doctest::Approx(spec->scale));
+        const float across = spec->width * p.instance.scale.x;
+        CHECK(across > 0.2F);
+        CHECK(across < 0.4F);
+        // On the ground, cut off at the head: no cap block over the lintel.
+        CHECK(p.instance.position.y == doctest::Approx(render::bandSurface(19) + spec->lift));
+        CHECK(p.instance.scale.y * spec->height == doctest::Approx(kDoorHeadHeight));
+        // Standing on the door's own plane (the south face of row 15), its
+        // section straddling the frontage's finish.
+        CHECK(p.instance.position.z == doctest::Approx(16.0F + proud));
+        // Hard against the edge of the opening, inside its own cell.
+        if (p.lightX == 10) {
+            ++west;
+            CHECK(p.instance.position.x > 10.5F);
+            CHECK(p.instance.position.x < 11.0F);
+        }
+        if (p.lightX == 13) {
+            ++east;
+            CHECK(p.instance.position.x > 13.0F);
+            CHECK(p.instance.position.x < 13.5F);
+        }
+    }
+    CHECK(west == 1);
+    CHECK(east == 1);
+    // And the head beam across the two of them, its underside on the head.
+    const float half = 0.5F * (lintel->maxX - lintel->minX) * lintel->scale;
+    std::size_t heads = 0;
+    for (const StaticPlacement& p : placed.placements) {
+        if (p.role == PieceRole::Joist && p.lightZ == 19 &&
+            p.instance.position.z == doctest::Approx(16.0F + proud)) {
+            ++heads;
+            CHECK(p.instance.position.y ==
+                  doctest::Approx(render::bandSurface(19) + kDoorHeadHeight + half + lintel->lift));
+        }
+    }
+    CHECK(heads == 1);
+}
+
+TEST_CASE("the mesher leaves the jamb cells' ground storey out and meshes the wall over it") {
+    // WHAT MAKES THE BEAM READ. A quarter-metre post inside a metre-square
+    // box is a decal on a block, so the mesher takes the box out of the two
+    // jamb cells from the ground to the head -- and ONLY to the head: the
+    // lintel course over the opening still meshes, so the frontage has no
+    // hole in it. The neighbouring wall then shows its own reveal down the
+    // whole opening, and the cell under the jamb shows its top: the
+    // threshold the beam stands on. Nothing is left see-through.
+    HouseWorld house;
+    const render::TileAtlas& atlas = proceduralAtlas();
+    const ChunkMaterials materials = ChunkMaterials::fromAtlas(atlas);
+    const ChunkGeometry geometry = buildChunkGeometry(house.tiles, atlas, materials,
+                                                      chunkOf(10, 15), 0);
+    const float floorY = render::bandSurface(19);
+    const float headY = floorY + kDoorHeadHeight;
+    const auto span = [&geometry](const ChunkFace& face, float& lowest, float& highest) {
+        for (std::size_t corner = 0; corner < 4; ++corner) {
+            const float y = geometry.positions[(face.firstVertex + corner) * 3 + 1];
+            lowest = std::min(lowest, y);
+            highest = std::max(highest, y);
+        }
+    };
+    std::size_t jambFaces = 0;
+    std::size_t plainFaces = 0;
+    float plainLowest = 1.0e9F;
+    bool jambSoffit = false;
+    bool revealFace = false;
+    bool threshold = false;
+    for (const ChunkFace& face : geometry.faces) {
+        float lowest = 1.0e9F;
+        float highest = -1.0e9F;
+        span(face, lowest, highest);
+        const bool jamb = face.z == 19 && face.y == 15 && (face.x == 10 || face.x == 13);
+        if (jamb) {
+            ++jambFaces;
+            // Not one quad of this cell dips under the head.
+            CHECK(lowest >= headY - 0.001F);
+            CHECK(highest <= floorY + render::kBandHeight + 0.001F);
+            if (face.dir == FaceDir::Bottom) {
+                jambSoffit = true;
+                CHECK(lowest == doctest::Approx(headY));
+            }
+        }
+        // The wall cell next along the run still reaches the ground, and
+        // shows the face it used to hide behind the jamb's box.
+        if (face.z == 19 && face.y == 15 && face.x == 9) {
+            ++plainFaces;
+            plainLowest = std::min(plainLowest, lowest);
+            if (face.dir == FaceDir::East) {
+                revealFace = true;
+                CHECK(lowest == doctest::Approx(floorY));
+                CHECK(highest == doctest::Approx(floorY + render::kBandHeight));
+            }
+        }
+        // The substrate under the jamb is no longer covered: its top face
+        // is the threshold.
+        if (face.z == 18 && face.y == 15 && face.x == 10 && face.dir == FaceDir::Top) {
+            threshold = true;
+            CHECK(lowest == doctest::Approx(floorY));
+        }
+    }
+    // The lintel course is still there -- the frontage is not open above
+    // the door.
+    CHECK(jambFaces > 0);
+    CHECK(jambSoffit);
+    CHECK(plainFaces > 0);
+    CHECK(plainLowest == doctest::Approx(floorY));
+    CHECK(revealFace);
+    CHECK(threshold);
+    // And the mesh is still a pure function of the tiles.
+    const ChunkGeometry again = buildChunkGeometry(house.tiles, atlas, materials,
+                                                   chunkOf(10, 15), 0);
+    CHECK(geometry.positions == again.positions);
+    CHECK(geometry.indices == again.indices);
 }
 
 TEST_CASE("the one-wide cobble leftovers along a frontage wear setts") {
@@ -2310,16 +2490,19 @@ TEST_CASE("a pair of lone posts two cells apart on a street carries a hitching r
     CHECK(rails == 2);
     CHECK(acrossRow);
     CHECK(downColumn);
-    // Both halves of each pair are door posts (the frame's timber, read
-    // from either end); the indoor table and the partition on the roof
-    // band are the pillars left.
-    CHECK(countRole(placed.placements, PieceRole::DoorPost) == 4);
+    // Both halves of each pair wear the strapped post fitted to their cell
+    // (the frame's timber, read from either end); the indoor table and the
+    // partition on the roof band are the pillars left. Plus the house's own
+    // door, whose two flank cells wear the slim jamb dress of the same
+    // piece: four street posts and two jambs.
+    CHECK(countRole(placed.placements, PieceRole::DoorPost) == 6);
     CHECK(countRole(placed.placements, PieceRole::Pillar) == 2);
     for (const StaticPlacement& p : placed.placements) {
         if (p.role == PieceRole::DoorPost) {
             const bool rowPair = p.lightY == 20 && (p.lightX == 20 || p.lightX == 22);
             const bool columnPair = p.lightX == 25 && (p.lightY == 22 || p.lightY == 24);
-            CHECK((rowPair || columnPair));
+            const bool jamb = p.lightY == 15 && (p.lightX == 10 || p.lightX == 13);
+            CHECK((rowPair || columnPair || jamb));
         }
     }
     // And a board in each frame, hung from the first post into the gap.

@@ -492,6 +492,10 @@ add_library(granadad-render3d-core STATIC
     # against them in parallel: chunk meshes (W), actor instances (A), the
     # viewmodel machine (V).
     src/render3d/chunk_mesher.cpp
+    # ONE TEST, TWO READERS: which wall cells flank a door opening. The
+    # placer stands the slim jamb beam on them, the mesher leaves their
+    # ground-storey box out under the head. Pure over the tile bytes.
+    src/render3d/door_jambs.cpp
     # The world lane: the Docks as a scene -- chunk geometries built once,
     # recoloured on the minute, instanced near the eye, the sky dome, the
     # camera from the body.
