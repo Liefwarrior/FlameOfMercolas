@@ -202,9 +202,8 @@ constexpr float kDegToRad = kPi / 180.0F;
 /// guard frame for the fists, its blade-across frame for the sword, the
 /// spell clip's raised off hand for the cast) and tuned on frames. Yaw is
 /// the half turn less the body's own turn to the left: the sword's hip
-/// stance and the armed cast's thrown hand both come round into frame when
-/// the body faces a little left of the eye's line (the bare cast turns the
-/// other way; see kFistsCast).
+/// stance and the cast's thrown hand both come round into frame when the
+/// body faces a little left of the eye's line.
 [[nodiscard]] constexpr ViewmodelRigPlacement placementOf(Vec3 offset, float turnLeftDegrees,
                                                           float pitchDegrees) noexcept {
     return ViewmodelRigPlacement{offset, kViewmodelRigYaw - turnLeftDegrees * kDegToRad,
@@ -217,27 +216,8 @@ constexpr ViewmodelRigPlacement kFistsBlock = placementOf(Vec3{0.0F, -1.22F, -0.
 /// shoulders behind the near plane in every frame and the fist flying in
 /// from the lower right to the middle rather than up through the eye.
 constexpr ViewmodelRigPlacement kFistsPunch = placementOf(Vec3{0.0F, -1.27F, 0.45F}, 0.0F, 10.0F);
-/// The bare-handed cast is framed off the SPELL clip, and that body is not
-/// the block clip's the other fists framings stand on: the block clip
-/// crouches (shoulders 1.2 up the rig, the fists at 0.9..1.1), the spell
-/// clip stands tall and throws the off hand to 1.9 -- half a metre over
-/// the guard's eye, with the left pauldron sitting right over it. So the
-/// eye rides HIGH here: 2.25 up the rig, between the pauldrons and a hair
-/// behind them, looking down thirty degrees at the back of the thrown
-/// hand, the body turned thirty degrees to the RIGHT of the eye's line (a
-/// negative turn) so the left hand crosses to centre-left and the forearm
-/// runs in from the bottom-left corner -- the hand about (500, 400) of
-/// 1280x720 and 0.6 out, the elbow on the bottom edge, the right arm off
-/// the right side. The lerp in from the guard then rises straight through
-/// the neck: the pauldron that filled a third of the frame for two steps
-/// in and three out under the armed framing clips a corner instead. A
-/// chest-height eye (the -1.2..-1.35 family) cannot frame this clip at
-/// all -- it looks up its own arm at the pauldron.
-constexpr ViewmodelRigPlacement kFistsCast = placementOf(Vec3{-0.12F, -2.25F, 0.05F}, -30.0F, 30.0F);
 constexpr ViewmodelRigPlacement kSwordGuard = placementOf(Vec3{0.40F, -2.04F, 0.28F}, 10.0F, 70.0F);
 constexpr ViewmodelRigPlacement kSwordBlock = placementOf(Vec3{0.30F, -1.96F, 0.28F}, 10.0F, 75.0F);
-/// The armed cast: the eye over the left shoulder, level with the thrown
-/// hand, the body turned left to bring it round.
 constexpr ViewmodelRigPlacement kCastPlacement = placementOf(Vec3{0.30F, -1.88F, -0.24F}, 20.0F, -10.0F);
 /// The swing's last third eases the placement back to the guard, so the
 /// fall back to Idle lands on the framing it left.
@@ -364,7 +344,8 @@ ViewmodelRigPlacement viewmodelBlockPlacement(ViewmodelKind kind) noexcept {
 }
 
 ViewmodelRigPlacement viewmodelCastPlacement(ViewmodelKind kind) noexcept {
-    return kind == ViewmodelKind::Fists ? kFistsCast : kCastPlacement;
+    (void)kind;
+    return kCastPlacement;
 }
 
 ViewmodelRigPlacement viewmodelSwingPlacement(ViewmodelKind kind) noexcept {
