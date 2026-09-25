@@ -70,7 +70,9 @@ FROM toolchain AS build
 # to go red at all, so the shell that gets it is the shell that has it.
 SHELL ["/bin/bash", "-c"]
 
-ARG GRANADAD_REVISION=docker
+# `unknown` when nobody says: the stamp must not print a word that reads like
+# an answer. scripts/gate.ps1 passes the real commit; see docker-compose.yml.
+ARG GRANADAD_REVISION=unknown
 ARG BUILD_TYPE=RelWithDebInfo
 
 WORKDIR /src

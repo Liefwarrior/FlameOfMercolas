@@ -151,8 +151,13 @@ struct ViewmodelRigPlacement {
 /// or the raised blade (a weapon) cover the middle of the frame.
 [[nodiscard]] ViewmodelRigPlacement viewmodelBlockPlacement(ViewmodelKind kind) noexcept;
 /// The cast: the rig dropped and turned so the off hand, thrown overhead in
-/// the spell clip, lands centre-frame with its glow. RAISES THE STANCE by
-/// construction -- a cast with the hands down still poses up here.
+/// the spell clip, lands centre-frame with its glow -- per kind, like the
+/// guard and the block: bare hands are seen from high between the
+/// pauldrons looking down at the thrown hand (the spell clip stands half a
+/// metre taller than the block clip the other fists framings stand on); a
+/// weapon keeps the eye over the left shoulder, level with the hand.
+/// RAISES THE STANCE by construction -- a cast with the hands down still
+/// poses up here.
 [[nodiscard]] ViewmodelRigPlacement viewmodelCastPlacement(ViewmodelKind kind) noexcept;
 /// The swing: where the rig sits for a charge, a hold and a swing -- the
 /// punches lunge half a metre, so bare fists step the rig back and level
