@@ -1618,6 +1618,14 @@ public:
     /// drawn alpha is its EasedToggle's business; this is the target a test
     /// can assert on.
     [[nodiscard]] bool quickBarWanted() const noexcept { return quickBarShowSteps_ > 0; }
+    /// KITFIX LANE. THE DRAWN ALPHA ITSELF -- 0 (closed) .. 1 (snapped fully
+    /// open). quickBarWanted() only ever proved the COUNTDOWN was armed; it
+    /// stayed true through a --settle-steps=0 capture that showed no strip
+    /// at all, because the strip's EASE can lag its own target with no
+    /// step() left to close the gap. This is the number a shutter actually
+    /// draws with, and the one a case checking "snapped, not mid-ease" has
+    /// to read -- see showQuickBar()'s own header.
+    [[nodiscard]] float quickBarFadeValue() const noexcept { return quickBarAnim_.value(); }
 
     // --- the Law of Earned Text (UI-EA-SPEC sec. 2, LANE HUD) ----------------
     //

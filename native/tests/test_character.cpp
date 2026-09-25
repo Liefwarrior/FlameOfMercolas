@@ -370,11 +370,15 @@ TEST_CASE("a carried row prints its weight, its worth and its marks; a worn slot
     CHECK(rows[22] == "ON THE BACK  COAT  DR 2");
     CHECK(rows[26] == "LOAD  " + std::to_string(tavern.loadDrams()) + " / 240 DRAMS");
     // Registry order: the cudgel, the coat, the rope, the picks, the dust.
-    CHECK(rows[27] == "CUDGEL  40DR  6C  IN HAND  SLOT 3");
-    CHECK(rows[28] == "COAT  60DR  12C  WORN");
-    CHECK(rows[29] == "ROPE  48DR  6C");
-    CHECK(rows[30] == "5 PICKS  5DR  10C");
-    CHECK(rows[31] == "2 DUST  6DR  32C  HOT");
+    // KITFIX LANE: the name column is padded to "5 PICKS", the widest name
+    // this list holds (seven cells), and DR/C are each right-justified into
+    // this list's own widest digit count -- rightAlignedDigits()'s contract,
+    // proved here row by row rather than just by the alignment case below.
+    CHECK(rows[27] == "CUDGEL   40DR   6C  IN HAND  SLOT 3");
+    CHECK(rows[28] == "COAT     60DR  12C  WORN");
+    CHECK(rows[29] == "ROPE     48DR   6C");
+    CHECK(rows[30] == "5 PICKS   5DR  10C");
+    CHECK(rows[31] == "2 DUST    6DR  32C  HOT");
     CHECK(session.loadLine() == rows[26]);
     CHECK(session.characterKitOffset() == 27);
     // The composed list behind the rows: the Kit's own rows are the only
@@ -385,6 +389,48 @@ TEST_CASE("a carried row prints its weight, its worth and its marks; a worn slot
     CHECK(kit[2].inKit);
     CHECK_FALSE(kit[3].inKit);  // the picks
     CHECK_FALSE(kit[4].inKit);  // the sack
+}
+
+TEST_CASE("DR and C share an end column across carried rows however their names run") {
+    // KITFIX LANE. B06's own finding (docs/frames/kit/): "the DR values
+    // start at four different x, the C values at four more." COAT and ROPE
+    // are both four glyphs, LANTERN is seven -- three names of two different
+    // lengths used to leave each row's number wherever its own name happened
+    // to end. rightAlignedDigits() (session.cpp, characterRows()) fixes it
+    // in the row-composition code; this reads the fix off the finished
+    // strings rather than off a screenshot.
+    render::Session session = standing();
+    Tavern& tavern = session.tavern();
+    REQUIRE(tavern.giveItem("coat"));
+    REQUIRE(tavern.giveItem("lantern"));
+    REQUIRE(tavern.giveItem("rope"));
+
+    const std::vector<std::string> rows = session.characterRows();
+    std::size_t drColumn = std::string::npos;
+    std::size_t cColumn = std::string::npos;
+    int found = 0;
+    for (const std::string& row : rows) {
+        if (row.rfind("COAT", 0) != 0 && row.rfind("LANTERN", 0) != 0 &&
+            row.rfind("ROPE", 0) != 0) {
+            continue;
+        }
+        ++found;
+        const std::size_t dr = row.find("DR");
+        REQUIRE(dr != std::string::npos);
+        if (drColumn == std::string::npos) {
+            drColumn = dr;
+        } else {
+            CHECK(dr == drColumn);
+        }
+        const std::size_t c = row.find('C', dr + 2);
+        REQUIRE(c != std::string::npos);
+        if (cColumn == std::string::npos) {
+            cColumn = c;
+        } else {
+            CHECK(c == cColumn);
+        }
+    }
+    REQUIRE(found == 3);
 }
 
 TEST_CASE("ENTER on a carried row wears it or bares it; on a sheet row it does nothing") {

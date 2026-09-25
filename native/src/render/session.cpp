@@ -2242,20 +2242,32 @@ void Session::showQuickBar() {
     // feature's own showcase, which is a real defect even though a live
     // player would never notice eight steps (~130ms) of ramp.
     //
-    // snapTo(true) FROM A DEAD STOP ONLY -- value() <= 0 is exactly "never
-    // risen at all yet", the case that produced the illegible capture.
-    // Reopening while the strip is already up, or mid-decay after the last
-    // touch, is deliberately left alone: EasedToggle::setTarget's own
-    // header ("reopening mid-close resumes from wherever it had got to")
-    // is the correct feel for that case and this pass has no complaint
-    // against it -- only the very first rise, which had nothing to resume
-    // FROM, needed the guarantee. The CLOSE still eases the ordinary way:
-    // syncPanelAnim()'s quickBarAnim_.setTarget(barWanted) below still owns
-    // the fall once quickBarShowSteps_ runs out, so the strip's one-
-    // transition-grammar veil on the way OUT is untouched.
-    if (quickBarAnim_.value() <= 0.0F) {
-        quickBarAnim_.snapTo(true);
-    }
+    // KITFIX LANE. THE GUARD WAS TOO NARROW: value() <= 0.0F ONLY CAUGHT A
+    // DEAD STOP. A capture off SmokeRunConfig::quickbar's own scripted
+    // sequence -- the Grimoire opened, a crafting walked onto a slot, the
+    // page closed, the number pressed, all with --settle-steps=0 and not
+    // one step() between them -- showed no strip at all
+    // (docs/frames/kit/, the --quickbar shutter): the countdown was
+    // genuinely armed (quickBarWanted() true) but VALUE was whatever the
+    // strip's LAST rise-and-fall had left it at, because closing the
+    // Grimoire mid-sequence stands the strip down first (conversingNow()
+    // counts an open Grimoire), and reopening it a moment later hit
+    // setTarget(true)'s "reopening mid-close resumes from wherever it had
+    // got to" rule -- correct for a live player watching the ease, wrong
+    // for a shutter with no frames left to resume ACROSS.
+    //
+    // SO: every call snaps, not just the one off a dead stop. A player never
+    // sees the difference -- snapping an already-open strip back to fully
+    // open is a no-op, and snapping a mid-close strip back up is the same
+    // "the hand touched it again" event setTarget(true) already fires on,
+    // just resolved in one frame instead of a few -- and a --settle-steps=0
+    // capture now shows exactly what showQuickBar()'s own promise always
+    // said: the strip is up, snapped, the instant a slot is chosen. The
+    // CLOSE still eases the ordinary way: syncPanelAnim()'s
+    // quickBarAnim_.setTarget(barWanted) below still owns the fall once
+    // quickBarShowSteps_ runs out, so the strip's one-transition-grammar
+    // veil on the way OUT is untouched.
+    quickBarAnim_.snapTo(true);
 }
 
 void Session::jump() {
@@ -9610,6 +9622,28 @@ std::string Session::legendLine() const {
                 34);
 }
 
+namespace {
+
+/// KITFIX LANE. THE ONE PLACE A NUMBER GETS PADDED. A capture of the Kit
+/// tile (docs/frames/kit/) found the DR column starting at four different x
+/// and the C column at four more -- KNIFE's 8DR sits three cells left of
+/// LANTERN's 30DR because each row's number followed straight off ITS OWN
+/// name, and a name is not a column. Every numeric suffix on the sheet is
+/// supposed to compose through here instead of a caller hand-padding a
+/// std::to_string in place: right-justified into a field exactly as wide as
+/// the widest value the CALLER'S OWN LIST can show, so a five-row page never
+/// reserves a sixth row's width and a hundred-drams row never crowds a
+/// single-digit one.
+[[nodiscard]] std::string rightAlignedDigits(std::int32_t value, std::size_t width) {
+    std::string digits = std::to_string(value);
+    if (digits.size() < width) {
+        digits.insert(digits.begin(), width - digits.size(), ' ');
+    }
+    return digits;
+}
+
+}  // namespace
+
 std::vector<std::string> Session::characterRows() const {
     // FIVE ROWS, THEN FOUR, THEN FIVE, THEN THREE: the five Legend tracks
     // (S8's own "who am I in this city yet", derived and thrown away every
@@ -9799,29 +9833,66 @@ std::vector<std::string> Session::characterRows() const {
     }
     // THE LOAD, the one visible budget, then every carried row.
     rows.push_back(loadLine());
-    for (const KitRow& row : kitRows()) {
+    // KITFIX LANE. THE LIST READ TWICE: once to learn what every row's
+    // prefix, drams and worth actually are (and how wide the widest of
+    // each runs), once to compose the lines -- rightAlignedDigits()'s own
+    // header on why a row cannot pad itself against a list it cannot see.
+    // Copied out of kitRows() the one time rather than called twice, which
+    // would ask the registry the same question under two different lists if
+    // anything about it were ever to change between calls.
+    const std::vector<KitRow> kit = kitRows();
+    struct KitLine {
+        const KitRow* row = nullptr;
+        const sim::ItemDef* thing = nullptr;
+        std::string prefix;
+        std::int32_t drams = 0;
+        std::int32_t royals = 0;
+    };
+    std::vector<KitLine> lines;
+    lines.reserve(kit.size());
+    std::size_t prefixWidth = 0;
+    std::size_t dramsWidth = 0;
+    std::size_t royalsWidth = 0;
+    for (const KitRow& row : kit) {
         const sim::ItemDef* thing = items.at(row.item);
         if (thing == nullptr) {
             continue;
         }
-        std::string line;
+        KitLine entry;
+        entry.row = &row;
+        entry.thing = thing;
         if (row.count > 1) {
-            line += std::to_string(row.count) + " ";
+            entry.prefix = std::to_string(row.count) + " ";
         }
-        line += thing->name;
+        entry.prefix += thing->name;
         // Weight and worth, the reference's right-aligned numbers, in the
         // font's own letters (no icons): DR is drams, C is coin.
-        const std::int32_t drams = row.item == tavern_->items().indexOf("bale")
-                                       ? tavern_->dialogue().crimes().baleUnits() *
-                                             sim::contrabandWeight(
-                                                 tavern_->dialogue().crimes().baleGood())
-                                       : thing->drams * row.count;
-        line += "  " + std::to_string(drams) + "DR";
-        if (thing->royals > 0) {
-            line += "  " + std::to_string(thing->royals * row.count) + "C";
+        entry.drams = row.item == tavern_->items().indexOf("bale")
+                          ? tavern_->dialogue().crimes().baleUnits() *
+                                sim::contrabandWeight(tavern_->dialogue().crimes().baleGood())
+                          : thing->drams * row.count;
+        entry.royals = thing->royals > 0 ? thing->royals * row.count : 0;
+        prefixWidth = std::max(prefixWidth, entry.prefix.size());
+        dramsWidth = std::max(dramsWidth, std::to_string(entry.drams).size());
+        if (entry.royals > 0) {
+            royalsWidth = std::max(royalsWidth, std::to_string(entry.royals).size());
+        }
+        lines.push_back(std::move(entry));
+    }
+    for (const KitLine& entry : lines) {
+        const KitRow& row = *entry.row;
+        const sim::ItemDef& thing = *entry.thing;
+        // The name column PADDED to the widest name this page holds, so
+        // every row's "  NNDR" starts under the last one -- the fix itself,
+        // everything above just measured for it.
+        std::string line = entry.prefix;
+        line.append(prefixWidth - entry.prefix.size(), ' ');
+        line += "  " + rightAlignedDigits(entry.drams, dramsWidth) + "DR";
+        if (entry.royals > 0) {
+            line += "  " + rightAlignedDigits(entry.royals, royalsWidth) + "C";
         }
         if (row.inKit && tavern_->kit().isWorn(row.item)) {
-            line += thing->slot == sim::ItemSlot::Hand ? "  IN HAND" : "  WORN";
+            line += thing.slot == sim::ItemSlot::Hand ? "  IN HAND" : "  WORN";
         }
         for (std::int32_t slot = 0; slot < sim::Tavern::kQuickSlotCount; ++slot) {
             if (tavern_->slotItemIndex(slot) == row.item) {
@@ -9829,7 +9900,7 @@ std::vector<std::string> Session::characterRows() const {
                 break;
             }
         }
-        if (thing->heat > 0) {
+        if (thing.heat > 0) {
             line += "  HOT";
         }
         rows.push_back(std::move(line));

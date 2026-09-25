@@ -412,6 +412,45 @@ TEST_CASE("the quick bar's step toast rides the first two risings and then retir
     CHECK_FALSE(session.wheelHintWanted());
 }
 
+TEST_CASE("the quick bar strip is snapped fully open, not mid-ease, the instant a slot is "
+          "chosen -- the --quickbar shutter's own sequence, with no step() to close the gap") {
+    // KITFIX LANE. A capture off SmokeRunConfig::quickbar (Grimoire open, a
+    // crafting walked onto a slot, the page closed, the number pressed, all
+    // with --settle-steps=0) showed no strip at all. quickBarWanted() was
+    // already proven true by the case above; the missing half of the promise
+    // is the drawn VALUE, and this pins it directly rather than through a
+    // screenshot.
+    Session session(quietDocks());
+
+    // Put the strip through one full rise and most of a fall with NOTHING
+    // else touching it, so quickBarFadeValue() lands on a genuine mid-ease
+    // number rather than the dead stop showQuickBar()'s old guard already
+    // handled. quickBarAnim_ eases over kPageEaseSteps (8) either way: 120
+    // steps exhausts the show countdown, four more spend half the fall.
+    session.selectQuickSlot(0);
+    session.stepMany(sim::MoveInput{}, 124);
+    REQUIRE_FALSE(session.quickBarWanted());
+    REQUIRE(session.quickBarFadeValue() == doctest::Approx(0.5F));
+
+    // The --quickbar shutter's own four calls, back to back, NOT ONE step()
+    // between them -- exactly what --settle-steps=0 photographs. Closing the
+    // Grimoire before the press is the smoke script's own order (see
+    // SmokeRunConfig::quickbar's header in session.cpp): the page is down by
+    // the time the number lands, so conversingNow() is false and nothing
+    // stands the strip back down again.
+    session.toggleGrimoire();
+    REQUIRE(session.grimoireOpen());
+    session.closeConversation();
+    REQUIRE_FALSE(session.grimoireOpen());
+    session.selectQuickSlot(1);
+
+    CHECK(session.quickBarWanted());
+    // THE FIX ITSELF: snapped, not resumed from the 0.5 it was mid-falling
+    // through. Under the old guard (snapTo only from a dead stop) this stays
+    // 0.5F and the assertion below is the one that catches it.
+    CHECK(session.quickBarFadeValue() == 1.0F);
+}
+
 TEST_CASE("the tutor band holds, yields, and spends its countdown once a step") {
     // The cross-lane contract (c): this lane lands the countdown/toggle
     // helper, PAGES instantiates one per band, FLOW raises it on wake
