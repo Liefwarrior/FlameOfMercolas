@@ -101,6 +101,14 @@ constexpr int kWaterMaxDepth = 7;
 /// disc is an arc of nothing. A brazier's is a little smaller because it
 /// burns a metre and a half up off the cobbles and its skirt would
 /// otherwise scrape them.
+///
+/// THESE ARE METRES IN THE WORLD and not a factor on anything. A brazier's
+/// halo used to be fitted to the stand's own scale (0.6 on the Docks cage),
+/// which is right for a flame quad living INSIDE a cage and wrong for the
+/// glow round it: it left the Tarwalk's braziers on 0.54 m, the very patch
+/// the critic could find no light behind, standing next to lanterns on 1.1.
+/// The fan's hot core is a fraction of the span (kHaloCoreFraction), so the
+/// fire still burns in its cage at whatever size the cage is.
 constexpr float kLanternFlameWidth = 1.1F;
 constexpr float kLanternFlameHeight = 1.1F;
 constexpr float kFireFlameWidth = 0.9F;
@@ -3625,8 +3633,12 @@ private:
                               static_cast<float>(lamp.y) + 0.5F};
             if (lamp.warmth == render::LampWarmth::Fire) {
                 // A brazier: the stand, the ember tray in its cage, the
-                // flame over it -- the tray and the flame at the stand's
-                // own scale, so a small brazier keeps its fire in its cage.
+                // halo over it. The tray and the FLAME'S HEIGHT ride the
+                // stand's own scale, so a small brazier keeps its fire in
+                // its cage -- the halo does not, because a glow is a thing
+                // in the street and not a thing in the cage, and a cage
+                // scaled to 0.6 was handing the Tarwalk a 0.54 m patch
+                // beside a lantern's 1.1 m disc.
                 const float bs = brazier != nullptr ? brazier->scale : 1.0F;
                 if (brazier != nullptr) {
                     pointPiece(PieceRole::Brazier, *brazier, centre, 0.0F, lamp.x, lamp.y, lamp.z);
@@ -3639,8 +3651,8 @@ private:
                                static_cast<float>((lamp.x + lamp.y) & 1) * kHalfPi, lamp.x, lamp.y, lamp.z,
                                Rgba8{}, fit, true);
                 }
-                flameAt(Vec3{centre.x, centre.y + kFireFlameLift * bs, centre.z}, kFireFlameWidth * bs,
-                        kFireFlameHeight * bs, knobs.fireFlame, lamp.x, lamp.y, lamp.z);
+                flameAt(Vec3{centre.x, centre.y + kFireFlameLift * bs, centre.z}, kFireFlameWidth,
+                        kFireFlameHeight, knobs.fireFlame, lamp.x, lamp.y, lamp.z);
                 continue;
             }
             // The wall it hangs on: the wall beside the lamp's tile, or --

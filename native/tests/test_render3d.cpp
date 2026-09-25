@@ -715,17 +715,38 @@ TEST_CASE("a lantern pools on a surface: its own cell dwarfs four tiles out") {
 }
 
 TEST_CASE("the lamps put light on the wall in a night frame, headless through rlsw") {
-    // THE LANE'S OWN VANTAGE: the reviewer's "straight on" spawn in front of
-    // the Gilded Gull's door at ten at night, the door lantern a metre ahead
-    // and over head height. Drawn twice -- the district's real lamps, then
-    // the same district with no lamps at all -- and the block of frame the
-    // lantern hangs over is measured against a control block of sky no lamp
-    // can reach. The wall gains; the control does not.
+    // THE TARWALK AT TEN AT NIGHT, from the authored spawn looking west with
+    // the Gilded Gull on the left: reviewer frame 10's own line, and the very
+    // camera the noon case above draws its eight thousand world pixels from.
+    // Drawn twice -- the district's real lamps, then the same district with
+    // no lamps at all -- and the two frames are compared PIXEL BY PIXEL. The
+    // lamps only ever add, they reach a great deal of the frame, and what
+    // stands right under one goes from the night ambient alone to most of a
+    // byte.
+    //
+    // WHY NOT THE ARM'S LENGTH VANTAGE. It stood the eye half a tile off the
+    // Gull's plaster and sampled a block in the middle of the frame, and that
+    // block came back at the night sky's own value: whatever was in it, it
+    // was not lit plaster, so there was nothing there to measure. The spawn
+    // is the same district and the same lamps at a range the pass is already
+    // proved to draw.
+    //
+    // WHY THE LAMPS RIDE IN LIVE rather than as the baked field, which is not
+    // a convenience: the adapter uploads a mesh once per (id, version) and a
+    // chunk's version is its rebuild count, the minute, the weather and the
+    // DYNAMIC lamp key -- the baked field is NOT in it, because in a session
+    // it never changes. Two world scenes over one district at one minute
+    // therefore hand the adapter the same id at the same version twice and
+    // the second description's colours never reach the card, which is how
+    // this case used to read its control as byte-for-byte its own lit frame.
+    // dynamicGlowAt has the same radius, peak and falloff as the baked field
+    // and colourChunk pools both through the one pooledGlow line, so what is
+    // measured here is exactly what the shipped path does.
     //
     // The pieces are not in this container (the Synty packs are not in the
-    // checkout), which is exactly the point: the WALL under them is chunk
-    // mesh, lit off the same glow field, so this case measures the pool
-    // itself and not the lantern model.
+    // checkout), which is exactly the point: the WALL and the COBBLES are
+    // chunk mesh, lit off the glow, so this case measures the pool itself and
+    // not the lantern model.
     if (!Backend::headlessCapable()) {
         MESSAGE("skipped: this build renders through a GPU window, not rlsw");
         return;
@@ -739,62 +760,121 @@ TEST_CASE("the lamps put light on the wall in a night frame, headless through rl
     const std::vector<render::Lamp> lamps =
         render::loadLamps(content::contentDir(), sim::docks::kWorldName);
     REQUIRE_FALSE(lamps.empty());
-    const std::vector<render::Lamp> none;
-    const render::LampGlow lit = render::LampGlow::build(tiles, lamps);
-    const render::LampGlow dark = render::LampGlow::build(tiles, none);
 
     render::Camera eye;
-    eye.x = 152.5F;
-    eye.y = 64.5F;
-    eye.z = render::bandSurface(19) + static_cast<float>(sim::kEyeHeightTilesQ8) / 256.0F;
-    eye.yaw = 3.14159265358979323846F;
-    eye.pitch = 15.0F * 3.14159265358979323846F / 180.0F;
+    eye.x = static_cast<float>(sim::docks::kSpawnTileX) + 0.5F;
+    eye.y = static_cast<float>(sim::docks::kSpawnTileY) + 0.5F;
+    eye.z = render::bandSurface(sim::docks::kSpawnBand) +
+            static_cast<float>(sim::kEyeHeightTilesQ8) / 256.0F;
+    eye.yaw = 265.0F * 3.14159265358979323846F / 180.0F;
+    eye.pitch = 0.0F;
     eye.hfovTan = 1.0F;
 
-    WorldSceneParams params;
-    params.timeOfDaySeconds = 22 * 3600;
     const float aspect = static_cast<float>(kWidth) / static_cast<float>(kHeight);
-    WorldScene litDocks(tiles, atlas, &lit);
-    WorldScene darkDocks(tiles, atlas, &dark);
+    WorldScene docks(tiles, atlas, nullptr);
+    WorldSceneParams unlit;
+    unlit.timeOfDaySeconds = 22 * 3600;
+    WorldSceneParams lit = unlit;
+    lit.dynamicLamps = lamps;
     SceneDescription withLamps;
     SceneDescription withoutLamps;
-    litDocks.refresh(withLamps, eye, aspect, params);
-    darkDocks.refresh(withoutLamps, eye, aspect, params);
+    docks.refresh(withLamps, eye, aspect, lit);
+    docks.refresh(withoutLamps, eye, aspect, unlit);
+
+    // THE GUARD ON ALL OF IT: every chunk mesh of the control carries a
+    // version of its own. Without that the adapter keeps the lit upload
+    // under the same id and the control draws the lit frame back, which is
+    // a control that measures nothing and passes quietly.
+    std::size_t chunkMeshes = 0;
+    std::size_t movedVersions = 0;
+    for (const MeshData& mesh : withLamps.meshes) {
+        if (mesh.id < kChunkMeshIdBase) {
+            continue;
+        }
+        ++chunkMeshes;
+        const MeshData* control = withoutLamps.findMesh(mesh.id);
+        REQUIRE(control != nullptr);
+        if (control->version != mesh.version) {
+            ++movedVersions;
+        }
+    }
+    REQUIRE(chunkMeshes > 0);
+    REQUIRE(movedVersions == chunkMeshes);
 
     std::unique_ptr<Backend> video = Backend::open(headlessConfig());
     REQUIRE(video != nullptr);
     const render::Framebuffer lampFrame = drawOnce(*video, withLamps, nullptr, nullptr);
     const render::Framebuffer noLampFrame = drawOnce(*video, withoutLamps, nullptr, nullptr);
+    REQUIRE(lampFrame.width() == kWidth);
+    REQUIRE(lampFrame.height() == kHeight);
 
-    // The mean brightness of a block of the frame.
-    const auto meanOf = [](const render::Framebuffer& frame, int x0, int y0, int w, int h) {
-        double sum = 0.0;
-        int count = 0;
-        for (int y = y0; y < y0 + h; ++y) {
-            for (int x = x0; x < x0 + w; ++x) {
-                const std::uint32_t p = pixelAt(frame, x, y);
-                sum += static_cast<double>((p & 0xFFU) + ((p >> 8) & 0xFFU) + ((p >> 16) & 0xFFU)) /
-                       3.0;
-                ++count;
+    // Channel by channel, in integers throughout, so the comparison is exact
+    // and not a float's opinion of one.
+    int brighter = 0;
+    int darker = 0;
+    int peakGain = 0;
+    double litSum = 0.0;
+    double darkSum = 0.0;
+    for (int y = 0; y < kHeight; ++y) {
+        for (int x = 0; x < kWidth; ++x) {
+            const std::uint32_t a = pixelAt(lampFrame, x, y);
+            const std::uint32_t b = pixelAt(noLampFrame, x, y);
+            int gained = 0;
+            int lost = 0;
+            for (int shift = 0; shift < 24; shift += 8) {
+                const int withLamp = static_cast<int>((a >> shift) & 0xFFU);
+                const int without = static_cast<int>((b >> shift) & 0xFFU);
+                gained += withLamp > without ? 1 : 0;
+                lost += withLamp < without ? 1 : 0;
+                peakGain = withLamp - without > peakGain ? withLamp - without : peakGain;
+                litSum += static_cast<double>(withLamp);
+                darkSum += static_cast<double>(without);
             }
+            brighter += gained > 0 ? 1 : 0;
+            darker += lost > 0 ? 1 : 0;
         }
-        return count > 0 ? sum / static_cast<double>(count) : 0.0;
-    };
-    // The lamp's region: the middle band of the frame, the plaster and the
-    // cobbles the lantern hangs over. The control: the top strip, the night
-    // sky and the roofline, out of every lamp's reach.
-    const double wallLit = meanOf(lampFrame, kWidth / 4, kHeight / 2, kWidth / 2, kHeight / 3);
-    const double wallDark = meanOf(noLampFrame, kWidth / 4, kHeight / 2, kWidth / 2, kHeight / 3);
-    const double skyLit = meanOf(lampFrame, 0, 0, kWidth, kHeight / 8);
-    const double skyDark = meanOf(noLampFrame, 0, 0, kWidth, kHeight / 8);
-    MESSAGE("night wall " << wallDark << " -> " << wallLit << ", control " << skyDark << " -> "
-                          << skyLit);
-    // The wall under the lantern gains a great deal from the lamps; the
-    // control gains next to nothing, and ends darker than the wall.
-    CHECK(wallLit > wallDark + 10.0);
-    CHECK(skyLit < skyDark + 2.0);
-    CHECK(wallLit > skyLit);
-    // And the same bytes drawn again: a pool is not a random walk.
+    }
+    const double channels = 3.0 * static_cast<double>(kWidth) * static_cast<double>(kHeight);
+    MESSAGE("night frame: " << brighter << " px brighter, " << darker << " darker, peak gain "
+                            << peakGain << " a channel, mean " << darkSum / channels << " -> "
+                            << litSum / channels);
+    // A lamp only ever ADDS. pooledGlow scales the lamp's own share and the
+    // sky's ambient sits under it either way, so no channel of no pixel in
+    // the district can come out darker for the lamps being lit.
+    CHECK(darker == 0);
+    // They reach the frame: plaster, cobble and timber all down the Tarwalk
+    // are inside some lamp's four and a half tiles, and a pool that faint
+    // still clears a byte.
+    CHECK(brighter > 500);
+    // And a surface at a lamp's own cell gains hard: the pool is at its peak
+    // there (0.86 of full, warm, so the red channel runs to the clamp) where
+    // the control has only the night ambient under it. An eighth of the byte
+    // range is the floor even on the procedural atlas, whose plaster and
+    // cobble are darker than the pack's.
+    CHECK(peakGain > 32);
+    CHECK(litSum > darkSum);
+    // The lamps light SURFACES and nothing else: the sky dome alone, drawn
+    // from each description (instance 0 is the dome, the noon case pins
+    // that), is the same bytes. And there is a district in front of it --
+    // without that the counts above would be a statement about an empty
+    // frame.
+    SceneDescription litSky = withLamps;
+    litSky.instances.resize(1);
+    SceneDescription darkSky = withoutLamps;
+    darkSky.instances.resize(1);
+    const render::Framebuffer litSkyFrame = drawOnce(*video, litSky, nullptr, nullptr);
+    const render::Framebuffer darkSkyFrame = drawOnce(*video, darkSky, nullptr, nullptr);
+    CHECK(litSkyFrame.pixels() == darkSkyFrame.pixels());
+    std::size_t worldPixels = 0;
+    for (std::size_t i = 0; i < lampFrame.pixels().size(); ++i) {
+        if (lampFrame.pixels()[i] != litSkyFrame.pixels()[i]) {
+            ++worldPixels;
+        }
+    }
+    CHECK(worldPixels > 1000);
+    // And the same bytes drawn again: a pool is not a random walk. The sky
+    // passes left the adapter holding the control's meshes, so this proves
+    // the lit colours go back up as well.
     const render::Framebuffer again = drawOnce(*video, withLamps, nullptr, nullptr);
     CHECK(again.pixels() == lampFrame.pixels());
 }
