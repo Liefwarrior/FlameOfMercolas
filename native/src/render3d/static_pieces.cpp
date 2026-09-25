@@ -38,7 +38,7 @@ constexpr std::string_view kRoleNames[kPieceRoleCount] = {
     "rowboat",     "crane",        "gunwale",     "window_timber", "rope",
     "hull",        "wall_plaster", "stool",       "quay_wall",     "roof_flag",
     "roof_batten", "shop_sign",    "floor_strip",  "post_rail",    "door_post",
-    "pane_timber", "item",         "lintel",
+    "pane_timber", "lintel",       "item",
 };
 
 // ---------------------------------------------------------------------------
