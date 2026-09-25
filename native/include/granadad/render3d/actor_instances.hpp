@@ -171,6 +171,39 @@ inline constexpr std::uint32_t kSaltLook = 0x4C4F4F4BU;  // "LOOK"
     return static_cast<std::uint32_t>(stepCount + static_cast<std::int64_t>(actorId) * 17);
 }
 
+/// A SMALL, STABLE, PER-ACTOR nudge within a body's own tile. Purely visual:
+/// nothing here is hashed, and it never moves a body off the sim's own
+/// one-tile grid -- the sim's one-per-cell rule is the only thing that says
+/// where a body IS, and this reads that position and never writes it back.
+/// It exists because the placeholder figure's shoulders are wider than the
+/// ~0.9 m tile it stands on, so two bodies the sim has legitimately placed on
+/// ADJACENT tiles -- exactly what WardPopulation::sidestep now does far more
+/// often, on purpose -- could still read as one fused silhouette from some
+/// angles. Offsetting each body toward a different point in its own tile, by
+/// an id-keyed hash so two neighbours do not happen to lean toward each
+/// other, buys real clearance for an orthogonally-adjacent pair without ever
+/// contradicting where the sim says either of them is standing.
+///
+/// EXPOSED, NOT FILE-LOCAL: test_scene3d.cpp pins every drawn instance
+/// against an independently computed expected position, so the test has to
+/// apply the identical nudge to agree with production -- a second hand-copied
+/// formula would silently drift from this one the first time either changed.
+[[nodiscard]] constexpr std::uint32_t personalSpaceHash(std::int32_t actorId) noexcept {
+    std::uint32_t h = static_cast<std::uint32_t>(actorId) * 0x9E3779B1u + 0x68E31DA4u;
+    h ^= h >> 15;
+    h *= 0x85EBCA6Bu;
+    h ^= h >> 13;
+    return h;
+}
+
+inline constexpr float kPersonalSpaceTiles = 0.3F;
+
+inline void personalSpaceNudge(std::int32_t actorId, float& px, float& py) noexcept {
+    const std::uint32_t h = personalSpaceHash(actorId);
+    px += (static_cast<float>(h & 0xFFu) / 255.0F - 0.5F) * kPersonalSpaceTiles;
+    py += (static_cast<float>((h >> 8) & 0xFFu) / 255.0F - 0.5F) * kPersonalSpaceTiles;
+}
+
 /// The placeholder figure for a kind: a closed box figure standing on y = 0,
 /// centred on the origin in x and z, facing -Z (north) at yaw 0 with a nose
 /// block on the front of the head. People are built 1.875 tiles tall (the

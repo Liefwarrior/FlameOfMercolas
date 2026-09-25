@@ -1333,6 +1333,12 @@ public:
     /// how "no guard pile-ups" stops being an opinion.
     [[nodiscard]] std::int64_t shoves() const noexcept { return shoves_; }
     [[nodiscard]] std::int32_t worstJam() const noexcept { return worstJam_; }
+    /// Times a body facing a taken tile stepped SIDEWAYS onto an open one
+    /// instead of standing there waiting for a shove -- see sidestep()'s own
+    /// comment. How "a crowd fans out at a doorway instead of gluing into a
+    /// single column" stops being an opinion, the same way shoves() already
+    /// made the etiquette gate one.
+    [[nodiscard]] std::int64_t sidesteps() const noexcept { return sidesteps_; }
     /// Times a watchman has laid hands on another watchman. ZERO, always: the
     /// etiquette gate refuses it before any draw is made, which is what makes
     /// the beat's own corner yield the resolution mechanism instead of two
@@ -1440,6 +1446,10 @@ private:
     /// One tile toward `target`, along a cached route. Answers whether the body
     /// moved.
     bool stepToward(WardActor& actor, std::int32_t tx, std::int32_t ty, std::int32_t tband);
+    /// One tile SIDEWAYS when the route's next hop is somebody else's tile
+    /// right now. See the comment at its call site in stepToward for why a
+    /// body needs this and not just the wait-or-shove it had before.
+    bool sidestep(WardActor& actor, std::int32_t tx, std::int32_t ty, std::int32_t tband);
     bool tryEnter(WardActor& actor, std::int32_t nx, std::int32_t ny, std::int32_t nband);
     bool tryPush(WardActor& pusher, std::int32_t cx, std::int32_t cy, std::int32_t cband,
                  const TickContext& context);
@@ -1579,6 +1589,7 @@ private:
     mutable PathFinder finder_;
     WardLedger ledger_;
     std::int64_t shoves_ = 0;
+    std::int64_t sidesteps_ = 0;
     std::int64_t watchShoves_ = 0;
     std::int64_t catches_ = 0;
     std::int64_t futileChases_ = 0;

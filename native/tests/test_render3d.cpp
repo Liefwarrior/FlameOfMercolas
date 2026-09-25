@@ -457,11 +457,17 @@ TEST_CASE("the ward's people render as figures in the 3D frame") {
     putActorRigs(scene);
     scene.actors = actorInstances(session, eye);
     REQUIRE(!scene.actors.empty());
-    // The subject is among them, two tiles ahead of the eye.
+    // The subject is among them, two tiles ahead of the eye. Same
+    // personal-space nudge actorInstances() applies to every body's render
+    // position -- see personalSpaceNudge's own comment -- so the expected
+    // spot has to carry it too, or this looks for the un-nudged tile centre.
+    float expectedX = static_cast<float>(subject->x) + 0.5F;
+    float expectedZ = static_cast<float>(subject->y) + 0.5F;
+    personalSpaceNudge(subject->id, expectedX, expectedZ);
     bool subjectInstanced = false;
     for (const ActorInstance& body : scene.actors) {
-        if (std::fabs(body.instance.position.x - (static_cast<float>(subject->x) + 0.5F)) < 1e-4F &&
-            std::fabs(body.instance.position.z - (static_cast<float>(subject->y) + 0.5F)) < 1e-4F) {
+        if (std::fabs(body.instance.position.x - expectedX) < 1e-4F &&
+            std::fabs(body.instance.position.z - expectedZ) < 1e-4F) {
             subjectInstanced = true;
             CHECK(body.skinned);
         }
