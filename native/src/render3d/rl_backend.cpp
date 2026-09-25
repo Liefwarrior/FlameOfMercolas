@@ -674,6 +674,18 @@ struct Backend::Impl {
         if (mirrored) {
             rlDisableBackfaceCulling();
         }
+        // A halo is light, not a thing: it is tested against the depth
+        // buffer (the lantern's own cage and the wall stand in front of
+        // it where they should) but never written to it, so the clear
+        // corners of its square cannot cut a hole through the next halo
+        // or pane drawn behind them -- a lit window seen past a door lamp,
+        // the bar lamp's glow seen through the door beside the door
+        // lamp's. Every other piece, the panes and the water included,
+        // writes its depth as it always did.
+        const bool halo = tints.mode == kDrawHalo;
+        if (halo) {
+            rlDisableDepthMask();
+        }
         Material& material = model.model.materials[m];
         const Shader keep = material.shader;
         if (blended && !glass) {
@@ -698,6 +710,9 @@ struct Backend::Impl {
         }
         DrawMesh(model.model.meshes[i], material, transform);
         material.shader = keep;
+        if (halo) {
+            rlEnableDepthMask();
+        }
         if (mirrored) {
             rlEnableBackfaceCulling();
         }

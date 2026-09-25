@@ -88,10 +88,12 @@ constexpr float kLanternFlameHeight = 0.58F;
 constexpr float kFireFlameWidth = 0.34F;
 constexpr float kFireFlameHeight = 0.42F;
 /// Where the flame sits in a lantern hung from `lift` (the lantern's origin
-/// is its top ring; its glass is about half way down) and in a brazier's
-/// cage (the cage floor is at 1.2 m of the 1.9 m stand), the brazier's
-/// figures at the stand's own scale.
-constexpr float kLanternFlameDrop = 0.66F;
+/// is the top of its hanging rod, 0.4 above the ring; the cap is 0.7 to 0.8
+/// down and the glass 0.8 to 1.0, so the flame sits at 0.9 -- at 0.66 the
+/// glow was centred on the ring and read as a lit hook over a dark lamp)
+/// and in a brazier's cage (the cage floor is at 1.2 m of the 1.9 m stand),
+/// the brazier's figures at the stand's own scale.
+constexpr float kLanternFlameDrop = 0.9F;
 constexpr float kFireFlameLift = 1.55F;
 constexpr float kEmberLift = 1.24F;
 /// The ember tray is fitted to this square inside the cage, in metres, at

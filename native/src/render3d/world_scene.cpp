@@ -62,6 +62,24 @@ constexpr float kLightClamp = 1.15F;
 /// A flame's halo keeps this much of its alpha at full daylight.
 constexpr float kFlameDayAlpha = 0.12F;
 
+/// A flame's halo floats toward the eye along the line of sight by this
+/// much of its own height (0.29 m on a lantern's 0.58): a point moved along
+/// the eye's own ray lands on the same pixel, so the glow stays centred on
+/// the flame, but its plane now clears the lantern's cap, cage and base
+/// (all within 0.26 m of the flame) from every side, so the body never
+/// slices the glow along a line that walks with the eye -- the glow is
+/// drawn over the lamp and the lamp reads through it, a lit glass and not
+/// a lit hook. Never more than the cap's fraction of the way to the eye,
+/// so the quad's centre stays past the near plane (0.1) even with the
+/// lamp at the edge of the view and a body pressed to the wall under it
+/// (0.31 m from the flame: the quad 0.19 out, clipped only past 57
+/// degrees off axis). Nearer the flame than 0.72 m the cap wins and the
+/// base's rim stands in front of the plane -- the underside of a lamp is
+/// dark, its rim comes through the glow -- which is the honest limit of a
+/// depth-tested sprite against an opaque body.
+constexpr float kHaloForward = 0.5F;
+constexpr float kHaloForwardCap = 0.4F;
+
 /// A window pane goes warm when the sky is darker than this (0 at
 /// midnight, 1 at noon) and the room behind it glows more than this.
 constexpr float kPaneNightBelow = 0.42F;
@@ -499,23 +517,59 @@ void WorldScene::refresh(SceneDescription& scene, const render::Camera& camera, 
             at.pane = slots[4];
             at.mode = p.mode;
             if (p.billboard && p.instance.piece < specs.size()) {
-                // A halo faces the eye: its quad's normal (local +Z, which
-                // a clockwise yaw takes to (-sin, cos) in XZ) along the
-                // line to the eye, and its origin -- the bottom-left corner
-                // of a quad `w` wide and `h` tall -- half a width back
-                // along its own +X from the anchor, half a height down.
-                // Two-sided, so which way along the line is all one.
+                // A halo faces the eye IN THREE DIMENSIONS, a sphere's
+                // billboard: its quad's normal (local +Z) along the whole
+                // line to the eye, not just its shadow on the ground. The
+                // yaw first -- a clockwise yaw takes +Z to (-sin, cos) in
+                // XZ -- then the pitch about the quad's own X (the adapter
+                // applies it before the yaw), which tips the normal down
+                // to an eye under the lamp and up to one on a roof. A
+                // yaw-only turn left the quad standing plumb, so a body
+                // under a lantern looking up saw it foreshortened to a
+                // bar and, from the roof, to a bright sliver: this is what
+                // the placement critic called the halo's edge at arm's
+                // length. The origin -- the bottom-left corner of a quad
+                // `w` wide and `h` tall -- is half a width back along its
+                // own +X from the anchor and half a height down its own
+                // +Y, both turned by the pitch and the yaw, so the centre
+                // holds on the anchor's ray whichever way the quad tips.
+                // The centre itself floats toward the eye along that ray
+                // (kHaloForward), clear of the lamp's own body. Facing the
+                // eye, the quad lies across the ray and reaches its own
+                // half-diagonal (0.37 m on a lantern) from the centre;
+                // the flame stands 0.42 m off its wall and the body's own
+                // radius keeps the eye 0.35 m off it, so the float never
+                // carries the centre more than a few centimetres nearer
+                // the plaster and the quad never touches it. Two-sided,
+                // so which way along the line is all one.
                 const PieceSpec& spec = specs[p.instance.piece];
                 const float dx = eye.x - p.anchor.x;
+                const float dy = eye.y - p.anchor.y;
                 const float dz = eye.z - p.anchor.z;
-                const float yaw = (dx * dx + dz * dz) > 1.0e-6F ? std::atan2(-dx, dz) : 0.0F;
+                const float flat = std::sqrt(dx * dx + dz * dz);
+                const float len = std::sqrt(flat * flat + dy * dy);
+                const float yaw = flat > 1.0e-3F ? std::atan2(-dx, dz) : 0.0F;
+                // +Z pitched by `pitch` is (0, -sin, cos): positive tips the
+                // normal down, toward an eye below the anchor.
+                const float pitch = std::atan2(-dy, flat);
                 const float w = spec.width * at.scale.x;
                 const float h = spec.height * at.scale.y;
                 const float c = std::cos(yaw);
                 const float s = std::sin(yaw);
+                const float cp = std::cos(pitch);
+                const float sp = std::sin(pitch);
+                // The float toward the eye, as a fraction of the way there.
+                const float forward =
+                    len > 1.0e-3F ? std::min(kHaloForward * h, kHaloForwardCap * len) / len : 0.0F;
+                const Vec3 centre{p.anchor.x + dx * forward, p.anchor.y + dy * forward,
+                                  p.anchor.z + dz * forward};
                 at.yaw = yaw < 0.0F ? yaw + 2.0F * kPi : yaw;
-                at.position = Vec3{p.anchor.x - 0.5F * w * c, p.anchor.y - 0.5F * h + spec.lift,
-                                   p.anchor.z - 0.5F * w * s};
+                at.pitch = pitch;
+                // The half-height step along the quad's own +Y, which the
+                // pitch takes to (0, cos, sin) and the yaw then turns.
+                at.position = Vec3{centre.x - 0.5F * w * c + 0.5F * h * sp * s,
+                                   centre.y - 0.5F * h * cp + spec.lift,
+                                   centre.z - 0.5F * w * s - 0.5F * h * sp * c};
             }
             scene.statics.push_back(at);
             ++stats_.piecesInstanced;
