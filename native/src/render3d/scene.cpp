@@ -122,8 +122,11 @@ void mixRgba(Fnv1a64& h, const Rgba8& c) noexcept {
 std::uint64_t sceneHash(const SceneDescription& scene) noexcept {
     Fnv1a64 h;
     // A format tag first, so a future field added to the byte image cannot
-    // collide with an old image by accident.
-    h.mixU32(0x53434E36U);  // "SCN6" -- the weather's veils joined the description
+    // collide with an old image by accident. STILL "SCN5" WITH THE WEATHER
+    // IN: the veils are mixed only when there are any (the end of this
+    // function), so a clear frame's description hashes to exactly what it
+    // hashed to before the weather lane -- the same picture, the same digest.
+    h.mixU32(0x53434E35U);  // "SCN5" -- the rig's pitch, clip, frame and socket joined the hands
 
     mixVec3(h, scene.camera.position);
     mixVec3(h, scene.camera.target);
@@ -244,9 +247,15 @@ std::uint64_t sceneHash(const SceneDescription& scene) noexcept {
     }
     // The veils: the weather's own instances, last in the pass and last in
     // the image. A fog that thickened by a shade is a different picture.
-    h.mixU64(static_cast<std::uint64_t>(scene.veils.size()));
-    for (const Instance& veil : scene.veils) {
-        mixInstance(veil);
+    // MIXED ONLY WHEN THERE ARE ANY: a clear frame has no veils and no veil
+    // mesh, so its byte image -- and its digest -- is the one it had before
+    // the weather lane. A veiled image cannot collide with a clear one by
+    // accident: its mesh list already carries the veil mesh above.
+    if (!scene.veils.empty()) {
+        h.mixU64(static_cast<std::uint64_t>(scene.veils.size()));
+        for (const Instance& veil : scene.veils) {
+            mixInstance(veil);
+        }
     }
     return h.value();
 }

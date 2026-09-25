@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 #include <limits>
+#include <utility>
 
 #include "granadad/render/lighting.hpp"
 #include "granadad/render/world_renderer.hpp"
@@ -210,6 +211,12 @@ constexpr float kVeilFloor = 0.004F;
 [[nodiscard]] render::Rgb veilRingColour(const render::SkyState& sky, float elevationDegrees) {
     if (elevationDegrees <= 0.0F) {
         return sky.fog;
+    }
+    if (elevationDegrees >= 90.0F) {
+        // Straight up is the dome's lid. Asked of tan, a float's quarter
+        // turn is a hair over the true one and the answer is a large number
+        // of the WRONG sign, which would clamp to the fog.
+        return sky.skyTop;
     }
     const float rise = std::tan(elevationDegrees * (kPi / 180.0F)) * kSkyRadius / kSkyHeight;
     return render::lerp(sky.fog, sky.skyTop, std::clamp(rise, 0.0F, 1.0F));
@@ -532,12 +539,18 @@ void WorldScene::refresh(SceneDescription& scene, const render::Camera& camera, 
         scene.putTexture(materials_.texture());
     }
 
-    // The sky, recoloured with the minute -- under the weather, which in a
-    // live session is a function of the minute too, and pinned otherwise.
-    const std::uint32_t skyVersion = skyDomeVersion(params.timeOfDaySeconds);
+    // The sky, recoloured with the minute -- under the weather. In a live
+    // session the weather is a function of the minute AND the day, so its
+    // own key rides the version above the minute (zero for clear: a clear
+    // dome's version is what it always was), and a day skipped at the same
+    // minute rebuilds the dome and the veil rather than keeping them.
+    const std::uint32_t skyVersion =
+        skyDomeVersion(params.timeOfDaySeconds) ^ (weatherVersionKey(params.weather) << 16);
     const MeshData* sky = scene.findMesh(kSkyMeshId);
     if (sky == nullptr || sky->version != skyVersion) {
-        scene.putMesh(buildSkyDome(params.timeOfDaySeconds, params.weather));
+        MeshData dome = buildSkyDome(params.timeOfDaySeconds, params.weather);
+        dome.version = skyVersion;
+        scene.putMesh(std::move(dome));
     }
     // WEATHER: the veil, on the same bucket. Built when the weather adds fog
     // over the clear day, dropped from the description the moment it does

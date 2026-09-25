@@ -227,6 +227,14 @@ std::uint32_t dynamicLampKey(const std::vector<render::Lamp>& lamps) noexcept {
     return folded == 0U ? 1U : folded;
 }
 
+std::uint32_t weatherVersionKey(const render::Weather& weather) noexcept {
+    if (weather.clear()) {
+        return 0U;
+    }
+    return (static_cast<std::uint32_t>(weather.kind) << 8) +
+           static_cast<std::uint32_t>(std::clamp(weather.intensity, 0.0F, 1.0F) * 100.0F + 0.5F);
+}
+
 std::uint32_t chunkVersion(std::uint32_t rebuildCount, const ChunkLighting& lighting) noexcept {
     const int minute = ((lighting.timeOfDaySeconds % 86400) + 86400) % 86400 / 60;
     // Rebuilds in the high bits, the lighting bucket in the low twelve (1440
@@ -238,13 +246,7 @@ std::uint32_t chunkVersion(std::uint32_t rebuildCount, const ChunkLighting& ligh
     // minute the same way (zero for clear, so a clear version is what it
     // always was). Weather is a function of the minute in a live session,
     // but a version that SAYS so cannot go stale if that ever changes.
-    const std::uint32_t weatherKey =
-        lighting.weather.clear()
-            ? 0U
-            : (static_cast<std::uint32_t>(lighting.weather.kind) << 8) +
-                  static_cast<std::uint32_t>(
-                      std::clamp(lighting.weather.intensity, 0.0F, 1.0F) * 100.0F + 0.5F);
-    return base ^ (lighting.lampKey << 20) ^ ((weatherKey * 0x9E37U) << 12);
+    return base ^ (lighting.lampKey << 20) ^ ((weatherVersionKey(lighting.weather) * 0x9E37U) << 12);
 }
 
 // ---------------------------------------------------------------------------

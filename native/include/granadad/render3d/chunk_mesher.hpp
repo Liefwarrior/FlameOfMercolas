@@ -117,6 +117,14 @@ struct ChunkLighting {
 [[nodiscard]] std::uint32_t chunkVersion(std::uint32_t rebuildCount,
                                          const ChunkLighting& lighting) noexcept;
 
+/// WEATHER. The key a Weather folds into a mesh version: zero for clear, so
+/// a clear version is what it always was; else the kind above the intensity
+/// to a hundredth. chunkVersion() spreads it over every chunk's version and
+/// the world scene spreads the same key over the sky dome's and the veil's,
+/// so a sky that moved with the weather and not with the minute -- a day
+/// skipped under live weather -- is rebuilt rather than kept.
+[[nodiscard]] std::uint32_t weatherVersionKey(const render::Weather& weather) noexcept;
+
 // ---------------------------------------------------------------------------
 // materials
 // ---------------------------------------------------------------------------
