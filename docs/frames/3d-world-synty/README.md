@@ -404,20 +404,16 @@ What moved. Code is `native/src/render3d/static_pieces.cpp` (`posts()`,
   not the piece's -- so the Gull's boards still hang in their frames and the
   rails still run post to post.
 
-What did not move, and why. The cell is still a metre square and three tall.
+What that pass did not move. The cell stayed a metre square and three tall.
 That is the sim's own wall cell, and the chunk box inside it is drawn
 whatever the catalogue says (the placeholder rule: no art, the box stands),
-so nothing thinner than the cell can stand in it without the box showing
+so nothing thinner than the cell could stand in it without the box showing
 through -- the pile beside the water hides its box under tarred boards for
-the same reason, and this post hides it the way the pillar did, edge to edge
+the same reason, and that post hid it the way the pillar did, edge to edge
 plus a hair. A jamb that is genuinely 0.3 m thick needs the mesher to leave
-that cell's box out (`chunk_mesher.cpp`'s `CellCache`, keyed off the same
-`doorPostAt()` test, and the street's fill laid over the ground the box hid,
-since the fill under the Tarwalk's posts is a bare wall top), which is a
-lane of its own: the box is what the body collides with, the 2D pass and the
-no-art build both draw it, and the frame test pins it standing. This pass
-takes the concrete out of the jamb. It does not take the metre out of the
-cell.
+that cell's box out, which the pass deferred. The critic's answer, scoring
+it 3 of 10: still metre-square, storey-tall boxes, and they frame no door.
+He was right. The section below is that box coming out.
 
 On the map, off `docks_surface.tmx` with the same rules: 31 cells change --
 the Gull's four and its hitching post; the Eel-Pots' oak post at (135,65)
@@ -443,6 +439,82 @@ line is `dist\granadad.exe --smoke=0 --hold --width=1280 --height=720
 | jambs-06 | ANOTHER DOOR: the timber house in the lane, the post two cells before its door | `--time=14 --spawn=131,78,19 --yaw=135 --pitch=-6 --fov=80 --screenshot=jambs-06.png` |
 | jambs-07 | UNCHANGED: the lone pillar in the lane behind the Gull, no door within two, no partner | `--time=14 --spawn=148,82,19 --yaw=90 --pitch=-2 --fov=80 --screenshot=jambs-07.png` |
 | jambs-08 | UNCHANGED: the taproom's plastered piers with their stools (frame 22's vantage) | `--time=20 --spawn=156,67,19 --yaw=250 --pitch=-3 --screenshot=jambs-08.png` |
+
+## The jambs, the mesher, 2026-09-25
+
+The box is out. A door's two jamb cells lose their ground storey in the
+chunk mesh, and what stands beside the opening is a beam a quarter of a
+metre across, floor to head, with a beam laid over the two heads. No
+metre-square block, no concrete, no cap.
+
+The rule moved too, and that is half the fix. A door post was any lone
+timber cell WITHIN TWO of a door. That is why the critic counted four posts
+in two pairs standing well clear of the opening while the Gull's own door
+had none: those were the Tarwalk's sign frames, and the frontage's actual
+jamb cells were part of a wall run, never lone, never looked at. Now a jamb
+is exactly the two cells `findDoors()` already demands: the wall hard
+against the left of the opening and the wall hard against its right. Two per
+door, no more, and a gate keeps the posts and beam it always had.
+
+Where the rule lives. `native/include/granadad/render3d/door_jambs.hpp` and
+its `.cpp`: ONE test, `doorPostAt(tiles, x, y, z)`, pure over the tile bytes
+with no catalogue in it, because the mesher has no catalogue. The placer
+(`static_pieces.cpp`, the new `jambs()`) stands the beam on every cell it
+says yes to; the mesher (`chunk_mesher.cpp`, in `CellCache`'s constructor,
+where the doc said it would go) raises that cell's voxel floor to the head
+before anything else is asked of it. They cannot drift, because there is
+nothing to drift from.
+
+Cutting the cell in the cache and not in the emit loop is what keeps the
+frontage whole. Every question after it reads the cut voxel: the jamb's own
+faces start at the head, so its west face is still hidden behind the wall
+next door and nothing z-fights; the wall next door is no longer covered, so
+it draws its reveal down the full height of the opening; the cell under the
+jamb is no longer covered, so it draws its top, which is the threshold the
+beam stands on; the jamb's underside draws, which is the soffit over the
+opening. Above the head the wall meshes exactly as it did. No hole, no
+sliver, nothing see-through.
+
+The beam. `SM_Prop_Beam_01` at its own section, 0.261 m, not the 4x the
+fitted dress used. Height is the door head, 2.03 m, so the strapped cap that
+looked like a maroon block at four times scale now sits under the lintel
+where a cap belongs. It stands at the edge of the opening, its whole section
+inside its own cell, and its depth straddles the frontage's finish: half
+buried in the plaster, half proud of it, which also means it never floats
+off a thin timber wall. The head beam is the kit joist, its underside on the
+head, running outer face to outer face. Tint is the wall material's own.
+
+What else changed. The old rule keeps its cells and its name in the code
+(`streetPostAt()`): a lone timber cell out of doors with a job is still the
+strapped post FITTED to its cell, because that cell's box is still standing
+round it. So the Tarwalk's sign frames and the Eel-Pots' hitching post stay
+timber and do not go back to brown concrete. They are just not door posts
+any more. The sign and the rail still hang off the cell's faces, including
+on a jamb cell.
+
+Render only. `TileQuery::solid()` is what a body walks into and the cell is
+still a wall, so nothing about movement or the twin hashes moves. Tavern and
+population baselines unchanged by construction.
+
+Known edge: the mesher cannot ask the catalogue what class a wall is, so the
+shared test is geometric. A doorway cut in a wall of a material with NO wall
+class (thatch, dirt, ash) would lose its box with no frontage panel to cover
+it. Nothing on the Docks map is such a wall, but the day one exists, that is
+where to look.
+
+Reshoot. Every line is `dist\granadad.exe --smoke=0 --hold --width=1280
+--height=720 --scale=1` plus:
+
+| frame | vantage | command |
+|---|---|---|
+| jamb-03 | README row 03: the Gull's door from the street, looking south | `--time=10 --spawn=153,61,19 --yaw=180 --pitch=4 --screenshot=jamb-03.png` |
+| jamb-12 | README row 12: the Gull's door zoomed, 45 degree field | `--time=10 --spawn=153,58,19 --yaw=180 --pitch=-6 --fov=45 --screenshot=jamb-12.png` |
+| jamb-14 | README row 14's vantage: the door head from inside the Gull, the soffit and the reveal | `--time=20 --spawn=153,68,19 --yaw=0 --pitch=18 --screenshot=jamb-14.png` |
+| jamb-25 | THE 3/4 STREET VIEW: the frontage on the slant from the east, both jambs and the head beam against the plaster | `--time=14 --spawn=160,57,19 --yaw=215 --pitch=-4 --fov=60 --screenshot=jamb-25.png` |
+| jamb-26 | THE CLOSE-UP: one jamb at 40 degrees, foot on the threshold, head under the beam, a body beside it for scale | `--time=14 --spawn=154,60,19 --yaw=195 --pitch=-8 --fov=40 --screenshot=jamb-26.png` |
+| jamb-27 | ANOTHER DOOR: the Eel-Pots', its own two jambs | `--time=14 --spawn=136,58,19 --yaw=180 --pitch=-4 --fov=60 --screenshot=jamb-27.png` |
+| jamb-28 | UNCHANGED: the Tarwalk's sign frames, still timber, still fitted to their cells | `--time=14 --spawn=153,50,19 --yaw=180 --pitch=-2 --fov=60 --screenshot=jamb-28.png` |
+| jamb-29 | A GATE, UNCHANGED: the Netters', its own posts and beam | `--time=10 --spawn=171,96,19 --yaw=180 --screenshot=jamb-29.png` |
 
 ## Weather, 2026-09-25
 

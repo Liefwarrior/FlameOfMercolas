@@ -6,6 +6,7 @@
 
 #include "granadad/render/lighting.hpp"
 #include "granadad/render/voxel_classify.hpp"
+#include "granadad/render3d/door_jambs.hpp"
 #include "granadad/sim/tile_query.hpp"
 
 namespace granadad::render3d {
@@ -31,6 +32,30 @@ constexpr render::Rgb kWaterTintFull{0.10F, 0.18F, 0.22F};
     return static_cast<std::uint8_t>(clamped * 255.0F + 0.5F);
 }
 
+/// THE DOORWAY IS CUT OUT OF THE BOX. A wall cell that flanks a door
+/// opening (door_jambs.hpp -- the one test the placer stands its jamb beam
+/// by) keeps only its lintel course: the metre-square storey under the head
+/// goes. That is what lets a beam a quarter-metre thick READ as the jamb
+/// instead of hiding inside a block, and it is done HERE, in the cache, so
+/// every question asked afterwards is asked of the cut cell: the cell's own
+/// faces, the neighbouring wall's cover test (it shows its reveal down the
+/// whole opening now), the cell below (it shows its top, the threshold the
+/// beam stands on). Nothing is left see-through and nothing is drawn twice.
+/// Above the head the wall meshes as it always did, so the frontage has no
+/// hole in it. Render only: sim::TileQuery::solid() is what a body walks
+/// into, and the cell is still a wall.
+void openJamb(const sim::TileQuery& tiles, std::int32_t x, std::int32_t y, std::int32_t z,
+              render::Voxel& v) noexcept {
+    if (!v.hasSides || v.water) {
+        return;
+    }
+    const float head = v.bottom + kDoorHeadHeight;
+    if (head >= v.top || !doorPostAt(tiles, x, y, z)) {
+        return;
+    }
+    v.bottom = head;
+}
+
 /// A chunk's cells plus a one-cell apron, classified once. 18 x 18 x (levels
 /// + 2) entries; every neighbour question below is answered from here.
 class CellCache {
@@ -53,6 +78,9 @@ public:
                     const bool drawn =
                         render::classifyVoxel(tiles, x0_ + lx, y0_ + ly, lz - 1, voxels_[at]);
                     present_[at] = static_cast<std::uint8_t>(drawn ? 1 : 0);
+                    if (drawn) {
+                        openJamb(tiles, x0_ + lx, y0_ + ly, lz - 1, voxels_[at]);
+                    }
                 }
             }
         }
