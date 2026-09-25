@@ -1581,6 +1581,21 @@ void drawBottomBand(Framebuffer& target, const HudState& state, BottomBand& band
     // this game's TES-quiet bar is not.
     if (state.quickBarFade > 0.0F) {
         const float fade = std::clamp(state.quickBarFade, 0.0F, 1.0F);
+        // KITFIX LANE. ONE ROW OF AIR BOUGHT BEFORE THE TAKE, ALWAYS -- not
+        // only when an earlier row happened to pad it there. With nothing
+        // else on the band (the common case a wheel/number press interrupts:
+        // no alert, no guard, no held-effect row), take() alone lands the
+        // strip on the FIRST slot, right above the health bar, which is
+        // exactly the screen real estate the drawn hand and its blade rest
+        // in -- a capture at --kit=slot showed the strip's own plate sitting
+        // in that footprint, the viewmodel's edge reading through it. The
+        // strip is drawn on top of the 3D frame already (present_frame()
+        // composites the HUD overlay after drawScene()/drawViewmodel()), so
+        // the plate's OWN alpha is what let the blade read through it, not
+        // the paint order -- lifting the row clear of the hand's usual
+        // resting height is the fix this file can make without touching the
+        // 3D pass or the hand's own rig.
+        band.pad(rowHeight(minor));
         const int y = band.take(minor);
         if (y >= 0) {
             constexpr int kQuickSlots = 10;
@@ -1627,8 +1642,20 @@ void drawBottomBand(Framebuffer& target, const HudState& state, BottomBand& band
                                     frameY1 - frameY0, gold, fade);
                 }
                 const char digit[2] = {static_cast<char>(slot == 9 ? '0' : '1' + slot), '\0'};
-                const Rgb ink = equipped ? kPlateBlack : kPlateBone;
-                const float inkAlpha = equipped ? fade : (loaded ? 0.95F : 0.35F) * fade;
+                // KITFIX LANE. UNSELECTED DIGITS READ AS SECONDARY HUD TEXT
+                // NOW, NOT AS A WASH. A capture (docs/frames/kit/) of an
+                // unloaded slot at kPlateBone's own 0.35 alpha photographed
+                // as near-invisible against the plate -- the aim reticle's
+                // own note row solved the identical problem (see kAimNote's
+                // header, "a note this close to mid-grey still loses to a
+                // bright sky"), so every digit that is not the equipped one
+                // takes that same bright, warm ink and its own visible floor
+                // instead of a second, dimmer vocabulary invented for one
+                // row. The equipped cell keeps its inverted knockout -- the
+                // one digit that is meant to read as SELECTED rather than as
+                // a slot merely present.
+                const Rgb ink = equipped ? kPlateBlack : kAimNote;
+                const float inkAlpha = equipped ? fade : (loaded ? 0.95F : 0.75F) * fade;
                 drawText(target, cx + (cellW - kGlyphW * minor) / 2, y, digit, ink, inkAlpha,
                          minor);
             }
