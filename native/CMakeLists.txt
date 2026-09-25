@@ -919,6 +919,15 @@ if(GRANADAD_BUILD_TESTS)
         # stands against, and the washes are overlay pixels. Placeholder
         # arms: no licensed glb required.
         tests/test_viewmodel.cpp
+        # WEATHER, RENDER-ONLY (roadmap D15). The four skies as a pure
+        # function of (seed, day, clock): the shipped seed's first days pinned
+        # period by period and swept for four hundred, the clear sky proved
+        # the old sky byte for byte at every minute, a session pinned to fog,
+        # overcast or wind stepping to the clear run's tavern and population
+        # digests while its frame moves, two sessions under one fog drawing
+        # one frame, the veil in the description and in the rlsw frame twice
+        # over, the summary's weather= field, and the wind bed's one-way wire.
+        tests/test_weather.cpp
     )
 
     add_executable(granadad-tests tests/test_main.cpp ${GRANADAD_TEST_SOURCES})

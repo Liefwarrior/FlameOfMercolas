@@ -378,6 +378,11 @@ struct Options {
     /// clobber the file's value with the default 90 on every launch.
     bool fovGiven = false;
     bool invertY = false;
+    /// WEATHER. True when --weather=STATE named one. The client's default is
+    /// LIVE weather (smoke.session.liveWeather, set in parse); a named state
+    /// pins it. --demo and --case-watch keep the clear sky their committed
+    /// frames were shot under unless a state was named.
+    bool weatherGiven = false;
     /// Where the bindings live. Overridable so a capture, a case or a second
     /// player on the same machine can have their own.
     std::filesystem::path controlsFile;
@@ -784,6 +789,15 @@ void print_usage() {
         "                       scripted line sets its own hour when this is not\n"
         "                       given -- --skyrun wants 22, when Finch is in\n"
         "                       the snug -- and never overrides one that is\n"
+        "  --weather=STATE      clear, overcast, fog or wind, pinned at full.\n"
+        "                       Without it the sky is the LIVE weather for the\n"
+        "                       seed, the day and the hour (fog off the water\n"
+        "                       at dawn, dusk and night, a lid of cloud, a\n"
+        "                       blow), easing in and out over the hours. The\n"
+        "                       summary line prints weather=STATE N.NN either\n"
+        "                       way. Render-only: the sim never reads it.\n"
+        "                       --demo and --case-watch stay clear unless one\n"
+        "                       is named.\n"
         "  --fov=DEG            horizontal field of view (default 90)\n"
         "  --spawn=X,Y,Z        spawn tile (default the authored Tarwalk spawn)\n"
         "  --yaw=DEG            spawn facing, 0 = north (default 0)\n"
@@ -1142,6 +1156,10 @@ void print_usage() {
 [[nodiscard]] Options parse(int argc, char** argv, bool& stop, int& exitCode) {
     Options options;
     options.smoke.session.timeOfDay = 20 * 3600;
+    // WEATHER: ON IN THE CLIENT, off in SessionConfig -- openingPage's own
+    // pattern. The windowed game and every capture draw the live sky for
+    // the seed, the day and the hour; --weather=STATE pins one instead.
+    options.smoke.session.liveWeather = true;
     stop = false;
     exitCode = 0;
 
@@ -1222,6 +1240,19 @@ void print_usage() {
             // Named, so a scripted line does not set its own clock over the
             // top of it. See render::scriptedStartHour.
             options.smoke.session.timeOfDayGiven = true;
+        } else if (starts_with(arg, "--weather=", &value)) {
+            // WEATHER: a named state pins the sky at full for the whole run,
+            // deterministically -- a fog asked for is the same fog twice.
+            render::WeatherKind kind = render::WeatherKind::Clear;
+            if (!render::parseWeatherKind(value, kind)) {
+                std::printf("granadad: --weather wants clear, overcast, fog or wind\n");
+                stop = true;
+                exitCode = 2;
+                return options;
+            }
+            options.smoke.session.liveWeather = false;
+            options.smoke.session.weather = kind;
+            options.weatherGiven = true;
         } else if (starts_with(arg, "--fov=", &value)) {
             options.smoke.session.fovDegrees = std::clamp(std::atoi(value), 40, 130);
             options.fovGiven = true;
@@ -3826,6 +3857,9 @@ struct SceneRig {
         }
         render3d::WorldSceneParams params;
         params.timeOfDaySeconds = session.timeOfDay();
+        // WEATHER: the session's sky -- live off the seed, the day and the
+        // clock, or pinned by --weather. Render-only; the sim never sees it.
+        params.weather = session.weather();
         params.dynamicLamps = session.tavernLights();
         world->refresh(scene, session.camera(), aspect, params);
         // KIT BUILD: the things on the tiles -- the room's hashed ground
@@ -4309,6 +4343,14 @@ int run_client(const Options& options, const render::CreationResult& chosen,
     // `--time` still wins, because an hour the player asked for is an hour they
     // meant.
     render::SessionConfig start = options.smoke.session;
+    // WEATHER: the demo's route and the case watch's replay have committed
+    // frames shot under the clear sky, and a fog easing in mid-reel would
+    // move them -- the courier's own rule, one block down. Both keep the
+    // clear sky unless --weather named one.
+    if ((options.demo || options.caseWatch) && !options.weatherGiven) {
+        start.liveWeather = false;
+        start.weather = render::WeatherKind::Clear;
+    }
     if (options.caseWatch) {
         // CASE WATCH: THE HARNESS'S OWN SESSION, not the client's. The watch
         // replays the recorded --case drive onto this session, and the replay
@@ -5524,6 +5566,9 @@ int run_client(const Options& options, const render::CreationResult& chosen,
         // the hour the beds shape to is the hour the steps just reached.
         if (audio != nullptr) {
             audio->setTimeOfDay(session.timeOfDay());
+            // WEATHER: and the wind, the same one-way wire -- a blustering
+            // period lifts the wind bed, a still fog drops it.
+            audio->setWind(session.weather().windGain());
             audio->update(static_cast<float>(frameSeconds));
         }
 

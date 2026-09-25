@@ -42,6 +42,7 @@
 #include "granadad/render/hud.hpp"
 #include "granadad/render/keys_page.hpp"
 #include "granadad/render/lamps.hpp"
+#include "granadad/render/lighting.hpp"
 #include "granadad/render/map_view.hpp"
 #include "granadad/render/menu_view.hpp"
 #include "granadad/render/pull.hpp"
@@ -101,6 +102,19 @@ struct SessionConfig {
     int fovDegrees = 90;
     /// The only persisted RNG state there is.
     std::uint64_t worldSeed = 0x4752414E41444144ull;  // "GRANADAD"
+    /// WEATHER (roadmap 21a; D15: render-only). LIVE weather draws the sky
+    /// off render::weatherFor(worldSeed, the tavern's day, the clock): fog,
+    /// overcast, wind and clear in periods of a few hours, easing in and out.
+    /// OFF BY DEFAULT AND ON IN THE CLIENT, exactly openingPage's pattern and
+    /// for the same reason: two hundred test cases and every committed frame
+    /// were drawn under the clear sky, and a Session built by a test must
+    /// still draw it. main.cpp turns it on for the windowed game and for
+    /// captures; --weather=STATE turns it off again and pins `weather`.
+    bool liveWeather = false;
+    /// The pinned state when liveWeather is false, at full intensity (Clear
+    /// is intensity zero, the sky every frame before this lane was drawn
+    /// under). The sim never reads either field.
+    WeatherKind weather = WeatherKind::Clear;
     /// OPEN THE CASE ON THE FIRST FRAME. What a new game does: the notes come
     /// up with the hook on them and the one lead the ward has given you, and
     /// the first step the player takes puts them away for good.
@@ -339,6 +353,16 @@ public:
 
     /// Seconds since midnight, right now.
     [[nodiscard]] int timeOfDay() const noexcept { return timeOfDay_; }
+    /// WEATHER. The sky this frame is drawn under: live off (worldSeed, the
+    /// tavern's own dayNumber(), the clock) when config().liveWeather, else
+    /// config().weather pinned at full. Read render-side only -- the day is
+    /// a public getter on hashed state, and nothing here writes back or is
+    /// hashed. Every sky consumer on both paths reads sky() below rather
+    /// than skyAt(timeOfDay()), so the 2D pass, the chunks, the pieces, the
+    /// people and the HUD's lamp mix agree about the weather.
+    [[nodiscard]] Weather weather() const noexcept;
+    /// skyAt(timeOfDay(), weather()) -- the one SkyState every consumer reads.
+    [[nodiscard]] SkyState sky() const noexcept;
     /// Simulated seconds since the session began.
     [[nodiscard]] std::int64_t elapsedSeconds() const noexcept { return elapsedSeconds_; }
     /// Jumps the clock, without simulating what happened in between. What

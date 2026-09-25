@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 #include <limits>
+#include <utility>
 
 #include "granadad/render/lighting.hpp"
 #include "granadad/render/world_renderer.hpp"
@@ -154,10 +155,14 @@ std::uint32_t skyDomeVersion(int timeOfDaySeconds) noexcept {
 }
 
 MeshData buildSkyDome(int timeOfDaySeconds) {
+    return buildSkyDome(timeOfDaySeconds, render::Weather{});
+}
+
+MeshData buildSkyDome(int timeOfDaySeconds, const render::Weather& weather) {
     MeshData mesh;
     mesh.id = kSkyMeshId;
     mesh.version = skyDomeVersion(timeOfDaySeconds);
-    const render::SkyState sky = render::skyAt(timeOfDaySeconds);
+    const render::SkyState sky = render::skyAt(timeOfDaySeconds, weather);
     const Rgba8 horizon = rgba(sky.skyHorizon);
     const Rgba8 top = rgba(sky.skyTop);
 
@@ -188,6 +193,125 @@ MeshData buildSkyDome(int timeOfDaySeconds) {
         pushDoubleTriangle(mesh, a1, b1, b2);
         pushDoubleTriangle(mesh, a1, b2, a2);
         pushDoubleTriangle(mesh, a2, b2, lidCentre);
+    }
+    return mesh;
+}
+
+// ---------------------------------------------------------------------------
+// the veil (WEATHER)
+// ---------------------------------------------------------------------------
+
+namespace {
+
+/// The shells, nearest first, in tiles. Closer together near the eye, where
+/// a step in the fog is a step across a wall the eye can read, and opening
+/// out with distance, where what contrast is left is small and a step is
+/// not. Fifty-six tiles is short of the chunk reach (64) and past anything
+/// a frame resolves through a fog worth drawing.
+constexpr float kVeilRadii[] = {1.5F,  2.5F,  3.5F,  4.5F,  5.5F,  6.75F, 8.0F,  9.5F,  11.0F, 13.0F,
+                                15.0F, 17.5F, 20.0F, 23.0F, 27.0F, 32.0F, 38.0F, 46.0F, 56.0F};
+constexpr std::size_t kVeilShells = sizeof(kVeilRadii) / sizeof(kVeilRadii[0]);
+/// Each shell's rings, as elevations in degrees, pole to pole. Denser round
+/// the horizon, where the fog's colour turns into the sky's. The poles are
+/// full rings of coincident vertices, so every ring indexes alike.
+constexpr float kVeilRingDegrees[] = {-90.0F, -50.0F, -25.0F, -10.0F, 0.0F, 8.0F,
+                                      16.0F,  25.0F,  35.0F,  50.0F,  90.0F};
+constexpr std::size_t kVeilRings = sizeof(kVeilRingDegrees) / sizeof(kVeilRingDegrees[0]);
+constexpr std::size_t kVeilSegments = 24;
+/// A shell whose inside is already this fogged over is not drawn: nothing
+/// it would add can be seen through what is inside it.
+constexpr float kVeilFloor = 0.004F;
+
+/// What a veil ring is coloured: the fog at and below the horizon; above
+/// it, the sky dome's own colour at that elevation (horizon to top over the
+/// dome's rise, kSkyHeight over kSkyRadius; the flat top above that), so a
+/// veil over the sky IS the sky and only the world in front of it fogs.
+[[nodiscard]] render::Rgb veilRingColour(const render::SkyState& sky, float elevationDegrees) {
+    if (elevationDegrees <= 0.0F) {
+        return sky.fog;
+    }
+    if (elevationDegrees >= 90.0F) {
+        // Straight up is the dome's lid. Asked of tan, a float's quarter
+        // turn is a hair over the true one and the answer is a large number
+        // of the WRONG sign, which would clamp to the fog.
+        return sky.skyTop;
+    }
+    const float rise = std::tan(elevationDegrees * (kPi / 180.0F)) * kSkyRadius / kSkyHeight;
+    return render::lerp(sky.fog, sky.skyTop, std::clamp(rise, 0.0F, 1.0F));
+}
+
+}  // namespace
+
+std::size_t veilShellCount() noexcept { return kVeilShells; }
+
+float veilShellRadius(std::size_t shell) noexcept {
+    return shell < kVeilShells ? kVeilRadii[shell] : 0.0F;
+}
+
+MeshData buildVeil(const render::SkyState& sky, std::uint32_t version) {
+    MeshData mesh;
+    mesh.id = kVeilMeshId;
+    mesh.version = version;
+    if (!(sky.veil > 0.0F)) {
+        return mesh;
+    }
+
+    // Which shells are worth drawing, and how much fog each one is: the
+    // fog between it and the shell inside it. A shell whose inside is
+    // already fogged to the floor adds nothing anyone can see.
+    std::uint8_t alpha[kVeilShells] = {};
+    std::size_t drawn = 0;
+    float inner = 0.0F;
+    for (std::size_t shell = 0; shell < kVeilShells; ++shell) {
+        const float through = std::exp(-sky.veil * inner);
+        if (through < kVeilFloor) {
+            break;
+        }
+        const float fog = 1.0F - std::exp(-sky.veil * (kVeilRadii[shell] - inner));
+        alpha[shell] = channel8(fog);
+        drawn = shell + 1;
+        inner = kVeilRadii[shell];
+    }
+
+    Rgba8 ring[kVeilRings];
+    for (std::size_t i = 0; i < kVeilRings; ++i) {
+        ring[i] = rgba(veilRingColour(sky, kVeilRingDegrees[i]));
+    }
+
+    // FAR TO NEAR in the index buffer: the outermost shell rasterizes first
+    // and every nearer one over it, the depth test on throughout, so the
+    // blend composes outside in and a face inside a shell is never fogged by
+    // it. Both windings, as the dome: the eye is inside every shell and the
+    // culling keeps exactly one.
+    for (std::size_t drawnShell = drawn; drawnShell > 0; --drawnShell) {
+        const std::size_t shell = drawnShell - 1;
+        if (alpha[shell] == 0U) {
+            continue;
+        }
+        const float radius = kVeilRadii[shell];
+        const auto base = static_cast<std::uint16_t>(mesh.vertexCount());
+        for (std::size_t i = 0; i < kVeilRings; ++i) {
+            const float elevation = kVeilRingDegrees[i] * (kPi / 180.0F);
+            const float y = radius * std::sin(elevation);
+            const float flat = radius * std::cos(elevation);
+            const Rgba8 colour{ring[i].r, ring[i].g, ring[i].b, alpha[shell]};
+            for (std::size_t s = 0; s < kVeilSegments; ++s) {
+                const float azimuth =
+                    2.0F * kPi * static_cast<float>(s) / static_cast<float>(kVeilSegments);
+                pushVertex(mesh, flat * std::cos(azimuth), y, flat * std::sin(azimuth), colour);
+            }
+        }
+        for (std::size_t i = 0; i + 1 < kVeilRings; ++i) {
+            for (std::size_t s = 0; s < kVeilSegments; ++s) {
+                const std::size_t next = (s + 1) % kVeilSegments;
+                const auto a0 = static_cast<std::uint16_t>(base + i * kVeilSegments + s);
+                const auto a1 = static_cast<std::uint16_t>(base + i * kVeilSegments + next);
+                const auto b0 = static_cast<std::uint16_t>(base + (i + 1) * kVeilSegments + s);
+                const auto b1 = static_cast<std::uint16_t>(base + (i + 1) * kVeilSegments + next);
+                pushDoubleTriangle(mesh, a0, b0, b1);
+                pushDoubleTriangle(mesh, a0, b1, a1);
+            }
+        }
     }
     return mesh;
 }
@@ -287,7 +411,7 @@ void WorldScene::relightPieces(const ChunkLighting& lighting) {
     // ambient + max(baked, dynamic) -- times the piece's facing factor,
     // clamped a little over one so a piece in a lamp's pool is lit rather
     // than blown out, folded into the unlit catalogue tint.
-    const render::SkyState sky = render::skyAt(lighting.timeOfDaySeconds);
+    const render::SkyState sky = render::skyAt(lighting.timeOfDaySeconds, lighting.weather);
     const bool hasDynamic = lighting.dynamicLamps != nullptr && !lighting.dynamicLamps->empty();
     litTints_.resize(placements_.placements.size() * kLitSlots);
     const auto glowAt = [&](std::int32_t x, std::int32_t y, std::int32_t z) {
@@ -341,11 +465,14 @@ void WorldScene::relightPieces(const ChunkLighting& lighting) {
         };
         if (p.selfLit) {
             // A lamp is its own light. A flame's halo (a translucent quad)
-            // fades with the daylight: full at night, a third at noon.
+            // fades with the daylight: full at night, a third at noon --
+            // and WEATHER takes its share off it when the wind is up
+            // (SkyState::haloScale, 1 in still air).
             Rgba8 own = p.instance.tint;
             if (p.role == PieceRole::Flame) {
                 const float glowAlpha = static_cast<float>(own.a) * (kFlameDayAlpha + (1.0F - kFlameDayAlpha) *
-                                                                                      (1.0F - sky.daylight));
+                                                                                      (1.0F - sky.daylight)) *
+                                        sky.haloScale;
                 own.a = static_cast<std::uint8_t>(std::clamp(glowAlpha, 0.0F, 255.0F) + 0.5F);
             }
             slots[0] = slots[1] = slots[2] = slots[3] = own;
@@ -431,6 +558,7 @@ void WorldScene::refresh(SceneDescription& scene, const render::Camera& camera, 
 
     ChunkLighting lighting;
     lighting.timeOfDaySeconds = params.timeOfDaySeconds;
+    lighting.weather = params.weather;
     lighting.glow = glow_;
     lighting.dynamicLamps = &params.dynamicLamps;
     lighting.lampKey = dynamicLampKey(params.dynamicLamps);
@@ -447,11 +575,38 @@ void WorldScene::refresh(SceneDescription& scene, const render::Camera& camera, 
         scene.putTexture(materials_.texture());
     }
 
-    // The sky, recoloured with the minute.
-    const std::uint32_t skyVersion = skyDomeVersion(params.timeOfDaySeconds);
+    // The sky, recoloured with the minute -- under the weather. In a live
+    // session the weather is a function of the minute AND the day, so its
+    // own key rides the version above the minute (zero for clear: a clear
+    // dome's version is what it always was), and a day skipped at the same
+    // minute rebuilds the dome and the veil rather than keeping them.
+    const std::uint32_t skyVersion =
+        skyDomeVersion(params.timeOfDaySeconds) ^ (weatherVersionKey(params.weather) << 16);
     const MeshData* sky = scene.findMesh(kSkyMeshId);
     if (sky == nullptr || sky->version != skyVersion) {
-        scene.putMesh(buildSkyDome(params.timeOfDaySeconds));
+        MeshData dome = buildSkyDome(params.timeOfDaySeconds, params.weather);
+        dome.version = skyVersion;
+        scene.putMesh(std::move(dome));
+    }
+    // WEATHER: the veil, on the same bucket. Built when the weather adds fog
+    // over the clear day, dropped from the description the moment it does
+    // not, so a clear frame's description is exactly a clear frame's.
+    const render::SkyState skyState = render::skyAt(params.timeOfDaySeconds, params.weather);
+    scene.veils.clear();
+    bool veiled = false;
+    if (skyState.veil > 0.0F) {
+        const MeshData* veil = scene.findMesh(kVeilMeshId);
+        if (veil == nullptr || veil->version != skyVersion) {
+            scene.putMesh(buildVeil(skyState, skyVersion));
+            veil = scene.findMesh(kVeilMeshId);
+        }
+        // A veil too thin for a single shell to round to a step of alpha
+        // is no veil: an empty mesh is never uploaded, and an instance of
+        // it would draw whatever the adapter last had under the id.
+        veiled = veil != nullptr && veil->triangleCount() > 0;
+    }
+    if (!veiled) {
+        scene.removeMesh(kVeilMeshId);
     }
 
     // The chunks: recoloured when their version moved, instanced when near.
@@ -464,6 +619,13 @@ void WorldScene::refresh(SceneDescription& scene, const render::Camera& camera, 
     skyAt.meshId = kSkyMeshId;
     skyAt.position = eye;
     scene.instances.push_back(skyAt);
+    if (veiled) {
+        // The veil rides the eye exactly as the dome does, and is drawn last.
+        Instance veilAt;
+        veilAt.meshId = kVeilMeshId;
+        veilAt.position = eye;
+        scene.veils.push_back(veilAt);
+    }
 
     stats_.chunksInstanced = 0;
     for (std::int32_t cy = 0; cy < chunksDown_; ++cy) {
@@ -596,7 +758,6 @@ void WorldScene::refresh(SceneDescription& scene, const render::Camera& camera, 
         scene.pieces.clear();
     }
 
-    const render::SkyState skyState = render::skyAt(params.timeOfDaySeconds);
     scene.clearColour = rgba(skyState.skyHorizon);
 }
 

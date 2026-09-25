@@ -525,7 +525,26 @@ void Session::setAudio(audio::AudioEngine* engine) {
     audio_->music().setZone(tavern_->playerInside() ? audio::MusicZone::Interior
                                                     : audio::MusicZone::Docks);
     audio_->setTimeOfDay(timeOfDay_);
+    // WEATHER: and the wind, on the same one-way wire the clock rides. The
+    // client re-pushes both every frame; this is the value the first frame
+    // has before it does.
+    audio_->setWind(weather().windGain());
 }
+
+Weather Session::weather() const noexcept {
+    if (config_.liveWeather) {
+        // The tavern's day is the ward's one monotonic calendar (see
+        // Tavern::dayNumber); the session's clock is the same clock the
+        // tavern keeps. Both read, neither written.
+        return weatherFor(config_.worldSeed, tavern_->dayNumber(), timeOfDay_);
+    }
+    Weather pinned;
+    pinned.kind = config_.weather;
+    pinned.intensity = config_.weather == WeatherKind::Clear ? 0.0F : 1.0F;
+    return pinned;
+}
+
+SkyState Session::sky() const noexcept { return skyAt(timeOfDay_, weather()); }
 
 std::int32_t Session::closedBookCount() const noexcept {
     return (casebook_.closed() ? 1 : 0) + (sheetBook_.closed() ? 1 : 0) +
@@ -9271,7 +9290,7 @@ std::vector<SpriteInstance> Session::actorSprites() const {
 
 std::vector<SpriteInstance> Session::actorSprites(const Camera& view) const {
     std::vector<SpriteInstance> sprites;
-    const SkyState sky = skyAt(timeOfDay_);
+    const SkyState sky = this->sky();
     const std::vector<Lamp> live = tavernLights();
     for (const sim::Actor& actor : tavern_->actors()) {
         if (!actor.present()) {
@@ -9445,7 +9464,7 @@ std::vector<SpriteInstance> Session::wardSprites(const Camera& view) const {
     if (people_ == nullptr) {
         return sprites;
     }
-    const SkyState sky = skyAt(timeOfDay_);
+    const SkyState sky = this->sky();
     // WHERE BETWEEN THE TWO TILES. The simulation says which tile a body left
     // and which one it is on; this says how far along it is THIS FRAME, and it
     // is the only place that opinion exists. Nothing here is written back --
@@ -10841,8 +10860,11 @@ FrameStats Session::drawFrame(Framebuffer& target, FramePasses passes) const {
 
     // A lamp is not a hole in the sky at noon. The flame billboards fade out as
     // the daylight comes up, so a lit district reads at dusk and disappears
-    // into ordinary daylight the way it should.
-    const float lampMix = 1.0F - 0.9F * skyAt(timeOfDay_).daylight;
+    // into ordinary daylight the way it should. WEATHER: the same sky the
+    // world is drawn under, so a foggy noon keeps its lanterns, and a wind
+    // takes a little off every flame (SkyState::haloScale).
+    const SkyState skyNow = sky();
+    const float lampMix = (1.0F - 0.9F * skyNow.daylight) * skyNow.haloScale;
     for (SpriteInstance& sprite : sprites) {
         sprite.glow *= lampMix;
         sprite.halfWidth *= 0.45F + 0.55F * lampMix;
@@ -10851,6 +10873,7 @@ FrameStats Session::drawFrame(Framebuffer& target, FramePasses passes) const {
 
     RenderSettings settings = settings_;
     settings.dynamicLamps = tavernLights();
+    settings.weather = weather();
 
     // The hearth's own flame, and a candle head on each lit table.
     for (const Lamp& light : settings.dynamicLamps) {
@@ -16626,11 +16649,19 @@ SmokeRunResult runSmoke(const SmokeRunConfig& config) {
 
     const int hour = session.timeOfDay() / 3600;
     const int minute = (session.timeOfDay() / 60) % 60;
+    // WEATHER: what sky the frame was shot under, beside the hour it was shot
+    // at, so a picture says what it shows. `weather=fog 0.83` is a fog most
+    // of the way in; `weather=clear 0.00` is the sky every earlier frame had.
+    // Two decimals, by integer arithmetic, so the line needs no <iomanip>.
+    const Weather shotUnder = session.weather();
+    const int hundredths = static_cast<int>(shotUnder.intensity * 100.0F + 0.5F);
     std::ostringstream summary;
     summary << "steps=" << config.steps << " at (" << result.endTileX << ',' << result.endTileY
             << ",z" << result.endBand << ") facing " << sim::compass_point(session.body().yaw())
             << " | " << (hour < 10 ? "0" : "") << hour << ':' << (minute < 10 ? "0" : "") << minute
-            << ' ' << session.placeLabel() << " | lamps=" << result.lampCount
+            << ' ' << session.placeLabel() << " weather=" << weatherKindName(shotUnder.kind) << ' '
+            << hundredths / 100 << '.' << (hundredths % 100 < 10 ? "0" : "") << hundredths % 100
+            << " | lamps=" << result.lampCount
             // #79: `gull=`, and it used to say `actors=`. Printed one space from
             // `ward=661` it read as "one of the six hundred is on screen", which
             // it never was: it is how many of the Gilded Gull's own seventeen

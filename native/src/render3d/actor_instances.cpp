@@ -382,7 +382,9 @@ std::vector<ActorInstance> actorInstances(const render::Session& session,
                                           const render::Camera& view,
                                           const ActorSceneParams& params) {
     std::vector<ActorInstance> out;
-    const render::SkyState sky = render::skyAt(session.timeOfDay());
+    // WEATHER: the session's own sky, so a body on a foggy quay is lit as
+    // the quay is.
+    const render::SkyState sky = session.sky();
     const render::LampGlow& glow = session.renderer().glow();
     const std::int64_t stepCount = session.body().stepCount();
 

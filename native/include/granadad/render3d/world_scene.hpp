@@ -17,9 +17,21 @@
 // skyHorizon at eye level, skyTop overhead -- so it is pitch-correct, it is
 // part of the hashed description, and it needs nothing from the adapter.
 // The clear colour is the horizon too, for the strip under the dome's rim.
-// Fog is NOT here: rlsw has no shader for it and a multiply can't add the
-// fog colour in; the GPU path's fog shader is the render lane's, and until
-// then the district reads sharp to its far end.
+// The clear day's own fog is NOT here: rlsw has no shader for it and a
+// multiply can't add the fog colour in; the GPU path's fog shader is the
+// render lane's, and until then the district reads sharp to its far end.
+//
+// THE WEATHER'S FOG IS, as geometry (WEATHER, roadmap 21a): what a fog or an
+// overcast adds over the clear day is drawn as THE VEIL -- nested translucent
+// shells round the eye, coloured the fog's colour, each shell's alpha the
+// fog between it and the shell inside it, drawn far to near after everything
+// else in the pass with the depth test on. Whatever stands inside a shell is
+// clear of it; whatever stands beyond it is seen through it; the sky beyond
+// them all is seen through the lot. No shader, so the rlsw frame and the GPU
+// frame are the same picture, the way every other pixel of this pass is. It
+// is banded where a shader would be smooth -- nineteen steps out to fifty-six
+// tiles, closer together where the eye can tell -- and it is only ever
+// ADDED: a clear frame has no veil and is the frame it was.
 //
 // THE STATIC PIECES (static_pieces.hpp) ride here too: placed once from the
 // tiles and the catalogue when the chunks are built, lit per lighting bucket
@@ -33,6 +45,7 @@
 #include <vector>
 
 #include "granadad/render/lamps.hpp"
+#include "granadad/render/lighting.hpp"
 #include "granadad/render3d/chunk_mesher.hpp"
 #include "granadad/render3d/scene.hpp"
 #include "granadad/render3d/static_pieces.hpp"
@@ -48,19 +61,37 @@ namespace granadad::render3d {
 /// The sky dome's mesh id: in the starter/debug range, above the two
 /// starter meshes, below the chunks.
 inline constexpr std::uint32_t kSkyMeshId = 900;
+/// WEATHER. The veil's mesh id, beside the sky's.
+inline constexpr std::uint32_t kVeilMeshId = 901;
 /// Dome radius in tiles. Must clear the far plane (512) with the dome's
 /// height on top, and exceed the farthest geometry from any eye in the
 /// district (the authored Docks are 192x128 tiles: nothing is 300 away).
 inline constexpr float kSkyRadius = 400.0F;
 inline constexpr float kSkyHeight = 220.0F;
 
-/// The sky dome for a time of day: its version is the minute bucket.
+/// The sky dome for a time of day: its version is the minute bucket. The
+/// one-argument form is the clear sky.
 [[nodiscard]] MeshData buildSkyDome(int timeOfDaySeconds);
+[[nodiscard]] MeshData buildSkyDome(int timeOfDaySeconds, const render::Weather& weather);
 [[nodiscard]] std::uint32_t skyDomeVersion(int timeOfDaySeconds) noexcept;
+
+/// WEATHER. The veil for a sky: the shells, far to near, each ring coloured
+/// the fog's colour below the horizon and the sky's own colour at its
+/// elevation above it (so the sky seen through every shell is still the
+/// sky), each shell's alpha 1 - exp(-veil * (its radius - the one inside)).
+/// Empty (no vertices) when sky.veil is zero. `version` is the caller's
+/// bucket, the sky dome's own.
+[[nodiscard]] MeshData buildVeil(const render::SkyState& sky, std::uint32_t version);
+/// The shell radii the veil is built on, in tiles, nearest first. Exposed
+/// so a test can pin the far-to-near order and the reach.
+[[nodiscard]] std::size_t veilShellCount() noexcept;
+[[nodiscard]] float veilShellRadius(std::size_t shell) noexcept;
 
 struct WorldSceneParams {
     /// Seconds since midnight, from the session's clock.
     int timeOfDaySeconds = 12 * 3600;
+    /// WEATHER. Session::weather(). The default is the clear sky.
+    render::Weather weather;
     /// Lights that come and go: Session::tavernLights().
     std::vector<render::Lamp> dynamicLamps;
     /// Chunks whose nearest edge is further than this from the eye are not

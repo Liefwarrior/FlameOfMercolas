@@ -443,3 +443,66 @@ line is `dist\granadad.exe --smoke=0 --hold --width=1280 --height=720
 | jambs-06 | ANOTHER DOOR: the timber house in the lane, the post two cells before its door | `--time=14 --spawn=131,78,19 --yaw=135 --pitch=-6 --fov=80 --screenshot=jambs-06.png` |
 | jambs-07 | UNCHANGED: the lone pillar in the lane behind the Gull, no door within two, no partner | `--time=14 --spawn=148,82,19 --yaw=90 --pitch=-2 --fov=80 --screenshot=jambs-07.png` |
 | jambs-08 | UNCHANGED: the taproom's plastered piers with their stools (frame 22's vantage) | `--time=20 --spawn=156,67,19 --yaw=250 --pitch=-3 --screenshot=jambs-08.png` |
+
+## Weather, 2026-09-25
+
+Four skies, render-only. Roadmap D15 ruled it yes on the one condition that
+the sim never reads it, and `DECISIONS.md` has the row. Clear, overcast,
+harbour fog and wind, each with an intensity that eases in over an hour and
+out over an hour, two to four periods a day, drawn off (seed, calendar day,
+clock) and nothing else. Live by default in the game and in every capture;
+for photography, pin one with `--weather=STATE` and it sits at full for the
+whole run. The summary line says what the frame was shot under either way:
+`weather=fog 1.00` pinned, `weather=fog 0.83` a live fog most of the way in,
+`weather=clear 0.00` the sky every frame above was drawn under.
+
+Weather is mood, not a feature demo. If a frame reads as "a weather effect"
+rather than "a harbour morning", it is wrong.
+
+Every command below is
+
+```
+dist\granadad.exe --smoke=0 --hold --width=1280 --height=720 --scale=1 --spawn=152,63,19 --yaw=270
+```
+
+plus what the table says, from the repo root, on a build of this lane. The
+wip exe in `dist\` predates `--weather=` and will refuse it; the Tarwalk
+spawn looks west down the street with the Gull's door on the left.
+
+| frame | what it should look like | add |
+|---|---|---|
+| clear 07:00 | the reference: dawn's sodium wash along the horizon, the lamps still carrying, the street sharp to its far end. Byte-identical to the same frame shot without `--weather` on a build before this lane. | `--time=7 --weather=clear --screenshot=weather-clear-07.png` |
+| clear 14:00 | flat overcast harbour light, the Tarwalk read to its end, the King's Bond's brick past the Gull | `--time=14 --weather=clear --screenshot=weather-clear-14.png` |
+| clear 22:00 | near-black, lamp pools, the far end of the street swallowed at seventeen tiles | `--time=22 --weather=clear --screenshot=weather-clear-22.png` |
+| overcast 07:00 | the dawn wash mostly gone under a lid: the sky one cool grey from zenith to horizon, a touch dimmer, a lit window warm by contrast | `--time=7 --weather=overcast --screenshot=weather-overcast-07.png` |
+| overcast 14:00 | the lid on at noon: no gradient in the sky, the light cooler and flatter, a little more haze down the street and no more than that | `--time=14 --weather=overcast --screenshot=weather-overcast-14.png` |
+| overcast 22:00 | barely different from clear night, the zenith a shade flatter. If you cannot tell, that is right | `--time=22 --weather=overcast --screenshot=weather-overcast-22.png` |
+| fog 07:00 | harbour fog at first light: milky with a little of the dawn's sodium in it, the far end of the street gone inside ten tiles, the near lamps haloed, faces flat | `--time=7 --weather=fog --screenshot=weather-fog-07.png` |
+| fog 14:00 | milky grey-white, eight tiles at full. The sky is the fog. The Gull's frontage is there; the brick beyond it is not | `--time=14 --weather=fog --screenshot=weather-fog-14.png` |
+| fog 22:00 | cold grey-blue, six and a half tiles, the blacks lifted a shade by the lamps' own scatter. A lamp pool is a lamp pool; the street past it is nothing | `--time=22 --weather=fog --screenshot=weather-fog-22.png` |
+| wind 07:00 | clear-ish and a shade crisper than clear, every flame's halo at two-thirds, the wind bed up if you are listening | `--time=7 --weather=wind --screenshot=weather-wind-07.png` |
+| wind 14:00 | the air scoured: further down the street than clear, the zenith a touch deeper. Mostly heard | `--time=14 --weather=wind --screenshot=weather-wind-14.png` |
+| wind 22:00 | night with the lanterns guttering, the far end a little further off than clear night | `--time=22 --weather=wind --screenshot=weather-wind-22.png` |
+| the quay in fog | the long view down the quay at first light, `--spawn=150,59,19 --yaw=300 --pitch=-6` in place of the Tarwalk spawn and yaw: the water, the rowboats, the piers and the cranes stepping back into the fog, the nearest crane there and the pier heads gone | `--spawn=150,59,19 --yaw=300 --pitch=-6 --time=7 --weather=fog --screenshot=weather-quay-fog.png` |
+
+Shoot any of them twice as separate processes: same seed, same day, same
+hour, same sky, byte for byte. That is the whole contract, and
+`native/tests/test_weather.cpp` holds the code to it: the clear sky is the
+old sky at every minute, a fogged session steps to the clear run's tavern
+and population digests, and two sessions under one fog draw one frame.
+
+How the fog is drawn: the 3D pass has never had a fog shader (rlsw has no
+shader at all), so the weather's fog is geometry. Nested translucent shells
+round the eye, nineteen of them out to fifty-six tiles and closer together
+near the eye, each coloured the fog's colour below the horizon and the sky's
+own above it, each with the alpha of the fog between it and the one inside,
+drawn last in the pass far to near with the depth test on. Whatever stands
+inside a shell is clear of it; whatever stands beyond it is seen through it.
+The rlsw frame and the GPU frame are the same picture. It is banded where a
+shader would be smooth; at eight tiles the eye reads it as fog.
+
+Honest gaps: the hands are still lit under the clear sky (`viewmodel.cpp`
+belongs to a live session and was left alone); the software `--2d` pass has
+the fog by distance only, no veil; the sky dome sits at the far plane, so a
+veil over open sky is the sky's own colour and the fog is only ever on the
+world in front of it.

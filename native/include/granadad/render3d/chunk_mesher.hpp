@@ -52,14 +52,11 @@
 
 #include "granadad/render/atlas.hpp"
 #include "granadad/render/lamps.hpp"
+#include "granadad/render/lighting.hpp"
 #include "granadad/render3d/scene.hpp"
 
 namespace granadad::sim {
 class TileQuery;
-}
-
-namespace granadad::render {
-class LampGlow;
 }
 
 namespace granadad::render3d {
@@ -96,6 +93,11 @@ struct ChunkKey {
 struct ChunkLighting {
     /// Seconds since midnight, bucketed by the caller to the minute.
     int timeOfDaySeconds = 12 * 3600;
+    /// WEATHER. The sky the faces are lit under is skyAt(timeOfDaySeconds,
+    /// weather); the default (clear) is the sky every chunk was ever
+    /// coloured under. Folded into chunkVersion so a fog that rolls in
+    /// recolours the district the way a minute does.
+    render::Weather weather;
     /// The baked lamp field (27 Docks lamps). Null = no lamps, ambient only.
     const render::LampGlow* glow = nullptr;
     /// The handful of lights that come and go (a tavern hearth, its candles).
@@ -114,6 +116,14 @@ struct ChunkLighting {
 /// nothing else does. Never zero (the adapter's "never uploaded" sentinel).
 [[nodiscard]] std::uint32_t chunkVersion(std::uint32_t rebuildCount,
                                          const ChunkLighting& lighting) noexcept;
+
+/// WEATHER. The key a Weather folds into a mesh version: zero for clear, so
+/// a clear version is what it always was; else the kind above the intensity
+/// to a hundredth. chunkVersion() spreads it over every chunk's version and
+/// the world scene spreads the same key over the sky dome's and the veil's,
+/// so a sky that moved with the weather and not with the minute -- a day
+/// skipped under live weather -- is rebuilt rather than kept.
+[[nodiscard]] std::uint32_t weatherVersionKey(const render::Weather& weather) noexcept;
 
 // ---------------------------------------------------------------------------
 // materials

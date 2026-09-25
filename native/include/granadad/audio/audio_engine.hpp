@@ -162,6 +162,14 @@ public:
     /// Session::timeOfDay() seconds (0..86399). Shapes per-layer bed gains.
     void setTimeOfDay(int secondsSinceMidnight) noexcept;
 
+    /// WEATHER (render-side, one-way, like the clock): a multiplier on the
+    /// Wind layer's bed gain -- 1 is the bed as authored, over 2 a blow,
+    /// under 1 a still fog (render::Weather::windGain). Clamped 0..4; the
+    /// mixer still caps the layer at one. Pushed by the client every frame
+    /// beside setTimeOfDay; nothing here reaches the sim.
+    void setWind(float gain) noexcept;
+    [[nodiscard]] float wind() const noexcept { return wind_; }
+
     void setBusGain(Bus bus, float gain);
 
     /// Once per frame: advances bed crossfades, day/night layer gains, sparse
@@ -215,6 +223,7 @@ private:
     bool deviceOpen_ = false;
     std::uint64_t rng_ = 0;
     int timeOfDay_ = 12 * 3600;
+    float wind_ = 1.0F;
     float sinceStep_ = 1.0e6F;
     std::array<std::uint8_t, kSoundIdCount> lastVariant_{};
     BedSlot active_;
