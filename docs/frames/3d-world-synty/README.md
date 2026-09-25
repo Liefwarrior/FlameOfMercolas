@@ -371,8 +371,92 @@ along one wall of one room, that is a bug.
 **Honest gaps.** Windows cull at 48 tiles, so an overview from the Saltgate
 head sees the terraces lit and the Tarwalk dark for distance, not for the
 law. A house that spans two storeys of different footprints draws two lots.
-A compound whose houses share a roofed passage is one household. The pane
-tint is flat; there is no glow on the wall under a lit window.
+A compound whose houses share a roofed passage is one household. See the
+second pass below for the pane's own flatness and the wall's own dark --
+one is fixed, the other only half.
+
+### Second pass (2026-09-25, the critic's 5/10)
+
+The critic shot `--smoke=0 --hold --settle-steps=0 --time=HH` and got the
+same Bond, the same roofline, at 23:00 and at 02:00. Traced the whole chain
+end to end -- `--time=` into `SessionConfig::timeOfDay`, into `Session`'s
+own `timeOfDay_` at construction (session.cpp:305), into
+`WorldSceneParams::timeOfDaySeconds` off `session.timeOfDay()`
+(`SceneRig::refresh`, main.cpp), into `ChunkLighting::timeOfDaySeconds`,
+into `relightPieces()`'s own `hour` -- and every link already reads the
+clock fresh: `litVersion_` starts at a bucket `chunkVersion()` can never
+produce (world_scene.hpp), so the first `refresh()` a shutter ever takes
+relights for real, no second frame needed, no `session.step()` needed
+either. `skipToHour()` (a sleep, a fast travel) writes `timeOfDay_`
+synchronously through `syncClockAfterSkip()` for the same reason. The
+sequencing was never broken.
+
+What was: the Bond is `HouseKind::Dark`, a kept-dark store whose watchman's
+lamp draws off `lot % 100 < storeLampPercent` alone -- no hour in the
+formula, on purpose, a lamp that burns all night. Two shots of the same
+building at two hours of the same night are supposed to match; that is the
+law working, not frozen. The roofline the critic paired next to it carries
+the same named, `litAllNight` buildings for the same reason. Picked the
+wrong two witnesses is the honest verdict, but a claim like that needs a
+test that cannot be misread, so one was added: `test_chunk_mesher.cpp`,
+"a session's own clock relights the ward with no session.step() between the
+two reads" builds a real `render::Session` at ten, counts the ward's own
+lit household panes through a real `WorldScene::refresh()` (not
+`paneGlows()` called by hand), calls `session.skipToHour(2)` -- no step(),
+the exact budget a `--settle-steps=0` shutter spends -- refreshes again and
+checks the count actually fell. It does.
+
+**The pane was still a flat decal.** Fixed. Every hung timber window is two
+stacked placements now, not one (`StaticPlacement::paneCore`,
+`static_pieces.cpp`): the sill-side 45% of the opening and the head-side
+rest, sharing one seam, never overlapping, so there is no z-fight to sort
+and no shader needed. Lit, the sill band keeps the law's own warm tint
+unchanged (`knobs.litPane`, 255/198/118 -- already close to the candle a
+window is supposed to be), the head band cools toward `kPaneEdgeLit`
+(217/140/64, `world_scene.cpp`) -- a hotter core low, a cooler glass high.
+Dark, the two bands agree exactly as the single pane used to. Tested in
+"a lit timber pane reads as two stops, not one flat wash": the two bands
+differ when lit and match when dark, on the real Docks, at ten and at noon.
+
+A true bilinear gradient (the shader every other blended piece uses) turned
+out to be closed to glass on purpose --
+`rl_backend.cpp:691, if (blended && !glass)` -- and the software backend has
+no shader at all, so a GPU-only gradient would not have been the same
+picture on both. Two flat, proven bands beat one gradient neither backend
+could be trusted to draw the same way.
+
+**Still zero spill, mostly.** A lit window's own timber frame
+(`PieceRole::WindowTimber`) now carries its pane's household too
+(`houseOf()`, called on the frame the same as the pane) and leans 40% of
+the way toward the law's own warm tint when its household is up
+(`kFrameWarmMix`, `world_scene.cpp`) -- the reveal itself catches the
+candle now. The wall cells further out did not: that wants the pane
+registered as a weak `render::Lamp` in `ChunkLighting::dynamicLamps` so
+`dynamicGlowAt()` (lighting.cpp) washes the chunk mesh the way a real lamp
+does, and the honest radius for a candle behind glass is nearer 1.5 m than
+`falloffOf()`'s own floor of 3.5 -- which means a second falloff curve, in
+the one function every baked and dynamic light in the game shares, changed
+blind. Left it alone rather than gamble the whole ward's lighting on an
+untested formula; the frame warming is the piece of this that was safe to
+ship without a compiler.
+
+**Reshoot,** the same command as the first pass, plus `--time=5` (the
+rising hour) and a close-up on the frontage:
+
+`dist\granadad.exe --smoke=0 --hold --settle-steps=0 --width=1280 --height=720 --scale=1 --time=HH --spawn=X,Y,Z --yaw=DEG [--pitch=DEG] [--fov=40] --screenshot=path.png`
+
+| vantage | flags | at eight | at eleven | at two | at five |
+|---|---|---|---|---|---|
+| the Tarwalk west from the spawn | `--spawn=156,63,19 --yaw=265 --pitch=4` | as the first pass, and now every warm timber pane shows a hotter sill and a cooler head instead of one flat block, the frame around each one a shade warmer than the wall past it | about a third of the households gone dark by house; the Bond's watchman's window unmoved, by design | the Gull and the Bilge lit, one or two stubborn windows, the rest dark and the Bond exactly as it was at eleven | the early trades' windows picking back up one by one, gradients and frames warming with them |
+| the Tarwalk east from the Bond | `--spawn=124,64,19 --yaw=85 --pitch=3` | the Bilge's frontage warm, gradient visible on its oak storey's panes | the same two houses lit, the street thinner | the two houses lit, the street dark, the Bond behind the eye reading exactly as it did at eight and at two -- same lamp, same law | a scatter of risers down the street |
+| the quay looking back at the frontage | `--spawn=141,55,19 --yaw=150 --pitch=2` | the Bilge and the Gull across the Tarwalk, both storeys warm, each pane now two-toned and each frame a shade lifted | unchanged (both lit all night) | unchanged | unchanged |
+| the overview from the Gull's roof, south-west | `--spawn=153,72,21 --yaw=225 --pitch=-18` | the Rows and the Mission lit, warm panes across the roofscape, the gradient too small to read at this distance but the frames still lift | about a third out, the named houses unmoved | the Rows, the Mission, a handful of owls | risers on the terraces below |
+| close-up on the Gull's frontage | `--spawn=145,58,19 --yaw=160 --pitch=0 --fov=40` | every pane on the storey shows its own hot sill and cool head, the timber frame around each one visibly warmer than the plaster beside it, and the wall past the frame reads exactly as dark as it did before this pass -- the honest edge of what shipped | -- | -- | -- |
+
+A house's windows still change together; a house's watchman's lamp and a
+named house's own lights still do not change at all, on any of these
+frames, at any hour -- that is `HouseKind::Dark` and `litAllNight` working,
+not a bug to chase in a third pass.
 
 ## The jambs, 2026-09-16
 

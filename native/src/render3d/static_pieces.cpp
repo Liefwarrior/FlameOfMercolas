@@ -146,6 +146,9 @@ constexpr float kTimberPaneHalfWidth = 0.34F;
 constexpr float kTimberPaneSill = 0.19F;
 constexpr float kTimberPaneHeight = 0.79F;
 constexpr float kTimberPaneOut = -0.02F;
+/// THE CRITIC'S SECOND: the sill-side share of the pane's own height that
+/// draws as the hot core (world_scene.cpp's kPaneEdgeLit is the rest).
+constexpr float kPaneCoreFraction = 0.45F;
 /// The door leaf's clearance off the reveal it hangs open against, and off
 /// the facade plane.
 constexpr float kLeafOffReveal = 0.14F;
@@ -1808,18 +1811,46 @@ private:
                                ly, r.z, Rgba8{}, Vec3{1.0F, 1.0F, 1.0F}, false, 2.0F);
                     out_.placements.back().facing =
                         (r.side == kNorth || r.side == kSouth) ? render::kFacingY : render::kFacingX;
+                    // THE CRITIC'S THIRD: the frame carries the same
+                    // household as the pane it holds, so a relight can warm
+                    // its own reveal when the house is up (world_scene.cpp)
+                    // -- Oblivion's boards catch a lit window's light; this
+                    // one should not stand as dark as a wall five tiles off.
+                    houseOf(out_.placements.back(), lx, ly, lx - kSideDx[r.side],
+                            ly - kSideDy[r.side], r.z);
                     // The frame has no glass of its own: the pane quad is
                     // set in its opening, a hair in front of its panels,
                     // and it is the pane that carries the household.
+                    //
+                    // THE CRITIC'S SECOND: never one quad but two, stacked
+                    // on one seam and never overlapping -- the sill-side
+                    // kPaneCoreFraction of the opening (paneCore) and the
+                    // head-side rest, so a relight (world_scene.cpp) can
+                    // tint them apart, a hotter core low and a cooler
+                    // glass high, without a shader or a second asset. Both
+                    // bands carry the same household off the same cell.
                     if (timberPane != nullptr) {
-                        FaceOpts po;
-                        po.frontOut = true;
-                        po.standoff = out + kTimberPaneOut;
-                        po.yBase = o.yBase + kTimberWindowLift + kTimberPaneSill;
-                        po.height = kTimberPaneHeight;
-                        po.light = cellLight(lx, ly);
+                        const float coreHeight = kTimberPaneHeight * kPaneCoreFraction;
+                        FaceOpts core;
+                        core.frontOut = true;
+                        core.standoff = out + kTimberPaneOut;
+                        core.yBase = o.yBase + kTimberWindowLift + kTimberPaneSill;
+                        core.height = coreHeight;
+                        core.light = cellLight(lx, ly);
                         facePiece(r, PieceRole::PaneTimber, *timberPane, mid - kTimberPaneHalfWidth,
-                                  mid + kTimberPaneHalfWidth, po);
+                                  mid + kTimberPaneHalfWidth, core);
+                        out_.placements.back().paneCore = true;
+                        houseOf(out_.placements.back(), lx, ly, lx - kSideDx[r.side],
+                                ly - kSideDy[r.side], r.z);
+
+                        FaceOpts edge;
+                        edge.frontOut = true;
+                        edge.standoff = out + kTimberPaneOut;
+                        edge.yBase = core.yBase + coreHeight;
+                        edge.height = kTimberPaneHeight - coreHeight;
+                        edge.light = cellLight(lx, ly);
+                        facePiece(r, PieceRole::PaneTimber, *timberPane, mid - kTimberPaneHalfWidth,
+                                  mid + kTimberPaneHalfWidth, edge);
                         houseOf(out_.placements.back(), lx, ly, lx - kSideDx[r.side],
                                 ly - kSideDy[r.side], r.z);
                     }

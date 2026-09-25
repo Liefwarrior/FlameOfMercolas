@@ -149,6 +149,15 @@ public:
     [[nodiscard]] const StaticPlacementStats& placementStats() const noexcept {
         return placements_.stats;
     }
+    /// TEST SUPPORT (the critic's first: a screenshot's own hour must not be
+    /// frozen). The pane tint the most recent relightPieces() actually wrote
+    /// for placement `i` -- litTints_'s own pane slot -- so a case can check
+    /// what a relight produced without threading the result through the
+    /// eye's reach and frustum the way scene.statics does. `i` must be a
+    /// valid index into placements(), after at least one refresh().
+    [[nodiscard]] Rgba8 relitPaneTint(std::size_t i) const noexcept {
+        return litTints_[i * kLitSlots + 4];
+    }
 
 private:
     struct Slot {

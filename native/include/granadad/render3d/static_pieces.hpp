@@ -641,6 +641,14 @@ struct StaticPlacement {
     HouseKind house = HouseKind::None;
     std::uint32_t houseLot = 0;
     std::int32_t insideX = 0, insideY = 0, insideZ = 0;
+    /// THE CRITIC'S SECOND: a hung timber pane is two stacked placements of
+    /// PieceRole::PaneTimber sharing one seam (static_pieces.cpp), never
+    /// one -- the sill-side band `paneCore`, the head-side band not. Both
+    /// carry the same house and lot; only the tint a relight gives slots[4]
+    /// (world_scene.cpp) tells them apart, so a lit window reads as a
+    /// hotter core toward its sill and a cooler glass toward its head
+    /// instead of one flat decal. Unused by every other role.
+    bool paneCore = false;
     /// The piece keeps its catalogue tint through the relight.
     bool selfLit = false;
     /// How far the piece reaches from its origin, in tiles: the frustum
