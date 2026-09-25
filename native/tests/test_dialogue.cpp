@@ -110,22 +110,23 @@ TEST_CASE("the owner's bark tables load, all of them") {
     // tone_barks.json and the 26 in topic_barks.json (both #82), and the 16 in
     // contract_tone_barks.json (#81 -- the register reaching a radiant offer)
     // and the 3 in combat_barks.json (feel/build, the Barks lane: watch.halt,
-    // brawl.join, crowd.flee) beside it, and the VOICE LANE's 142 (lane/voice,
-    // the one voice channel): 112 in voice_barks.json (pass and pass.room /
-    // farewell / overheard / react, per family and attitude, the trade
-    // rungs above the family), 10 in watch_voice_barks.json (watch.notice
-    // by cause / heat / paper / wielder and the approach readback by cause
-    // and by what is up), 7 in rumor_barks.json
-    // (rumor.<family>, WHAT THE WARD SAYS in a trade's own mouth) and 13 in
-    // greet_more_barks.json (the numbered .2 siblings that widen a canon
-    // greet cell without the owner's file moving) -- each sprint adds a
-    // SECOND file rather than editing 59KB of canon, and BarkTables::load
-    // reads the whole directory. Pinned: content added should be a visible
-    // change here, and content LOST should be red.
-    // -- and the 4 in street_barks.json (lane/street: street.halt,
-    // street.sheathe, street.offence, street.routed -- the street Watch's
-    // mouth and a routed docker's) beside those.
-    CHECK(barks().tableCount() == 539);
+    // brawl.join, crowd.flee) beside it, and the 4 in street_barks.json
+    // (lane/street: street.halt, street.sheathe, street.offence,
+    // street.routed -- the street Watch's mouth and a routed docker's), the
+    // 21 in legend_barks.json (lane/rung: legend.<track>.<rung>, one row per
+    // rung per track for the rung plate, plus legend.top), and the VOICE
+    // LANE's 142 (lane/voice, the one voice channel): 112 in
+    // voice_barks.json (pass and pass.room / farewell / overheard / react,
+    // per family and attitude, the trade rungs above the family), 10 in
+    // watch_voice_barks.json (watch.notice by cause / heat / paper / wielder
+    // and the approach readback by cause and by what is up), 7 in
+    // rumor_barks.json (rumor.<family>, WHAT THE WARD SAYS in a trade's own
+    // mouth) and 13 in greet_more_barks.json (the numbered .2 siblings that
+    // widen a canon greet cell without the owner's file moving) -- each
+    // sprint adds a SECOND file rather than editing 59KB of canon, and
+    // BarkTables::load reads the whole directory. Pinned: content added
+    // should be a visible change here, and content LOST should be red.
+    CHECK(barks().tableCount() == 560);
     CHECK(barks().rowCount() > 500);
     // Sorted by key, which is what makes lookup a binary search rather than a
     // hash whose iteration order is the standard library's business.

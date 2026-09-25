@@ -370,11 +370,15 @@ TEST_CASE("a carried row prints its weight, its worth and its marks; a worn slot
     CHECK(rows[22] == "ON THE BACK  COAT  DR 2");
     CHECK(rows[26] == "LOAD  " + std::to_string(tavern.loadDrams()) + " / 240 DRAMS");
     // Registry order: the cudgel, the coat, the rope, the picks, the dust.
-    CHECK(rows[27] == "CUDGEL  40DR  6C  IN HAND  SLOT 3");
-    CHECK(rows[28] == "COAT  60DR  12C  WORN");
-    CHECK(rows[29] == "ROPE  48DR  6C");
-    CHECK(rows[30] == "5 PICKS  5DR  10C");
-    CHECK(rows[31] == "2 DUST  6DR  32C  HOT");
+    // KITFIX LANE: the name column is padded to "5 PICKS", the widest name
+    // this list holds (seven cells), and DR/C are each right-justified into
+    // this list's own widest digit count -- rightAlignedDigits()'s contract,
+    // proved here row by row rather than just by the alignment case below.
+    CHECK(rows[27] == "CUDGEL   40DR   6C  IN HAND  SLOT 3");
+    CHECK(rows[28] == "COAT     60DR  12C  WORN");
+    CHECK(rows[29] == "ROPE     48DR   6C");
+    CHECK(rows[30] == "5 PICKS   5DR  10C");
+    CHECK(rows[31] == "2 DUST    6DR  32C  HOT");
     CHECK(session.loadLine() == rows[26]);
     CHECK(session.characterKitOffset() == 27);
     // The composed list behind the rows: the Kit's own rows are the only
@@ -385,6 +389,48 @@ TEST_CASE("a carried row prints its weight, its worth and its marks; a worn slot
     CHECK(kit[2].inKit);
     CHECK_FALSE(kit[3].inKit);  // the picks
     CHECK_FALSE(kit[4].inKit);  // the sack
+}
+
+TEST_CASE("DR and C share an end column across carried rows however their names run") {
+    // KITFIX LANE. B06's own finding (docs/frames/kit/): "the DR values
+    // start at four different x, the C values at four more." COAT and ROPE
+    // are both four glyphs, LANTERN is seven -- three names of two different
+    // lengths used to leave each row's number wherever its own name happened
+    // to end. rightAlignedDigits() (session.cpp, characterRows()) fixes it
+    // in the row-composition code; this reads the fix off the finished
+    // strings rather than off a screenshot.
+    render::Session session = standing();
+    Tavern& tavern = session.tavern();
+    REQUIRE(tavern.giveItem("coat"));
+    REQUIRE(tavern.giveItem("lantern"));
+    REQUIRE(tavern.giveItem("rope"));
+
+    const std::vector<std::string> rows = session.characterRows();
+    std::size_t drColumn = std::string::npos;
+    std::size_t cColumn = std::string::npos;
+    int found = 0;
+    for (const std::string& row : rows) {
+        if (row.rfind("COAT", 0) != 0 && row.rfind("LANTERN", 0) != 0 &&
+            row.rfind("ROPE", 0) != 0) {
+            continue;
+        }
+        ++found;
+        const std::size_t dr = row.find("DR");
+        REQUIRE(dr != std::string::npos);
+        if (drColumn == std::string::npos) {
+            drColumn = dr;
+        } else {
+            CHECK(dr == drColumn);
+        }
+        const std::size_t c = row.find('C', dr + 2);
+        REQUIRE(c != std::string::npos);
+        if (cColumn == std::string::npos) {
+            cColumn = c;
+        } else {
+            CHECK(c == cColumn);
+        }
+    }
+    REQUIRE(found == 3);
 }
 
 TEST_CASE("ENTER on a carried row wears it or bares it; on a sheet row it does nothing") {
@@ -406,7 +452,17 @@ TEST_CASE("ENTER on a carried row wears it or bares it; on a sheet row it does n
     const std::string enter(render::promptConfirmKey(render::InputDevice::KeyboardMouse));
     const std::string arrows{render::kMotifLeft, render::kMotifRight};
     CHECK(session.dialogueView().epithet == enter + " WEAR  " + arrows + " SLOT  X DROP");
-    session.chooseTopic(static_cast<std::size_t>(session.topicCursor()));
+    // ENTER, the way main.cpp presses it: chooseTopic() handed the cursor
+    // that FOLLOWS THE FOCUS. menuCursor() is the character tile's own
+    // characterCursor_ here, the same number the drawn panel highlights;
+    // topicCursor() is the conversation's cursor and would answer 0 on this
+    // tile whatever row is lit. (This press happens to ignore its index and
+    // read the tile's own cursor anyway -- see chooseTopic's KIT BUILD
+    // branch -- which is exactly why the old topicCursor() call here passed
+    // without proving anything.)
+    CHECK(session.menuCursor() == session.dialogueView().cursor);
+    CHECK(session.menuCursor() == coatRow);
+    session.chooseTopic(static_cast<std::size_t>(session.menuCursor()));
     CHECK(tavern.kit().isWorn(tavern.items().indexOf("coat")));
     CHECK(session.lastMessage() == "COAT - ON.");
     CHECK(session.dialogueView().epithet == enter + " BARE  " + arrows + " SLOT  X DROP");
@@ -421,10 +477,10 @@ TEST_CASE("ENTER on a carried row wears it or bares it; on a sheet row it does n
     CHECK(session.lastMessage() == "THE ROPE IS NOT WORN.");
     // A sheet row is something to read. Back to row zero exactly, by the
     // cursor's own count rather than a magic constant that would drift
-    // every time the sheet's own row count does. dialogueView().cursor,
-    // not topicCursor() -- the character tile keeps its own cursor
+    // every time the sheet's own row count does. menuCursor(), not
+    // topicCursor() -- the character tile keeps its own cursor
     // (characterCursor_), and topicCursor_ is a different field entirely.
-    session.moveTopicCursor(-session.dialogueView().cursor);
+    session.moveTopicCursor(-session.menuCursor());
     CHECK_FALSE(session.highlightedKitRow().has_value());
     const std::string before = session.lastMessage();
     session.chooseTopic(0);

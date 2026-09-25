@@ -265,20 +265,22 @@ struct HudState {
     /// STANCE & ROOM BUILD: "FISTS UP" / "CUDGEL UP" / "STEEL UP" exactly
     /// while the room's own fighting-mode bit (Tavern::playerHandsUp) is true
     /// -- the state the owner could not see. Bottom band, centred, right
-    /// behind the guard row: the two CAN share the band (a guard raises the
-    /// hands), and both read as one fact -- what the hands are doing. Empty
-    /// draws nothing, the usual state, so every hand-built HudState that
-    /// predates it is pixel-identical.
+    /// behind the guard row and the turn row: the three CAN share the band
+    /// (a guard raises the hands), and all read as one fact -- what the
+    /// hands are doing. Empty draws nothing, the usual state, so every
+    /// hand-built HudState that predates it is pixel-identical.
     std::string_view handsLabel;
     /// KIT BUILD (defence v1): "COAT TURNS 2" for kPlateHoldSteps after a
     /// landed blow the worn kit softened -- the piece with the most DR on
     /// the body and what the blow lost to it. An EVENT row (the Law of
     /// Earned Text: said when it happens, never furniture), centred right
-    /// behind the hands row in the blocked-blow wash's own steel-cool ink,
+    /// behind the guard row in the blocked-blow wash's own steel-cool ink,
     /// so the row and the wash read as one fact. Its own row rather than
     /// the alert, because a bouncer's warning outranks the alert for as
-    /// long as the house minds you and would eat every turn in a brawl.
-    /// Empty draws nothing, the usual state.
+    /// long as the house minds you and would eat every turn in a brawl --
+    /// and AHEAD of the hands row (KIT POLISH) for the same reason: on the
+    /// three-slot band every monitor size gets, a warning plus FISTS UP
+    /// would eat it just as surely. Empty draws nothing, the usual state.
     std::string_view turnLabel;
     /// SPELLS BUILD: the quick bar strip -- BOTTOM-CENTRE, which is this
     /// file's own header giving Barony's hotbar its place ("hotbar

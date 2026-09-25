@@ -664,6 +664,9 @@ TEST_CASE("every HUD row lit at once still leaves the centre clear") {
     // STANCE & ROOM BUILD: the fighting-mode row at its longest, lit beside
     // the guard it can share the band with.
     full.handsLabel = "THE EVICTOR UP";
+    // KIT BUILD: the turned-blow row, lit too -- the every-field proof had
+    // not been told about it.
+    full.turnLabel = "THE COAT TURNS 2";
     // HELD-EFFECTS BUILD: all four live-hold rows at once, at their own
     // longest -- the fullest top-right stack this game can produce.
     full.effectLabels = {"SET THE SHOULDERS 899S", "STEADY THE HAND 899S",
@@ -742,6 +745,70 @@ TEST_CASE("every HUD row lit at once still leaves the centre clear") {
         CHECK(changedIn(0, 0, width, centre.y0) > 200);
         CHECK(changedIn(0, centre.y1, width, height) > 200);
     }
+}
+
+TEST_CASE("the turned-blow row draws beside a bouncer's warning and raised hands at every capture size") {
+    // KIT POLISH. docs/frames/kit/kit-dr-960x540.png was shot to show COAT
+    // TURNS 2 and never did. The bottom band at 960x540 is four minor slots
+    // deep (base 501, floor 422, step 16); the alert at full scale holds two,
+    // the KIT FIX PASS's spacer slot took the third, FISTS UP the fourth,
+    // and the turn row -- last of the three in the priority order -- was
+    // refused by BottomBand::take() one pixel over the exclusion floor.
+    // From 1080p up the band is only THREE slots deep, so the turn has to
+    // outrank the hands as well, or the same warning-plus-FISTS-UP pair eats
+    // it on every monitor. Both are fixed in hud.cpp (the spacer is a pixel
+    // pad now; the turn is taken ahead of the hands); this is the proof, at
+    // the sizes the Kit is shot at and the one it is played at.
+    HudState fight;
+    fight.health = 61;
+    fight.healthMax = 100;
+    fight.yawBam = sim::kFacingWest;
+    fight.alert = "OX GULLBANE: YOU HAVE HAD THE ONLY WORD YOU GET. THE DOOR.";
+    fight.handsLabel = "FISTS UP";
+    HudState turned = fight;
+    turned.turnLabel = "COAT TURNS 2";
+
+    // How many pixels two HUD states differ by, split at the exclusion
+    // rectangle's floor: the band below it, and everywhere else.
+    const auto inkBetween = [](const HudState& a, const HudState& b, int width, int height) {
+        Framebuffer left(width, height);
+        left.clear(Rgb{0.20F, 0.18F, 0.16F});
+        drawHud(left, a);
+        Framebuffer right(width, height);
+        right.clear(Rgb{0.20F, 0.18F, 0.16F});
+        drawHud(right, b);
+        const CentreRect centre = hudCentreRect(width, height);
+        std::pair<std::size_t, std::size_t> counts{0, 0};
+        for (int y = 0; y < height; ++y) {
+            for (int x = 0; x < width; ++x) {
+                if (left.pixels()[left.index(x, y)] == right.pixels()[right.index(x, y)]) {
+                    continue;
+                }
+                if (y >= centre.y1) {
+                    ++counts.first;
+                } else {
+                    ++counts.second;
+                }
+            }
+        }
+        return counts;
+    };
+
+    for (const auto& [width, height] : {std::pair{640, 360}, std::pair{960, 540},
+                                        std::pair{1280, 720}, std::pair{1920, 1080}}) {
+        const auto [band, elsewhere] = inkBetween(fight, turned, width, height);
+        INFO("at ", width, "x", height, " the turn row put ", band,
+             " pixels in the band and ", elsewhere, " outside it");
+        CHECK(band > 50);
+        CHECK(elsewhere == 0);
+    }
+    // And on the four-slot band the Kit is shot at, it cost the hands
+    // nothing: FISTS UP is still on the frame beside it.
+    HudState turnedHandsDown = turned;
+    turnedHandsDown.handsLabel = {};
+    const auto [handsInk, handsElsewhere] = inkBetween(turnedHandsDown, turned, 960, 540);
+    CHECK(handsInk > 50);
+    CHECK(handsElsewhere == 0);
 }
 
 TEST_CASE("a bottom-band or top-right label does not run off the frame at an off-16:9 window") {

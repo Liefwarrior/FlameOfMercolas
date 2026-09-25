@@ -243,8 +243,18 @@ round up.
 ## Still open, unchanged
 
 Fast travel and the courier case stand as last phase left them (travel is
-minutes not hours, the zero-paces re-travel wart, the options page still on a
-HUD strip). The windowed harness cannot drive keyboard character-creation blind
+minutes not hours, the options page still on a HUD strip). **The zero-paces
+re-travel wart is closed, both halves, on the owner's ruling:** the map
+pane's HERE predicate (badge `<PLACE> - HERE`, the travel row asleep within
+two paces of the aim) got its missing half — `districtMapTravelPlan()` now
+answers `standingIn` on the same predicate, the pane's `paces <= 2` restated
+in the sim's integers as `d2 <= 6`, so the T press re-planning at your own
+door is inert instead of silently charging a minute to shuffle one step and
+re-fire the plate. Pinned by `test_travel`'s Counting-House drive, which
+also pins the defect's precondition (the arrival ring leaving the body
+outside the footprint); `kw6-mapafter`/`kw7-press` show the wart,
+`kw8-standing` the same scene on the fixed build. The windowed harness
+cannot drive keyboard character-creation blind
 (the pad path covers it); `--travel=NAME` and `--map-place=NAME` want the
 roster's exact mixed-case name. New this phase: `drive-windowed.ps1` learned the
 whole digit row (topic lists select up to 9; the hire is topic 8).

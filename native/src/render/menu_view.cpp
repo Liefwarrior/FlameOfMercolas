@@ -248,9 +248,19 @@ void drawTile(Framebuffer& target, const PanelRect& pane, const PanelMetric& met
         drawCellText(target, pane, metric, 0, row,
                      clipLabel(view.alert, static_cast<std::size_t>(paneCells)), kAlertInk, fade);
     } else if (!view.epithet.empty()) {
+        // KITFIX LANE. ONE CELL OF AIR OFF THE TILE'S OWN EDGE -- the
+        // identical reason panes[0]'s right-aligned state word and the
+        // casebook's own header readout already leave one (drawCellTextRight
+        // callers throughout this vocabulary): a value flush against the
+        // divider reads as punctuated by the `|`/`!` flicker between tiles
+        // rather than as a row that ended on purpose. Every other row here
+        // (the badge's attitude, the list's own value column) already
+        // reserves this cell; the epithet was the one row still clipped to
+        // the bare pane width, so a long enough one (a reputation title, a
+        // held-goods verb string) could butt the tile's own border.
         drawCellText(target, pane, metric, 0, row,
-                     clipLabel(view.epithet, static_cast<std::size_t>(paneCells)), ink.dim,
-                     0.85F * fade);
+                     clipLabel(view.epithet, static_cast<std::size_t>(std::max(1, paneCells - 1))),
+                     ink.dim, 0.85F * fade);
     }
     ++row;
 
@@ -345,9 +355,19 @@ void drawTile(Framebuffer& target, const PanelRect& pane, const PanelMetric& met
             // an unkeyed marker. The cursor pages this list: the screen shown
             // follows it. Same unkeyed shape casebook_page.cpp's own MORE
             // indicator settled on.
+            //
+            // KITFIX LANE. CLIPPED TO THE TILE, WHICH drawCellText ITSELF
+            // NEVER DOES -- a capture at a narrow tile column (three tiles
+            // across a modest window) showed "MORE (3/3)" running straight
+            // through the divider and into the next tile's own text, because
+            // every OTHER row on this pane goes through clipLabel/clipToWidth
+            // and this one was the row that did not. paneCells is the tile's
+            // own width in cells; the mark stays whole (clipLabel's own
+            // three-glyph floor) well inside it at any width this pane draws.
             drawCellText(target, listRect, metric, 0, capacity - 1,
-                         "MORE (" + std::to_string(page.screen + 1) + "/" +
-                             std::to_string(page.screens) + ")",
+                         clipLabel("MORE (" + std::to_string(page.screen + 1) + "/" +
+                                       std::to_string(page.screens) + ")",
+                                   static_cast<std::size_t>(std::max(1, paneCells))),
                          ink.dim, 0.75F * fade);
             used = capacity;
         }

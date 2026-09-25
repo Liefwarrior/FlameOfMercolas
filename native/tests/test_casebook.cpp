@@ -810,6 +810,61 @@ TEST_CASE("a letter opens in the tiled Menu's Letters tile, which covers the mid
     CHECK(anyDiffer);
 }
 
+TEST_CASE("ENTER on the Letters tile opens the row under the cursor, by the cursor that follows the focus") {
+    // KIT POLISH. main.cpp's ENTER on the tiled Menu handed chooseTopic()
+    // topicCursor() -- the CONVERSATION's cursor, 0 in a fresh session and
+    // the last topic picked otherwise -- so on this tile it opened the first
+    // letter whatever row was lit, and nothing at all once a conversation
+    // had left that number past the shelf. Session::menuCursor() is the
+    // cursor the arrows actually moved, routed by focus exactly as
+    // moveTopicCursor() routes them; this is the press, through it.
+    render::SessionConfig config;
+    config.contentDir = content::contentDir();
+    config.timeOfDay = 8 * 3600;
+    render::Session session(config);
+    session.stepMany(MoveInput{}, 2);
+
+    const std::vector<Lead>& leads = raws().leads();
+    int rounds = 0;
+    while (session.casebook().nextOpen() >= 0 &&
+           rounds <= static_cast<int>(leads.size()) && !session.casebook().closed()) {
+        const std::int32_t at = session.casebook().nextOpen();
+        const Lead& lead = leads[static_cast<std::size_t>(at)];
+        (void)session.casebook().look(lead.site.x, lead.site.y, lead.site.band);
+        ++rounds;
+    }
+    session.toggleLetters();
+    REQUIRE(session.lettersOpen());
+    REQUIRE(session.dialogueView().topics.size() >= 2);
+
+    // THE SECOND LETTER BY ITS PRINTED NUMBER: the reference. ESC steps back
+    // to the list and leaves the cursor on that row.
+    session.chooseVisibleTopic(1);
+    REQUIRE(session.dialogueView().letter);
+    const std::vector<std::string> second = session.dialogueView().letterLines;
+    session.closeConversation();
+    REQUIRE(session.lettersOpen());
+    REQUIRE_FALSE(session.dialogueView().letter);
+    CHECK(session.dialogueView().cursor == 1);
+
+    // THE SAME ROW BY ENTER. The focus-following cursor names it; the
+    // conversation's cursor never moved off zero.
+    CHECK(session.menuCursor() == 1);
+    CHECK(session.topicCursor() == 0);
+    session.chooseTopic(static_cast<std::size_t>(session.menuCursor()));
+    REQUIRE(session.dialogueView().letter);
+    CHECK(session.dialogueView().letterLines == second);
+    session.closeConversation();
+
+    // AND WHAT THE OLD PRESS OPENED: the first letter, which is a different
+    // document -- so the old call was not a harmless way of saying the same
+    // thing.
+    session.chooseTopic(static_cast<std::size_t>(session.topicCursor()));
+    REQUIRE(session.dialogueView().letter);
+    CHECK(session.dialogueView().letterLines != second);
+    session.closeConversation();
+}
+
 // ===========================================================================
 // SHEETS BUILD: THE WORK, UNDER THE TRAIL
 // ===========================================================================

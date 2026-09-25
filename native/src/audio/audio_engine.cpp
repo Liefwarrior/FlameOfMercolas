@@ -407,6 +407,10 @@ void AudioEngine::setTimeOfDay(int secondsSinceMidnight) noexcept {
     timeOfDay_ = secondsSinceMidnight;
 }
 
+void AudioEngine::setWind(float gain) noexcept {
+    wind_ = std::clamp(gain, 0.0F, 4.0F);
+}
+
 void AudioEngine::setBusGain(Bus bus, float gain) {
     mixer_.setBusGain(bus, gain);
 }
@@ -435,6 +439,10 @@ void AudioEngine::update(float dtSec) {
                 lerp(p.nightGain, p.dayGain, day) * slot->env;
         }
     }
+    // WEATHER: the wind's own multiplier, over both slots' share of the
+    // layer, before the cap -- so a blow through the walls is still a blow
+    // through the walls, and a still fog quiets the quay.
+    target[static_cast<std::size_t>(ProcLayer::Wind)] *= wind_;
     for (std::size_t i = 0; i < kProcLayerCount; ++i) {
         mixer_.setProceduralGain(static_cast<ProcLayer>(i),
                                  std::min(target[i], 1.0F), 0.08F);

@@ -6,6 +6,7 @@
 
 #include "granadad/render/lighting.hpp"
 #include "granadad/render/voxel_classify.hpp"
+#include "granadad/render3d/door_jambs.hpp"
 #include "granadad/sim/tile_query.hpp"
 
 namespace granadad::render3d {
@@ -31,6 +32,30 @@ constexpr render::Rgb kWaterTintFull{0.10F, 0.18F, 0.22F};
     return static_cast<std::uint8_t>(clamped * 255.0F + 0.5F);
 }
 
+/// THE DOORWAY IS CUT OUT OF THE BOX. A wall cell that flanks a door
+/// opening (door_jambs.hpp -- the one test the placer stands its jamb beam
+/// by) keeps only its lintel course: the metre-square storey under the head
+/// goes. That is what lets a beam a quarter-metre thick READ as the jamb
+/// instead of hiding inside a block, and it is done HERE, in the cache, so
+/// every question asked afterwards is asked of the cut cell: the cell's own
+/// faces, the neighbouring wall's cover test (it shows its reveal down the
+/// whole opening now), the cell below (it shows its top, the threshold the
+/// beam stands on). Nothing is left see-through and nothing is drawn twice.
+/// Above the head the wall meshes as it always did, so the frontage has no
+/// hole in it. Render only: sim::TileQuery::solid() is what a body walks
+/// into, and the cell is still a wall.
+void openJamb(const sim::TileQuery& tiles, std::int32_t x, std::int32_t y, std::int32_t z,
+              render::Voxel& v) noexcept {
+    if (!v.hasSides || v.water) {
+        return;
+    }
+    const float head = v.bottom + kDoorHeadHeight;
+    if (head >= v.top || !doorPostAt(tiles, x, y, z)) {
+        return;
+    }
+    v.bottom = head;
+}
+
 /// A chunk's cells plus a one-cell apron, classified once. 18 x 18 x (levels
 /// + 2) entries; every neighbour question below is answered from here.
 class CellCache {
@@ -53,6 +78,9 @@ public:
                     const bool drawn =
                         render::classifyVoxel(tiles, x0_ + lx, y0_ + ly, lz - 1, voxels_[at]);
                     present_[at] = static_cast<std::uint8_t>(drawn ? 1 : 0);
+                    if (drawn) {
+                        openJamb(tiles, x0_ + lx, y0_ + ly, lz - 1, voxels_[at]);
+                    }
                 }
             }
         }
@@ -227,6 +255,14 @@ std::uint32_t dynamicLampKey(const std::vector<render::Lamp>& lamps) noexcept {
     return folded == 0U ? 1U : folded;
 }
 
+std::uint32_t weatherVersionKey(const render::Weather& weather) noexcept {
+    if (weather.clear()) {
+        return 0U;
+    }
+    return (static_cast<std::uint32_t>(weather.kind) << 8) +
+           static_cast<std::uint32_t>(std::clamp(weather.intensity, 0.0F, 1.0F) * 100.0F + 0.5F);
+}
+
 std::uint32_t chunkVersion(std::uint32_t rebuildCount, const ChunkLighting& lighting) noexcept {
     const int minute = ((lighting.timeOfDaySeconds % 86400) + 86400) % 86400 / 60;
     // Rebuilds in the high bits, the lighting bucket in the low twelve (1440
@@ -234,7 +270,11 @@ std::uint32_t chunkVersion(std::uint32_t rebuildCount, const ChunkLighting& ligh
     // dynamic lamp key is folded in above the minute -- it never touches the
     // low twelve bits, so the result stays non-zero whatever the key.
     const std::uint32_t base = (rebuildCount << 12) + static_cast<std::uint32_t>(minute) + 1U;
-    return base ^ (lighting.lampKey << 20);
+    // WEATHER: the kind and the intensity to a hundredth, spread above the
+    // minute the same way (zero for clear, so a clear version is what it
+    // always was). Weather is a function of the minute in a live session,
+    // but a version that SAYS so cannot go stale if that ever changes.
+    return base ^ (lighting.lampKey << 20) ^ ((weatherVersionKey(lighting.weather) * 0x9E37U) << 12);
 }
 
 // ---------------------------------------------------------------------------
@@ -466,7 +506,7 @@ MeshData colourChunk(const ChunkGeometry& geometry, const ChunkLighting& lightin
 
     const std::size_t vertices = geometry.vertexCount();
     mesh.colours.resize(vertices * 4U);
-    const render::SkyState sky = render::skyAt(lighting.timeOfDaySeconds);
+    const render::SkyState sky = render::skyAt(lighting.timeOfDaySeconds, lighting.weather);
     const bool hasDynamic = lighting.dynamicLamps != nullptr && !lighting.dynamicLamps->empty();
 
     // Light is a fact about the CELL, so it is computed once per face and
@@ -485,9 +525,16 @@ MeshData colourChunk(const ChunkGeometry& geometry, const ChunkLighting& lightin
             const render::Rgb live = hasDynamic
                                          ? render::dynamicGlowAt(*lighting.dynamicLamps, x, y, z)
                                          : render::Rgb{};
-            surface = render::Rgb{sky.ambient.r + std::max(baked.r, live.r),
-                                  sky.ambient.g + std::max(baked.g, live.g),
-                                  sky.ambient.b + std::max(baked.b, live.b)};
+            // The lamp's share, SHAPED (render::pooledGlow): a lantern pools
+            // on the cobbles under it and the plaster behind it instead of
+            // washing a whole street at one value. Surfaces only -- the glow
+            // field itself is untouched, and so is the light law that reads
+            // it.
+            const render::Rgb pool = render::pooledGlow(render::Rgb{std::max(baked.r, live.r),
+                                                                    std::max(baked.g, live.g),
+                                                                    std::max(baked.b, live.b)});
+            surface = render::Rgb{sky.ambient.r + pool.r, sky.ambient.g + pool.g,
+                                  sky.ambient.b + pool.b};
             lastX = x;
             lastY = y;
             lastZ = z;

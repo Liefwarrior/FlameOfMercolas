@@ -525,7 +525,26 @@ void Session::setAudio(audio::AudioEngine* engine) {
     audio_->music().setZone(tavern_->playerInside() ? audio::MusicZone::Interior
                                                     : audio::MusicZone::Docks);
     audio_->setTimeOfDay(timeOfDay_);
+    // WEATHER: and the wind, on the same one-way wire the clock rides. The
+    // client re-pushes both every frame; this is the value the first frame
+    // has before it does.
+    audio_->setWind(weather().windGain());
 }
+
+Weather Session::weather() const noexcept {
+    if (config_.liveWeather) {
+        // The tavern's day is the ward's one monotonic calendar (see
+        // Tavern::dayNumber); the session's clock is the same clock the
+        // tavern keeps. Both read, neither written.
+        return weatherFor(config_.worldSeed, tavern_->dayNumber(), timeOfDay_);
+    }
+    Weather pinned;
+    pinned.kind = config_.weather;
+    pinned.intensity = config_.weather == WeatherKind::Clear ? 0.0F : 1.0F;
+    return pinned;
+}
+
+SkyState Session::sky() const noexcept { return skyAt(timeOfDay_, weather()); }
 
 std::int32_t Session::closedBookCount() const noexcept {
     return (casebook_.closed() ? 1 : 0) + (sheetBook_.closed() ? 1 : 0) +
@@ -2242,20 +2261,32 @@ void Session::showQuickBar() {
     // feature's own showcase, which is a real defect even though a live
     // player would never notice eight steps (~130ms) of ramp.
     //
-    // snapTo(true) FROM A DEAD STOP ONLY -- value() <= 0 is exactly "never
-    // risen at all yet", the case that produced the illegible capture.
-    // Reopening while the strip is already up, or mid-decay after the last
-    // touch, is deliberately left alone: EasedToggle::setTarget's own
-    // header ("reopening mid-close resumes from wherever it had got to")
-    // is the correct feel for that case and this pass has no complaint
-    // against it -- only the very first rise, which had nothing to resume
-    // FROM, needed the guarantee. The CLOSE still eases the ordinary way:
-    // syncPanelAnim()'s quickBarAnim_.setTarget(barWanted) below still owns
-    // the fall once quickBarShowSteps_ runs out, so the strip's one-
-    // transition-grammar veil on the way OUT is untouched.
-    if (quickBarAnim_.value() <= 0.0F) {
-        quickBarAnim_.snapTo(true);
-    }
+    // KITFIX LANE. THE GUARD WAS TOO NARROW: value() <= 0.0F ONLY CAUGHT A
+    // DEAD STOP. A capture off SmokeRunConfig::quickbar's own scripted
+    // sequence -- the Grimoire opened, a crafting walked onto a slot, the
+    // page closed, the number pressed, all with --settle-steps=0 and not
+    // one step() between them -- showed no strip at all
+    // (docs/frames/kit/, the --quickbar shutter): the countdown was
+    // genuinely armed (quickBarWanted() true) but VALUE was whatever the
+    // strip's LAST rise-and-fall had left it at, because closing the
+    // Grimoire mid-sequence stands the strip down first (conversingNow()
+    // counts an open Grimoire), and reopening it a moment later hit
+    // setTarget(true)'s "reopening mid-close resumes from wherever it had
+    // got to" rule -- correct for a live player watching the ease, wrong
+    // for a shutter with no frames left to resume ACROSS.
+    //
+    // SO: every call snaps, not just the one off a dead stop. A player never
+    // sees the difference -- snapping an already-open strip back to fully
+    // open is a no-op, and snapping a mid-close strip back up is the same
+    // "the hand touched it again" event setTarget(true) already fires on,
+    // just resolved in one frame instead of a few -- and a --settle-steps=0
+    // capture now shows exactly what showQuickBar()'s own promise always
+    // said: the strip is up, snapped, the instant a slot is chosen. The
+    // CLOSE still eases the ordinary way: syncPanelAnim()'s
+    // quickBarAnim_.setTarget(barWanted) below still owns the fall once
+    // quickBarShowSteps_ runs out, so the strip's one-transition-grammar
+    // veil on the way OUT is untouched.
+    quickBarAnim_.snapTo(true);
 }
 
 void Session::jump() {
@@ -2527,6 +2558,15 @@ namespace {
     return false;
 }
 
+/// The HERE clause's reach: squared tile distance from the body to the
+/// selection's aim point, at or under which a travel plan says standingIn
+/// instead of pricing a walk. Six IS the map pane's "within two paces" --
+/// the pane prints lround(sqrt(dx*dx + dy*dy)) as the paces count and calls
+/// HERE at <= 2, and sqrt(6) rounds to 2 while sqrt(7) rounds to 3 -- so
+/// this integer and the pane's float read are the same predicate, stated
+/// once each side of the render/plan line. Change one, change both.
+constexpr std::int64_t kTravelHerePacesSq = 6;
+
 /// "02:14" -- the clock as the arrival line speaks it. The wait page says
 /// whole hours because it deals in them; a walk lands mid-hour and says so.
 [[nodiscard]] std::string travelClockText(int secondOfDay) {
@@ -2577,18 +2617,42 @@ Session::TravelPlan Session::districtMapTravelPlan() const {
         plan.standingIn = true;
         return plan;
     }
-    // THE STATE REFUSALS FIRST -- they are cheap, they are the ones a player
+    // THE HERE CLAUSE -- the ship note's "zero-paces re-travel", closed on
+    // the KEY's side to match the page. The map pane already stopped selling
+    // the doorstep: within two paces of the aim the badge reads HERE and the
+    // travel row sleeps (map_view's zero-paces predicate, UI-EA-SPEC sec. 4
+    // #12). But the pane only hid the row -- the T press re-plans through
+    // THIS function, and a place's door (the anchor, the aim) can sit just
+    // OUTSIDE the footprint contains() answers for (the Counting-House's is
+    // one row north of its own rectangle), so the arrival ring lands a body
+    // at a door the strict check disowns and the key still charged a real
+    // minute to shuffle one step and re-fire the plate, with no row on
+    // screen saying it would. The predicate here is the pane's own, in the
+    // sim's integers: lround(sqrt(d2)) <= 2 paces is exactly d2 <= 6, so the
+    // page and the key can never name different doors. No band guard, also
+    // to match the page. Checked before the refusals, the way contains()
+    // above already is -- a body with nowhere to go is not refused travel,
+    // it is told it has arrived.
+    std::int32_t aimX = 0;
+    std::int32_t aimY = 0;
+    mapAimPoint(place, px, py, aimX, aimY);
+    {
+        const std::int64_t dx = aimX - px;
+        const std::int64_t dy = aimY - py;
+        if (dx * dx + dy * dy <= kTravelHerePacesSq) {
+            plan.standingIn = true;
+            return plan;
+        }
+    }
+    // THE STATE REFUSALS -- they are cheap, they are the ones a player
     // needs told about, and a refused plan owes no route.
     plan.refusal = travelRefusal();
     if (!plan.refusal.empty()) {
         return plan;
     }
     // THE ARRIVAL: the same aim point the pane's bearing and FACE IT already
-    // use (the door you knock on), snapped to standable ground on the place's
-    // own band -- the demo Cut's own landing rule.
-    std::int32_t aimX = 0;
-    std::int32_t aimY = 0;
-    mapAimPoint(place, px, py, aimX, aimY);
+    // use (the door you knock on, computed above), snapped to standable
+    // ground on the place's own band -- the demo Cut's own landing rule.
     if (!travelStandable(*tiles_, aimX, aimY, place.band, &plan.toX, &plan.toY)) {
         plan.refusal = "NO GROUND TO STAND ON.";
         return plan;
@@ -3660,7 +3724,21 @@ void Session::stepPull() {
     if (skillToastShowSteps_ > 0) {
         --skillToastShowSteps_;
     }
-    if (skillToastShowSteps_ == 0 && !skillToastQueue_.empty() && skillToastAnim_.settled()) {
+    // THE RUNG PLATE OUTRANKS THE TOAST, ONE ALREADY ON SCREEN INCLUDED: a
+    // rung is bigger than a tick, and a rung and its matching skill can be
+    // the SAME EVENT SAID TWICE (a leap that both tips THE ROOFS and levels
+    // SKYRUNNING) -- the toast used to keep counting down and drawing right
+    // through the plate landing on top of it, two notices piled on the one
+    // corner. Cut its hold the moment the plate wants the screen, the
+    // identical idiom rungPlateOutranked() already applies to the plate's
+    // own hold under a warning: dismissed, not paused, because the plate has
+    // already told the moment. A toast still in the queue is never dropped,
+    // it simply cannot start while the plate wants the screen either.
+    if (skillToastShowSteps_ > 0 && rungPlateWanted()) {
+        skillToastShowSteps_ = 0;
+    }
+    if (skillToastShowSteps_ == 0 && !skillToastQueue_.empty() && skillToastAnim_.settled() &&
+        !rungPlateWanted()) {
         skillToastText_ = std::move(skillToastQueue_.front());
         skillToastQueue_.erase(skillToastQueue_.begin());
         skillToastShowSteps_ = kCasePlateShowSteps;
@@ -3762,11 +3840,105 @@ void Session::composePullHud(HudState& hud) const {
         }
         hud.placeTickBams.push_back(pullTickBam(px, py, ax, ay));
     }
-    // THE TOAST.
+    // THE TOAST. Zero the instant the plate wants the screen -- stepPull()
+    // has already cut the hold for every step after this one; this is what
+    // keeps the toast's own eased fade-out from painting through the frame
+    // the plate first lands on (rungPlateState's identical `outranked ? 0`
+    // rule, mirrored here for the corner the plate is outranking).
     hud.skillToast = std::string_view{skillToastText_};
-    hud.skillToastFade = skillToastAnim_.value();
+    hud.skillToastFade = rungPlateWanted() ? 0.0F : skillToastAnim_.value();
     hud.skillToastDrift = skillToastAnim_.target() ? -(1.0F - skillToastAnim_.value())
                                                    : (1.0F - skillToastAnim_.value());
+}
+
+// ---------------------------------------------------------------------------
+// THE RUNG PLATE (render/rung_plate.hpp) -- the ward says so
+// ---------------------------------------------------------------------------
+
+bool Session::rungPlateOutranked() const noexcept {
+    // THE ALERT ROW'S OWN PRIORITY RULE, applied whole. `warned` is the
+    // identical three-line test drawFrame() and syncPanelAnim() each make for
+    // the bouncer's warning (their own note explains the duplication: one
+    // runs const, one mutates); a fourth copy is the price of a const path
+    // neither of them exposes, and the formula has not moved since S6. Then
+    // everything else that owns the screen: a page or a talk (the one
+    // formula, conversingNow), the court's beats, plate and page and the
+    // rope's ceremony (inCustody), and the death ceremony's veil.
+    const bool warned = !tavern_->lastWarning().empty() &&
+                        tavern_->playerStanding() != sim::Standing::Welcome;
+    return warned || conversingNow() || inCustody() || deathCeremonySteps_ > 0;
+}
+
+void Session::stepRungPlate() {
+    // 1. THE DIFF, once a step, off the same pure legend() the sheet prints
+    //    -- every rung is a function of counters the sim already hashes, so
+    //    remembering five integers on this side of the boundary is the whole
+    //    of the detection. A rise on any track queues its plate, worded out
+    //    of the authored sheet and never by this file.
+    const std::vector<LegendRise> rises = legendRise_.diff(legend());
+    if (!rises.empty()) {
+        const sim::BarkTables& barks = tavern_->dialogue().barks();
+        for (const LegendRise& rise : rises) {
+            rungPlateQueue_.push_back(rungPlateFor(rise, barks));
+        }
+    }
+    // 2. THE HOLD, spent HERE and only here, once a step -- the plate
+    //    family's rule (placePlateShowSteps_'s own note).
+    if (rungPlateShowSteps_ > 0) {
+        --rungPlateShowSteps_;
+    }
+    // 3. DISMISSED UNDER ANYTHING THAT OWNS THE SCREEN. A page key, a talk,
+    //    the court taking you, a bouncer's warning: the plate that was up is
+    //    done, its hold cut to nothing, and the ease-out hides under whatever
+    //    took the frame (rungPlateState zeroes the fade while outranked).
+    //    Never held for later: a warning can last as long as the house minds
+    //    you, and a plate surfacing minutes after its rung would be a
+    //    notice out of its moment.
+    const bool outranked = rungPlateOutranked();
+    if (rungPlateShowSteps_ > 0 && outranked) {
+        rungPlateShowSteps_ = 0;
+    }
+    // 4. THE NEXT ONE UP, off the queue, on a free screen, and only once the
+    //    last has eased all the way down -- `!target()` is what puts a beat
+    //    of black between two plates instead of swapping the words mid-hold.
+    //    Queued rises wait through pages, talks and warnings and are never
+    //    dropped. Its own cue, the heavy bell, the step it actually shows.
+    if (rungPlateShowSteps_ == 0 && !rungPlateQueue_.empty() && !outranked &&
+        rungPlateAnim_.settled() && !rungPlateAnim_.target()) {
+        rungPlateText_ = std::move(rungPlateQueue_.front());
+        rungPlateQueue_.erase(rungPlateQueue_.begin());
+        rungPlateShowSteps_ = kRungPlateHoldSteps;
+        if (audio_ != nullptr) {
+            audio_->playOneShot(audio::SoundId::LegendRung);
+        }
+    }
+    rungPlateAnim_.setTarget(rungPlateShowSteps_ > 0);
+    rungPlateAnim_.advance();
+}
+
+RungPlateState Session::rungPlateState() const noexcept {
+    RungPlateState state;
+    state.head = std::string_view{rungPlateText_.head};
+    state.prose = std::string_view{rungPlateText_.prose};
+    state.top = std::string_view{rungPlateText_.top};
+    // ZERO UNDER ANYTHING THAT OWNS THE SCREEN -- the case plate's own
+    // `conversing ? 0` rule. stepRungPlate has already cut the hold; this is
+    // what keeps the handful of frames the ease-out spends from being painted
+    // over the page, the warning or the court's plate that dismissed it.
+    state.fade = rungPlateOutranked() ? 0.0F : rungPlateAnim_.value();
+    // THE SIGN COMES OFF THE TOGGLE'S OWN TARGET, the announce plates' contract:
+    // rising (target true) it is still below its seat, closing on zero;
+    // fading (target false) it is past and drifting on up and out.
+    state.drift = rungPlateAnim_.target() ? -(1.0F - rungPlateAnim_.value())
+                                          : (1.0F - rungPlateAnim_.value());
+    return state;
+}
+
+void Session::composeRungPlate(Framebuffer& target) const {
+    if (rungPlateText_.empty()) {
+        return;
+    }
+    drawRungPlate(target, rungPlateState());
 }
 
 int Session::mapPlaceForLead(std::int32_t leadIndex) const {
@@ -4958,6 +5130,10 @@ void Session::step(const sim::MoveInput& input) {
         --casePlateShowSteps_;
     }
     casePlateAnim_.advance();
+    // THE RUNG PLATE: the Legend diff, the queue and the hold -- BEFORE the
+    // pull's own hook, so a rung and a skill level earned in the same step
+    // resolve with the plate up and the toast waiting behind it.
+    stepRungPlate();
     stepPull();  // THE PULL PACK: the one step hook (render/pull.hpp).
     // INNOVATION SPRINT ITEM #2. THE SAME PER-STEP ADVANCE, ONE PER TILE.
     characterFocusAnim_.advance();
@@ -6216,6 +6392,29 @@ void Session::moveTopicCursor(int delta) {
     // that pick the ones you can see.
     wrapCursorAndPage(topicCursor_, topicPage_, delta,
                        static_cast<int>(tavern_->dialogue().topics().size()));
+}
+
+int Session::menuCursor() const noexcept {
+    // KIT POLISH. THE SAME ROUTE moveTopicCursor() TAKES, read instead of
+    // moved -- see the header. Kept beside it on purpose: a list this
+    // router learns to move is a list this has to learn to read.
+    if (keysOpen_) {
+        return caseCursor_;
+    }
+    if (casebookOpen_) {
+        switch (menuFocus_) {
+            case kMenuFocusCharacter:
+                return characterCursor_;
+            case kMenuFocusMap:
+                return mapCursor_;
+            case kMenuFocusLetters:
+                return lettersCursor_;
+            case kMenuFocusJournal:
+            default:
+                return caseCursor_;
+        }
+    }
+    return topicCursor_;
 }
 
 void Session::nextTopicPage() {
@@ -9349,7 +9548,7 @@ std::vector<SpriteInstance> Session::actorSprites() const {
 
 std::vector<SpriteInstance> Session::actorSprites(const Camera& view) const {
     std::vector<SpriteInstance> sprites;
-    const SkyState sky = skyAt(timeOfDay_);
+    const SkyState sky = this->sky();
     const std::vector<Lamp> live = tavernLights();
     for (const sim::Actor& actor : tavern_->actors()) {
         if (!actor.present()) {
@@ -9523,7 +9722,7 @@ std::vector<SpriteInstance> Session::wardSprites(const Camera& view) const {
     if (people_ == nullptr) {
         return sprites;
     }
-    const SkyState sky = skyAt(timeOfDay_);
+    const SkyState sky = this->sky();
     // WHERE BETWEEN THE TWO TILES. The simulation says which tile a body left
     // and which one it is on; this says how far along it is THIS FRAME, and it
     // is the only place that opinion exists. Nothing here is written back --
@@ -9687,6 +9886,28 @@ std::string Session::legendLine() const {
     return clip(std::string(book.title()) + "  " + std::to_string(book.totalRungs()) + " RUNGS",
                 34);
 }
+
+namespace {
+
+/// KITFIX LANE. THE ONE PLACE A NUMBER GETS PADDED. A capture of the Kit
+/// tile (docs/frames/kit/) found the DR column starting at four different x
+/// and the C column at four more -- KNIFE's 8DR sits three cells left of
+/// LANTERN's 30DR because each row's number followed straight off ITS OWN
+/// name, and a name is not a column. Every numeric suffix on the sheet is
+/// supposed to compose through here instead of a caller hand-padding a
+/// std::to_string in place: right-justified into a field exactly as wide as
+/// the widest value the CALLER'S OWN LIST can show, so a five-row page never
+/// reserves a sixth row's width and a hundred-drams row never crowds a
+/// single-digit one.
+[[nodiscard]] std::string rightAlignedDigits(std::int32_t value, std::size_t width) {
+    std::string digits = std::to_string(value);
+    if (digits.size() < width) {
+        digits.insert(digits.begin(), width - digits.size(), ' ');
+    }
+    return digits;
+}
+
+}  // namespace
 
 std::vector<std::string> Session::characterRows() const {
     // FIVE ROWS, THEN FOUR, THEN FIVE, THEN THREE: the five Legend tracks
@@ -9877,29 +10098,66 @@ std::vector<std::string> Session::characterRows() const {
     }
     // THE LOAD, the one visible budget, then every carried row.
     rows.push_back(loadLine());
-    for (const KitRow& row : kitRows()) {
+    // KITFIX LANE. THE LIST READ TWICE: once to learn what every row's
+    // prefix, drams and worth actually are (and how wide the widest of
+    // each runs), once to compose the lines -- rightAlignedDigits()'s own
+    // header on why a row cannot pad itself against a list it cannot see.
+    // Copied out of kitRows() the one time rather than called twice, which
+    // would ask the registry the same question under two different lists if
+    // anything about it were ever to change between calls.
+    const std::vector<KitRow> kit = kitRows();
+    struct KitLine {
+        const KitRow* row = nullptr;
+        const sim::ItemDef* thing = nullptr;
+        std::string prefix;
+        std::int32_t drams = 0;
+        std::int32_t royals = 0;
+    };
+    std::vector<KitLine> lines;
+    lines.reserve(kit.size());
+    std::size_t prefixWidth = 0;
+    std::size_t dramsWidth = 0;
+    std::size_t royalsWidth = 0;
+    for (const KitRow& row : kit) {
         const sim::ItemDef* thing = items.at(row.item);
         if (thing == nullptr) {
             continue;
         }
-        std::string line;
+        KitLine entry;
+        entry.row = &row;
+        entry.thing = thing;
         if (row.count > 1) {
-            line += std::to_string(row.count) + " ";
+            entry.prefix = std::to_string(row.count) + " ";
         }
-        line += thing->name;
+        entry.prefix += thing->name;
         // Weight and worth, the reference's right-aligned numbers, in the
         // font's own letters (no icons): DR is drams, C is coin.
-        const std::int32_t drams = row.item == tavern_->items().indexOf("bale")
-                                       ? tavern_->dialogue().crimes().baleUnits() *
-                                             sim::contrabandWeight(
-                                                 tavern_->dialogue().crimes().baleGood())
-                                       : thing->drams * row.count;
-        line += "  " + std::to_string(drams) + "DR";
-        if (thing->royals > 0) {
-            line += "  " + std::to_string(thing->royals * row.count) + "C";
+        entry.drams = row.item == tavern_->items().indexOf("bale")
+                          ? tavern_->dialogue().crimes().baleUnits() *
+                                sim::contrabandWeight(tavern_->dialogue().crimes().baleGood())
+                          : thing->drams * row.count;
+        entry.royals = thing->royals > 0 ? thing->royals * row.count : 0;
+        prefixWidth = std::max(prefixWidth, entry.prefix.size());
+        dramsWidth = std::max(dramsWidth, std::to_string(entry.drams).size());
+        if (entry.royals > 0) {
+            royalsWidth = std::max(royalsWidth, std::to_string(entry.royals).size());
+        }
+        lines.push_back(std::move(entry));
+    }
+    for (const KitLine& entry : lines) {
+        const KitRow& row = *entry.row;
+        const sim::ItemDef& thing = *entry.thing;
+        // The name column PADDED to the widest name this page holds, so
+        // every row's "  NNDR" starts under the last one -- the fix itself,
+        // everything above just measured for it.
+        std::string line = entry.prefix;
+        line.append(prefixWidth - entry.prefix.size(), ' ');
+        line += "  " + rightAlignedDigits(entry.drams, dramsWidth) + "DR";
+        if (entry.royals > 0) {
+            line += "  " + rightAlignedDigits(entry.royals, royalsWidth) + "C";
         }
         if (row.inKit && tavern_->kit().isWorn(row.item)) {
-            line += thing->slot == sim::ItemSlot::Hand ? "  IN HAND" : "  WORN";
+            line += thing.slot == sim::ItemSlot::Hand ? "  IN HAND" : "  WORN";
         }
         for (std::int32_t slot = 0; slot < sim::Tavern::kQuickSlotCount; ++slot) {
             if (tavern_->slotItemIndex(slot) == row.item) {
@@ -9907,7 +10165,7 @@ std::vector<std::string> Session::characterRows() const {
                 break;
             }
         }
-        if (thing->heat > 0) {
+        if (thing.heat > 0) {
             line += "  HOT";
         }
         rows.push_back(std::move(line));
@@ -10955,8 +11213,11 @@ FrameStats Session::drawFrame(Framebuffer& target, FramePasses passes) const {
 
     // A lamp is not a hole in the sky at noon. The flame billboards fade out as
     // the daylight comes up, so a lit district reads at dusk and disappears
-    // into ordinary daylight the way it should.
-    const float lampMix = 1.0F - 0.9F * skyAt(timeOfDay_).daylight;
+    // into ordinary daylight the way it should. WEATHER: the same sky the
+    // world is drawn under, so a foggy noon keeps its lanterns, and a wind
+    // takes a little off every flame (SkyState::haloScale).
+    const SkyState skyNow = sky();
+    const float lampMix = (1.0F - 0.9F * skyNow.daylight) * skyNow.haloScale;
     for (SpriteInstance& sprite : sprites) {
         sprite.glow *= lampMix;
         sprite.halfWidth *= 0.45F + 0.55F * lampMix;
@@ -10965,6 +11226,7 @@ FrameStats Session::drawFrame(Framebuffer& target, FramePasses passes) const {
 
     RenderSettings settings = settings_;
     settings.dynamicLamps = tavernLights();
+    settings.weather = weather();
 
     // The hearth's own flame, and a candle head on each lit table.
     for (const Lamp& light : settings.dynamicLamps) {
@@ -11690,6 +11952,12 @@ FrameStats Session::drawFrame(Framebuffer& target, FramePasses passes) const {
     if (furniture) {
         drawDialogue(target, panel);
         drawHud(target, hud);
+        // THE RUNG PLATE: over the HUD, under the travel seam, the ceremonies
+        // and the court's own plate -- everything below outranks it by being
+        // painted after it. Only on THIS path, the world's: every composed
+        // page above returned before here, and a page owning the screen is
+        // exactly what dismisses the plate (stepRungPlate's rule).
+        composeRungPlate(target);
         dipTravelSeam(target, travelFadeAnim_.value());
         composeDeathCeremony(target);
         composeRopeCeremony(target);
@@ -14080,6 +14348,28 @@ void standAtFacing(Session& session, std::int32_t standX, std::int32_t standY,
     facePlayerAndSync(session, sim::q8_tile_centre(faceX), sim::q8_tile_centre(faceY));
 }
 
+/// KIT POLISH. Tilts the eye onto the boards one tile ahead -- what a body
+/// does to look at a thing it has just put down, or is about to pick up.
+/// The look down IS the beat, the same mouse a player's own hand makes; the
+/// roof line and the lock line already set their frames' pitch this way.
+///
+/// THE GEOMETRY, so nobody reaches for the item table again: the eye is
+/// 1.70 tiles up (kEyeHeightTilesQ8), TAKE reaches two tiles (kReachQ8,
+/// Manhattan from the tile's centre, and the walker lands up to an eighth
+/// of a tile off centre -- so the stand is one tile back, not two). One
+/// tile ahead a thing on the floor is 59.5 degrees below the horizon; the
+/// 90-degree lens at 16:9 sees 29.4 degrees down. No scale, lift or pitch
+/// of the MESH closes that gap -- a coil would have to stand 1.14 tiles
+/// tall to break the frame's bottom edge, and a floor item is not inside a
+/// level frame until it is three tiles off, past the reach that puts TAKE
+/// on the crosshair. Fifty degrees down puts the coil just under the
+/// reticle and its prompt, clear of the hands hanging at the foot of the
+/// frame (measured on the baseline with --pitch: -40 hides it behind the
+/// fist, -45 crowds it against the fist, -60 prints the prompt over it).
+void lookDownAtBoards(Session& session) {
+    session.body().setPitch(sim::angle_from_degrees(-50));
+}
+
 [[nodiscard]] int runKitLine(Session& session, const std::string& ending) {
     int landed = 0;
     gKitNote.clear();
@@ -14105,6 +14395,10 @@ void standAtFacing(Session& session, std::int32_t standX, std::int32_t standY,
     Session::InteractTarget aim = session.interactTarget();
     noteAim("take", aim);
     if (ending == "take") {
+        // KIT POLISH: the frame is of the coil, so the eye goes onto it --
+        // on this ending only, since the line's next stop is a lantern on a
+        // table at eye height. See lookDownAtBoards for the geometry.
+        lookDownAtBoards(session);
         return aim.verb == "TAKE" && aim.subject == "ROPE" ? 1 : 0;
     }
     session.interact();
@@ -14318,6 +14612,14 @@ void standAtFacing(Session& session, std::int32_t standX, std::int32_t standY,
     // so the coil is in reach whatever side of the tile the walk landed on
     // and nobody is standing on it for the frame.
     standAtFacing(session, 196, 62, 195, 62);
+    // KIT POLISH: and the eye down onto it. "Stepped back to look at it on
+    // the boards" was only half true -- the crosshair named the coil (TAKE
+    // is by reach, not by the look-ray) while the mesh sat sixty degrees
+    // under a level frame, and the critic found it only at a --pitch of
+    // -40. Looking at it means looking down: the mouse follows what the
+    // hand put down. See lookDownAtBoards for the numbers and why no
+    // change to the mesh could have done this instead.
+    lookDownAtBoards(session);
     bool coilDown = false;
     for (const sim::GroundItem& entry : tavern.groundItems()) {
         if (entry.item == item("rope") && entry.x == 195 && entry.y == 62) {
@@ -15919,6 +16221,255 @@ constexpr std::int32_t kEvictRefuseBeats = 8;
     return talk.journal().stagesDone(questId);
 }
 
+// ---------------------------------------------------------------------------
+// THE RUNG PLATE: --rung, a rung raised through the real verbs
+// ---------------------------------------------------------------------------
+
+/// The two beats a `--rung` run owes: the rung rose, and the plate is up.
+constexpr std::int32_t kRungBeats = 2;
+
+/// PLAYS THE SHORTEST REAL PATH TO A RUNG ON ONE TRACK and stops on the
+/// plate. Every beat is a Session call a keypress makes -- most of them the
+/// smoke's own lines' beats reused whole -- and nothing reaches into the
+/// simulation sideways, so the plate on the frame is the plate a player
+/// would see. Each track's path, and why it is the shortest:
+///
+///   wire   ONE CRACKED STRONGBOX. A burgle is eight points of THE WIRE
+///          (legend.cpp), which is the first threshold exactly: the
+///          burglary line's own box beat at two in the morning, crouched,
+///          the doors barred. Four caught lifts would do it too, and every
+///          caught lift is a bouncer's warning, which OUTRANKS the plate.
+///          The eye goes up the landing BEFORE the lid does, because the
+///          lid is the rung and nothing walks after a rung (below).
+///   roofs  THE FIRST ROOF-RUN (three) AND SKYRUNNING (two a level): in at
+///          the Gull's door and up onto its lead the roof line's own way,
+///          then the alley leapt west and east -- a leap is two uses --
+///          until the roofs will have it. Stopped on the roof it rose on,
+///          the alley under the eye.
+///   flame  TWO LEADS READ (six apiece): the trail's own first two, the
+///          Mission's back room and its flagstones, walked to by the
+///          district's router and read with the same Q, at the trail's own
+///          hour (nine, the Mission's door open) -- each of them read from
+///          the trail's own stand-back rather than off it, so the frame is
+///          the room and not a wall AND no step falls after the rung.
+///   trade  THE WARD'S BOUNTY, PAID: runContractLine whole. Six for the job
+///          and the coin over four clears the threshold at the smallest
+///          bounty the board deals (bounty_kennel, two units at four: eight
+///          coin, two points). The rung rises at the turn-in, across Cull's
+///          table, and the plate comes up the step the talk closes.
+///   law    FOUR DRINKS STOOD TO WATCHMAN CULL. A bought drink is a deed
+///          worth two of standing with the drinker's own guild
+///          (factionDeedWeight), and the Watch at eight on a clean sheet is
+///          KNOWN TO THE WATCH. The honest short road: the bounty alone
+///          leaves a man three short of it.
+///
+/// AND NOTHING WALKS AFTER A RUNG. That is the one rule every track here
+/// keeps, and the two that broke it are why it is written down: the plate
+/// holds five seconds (kRungPlateHoldSteps) and a scripted walk spends them
+/// faster than anything else in this file -- fifty tiles out of the Mission
+/// and round it, or a crouched fight for the last tile of the Gull's
+/// landing -- so the rung comes up on a body that is already framed and the
+/// drive stops there. Same rule `--trail=opened` states for the lead-opened
+/// notice, and for the same three-second reason.
+///
+/// The line ends by stepping the plate all the way up (its own eight-step
+/// rise), bounded, so `--settle-steps=0` photographs it at full strength and
+/// the default rest still leaves a second of its five-second hold.
+[[nodiscard]] RungLineResult runRungLine(Session& session, const std::string& word) {
+    RungLineResult out;
+    if (!legendTrackFromKey(word, out.track)) {
+        return out;
+    }
+    out.found = true;
+    out.from = session.legend().row(out.track).rung;
+    const auto rung = [&session, &out]() { return session.legend().row(out.track).rung; };
+    const auto risen = [&rung, &out]() { return rung() > out.from; };
+
+    switch (out.track) {
+        case sim::LegendTrack::Wire: {
+            // The burglary's beats 1, 4, 5, 6 and 7 -- crouched, in, up, the
+            // wire in a guest's box, the pins worked (a shoulder if the wire
+            // ruined it), the box emptied. The empty IS the burgle.
+            session.toggleCrouch();
+            walkToTile(session, sim::gull::kDoorX0, sim::gull::kDoorY + 1);
+            walkToTile(session, sim::gull::kStairX, sim::gull::kStairY);
+            climbAndLand(session);
+            const sim::gull::GuestRoom& box = sim::gull::kRooms[2];
+            walkToTile(session, box.standX, box.standY);
+            session.steal();
+            (void)workTheWire(session);
+            if (session.picking()) {
+                session.stopPicking();
+            }
+            if ((session.tavern().openedLocks() & (1 << 2)) == 0) {
+                session.forceLock();
+            }
+            // THE FRAME IS AIMED BEFORE THE LID GOES, AND NOTHING WALKS
+            // AFTER IT. The burglary shoots this room from the landing, four
+            // tiles out, and walks there once the box is empty -- which is
+            // right for `--burgle` and wrong here, because here the box IS
+            // the rung. The plate holds five seconds (kRungPlateHoldSteps)
+            // and that walk spends them: off the bed-foot, crouched at half
+            // pace, with the last tile fought for and never won. Same rule
+            // `--trail=opened` states in as many words -- stop on the step
+            // the notice fires and do nothing afterwards -- so the eye is
+            // put on the landing the burglar came up FIRST, with the room he
+            // is doing behind him, and then the lid.
+            session.body().setYaw(sim::bearingTo(session.body().tileX(), session.body().tileY(),
+                                                 152, 72));
+            session.body().setPitch(sim::angle_from_degrees(-8));
+            // The empty IS the burgle, so this is the step the rung rises on
+            // and the last step this track takes.
+            session.steal();
+            break;
+        }
+        case sim::LegendTrack::Roofs: {
+            // In at the door first -- the roof line's own first beat, because
+            // the house router is asked for the stair from the street
+            // otherwise -- then up the lead the way every roof line goes up.
+            walkToTile(session, sim::gull::kDoorX0, sim::gull::kDoorY + 1);
+            upOntoTheLead(session);
+            walkToTile(session, sim::gull::kFootprintX0, 70);
+            // West over the two tiles of air and back east, the skyrun's own
+            // alley beat, until the roofs will have it. Bounded exactly as
+            // that line bounds it.
+            for (int i = 0; i < 24 && !risen(); ++i) {
+                session.body().setYaw(sim::kFacingWest);
+                climbAndLand(session);
+                if (risen()) {
+                    break;
+                }
+                session.body().setYaw(sim::kFacingEast);
+                climbAndLand(session);
+            }
+            // The roof line's leap shot: the alley under the eye.
+            session.body().setPitch(sim::angle_from_degrees(-10));
+            break;
+        }
+        case sim::LegendTrack::Flame: {
+            // The trail's own loop for its first two leads: the nearest OPEN
+            // lead on this band, walked to by the district's router, read
+            // with the same Q -- stopped the moment the track rises.
+            //
+            // WITH THE TRAIL'S STAND-BACK MOVED AHEAD OF THE KEY, and that
+            // is the whole of the difference. The trail reads standing on
+            // the anchor and walks off it afterwards, which is right for
+            // `--trail` and fatal here: the Mission's flagstones sit inside
+            // the almshouse, the tile seven south of them is out on the
+            // quay, and the router's honest answer is out of the north
+            // door, round the building and back down -- fifty-odd tiles,
+            // where the plate holds five seconds (kRungPlateHoldSteps).
+            // kLookRangeTiles is four and the trail's own tail says so:
+            // four tiles off, the clue still reads. So the body backs off
+            // FIRST -- toward the side it is already on, which is the side
+            // the door is on -- turns, and reads from there. The rung rises
+            // with the frame already made and the drive takes no step after
+            // it. `--trail=opened`'s rule, applied to a rung.
+            const sim::CasebookRaws* raws = session.casebook().raws();
+            for (int guard = 0; raws != nullptr && guard < 4 && !risen(); ++guard) {
+                std::int32_t best = -1;
+                std::int32_t bestDistance = 0;
+                for (const std::int32_t index : session.casebook().known()) {
+                    if (session.casebook().state(index) != sim::LeadState::Open) {
+                        continue;
+                    }
+                    const sim::Lead& lead = raws->leads()[static_cast<std::size_t>(index)];
+                    if (lead.site.band != session.body().band()) {
+                        continue;
+                    }
+                    const std::int32_t dx = lead.site.x - session.body().tileX();
+                    const std::int32_t dy = lead.site.y - session.body().tileY();
+                    const std::int32_t distance = (dx < 0 ? -dx : dx) + (dy < 0 ? -dy : dy);
+                    if (best < 0 || distance < bestDistance) {
+                        best = index;
+                        bestDistance = distance;
+                    }
+                }
+                if (best < 0) {
+                    break;
+                }
+                const sim::Lead& lead = raws->leads()[static_cast<std::size_t>(best)];
+                const std::int32_t before = session.casebook().readCount();
+                // 1. OFF THE ANCHOR, THE WAY THE BODY CAME. Four tiles, then
+                //    three -- both inside kLookRangeTiles -- and the sign is
+                //    taken off where the body already stands, so the step
+                //    back is into the room it is walking into rather than
+                //    out of its door.
+                const std::int32_t awayX = session.body().tileX() < lead.site.x ? -1 : 1;
+                const std::int32_t awayY = session.body().tileY() < lead.site.y ? -1 : 1;
+                for (const std::int32_t back : {4, 3}) {
+                    if (walkAcrossDistrict(session, lead.site.x, lead.site.y + awayY * back) ||
+                        walkAcrossDistrict(session, lead.site.x + awayX * back, lead.site.y) ||
+                        walkAcrossDistrict(session, lead.site.x, lead.site.y - awayY * back) ||
+                        walkAcrossDistrict(session, lead.site.x - awayX * back, lead.site.y)) {
+                        break;
+                    }
+                }
+                session.body().setYaw(sim::bearingTo(session.body().tileX(),
+                                                     session.body().tileY(), lead.site.x,
+                                                     lead.site.y));
+                session.examine();
+                // 2. AND ONTO IT IF IT WOULD NOT READ FROM THERE -- the
+                //    trail's own walk, unchanged, so a lead that cannot be
+                //    stood off is still read where the trail reads it. A
+                //    nose against masonry is a worse frame than the landing
+                //    and a better one than no plate at all.
+                if (session.casebook().readCount() <= before) {
+                    bool got = walkAcrossDistrict(session, lead.site.x, lead.site.y);
+                    for (const std::int32_t offset : {1, -1, 2, -2}) {
+                        if (got) {
+                            break;
+                        }
+                        got = walkAcrossDistrict(session, lead.site.x + offset, lead.site.y) ||
+                              walkAcrossDistrict(session, lead.site.x, lead.site.y + offset);
+                    }
+                    session.body().setYaw(sim::bearingTo(session.body().tileX(),
+                                                         session.body().tileY(), lead.site.x,
+                                                         lead.site.y));
+                    session.examine();
+                }
+                if (session.casebook().readCount() <= before) {
+                    break;
+                }
+            }
+            break;
+        }
+        case sim::LegendTrack::Trade: {
+            // The bounty, whole, and closed at the end so the plate that
+            // queued behind Cull's table can come up.
+            (void)runContractLine(session, "away");
+            break;
+        }
+        case sim::LegendTrack::Law: {
+            if (speakTo(session, "Watchman Cull")) {
+                for (int i = 0; i < 8 && !risen(); ++i) {
+                    if (!pick(session, sim::TopicKind::BuyDrinkFor)) {
+                        break;
+                    }
+                }
+                session.closeConversation();
+            }
+            standBackFrom(session, "Watchman Cull");
+            break;
+        }
+    }
+
+    // THE PLATE, ALL THE WAY UP. One step arms it off the diff, eight ease it
+    // in; bounded, and a rung that did not rise leaves nothing to wait for.
+    const auto plateFullyUp = [&session]() {
+        return session.rungPlateWanted() && session.rungPlateFade() >= 1.0F;
+    };
+    for (int i = 0; i < 2 * kPageEaseSteps + 4 && risen() && !plateFullyUp(); ++i) {
+        session.stepMany(sim::MoveInput{}, 1);
+    }
+    out.to = rung();
+    out.rose = out.to > out.from;
+    out.plateUp = plateFullyUp();
+    out.head = session.rungPlateText().head;
+    out.row = session.rungPlateText().prose;
+    return out;
+}
+
 }  // namespace
 
 // ---------------------------------------------------------------------------
@@ -16979,6 +17530,25 @@ int scriptedStartHour(const SmokeRunConfig& config) noexcept {
     if (config.skyrun) {
         return 1;
     }
+    // THE RUNG PLATE. Each track's shortest path is one of the smoke's own
+    // lines' beats, so each borrows that line's hour -- see runRungLine.
+    if (!config.rung.empty()) {
+        sim::LegendTrack track = sim::LegendTrack::Wire;
+        if (legendTrackFromKey(config.rung, track)) {
+            switch (track) {
+                case sim::LegendTrack::Wire:
+                    return 2;  // the burglar's hour: doors barred, lanterns out
+                case sim::LegendTrack::Roofs:
+                    return 1;  // the skyrun's: the Gull open, the Watch gone home
+                case sim::LegendTrack::Flame:
+                    return 9;  // the trail's: nine, the Mission's door open (test_casebook's own hour for it)
+                case sim::LegendTrack::Trade:
+                    return 21;  // the bounty's: Cull and Maell in one room
+                case sim::LegendTrack::Law:
+                    return 23;  // Cull on his stool, the Watch tests' own hour
+            }
+        }
+    }
     // KIT BUILD. Two in the afternoon: daylight on the quay for the coil
     // the crosshair names and the coil put down at the end. The line moves
     // its own clock to four the next morning for the lifts (the house
@@ -17631,6 +18201,18 @@ SmokeRunResult runSmoke(const SmokeRunConfig& config) {
         result.scriptedLanded += result.skyrunStages;
     }
 
+    if (!config.rung.empty()) {
+        // THE RUNG PLATE. See SmokeRunConfig::rung and runRungLine. Two
+        // beats: the track's rung genuinely rose off the real verbs, and the
+        // plate is up, fully risen, with that rung's own words on it. A
+        // track word that is none of the five lands neither and says so.
+        result.rungResult = runRungLine(session, config.rung);
+        result.scriptedWanted += kRungBeats;
+        result.scriptedLanded += (result.rungResult.rose ? 1 : 0) +
+                                 (result.rungResult.plateUp ? 1 : 0);
+        result.talking = session.talking();
+    }
+
     // DISTRICT PHASE D. THE CROSSING, AFTER every scripted line above it and
     // BEFORE the menu-opening flags below -- which is the only order that lets
     // `--threshold=saltgate --map-overlay` photograph the stand-down rule
@@ -17996,11 +18578,19 @@ SmokeRunResult runSmoke(const SmokeRunConfig& config) {
 
     const int hour = session.timeOfDay() / 3600;
     const int minute = (session.timeOfDay() / 60) % 60;
+    // WEATHER: what sky the frame was shot under, beside the hour it was shot
+    // at, so a picture says what it shows. `weather=fog 0.83` is a fog most
+    // of the way in; `weather=clear 0.00` is the sky every earlier frame had.
+    // Two decimals, by integer arithmetic, so the line needs no <iomanip>.
+    const Weather shotUnder = session.weather();
+    const int hundredths = static_cast<int>(shotUnder.intensity * 100.0F + 0.5F);
     std::ostringstream summary;
     summary << "steps=" << config.steps << " at (" << result.endTileX << ',' << result.endTileY
             << ",z" << result.endBand << ") facing " << sim::compass_point(session.body().yaw())
             << " | " << (hour < 10 ? "0" : "") << hour << ':' << (minute < 10 ? "0" : "") << minute
-            << ' ' << session.placeLabel() << " | lamps=" << result.lampCount
+            << ' ' << session.placeLabel() << " weather=" << weatherKindName(shotUnder.kind) << ' '
+            << hundredths / 100 << '.' << (hundredths % 100 < 10 ? "0" : "") << hundredths % 100
+            << " | lamps=" << result.lampCount
             // #79: `gull=`, and it used to say `actors=`. Printed one space from
             // `ward=661` it read as "one of the six hundred is on screen", which
             // it never was: it is how many of the Gilded Gull's own seventeen
@@ -18328,6 +18918,20 @@ SmokeRunResult runSmoke(const SmokeRunConfig& config) {
                 << " known=" << talk.grimoire().size() << " forged="
                 << talk.grimoire().craftedCount()
                 << " linkcraft=" << talk.skills().level(sim::kCraftingSkill);
+    }
+    if (!config.rung.empty()) {
+        // THE RUNG PLATE. The track, the rung either side of the line, and
+        // THE WORDS ON THE PLATE -- a frame of a plate is a frame of words,
+        // and the words are the claim: the head off legend.cpp's own tables,
+        // the row out of legend_barks.json, whether the plate is genuinely
+        // up at the shutter, and whether the word named a track at all.
+        const RungLineResult& rung = result.rungResult;
+        summary << " | rung=" << config.rung << ' ' << rung.from << "->" << rung.to
+                << " row=\"" << rung.row << '"'
+                << " head=\"" << rung.head << '"'
+                << " plate=" << (rung.plateUp ? "up" : "down")
+                << " found=" << (rung.found ? "yes" : "no")
+                << " called=" << session.legend().title();
     }
     // A SCRIPTED RUN THAT FELL SHORT SAYS SO, AND FAILS.
     //

@@ -351,17 +351,42 @@ struct StaticInstance {
     /// world scene decides; the adapter draws it verbatim.
     Rgba8 pane{40, 44, 52, 255};
     /// How the adapter shades the piece: kDrawPlain (the tints alone);
-    /// kDrawHalo (a translucent quad whose alpha falls off radially over
-    /// its local XY -- gradientFrom..To is its X span, gradientFromZ..ToZ
-    /// its Y span -- a flame's glow); kDrawShaded (the tint darkened on
-    /// faces that look down and lifted on faces that look up, from the
-    /// mesh's own normals: the volume a prop needs when nothing lights it).
+    /// kDrawHalo (the piece's own mesh is NOT drawn at all -- the adapter
+    /// draws haloFanMesh() fitted to the piece's local span instead,
+    /// gradientFrom..To across and gradientFromZ..ToZ up, a flame's glow);
+    /// kDrawShaded (the tint darkened on faces that look down and lifted on
+    /// faces that look up, from the mesh's own normals: the volume a prop
+    /// needs when nothing lights it).
     std::uint8_t mode = 0;
 };
 
 inline constexpr std::uint8_t kDrawPlain = 0;
 inline constexpr std::uint8_t kDrawHalo = 1;
 inline constexpr std::uint8_t kDrawShaded = 2;
+
+/// THE HALO IS GEOMETRY, NOT A SHADER. It used to be the flame's quad with a
+/// radial alpha in the GL 3.3 blend shader -- which rlsw has not got, so the
+/// headless twin drew the same lamp as a flat pale RECTANGLE with corners in
+/// it, and the shipped exe and the gate disagreed about the brightest thing
+/// on the street. The critic called it "a quad, not a flame" and was reading
+/// the software frame.
+///
+/// So the falloff lives in vertex colours now, which both rasterizers carry
+/// verbatim: a fan of `kHaloFanSegments` wedges over `kHaloFanRings` rings in
+/// a UNIT DISC (local XY, z = 0, radius 1), white, its alpha TWO-STOP -- flat
+/// and full out to kHaloCoreFraction of the radius (the flame's own hot core,
+/// about 0.12 m on a lantern's halo) and then a smooth (1 - t)^2 skirt to
+/// exactly nothing at the rim. Zero at the rim is what lets the disc be as
+/// wide as the light it stands for: where the far edge of a tipped billboard
+/// sinks into the plaster the depth test cuts it, and a cut through alpha 0
+/// is a cut nobody can see.
+///
+/// The adapter uploads it ONCE and fits it to each halo's own local span.
+inline constexpr int kHaloFanSegments = 24;
+inline constexpr int kHaloFanRings = 5;
+inline constexpr float kHaloCoreFraction = 0.22F;
+
+[[nodiscard]] MeshData haloFanMesh();
 
 struct SceneDescription {
     SceneCamera camera;
@@ -379,11 +404,24 @@ struct SceneDescription {
     /// and before the people. Hashed like everything else here.
     std::vector<StaticPieceRef> pieces;
     std::vector<StaticInstance> statics;
+    /// WEATHER. The veils: translucent instances drawn LAST inside the 3D
+    /// pass -- after the people and the deferred glass, before the hands --
+    /// with the depth test on, so whatever stands nearer than a veil is
+    /// clear of it and whatever stands beyond it is seen through it. The
+    /// harbour fog is one of these (world_scene.hpp, buildVeil): nested
+    /// shells round the eye, far to near. Empty in clear weather, which is
+    /// every frame drawn before the weather lane. Hashed like everything
+    /// else here.
+    std::vector<Instance> veils;
 
     [[nodiscard]] const MeshData* findMesh(std::uint32_t id) const noexcept;
     [[nodiscard]] MeshData* findMesh(std::uint32_t id) noexcept;
     /// Adds or replaces the mesh with this id.
     void putMesh(MeshData mesh);
+    /// Drops the mesh with this id, if it is here. The adapter keeps its
+    /// upload (nothing references it), and the description is once again
+    /// what it was before the mesh was put.
+    void removeMesh(std::uint32_t id);
     void putTexture(TextureData texture);
 };
 

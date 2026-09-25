@@ -583,3 +583,298 @@ TEST_CASE("a missing piece falls back to the placeholder and the scene still ren
     MESSAGE("placeholder frame: " << dressed.statics.size() << " pieces described, none drawn, "
                                   << dressed.instances.size() << " chunk instances stand");
 }
+
+TEST_CASE("the halo's fan is a two-stop disc with nothing at its rim") {
+    // THE FALLOFF IS GEOMETRY NOW. It used to be a radial alpha in the GL
+    // 3.3 blend shader, which rlsw has not got: the exe drew a soft disc and
+    // the headless twin drew a flat pale RECTANGLE, and the critic reading
+    // the software frames wrote down "a quad, not a flame" -- correctly. So
+    // the falloff lives in vertex colours, which both rasterizers carry
+    // verbatim, and this case is what those colours are.
+    const MeshData fan = haloFanMesh();
+    const std::size_t segments = static_cast<std::size_t>(kHaloFanSegments);
+    const std::size_t rings = static_cast<std::size_t>(kHaloFanRings);
+    REQUIRE(fan.vertexCount() == 1U + segments * rings);
+    // One wedge per segment round the core, then two triangles per segment
+    // between each pair of rings.
+    CHECK(fan.triangleCount() == segments * (1U + 2U * (rings - 1U)));
+    CHECK(fan.indices.size() == fan.triangleCount() * 3U);
+    CHECK(fan.colours.size() == fan.vertexCount() * 4U);
+    for (const std::uint16_t index : fan.indices) {
+        CHECK(static_cast<std::size_t>(index) < fan.vertexCount());
+    }
+
+    // A UNIT DISC, flat on its own local z: the adapter fits it to each
+    // halo's local span with a matrix, so the geometry here is the shape and
+    // nothing else.
+    const auto radiusOf = [&fan](std::size_t v) {
+        const float x = fan.positions[v * 3U];
+        const float y = fan.positions[v * 3U + 1U];
+        return std::sqrt(x * x + y * y);
+    };
+    for (std::size_t v = 0; v < fan.vertexCount(); ++v) {
+        CHECK(fan.positions[v * 3U + 2U] == doctest::Approx(0.0F));
+        // White throughout: the lamp's own warmth arrives as the material
+        // tint, which is what carries the day fade and the weather's share.
+        CHECK(fan.colours[v * 4U] == 255);
+        CHECK(fan.colours[v * 4U + 1U] == 255);
+        CHECK(fan.colours[v * 4U + 2U] == 255);
+    }
+    CHECK(radiusOf(0) == doctest::Approx(0.0F));
+    CHECK(fan.colours[3] == 255);
+
+    // TWO STOPS. The core ring stands at the same full alpha as the centre
+    // -- a flat hot core about a quarter of the disc across, which is the
+    // flame itself -- and every ring outside it is strictly dimmer, down to
+    // exactly nothing at the rim. Zero at the rim is load-bearing: it is
+    // what lets the disc be wider than the 0.42 m the lamp stands off its
+    // wall, because the arc the plaster's depth cuts out of a tipped
+    // billboard is then an arc of nothing.
+    int previous = 256;
+    for (std::size_t ring = 0; ring < rings; ++ring) {
+        const std::size_t first = 1U + ring * segments;
+        const int alpha = fan.colours[first * 4U + 3U];
+        const float radius = radiusOf(first);
+        for (std::size_t seg = 0; seg < segments; ++seg) {
+            const std::size_t v = first + seg;
+            // Every vertex of a ring at that ring's own radius and alpha: a
+            // disc, not an ellipse, and no wedge brighter than its
+            // neighbour.
+            CHECK(radiusOf(v) == doctest::Approx(radius));
+            CHECK(fan.colours[v * 4U + 3U] == alpha);
+        }
+        if (ring == 0) {
+            CHECK(alpha == 255);
+            CHECK(radius == doctest::Approx(kHaloCoreFraction));
+        } else {
+            CHECK(alpha < previous);
+        }
+        previous = alpha;
+    }
+    CHECK(radiusOf(fan.vertexCount() - 1U) == doctest::Approx(1.0F));
+    CHECK(fan.colours[(fan.vertexCount() - 1U) * 4U + 3U] == 0);
+}
+
+TEST_CASE("a lantern pools on a surface: its own cell dwarfs four tiles out") {
+    // THE CRITIC'S FIRST NOTE: "the wall directly above the cap is the same
+    // value as the far corner". It was, and this is why -- the falloff is
+    // fall SQUARED over a five-tile radius, which still keeps a fifth of the
+    // lamp four tiles out; with the sky's ambient under it and the surface
+    // clamp over it a whole street of plaster sat at one value, and the halo
+    // agreed with nothing.
+    //
+    // What a SURFACE sees now is that glow shaped by its own strength
+    // (lighting.hpp, pooledGlow), which is one more power of the falloff
+    // with the peak and the radius left exactly where they were. The field
+    // itself is untouched, so the light law behind the panes reads what it
+    // always read -- this case measures the surface's copy.
+    //
+    // One probe lamp in an empty field, so the number is the law and not the
+    // Docks' own crowding.
+    namespace content = granadad::content;
+    namespace sim = granadad::sim;
+    const content::World world =
+        content::loadWorldFile(content::bakedMap(sim::docks::kWorldName));
+    const sim::TileQuery tiles(world);
+    const std::int32_t px = tiles.sizeX() / 2;
+    const std::int32_t py = tiles.sizeY() / 2;
+    const auto pz = static_cast<std::int32_t>(sim::docks::kSpawnBand);
+    const std::vector<render::Lamp> one{
+        render::Lamp{"probe", px, py, pz, 20, render::LampWarmth::Lantern}};
+    const render::LampGlow pool = render::LampGlow::build(tiles, one);
+    const auto valueAt = [&pool, px, py, pz](std::int32_t d) {
+        const render::Rgb g = render::pooledGlow(pool.at(px + d, py, pz));
+        return (g.r + g.g + g.b) / 3.0F;
+    };
+    const float own = valueAt(0);
+    const float oneOut = valueAt(1);
+    const float twoOut = valueAt(2);
+    const float fourOut = valueAt(4);
+    REQUIRE(own > 0.5F);
+    // The lamp's own cell and the tile beside it come through at full
+    // strength: NOTHING GOT BRIGHTER, and nothing blows out that did not
+    // blow out before.
+    const render::Rgb rawOwn = pool.at(px, py, pz);
+    CHECK(own == doctest::Approx((rawOwn.r + rawOwn.g + rawOwn.b) / 3.0F));
+    CHECK(oneOut < own);
+    CHECK(oneOut > 0.8F * own);
+    // Two tiles off keeps a bit over half, four tiles off a twentieth. The
+    // unshaped glow the light law still reads puts that last ratio at about
+    // seven -- which is the wash the critic photographed.
+    CHECK(twoOut > 0.45F * own);
+    CHECK(twoOut < 0.7F * own);
+    CHECK(fourOut < oneOut / 12.0F);
+    // And the shaping never lifts anything: every cell is at most what the
+    // field itself holds.
+    for (std::int32_t d = 0; d <= 4; ++d) {
+        const render::Rgb raw = pool.at(px + d, py, pz);
+        CHECK(valueAt(d) <= (raw.r + raw.g + raw.b) / 3.0F + 1.0e-4F);
+    }
+    MESSAGE("lantern pool: own " << own << ", 1 tile " << oneOut << ", 2 tiles " << twoOut
+                                 << ", 4 tiles " << fourOut);
+}
+
+TEST_CASE("the lamps put light on the wall in a night frame, headless through rlsw") {
+    // THE TARWALK AT TEN AT NIGHT, from the authored spawn looking west with
+    // the Gilded Gull on the left: reviewer frame 10's own line, and the very
+    // camera the noon case above draws its eight thousand world pixels from.
+    // Drawn twice -- the district's real lamps, then the same district with
+    // no lamps at all -- and the two frames are compared PIXEL BY PIXEL. The
+    // lamps only ever add, they reach a great deal of the frame, and what
+    // stands right under one goes from the night ambient alone to most of a
+    // byte.
+    //
+    // WHY NOT THE ARM'S LENGTH VANTAGE. It stood the eye half a tile off the
+    // Gull's plaster and sampled a block in the middle of the frame, and that
+    // block came back at the night sky's own value: whatever was in it, it
+    // was not lit plaster, so there was nothing there to measure. The spawn
+    // is the same district and the same lamps at a range the pass is already
+    // proved to draw.
+    //
+    // WHY THE LAMPS RIDE IN LIVE rather than as the baked field, which is not
+    // a convenience: the adapter uploads a mesh once per (id, version) and a
+    // chunk's version is its rebuild count, the minute, the weather and the
+    // DYNAMIC lamp key -- the baked field is NOT in it, because in a session
+    // it never changes. Two world scenes over one district at one minute
+    // therefore hand the adapter the same id at the same version twice and
+    // the second description's colours never reach the card, which is how
+    // this case used to read its control as byte-for-byte its own lit frame.
+    // dynamicGlowAt has the same radius, peak and falloff as the baked field
+    // and colourChunk pools both through the one pooledGlow line, so what is
+    // measured here is exactly what the shipped path does.
+    //
+    // The pieces are not in this container (the Synty packs are not in the
+    // checkout), which is exactly the point: the WALL and the COBBLES are
+    // chunk mesh, lit off the glow, so this case measures the pool itself and
+    // not the lantern model.
+    if (!Backend::headlessCapable()) {
+        MESSAGE("skipped: this build renders through a GPU window, not rlsw");
+        return;
+    }
+    namespace content = granadad::content;
+    namespace sim = granadad::sim;
+    const content::World world =
+        content::loadWorldFile(content::bakedMap(sim::docks::kWorldName));
+    const sim::TileQuery tiles(world);
+    const render::TileAtlas atlas = render::TileAtlas::load(content::contentDir());
+    const std::vector<render::Lamp> lamps =
+        render::loadLamps(content::contentDir(), sim::docks::kWorldName);
+    REQUIRE_FALSE(lamps.empty());
+
+    render::Camera eye;
+    eye.x = static_cast<float>(sim::docks::kSpawnTileX) + 0.5F;
+    eye.y = static_cast<float>(sim::docks::kSpawnTileY) + 0.5F;
+    eye.z = render::bandSurface(sim::docks::kSpawnBand) +
+            static_cast<float>(sim::kEyeHeightTilesQ8) / 256.0F;
+    eye.yaw = 265.0F * 3.14159265358979323846F / 180.0F;
+    eye.pitch = 0.0F;
+    eye.hfovTan = 1.0F;
+
+    const float aspect = static_cast<float>(kWidth) / static_cast<float>(kHeight);
+    WorldScene docks(tiles, atlas, nullptr);
+    WorldSceneParams unlit;
+    unlit.timeOfDaySeconds = 22 * 3600;
+    WorldSceneParams lit = unlit;
+    lit.dynamicLamps = lamps;
+    SceneDescription withLamps;
+    SceneDescription withoutLamps;
+    docks.refresh(withLamps, eye, aspect, lit);
+    docks.refresh(withoutLamps, eye, aspect, unlit);
+
+    // THE GUARD ON ALL OF IT: every chunk mesh of the control carries a
+    // version of its own. Without that the adapter keeps the lit upload
+    // under the same id and the control draws the lit frame back, which is
+    // a control that measures nothing and passes quietly.
+    std::size_t chunkMeshes = 0;
+    std::size_t movedVersions = 0;
+    for (const MeshData& mesh : withLamps.meshes) {
+        if (mesh.id < kChunkMeshIdBase) {
+            continue;
+        }
+        ++chunkMeshes;
+        const MeshData* control = withoutLamps.findMesh(mesh.id);
+        REQUIRE(control != nullptr);
+        if (control->version != mesh.version) {
+            ++movedVersions;
+        }
+    }
+    REQUIRE(chunkMeshes > 0);
+    REQUIRE(movedVersions == chunkMeshes);
+
+    std::unique_ptr<Backend> video = Backend::open(headlessConfig());
+    REQUIRE(video != nullptr);
+    const render::Framebuffer lampFrame = drawOnce(*video, withLamps, nullptr, nullptr);
+    const render::Framebuffer noLampFrame = drawOnce(*video, withoutLamps, nullptr, nullptr);
+    REQUIRE(lampFrame.width() == kWidth);
+    REQUIRE(lampFrame.height() == kHeight);
+
+    // Channel by channel, in integers throughout, so the comparison is exact
+    // and not a float's opinion of one.
+    int brighter = 0;
+    int darker = 0;
+    int peakGain = 0;
+    double litSum = 0.0;
+    double darkSum = 0.0;
+    for (int y = 0; y < kHeight; ++y) {
+        for (int x = 0; x < kWidth; ++x) {
+            const std::uint32_t a = pixelAt(lampFrame, x, y);
+            const std::uint32_t b = pixelAt(noLampFrame, x, y);
+            int gained = 0;
+            int lost = 0;
+            for (int shift = 0; shift < 24; shift += 8) {
+                const int withLamp = static_cast<int>((a >> shift) & 0xFFU);
+                const int without = static_cast<int>((b >> shift) & 0xFFU);
+                gained += withLamp > without ? 1 : 0;
+                lost += withLamp < without ? 1 : 0;
+                peakGain = withLamp - without > peakGain ? withLamp - without : peakGain;
+                litSum += static_cast<double>(withLamp);
+                darkSum += static_cast<double>(without);
+            }
+            brighter += gained > 0 ? 1 : 0;
+            darker += lost > 0 ? 1 : 0;
+        }
+    }
+    const double channels = 3.0 * static_cast<double>(kWidth) * static_cast<double>(kHeight);
+    MESSAGE("night frame: " << brighter << " px brighter, " << darker << " darker, peak gain "
+                            << peakGain << " a channel, mean " << darkSum / channels << " -> "
+                            << litSum / channels);
+    // A lamp only ever ADDS. pooledGlow scales the lamp's own share and the
+    // sky's ambient sits under it either way, so no channel of no pixel in
+    // the district can come out darker for the lamps being lit.
+    CHECK(darker == 0);
+    // They reach the frame: plaster, cobble and timber all down the Tarwalk
+    // are inside some lamp's four and a half tiles, and a pool that faint
+    // still clears a byte.
+    CHECK(brighter > 500);
+    // And a surface at a lamp's own cell gains hard: the pool is at its peak
+    // there (0.86 of full, warm, so the red channel runs to the clamp) where
+    // the control has only the night ambient under it. An eighth of the byte
+    // range is the floor even on the procedural atlas, whose plaster and
+    // cobble are darker than the pack's.
+    CHECK(peakGain > 32);
+    CHECK(litSum > darkSum);
+    // The lamps light SURFACES and nothing else: the sky dome alone, drawn
+    // from each description (instance 0 is the dome, the noon case pins
+    // that), is the same bytes. And there is a district in front of it --
+    // without that the counts above would be a statement about an empty
+    // frame.
+    SceneDescription litSky = withLamps;
+    litSky.instances.resize(1);
+    SceneDescription darkSky = withoutLamps;
+    darkSky.instances.resize(1);
+    const render::Framebuffer litSkyFrame = drawOnce(*video, litSky, nullptr, nullptr);
+    const render::Framebuffer darkSkyFrame = drawOnce(*video, darkSky, nullptr, nullptr);
+    CHECK(litSkyFrame.pixels() == darkSkyFrame.pixels());
+    std::size_t worldPixels = 0;
+    for (std::size_t i = 0; i < lampFrame.pixels().size(); ++i) {
+        if (lampFrame.pixels()[i] != litSkyFrame.pixels()[i]) {
+            ++worldPixels;
+        }
+    }
+    CHECK(worldPixels > 1000);
+    // And the same bytes drawn again: a pool is not a random walk. The sky
+    // passes left the adapter holding the control's meshes, so this proves
+    // the lit colours go back up as well.
+    const render::Framebuffer again = drawOnce(*video, withLamps, nullptr, nullptr);
+    CHECK(again.pixels() == lampFrame.pixels());
+}

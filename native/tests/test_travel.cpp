@@ -175,11 +175,77 @@ TEST_CASE("standing in the selection offers no travel -- there is nowhere to go"
     session.stepMany(sim::MoveInput{}, 1);
     session.toggleDistrictMap();
     // The map opens with the cursor on the ground underfoot -- the body is
-    // inside its own selection, so the plan says standingIn and the foot draws
-    // YOU ARE STANDING IN IT rather than a verb.
+    // inside its own selection, so the plan says standingIn and the pane
+    // reads HERE rather than a verb.
     const Session::TravelPlan here = session.districtMapTravelPlan();
     CHECK(here.standingIn);
     CHECK_FALSE(here.available);
+}
+
+TEST_CASE("arrived, the map sells no second ticket to the door you stand at") {
+    // THE SHIP NOTE'S "ZERO-PACES RE-TRAVEL" (kw6-mapafter, kw7-press),
+    // closed on the KEY's side. The Counting-House's door -- the anchor, the
+    // travel's aim -- sits one row NORTH of its own footprint, so the
+    // arrival ring lands the body at the door with contains() still false.
+    // The pane's zero-paces predicate already reads HERE there and sleeps
+    // the row; this case pins the other half: the plan's HERE clause (the
+    // same predicate, d2 <= 6, in integers) answers standingIn, so the T
+    // press re-planning through it is inert rather than silently charging a
+    // minute to shuffle one step and re-fire the plate.
+    SessionConfig config;
+    config.contentDir = content::contentDir();
+    config.width = 640;
+    config.height = 360;
+    config.timeOfDay = 20 * 3600;
+    config.timeOfDayGiven = true;
+    Session session(config);
+    session.stepMany(sim::MoveInput{}, 1);
+    session.toggleDistrictMap();
+    REQUIRE(session.districtMapOpen());
+    REQUIRE(session.selectDistrictMapPlace("The Royal Counting-House"));
+    const Session::TravelPlan plan = session.districtMapTravelPlan();
+    REQUIRE(plan.available);
+    session.travelDistrictMapSelection();
+    REQUIRE_FALSE(session.districtMapOpen());  // the travel was taken
+
+    // The defect's own precondition, pinned so this case cannot quietly rot
+    // into the plain contains() path: the ring left the body OUTSIDE the
+    // footprint. (Content is frozen -- if a re-bake ever moves this door,
+    // this line is the one that should speak up.)
+    const std::vector<MapPlace>& places = mapPlaces();
+    const MapPlace* house = nullptr;
+    for (const MapPlace& p : places) {
+        if (p.name == "The Royal Counting-House") {
+            house = &p;
+        }
+    }
+    REQUIRE(house != nullptr);
+    CHECK_FALSE(house->contains(session.body().tileX(), session.body().tileY()));
+
+    // Reopen on the same selection: the plan says you are standing in it,
+    // and no travel is on offer.
+    session.toggleDistrictMap();
+    REQUIRE(session.districtMapOpen());
+    REQUIRE(session.selectDistrictMapPlace("The Royal Counting-House"));
+    const Session::TravelPlan again = session.districtMapTravelPlan();
+    CHECK(again.standingIn);
+    CHECK_FALSE(again.available);
+    // And the page can price no ticket: a standingIn plan leaves the state's
+    // travel row empty -- no cost, no refusal -- matching the pane's own
+    // sleeping row, so the page and the key agree at the door.
+    const DistrictMapState paneState = session.districtMapState();
+    CHECK(paneState.travelCost.empty());
+    CHECK(paneState.travelRefusal.empty());
+
+    // The press is inert: no minute charged, no step taken, the page still up.
+    const int clock = session.timeOfDay();
+    const std::int32_t atX = session.body().tileX();
+    const std::int32_t atY = session.body().tileY();
+    session.travelDistrictMapSelection();
+    CHECK(session.timeOfDay() == clock);
+    CHECK(session.body().tileX() == atX);
+    CHECK(session.body().tileY() == atY);
+    CHECK(session.districtMapOpen());
 }
 
 // ---------------------------------------------------------------------------

@@ -102,7 +102,218 @@ Rgb dynamicGlowAt(const std::vector<Lamp>& lamps, std::int32_t x, std::int32_t y
     return Rgb{red * norm * intensity, green * norm * intensity, blue * norm * intensity};
 }
 
-SkyState skyAt(int timeOfDaySeconds) {
+// ---------------------------------------------------------------------------
+// weather
+// ---------------------------------------------------------------------------
+
+namespace {
+
+/// splitmix64's finaliser: the one integer mixer this file draws with. Every
+/// draw is this over (seed, day, salt), so the same three numbers give the
+/// same draw on every machine -- there is no stream and no position.
+[[nodiscard]] constexpr std::uint64_t splitmix(std::uint64_t x) noexcept {
+    x += 0x9E3779B97F4A7C15ULL;
+    x = (x ^ (x >> 30)) * 0xBF58476D1CE4E5B9ULL;
+    x = (x ^ (x >> 27)) * 0x94D049BB133111EBULL;
+    return x ^ (x >> 31);
+}
+
+[[nodiscard]] constexpr std::uint64_t weatherDraw(std::uint64_t seed, std::int32_t day,
+                                                  std::uint32_t salt) noexcept {
+    const auto d = static_cast<std::uint64_t>(static_cast<std::int64_t>(day));
+    return splitmix(seed + d * 0x9E3779B97F4A7C15ULL +
+                    static_cast<std::uint64_t>(salt) * 0xD1B54A32D192ED03ULL);
+}
+
+/// The salts, named. A period's own draws are salted by its index too.
+constexpr std::uint32_t kSaltPeriodCount = 1;
+constexpr std::uint32_t kSaltPeriodEdge = 16;
+constexpr std::uint32_t kSaltPeriodKind = 32;
+constexpr std::uint32_t kSaltPeriodPeak = 48;
+
+constexpr std::int32_t kMinutesPerDay = 1440;
+/// A period edge lands within an hour either side of its even split.
+constexpr std::int32_t kEdgeJitterMinutes = 60;
+/// A period eases in over its first hour and out over its last -- or a
+/// third of itself, when it is short.
+constexpr std::int32_t kRampMinutes = 60;
+
+/// How many periods START in `day`, 2..4. A day has as many cuts as
+/// periods, and the stretch before its first cut is the tail of the day
+/// before's last period.
+[[nodiscard]] std::int32_t periodCount(std::uint64_t seed, std::int32_t day) noexcept {
+    return 2 + static_cast<std::int32_t>(weatherDraw(seed, day, kSaltPeriodCount) % 3ULL);
+}
+
+/// The minute the day's `index`-th cut falls at (index 0..count-1): the even
+/// split on the half-offsets (two periods cut at 06:00 and 18:00, four at
+/// 03:00, 09:00, 15:00 and 21:00), jittered within an hour either side.
+/// Strictly inside the day, strictly increasing in index.
+[[nodiscard]] std::int32_t periodEdge(std::uint64_t seed, std::int32_t day, std::int32_t count,
+                                      std::int32_t index) noexcept {
+    const std::int32_t even = (kMinutesPerDay * (2 * index + 1)) / (2 * count);
+    const std::int32_t jitter =
+        static_cast<std::int32_t>(weatherDraw(seed, day, kSaltPeriodEdge + static_cast<std::uint32_t>(index)) %
+                                  static_cast<std::uint64_t>(2 * kEdgeJitterMinutes + 1)) -
+        kEdgeJitterMinutes;
+    return even + jitter;
+}
+
+/// The kind a period gets, by the hour its middle sits in. The bands and
+/// their weights (out of 100). Clear leads everywhere; fog is the most
+/// common thing that is not, and it is a dawn, dusk and night thing.
+///
+///                 clear  overcast  fog  wind
+///   night  21-05    42      16      32    10
+///   edges  05-09    34      18      38    10     dawn and dusk: the fog's hours
+///          17-21
+///   day    09-17    48      22      12    18
+[[nodiscard]] WeatherKind periodKind(std::uint64_t seed, std::int32_t day, std::int32_t index,
+                                     std::int32_t midMinute) noexcept {
+    const std::int32_t hour = ((midMinute % kMinutesPerDay) + kMinutesPerDay) % kMinutesPerDay / 60;
+    int clear = 48;
+    int overcast = 22;
+    int fog = 12;
+    if (hour < 5 || hour >= 21) {
+        clear = 42;
+        overcast = 16;
+        fog = 32;
+    } else if (hour < 9 || hour >= 17) {
+        clear = 34;
+        overcast = 18;
+        fog = 38;
+    }
+    const int roll = static_cast<int>(
+        weatherDraw(seed, day, kSaltPeriodKind + static_cast<std::uint32_t>(index)) % 100ULL);
+    if (roll < clear) {
+        return WeatherKind::Clear;
+    }
+    if (roll < clear + overcast) {
+        return WeatherKind::Overcast;
+    }
+    if (roll < clear + overcast + fog) {
+        return WeatherKind::Fog;
+    }
+    return WeatherKind::Wind;
+}
+
+/// How strong a period gets, 0.55..1.0. Zero for a clear one.
+[[nodiscard]] float periodPeak(std::uint64_t seed, std::int32_t day, std::int32_t index,
+                               WeatherKind kind) noexcept {
+    if (kind == WeatherKind::Clear) {
+        return 0.0F;
+    }
+    const auto draw = static_cast<float>(
+        weatherDraw(seed, day, kSaltPeriodPeak + static_cast<std::uint32_t>(index)) % 1000ULL);
+    return 0.55F + 0.45F * (draw / 999.0F);
+}
+
+}  // namespace
+
+WeatherPeriod weatherPeriodAt(std::uint64_t worldSeed, std::int32_t day,
+                              int timeOfDaySeconds) noexcept {
+    const int wrapped = ((timeOfDaySeconds % kSecondsPerDay) + kSecondsPerDay) % kSecondsPerDay;
+    const std::int32_t minute = wrapped / 60;
+
+    // The cuts of this day, and the one at or before `minute`.
+    const std::int32_t count = periodCount(worldSeed, day);
+    std::int32_t startDay = day;
+    std::int32_t startIndex = 0;
+    std::int32_t startMinute = 0;
+    std::int32_t endMinute = 0;
+    bool found = false;
+    for (std::int32_t i = count - 1; i >= 0; --i) {
+        const std::int32_t edge = periodEdge(worldSeed, day, count, i);
+        if (edge <= minute) {
+            found = true;
+            startIndex = i;
+            startMinute = edge;
+            endMinute = i + 1 < count
+                            ? periodEdge(worldSeed, day, count, i + 1)
+                            : kMinutesPerDay + periodEdge(worldSeed, day + 1, periodCount(worldSeed, day + 1), 0);
+            break;
+        }
+    }
+    if (!found) {
+        // Before the day's first cut: the period is yesterday's last, run
+        // on through midnight.
+        startDay = day - 1;
+        const std::int32_t yesterday = periodCount(worldSeed, startDay);
+        startIndex = yesterday - 1;
+        startMinute = periodEdge(worldSeed, startDay, yesterday, startIndex) - kMinutesPerDay;
+        endMinute = periodEdge(worldSeed, day, count, 0);
+    }
+
+    WeatherPeriod period;
+    period.startMinute = startMinute;
+    period.endMinute = endMinute;
+    period.kind = periodKind(worldSeed, startDay, startIndex, (startMinute + endMinute) / 2);
+    period.peak = periodPeak(worldSeed, startDay, startIndex, period.kind);
+    return period;
+}
+
+Weather weatherFor(std::uint64_t worldSeed, std::int32_t day, int timeOfDaySeconds) noexcept {
+    const WeatherPeriod period = weatherPeriodAt(worldSeed, day, timeOfDaySeconds);
+    Weather weather;
+    weather.kind = period.kind;
+    if (period.kind == WeatherKind::Clear) {
+        return weather;
+    }
+    const int wrapped = ((timeOfDaySeconds % kSecondsPerDay) + kSecondsPerDay) % kSecondsPerDay;
+    const float now = static_cast<float>(wrapped) / 60.0F;
+    const float start = static_cast<float>(period.startMinute);
+    const float end = static_cast<float>(period.endMinute);
+    const float ramp =
+        std::min(static_cast<float>(kRampMinutes), std::max(1.0F, (end - start) / 3.0F));
+    // A trapezoid: up over the first ramp, flat, down over the last.
+    const float envelope =
+        smoothstep(start, start + ramp, now) * (1.0F - smoothstep(end - ramp, end, now));
+    weather.intensity = std::clamp(period.peak * envelope, 0.0F, 1.0F);
+    return weather;
+}
+
+float Weather::windGain() const noexcept {
+    switch (kind) {
+        case WeatherKind::Wind:
+            return 1.0F + 1.4F * intensity;
+        case WeatherKind::Fog:
+            return 1.0F - 0.35F * intensity;
+        case WeatherKind::Overcast:
+            return 1.0F + 0.15F * intensity;
+        case WeatherKind::Clear:
+            break;
+    }
+    return 1.0F;
+}
+
+std::string_view weatherKindName(WeatherKind kind) noexcept {
+    switch (kind) {
+        case WeatherKind::Clear:
+            return "clear";
+        case WeatherKind::Overcast:
+            return "overcast";
+        case WeatherKind::Fog:
+            return "fog";
+        case WeatherKind::Wind:
+            return "wind";
+    }
+    return "clear";
+}
+
+bool parseWeatherKind(std::string_view name, WeatherKind& out) noexcept {
+    for (int i = 0; i < kWeatherKindCount; ++i) {
+        const auto kind = static_cast<WeatherKind>(i);
+        if (name == weatherKindName(kind)) {
+            out = kind;
+            return true;
+        }
+    }
+    return false;
+}
+
+SkyState skyAt(int timeOfDaySeconds) { return skyAt(timeOfDaySeconds, Weather{}); }
+
+SkyState skyAt(int timeOfDaySeconds, const Weather& weather) {
     const int wrapped = ((timeOfDaySeconds % kSecondsPerDay) + kSecondsPerDay) % kSecondsPerDay;
     const float hour = static_cast<float>(wrapped) / 3600.0F;
 
@@ -152,6 +363,84 @@ SkyState skyAt(int timeOfDaySeconds) {
     sky.fog = lerp(sky.skyHorizon * 0.75F, sky.skyHorizon, 0.5F);
     // Fog closes in at night: the district should swallow its own far end.
     sky.fogDistance = 17.0F + 24.0F * daylight;
+
+    // THE CLEAR SKY ENDS HERE, and everything pinned before the weather lane
+    // is a picture of it. A clear Weather returns it untouched -- not
+    // "nearly": the same bytes -- which is what keeps every existing frame
+    // and every sky test where it was.
+    if (weather.clear()) {
+        return sky;
+    }
+
+    // ---- the weather, by intensity ---------------------------------------
+    //
+    // Everything below is a lerp from the clear sky by `i`, so a period that
+    // is easing in eases the whole picture in with it and no consumer sees
+    // a step. The clear fogDistance is kept aside: the 3D veil is what the
+    // weather adds OVER it (SkyState::veil), never the clear day's own fog.
+    const float i = std::clamp(weather.intensity, 0.0F, 1.0F);
+    const float clearDensity = 1.0F / sky.fogDistance;
+    switch (weather.kind) {
+        case WeatherKind::Fog: {
+            // Harbour fog. Milky by day, a cold grey-blue at night that
+            // lifts the blacks a shade -- the lamps' own light scattered
+            // back -- and at last light it takes a little of the sodium
+            // wash. The fog IS the sky at full: the horizon goes to it and
+            // the zenith most of the way.
+            const Rgb nightFog{0.085F, 0.100F, 0.135F};
+            const Rgb dayFog{0.70F, 0.72F, 0.74F};
+            Rgb fogTarget = lerp(nightFog, dayFog, daylight);
+            fogTarget = lerp(fogTarget, Rgb{0.42F, 0.24F, 0.15F}, duskness * 0.25F);
+            sky.fog = lerp(sky.fog, fogTarget, i);
+            sky.skyHorizon = lerp(sky.skyHorizon, fogTarget, i);
+            sky.skyTop = lerp(sky.skyTop, fogTarget, 0.85F * i);
+            // Flatter light: a shade down by day, a shade up and cold at
+            // night, so a lit face and a shaded one sit closer together.
+            const Rgb flat = sky.ambient * (0.92F + 0.12F * (1.0F - daylight)) +
+                             Rgb{0.0F, 0.006F, 0.012F} * (1.0F - daylight);
+            sky.ambient = lerp(sky.ambient, flat, i);
+            // Eight tiles by day, six and a half at night, at full -- lerped
+            // as DENSITY so half a fog is half the fog and not a tenth.
+            const float fullDistance = 6.5F + 1.5F * daylight;
+            const float density = clearDensity + (1.0F / fullDistance - clearDensity) * i;
+            sky.fogDistance = 1.0F / density;
+            sky.daylight = daylight * (1.0F - 0.20F * i);
+            break;
+        }
+        case WeatherKind::Overcast: {
+            // A lid on the sky: the band flattened to one cool grey between
+            // the zenith and the horizon, the dusk wash mostly gone under it,
+            // the light cooler and a touch dimmer -- which is what makes a
+            // lit window read warm by contrast.
+            const Rgb mid = lerp(sky.skyTop, sky.skyHorizon, 0.55F);
+            const Rgb flat{mid.r * 0.93F * 0.94F, mid.g * 0.955F * 0.94F, mid.b * 0.94F};
+            sky.skyTop = lerp(sky.skyTop, flat, i);
+            sky.skyHorizon = lerp(sky.skyHorizon, flat, 0.75F * i);
+            const Rgb cool{sky.ambient.r * 0.86F, sky.ambient.g * 0.90F, sky.ambient.b * 0.97F};
+            sky.ambient = lerp(sky.ambient, cool, i);
+            sky.fog = lerp(sky.skyHorizon * 0.75F, sky.skyHorizon, 0.5F);
+            // A little more haze, no more than that.
+            const float density = clearDensity * (1.0F + 0.25F * i);
+            sky.fogDistance = 1.0F / density;
+            sky.daylight = daylight * (1.0F - 0.15F * i);
+            break;
+        }
+        case WeatherKind::Wind: {
+            // Clear-ish and blustering: the air scoured a little clearer,
+            // the zenith a touch deeper, the lanterns guttering. Mostly
+            // heard -- see Weather::windGain.
+            const float density = clearDensity / (1.0F + 0.3F * i);
+            sky.fogDistance = 1.0F / density;
+            sky.skyTop = sky.skyTop * (1.0F - 0.06F * i);
+            sky.haloScale = 1.0F - 0.30F * i;
+            break;
+        }
+        case WeatherKind::Clear:
+            break;
+    }
+    // What the 3D pass adds round the eye: the density over the clear
+    // day's, never less than nothing (wind clears, it does not veil).
+    sky.veil = std::max(0.0F, 1.0F / sky.fogDistance - clearDensity);
     return sky;
 }
 

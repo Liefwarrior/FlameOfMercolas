@@ -87,3 +87,88 @@ and every pinned pool, gait and damage number moves with it, so it is its own ga
 budget already reads the effective sheet and follows the day it lands. The Watch does not search
 the Kit for a stolen coat, heat rides the sack as before. A stolen thing dropped becomes nobody's.
 Corpse kits are fixed per role.
+
+## The kitfix, 2026-09-25
+
+The critic's line: 5/10. Four findings off B01/B03/B05/B06 -- the kit sheet, a bare slot press, the
+`--quickbar` shutter, the same sheet at 2560x1440.
+
+1. "Numeric columns are ragged: in B06 the DR values start at four different x, the C values at
+   four more." KNIFE's `8DR` sat three cells left of LANTERN's `30DR` because each row's number
+   followed straight off ITS OWN name and a name is not a column.
+2. "Higher resolution shows LESS text ... the epithet row butts the divider with no gutter ...
+   'MORE (3/3)' overhangs the tile border."
+3. "The quick bar fails its own claim: B05 (`--quickbar`) has no strip at all; at B03 (`--kit
+   slot`) it is there but the viewmodel blade crosses it and the unselected digits are near-
+   invisible grey."
+
+What moved.
+
+- **The DR/C columns.** `characterRows()` in `native/src/render/session.cpp` now reads the carried
+  list twice: once to learn the widest name, the widest DR and the widest C this page's OWN rows
+  will print, once to compose each line against those three widths through one helper,
+  `rightAlignedDigits()`. Every row's `DR` and `C` end under the last one now, whatever the name in
+  front of them runs. `test_character.cpp` pins the padded strings for a five-item kit and, in its
+  own case, reads the fix off three differently-named rows (COAT, LANTERN, ROPE) rather than off a
+  screenshot.
+- **The tile border.** Two bugs in `native/src/render/menu_view.cpp`'s `drawTile()`: the epithet
+  row (row 1 of an unfocused tile -- THE GILDED GULL under THE CHART) clipped to the bare pane
+  width with no cell of air before the divider, the one row on that pane that did not leave one.
+  And the paginated list's own `MORE (n/n)` foot was the one row on the whole surface drawn with a
+  raw `drawCellText`, no `clipLabel` -- every OTHER row on the tile goes through it. Both now leave
+  or take the same one-cell gutter the rest of the vocabulary already keeps.
+- **The `--quickbar` shutter.** `Session::showQuickBar()` used to snap the strip to fully open only
+  from a dead stop (`quickBarAnim_.value() <= 0.0F`) -- right for the very first press of a fresh
+  session, wrong for `SmokeRunConfig::quickbar`'s own script, which opens the Grimoire, walks a
+  crafting onto a slot, CLOSES THE PAGE, then presses the number. Closing the Grimoire mid-sequence
+  stands the strip down first; re-arming it a moment later hit `setTarget(true)`'s "resume from
+  wherever it had got to" rule, which is correct for a live player and wrong for a shutter with no
+  frames left to resume across. It snaps every time now -- a no-op if the strip was already open,
+  the fix if it was not. `session.hpp` gains `quickBarFadeValue()` beside `quickBarWanted()` so a
+  case can read the drawn alpha directly instead of inferring it from a screenshot; `test_hud_diet.cpp`
+  pins a session mid-fall at 0.5, replays the shutter's own four calls with zero `step()`s between
+  them, and checks it lands on exactly 1.0.
+- **The digits and the strip's own y.** `hud.cpp`'s quick bar strip: unselected digits took
+  `kPlateBone` at a bare 0.35 alpha for an unloaded slot, which is the aim reticle's own solved
+  problem (`kAimNote`'s header) reinvented dimmer. They read at `kAimNote`'s ink now, with a 0.75
+  floor -- the equipped cell keeps its inverted knockout, which is the one digit meant to read as
+  SELECTED. And the strip buys one row of air before its own `take()`, always, not only when an
+  earlier row happened to pad it there -- with nothing else on the band (the common case a number
+  press interrupts) the strip used to land on the very first slot, right above the health bar,
+  which is exactly the footprint the drawn hand and its blade rest in.
+
+What did not move, and why. Finding 2's other half -- "the chart truncates to 'MISSION OF THE.' at
+2560 vs 'MISSION OF THE FLA.' at 1600" -- is real and the cause is found: `panelMetric()` sizes
+every terminal-register page off `hudMinorScale(height)` alone, and that function's cell width
+grows a little FASTER than linearly with height (the flat `-1` in `hudScale(height) - 1` matters
+less as height grows), so at a fixed aspect ratio the number of cells across a page falls as the
+window grows, asymptotically, forever. It is not new and it is not a rounding slip: this file's own
+`kit-sheet-960x540.png` row is captured at 960x540 rather than 1920x1080 for exactly this reason
+(see `casebook_page.cpp`'s own comment on `kMasterShare`, "hudMinorScale steps up with height"), and
+the same arithmetic already gives 640x360 MORE cells across than 960x540 -- 128 against 96 -- two of
+the five sizes this whole build is captured and pinned at. A fix that holds cells-across
+non-decreasing as the window grows has to change `hudScale()`/`hudMinorScale()`/`panelMetric()`
+themselves, which every composed page in the game sizes itself off, and there is no toolchain in
+this worktree to rebuild and run the suite that arithmetic is pinned against. Wrong here is worse
+than slow, so this pass leaves it named rather than guessed at: a lane with a build and the room to
+walk every capture size belongs on it next.
+
+Reviewer command lines, off `dist\granadad.exe` on the gated build, each with
+`--settle-steps=0 --music-off --scale=1 --hold --smoke=0`:
+
+```
+dist\granadad.exe --smoke=0 --hold --width=1280 --height=720 --scale=1 --music-off --settle-steps=0 --kit --screenshot=docs\frames\kit\kitfix-kit-1280x720.png
+dist\granadad.exe --smoke=0 --hold --width=1600 --height=900 --scale=1 --music-off --settle-steps=0 --kit --screenshot=docs\frames\kit\kitfix-kit-1600x900.png
+dist\granadad.exe --smoke=0 --hold --width=2560 --height=1440 --scale=1 --music-off --settle-steps=0 --kit --screenshot=docs\frames\kit\kitfix-kit-2560x1440.png
+dist\granadad.exe --smoke=0 --hold --width=1280 --height=720 --scale=1 --music-off --settle-steps=0 --character --screenshot=docs\frames\kit\kitfix-character-1280x720.png
+dist\granadad.exe --smoke=0 --hold --width=1600 --height=900 --scale=1 --music-off --settle-steps=0 --character --screenshot=docs\frames\kit\kitfix-character-1600x900.png
+dist\granadad.exe --smoke=0 --hold --width=2560 --height=1440 --scale=1 --music-off --settle-steps=0 --character --screenshot=docs\frames\kit\kitfix-character-2560x1440.png
+dist\granadad.exe --smoke=0 --hold --width=1280 --height=720 --scale=1 --music-off --settle-steps=0 --quickbar --screenshot=docs\frames\kit\kitfix-quickbar-1280x720.png
+dist\granadad.exe --smoke=0 --hold --width=1600 --height=900 --scale=1 --music-off --settle-steps=0 --quickbar --screenshot=docs\frames\kit\kitfix-quickbar-1600x900.png
+dist\granadad.exe --smoke=0 --hold --width=2560 --height=1440 --scale=1 --music-off --settle-steps=0 --quickbar --screenshot=docs\frames\kit\kitfix-quickbar-2560x1440.png
+```
+
+None of these are shot yet -- no toolchain in this worktree, the orchestrator's gate takes it from
+here. What to look for: DR/C sharing an end column on the kit sheet at all three widths, the chart
+tile's epithet clear of the divider, `MORE (n/n)` never past its own tile, and the quickbar strip up
+and snapped (not a sliver) the instant the `--quickbar` shutter fires.
