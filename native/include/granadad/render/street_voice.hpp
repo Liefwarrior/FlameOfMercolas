@@ -107,6 +107,10 @@ struct VoiceLine {
     std::string key;
     /// The speaker's ledger id: the Gull's 1..17, or kWardSpeakerIdBase + id.
     std::int32_t actorId = -1;
+    /// OVERHEARD ONLY: the other half of the exchange, the same way, or -1.
+    /// The line is one side of a talk between two bodies; a frame of it
+    /// wants both, and the shot needs to know who the second one is.
+    std::int32_t partnerId = -1;
     VoiceChannel channel = VoiceChannel::Pass;
     /// The step it was said on.
     std::int32_t step = 0;

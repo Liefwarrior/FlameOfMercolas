@@ -412,8 +412,11 @@ void StreetVoice::step(const VoiceScene& scene) {
     }
     if (scene.talking) {
         // The person in front of you owns the panel; the street holds its
-        // tongue. The goodbye arrives through speakFarewell as the panel
-        // closes.
+        // tongue, and what it was saying steps aside -- the row is not drawn
+        // under a panel anyway (Session::syncVoiceAnim), so a line left
+        // holding there is state disagreeing with the screen. The goodbye
+        // arrives through speakFarewell as the panel closes.
+        standDown();
         return;
     }
     if (stepPass(scene)) {
@@ -871,15 +874,15 @@ bool StreetVoice::stepOverheard(const VoiceScene& scene) {
         if (!speakerFree(speaker.speakerId, scene.step, kOverheardSpeakerCooldownSteps)) {
             continue;
         }
-        bool company = false;
+        std::int32_t company = -1;
         for (const Body& other : near) {
             if (other.speakerId != speaker.speakerId &&
                 tilesApart(speaker.x, speaker.y, other.x, other.y) <= 1) {
-                company = true;
+                company = other.speakerId;
                 break;
             }
         }
-        if (!company) {
+        if (company < 0) {
             continue;
         }
         sim::JobFamily family = sim::JobFamily::Serf;
@@ -899,6 +902,7 @@ bool StreetVoice::stepOverheard(const VoiceScene& scene) {
             continue;  // this mouth's cells are spent; the next pair may not be
         }
         line.name = std::move(name);
+        line.partnerId = company;
         line.channel = VoiceChannel::Overheard;
         say(std::move(line));
         return true;

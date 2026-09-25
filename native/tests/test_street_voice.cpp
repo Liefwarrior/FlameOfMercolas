@@ -44,6 +44,7 @@
 #include <algorithm>
 #include <set>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "granadad/content/content_dir.hpp"
@@ -53,6 +54,7 @@
 #include "granadad/sim/barks.hpp"
 #include "granadad/sim/dialogue.hpp"
 #include "granadad/sim/docks.hpp"
+#include "granadad/sim/stealth.hpp"
 #include "granadad/sim/world_hash.hpp"
 
 namespace content = granadad::content;
@@ -877,6 +879,113 @@ TEST_CASE("the one you talk to in the Gull holds still and faces you, and moves 
     CHECK(goodbye.name == session.tavern().actorById(who)->name());
 }
 
+TEST_CASE("a witness to a blow turns to look at it, and a witness to a bought drink does not") {
+    // THE REACT FRAME'S OWN RULE, in the room: Tavern::spreadWitness turns
+    // every body that SAW violence (Struck, DrewSteel, Slew) toward it --
+    // one at its post, drinking, working or watching -- and turns nobody
+    // for a bought drink or a lifted purse, so the gate's tavern driver
+    // (which buys and talks and never swings) hashes as it always did. The
+    // critic's frame had the witness in profile to the bar while his line
+    // said he saw it.
+    render::SessionConfig config;
+    config.contentDir = content::contentDir();
+    config.timeOfDay = 20 * 3600;
+    render::Session session(config);
+    session.placeBodyAt(gull::kBartenderX, gull::kBartenderY + 1, gull::kGroundBand);
+    session.stepMany(sim::MoveInput{}, kStepsPerSecond);
+    // A drinking patron at his stool who is NOT the one about to be hit and
+    // who can see the player: he keeps his stool's facing until the blow.
+    const sim::Actor* mark = session.tavern().nearestTo(session.body().x(), session.body().y(),
+                                                        2 * kSubOne);
+    REQUIRE(mark != nullptr);
+    std::int32_t witnessId = -1;
+    Angle before = 0;
+    for (const Actor& actor : session.tavern().actors()) {
+        if (!actor.present() || actor.id() == mark->id() || actor.role() != ActorRole::Patron ||
+            actor.activity() != Activity::Drinking || !session.tavern().noticeBy(actor).seen) {
+            continue;
+        }
+        witnessId = actor.id();
+        before = actor.facing();
+        break;
+    }
+    REQUIRE(witnessId >= 0);
+    const sim::Actor* witness = session.tavern().actorById(witnessId);
+    const Angle towardPlayer = sim::bearingTo(witness->tileX(), witness->tileY(),
+                                              session.body().tileX(), session.body().tileY());
+    // A fist on the man beside you, in his sight -- the Attack key's own tap,
+    // the mark on the crosshair, until one lands (his sheet moves): Struck
+    // spreads, and the witness turns to it.
+    const std::int32_t markId = mark->id();
+    bool landed = false;
+    for (int attempt = 0; attempt < 16 && !landed; ++attempt) {
+        const sim::Actor* now = session.tavern().actorById(markId);
+        REQUIRE(now != nullptr);
+        session.body().setYaw(sim::bearingTo(session.body().tileX(), session.body().tileY(),
+                                             now->tileX(), now->tileY()));
+        session.stepMany(sim::MoveInput{}, 1);
+        const std::int32_t hpBefore = now->hp();
+        session.punch();
+        const sim::Actor* struck = session.tavern().actorById(markId);
+        landed = struck != nullptr && (struck->hp() < hpBefore || isFloored(struck->activity()));
+        session.stepMany(sim::MoveInput{}, kSwingRecoverySteps + 1);
+    }
+    REQUIRE(landed);
+    witness = session.tavern().actorById(witnessId);
+    REQUIRE(witness != nullptr);
+    INFO("witness ", witness->name(), " before=", before, " after=", witness->facing(),
+         " toward=", towardPlayer);
+    // Eight-point facing, so "toward" is the nearest of the eight to the
+    // bearing: within an eighth of a turn.
+    std::int32_t off = static_cast<std::int32_t>((witness->facing() - towardPlayer) & (kTurnFull - 1));
+    if (off > kTurnFull / 2) {
+        off -= kTurnFull;
+    }
+    CHECK(std::abs(off) <= kTurnFull / 8);
+    const sim::Memory* memory = session.tavern().dialogue().ledger().memoryOf(witnessId);
+    REQUIRE(memory != nullptr);
+    CHECK(memory->lastDeed == Deed::Struck);
+
+    // AND THE OTHER HALF, which is what keeps the gate's own tavern workload
+    // (it buys and talks and never swings) hashing as it always did: a
+    // BOUGHT DRINK spreads through the same door and turns nobody. Every
+    // facing in the room is what it was, bar the one you are talking to --
+    // talkTo's own rule, older than this lane.
+    render::SessionConfig quiet;
+    quiet.contentDir = content::contentDir();
+    quiet.timeOfDay = 20 * 3600;
+    render::Session peaceable(quiet);
+    peaceable.placeBodyAt(gull::kBartenderX, gull::kBartenderY + 1, gull::kGroundBand);
+    peaceable.stepMany(sim::MoveInput{}, kStepsPerSecond);
+    peaceable.interact();
+    REQUIRE(peaceable.talking());
+    const std::int32_t partner = peaceable.tavern().talkingTo();
+    std::vector<std::pair<std::int32_t, Angle>> facings;
+    for (const Actor& actor : peaceable.tavern().actors()) {
+        if (actor.present() && actor.id() != partner) {
+            facings.emplace_back(actor.id(), actor.facing());
+        }
+    }
+    REQUIRE(facings.size() > 4);
+    std::size_t buy = peaceable.tavern().dialogue().topics().size();
+    for (std::size_t i = 0; i < peaceable.tavern().dialogue().topics().size(); ++i) {
+        if (peaceable.tavern().dialogue().topics()[i].kind == TopicKind::BuyDrinkFor) {
+            buy = i;
+            break;
+        }
+    }
+    REQUIRE(buy < peaceable.tavern().dialogue().topics().size());
+    peaceable.chooseTopic(buy);
+    const sim::Memory* bought = peaceable.tavern().dialogue().ledger().memoryOf(partner);
+    INFO("partner ", partner, " deed=", bought == nullptr ? -1 : static_cast<int>(bought->lastDeed));
+    for (const auto& [id, was] : facings) {
+        const sim::Actor* now = peaceable.tavern().actorById(id);
+        REQUIRE(now != nullptr);
+        INFO("actor ", now->name(), " was=", was, " now=", now->facing());
+        CHECK(now->facing() == was);
+    }
+}
+
 TEST_CASE("the worded reaction is never a number, and it stands on the panel's dateline row") {
     CHECK(render::wordedReaction(0, 0).empty());
     CHECK(render::wordedReaction(0, 2) == "(THE FACE SOFTENS A HAIR)");
@@ -1000,11 +1109,17 @@ TEST_CASE("--voice=pass: a body passing on the Tarwalk says its one line, off a 
     CHECK(startsWith(played.voiceKey, "pass"));
     CHECK_FALSE(played.voiceSpeaker.empty());
     CHECK_FALSE(played.voiceRow.empty());
-    // THE FRAME IS OF THE SPEAKER: the walk turned to whoever spoke, and
-    // they are in the lens, within the talk reach the emitter used.
+    // THE FRAME IS OF THE SPEAKER: the look turned to whoever spoke, and
+    // they are in the lens -- a passer-by, so within the talk reach when the
+    // row landed and a few tiles further on by the time the row's fade has
+    // settled and the shot is taken (a second of walking at most).
     CHECK(played.voiceSpeakerInView);
     CHECK(played.voiceSpeakerTenths >= 0);
-    CHECK(played.voiceSpeakerTenths <= 10 * (render::kPassReachTiles + 1));
+    CHECK(played.voiceSpeakerTenths <= 10 * (render::kPassReachTiles + 2));
+    // AND COMPOSED, not merely in view: the look is AT them, so they are in
+    // the middle of the frame and not at its edge.
+    CHECK(played.voiceSpeakerOffDeg >= 0);
+    CHECK(played.voiceSpeakerOffDeg <= 8);
 }
 
 TEST_CASE("--voice=overheard: two bodies standing together are overheard, off an overheard key") {
@@ -1014,7 +1129,10 @@ TEST_CASE("--voice=overheard: two bodies standing together are overheard, off an
     CHECK_FALSE(played.scriptFellShort());
     CHECK(played.voiceBeats == 2);
     CHECK(startsWith(played.voiceKey, "overheard"));
+    // The look is at the MIDPOINT of the pair, so the speaker sits a little
+    // off centre and her partner the same the other way.
     CHECK(played.voiceSpeakerInView);
+    CHECK(played.voiceSpeakerOffDeg <= 15);
 }
 
 TEST_CASE("--voice=farewell: the street line, then LEAVE, and the goodbye on the row as the panel closes") {
@@ -1030,6 +1148,7 @@ TEST_CASE("--voice=farewell: the street line, then LEAVE, and the goodbye on the
     // them (the lens in their hair, the critic's rope-hand frames) -- a tile
     // and a half at the least, the talk reach at the most.
     CHECK(played.voiceSpeakerInView);
+    CHECK(played.voiceSpeakerOffDeg <= 8);
     CHECK(played.voiceSpeakerTenths >= 14);
     CHECK(played.voiceSpeakerTenths <= 29);
 }
@@ -1045,6 +1164,7 @@ TEST_CASE("--voice=moved: a reply that moved them shows a worded reaction on the
     // With the panel open the frame is about the one you are talking to:
     // in the lens, at a talking distance.
     CHECK(played.voiceSpeakerInView);
+    CHECK(played.voiceSpeakerOffDeg <= 8);
     CHECK(played.voiceSpeakerTenths >= 14);
     CHECK(played.voiceSpeakerTenths <= 29);
 }
@@ -1057,8 +1177,9 @@ TEST_CASE("--voice=react: a witness to a tap in the Gull says so, and it is not 
     CHECK(played.voiceBeats == 3);
     CHECK(startsWith(played.voiceKey, "react."));
     CHECK(played.voiceChannel == "react");
-    // The shot turned to the witness, and he is in it.
+    // The shot turned to the witness: he is in it, and in the middle of it.
     CHECK(played.voiceSpeakerInView);
+    CHECK(played.voiceSpeakerOffDeg <= 8);
 }
 
 TEST_CASE("--voice=watch: steel across the room from Cull, his halt, and his readback as he crosses it, in his name and never beside his halt") {
@@ -1085,6 +1206,11 @@ TEST_CASE("--voice=watch: steel across the room from Cull, his halt, and his rea
     // onto the west face of the table at (151,69); see the case below on why
     // the sim's own line of sight said otherwise.
     CHECK(played.voiceSpeakerInView);
+    // OFF THE BLADE, and deliberately so: the drawn sword crosses the middle
+    // of the frame, so he stands a third of the way out of it and not at the
+    // edge -- between ten and twenty-five degrees.
+    CHECK(played.voiceSpeakerOffDeg >= 10);
+    CHECK(played.voiceSpeakerOffDeg <= 25);
     const bool acrossTheRoom = played.summary.find(" apart=5") != std::string::npos ||
                                played.summary.find(" apart=4") != std::string::npos ||
                                played.summary.find(" apart=3") != std::string::npos;

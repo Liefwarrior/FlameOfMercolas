@@ -2905,7 +2905,16 @@ void Tavern::spreadWitness(std::int32_t victimId, Deed deed) {
     if (!playerKnown_) {
         return;
     }
-    for (const Actor& actor : actors_) {
+    // VOICE LANE: THEY TURN TO LOOK. A blow, a blade, a killing turns every
+    // head that saw it -- talkTo's own "the whole difference between a person
+    // and a prop", for violence. Only violence: a bought drink or a lifted
+    // purse turns nobody, so the gate's own tavern driver (which buys and
+    // talks and never swings) hashes exactly as it did. And only a body with
+    // nowhere to be: one working, drinking or watching at its post. A walker
+    // keeps walking, the fight's own men, the house's ladder and the closing
+    // Watch have facings of their own, and the floor faces the floor.
+    const bool violence = deed == Deed::Struck || deed == Deed::DrewSteel || deed == Deed::Slew;
+    for (Actor& actor : actors_) {
         if (actor.id() == victimId) {
             continue;
         }
@@ -2913,6 +2922,11 @@ void Tavern::spreadWitness(std::int32_t victimId, Deed deed) {
             continue;
         }
         dialogue_.ledger().witness(actor.id(), deed);
+        if (violence && (actor.activity() == Activity::Working ||
+                         actor.activity() == Activity::Drinking ||
+                         actor.activity() == Activity::Watching)) {
+            actor.faceToward(playerX_, playerY_);
+        }
     }
 }
 

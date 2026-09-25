@@ -4033,6 +4033,10 @@ struct SmokeRunResult {
     /// speaker, or the summary says it is not.
     bool voiceSpeakerInView = false;
     std::int32_t voiceSpeakerTenths = -1;
+    /// And how far off the middle of the frame they are, in degrees (-1 with
+    /// nobody named): in view is not the same as composed -- the field of
+    /// view is ninety degrees wide and a body at its edge is in it.
+    std::int32_t voiceSpeakerOffDeg = -1;
     /// JUSTICE BUILD: beats of the court line (--court), by its ending.
     std::int32_t courtBeats = 0;
     /// KIT BUILD: beats of the Kit line (--kit), by its ending.

@@ -12008,6 +12008,23 @@ bool cameraSightClear(const sim::TileQuery& tiles, std::int32_t fromXQ8, std::in
 
 namespace {
 
+/// A ward body on the move: sliding between two tiles this second, or
+/// walking a leg whose corner is somewhere else (targetBand == 0 is the
+/// population's own "no leg yet"). A body that has not been ticked at all
+/// looks still by both, which is why runStreetLine lets the crowd walk a
+/// couple of seconds before it asks.
+[[nodiscard]] bool wardWalking(const sim::WardActor& who) noexcept {
+    const bool sliding = who.prevX != who.x || who.prevY != who.y || who.prevBand != who.band;
+    const bool onALeg = who.targetBand != 0 && (who.targetX != who.x || who.targetY != who.y);
+    return sliding || onALeg;
+}
+
+/// A ward body standing on its tile: drawn at its centre, not sliding out
+/// of one cell into the next, and going nowhere this leg.
+[[nodiscard]] bool wardStandsStill(const sim::WardActor& who) noexcept {
+    return !wardWalking(who);
+}
+
 /// Where a ward body is DRAWN this step, Q8: the slide from its last tile
 /// to its current one by the session's own fraction of the second -- the
 /// identical arithmetic wardSprites and the 3D instancer use, so a shot
@@ -13133,16 +13150,178 @@ constexpr int kVoiceWaitSteps = 90 * sim::kStepsPerSecond;
     return false;
 }
 
-/// Turns the body to look at whoever the row names, so the frame is a
-/// picture of the speaker and not of the wall the walk ended against; a
-/// step to sync the facing, which the row's hold outlasts many times over.
-void faceTheSpeaker(Session& session) {
+/// Where a face is, above the feet, in tiles. The rigs are scaled by
+/// render::figureScaleOf's height against the person's 1.875 (the 3D
+/// instancer's own rule), and a licensed rig's crown stands about eight
+/// tenths of that figure with the face a little under it: a serf's face
+/// at a tile and a third, a watchman's a hair higher, an urchin's at a
+/// tile. Measured off the frames, not the sheet.
+[[nodiscard]] double faceHeightTiles(sim::WardType type) noexcept {
+    return 0.72 * static_cast<double>(figureScaleOf(type).heightTiles);
+}
+
+/// LOOKS AT SOMEBODY'S FACE: the yaw to the body (bearingToward), and the
+/// pitch to its face -- the eye stands a tile and three quarters up
+/// (kEyeHeightTilesQ8) and a face is lower, so a level look at a person
+/// two tiles off has their crown a hand under the horizon and their body
+/// under the frame; a person looking at a person tilts. `yawOffset` puts
+/// them off centre on purpose (the watch reveal keeps Cull clear of the
+/// drawn blade). One step to sync, as facePlayerAndSync.
+void lookAtFace(Session& session, std::int32_t xQ8, std::int32_t yQ8, sim::WardType type,
+                sim::Angle yawOffset) {
+    const std::int32_t dx = xQ8 - session.body().x();
+    const std::int32_t dy = yQ8 - session.body().y();
+    if (dx != 0 || dy != 0) {
+        session.body().setYaw(static_cast<sim::Angle>((bearingToward(session, xQ8, yQ8) + yawOffset) &
+                                                      (sim::kTurnFull - 1)));
+    }
+    const double apart = std::sqrt(static_cast<double>(dx) * static_cast<double>(dx) +
+                                   static_cast<double>(dy) * static_cast<double>(dy)) /
+                         static_cast<double>(sim::kSubOne);
+    const double eye = static_cast<double>(sim::kEyeHeightTilesQ8) / static_cast<double>(sim::kSubOne);
+    constexpr double kTwoPi = 6.283185307179586;
+    if (apart > 0.05) {
+        const double tilt = std::atan2(faceHeightTiles(type) - eye, apart);
+        session.body().setPitch(static_cast<sim::Angle>(
+            std::lround(tilt * static_cast<double>(sim::kTurnFull) / kTwoPi)));
+    }
+    session.stepMany(sim::MoveInput{}, 1);
+}
+
+/// The kind of figure the row's speaker is drawn as, for the face height.
+[[nodiscard]] sim::WardType speakerFigure(const Session& session) noexcept {
+    const VoiceLine& line = session.voice().current();
+    if (line.actorId >= sim::kWardSpeakerIdBase) {
+        const sim::WardActor* who = session.people().byId(line.actorId - sim::kWardSpeakerIdBase);
+        return who != nullptr ? who->type : sim::WardType::Serf;
+    }
+    const sim::Actor* who = session.tavern().actorById(line.actorId);
+    return who != nullptr ? figureForRole(who->role(), who->id()) : sim::WardType::Serf;
+}
+
+/// Turns the body to look at whoever the row names -- at their face -- so
+/// the frame is a picture of the speaker and not of the wall the walk ended
+/// against; a step to sync the facing, which the row's hold outlasts many
+/// times over. `yawOffset` as lookAtFace's.
+void faceTheSpeaker(Session& session, sim::Angle yawOffset = 0) {
     std::int32_t x = 0;
     std::int32_t y = 0;
     std::int32_t band = 0;
     if (speakerDrawnQ8(session, x, y, band)) {
-        facePlayerAndSync(session, x, y);
+        lookAtFace(session, x, y, speakerFigure(session), yawOffset);
     }
+}
+
+/// OVERHEARD: the frame wants BOTH halves of the exchange. Looks at the
+/// midpoint of the pair's faces -- and when the two stand on one line from
+/// the lens (the partner behind the speaker, one body in the picture) it
+/// walks, once, to the best vantage a short way off: the standable tile
+/// within three of here, two to six tiles from the nearer of the pair,
+/// with a clear lens line to both, that opens the widest angle between
+/// them -- what a person does to see who is talking. A real walk on the
+/// room's own router, then the look. `mayWalk` false only re-aims (the
+/// second call, after the row's fade has settled). Nothing when the row
+/// names no partner.
+void faceThePair(Session& session, bool mayWalk) {
+    const VoiceLine& line = session.voice().current();
+    if (line.empty() || line.partnerId < 0) {
+        faceTheSpeaker(session);
+        return;
+    }
+    const auto drawnQ8 = [&](std::int32_t id, std::int32_t& x, std::int32_t& y) {
+        if (id >= sim::kWardSpeakerIdBase) {
+            const sim::WardActor* who = session.people().byId(id - sim::kWardSpeakerIdBase);
+            if (who == nullptr || !who->visible()) {
+                return false;
+            }
+            const std::pair<std::int32_t, std::int32_t> at = wardDrawnQ8(session, *who);
+            x = at.first;
+            y = at.second;
+            return true;
+        }
+        const sim::Actor* who = session.tavern().actorById(id);
+        if (who == nullptr || !who->present()) {
+            return false;
+        }
+        x = who->x();
+        y = who->y();
+        return true;
+    };
+    std::int32_t ax = 0;
+    std::int32_t ay = 0;
+    std::int32_t bx = 0;
+    std::int32_t by = 0;
+    if (!drawnQ8(line.actorId, ax, ay) || !drawnQ8(line.partnerId, bx, by)) {
+        faceTheSpeaker(session);
+        return;
+    }
+    const sim::WardType figure = speakerFigure(session);
+    const std::int32_t band = session.body().band();
+    // The angle the pair opens from a Q8 point, in BAM, folded to a half
+    // turn: what "both in the picture" measures.
+    const auto opening = [&](std::int32_t fromX, std::int32_t fromY) {
+        constexpr double kTwoPi = 6.283185307179586;
+        const double ta = std::atan2(static_cast<double>(ax - fromX), static_cast<double>(-(ay - fromY)));
+        const double tb = std::atan2(static_cast<double>(bx - fromX), static_cast<double>(-(by - fromY)));
+        double off = std::abs(ta - tb);
+        if (off > kTwoPi / 2.0) {
+            off = kTwoPi - off;
+        }
+        return static_cast<std::int32_t>(off * static_cast<double>(sim::kTurnFull) / kTwoPi);
+    };
+    // Stacked when the two are inside a figure's width of each other at the
+    // nearer one's distance -- one body hides the other.
+    const auto stackedFrom = [&](std::int32_t fromX, std::int32_t fromY) {
+        const double da = std::hypot(static_cast<double>(ax - fromX), static_cast<double>(ay - fromY));
+        const double db = std::hypot(static_cast<double>(bx - fromX), static_cast<double>(by - fromY));
+        const double nearer = std::max(1.0, std::min(da, db)) / static_cast<double>(sim::kSubOne);
+        constexpr double kFigureWidthTiles = 0.8;
+        constexpr double kTwoPi = 6.283185307179586;
+        const std::int32_t width = static_cast<std::int32_t>(
+            std::atan(kFigureWidthTiles / nearer) * static_cast<double>(sim::kTurnFull) / kTwoPi);
+        return opening(fromX, fromY) < width;
+    };
+    if (mayWalk && stackedFrom(session.body().x(), session.body().y())) {
+        const std::int32_t px = session.body().tileX();
+        const std::int32_t py = session.body().tileY();
+        std::int32_t bestX = px;
+        std::int32_t bestY = py;
+        std::int32_t bestOpening = -1;
+        for (std::int32_t y = py - 3; y <= py + 3; ++y) {
+            for (std::int32_t x = px - 3; x <= px + 3; ++x) {
+                if (!session.tiles().standable(x, y, band)) {
+                    continue;
+                }
+                const std::int32_t cx = sim::q8_tile_centre(x);
+                const std::int32_t cy = sim::q8_tile_centre(y);
+                const double da = std::hypot(static_cast<double>(ax - cx), static_cast<double>(ay - cy)) /
+                                  static_cast<double>(sim::kSubOne);
+                const double db = std::hypot(static_cast<double>(bx - cx), static_cast<double>(by - cy)) /
+                                  static_cast<double>(sim::kSubOne);
+                const double nearer = std::min(da, db);
+                if (nearer < 2.0 || nearer > static_cast<double>(kOverheardEarshotTiles)) {
+                    continue;
+                }
+                if (!cameraSightClear(session.tiles(), cx, cy, ax, ay, band, false) ||
+                    !cameraSightClear(session.tiles(), cx, cy, bx, by, band, false)) {
+                    continue;
+                }
+                if (session.people().nearestTo(x, y, band, 0) != nullptr) {
+                    continue;
+                }
+                const std::int32_t opens = opening(cx, cy);
+                if (opens > bestOpening) {
+                    bestOpening = opens;
+                    bestX = x;
+                    bestY = y;
+                }
+            }
+        }
+        if (bestX != px || bestY != py) {
+            walkToTile(session, bestX, bestY);
+        }
+    }
+    lookAtFace(session, (ax + bx) / 2, (ay + by) / 2, figure, 0);
 }
 
 /// What `--voice=watch` owes. See runWatchRevealLine.
@@ -13341,10 +13520,20 @@ constexpr std::int32_t kWatchRevealBeats = 4;
             break;
         }
     }
+    // OFF THE BLADE. Steel is up, and the drawn blade runs from the hand at
+    // the lower right up across the middle of the frame; a man dead centre
+    // has it through his face. A third of the frame to the RIGHT of centre
+    // (eighteen degrees at this field of view) has the blade low across his
+    // legs and his face clear above it -- and the lens turned that way looks
+    // up the empty row past him rather than at the stools, so nobody else
+    // stands where the eye goes first. The left third was tried: face
+    // clear too, but the turn put a drinking patron dead centre under the
+    // prompt, and the frame read as his.
+    constexpr sim::Angle kOffTheBlade = -sim::angle_from_degrees(18);
     if (voiceRowUpFrom(session, "watch.approach")) {
-        faceTheSpeaker(session);
+        faceTheSpeaker(session, kOffTheBlade);
         session.stepMany(sim::MoveInput{}, kPageEaseSteps + 1);
-        faceTheSpeaker(session);
+        faceTheSpeaker(session, kOffTheBlade);
         if (voiceRowUpFrom(session, "watch.approach")) {
             ++landed;  // 4
         }
@@ -13360,15 +13549,47 @@ constexpr std::int32_t kWatchRevealBeats = 4;
 [[nodiscard]] int runVoiceLine(Session& session, const std::string& ending) {
     int landed = 0;
     if (ending == "pass") {
-        // THE TARWALK, WALKED. The smoke's own forward walk with its slow
-        // drift of the head, until somebody passes within the talk reach
-        // and says their one line.
-        sim::MoveInput input;
-        input.forward = 1;
+        // THE TARWALK, STOOD IN. A PASS IS SOMEBODY PASSING, and the first
+        // row off the spawn came from a serf standing in the nook beside it
+        // before the old forward walk had taken a step -- the critic's "a
+        // wall with a head on it". Two walks were tried in its place: the
+        // first draft's drift wandered off the quay onto the upper band
+        // inside ninety seconds, and a straight walk west ended in the dead
+        // end at (141,63) being begged at by a wastrel in a doorway. So the
+        // body STANDS where the game puts it, on the Tarwalk at the spawn,
+        // and looks west down the street -- the Gull's door, the queue along
+        // its wall, the quay beyond -- which is what a person does on a
+        // street corner, and waits for a line from a body ON THE MOVE
+        // (wardWalking: sliding, or a leg drawn to somewhere else), which is
+        // what the frame claims. Past half the bound it takes anybody, so a
+        // thin afternoon still gets its line.
+        session.body().setYaw(sim::kFacingWest);
+        // And a body the lens can reach: a passer-by needs no sight line to
+        // say good day (the emitter's own rule), but a frame of one does --
+        // the wastrel in that doorway said his line to a wall.
+        const auto passingSpoke = [&](bool anybody) {
+            if (!voiceRowUpFrom(session, "pass.")) {
+                return false;
+            }
+            const VoiceLine& line = session.voice().current();
+            std::int32_t sx = 0;
+            std::int32_t sy = 0;
+            std::int32_t sband = 0;
+            if (!speakerDrawnQ8(session, sx, sy, sband) || sband != session.body().band() ||
+                !cameraSightClear(session.tiles(), session.body().x(), session.body().y(), sx, sy,
+                                  sband, false) ||
+                bodyBetween(session, sx, sy, sband, line.actorId)) {
+                return false;
+            }
+            if (anybody || line.actorId < sim::kWardSpeakerIdBase) {
+                return true;
+            }
+            const sim::WardActor* who = session.people().byId(line.actorId - sim::kWardSpeakerIdBase);
+            return who != nullptr && wardWalking(*who);
+        };
         for (int i = 0; i < kVoiceWaitSteps; ++i) {
-            input.turn = (i / 90) % 4 == 3 ? 1 : 0;
-            session.step(input);
-            if (voiceRowUpFrom(session, "pass.")) {
+            session.step(sim::MoveInput{});
+            if (passingSpoke(i > kVoiceWaitSteps / 2)) {
                 break;
             }
         }
@@ -13378,9 +13599,12 @@ constexpr std::int32_t kWatchRevealBeats = 4;
             ++landed;
         }
         // 2. And the row is up off a pass key. The shot is composed on the
-        //    speaker: the walk turns to look at whoever spoke.
+        //    speaker: the look turns to whoever spoke -- to their face --
+        //    and again after the row has settled, for the ground a
+        //    passer-by covers meanwhile.
         faceTheSpeaker(session);
-        session.stepMany(sim::MoveInput{}, kPageEaseSteps + 2);
+        session.stepMany(sim::MoveInput{}, kPageEaseSteps + 1);
+        faceTheSpeaker(session);
         if (voiceRowUpFrom(session, "pass.")) {
             ++landed;
         }
@@ -13405,8 +13629,11 @@ constexpr std::int32_t kWatchRevealBeats = 4;
         if (!session.voice().current().name.empty()) {
             ++landed;  // 1. a pair stood together within earshot
         }
-        faceTheSpeaker(session);
-        session.stepMany(sim::MoveInput{}, kPageEaseSteps + 2);
+        // The shot is of the PAIR -- both halves of the exchange, and a
+        // short walk to a vantage when one stands behind the other from here.
+        faceThePair(session, true);
+        session.stepMany(sim::MoveInput{}, kPageEaseSteps + 1);
+        faceThePair(session, false);
         if (heard && voiceRowUpFrom(session, "overheard")) {
             ++landed;  // 2. the row is up off an overheard key
         }
@@ -13448,7 +13675,8 @@ constexpr std::int32_t kWatchRevealBeats = 4;
             // (faceTheSpeaker, standBackFrom); this one hadn't.
             if (const sim::WardActor* who = session.people().byId(street.actorId);
                 who != nullptr && who->visible()) {
-                facePlayerAndSync(session, sim::q8_tile_centre(who->x), sim::q8_tile_centre(who->y));
+                const std::pair<std::int32_t, std::int32_t> at = wardDrawnQ8(session, *who);
+                lookAtFace(session, at.first, at.second, who->type, 0);
             }
             return landed;
         }
@@ -13478,7 +13706,8 @@ constexpr std::int32_t kWatchRevealBeats = 4;
         // has run.
         if (const sim::WardActor* who = session.people().byId(street.actorId);
             who != nullptr && who->visible()) {
-            facePlayerAndSync(session, sim::q8_tile_centre(who->x), sim::q8_tile_centre(who->y));
+            const std::pair<std::int32_t, std::int32_t> at = wardDrawnQ8(session, *who);
+            lookAtFace(session, at.first, at.second, who->type, 0);
         }
         return landed;
     }
@@ -15539,23 +15768,6 @@ constexpr StreetTrade kStreetTrades[] = {
     {"cat", sim::WardType::Cat},          {"dog", sim::WardType::Dog},
 };
 
-/// A ward body on the move: sliding between two tiles this second, or
-/// walking a leg whose corner is somewhere else (targetBand == 0 is the
-/// population's own "no leg yet"). A body that has not been ticked at all
-/// looks still by both, which is why runStreetLine lets the crowd walk a
-/// couple of seconds before it asks.
-[[nodiscard]] bool wardWalking(const sim::WardActor& who) noexcept {
-    const bool sliding = who.prevX != who.x || who.prevY != who.y || who.prevBand != who.band;
-    const bool onALeg = who.targetBand != 0 && (who.targetX != who.x || who.targetY != who.y);
-    return sliding || onALeg;
-}
-
-/// A ward body standing on its tile: drawn at its centre, not sliding out
-/// of one cell into the next, and going nowhere this leg.
-[[nodiscard]] bool wardStandsStill(const sim::WardActor& who) noexcept {
-    return !wardWalking(who);
-}
-
 /// True when some OTHER visible ward body is DRAWN within `radius` tiles of
 /// (x, y) -- its tile, or the tile it is sliding from, a walker being
 /// somewhere between the two for the whole second -- or is WALKING within
@@ -15731,11 +15943,11 @@ StreetLineResult runStreetLine(Session& session, const std::string& who, int top
     // to where they are drawn (bearingToward, the scripted drives' own
     // render-side atan2 over the body's facing), a stand on the diagonal
     // included.
-    session.body().setYaw(bearingToward(session, sim::q8_tile_centre(target->x),
-                                        sim::q8_tile_centre(target->y)));
-    // One movement step, so the room's own idea of where the player is standing
-    // catches up with the body before the key is pressed.
-    session.stepMany(sim::MoveInput{}, 1);
+    // The step lookAtFace takes is the one movement step the room needs, so
+    // its own idea of where the player is standing catches up with the body
+    // before the key is pressed.
+    lookAtFace(session, sim::q8_tile_centre(target->x), sim::q8_tile_centre(target->y),
+               target->type, 0);
     session.interact();
     out.opened = session.talking() && session.wardTalkingTo() == out.actorId;
     if (!out.opened) {
@@ -17081,6 +17293,13 @@ SmokeRunResult runSmoke(const SmokeRunConfig& config) {
             const double dy = static_cast<double>(sy - session.body().y());
             result.voiceSpeakerTenths = static_cast<std::int32_t>(
                 std::lround(std::sqrt(dx * dx + dy * dy) * 10.0 / static_cast<double>(sim::kSubOne)));
+            std::int32_t off = static_cast<std::int32_t>(
+                (bearingToward(session, sx, sy) - session.body().yaw()) & (sim::kTurnFull - 1));
+            if (off > sim::kTurnFull / 2) {
+                off -= sim::kTurnFull;
+            }
+            result.voiceSpeakerOffDeg =
+                std::abs(off) * 360 / sim::kTurnFull;
         }
     }
 
@@ -17810,6 +18029,8 @@ SmokeRunResult runSmoke(const SmokeRunConfig& config) {
                 << " row=\"" << result.voiceRow << "\""
                 << " spoken=" << session.voice().linesSpoken()
                 << " inview=" << (result.voiceSpeakerTenths < 0 ? "-" : (result.voiceSpeakerInView ? "yes" : "no"))
+                << " off=" << (result.voiceSpeakerOffDeg < 0 ? std::string("-")
+                                                             : std::to_string(result.voiceSpeakerOffDeg) + "deg")
                 << " apart=" << (result.voiceSpeakerTenths < 0 ? std::string("-")
                                                               : std::to_string(result.voiceSpeakerTenths / 10) + "." +
                                                                     std::to_string(result.voiceSpeakerTenths % 10))
