@@ -87,12 +87,24 @@ constexpr std::int32_t kSignStoreys = 2;
 /// each depth for its own surface height.
 constexpr int kWaterMaxDepth = 7;
 
-/// A flame quad's size, a lantern's and a fire's: the warm square a lamp
-/// draws inside its cage, in metres.
-constexpr float kLanternFlameWidth = 0.46F;
-constexpr float kLanternFlameHeight = 0.58F;
-constexpr float kFireFlameWidth = 0.34F;
-constexpr float kFireFlameHeight = 0.42F;
+/// A FLAME'S HALO, ACROSS: the extent the adapter's fan fills (haloFanMesh,
+/// scene.hpp), the same in both axes so the disc comes out ROUND in the
+/// world, in metres. The lantern's was 0.46 x 0.58 -- a patch barely past
+/// the lamp's own body, which is why the critic could find no glow that
+/// agreed with any light cast on the wall or the cobbles. It is 1.1 m now,
+/// better than three times the body, and the fan's own hot core is still
+/// only a quarter of that across (kHaloCoreFraction), so the flame still
+/// reads as a flame and the rest is skirt.
+///
+/// Wider than the 0.42 m the lamp stands off its wall, on purpose: the fan
+/// goes to alpha 0 at its rim, so the arc the plaster cuts out of a tipped
+/// disc is an arc of nothing. A brazier's is a little smaller because it
+/// burns a metre and a half up off the cobbles and its skirt would
+/// otherwise scrape them.
+constexpr float kLanternFlameWidth = 1.1F;
+constexpr float kLanternFlameHeight = 1.1F;
+constexpr float kFireFlameWidth = 0.9F;
+constexpr float kFireFlameHeight = 0.9F;
 /// Where the flame sits in a lantern hung from `lift` (the lantern's origin
 /// is the top of its hanging rod, 0.4 above the ring; the cap is 0.7 to 0.8
 /// down and the glass 0.8 to 1.0, so the flame sits at 0.9 -- at 0.66 the
@@ -1011,11 +1023,13 @@ private:
         const Vec3 at{centre.x - 0.5F * w * c, centre.y - 0.5F * h, centre.z - 0.5F * w * s};
         pointPiece(PieceRole::Flame, spec, at, yaw, lx, ly, lz, tint, Vec3{sx, sy, -1.0F}, true,
                    1.5F);
-        // A halo: its alpha falls off radially over the quad, whose local X
-        // spans its width and local Y its height (the adapter reads the Z
-        // span as Y for this mode). A billboard: the world scene turns it
-        // to the eye about its centre every frame, so it is never seen
-        // edge-on as a bright bar at arm's length.
+        // A halo: the adapter draws its own vertex-coloured fan over this
+        // local extent instead of the piece's mesh -- local X spans the
+        // width and local Y the height (the adapter reads the Z span as Y
+        // for this mode) -- so the falloff is geometry and the rlsw twin
+        // and the GL exe draw the same disc. A billboard: the world scene
+        // turns it to the eye about its centre every frame, so it is never
+        // seen edge-on as a bright bar at arm's length.
         StaticPlacement& p = out_.placements.back();
         p.mode = kDrawHalo;
         p.instance.mode = kDrawHalo;

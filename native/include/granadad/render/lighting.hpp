@@ -21,6 +21,7 @@
 //            0.55 + 0.45*lum/26, falloff P*(1-(d/R)^2)^2, overlaps combined by
 //            saturating union with a weighted-average colour.
 
+#include <algorithm>
 #include <cstdint>
 #include <string_view>
 #include <vector>
@@ -160,6 +161,39 @@ struct WeatherPeriod {
 /// A hundred of them would not be, and the day there are a hundred is the day
 /// they get a second baked field of their own.
 ///
+/// THE POOL, AS A SURFACE SEES IT. Applied by the 3D pass ONLY, and only
+/// where a lamp's glow becomes the colour of a wall, a cobble or a kit piece
+/// -- never to the glow itself, so the light law's own question ("does the
+/// room behind this pane glow?", world_scene.cpp) and the 2D renderer read
+/// exactly the numbers they always read.
+///
+/// WHY. The falloff above is peak * (1 - d^2/r^2)^2 over four to five and a
+/// half tiles, which is a very flat pool: four tiles out still keeps a fifth
+/// of the lamp. Put the sky's ambient under that and the surface clamp over
+/// it and a whole street of plaster comes out at one value, which is the
+/// halo critic's first note word for word -- the wall directly above a
+/// lantern's cap reading the same as the far corner, so the glow agrees with
+/// nothing cast on anything. A lantern is meant to be the brightest thing on
+/// its street and to POOL on the wall behind it and the cobbles under it.
+///
+/// WHAT. The glow is scaled by its own strength: its full value where the
+/// lamp is strong, down to kPoolFloor of itself where the lamp is nearly
+/// gone. That is one more power of the falloff without touching the peak or
+/// the radius, so NOTHING GETS BRIGHTER and no surface blows out that did
+/// not blow out before -- the far field gets darker, and that is what makes
+/// the near field read as a pool. All three channels take the same factor,
+/// so a lantern's warmth and a fire's are the colours they were.
+inline constexpr float kPoolFloor = 0.15F;
+
+[[nodiscard]] inline Rgb pooledGlow(const Rgb& glow) noexcept {
+    const float strength = std::min(1.0F, std::max(glow.r, std::max(glow.g, glow.b)));
+    if (strength <= 0.0F) {
+        return Rgb{};
+    }
+    const float shaped = kPoolFloor + (1.0F - kPoolFloor) * strength;
+    return Rgb{glow.r * shaped, glow.g * shaped, glow.b * shaped};
+}
+
 /// Same radius, peak and falloff as the baked lamps, so a hearth and a street
 /// lantern of equal luminance light a room identically.
 [[nodiscard]] Rgb dynamicGlowAt(const std::vector<Lamp>& lamps, std::int32_t x, std::int32_t y,
