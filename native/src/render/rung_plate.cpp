@@ -111,7 +111,8 @@ struct PlateLayout {
     bool draws = false;
     /// Outer cells wide, borders included.
     int cells = 0;
-    /// Content rows used: the head, then the prose and the top row when present.
+    /// Content rows used: the head, a blank leading row, then the prose and
+    /// the top row when present.
     int rows = 0;
     int headCells = 0;
     int proseCells = 0;
@@ -127,7 +128,13 @@ struct PlateLayout {
     out.headCells = static_cast<int>(state.head.size());
     out.proseCells = static_cast<int>(state.prose.size());
     out.topCells = static_cast<int>(state.top.size());
-    out.rows = 1 + (state.prose.empty() ? 0 : 1) + (state.top.empty() ? 0 : 1);
+    // ONE CELL ROW OF LEADING between the knocked-out head and the prose --
+    // the critic's finding: zero air let the prose's caps touch the head
+    // block's own underside. Spent only when there is a prose row to leave
+    // air above; the top row, when a track is capped, sits directly under
+    // the prose with none of its own, the dateline's own proximity.
+    const bool hasProse = !state.prose.empty();
+    out.rows = 1 + (hasProse ? 2 : 0) + (state.top.empty() ? 0 : 1);
     // SIZED TO ITS CONTENT (the spec's "size to content where content is
     // static"): the widest row, where the head wears a cell of the accent
     // fill either side of its words; a cell of padding inside each edge; the
@@ -160,7 +167,18 @@ RungPlateBox rungPlateBox(int width, int height, const RungPlateState& state) {
     // exact centre and the aim prompt that hangs up and to the right of it
     // (hud.cpp's aimBox) -- the plate must never sit on the thing the player
     // is looking at, and never on the words that name it.
-    box.y = ((height - box.h) * kRungPlateSeat) / 100;
+    //
+    // COLLISION CLEARANCE, one more cell row of it: the quarter-height seat
+    // alone could still land close enough under a `NEW LEAD` announce plate
+    // that the two keylines all but touched, reading as one pile of notices
+    // rather than two. CLAMPED against hudAimRect() so that push never buys
+    // its clearance at the reticle's own expense -- the one fence every
+    // other HUD element already answers to, and the plate would rather sit
+    // closer to the row above it than land on the thing the player is
+    // looking at.
+    const int rawSeatY = ((height - box.h) * kRungPlateSeat) / 100 + layout.metric.cellH();
+    const CentreRect fence = hudAimRect(width, height);
+    box.y = std::clamp(rawSeatY, 0, std::max(0, fence.y0 - box.h));
     box.draws = true;
     return box;
 }
@@ -213,6 +231,10 @@ void drawRungPlate(Framebuffer& target, const RungPlateState& state) {
                                fade);
     int row = 1;
     if (!state.prose.empty()) {
+        // ONE CELL ROW OF LEADING, no ink, between the head and the prose --
+        // layoutFor's own extra row, spent here as air rather than as a
+        // second copy of the head's row.
+        ++row;
         // What the ward says, in the prose ink, centred under the name.
         (void)drawCellText(target, body, metric,
                            std::max(0, (interior - layout.proseCells) / 2), row, state.prose,

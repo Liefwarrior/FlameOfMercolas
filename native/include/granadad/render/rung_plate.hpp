@@ -51,9 +51,11 @@
 //     "dismissable by any page key" means in practice.
 //   * Two rungs in one step, or a second while one is up: the second WAITS
 //     its turn. Queued, never dropped.
-//   * A skill toast and a rung plate in the same step: THE PLATE WINS and the
+//   * A skill toast and a rung plate, same step or not: THE PLATE WINS. A new
 //     toast waits behind it (the toast's own queue holds while a plate is
-//     up). A toast already on screen finishes.
+//     up), and one already on screen when the plate lands goes dark rather
+//     than share the corner -- a rung and its matching skill are sometimes
+//     the same event said twice, and the plate has already told it.
 //   * Its own cue, heavier than the toast's chime -- audio::SoundId::LegendRung,
 //     the Kenney heavy bell -- played when the plate actually shows.
 

@@ -3687,11 +3687,19 @@ void Session::stepPull() {
     if (skillToastShowSteps_ > 0) {
         --skillToastShowSteps_;
     }
-    // THE RUNG PLATE OUTRANKS THE TOAST: while a rung's plate is up no new
-    // toast starts -- a rung is bigger than a tick, and the two arriving in
-    // one step (a lift levels the hands AND tips THE WIRE) would be two
-    // pieces of news fighting for the same second. The toast WAITS in its own
-    // queue and plays once the plate is down; one already on screen finishes.
+    // THE RUNG PLATE OUTRANKS THE TOAST, ONE ALREADY ON SCREEN INCLUDED: a
+    // rung is bigger than a tick, and a rung and its matching skill can be
+    // the SAME EVENT SAID TWICE (a leap that both tips THE ROOFS and levels
+    // SKYRUNNING) -- the toast used to keep counting down and drawing right
+    // through the plate landing on top of it, two notices piled on the one
+    // corner. Cut its hold the moment the plate wants the screen, the
+    // identical idiom rungPlateOutranked() already applies to the plate's
+    // own hold under a warning: dismissed, not paused, because the plate has
+    // already told the moment. A toast still in the queue is never dropped,
+    // it simply cannot start while the plate wants the screen either.
+    if (skillToastShowSteps_ > 0 && rungPlateWanted()) {
+        skillToastShowSteps_ = 0;
+    }
     if (skillToastShowSteps_ == 0 && !skillToastQueue_.empty() && skillToastAnim_.settled() &&
         !rungPlateWanted()) {
         skillToastText_ = std::move(skillToastQueue_.front());
@@ -3795,9 +3803,13 @@ void Session::composePullHud(HudState& hud) const {
         }
         hud.placeTickBams.push_back(pullTickBam(px, py, ax, ay));
     }
-    // THE TOAST.
+    // THE TOAST. Zero the instant the plate wants the screen -- stepPull()
+    // has already cut the hold for every step after this one; this is what
+    // keeps the toast's own eased fade-out from painting through the frame
+    // the plate first lands on (rungPlateState's identical `outranked ? 0`
+    // rule, mirrored here for the corner the plate is outranking).
     hud.skillToast = std::string_view{skillToastText_};
-    hud.skillToastFade = skillToastAnim_.value();
+    hud.skillToastFade = rungPlateWanted() ? 0.0F : skillToastAnim_.value();
     hud.skillToastDrift = skillToastAnim_.target() ? -(1.0F - skillToastAnim_.value())
                                                    : (1.0F - skillToastAnim_.value());
 }
