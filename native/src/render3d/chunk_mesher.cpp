@@ -520,19 +520,30 @@ MeshData colourChunk(const ChunkGeometry& geometry, const ChunkLighting& lightin
         const std::int32_t y = geometry.cells[i * 3 + 1];
         const std::int32_t z = geometry.cells[i * 3 + 2];
         if (x != lastX || y != lastY || z != lastZ) {
-            const render::Rgb baked =
-                lighting.glow != nullptr ? lighting.glow->at(x, y, z) : render::Rgb{};
-            const render::Rgb live = hasDynamic
-                                         ? render::dynamicGlowAt(*lighting.dynamicLamps, x, y, z)
-                                         : render::Rgb{};
-            // The lamp's share, SHAPED (render::pooledGlow): a lantern pools
-            // on the cobbles under it and the plaster behind it instead of
-            // washing a whole street at one value. Surfaces only -- the glow
-            // field itself is untouched, and so is the light law that reads
-            // it.
-            const render::Rgb pool = render::pooledGlow(render::Rgb{std::max(baked.r, live.r),
-                                                                    std::max(baked.g, live.g),
-                                                                    std::max(baked.b, live.b)});
+            // The lamp's share on a SURFACE: the pool field (lighting.hpp,
+            // THE SURFACE POOL) where the scene built one -- a hot core and
+            // a skirt that carries to eight tiles -- and, without one, the
+            // law's own glow shaped by pooledGlow() as it always was. The
+            // glow field itself is untouched either way, and so is the
+            // light law that reads it.
+            render::Rgb pool{};
+            if (lighting.pool != nullptr) {
+                const render::Rgb baked = lighting.pool->at(x, y, z);
+                const render::Rgb live = hasDynamic
+                                             ? render::dynamicPoolAt(*lighting.dynamicLamps, x, y, z)
+                                             : render::Rgb{};
+                pool = render::Rgb{std::max(baked.r, live.r), std::max(baked.g, live.g),
+                                   std::max(baked.b, live.b)};
+            } else {
+                const render::Rgb baked =
+                    lighting.glow != nullptr ? lighting.glow->at(x, y, z) : render::Rgb{};
+                const render::Rgb live = hasDynamic
+                                             ? render::dynamicGlowAt(*lighting.dynamicLamps, x, y, z)
+                                             : render::Rgb{};
+                pool = render::pooledGlow(render::Rgb{std::max(baked.r, live.r),
+                                                      std::max(baked.g, live.g),
+                                                      std::max(baked.b, live.b)});
+            }
             surface = render::Rgb{sky.ambient.r + pool.r, sky.ambient.g + pool.g,
                                   sky.ambient.b + pool.b};
             lastX = x;

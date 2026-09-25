@@ -199,6 +199,62 @@ inline constexpr float kPoolFloor = 0.15F;
 [[nodiscard]] Rgb dynamicGlowAt(const std::vector<Lamp>& lamps, std::int32_t x, std::int32_t y,
                                 std::int32_t z) noexcept;
 
+// ---------------------------------------------------------------------------
+// THE SURFACE POOL (the 3D pass's own light on walls, cobbles, kit and bodies)
+// ---------------------------------------------------------------------------
+//
+// The baked field above is the LIGHT LAW's number and the 2D renderer's: it
+// says whether a room glows, and it is what the software raycaster paints
+// with. Its falloff is P * (1 - d^2/R^2)^2 over four to five and a half
+// tiles, and pooledGlow() then pulls that far field down again so the 3D
+// surfaces do not come out at one value. Together they make a pool that is
+// gone by four metres, which the night-light critic measured on the
+// Tarwalk: "the pool dies by 8 m" was the kindest reading; it died by five.
+//
+// So the 3D pass has a field of its own now, built from the SAME lamps by
+// the SAME accumulation (saturating union, weighted-average colour) but under
+// a different shape: a hot core that falls away fast round the lamp (an
+// inverse square over the first metre or so, so the plaster behind a lantern
+// and the plaster a metre off are visibly two values) plus a long, low skirt
+// that runs out linearly to about eight and a half metres and reaches nothing
+// only there. Ambient at night is 0.05; the skirt is still twice that at six
+// metres and gone at eight and a half -- a pool, and one that carries.
+//
+// Read by the chunk colour stage, the piece relight and the bodies' tint, and
+// by NOTHING ELSE: the law still reads the baked field, the 2D pass still
+// paints with it, and the sim never knew either existed.
+//
+// The vertical weight is heavier than the baked field's, because the skirt is
+// long: a lantern lights its own storey and a little of the one above it,
+// never two up (a band is three tiles; at 4.5 per band the second storey is
+// nine tiles off and past the cap).
+
+/// How far the pool reaches past the baked falloff's own radius, and where
+/// it stops whatever the lamp: about eight and a half metres on a typical
+/// lantern (luminance 18: 4.8 tiles baked, 8.4 pooled).
+inline constexpr float kPoolReach = 1.75F;
+inline constexpr float kPoolRadiusCap = 8.5F;
+inline constexpr float kPoolRadiusFloor = 6.0F;
+/// The hot core's half-value distance, in tiles, and the shares of the two
+/// terms (they sum to one, so the lamp's own cell keeps its peak).
+inline constexpr float kPoolCoreRadius = 1.0F;
+inline constexpr float kPoolCoreShare = 0.6F;
+inline constexpr float kPoolVerticalWeight = 4.5F;
+
+/// The pool's radius for an authored luminance: the baked radius times
+/// kPoolReach, held between the floor and the cap.
+[[nodiscard]] float poolRadiusOf(std::int32_t luminance) noexcept;
+
+/// The pool's value at `distance` tiles from a lamp of this luminance, the
+/// core and the skirt summed, before the lamp's colour: `peak` at the lamp,
+/// zero at the radius and beyond. Exposed so a test can pin the curve.
+[[nodiscard]] float poolValueAt(std::int32_t luminance, float distance) noexcept;
+
+/// The pool of a HANDFUL of lights that are not in the baked field, per
+/// cell, the way dynamicGlowAt() does for the law's field.
+[[nodiscard]] Rgb dynamicPoolAt(const std::vector<Lamp>& lamps, std::int32_t x, std::int32_t y,
+                                std::int32_t z) noexcept;
+
 /// A dense per-cell glow field over the world, built once from the lamps.
 class LampGlow {
 public:
@@ -209,6 +265,13 @@ public:
     [[nodiscard]] static LampGlow build(const sim::TileQuery& tiles,
                                         const std::vector<Lamp>& lamps);
 
+    /// THE SURFACE POOL over the same lamps: the same accumulation under the
+    /// pool's own shape (poolValueAt). The 3D pass builds one of these beside
+    /// the baked field and reads it for every surface it colours; nothing
+    /// else does.
+    [[nodiscard]] static LampGlow buildPool(const sim::TileQuery& tiles,
+                                            const std::vector<Lamp>& lamps);
+
     /// Additive light at a cell. Black where no lamp reaches.
     [[nodiscard]] Rgb at(std::int32_t x, std::int32_t y, std::int32_t z) const noexcept;
 
@@ -216,6 +279,15 @@ public:
     [[nodiscard]] std::size_t litCellCount() const noexcept { return litCells_; }
 
 private:
+    /// An all-dark field the size of the world.
+    [[nodiscard]] static LampGlow sized(const sim::TileQuery& tiles);
+    /// Every lamp poured into this field under one shape: `reachOf` the
+    /// radius in tiles for a luminance, `shape` the value at a distance,
+    /// `verticalWeight` tiles per band. The baked field and the pool share
+    /// this and differ only in what they pass.
+    void accumulateWith(const std::vector<Lamp>& lamps, float verticalWeight,
+                        float (*reachOf)(std::int32_t), float (*shape)(std::int32_t, float));
+
     std::int32_t sizeX_ = 0;
     std::int32_t sizeY_ = 0;
     std::int32_t sizeZ_ = 0;

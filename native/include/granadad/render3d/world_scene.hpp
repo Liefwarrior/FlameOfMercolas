@@ -41,6 +41,7 @@
 // catalogue's piece table beside them. No catalogue: no pieces, and the
 // description is what it was before the lane.
 
+#include <algorithm>
 #include <cstdint>
 #include <vector>
 
@@ -158,6 +159,18 @@ public:
     [[nodiscard]] Rgba8 relitPaneTint(std::size_t i) const noexcept {
         return litTints_[i * kLitSlots + 4];
     }
+    /// The relit tint of placement `i` at its local corner `slot` (0..3):
+    /// what the adapter blends between. A run piece's two ends are slots 0
+    /// and 1.
+    [[nodiscard]] Rgba8 relitTint(std::size_t i, std::size_t slot = 0) const noexcept {
+        return litTints_[i * kLitSlots + std::min<std::size_t>(slot, 3)];
+    }
+    /// THE SURFACE POOL (render::LampGlow::buildPool): what the lamps put
+    /// on every surface this scene colours, built once from the lamp list
+    /// it was given. Null when it was given none.
+    [[nodiscard]] const render::LampGlow* pool() const noexcept {
+        return hasPool_ ? &pool_ : nullptr;
+    }
 
 private:
     struct Slot {
@@ -189,6 +202,8 @@ private:
     WorldSceneStats stats_;
     const StaticCatalogue* catalogue_ = nullptr;
     const std::vector<render::Lamp>* lamps_ = nullptr;
+    render::LampGlow pool_;
+    bool hasPool_ = false;
     StaticPlacements placements_;
     bool piecesPlaced_ = false;
     /// The lit tints per placement -- the four blend corners and the pane

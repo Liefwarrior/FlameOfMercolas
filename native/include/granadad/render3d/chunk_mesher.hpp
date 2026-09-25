@@ -106,6 +106,12 @@ struct ChunkLighting {
     /// A key for the dynamic lamp SET, so the version moves when it does.
     /// dynamicLampKey() computes it; zero means "no dynamic lamps".
     std::uint32_t lampKey = 0;
+    /// THE SURFACE POOL (render::LampGlow::buildPool, lighting.hpp): what
+    /// the lamps put on a surface, as against `glow`, which is what the
+    /// light law reads. Null means no pool was built (a scene with no lamp
+    /// list): the colour stage then shapes `glow` with pooledGlow() as it
+    /// always did, so a hand-built lighting reads exactly as before.
+    const render::LampGlow* pool = nullptr;
 };
 
 /// The key a set of dynamic lamps hashes to. Zero for an empty set.

@@ -103,9 +103,13 @@ void pushBox(MeshData& mesh, float x0, float y0, float z0, float x1, float y1, f
     pushQuad(mesh, p000, p001, p011, p010, shade(base, 0.62F));  // -X west
 }
 
-/// The light where a body stands, the way the sprite paths compute it:
-/// ambient + max(baked, dynamic), clamped near 1 so a figure in a lamp pool
-/// is lit rather than blown out. Folded into a tint (255 = 1.0).
+/// The light where a body stands, the way the pieces compute it: ambient +
+/// the lamps' POOL (lighting.hpp, THE SURFACE POOL -- the same hot core and
+/// long skirt the plaster and the cobbles round the body wear), clamped
+/// near 1 so a figure in a lamp pool is lit rather than blown out. Folded
+/// into a tint (255 = 1.0). It was the law's own raw glow, which at a tile
+/// from a lantern is nine tenths of white: a body beside a lamp at night
+/// drew in its full daylight coat, the critic's note on the bodies.
 [[nodiscard]] Rgba8 tintFor(const render::SkyState& sky, const render::Rgb& baked,
                             const render::Rgb& dynamic) noexcept {
     const auto ch = [](float ambient, float b, float d) {
@@ -114,6 +118,20 @@ void pushBox(MeshData& mesh, float x0, float y0, float z0, float x1, float y1, f
     };
     return Rgba8{ch(sky.ambient.r, baked.r, dynamic.r), ch(sky.ambient.g, baked.g, dynamic.g),
                  ch(sky.ambient.b, baked.b, dynamic.b), 255};
+}
+
+/// The pool where a body stands: the field where the scene built one, the
+/// law's glow shaped by pooledGlow() where it did not, and the handful of
+/// live lamps under the same shape either way.
+[[nodiscard]] Rgba8 bodyTint(const render::SkyState& sky, const render::LampGlow* pool,
+                             const render::LampGlow& glow, const std::vector<render::Lamp>& live,
+                             std::int32_t x, std::int32_t y, std::int32_t z) noexcept {
+    if (pool != nullptr) {
+        return tintFor(sky, pool->at(x, y, z),
+                       live.empty() ? render::Rgb{} : render::dynamicPoolAt(live, x, y, z));
+    }
+    return tintFor(sky, render::pooledGlow(glow.at(x, y, z)),
+                   live.empty() ? render::Rgb{} : render::pooledGlow(render::dynamicGlowAt(live, x, y, z)));
 }
 
 [[nodiscard]] float yawOf(sim::Angle facing) noexcept {
@@ -386,6 +404,7 @@ std::vector<ActorInstance> actorInstances(const render::Session& session,
     // the quay is.
     const render::SkyState sky = session.sky();
     const render::LampGlow& glow = session.renderer().glow();
+    static const std::vector<render::Lamp> kNoLive;
     const std::int64_t stepCount = session.body().stepCount();
 
     // --- the ward ----------------------------------------------------------
@@ -426,7 +445,7 @@ std::vector<ActorInstance> actorInstances(const render::Session& session,
         body.instance.position = toScene(px, py, render::bandSurface(actor.band));
         body.instance.yaw = yawOf(actor.facing);
         body.instance.scale = actorInstanceScale(actor.type);
-        body.instance.tint = tintFor(sky, glow.at(actor.x, actor.y, actor.band), render::Rgb{});
+        body.instance.tint = bodyTint(sky, params.pool, glow, kNoLive, actor.x, actor.y, actor.band);
         body.clip = actor.slain ? ActorClip::Death
                     : down     ? ActorClip::Recover
                     : actor.dead ? ActorClip::Death
@@ -461,8 +480,7 @@ std::vector<ActorInstance> actorInstances(const render::Session& session,
         body.instance.yaw = yawOf(actor.facing());
         body.instance.scale = actorInstanceScale(type);
         body.instance.tint =
-            tintFor(sky, glow.at(actor.tileX(), actor.tileY(), actor.band()),
-                    render::dynamicGlowAt(live, actor.tileX(), actor.tileY(), actor.band()));
+            bodyTint(sky, params.pool, glow, live, actor.tileX(), actor.tileY(), actor.band());
         // VOICE LANE, THE ADDRESS. The one held for the talk is drawn
         // STANDING, whatever his schedule says he was doing: the hold keeps
         // his tile and his face to you (tavern.cpp, stepMovement), and a

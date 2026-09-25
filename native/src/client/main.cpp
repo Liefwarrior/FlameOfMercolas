@@ -3903,7 +3903,12 @@ struct SceneRig {
         // swaps in the glb by name where it has one), and the instances
         // rewritten every frame off the roster with wardSprites' own slide.
         render3d::putActorRigs(scene);
-        scene.actors = render3d::actorInstances(session, session.camera());
+        // The bodies stand in the same pool the walls and cobbles wear
+        // (WorldScene::pool), so a figure beside a lantern at night is lit
+        // by that lantern and not drawn in its daylight coat.
+        render3d::ActorSceneParams actorParams;
+        actorParams.pool = world->pool();
+        scene.actors = render3d::actorInstances(session, session.camera(), actorParams);
         // V LANE: the player's own hands. The placeholder parts put once
         // (the adapter swaps in the arms glb by name where it has one), the
         // pose rewritten every frame off Session::viewmodel() -- the machine

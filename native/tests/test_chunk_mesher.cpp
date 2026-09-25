@@ -37,6 +37,7 @@
 #include "granadad/render/session.hpp"
 #include "granadad/render/vertical.hpp"
 #include "granadad/render/world_renderer.hpp"
+#include "granadad/render3d/actor_instances.hpp"
 #include "granadad/render3d/chunk_mesher.hpp"
 #include "granadad/render3d/door_jambs.hpp"
 #include "granadad/render3d/scene.hpp"
@@ -2835,16 +2836,26 @@ TEST_CASE("the light law on the Docks: up at ten, abed at three, and the Gull ne
     }
     const std::size_t timberPanes = countRole(first.placements, PieceRole::PaneTimber);
     CHECK(timberPanes > 10);
-    // THE CRITIC'S SECOND: two stacked bands per opening now, never one --
-    // see StaticPlacement::paneCore.
-    CHECK(timberPanes == 2 * countRole(first.placements, PieceRole::WindowTimber));
-    std::size_t timberCoreBands = 0;
+    // ONE ramp quad per opening (kDrawPaneRamp, scene.hpp), and the board
+    // module it hangs in cut into two halves that carry the spill
+    // (StaticPlacement::spill).
+    CHECK(timberPanes == countRole(first.placements, PieceRole::WindowTimber));
+    std::size_t rampPanes = 0;
+    std::size_t spillHalves = 0;
     for (const StaticPlacement& p : first.placements) {
-        if (p.role == PieceRole::PaneTimber && p.paneCore) {
-            ++timberCoreBands;
+        if (p.role == PieceRole::PaneTimber && p.mode == kDrawPaneRamp &&
+            p.instance.mode == kDrawPaneRamp && p.instance.gradientTo > p.instance.gradientFrom &&
+            p.instance.gradientToZ > p.instance.gradientFromZ) {
+            ++rampPanes;
+        }
+        if (p.role == PieceRole::WallTimber && p.spill) {
+            REQUIRE(p.hasInside);
+            ++spillHalves;
         }
     }
-    CHECK(timberCoreBands == timberPanes / 2);
+    CHECK(rampPanes == timberPanes);
+    CHECK(spillHalves >= timberPanes);
+    CHECK(spillHalves <= 2 * timberPanes);
     CHECK(households >= 40);
     CHECK(litHouses >= 4);
     CHECK(darkHouses >= 4);
@@ -3008,15 +3019,29 @@ TEST_CASE("a session's own clock relights the ward with no session.step() betwee
     CHECK(litAt02 < litAt22);
 }
 
-TEST_CASE("a lit timber pane reads as two stops, not one flat wash") {
-    // THE CRITIC'S SECOND. Every hung timber window is two stacked
-    // placements now (StaticPlacement::paneCore, static_pieces.cpp),
-    // emitted core then edge with nothing between them (placeStaticPieces
-    // never reorders). This checks what a relight actually gives them: lit,
-    // the sill-side band and the head-side band differ -- a hotter core and
-    // a cooler edge, not one colour worn twice, and the core keeps the
-    // law's own tint unchanged from before the lane split the pane; dark,
-    // the two bands agree, the same dark glass a single pane always was.
+TEST_CASE("a lit timber pane is one ramp quad, hot at the sill, and the boards either side catch it") {
+    // THE NIGHT-LIGHT CRITIC'S SECOND AND THIRD. The two stacked bands are
+    // gone: every hung timber window is ONE placement drawn as
+    // paneRampMesh() (scene.hpp) in the pane tint, its ramp in vertex
+    // colour so both rasterizers agree; and the board module it hangs in
+    // is two halves (StaticPlacement::spill, static_pieces.cpp), emitted
+    // before-half, after-half, frame, pane with nothing between them, each
+    // half carrying the pane's household. This checks what a relight gives
+    // them: lit, the pane wears the law's own candle and each half's end
+    // AT the pane is warmer than its far end; the ramp mesh itself is
+    // white at its sill row and kPaneRampHead at its head row.
+    const MeshData ramp = paneRampMesh();
+    REQUIRE(ramp.vertexCount() == 6);
+    REQUIRE(ramp.triangleCount() == 4);
+    CHECK(ramp.colours[0] == 255);
+    CHECK(ramp.colours[1] == 255);
+    CHECK(ramp.colours[2] == 255);
+    CHECK(ramp.colours[4 * 4] == kPaneRampHead.r);
+    CHECK(ramp.colours[4 * 4 + 1] == kPaneRampHead.g);
+    CHECK(ramp.colours[4 * 4 + 2] == kPaneRampHead.b);
+    CHECK(ramp.positions[1] == 0.0F);
+    CHECK(ramp.positions[4 * 3 + 1] == 1.0F);
+
     const sim::TileQuery tiles(docksWorld());
     const StaticCatalogue& catalogue = shippedCatalogue();
     const std::vector<render::Lamp> lamps =
@@ -3026,48 +3051,318 @@ TEST_CASE("a lit timber pane reads as two stops, not one flat wash") {
     WorldSceneParams params;
     params.timeOfDaySeconds = 22 * 3600;
     world.refresh(scene, spawnCamera(), 320.0F / 180.0F, params);
+    const Rgba8 warm = catalogue.knobs().litPane;
 
-    std::size_t pairsChecked = 0;
-    std::size_t pairsLit = 0;
-    for (std::size_t i = 0; i + 1 < world.placements().size(); ++i) {
-        const StaticPlacement& core = world.placements()[i];
-        if (core.role != PieceRole::PaneTimber || !core.paneCore) {
+    std::size_t panesChecked = 0;
+    std::size_t panesLit = 0;
+    std::size_t halvesChecked = 0;
+    for (std::size_t i = 3; i < world.placements().size(); ++i) {
+        const StaticPlacement& pane = world.placements()[i];
+        if (pane.role != PieceRole::PaneTimber) {
             continue;
         }
-        const StaticPlacement& edge = world.placements()[i + 1];
-        REQUIRE(edge.role == PieceRole::PaneTimber);
-        REQUIRE_FALSE(edge.paneCore);
-        REQUIRE(edge.house == core.house);
-        REQUIRE(edge.houseLot == core.houseLot);
-        ++pairsChecked;
-        const Rgba8 coreTint = world.relitPaneTint(i);
-        const Rgba8 edgeTint = world.relitPaneTint(i + 1);
-        if (coreTint.r < 60 && edgeTint.r < 60) {
-            continue;  // dark: nothing to check about the gradient here.
+        ++panesChecked;
+        REQUIRE(pane.mode == kDrawPaneRamp);
+        REQUIRE(world.placements()[i - 1].role == PieceRole::WindowTimber);
+        const Rgba8 tint = world.relitPaneTint(i);
+        const bool lit = tint.r == warm.r && tint.g == warm.g && tint.b == warm.b;
+        panesLit += lit ? 1 : 0;
+        // The corner slots carry the same, for the hash and the software path.
+        CHECK(world.relitTint(i, 0).r == tint.r);
+        CHECK(world.relitTint(i, 3).b == tint.b);
+        const StaticPlacement& after = world.placements()[i - 2];
+        const StaticPlacement& before = world.placements()[i - 3];
+        if (!(after.role == PieceRole::WallTimber && after.spill)) {
+            continue;  // a hung window on a run that is not a board module
         }
-        ++pairsLit;
-        CHECK((coreTint.r != edgeTint.r || coreTint.g != edgeTint.g || coreTint.b != edgeTint.b));
-        CHECK(coreTint.r == catalogue.knobs().litPane.r);
-        CHECK(coreTint.g == catalogue.knobs().litPane.g);
-        CHECK(coreTint.b == catalogue.knobs().litPane.b);
+        REQUIRE(before.role == PieceRole::WallTimber);
+        REQUIRE(before.spill);
+        REQUIRE(before.spillAtB);
+        REQUIRE_FALSE(after.spillAtB);
+        REQUIRE(before.houseLot == pane.houseLot);
+        REQUIRE(after.houseLot == pane.houseLot);
+        REQUIRE(before.house == pane.house);
+        ++halvesChecked;
+        if (!lit) {
+            continue;
+        }
+        // Slot 0 is the a end (the `from` cut) unless the piece was turned
+        // round, slot 1 the b end. The pane end is b on the half before the
+        // window and a on the half after it.
+        const Rgba8 beforeInner = world.relitTint(i - 3, before.flipped ? 0 : 1);
+        const Rgba8 beforeOuter = world.relitTint(i - 3, before.flipped ? 1 : 0);
+        const Rgba8 afterInner = world.relitTint(i - 2, after.flipped ? 1 : 0);
+        const Rgba8 afterOuter = world.relitTint(i - 2, after.flipped ? 0 : 1);
+        CHECK(beforeInner.r > beforeOuter.r);
+        CHECK(beforeInner.g > beforeOuter.g);
+        CHECK(afterInner.r > afterOuter.r);
+        CHECK(afterInner.g > afterOuter.g);
+        // Warm, not white: the candle's own colour on the wood.
+        CHECK(beforeInner.r > beforeInner.b);
+        CHECK(afterInner.r > afterInner.b);
     }
-    MESSAGE("Timber pane pairs: " << pairsChecked << " checked, " << pairsLit << " lit at ten");
-    CHECK(pairsChecked > 10);
-    CHECK(pairsLit >= 4);
+    MESSAGE("Timber panes: " << panesChecked << " checked, " << panesLit << " lit at ten, "
+                             << halvesChecked << " with both halves");
+    CHECK(panesChecked > 10);
+    CHECK(panesLit >= 4);
+    CHECK(halvesChecked >= 4);
 
-    // At noon every pane -- core and edge alike -- is the same dark glass.
+    // At noon every pane is dark glass, and no half is warmer at the pane
+    // than a dark pane's own pool would make it: the spill went out with
+    // the pane.
     params.timeOfDaySeconds = 12 * 3600;
     world.refresh(scene, spawnCamera(), 320.0F / 180.0F, params);
-    for (std::size_t i = 0; i + 1 < world.placements().size(); ++i) {
-        const StaticPlacement& core = world.placements()[i];
-        if (core.role != PieceRole::PaneTimber || !core.paneCore) {
+    for (std::size_t i = 3; i < world.placements().size(); ++i) {
+        const StaticPlacement& pane = world.placements()[i];
+        if (pane.role != PieceRole::PaneTimber) {
             continue;
         }
-        const Rgba8 coreTint = world.relitPaneTint(i);
-        const Rgba8 edgeTint = world.relitPaneTint(i + 1);
-        CHECK(coreTint.r == edgeTint.r);
-        CHECK(coreTint.g == edgeTint.g);
-        CHECK(coreTint.b == edgeTint.b);
+        const Rgba8 tint = world.relitPaneTint(i);
+        CHECK(tint.r < 60);
+        CHECK(tint.b >= tint.r);
+        const StaticPlacement& before = world.placements()[i - 3];
+        if (before.role == PieceRole::WallTimber && before.spill) {
+            const Rgba8 inner = world.relitTint(i - 3, before.flipped ? 0 : 1);
+            const Rgba8 outer = world.relitTint(i - 3, before.flipped ? 1 : 0);
+            // By day the two ends differ only by the sky, and the sky is
+            // one value along a metre of wall: no candle add.
+            CHECK(std::abs(static_cast<int>(inner.r) - static_cast<int>(outer.r)) <= 8);
+        }
     }
 }
 
+TEST_CASE("the morning: more household panes are lit at five than at two, and most at eight") {
+    // THE NIGHT-LIGHT CRITIC'S FOURTH: two shots of the Gull's roof at two
+    // and at five showed the same panes, and the read was that the rising
+    // window (houseRisingFrom/To) never relights. It does -- the three
+    // households that vantage sees all drew rising hours past five under
+    // the 4..6.5 window, which is a sample of three, not a wiring fault
+    // (moving the window to half past midnight in the catalogue lit them
+    // at two in the shipped exe). The window now closes at half past five
+    // so two houses in three are up by five, and THIS pins the rise the
+    // way the critic tried to read it: the ward's own lit household panes
+    // through a real Session's clock and a real WorldScene::refresh(), no
+    // session.step() between reads (skipToHour is the sleep/travel jump),
+    // fewer at two than at five, fewer at five than at eight.
+    render::SessionConfig config;
+    config.timeOfDay = 20 * 3600;
+    config.timeOfDayGiven = true;
+    render::Session session(config);
+    REQUIRE(session.timeOfDay() == 20 * 3600);
+
+    const StaticCatalogue& catalogue = shippedCatalogue();
+    const RuleKnobs& knobs = catalogue.knobs();
+    REQUIRE(knobs.houseRisingFrom > 0.0F);
+    REQUIRE(knobs.houseRisingTo > knobs.houseRisingFrom);
+    const Rgba8 warm = knobs.litPane;
+    WorldScene world(session.tiles(), session.atlas(), &session.renderer().glow(), &catalogue,
+                     &session.renderer().lamps());
+    SceneDescription scene;
+    WorldSceneParams params;
+    const auto refreshNow = [&] {
+        params.timeOfDaySeconds = session.timeOfDay();
+        params.weather = session.weather();
+        params.dynamicLamps = session.tavernLights();
+        world.refresh(scene, session.camera(), 320.0F / 180.0F, params);
+    };
+    const auto litHouseholds = [&] {
+        std::size_t n = 0;
+        for (std::size_t i = 0; i < world.placements().size(); ++i) {
+            const StaticPlacement& p = world.placements()[i];
+            if (!windowPane(p.role) || p.house != HouseKind::Household) {
+                continue;
+            }
+            const Rgba8 pane = world.relitPaneTint(i);
+            n += (pane.r == warm.r && pane.g == warm.g && pane.b == warm.b) ? 1 : 0;
+        }
+        return n;
+    };
+    refreshNow();
+    const std::size_t litAt20 = litHouseholds();
+    session.skipToHour(2);
+    REQUIRE(session.timeOfDay() == 2 * 3600);
+    refreshNow();
+    const std::size_t litAt02 = litHouseholds();
+    session.skipToHour(5);
+    REQUIRE(session.timeOfDay() == 5 * 3600);
+    refreshNow();
+    const std::size_t litAt05 = litHouseholds();
+    CHECK(world.stats().piecesRelit == 3);
+    MESSAGE("Ward households lit through a real session: " << litAt20 << " at eight, " << litAt02
+                                                         << " at two, " << litAt05 << " at five");
+    CHECK(litAt02 < litAt05);
+    CHECK(litAt05 < litAt20);
+    CHECK(litAt02 * 2 < litAt05);
+}
+
+TEST_CASE("the surface pool carries to eight tiles and the law's field does not") {
+    // THE NIGHT-LIGHT CRITIC'S FIRST, the pool. render::LampGlow::buildPool
+    // is the 3D pass's own light on surfaces: the same lamps, a hot core
+    // and a long skirt to ~8.5 tiles, against the law's field that is gone
+    // by 5.5 and that the 2D pass and the light law still read untouched.
+    // A typical Docks lantern is luminance 18.
+    const float peak = render::poolValueAt(18, 0.0F);
+    CHECK(peak == doctest::Approx(0.55F + 0.45F * 18.0F / 26.0F));
+    CHECK(render::poolRadiusOf(18) == doctest::Approx(8.4583F).epsilon(0.01));
+    CHECK(render::poolValueAt(18, 1.0F) < 0.75F * peak);
+    CHECK(render::poolValueAt(18, 1.0F) > 0.5F * peak);
+    CHECK(render::poolValueAt(18, 6.0F) > 0.1F);
+    CHECK(render::poolValueAt(18, 7.0F) > 0.05F);
+    CHECK(render::poolValueAt(18, 8.5F) == 0.0F);
+    CHECK(render::poolValueAt(18, 9.0F) == 0.0F);
+    float last = peak;
+    for (float d = 0.25F; d < 9.0F; d += 0.25F) {
+        const float v = render::poolValueAt(18, d);
+        CHECK(v <= last);
+        last = v;
+    }
+    CHECK(render::poolRadiusOf(8) == doctest::Approx(render::kPoolRadiusFloor));
+    CHECK(render::poolRadiusOf(31) == doctest::Approx(render::kPoolRadiusCap));
+
+    // On the real Docks: seven tiles along a row from a lantern the law's
+    // field is black and the pool is not.
+    const sim::TileQuery tiles(docksWorld());
+    const std::vector<render::Lamp> lamps =
+        render::loadLamps(content::contentDir(), sim::docks::kWorldName);
+    REQUIRE_FALSE(lamps.empty());
+    const render::LampGlow glow = render::LampGlow::build(tiles, lamps);
+    const render::LampGlow pool = render::LampGlow::buildPool(tiles, lamps);
+    CHECK(pool.litCellCount() > glow.litCellCount());
+    std::size_t reached = 0;
+    for (const render::Lamp& lamp : lamps) {
+        const render::Rgb near = pool.at(lamp.x, lamp.y, lamp.z);
+        CHECK(near.r > 0.5F);
+        for (int side = 0; side < 4; ++side) {
+            const std::int32_t x = lamp.x + (side == 0 ? 7 : side == 1 ? -7 : 0);
+            const std::int32_t y = lamp.y + (side == 2 ? 7 : side == 3 ? -7 : 0);
+            if (x < 0 || y < 0 || x >= tiles.sizeX() || y >= tiles.sizeY()) {
+                continue;
+            }
+            const render::Rgb far = pool.at(x, y, lamp.z);
+            const render::Rgb law = glow.at(x, y, lamp.z);
+            // Another lamp may stand nearer that cell; only a cell no lamp's
+            // law field reaches proves the pool's own reach.
+            if (law.r == 0.0F && law.g == 0.0F && law.b == 0.0F && far.r > 0.04F) {
+                ++reached;
+            }
+        }
+    }
+    MESSAGE("Docks cells seven tiles from a lantern lit by the pool alone: " << reached);
+    CHECK(reached >= 4);
+}
+
+TEST_CASE("after dark a lantern's glass out-values its metal, and by day it is a lamp") {
+    // THE NIGHT-LIGHT CRITIC'S FIRST, the lamp. Its glass (the pane slot,
+    // kLampGlassNight) is near white after dark; its metal (the corner
+    // slots) is sky-lit and capped (kLampMetalNightCap), so the cap never
+    // out-values the glass. By day the metal keeps the catalogue's own
+    // tint, as it always did.
+    const sim::TileQuery tiles(docksWorld());
+    const StaticCatalogue& catalogue = shippedCatalogue();
+    const std::vector<render::Lamp> lamps =
+        render::loadLamps(content::contentDir(), sim::docks::kWorldName);
+    WorldScene world(tiles, proceduralAtlas(), nullptr, &catalogue, &lamps);
+    REQUIRE(world.pool() != nullptr);
+    SceneDescription scene;
+    WorldSceneParams params;
+    params.timeOfDaySeconds = 22 * 3600;
+    world.refresh(scene, spawnCamera(), 320.0F / 180.0F, params);
+    std::size_t lanterns = 0;
+    for (std::size_t i = 0; i < world.placements().size(); ++i) {
+        const StaticPlacement& p = world.placements()[i];
+        if (p.role != PieceRole::LampWall && p.role != PieceRole::LampPost) {
+            continue;
+        }
+        ++lanterns;
+        const Rgba8 glass = world.relitPaneTint(i);
+        const Rgba8 metal = world.relitTint(i, 0);
+        CHECK(glass.r == 255);
+        CHECK(glass.g >= 230);
+        CHECK(glass.b >= 190);
+        CHECK(metal.r < glass.r);
+        CHECK(metal.g < glass.g);
+        CHECK(metal.b < glass.b);
+        CHECK(metal.r <= static_cast<std::uint8_t>(p.instance.tint.r * 0.5F + 1.0F));
+        CHECK(world.relitTint(i, 3).r == metal.r);
+    }
+    CHECK(lanterns >= 8);
+    params.timeOfDaySeconds = 12 * 3600;
+    world.refresh(scene, spawnCamera(), 320.0F / 180.0F, params);
+    for (std::size_t i = 0; i < world.placements().size(); ++i) {
+        const StaticPlacement& p = world.placements()[i];
+        if (p.role != PieceRole::LampWall && p.role != PieceRole::LampPost) {
+            continue;
+        }
+        const Rgba8 metal = world.relitTint(i, 0);
+        CHECK(metal.r == p.instance.tint.r);
+        CHECK(metal.g == p.instance.tint.g);
+        CHECK(metal.b == p.instance.tint.b);
+        CHECK(world.relitPaneTint(i).r < 100);
+    }
+    // The catalogue names where the hung lantern's glass is, and the ref
+    // the adapter reads carries it.
+    const PieceSpec* lantern = catalogue.piece(PieceRole::LampWall);
+    REQUIRE(lantern != nullptr);
+    CHECK(lantern->glassBandHi > lantern->glassBandLo);
+    CHECK(lantern->glassU1 > lantern->glassU0);
+    CHECK(lantern->glassV1 > lantern->glassV0);
+    bool refCuts = false;
+    for (const StaticPieceRef& ref : catalogue.pieceRefs()) {
+        refCuts = refCuts || (ref.file == lantern->file && ref.cutsGlass());
+    }
+    CHECK(refCuts);
+}
+
+TEST_CASE("a body beside a lantern after dark wears the lantern's pool, and one far from any is dark") {
+    // THE NIGHT-LIGHT CRITIC'S FIRST, the bodies. They drew in their
+    // daylight coats beside a lamp at night because their tint read the
+    // law's raw glow, which at a tile from a lantern is nine tenths of
+    // white. They take the surface pool now (ActorSceneParams::pool), the
+    // same number the cobbles under them wear: warm within it, near-black
+    // past it.
+    render::SessionConfig config;
+    config.timeOfDay = 22 * 3600;
+    config.timeOfDayGiven = true;
+    render::Session session(config);
+    const StaticCatalogue& catalogue = shippedCatalogue();
+    WorldScene world(session.tiles(), session.atlas(), &session.renderer().glow(), &catalogue,
+                     &session.renderer().lamps());
+    REQUIRE(world.pool() != nullptr);
+    ActorSceneParams params;
+    params.pool = world.pool();
+    params.maxDistance = 400.0F;
+    const std::vector<ActorInstance> bodies = actorInstances(session, session.camera(), params);
+    REQUIRE_FALSE(bodies.empty());
+    const std::vector<render::Lamp>& lamps = session.renderer().lamps();
+    std::size_t inPool = 0;
+    std::size_t inDark = 0;
+    for (const ActorInstance& body : bodies) {
+        // Scene X is tile x, scene Z is tile y (toScene), the band by height.
+        const float bx = body.instance.position.x;
+        const float bz = body.instance.position.z;
+        float nearest = 1.0e9F;
+        for (const render::Lamp& lamp : lamps) {
+            const float dx = bx - (static_cast<float>(lamp.x) + 0.5F);
+            const float dz = bz - (static_cast<float>(lamp.y) + 0.5F);
+            const float dy = body.instance.position.y - render::bandSurface(lamp.z);
+            if (std::fabs(dy) > 1.0F) {
+                continue;
+            }
+            nearest = std::min(nearest, std::sqrt(dx * dx + dz * dz));
+        }
+        const Rgba8 tint = body.instance.tint;
+        if (nearest <= 1.5F) {
+            ++inPool;
+            CHECK(tint.r > 90);
+            CHECK(tint.r > tint.b);
+            CHECK(tint.r < 250);
+        } else if (nearest > 10.0F) {
+            ++inDark;
+            CHECK(tint.r < 40);
+        }
+    }
+    MESSAGE("Bodies at ten: " << inPool << " within a tile and a half of a lantern, " << inDark
+                              << " past ten tiles of any");
+    CHECK(inPool >= 1);
+    CHECK(inDark >= 1);
+}

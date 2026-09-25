@@ -196,6 +196,12 @@ struct ActorSceneParams {
     /// Bodies inside this radius are skinned (animated); outside they draw
     /// in a rest pose. The software fog's e-folding distance, roughly.
     float skinDistance = 24.0F;
+    /// THE SURFACE POOL (render::LampGlow::buildPool; WorldScene::pool()):
+    /// what the lamps put on a body standing in their light, the same
+    /// number the walls and the cobbles round it wear. Null (a scene with
+    /// no pool) falls back to the law's own glow shaped by pooledGlow(),
+    /// the way the pieces do.
+    const render::LampGlow* pool = nullptr;
 };
 
 /// The instances for one frame: every visible ward body and every present

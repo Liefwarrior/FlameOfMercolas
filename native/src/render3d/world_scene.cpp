@@ -88,14 +88,23 @@ constexpr float kHaloForwardCap = 0.4F;
 /// reaches it -- or the light law says the household is up (paneGlows()).
 constexpr float kPaneLitAbove = 0.12F;
 
-/// THE CRITIC'S SECOND: a lit timber pane's own two-stop gradient. The
-/// law's own knobs.litPane (255, 198, 118 shipped) is already the hot
-/// core -- it stands on the sill-side band (StaticPlacement::paneCore,
-/// static_pieces.cpp) unchanged, the same tint a WallWindow pane has
-/// always worn. This is the cooler glass toward the pane's own head, on
-/// the rest of it, so a lit window reads as a candle behind glass and not
-/// a flat wash the size of the frame.
-constexpr Rgba8 kPaneEdgeLit{217, 140, 64, 255};
+/// THE SPILL (the night-light critic's third): the emissive pool a lit
+/// pane puts on the boards either side of it, as a glow ADDED under the
+/// surface clamp at the board's end that meets the pane -- candle-coloured,
+/// about the pool a lantern gives its own wall -- and kSpillFarShare of it
+/// at the board's far end, so the blend across the board runs out from the
+/// window. Only the halves static_pieces.cpp cut at a hung window carry it
+/// (StaticPlacement::spill), and it goes out with the pane.
+constexpr render::Rgb kSpillGlow{0.62F, 0.40F, 0.16F};
+constexpr float kSpillFarShare = 0.25F;
+
+/// THE LANTERN'S METAL AFTER DARK: the cap, the cage and the base are lit
+/// like everything else now -- the sky's ambient plus the lamp's own pool
+/// -- and capped at this, so the glass (below) out-values the cap at any
+/// range. They drew at their full catalogue tint, brighter than the glass,
+/// which was the critic's first note on the halo: a lamp whose dullest
+/// part was its light. By day they keep the full tint they always had.
+constexpr float kLampMetalNightCap = 0.5F;
 
 /// THE CRITIC'S THIRD: how far a lit hung window's own frame (WindowTimber)
 /// leans from its ambient tint toward the law's own warm one -- mixed, not
@@ -114,7 +123,12 @@ constexpr float kFrameWarmMix = 0.4F;
 /// The mechanism is the pane slot the light law already uses (slots[4],
 /// drawn on any sub-mesh the adapter classes as glass) -- nothing in
 /// paneGlows() or the window rule is touched to get it.
-constexpr Rgba8 kLampGlassNight{255, 217, 140, 255};
+///
+/// THIRD PASS: nearer white still, and the adapter draws a pane VERBATIM
+/// now (rl_backend.cpp, drawStaticMesh) instead of through the glass
+/// material's own base colour, which on the camp lantern is a grey-green
+/// that turned this amber to olive.
+constexpr Rgba8 kLampGlassNight{255, 240, 205, 255};
 
 /// True for the lamp bodies that HAVE a glass: the hung lantern and the
 /// street post. The bracket and the chain are not self-lit, the flame is a
@@ -366,6 +380,12 @@ WorldScene::WorldScene(const sim::TileQuery& tiles, const render::TileAtlas& atl
       materials_(ChunkMaterials::fromAtlas(atlas)),
       catalogue_(catalogue),
       lamps_(lamps) {
+    // THE SURFACE POOL: built once from the lamps, beside the law's own
+    // baked field, for every surface this scene colours (lighting.hpp).
+    if (lamps_ != nullptr) {
+        pool_ = render::LampGlow::buildPool(tiles, *lamps_);
+        hasPool_ = true;
+    }
     chunksAcross_ = std::min(kChunksAcross, (tiles.sizeX() + kChunkTiles - 1) / kChunkTiles);
     chunksDown_ = (tiles.sizeY() + kChunkTiles - 1) / kChunkTiles;
     slots_.resize(static_cast<std::size_t>(chunksAcross_) * static_cast<std::size_t>(chunksDown_));
@@ -445,12 +465,14 @@ void WorldScene::relightPieces(const ChunkLighting& lighting) {
         return;
     }
     // The same surface light the chunk colour stage computes for a cell --
-    // ambient + max(baked, dynamic) -- times the piece's facing factor,
-    // clamped a little over one so a piece in a lamp's pool is lit rather
-    // than blown out, folded into the unlit catalogue tint.
+    // ambient + the lamps' pool -- times the piece's facing factor, clamped
+    // a little over one so a piece in a lamp's pool is lit rather than
+    // blown out, folded into the unlit catalogue tint.
     const render::SkyState sky = render::skyAt(lighting.timeOfDaySeconds, lighting.weather);
     const bool hasDynamic = lighting.dynamicLamps != nullptr && !lighting.dynamicLamps->empty();
     litTints_.resize(placements_.placements.size() * kLitSlots);
+    // THE LAW'S LIGHT at a cell: the baked field and the handful of live
+    // lamps, the number "does the room behind this pane glow?" reads.
     const auto glowAt = [&](std::int32_t x, std::int32_t y, std::int32_t z) {
         const render::Rgb baked = glow_ != nullptr ? glow_->at(x, y, z) : render::Rgb{};
         const render::Rgb live =
@@ -458,21 +480,36 @@ void WorldScene::relightPieces(const ChunkLighting& lighting) {
         return render::Rgb{std::max(baked.r, live.r), std::max(baked.g, live.g),
                            std::max(baked.b, live.b)};
     };
-    // The glow AT A CUT between two cell centres, `t` of the way from the
-    // first to the second, so the two pieces meeting there share one value.
-    const auto glowBetween = [&](std::int32_t ax, std::int32_t ay, std::int32_t bx, std::int32_t by,
-                                 float t, std::int32_t z) {
-        const render::Rgb a = glowAt(ax, ay, z);
-        const render::Rgb b = glowAt(bx, by, z);
+    // THE SURFACE'S LIGHT at a cell: the pool field where the scene built
+    // one (lighting.hpp, THE SURFACE POOL -- a hot core and a skirt to eight
+    // tiles) and, without one, the law's own glow shaped by pooledGlow() as
+    // it always was. What every piece is coloured with.
+    const auto surfaceAt = [&](std::int32_t x, std::int32_t y, std::int32_t z) {
+        if (!hasPool_) {
+            return render::pooledGlow(glowAt(x, y, z));
+        }
+        const render::Rgb baked = pool_.at(x, y, z);
+        const render::Rgb live =
+            hasDynamic ? render::dynamicPoolAt(*lighting.dynamicLamps, x, y, z) : render::Rgb{};
+        return render::Rgb{std::max(baked.r, live.r), std::max(baked.g, live.g),
+                           std::max(baked.b, live.b)};
+    };
+    // The surface light AT A CUT between two cell centres, `t` of the way
+    // from the first to the second, so the two pieces meeting there share
+    // one value.
+    const auto surfaceBetween = [&](std::int32_t ax, std::int32_t ay, std::int32_t bx,
+                                    std::int32_t by, float t, std::int32_t z) {
+        const render::Rgb a = surfaceAt(ax, ay, z);
+        const render::Rgb b = surfaceAt(bx, by, z);
         return render::Rgb{a.r + (b.r - a.r) * t, a.g + (b.g - a.g) * t, a.b + (b.b - a.b) * t};
     };
-    // The glow at a grid CORNER POINT (px, py): the average of the four
-    // cells that meet there.
-    const auto glowAtCorner = [&](std::int32_t px, std::int32_t py, std::int32_t z) {
+    // The surface light at a grid CORNER POINT (px, py): the average of
+    // the four cells that meet there.
+    const auto surfaceAtCorner = [&](std::int32_t px, std::int32_t py, std::int32_t z) {
         render::Rgb sum{};
         for (std::int32_t dy = -1; dy <= 0; ++dy) {
             for (std::int32_t dx = -1; dx <= 0; ++dx) {
-                const render::Rgb g = glowAt(px + dx, py + dy, z);
+                const render::Rgb g = surfaceAt(px + dx, py + dy, z);
                 sum.r += g.r;
                 sum.g += g.g;
                 sum.b += g.b;
@@ -491,19 +528,36 @@ void WorldScene::relightPieces(const ChunkLighting& lighting) {
     for (std::size_t i = 0; i < placements_.placements.size(); ++i) {
         const StaticPlacement& p = placements_.placements[i];
         Rgba8* slots = &litTints_[i * kLitSlots];
-        const auto lit = [&p, &sky](const render::Rgb& glow, const Rgba8& tint) {
-            // The lamp's share, SHAPED (render::pooledGlow): the far field
-            // pulled down so a lantern pools on the plaster instead of
-            // washing the whole street at one value. The raw glow is what
-            // the light law reads below -- this is the surface's copy.
-            const render::Rgb pool = render::pooledGlow(glow);
-            const auto ch = [&p](float ambient, float g, std::uint8_t t) {
-                const float light = std::min(kLightClamp, ambient + g) * p.facing;
+        // A window whose room is lit after dark shows it: the pane goes
+        // warm and bright, its own light -- lit by a lamp that reaches the
+        // room, or because the light law has the household up at this
+        // hour (the whole room's lot, so a house's windows agree). Decided
+        // first, because the boards either side of the pane read it too.
+        //
+        // Named `paneUp`, not `lit`: `lit` below is the per-corner light
+        // lambda every branch uses.
+        bool paneUp = false;
+        if (p.hasInside && night) {
+            const render::Rgb room = glowAt(p.insideX, p.insideY, p.insideZ);
+            paneUp = std::max(room.r, std::max(room.g, room.b)) > kPaneLitAbove ||
+                     paneGlows(p.house, p.houseLot, hour, knobs);
+        }
+        // The surface's own light (already the pool's shape) plus any
+        // emissive `extra` the piece carries, under the clamp, into the
+        // catalogue tint.
+        const auto litWith = [&p, &sky](const render::Rgb& pool, const render::Rgb& extra,
+                                        const Rgba8& tint, float cap) {
+            const auto ch = [&p, cap](float ambient, float g, float e, std::uint8_t t) {
+                const float light = std::min(cap, ambient + g + e) * p.facing;
                 return static_cast<std::uint8_t>(
                     std::clamp(light * static_cast<float>(t), 0.0F, 255.0F) + 0.5F);
             };
-            return Rgba8{ch(sky.ambient.r, pool.r, tint.r), ch(sky.ambient.g, pool.g, tint.g),
-                         ch(sky.ambient.b, pool.b, tint.b), tint.a};
+            return Rgba8{ch(sky.ambient.r, pool.r, extra.r, tint.r),
+                         ch(sky.ambient.g, pool.g, extra.g, tint.g),
+                         ch(sky.ambient.b, pool.b, extra.b, tint.b), tint.a};
+        };
+        const auto lit = [&litWith](const render::Rgb& pool, const Rgba8& tint) {
+            return litWith(pool, render::Rgb{}, tint, kLightClamp);
         };
         if (p.selfLit) {
             // A lamp is its own light. A flame's halo (a translucent quad)
@@ -517,17 +571,39 @@ void WorldScene::relightPieces(const ChunkLighting& lighting) {
                                         sky.haloScale;
                 own.a = static_cast<std::uint8_t>(std::clamp(glowAlpha, 0.0F, 255.0F) + 0.5F);
             }
-            slots[0] = slots[1] = slots[2] = slots[3] = own;
+            if (night && hasLampGlass(p.role)) {
+                // THE LANTERN'S METAL AFTER DARK (kLampMetalNightCap): lit
+                // by the sky and its own pool like any prop, and capped,
+                // so the cap never out-values the glass.
+                const Rgba8 metal = litWith(surfaceAt(p.lightX, p.lightY, p.lightZ), render::Rgb{},
+                                            own, kLampMetalNightCap);
+                slots[0] = slots[1] = slots[2] = slots[3] = metal;
+            } else {
+                slots[0] = slots[1] = slots[2] = slots[3] = own;
+            }
             // The glass, hot after dark and plain by day (kLampGlassNight).
             slots[4] = night && hasLampGlass(p.role) ? kLampGlassNight : darkPane(own);
         } else if (p.gradient) {
             // A run piece: lit at each end AT THE BOUNDARY, blended across
             // by the adapter. The piece's local X runs from the a0 end
             // unless it was turned around to show its other finish.
-            const Rgba8 a = lit(glowBetween(p.lightX, p.lightY, p.endAX, p.endAY, p.endAT, p.lightZ),
-                                p.instance.tint);
-            const Rgba8 b = lit(glowBetween(p.lightX2, p.lightY2, p.endBX, p.endBY, p.endBT, p.lightZ),
-                                p.instance.tint);
+            //
+            // THE SPILL: a board half cut at a hung window carries the
+            // pane's household (StaticPlacement::spill); its end at the
+            // pane takes the candle's pool and its far end a share of it,
+            // as long as the pane is up.
+            render::Rgb extraA{};
+            render::Rgb extraB{};
+            if (p.spill && paneUp) {
+                const render::Rgb far{kSpillGlow.r * kSpillFarShare, kSpillGlow.g * kSpillFarShare,
+                                      kSpillGlow.b * kSpillFarShare};
+                extraA = p.spillAtB ? far : kSpillGlow;
+                extraB = p.spillAtB ? kSpillGlow : far;
+            }
+            const Rgba8 a = litWith(surfaceBetween(p.lightX, p.lightY, p.endAX, p.endAY, p.endAT, p.lightZ),
+                                    extraA, p.instance.tint, kLightClamp);
+            const Rgba8 b = litWith(surfaceBetween(p.lightX2, p.lightY2, p.endBX, p.endBY, p.endBT, p.lightZ),
+                                    extraB, p.instance.tint, kLightClamp);
             if (p.alongZ) {
                 // The blend runs along the piece's Z: its near end (z = 0)
                 // first.
@@ -540,10 +616,10 @@ void WorldScene::relightPieces(const ChunkLighting& lighting) {
             slots[4] = darkPane(slots[0]);
         } else if (p.bilinear) {
             // A block: its four corner points, in the piece's own order.
-            slots[0] = lit(glowAtCorner(p.lightX, p.lightY, p.lightZ), p.instance.tint);
-            slots[1] = lit(glowAtCorner(p.lightX2, p.lightY2, p.lightZ), p.instance.tint);
-            slots[2] = lit(glowAtCorner(p.endAX, p.endAY, p.lightZ), p.instance.tint);
-            slots[3] = lit(glowAtCorner(p.endBX, p.endBY, p.lightZ), p.instance.tint);
+            slots[0] = lit(surfaceAtCorner(p.lightX, p.lightY, p.lightZ), p.instance.tint);
+            slots[1] = lit(surfaceAtCorner(p.lightX2, p.lightY2, p.lightZ), p.instance.tint);
+            slots[2] = lit(surfaceAtCorner(p.endAX, p.endAY, p.lightZ), p.instance.tint);
+            slots[3] = lit(surfaceAtCorner(p.endBX, p.endBY, p.lightZ), p.instance.tint);
             slots[4] = darkPane(slots[0]);
         } else {
             // A point piece, or a flat block: averaged over the cells it
@@ -556,7 +632,7 @@ void WorldScene::relightPieces(const ChunkLighting& lighting) {
             int count = 0;
             for (std::int32_t y = y0; y <= y1; ++y) {
                 for (std::int32_t x = x0; x <= x1; ++x) {
-                    const render::Rgb g = glowAt(x, y, p.lightZ);
+                    const render::Rgb g = surfaceAt(x, y, p.lightZ);
                     sum.r += g.r;
                     sum.g += g.g;
                     sum.b += g.b;
@@ -568,45 +644,24 @@ void WorldScene::relightPieces(const ChunkLighting& lighting) {
             slots[0] = slots[1] = slots[2] = slots[3] = flat;
             slots[4] = darkPane(flat);
         }
-        // A window whose room is lit after dark shows it: the pane goes
-        // warm and bright, its own light -- lit by a lamp that reaches the
-        // room, or because the light law has the household up at this
-        // hour (the whole room's lot, so a house's windows agree).
-        //
-        // Named `paneUp`, not `lit`: `lit` above this is already the
-        // per-corner light lambda every branch above uses.
-        bool paneUp = false;
-        if (p.hasInside && night) {
-            const render::Rgb room = glowAt(p.insideX, p.insideY, p.insideZ);
-            paneUp = std::max(room.r, std::max(room.g, room.b)) > kPaneLitAbove ||
-                    paneGlows(p.house, p.houseLot, hour, knobs);
-            if (paneUp) {
-                slots[4] = litPaneTint;
-            }
+        if (paneUp && !p.selfLit) {
+            slots[4] = litPaneTint;
         }
-        // The pane quad in a hung timber frame IS its pane: the whole quad
-        // wears what a glass pane would, dark by day, warm when the room
-        // is -- and, lit, the head-side band (not paneCore) cools toward
-        // kPaneEdgeLit, the sill-side band keeping the law's own hot core
-        // unchanged, so the two stacked placements read as one gradient
-        // pane rather than one flat one. Dark, both stay the same dark
-        // pane they always were.
+        // The pane quad in a hung timber frame IS its pane: the adapter
+        // draws paneRampMesh() in the pane tint over its span (kDrawPaneRamp,
+        // scene.hpp), hot at the sill and easing to the head -- so the
+        // whole quad wears what a glass pane would, dark by day, the law's
+        // own candle when the room is up. The corner slots carry the same,
+        // for the hash and for any adapter without the ramp.
         if (p.role == PieceRole::PaneTimber) {
-            if (paneUp && !p.paneCore) {
-                slots[4] = kPaneEdgeLit;
-            }
             slots[0] = slots[1] = slots[2] = slots[3] = slots[4];
         }
         // THE CRITIC'S THIRD: no spill. A hung window's own timber frame
-        // carries its pane's household now (static_pieces.cpp), so a lit
-        // pane warms its own reveal instead of standing as dark as a wall
-        // five tiles off -- the cheapest honest wash a static piece can
-        // give without registering the pane as a dynamic lamp (that would
-        // want a Lamp in ChunkLighting::dynamicLamps, at a ~1.5 m radius
-        // through dynamicGlowAt(), lighting.cpp -- past this pass's reach
-        // without a build to prove the chunk-mesh side of it). Mixed
-        // toward the law's own warm tint, not replaced by it, so the wood
-        // still reads as wood and not as a second pane.
+        // carries its pane's household (static_pieces.cpp), so a lit pane
+        // warms its own reveal instead of standing as dark as a wall five
+        // tiles off. Mixed toward the law's own warm tint, not replaced by
+        // it, so the wood still reads as wood and not as a second pane.
+        // The boards past the frame take the spill above.
         if (p.role == PieceRole::WindowTimber && paneUp) {
             const auto warmed = [&](const Rgba8& tint) {
                 const auto mix = [](std::uint8_t c, std::uint8_t hot) {
@@ -643,6 +698,7 @@ void WorldScene::refresh(SceneDescription& scene, const render::Camera& camera, 
     lighting.glow = glow_;
     lighting.dynamicLamps = &params.dynamicLamps;
     lighting.lampKey = dynamicLampKey(params.dynamicLamps);
+    lighting.pool = pool();
 
     // The atlas, once per scene.
     bool haveTexture = false;
