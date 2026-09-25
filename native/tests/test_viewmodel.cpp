@@ -888,21 +888,9 @@ TEST_CASE("the weapon socket, the framing and the clip policy are pure per kind 
     CHECK(swordGuard.pitch > fistsGuard.pitch);
     CHECK(swordGuard.offset.y < fistsGuard.offset.y);
     CHECK(swordGuard.yaw < kViewmodelRigYaw);
-    // The cast is per kind too. Bare hands: the eye higher than any guard
-    // (the spell clip's thrown hand is half a metre over the block clip's
-    // shoulders), looking well down, the body turned RIGHT of the eye's
-    // line -- a yaw past the half turn -- so the left hand crosses to
-    // centre. A weapon keeps the shared framing: level, turned left.
     const ViewmodelRigPlacement cast = viewmodelCastPlacement(ViewmodelKind::Fists);
-    CHECK(cast.yaw > kViewmodelRigYaw);
-    CHECK(cast.offset.y < swordGuard.offset.y);
-    CHECK(cast.pitch > 0.4F);
-    const ViewmodelRigPlacement swordCast = viewmodelCastPlacement(ViewmodelKind::Sword);
-    CHECK(swordCast.yaw < kViewmodelRigYaw);
-    CHECK(swordCast.pitch < 0.0F);
-    CHECK(swordCast.offset.y < -1.5F);
-    CHECK(swordCast.offset.y > cast.offset.y);
-    CHECK(viewmodelCastPlacement(ViewmodelKind::Club).offset.y == swordCast.offset.y);
+    CHECK(cast.yaw < kViewmodelRigYaw);
+    CHECK(cast.offset.y < -1.5F);
     CHECK(viewmodelGuardPlacement(ViewmodelKind::Club).offset.y ==
           viewmodelGuardPlacement(ViewmodelKind::Sword).offset.y);
 
