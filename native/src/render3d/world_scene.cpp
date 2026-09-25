@@ -80,9 +80,9 @@ constexpr float kFlameDayAlpha = 0.12F;
 constexpr float kHaloForward = 0.5F;
 constexpr float kHaloForwardCap = 0.4F;
 
-/// A window pane goes warm when the sky is darker than this (0 at
-/// midnight, 1 at noon) and the room behind it glows more than this.
-constexpr float kPaneNightBelow = 0.42F;
+/// A window pane goes warm after dark (the sky under the catalogue's
+/// `paneDuskBelow`) when the room behind it glows more than this -- a lamp
+/// reaches it -- or the light law says the household is up (paneGlows()).
 constexpr float kPaneLitAbove = 0.12F;
 
 /// The glass of an unlit window: a third of the light, blue-grey -- a dark
@@ -277,6 +277,12 @@ void WorldScene::placePieces() {
 }
 
 void WorldScene::relightPieces(const ChunkLighting& lighting) {
+    // Without a catalogue nothing was placed and there is nothing to
+    // relight (refresh() never asks; this keeps the knobs below honest).
+    if (catalogue_ == nullptr) {
+        litTints_.clear();
+        return;
+    }
     // The same surface light the chunk colour stage computes for a cell --
     // ambient + max(baked, dynamic) -- times the piece's facing factor,
     // clamped a little over one so a piece in a lamp's pool is lit rather
@@ -313,9 +319,14 @@ void WorldScene::relightPieces(const ChunkLighting& lighting) {
         }
         return render::Rgb{sum.r * 0.25F, sum.g * 0.25F, sum.b * 0.25F};
     };
-    const Rgba8 litPaneTint =
-        catalogue_ != nullptr ? catalogue_->knobs().litPane : Rgba8{255, 196, 120, 255};
-    const bool night = sky.daylight < kPaneNightBelow;
+    const RuleKnobs& knobs = catalogue_->knobs();
+    const Rgba8 litPaneTint = knobs.litPane;
+    const bool night = sky.daylight < knobs.paneDuskBelow;
+    // The hour with its minutes, for the households' bedtimes: the relight
+    // runs on the minute (chunkVersion()), so a house goes dark on the
+    // minute its lot names.
+    const int second = ((lighting.timeOfDaySeconds % 86400) + 86400) % 86400;
+    const float hour = static_cast<float>(second) / 3600.0F;
     for (std::size_t i = 0; i < placements_.placements.size(); ++i) {
         const StaticPlacement& p = placements_.placements[i];
         Rgba8* slots = &litTints_[i * kLitSlots];
@@ -387,14 +398,21 @@ void WorldScene::relightPieces(const ChunkLighting& lighting) {
             slots[0] = slots[1] = slots[2] = slots[3] = flat;
             slots[4] = darkPane(flat);
         }
-        // A window whose room is lit at night shows it: the pane goes
+        // A window whose room is lit after dark shows it: the pane goes
         // warm and bright, its own light -- lit by a lamp that reaches the
-        // room, or by the candle the tile hash keeps in a roofed room.
+        // room, or because the light law has the household up at this
+        // hour (the whole room's lot, so a house's windows agree).
         if (p.hasInside && night) {
             const render::Rgb room = glowAt(p.insideX, p.insideY, p.insideZ);
-            if (p.homely || std::max(room.r, std::max(room.g, room.b)) > kPaneLitAbove) {
+            if (std::max(room.r, std::max(room.g, room.b)) > kPaneLitAbove ||
+                paneGlows(p.house, p.houseLot, hour, knobs)) {
                 slots[4] = litPaneTint;
             }
+        }
+        // The pane quad in a hung timber frame IS its pane: the whole quad
+        // wears what a glass pane would, dark by day, warm when the room is.
+        if (p.role == PieceRole::PaneTimber) {
+            slots[0] = slots[1] = slots[2] = slots[3] = slots[4];
         }
     }
     ++stats_.piecesRelit;

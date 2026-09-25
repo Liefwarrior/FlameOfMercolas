@@ -2421,3 +2421,244 @@ TEST_CASE("a pair of lone posts two cells apart on a street carries a hitching r
     CHECK(boards == 2);
 }
 
+// ---------------------------------------------------------------------------
+// THE LIGHT LAW -- the ward after dark
+// ---------------------------------------------------------------------------
+
+namespace {
+
+/// A lot whose draws come out as asked: the candle and the owl are read as
+/// `lot % 100` and `(lot >> 8) % 100` over the whole word, so the low
+/// sixteen bits are searched for the pair once the bedtime and rising bytes
+/// (16..23, 24..31) are set.
+std::uint32_t lotOf(int candle, int owl, std::uint32_t bed, std::uint32_t rise) {
+    const std::uint32_t top = (rise << 24) | (bed << 16);
+    for (std::uint32_t low = 0; low < 65536U; ++low) {
+        const std::uint32_t lot = top | low;
+        if (static_cast<int>(lot % 100U) == candle && static_cast<int>((lot >> 8) % 100U) == owl) {
+            return lot;
+        }
+    }
+    return top;
+}
+
+bool windowPane(PieceRole role) {
+    return role == PieceRole::WallWindow || role == PieceRole::PaneTimber;
+}
+
+bool warmPane(const StaticInstance& piece, const Rgba8& warm) {
+    return windowPane(static_cast<PieceRole>(piece.role)) && piece.pane.r == warm.r &&
+           piece.pane.g == warm.g && piece.pane.b == warm.b;
+}
+
+}  // namespace
+
+TEST_CASE("the light law answers the hour, and a house's windows draw one lot") {
+    // The rule alone, on lots built by hand, with the shipped hours.
+    RuleKnobs knobs;
+    knobs.houseCandlePercent = 85;
+    knobs.houseOwlPercent = 10;
+    knobs.houseBedtimeFrom = 21.5F;
+    knobs.houseBedtimeTo = 26.5F;
+    knobs.houseRisingFrom = 4.0F;
+    knobs.houseRisingTo = 6.5F;
+    knobs.storeLampPercent = 15;
+    // A plain household: a candle, no owl, bedtime at the window's middle
+    // (midnight), rising at the middle of its own (a quarter past five).
+    const std::uint32_t plain = lotOf(0, 50, 128U, 128U);
+    REQUIRE(plain % 100U == 0U);
+    REQUIRE((plain >> 8) % 100U == 50U);
+    CHECK(paneGlows(HouseKind::Household, plain, 20.0F, knobs));
+    CHECK(paneGlows(HouseKind::Household, plain, 23.5F, knobs));
+    CHECK_FALSE(paneGlows(HouseKind::Household, plain, 0.5F, knobs));
+    CHECK_FALSE(paneGlows(HouseKind::Household, plain, 3.0F, knobs));
+    CHECK_FALSE(paneGlows(HouseKind::Household, plain, 5.0F, knobs));
+    CHECK(paneGlows(HouseKind::Household, plain, 5.5F, knobs));
+    // The earliest bedtime and the latest: half past nine, half past two.
+    CHECK(paneGlows(HouseKind::Household, lotOf(0, 50, 0U, 128U), 21.4F, knobs));
+    CHECK_FALSE(paneGlows(HouseKind::Household, lotOf(0, 50, 0U, 128U), 21.6F, knobs));
+    CHECK(paneGlows(HouseKind::Household, lotOf(0, 50, 255U, 128U), 2.0F, knobs));
+    CHECK_FALSE(paneGlows(HouseKind::Household, lotOf(0, 50, 255U, 128U), 3.0F, knobs));
+    // No candle: dark whatever the hour. An owl: up whatever the hour.
+    CHECK_FALSE(paneGlows(HouseKind::Household, lotOf(90, 50, 128U, 128U), 20.0F, knobs));
+    CHECK(paneGlows(HouseKind::Household, lotOf(0, 5, 128U, 128U), 3.0F, knobs));
+    // The named houses, whatever their lot: lit is lit, dark is a
+    // watchman's lamp in one window in so many, none is none.
+    CHECK(paneGlows(HouseKind::Lit, lotOf(90, 50, 0U, 0U), 3.0F, knobs));
+    CHECK(paneGlows(HouseKind::Dark, lotOf(10, 50, 0U, 0U), 3.0F, knobs));
+    CHECK_FALSE(paneGlows(HouseKind::Dark, lotOf(20, 50, 0U, 0U), 22.0F, knobs));
+    CHECK_FALSE(paneGlows(HouseKind::None, lotOf(0, 5, 0U, 0U), 22.0F, knobs));
+    // The defaults are the old rule: two panes in three, up all night.
+    const RuleKnobs old{};
+    CHECK(paneGlows(HouseKind::Household, lotOf(0, 50, 128U, 128U), 3.0F, old));
+    CHECK(paneGlows(HouseKind::Household, lotOf(66, 50, 128U, 128U), 3.0F, old));
+    CHECK_FALSE(paneGlows(HouseKind::Household, lotOf(67, 50, 128U, 128U), 22.0F, old));
+
+    // On the house world every window on the ring looks into the one room,
+    // so every pane carries the one lot -- the household's, since no sign
+    // of the Docks stands here.
+    HouseWorld house;
+    const StaticCatalogue& catalogue = shippedCatalogue();
+    const StaticPlacements placed = placeStaticPieces(house.tiles, catalogue, {});
+    std::size_t panes = 0;
+    std::uint32_t lot = 0;
+    for (const StaticPlacement& p : placed.placements) {
+        if (!windowPane(p.role)) {
+            continue;
+        }
+        REQUIRE(p.hasInside);
+        CHECK(p.homely);
+        CHECK(p.house == HouseKind::Household);
+        CHECK(p.houseLot != 0U);
+        if (panes == 0) {
+            lot = p.houseLot;
+        }
+        CHECK(p.houseLot == lot);
+        ++panes;
+    }
+    CHECK(panes >= 2);
+}
+
+TEST_CASE("the light law on the Docks: up at ten, abed at three, and the Gull never sleeps") {
+    const sim::TileQuery tilesA(docksWorld());
+    const sim::TileQuery tilesB(docksWorld());
+    const StaticCatalogue& catalogue = shippedCatalogue();
+    const RuleKnobs& knobs = catalogue.knobs();
+    REQUIRE(knobs.houseBedtimeTo > knobs.houseBedtimeFrom);
+    REQUIRE_FALSE(knobs.litAllNight.empty());
+    REQUIRE_FALSE(knobs.keptDark.empty());
+    const std::vector<render::Lamp> lamps =
+        render::loadLamps(content::contentDir(), sim::docks::kWorldName);
+    const StaticPlacements first = placeStaticPieces(tilesA, catalogue, lamps);
+    const StaticPlacements second = placeStaticPieces(tilesB, catalogue, lamps);
+    REQUIRE(first.placements.size() == second.placements.size());
+
+    // Every pane knows its house the same way twice, and a timber frame
+    // carries a pane of its own.
+    std::size_t households = 0;
+    std::size_t litHouses = 0;
+    std::size_t darkHouses = 0;
+    std::size_t yards = 0;
+    for (std::size_t i = 0; i < first.placements.size(); ++i) {
+        const StaticPlacement& p = first.placements[i];
+        const StaticPlacement& q = second.placements[i];
+        REQUIRE(p.role == q.role);
+        if (!windowPane(p.role)) {
+            continue;
+        }
+        REQUIRE(p.hasInside);
+        REQUIRE(p.house == q.house);
+        REQUIRE(p.houseLot == q.houseLot);
+        REQUIRE(p.insideX == q.insideX);
+        REQUIRE(p.insideY == q.insideY);
+        REQUIRE(p.insideZ == q.insideZ);
+        CHECK(p.homely == (p.house != HouseKind::None));
+        switch (p.house) {
+            case HouseKind::None: ++yards; break;
+            case HouseKind::Household: ++households; break;
+            case HouseKind::Lit: ++litHouses; break;
+            case HouseKind::Dark: ++darkHouses; break;
+        }
+    }
+    const std::size_t timberPanes = countRole(first.placements, PieceRole::PaneTimber);
+    CHECK(timberPanes > 10);
+    CHECK(timberPanes == countRole(first.placements, PieceRole::WindowTimber));
+    CHECK(households >= 40);
+    CHECK(litHouses >= 4);
+    CHECK(darkHouses >= 4);
+    MESSAGE("Docks panes: " << households << " household, " << litHouses << " lit all night, "
+                            << darkHouses << " kept dark, " << yards << " on no room");
+
+    // The law's own count at an hour (a lamp's glow is on top of this).
+    const auto upAt = [&](float hour, HouseKind kind) {
+        std::size_t n = 0;
+        for (const StaticPlacement& p : first.placements) {
+            if (windowPane(p.role) && p.house == kind && paneGlows(p.house, p.houseLot, hour, knobs)) {
+                ++n;
+            }
+        }
+        return n;
+    };
+    const std::size_t up20 = upAt(20.0F, HouseKind::Household);
+    const std::size_t up22 = upAt(22.0F, HouseKind::Household);
+    const std::size_t up3 = upAt(3.0F, HouseKind::Household);
+    MESSAGE("Docks households up: " << up20 << " at eight, " << up22 << " at ten, " << up3 << " at three");
+    // At eight nobody has gone to bed; at ten most are up; at three only
+    // the owls.
+    CHECK(up20 >= up22);
+    CHECK(up22 >= 20);
+    CHECK(up22 * 3 > households);
+    CHECK(up3 * 2 < up22);
+    CHECK(up3 * 3 < households);
+    // A watchman's lamp in a few of the stores' windows, never most.
+    CHECK(upAt(3.0F, HouseKind::Dark) * 2 < darkHouses);
+    CHECK(upAt(3.0F, HouseKind::Lit) == litHouses);
+    CHECK(upAt(22.0F, HouseKind::None) == 0);
+
+    // The Gilded Gull (its sign's footprint, tavern.hpp: x 146..160, y
+    // 66..79, its oak storey over its granite one) keeps every pane lit at
+    // both hours; the King's Bond across the Tarwalk is kept dark.
+    std::size_t gull = 0;
+    std::size_t bond = 0;
+    for (const StaticPlacement& p : first.placements) {
+        if (!windowPane(p.role) || p.insideZ < 19 || p.insideZ > 21) {
+            continue;
+        }
+        if (p.insideX >= 146 && p.insideX <= 160 && p.insideY >= 66 && p.insideY <= 79) {
+            CHECK(p.house == HouseKind::Lit);
+            CHECK(paneGlows(p.house, p.houseLot, 22.0F, knobs));
+            CHECK(paneGlows(p.house, p.houseLot, 3.0F, knobs));
+            ++gull;
+        }
+        if (p.insideX >= 114 && p.insideX <= 130 && p.insideY >= 66 && p.insideY <= 78) {
+            CHECK(p.house == HouseKind::Dark);
+            ++bond;
+        }
+    }
+    CHECK(gull >= 2);
+    CHECK(bond >= 1);
+
+    // Through the world scene, from the Tarwalk before the Gull's frontage
+    // (frame 16's vantage), no baked lamps: the panes the eye sees are warm
+    // by the law alone, the same twice, fewer at three than at ten, none at
+    // noon.
+    const render::TileAtlas& atlas = proceduralAtlas();
+    render::Camera eye;
+    eye.x = 150.5F;
+    eye.y = 63.5F;
+    eye.z = render::bandSurface(19) + static_cast<float>(sim::kEyeHeightTilesQ8) / 256.0F;
+    eye.yaw = 150.0F * 3.14159265358979323846F / 180.0F;
+    eye.pitch = 0.0F;
+    eye.hfovTan = 1.0F;
+    WorldScene worldA(tilesA, atlas, nullptr, &catalogue, &lamps);
+    WorldScene worldB(tilesB, atlas, nullptr, &catalogue, &lamps);
+    WorldSceneParams params;
+    params.timeOfDaySeconds = 22 * 3600;
+    SceneDescription sceneA;
+    SceneDescription sceneB;
+    worldA.refresh(sceneA, eye, 16.0F / 9.0F, params);
+    worldB.refresh(sceneB, eye, 16.0F / 9.0F, params);
+    CHECK(sceneHash(sceneA) == sceneHash(sceneB));
+    const Rgba8 warm = knobs.litPane;
+    const auto warmSeen = [&warm](const SceneDescription& scene) {
+        std::size_t n = 0;
+        for (const StaticInstance& piece : scene.statics) {
+            n += warmPane(piece, warm) ? 1 : 0;
+        }
+        return n;
+    };
+    const std::size_t warm22 = warmSeen(sceneA);
+    CHECK(warm22 >= 2);
+    params.timeOfDaySeconds = 3 * 3600;
+    worldA.refresh(sceneA, eye, 16.0F / 9.0F, params);
+    worldB.refresh(sceneB, eye, 16.0F / 9.0F, params);
+    CHECK(sceneHash(sceneA) == sceneHash(sceneB));
+    const std::size_t warm3 = warmSeen(sceneA);
+    MESSAGE("Docks panes warm from the Gull's frontage: " << warm22 << " at ten, " << warm3 << " at three");
+    CHECK(warm3 >= 1);
+    CHECK(warm3 <= warm22);
+    params.timeOfDaySeconds = 12 * 3600;
+    worldA.refresh(sceneA, eye, 16.0F / 9.0F, params);
+    CHECK(warmSeen(sceneA) == 0);
+}
+

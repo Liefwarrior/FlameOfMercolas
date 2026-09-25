@@ -261,6 +261,119 @@ Tavern baseline `0x86E05F527E54E795` and population baseline
 times with byte-identical PNGs (sha256 `FD3D16BB...4A70A1`). 19,234 pieces
 placed over the district, about 3,600 described from the spawn.
 
+## The ward after dark (2026-09-25)
+
+The critic counted the lit windows across the whole Docks at night and got
+one, two, three. Fair. Shot the wip build at nine from the spawn and the
+Gull's roof: one warm pane beside the Gull's door, one on the roofscape, and
+every timber storey a black box. Here is why, and what changed. Code is
+`native/src/render3d/static_pieces.cpp` and `world_scene.cpp`.
+
+**Root cause.** Three things stacked.
+
+1. The hung timber window (`SM_Bld_House_Window_04`) is a frame and three
+   shutter panels. No glass mesh, so there was nothing to tint. The old rule
+   set `hasInside` on the frame and the relight dutifully wrote a warm pane
+   tint that no submesh ever wore. Every timber storey, every timber hovel,
+   dark by construction.
+2. The kit window on masonry did light, two panes in three over a roofed
+   room, by the pane's own tile hash. But the Tarwalk is timber above its
+   stone ground floors, so from the street that came to the one window
+   beside the Gull's door. And per-pane hashing meant a lit house was a
+   scatter of odd panes, never a home.
+3. The night gate sat at daylight 0.42, which on the sky curve is twenty
+   past eight. The eight o'clock frame had every pane dark by definition.
+
+**The law.** A pane glows by its household, never by itself. At placement
+the roofed room behind each window is flood-filled once and every window on
+it draws one lot off the room's anchor cell, the storey folded out, so a
+house's floors agree where their footprints do. The lot's bytes are the
+house's candle (85 in 100 keep one), whether it is a night owl (10 in 100
+never put it out), its bedtime (hashed between half past nine and half past
+two) and its rising hour (four to half past six, the early trades first).
+`paneGlows()` reads the lot against the hour at relight, on the minute, so
+a house goes dark on the minute its lot names and the placement stays pure
+over the tiles. A lamp that reaches the room still lights the pane on top
+of all this, as before.
+
+The ward's own signs name the exceptions by their `place` text
+(`docks_signs_generated.hpp`, read at the wall cell and then at the room
+cell behind it, the smallest listed footprint winning where they nest). The
+Gull, the Bilge, the Mission, the Lantern Room, the Rows, the Eel-Pots, the
+Watch-Post and the Guardhouse keep their lights whatever the hour. The
+King's Bond, the Long Store, the Counting-House, the Impound, the Ropewalk,
+Salt Row, Pitchfield, Dawnstalls, Harl's, Merle's, Kennel Row, the Coopers
+and the Drowned Hold are kept dark but for a watchman's lamp in one window
+in seven (that draw is per pane, so a lamp is a window and never a whole
+warehouse). A window with no roofed room behind it (a yard, a deck, a
+parapet) is dark unless a lamp reaches the cell.
+
+The timber frame gets a pane: `pane_timber`, the thin plaster quad fitted to
+the frame's opening (0.68 by 0.79 m, measured off the frame's vertices), set
+two centimetres behind the jamb faces and three clear of the shutter panels,
+under the hood and over the sill. Dark blue-grey glass by day, warm by the
+law at night. The dusk gate moved to 0.7, last light, about ten to eight.
+
+Deterministic throughout: a hash of the building's cell and the hour, no
+RNG, render-only. The sim baselines do not move; the scene hash does.
+
+**What it comes to.** Of the households, about 85 in 100 lit at eight, 77 at
+ten, 62 at eleven, 47 at midnight, 16 at two, 8 at three (the owls), 39 at
+five, 76 at six, until first light takes every pane at about twenty to
+seven. The named houses on top, either way. That is the Oblivion curve: a
+town that is up in the evening, thins after eleven, and is a few stubborn
+windows and the tavern by two.
+
+**Knobs** (`content/raws/world3d/docks-pieces.json`, `rules`, all read into
+the catalogue digest):
+
+| knob | value | what |
+|---|---|---|
+| `paneDuskBelow` | 0.7 | a pane may glow once the sky's daylight is under this |
+| `houseCandlePercent` | 85 | households that keep a candle at all |
+| `houseBedtimeFrom` / `To` | 21.5 / 26.5 | the bedtime window, hours past noon (26.5 is half past two) |
+| `houseRisingFrom` / `To` | 4 / 6.5 | the rising window |
+| `houseOwlPercent` | 10 | candle-keepers that never put it out |
+| `storeLampPercent` | 15 | a kept-dark house's windows with a watchman's lamp |
+| `litAllNight` | eight names | houses lit whatever the hour, by sign text |
+| `keptDark` | thirteen names | stores and yards kept dark, by sign text |
+
+The defaults with no knobs set are the old rule (two in three, up all night),
+so a catalogue without them places as it did.
+
+**Tests.** `test_chunk_mesher.cpp`: the law answers the hour on lots built by
+hand (bedtime, rising, owl, no candle, lit, dark, none, and the old defaults);
+on the house world every window on the ring carries one lot; on the baked
+Docks the panes know their house the same way twice, more households are up
+at ten than at three by a wide margin, every pane on the Gull is lit at both
+hours, the King's Bond is kept dark, and the scene from the Gull's frontage
+hashes the same twice, warmer at ten than at three, with no warm pane at
+noon.
+
+**Reshoot.** Every line is
+
+`dist\granadad.exe --smoke=0 --hold --width=1280 --height=720 --scale=1 --time=HH --spawn=X,Y,Z --yaw=DEG [--pitch=DEG] --screenshot=path.png`
+
+with these vantages, each at `--time=20`, `--time=23` and `--time=2`:
+
+| vantage | flags | at eight | at eleven | at two |
+|---|---|---|---|---|
+| the Tarwalk west from the spawn | `--spawn=156,63,19 --yaw=265 --pitch=4` | the Gull's ground and oak storey warm on the left, the Bilge's beyond it, warm panes up the timber storeys down the street, the Bond dark at the far end but for a lamp or none | the Gull and the Bilge as they were, about a third of the other panes gone dark by house, not by pane | the Gull and the Bilge still lit, one or two stubborn windows down the street, the rest dark |
+| the Tarwalk east from the Bond | `--spawn=124,64,19 --yaw=85 --pitch=3` | the Bilge's frontage warm on the right, the Gull's beyond, the stalls' panes if any on the left; the Bond behind the eye | the same two houses lit, the street beyond thinner | the two houses lit, the street dark |
+| the quay looking back at the frontage | `--spawn=141,55,19 --yaw=150 --pitch=2` | the Bilge and the Gull across the Tarwalk, both storeys warm, the door lantern between | unchanged (both are lit all night) | unchanged; the water and the sky black, the frontage the one warm thing |
+| the overview from the Gull's roof, south-west | `--spawn=153,72,21 --yaw=225 --pitch=-18` | the Rows and the Mission lit, Fenner's and the Bathhouse by their lot, warm panes across the roofscape | about a third of the households out, the Rows and the Mission unmoved | the Rows and the Mission and a handful of owls; the Guardhouse at the edge of the window cull |
+
+A house's windows change together. If you see one storey of a house lit and
+the other not, either the storeys have different footprints (their rooms
+draw apart) or a lamp reaches one room. If you see odd panes on and off
+along one wall of one room, that is a bug.
+
+**Honest gaps.** Windows cull at 48 tiles, so an overview from the Saltgate
+head sees the terraces lit and the Tarwalk dark for distance, not for the
+law. A house that spans two storeys of different footprints draws two lots.
+A compound whose houses share a roofed passage is one household. The pane
+tint is flat; there is no glow on the wall under a lit window.
+
 ## The jambs, 2026-09-16
 
 The critic's line: the Gull's door posts are metre-square 3 m pillars. They
