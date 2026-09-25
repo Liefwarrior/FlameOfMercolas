@@ -60,15 +60,17 @@
 //   THE LIGHT LAW  after dark a pane glows by its HOUSEHOLD, never by
 //                  itself: the roofed room behind it is walked once and
 //                  every window on that room draws one lot off the room's
-//                  anchor cell -- the family is up or it is not. A house
-//                  keeps a candle two nights in three, puts it out at its
-//                  own hashed bedtime, and lights it again at its own
-//                  rising hour; one house in so many never puts it out.
-//                  The ward's signs name the exceptions: the houses that
-//                  keep their lights all night (the tavern, the Mission,
-//                  the watch) and the stores kept dark but for a watchman's
-//                  lamp. The knobs are the catalogue's `rules`; the lot is
-//                  read off the hour at relight (world_scene.cpp), so the
+//                  anchor cell, its storey folded out, so a house's floors
+//                  agree where their footprints do -- the family is up or
+//                  it is not. A house keeps a candle so many nights in a
+//                  hundred, puts it out at its own hashed bedtime, and
+//                  lights it again at its own rising hour; one house in so
+//                  many never puts it out. The ward's signs name the
+//                  exceptions: the houses that keep their lights all night
+//                  (the tavern, the Mission, the watch) and the stores kept
+//                  dark but for a watchman's lamp in one window in so many.
+//                  The knobs are the catalogue's `rules`; the lot is read
+//                  off the hour at relight (world_scene.cpp), so the
 //                  placement stays pure over the tiles.
 //   DOORS          a gap of two or three walkable tiles in a wall line, open
 //                  on both sides, one side roofed and one not, with the wall
@@ -466,8 +468,8 @@ struct RuleKnobs {
     /// small hours, and an empty window is no bedtime), and lights it again
     /// at its rising hour between `houseRisingFrom` and `houseRisingTo`;
     /// `houseOwlPercent` of them never put it out. A house the law names
-    /// dark keeps a watchman's lamp in `storeLampPercent` of its rooms. The
-    /// defaults are the old rule: two panes in three, up all night.
+    /// dark keeps a watchman's lamp in `storeLampPercent` of its windows.
+    /// The defaults are the old rule: two panes in three, up all night.
     float paneDuskBelow = 0.42F;
     std::int32_t houseCandlePercent = 67;
     float houseBedtimeFrom = 0.0F;
@@ -501,7 +503,7 @@ enum class HouseKind : std::uint8_t {
 
 /// THE LIGHT LAW for one pane: whether it glows at `hour` (0..24, the
 /// minute as a fraction) given the household behind it and the lot its
-/// room drew (StaticPlacement::houseLot). The sky's dusk gate
+/// house drew (StaticPlacement::houseLot). The sky's dusk gate
 /// (RuleKnobs::paneDuskBelow) and a lamp's own glow are the caller's.
 /// Pure: the same lot, hour and knobs answer the same on every machine.
 [[nodiscard]] bool paneGlows(HouseKind house, std::uint32_t lot, float hour,
@@ -611,9 +613,10 @@ struct StaticPlacement {
     /// frame): the cell behind it, whose light says whether a lamp reaches
     /// the room (the pane goes warm at night). `homely` says a household
     /// stands behind it -- the cell is a roofed floor -- and `house` says
-    /// what the light law makes of it, `houseLot` the lot its whole room
-    /// drew (the hash of the room's anchor cell, one for every window on
-    /// the room), read against the hour at relight by paneGlows().
+    /// what the light law makes of it, `houseLot` the lot its whole house
+    /// drew (the hash of the room's anchor cell with the storey folded out,
+    /// one for every window on the house; a store kept dark draws per
+    /// pane), read against the hour at relight by paneGlows().
     bool hasInside = false;
     bool homely = false;
     HouseKind house = HouseKind::None;

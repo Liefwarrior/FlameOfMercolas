@@ -259,6 +259,12 @@ void WorldScene::placePieces() {
 }
 
 void WorldScene::relightPieces(const ChunkLighting& lighting) {
+    // Without a catalogue nothing was placed and there is nothing to
+    // relight (refresh() never asks; this keeps the knobs below honest).
+    if (catalogue_ == nullptr) {
+        litTints_.clear();
+        return;
+    }
     // The same surface light the chunk colour stage computes for a cell --
     // ambient + max(baked, dynamic) -- times the piece's facing factor,
     // clamped a little over one so a piece in a lamp's pool is lit rather
@@ -295,10 +301,6 @@ void WorldScene::relightPieces(const ChunkLighting& lighting) {
         }
         return render::Rgb{sum.r * 0.25F, sum.g * 0.25F, sum.b * 0.25F};
     };
-    // Without a catalogue nothing was placed: nothing to relight.
-    if (catalogue_ == nullptr) {
-        return;
-    }
     const RuleKnobs& knobs = catalogue_->knobs();
     const Rgba8 litPaneTint = knobs.litPane;
     const bool night = sky.daylight < knobs.paneDuskBelow;

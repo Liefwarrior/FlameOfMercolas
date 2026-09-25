@@ -4,6 +4,7 @@
 #include <climits>
 #include <cmath>
 #include <fstream>
+#include <limits>
 #include <map>
 #include <span>
 #include <sstream>
@@ -131,15 +132,16 @@ constexpr float kWindowMinLength = 1.8F;
 constexpr float kTimberWindowLift = 1.15F;
 constexpr float kShelfLift = 1.55F;
 /// The pane quad set in the hung timber window's frame
-/// (SM_Bld_House_Window_04): the frame's opening between its jambs runs
-/// 0.34 m either side of its centre and from 0.19 m over its sill to 0.98
-/// m, and its two panels sit at 0.08..0.01 m behind the frame's origin, so
-/// the quad stands 0.02 m in front of that origin -- over the panels,
-/// inside the sill and the hood, which reach 0.06 and 0.13 m out.
+/// (SM_Bld_House_Window_04, measured off its vertices): the opening between
+/// the jambs runs 0.34 m either side of the centre and from 0.19 m over the
+/// sill to 0.98 m; the jambs' faces stand 0.005 m behind the frame's origin
+/// and the three panels 0.053..0.085 m behind it. The quad stands 0.02 m
+/// behind the origin: a hair inside the jamb faces, well clear of the
+/// panels, under the hood and over the sill (0.13 and 0.06 m out).
 constexpr float kTimberPaneHalfWidth = 0.34F;
 constexpr float kTimberPaneSill = 0.19F;
 constexpr float kTimberPaneHeight = 0.79F;
-constexpr float kTimberPaneOut = 0.02F;
+constexpr float kTimberPaneOut = -0.02F;
 /// The door leaf's clearance off the reveal it hangs open against, and off
 /// the facade plane.
 constexpr float kLeafOffReveal = 0.14F;
@@ -650,7 +652,7 @@ private:
     /// a house; a world the table does not describe matches nothing.
     [[nodiscard]] HouseKind namedHouse(std::int32_t x, std::int32_t y, std::int32_t z) const noexcept {
         HouseKind kind = HouseKind::Household;
-        std::int64_t best = INT64_MAX;
+        std::int64_t best = std::numeric_limits<std::int64_t>::max();
         for (const sim::docks::Sign& sign : sim::docks::kSigns) {
             if (sign.kind != sim::docks::SignKind::Door || z < sign.band || z > sign.band + kSignStoreys ||
                 x < sign.x0 || x > sign.x1 || y < sign.y0 || y > sign.y1) {
@@ -671,7 +673,7 @@ private:
     }
 
     /// The household behind a window in the wall cell (wx, wy, z) with the
-    /// room cell (ix, iy, z) behind it: the room's lot and what the law
+    /// room cell (ix, iy, z) behind it: the house's lot and what the law
     /// makes of the house, written onto the pane's placement. No room (a
     /// yard, a deck, a parapet behind the wall) leaves the pane dark but
     /// for a lamp.
@@ -690,8 +692,19 @@ private:
             return;
         }
         p.homely = true;
+        // The sign is read at the wall cell, then at the room cell behind
+        // it, for a footprint drawn tight to the floor.
         p.house = namedHouse(wx, wy, z);
-        p.houseLot = cellHash(ax, ay, z, kSaltHouse);
+        if (p.house == HouseKind::Household) {
+            p.house = namedHouse(ix, iy, z);
+        }
+        // The lot is the HOUSE's: the room's anchor with its storey folded
+        // out, so the floors of a house draw as one where their footprints
+        // agree -- the family is up or it is not. A store kept dark draws
+        // per pane instead: its watchman's lamp is one window in so many,
+        // never the whole warehouse.
+        p.houseLot = p.house == HouseKind::Dark ? cellHash(ix, iy, z, kSaltHouse)
+                                                 : cellHash(ax, ay, 0, kSaltHouse);
     }
 
     /// A storey's piece is fitted to the band less a centimetre, so its top
@@ -4012,12 +4025,12 @@ bool paneGlows(HouseKind house, std::uint32_t lot, float hour, const RuleKnobs& 
         case HouseKind::Lit:
             return true;
         case HouseKind::Dark:
-            // A store's watchman's lamp, in one room in so many.
+            // A store's watchman's lamp: one window in so many, all night.
             return static_cast<std::int32_t>(lot % 100U) < knobs.storeLampPercent;
         case HouseKind::Household:
             break;
     }
-    // Each lot off its own byte of the room's hash, so no two draws share.
+    // Each draw off its own byte of the house's lot, so no two draws share.
     if (static_cast<std::int32_t>(lot % 100U) >= knobs.houseCandlePercent) {
         return false;  // no candle in this house
     }
@@ -4033,9 +4046,15 @@ bool paneGlows(HouseKind house, std::uint32_t lot, float hour, const RuleKnobs& 
     const float bedtime = knobs.houseBedtimeFrom +
                           (knobs.houseBedtimeTo - knobs.houseBedtimeFrom) *
                               static_cast<float>((lot >> 16) % 256U) / 256.0F;
-    const float rising = 24.0F + knobs.houseRisingFrom +
-                         (knobs.houseRisingTo - knobs.houseRisingFrom) *
-                             static_cast<float>((lot >> 24) % 256U) / 256.0F;
+    // The rising hour, the next morning. An empty window is one hour for
+    // every house; none at all keeps the house abed to noon, by which time
+    // the day has the panes dark anyway.
+    float rising = knobs.houseRisingFrom > 0.0F ? knobs.houseRisingFrom : 12.0F;
+    if (knobs.houseRisingTo > knobs.houseRisingFrom) {
+        rising = knobs.houseRisingFrom + (knobs.houseRisingTo - knobs.houseRisingFrom) *
+                                             static_cast<float>((lot >> 24) % 256U) / 256.0F;
+    }
+    rising += 24.0F;
     const bool abed = h >= bedtime && h < rising;
     return !abed;
 }
