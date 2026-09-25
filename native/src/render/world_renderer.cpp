@@ -254,7 +254,7 @@ FrameStats WorldRenderer::renderFrame(Framebuffer& target, const Camera& camera,
                                       const std::vector<SpriteInstance>& sprites) const {
     const int width = target.width();
     const int height = target.height();
-    const SkyState sky = skyAt(settings.timeOfDay);
+    const SkyState sky = skyAt(settings.timeOfDay, settings.weather);
 
     target.clear(sky.skyTop);
 

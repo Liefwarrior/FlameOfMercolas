@@ -91,9 +91,11 @@ enum class SoundId : std::uint8_t {
     // THE PULL PACK (appended, never interleaved):
     CaseNews,         ///< the book changed: a lead heard, a stage moved, an errand taken
     SkillUp,          ///< a skill level rising: the toast's own chime, never the menu's confirm
+    // THE RUNG PLATE (appended, never interleaved):
+    LegendRung,       ///< a Legend rung rising: one heavy bell under the plate, heavier than the toast's chime
 };
 
-inline constexpr std::size_t kSoundIdCount = 56;
+inline constexpr std::size_t kSoundIdCount = 57;
 
 [[nodiscard]] constexpr std::size_t soundIndex(SoundId id) noexcept {
     return static_cast<std::size_t>(id);

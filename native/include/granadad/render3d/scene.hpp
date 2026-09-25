@@ -379,11 +379,24 @@ struct SceneDescription {
     /// and before the people. Hashed like everything else here.
     std::vector<StaticPieceRef> pieces;
     std::vector<StaticInstance> statics;
+    /// WEATHER. The veils: translucent instances drawn LAST inside the 3D
+    /// pass -- after the people and the deferred glass, before the hands --
+    /// with the depth test on, so whatever stands nearer than a veil is
+    /// clear of it and whatever stands beyond it is seen through it. The
+    /// harbour fog is one of these (world_scene.hpp, buildVeil): nested
+    /// shells round the eye, far to near. Empty in clear weather, which is
+    /// every frame drawn before the weather lane. Hashed like everything
+    /// else here.
+    std::vector<Instance> veils;
 
     [[nodiscard]] const MeshData* findMesh(std::uint32_t id) const noexcept;
     [[nodiscard]] MeshData* findMesh(std::uint32_t id) noexcept;
     /// Adds or replaces the mesh with this id.
     void putMesh(MeshData mesh);
+    /// Drops the mesh with this id, if it is here. The adapter keeps its
+    /// upload (nothing references it), and the description is once again
+    /// what it was before the mesh was put.
+    void removeMesh(std::uint32_t id);
     void putTexture(TextureData texture);
 };
 

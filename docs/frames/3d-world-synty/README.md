@@ -35,7 +35,7 @@ otherwise.
 |---|---|---|---|
 | 1 | raw atlas showing through (the Gull's ceiling, the quay, the pier lip) | every dressed wall standing over an open cell gets the plaster quad under it, in the room's own ceiling tint (`ceilings()`, the second pass). Every floor slab edge that faces air gets a lip quad the slab's own height, planks on timber and tinted plaster on stone (`lips()`). Steel has a rule now, so the quay's odd patch is dressed. | 13, 14, 08, 17 |
 | 2 | brick facing into plastered rooms behind the door frame | the thin plaster quad stands behind the header and both jambs, cut round the opening, plus two returns over the frame's ends in the reveal planes (`doors()`). Plaster faces in general are the one-sided thin quad now (`WallPlaster`), so a corner has no brick back and no brick end. | 14, 23 |
-| 3 | lamps with no light in them, no lit windows | lanterns are `SM_Prop_Camp_Lantern_01` on a bracket arm with a warm translucent halo (two crossed quads, their own light, brighter after dark). Fires keep the brazier and get an ember tray in the cage and a flame over it. A window pane goes warm at night when the room behind it is lit by a lamp, or when the tile hash keeps a candle in a roofed room (two windows in three), so the ward is not dead after dark. | 10, 15, 16, 19 |
+| 3 | lamps with no light in them, no lit windows | lanterns are `SM_Prop_Camp_Lantern_01` on a bracket arm with a warm translucent halo (two crossed quads then, one billboard since -- see "The halo, from under it" below; their own light, brighter after dark). Fires keep the brazier and get an ember tray in the cage and a flame over it. A window pane goes warm at night when the room behind it is lit by a lamp, or when the tile hash keeps a candle in a roofed room (two windows in three), so the ward is not dead after dark. | 10, 15, 16, 19 |
 | 4 | the Gull an empty box | joists across every room ceiling on the odd grid lines. Tables with benches and mugs on a lattice round the indoor lantern where a clear 3x3 of floor allows. Shelves with bottles on the indoor masonry faces. Barrel racks against walls. The free-standing two-cell masonry block is a hearth and wears the fireplace with a fire in it. The lone timber cells inside are square plastered pillars with a stool each side (`furniture()`, `posts()`). | 07, 21, 22 |
 | 5 | floorboard roofs, chimneys on fences | roof planes wear the flagstone piece as dark slates over a slate fill, loose tiles scattered by hash, an upstand along every edge cell (brick over masonry, boards over timber), chimneys one in twelve over masonry walls only in three variants, the odd crate or barrel at the edge (`roofs()`). Still flat, see below. | 05, 06, 19 |
 | 6 | hulls as sheds, 1x1 posts as boarded pillars | a timber wall with the harbour beside it is a hull. Its boards run across and lean outward nine degrees, tarred, with a gunwale beam along the open top and mooring lines down the side. Rowboats moor along quay edges one cell in seven, cranes stand one cell back from a pier head. A lone timber cell out of doors is a tarred core with a banded timber post at each corner. The chunk box is still a metre square, that is the sim's cell. | 08, 17, 18, 20 |
@@ -169,8 +169,10 @@ one line once the tiles say so.
   Gull's tables are these, in the sim's terms), so the dressing keeps the
   footprint and makes it a pillar or a post cluster rather than pretending
   it is thin.
-- The lantern halo is two crossed translucent quads with a radial falloff.
-  It reads as a glow; walk through one and the crossing shows.
+- The lantern halo is one translucent quad with a radial falloff, turned to
+  the eye in three dimensions and floated a hand's breadth toward it (see
+  "The halo, from under it" below). It reads as a glow; walk into one and it
+  fills the view, as a glow does.
 - The roof flags land on whole 3x3 blocks at their own module. A roof strip
   narrower than three stays the plain dark fill, lead rather than slate.
 - The hull stands plumb. A lean is a knob (`hullFlareDegrees`) but a leaning
@@ -180,6 +182,73 @@ one line once the tiles say so.
   and a body walks through a table.
 - Some crowd bodies render white in daylight (a rig's embedded texture does
   not load). That is the rig export, not this lane.
+
+## The halo, from under it (2026-09-16)
+
+The placement critic's one open minor: "the halo's edge-on quad shows at
+arm's length". Measured first on the gated exe of wip `d23ba091` (dist
+digest `6ea17fc2`), which already had the crossed pair collapsed to one quad
+yawed to the eye (`55cefc2c`; frame 15 above is the OLD crossed pair, its
+seam plain down the ring). What the one yawed quad still did, shot at the
+Gull's door lantern (`lamp_gull_door`, hung on the jamb west of the door at
+about x 152.7, y 65.58, band 19):
+
+- Straight on at arm's length and from 45 degrees it read as a soft glow,
+  no seam. The yaw was doing its job along the street.
+- From under it -- stand on the tile in front of the jamb and look up --
+  the quad stood plumb whatever the eye did, so at 66 degrees of pitch it
+  was foreshortened to a bar and the lantern's base hid what was left.
+  The glow was gone from beneath. From a roof it was the same sliver, the
+  other way up.
+- From beside it, against the sky, the glow was centred on the RING, a
+  hand above the glass. `kLanternFlameDrop` measured 0.66 from the piece's
+  origin, taken for the top ring; the origin is the top of the lantern's
+  hanging rod, 0.4 above the ring, and the glass is 0.8 to 1.0 down.
+- By noon an eighth of the alpha (`kFlameDayAlpha`) is nothing you can
+  see against a daylit wall, from any angle. No square.
+
+What changed, code in `native/src/render3d/`:
+
+- `world_scene.cpp`, the billboard block: the quad is a SPHERE'S billboard
+  now. Its normal follows the whole line to the eye -- the yaw as before,
+  then a pitch about the quad's own X (`StaticInstance::pitch`, which the
+  adapter applies before the yaw), down to an eye under the lamp, up to
+  one on the roof -- so there is no angle it is edge-on from. The origin
+  is re-derived so the centre holds. And the centre floats toward the eye
+  along the eye's own ray, half the quad's height (`kHaloForward`, 0.29 m
+  on a lantern, never more than four tenths of the way to the eye): the
+  same pixel as the flame, but the plane clears the lantern's cap, cage
+  and base from every side beyond 0.72 m, so the body never slices the
+  glow along a line that walks with the eye. The glow is drawn over the
+  lamp and the lamp reads through it. Nearer than that the cap wins and
+  the base's rim comes through (the last row of the table).
+- `rl_backend.cpp`, `drawStaticMesh`: a `kDrawHalo` mesh is depth-tested
+  (the cage and the wall stand in front of it where they should) but
+  never depth-WRITTEN, so the clear corners of its square cannot cut a
+  hole through a halo or a pane drawn after it. It was writing depth.
+- `static_pieces.cpp`: `kLanternFlameDrop` 0.66 to 0.9, the glass. The
+  brazier and the hearth flames are untouched and ride the same billboard.
+- The world-scene test "a flame's halo faces the eye from wherever the
+  eye is" now looks from under the lamp and from the roof as well, checks
+  the normal in three dimensions, and picks the lantern's flame (the
+  house's hearth has one too, placed first).
+
+Reshoot on the next gated exe, from the repo root, `--smoke=40 --hold` on
+each as in the table:
+
+| what | command (after `dist\granadad.exe --smoke=40 --hold`) | should show |
+|---|---|---|
+| night, straight on, arm's length (1.1 m) | `--spawn=152,64,19 --yaw=180 --pitch=15 --fov=60 --time=22 --screenshot=halo-front.png` | a soft round glow centred on the lantern's glass, the cage and cap read through it, no edge anywhere, the wall lit warm behind |
+| night, 45 degrees | `--spawn=151,64,19 --yaw=132 --pitch=10 --fov=60 --time=22 --screenshot=halo-45.png` | the same disc, the same size, no seam or bar; the door's light and the window beside it unbroken by it |
+| night, beside it, against the sky | `--spawn=151,65,19 --yaw=94 --pitch=14 --fov=60 --time=22 --screenshot=halo-beside.png` | a round glow on the GLASS, not the ring, soft against the black sky; the rod and ring above it barely touched |
+| night, from under it (0.37 m) | `--spawn=152,65,19 --yaw=112 --pitch=54 --fov=60 --time=22 --screenshot=halo-below.png` | a glow, round, filling much of the view at this range, the lantern's base a warm dark shape inside it; no bar, no sliver. This close the float is capped short of the eye (four tenths of the way, so the quad stays off the near plane) and the base's own rim stands in front of the glow's plane: the underside of a lamp is dark, its rim comes through the glow. Step back a tile and the plane clears the whole body |
+| noon, straight on | `--spawn=152,64,19 --yaw=180 --pitch=15 --fov=60 --time=12 --screenshot=halo-noon.png` | the lantern and its wall in daylight, the glow an eighth of its night alpha -- nothing you can point to, and no square |
+| noon, from under it | `--spawn=152,65,19 --yaw=112 --pitch=54 --fov=60 --time=12 --screenshot=halo-noon-below.png` | the same: the base and the wall, no bar |
+
+The scene hash moves (every halo carries a pitch and a float now); the
+tavern and population baselines do not (render only). Two runs of any line
+above must still be byte-identical: nothing in the turn reads a clock or a
+die, only the eye and the anchor.
 
 ## Numbers
 
@@ -191,6 +260,119 @@ Tavern baseline `0x86E05F527E54E795` and population baseline
 `--smoke=40 --time=20` twice as separate processes, `0xA47D544D1681F761` both
 times with byte-identical PNGs (sha256 `FD3D16BB...4A70A1`). 19,234 pieces
 placed over the district, about 3,600 described from the spawn.
+
+## The ward after dark (2026-09-25)
+
+The critic counted the lit windows across the whole Docks at night and got
+one, two, three. Fair. Shot the wip build at nine from the spawn and the
+Gull's roof: one warm pane beside the Gull's door, one on the roofscape, and
+every timber storey a black box. Here is why, and what changed. Code is
+`native/src/render3d/static_pieces.cpp` and `world_scene.cpp`.
+
+**Root cause.** Three things stacked.
+
+1. The hung timber window (`SM_Bld_House_Window_04`) is a frame and three
+   shutter panels. No glass mesh, so there was nothing to tint. The old rule
+   set `hasInside` on the frame and the relight dutifully wrote a warm pane
+   tint that no submesh ever wore. Every timber storey, every timber hovel,
+   dark by construction.
+2. The kit window on masonry did light, two panes in three over a roofed
+   room, by the pane's own tile hash. But the Tarwalk is timber above its
+   stone ground floors, so from the street that came to the one window
+   beside the Gull's door. And per-pane hashing meant a lit house was a
+   scatter of odd panes, never a home.
+3. The night gate sat at daylight 0.42, which on the sky curve is twenty
+   past eight. The eight o'clock frame had every pane dark by definition.
+
+**The law.** A pane glows by its household, never by itself. At placement
+the roofed room behind each window is flood-filled once and every window on
+it draws one lot off the room's anchor cell, the storey folded out, so a
+house's floors agree where their footprints do. The lot's bytes are the
+house's candle (85 in 100 keep one), whether it is a night owl (10 in 100
+never put it out), its bedtime (hashed between half past nine and half past
+two) and its rising hour (four to half past six, the early trades first).
+`paneGlows()` reads the lot against the hour at relight, on the minute, so
+a house goes dark on the minute its lot names and the placement stays pure
+over the tiles. A lamp that reaches the room still lights the pane on top
+of all this, as before.
+
+The ward's own signs name the exceptions by their `place` text
+(`docks_signs_generated.hpp`, read at the wall cell and then at the room
+cell behind it, the smallest listed footprint winning where they nest). The
+Gull, the Bilge, the Mission, the Lantern Room, the Rows, the Eel-Pots, the
+Watch-Post and the Guardhouse keep their lights whatever the hour. The
+King's Bond, the Long Store, the Counting-House, the Impound, the Ropewalk,
+Salt Row, Pitchfield, Dawnstalls, Harl's, Merle's, Kennel Row, the Coopers
+and the Drowned Hold are kept dark but for a watchman's lamp in one window
+in seven (that draw is per pane, so a lamp is a window and never a whole
+warehouse). A window with no roofed room behind it (a yard, a deck, a
+parapet) is dark unless a lamp reaches the cell.
+
+The timber frame gets a pane: `pane_timber`, the thin plaster quad fitted to
+the frame's opening (0.68 by 0.79 m, measured off the frame's vertices), set
+two centimetres behind the jamb faces and three clear of the shutter panels,
+under the hood and over the sill. Dark blue-grey glass by day, warm by the
+law at night. The dusk gate moved to 0.7, last light, about ten to eight.
+
+Deterministic throughout: a hash of the building's cell and the hour, no
+RNG, render-only. The sim baselines do not move; the scene hash does.
+
+**What it comes to.** Of the households, about 85 in 100 lit at eight, 77 at
+ten, 62 at eleven, 47 at midnight, 16 at two, 8 at three (the owls), 39 at
+five, 76 at six, until first light takes every pane at about twenty to
+seven. The named houses on top, either way. That is the Oblivion curve: a
+town that is up in the evening, thins after eleven, and is a few stubborn
+windows and the tavern by two.
+
+**Knobs** (`content/raws/world3d/docks-pieces.json`, `rules`, all read into
+the catalogue digest):
+
+| knob | value | what |
+|---|---|---|
+| `paneDuskBelow` | 0.7 | a pane may glow once the sky's daylight is under this |
+| `houseCandlePercent` | 85 | households that keep a candle at all |
+| `houseBedtimeFrom` / `To` | 21.5 / 26.5 | the bedtime window, hours past noon (26.5 is half past two) |
+| `houseRisingFrom` / `To` | 4 / 6.5 | the rising window |
+| `houseOwlPercent` | 10 | candle-keepers that never put it out |
+| `storeLampPercent` | 15 | a kept-dark house's windows with a watchman's lamp |
+| `litAllNight` | eight names | houses lit whatever the hour, by sign text |
+| `keptDark` | thirteen names | stores and yards kept dark, by sign text |
+
+The defaults with no knobs set are the old rule (two in three, up all night),
+so a catalogue without them places as it did.
+
+**Tests.** `test_chunk_mesher.cpp`: the law answers the hour on lots built by
+hand (bedtime, rising, owl, no candle, lit, dark, none, and the old defaults);
+on the house world every window on the ring carries one lot; on the baked
+Docks the panes know their house the same way twice, more households are up
+at ten than at three by a wide margin, every pane on the Gull is lit at both
+hours, the King's Bond is kept dark, and the scene from the Gull's frontage
+hashes the same twice, warmer at ten than at three, with no warm pane at
+noon.
+
+**Reshoot.** Every line is
+
+`dist\granadad.exe --smoke=0 --hold --width=1280 --height=720 --scale=1 --time=HH --spawn=X,Y,Z --yaw=DEG [--pitch=DEG] --screenshot=path.png`
+
+with these vantages, each at `--time=20`, `--time=23` and `--time=2`:
+
+| vantage | flags | at eight | at eleven | at two |
+|---|---|---|---|---|
+| the Tarwalk west from the spawn | `--spawn=156,63,19 --yaw=265 --pitch=4` | the Gull's ground and oak storey warm on the left, the Bilge's beyond it, warm panes up the timber storeys down the street, the Bond dark at the far end but for a lamp or none | the Gull and the Bilge as they were, about a third of the other panes gone dark by house, not by pane | the Gull and the Bilge still lit, one or two stubborn windows down the street, the rest dark |
+| the Tarwalk east from the Bond | `--spawn=124,64,19 --yaw=85 --pitch=3` | the Bilge's frontage warm on the right, the Gull's beyond, the stalls' panes if any on the left; the Bond behind the eye | the same two houses lit, the street beyond thinner | the two houses lit, the street dark |
+| the quay looking back at the frontage | `--spawn=141,55,19 --yaw=150 --pitch=2` | the Bilge and the Gull across the Tarwalk, both storeys warm, the door lantern between | unchanged (both are lit all night) | unchanged; the water and the sky black, the frontage the one warm thing |
+| the overview from the Gull's roof, south-west | `--spawn=153,72,21 --yaw=225 --pitch=-18` | the Rows and the Mission lit, Fenner's and the Bathhouse by their lot, warm panes across the roofscape | about a third of the households out, the Rows and the Mission unmoved | the Rows and the Mission and a handful of owls; the Guardhouse at the edge of the window cull |
+
+A house's windows change together. If you see one storey of a house lit and
+the other not, either the storeys have different footprints (their rooms
+draw apart) or a lamp reaches one room. If you see odd panes on and off
+along one wall of one room, that is a bug.
+
+**Honest gaps.** Windows cull at 48 tiles, so an overview from the Saltgate
+head sees the terraces lit and the Tarwalk dark for distance, not for the
+law. A house that spans two storeys of different footprints draws two lots.
+A compound whose houses share a roofed passage is one household. The pane
+tint is flat; there is no glow on the wall under a lit window.
 
 ## The jambs, 2026-09-16
 
@@ -333,3 +515,66 @@ Reshoot. Every line is `dist\granadad.exe --smoke=0 --hold --width=1280
 | jamb-27 | ANOTHER DOOR: the Eel-Pots', its own two jambs | `--time=14 --spawn=136,58,19 --yaw=180 --pitch=-4 --fov=60 --screenshot=jamb-27.png` |
 | jamb-28 | UNCHANGED: the Tarwalk's sign frames, still timber, still fitted to their cells | `--time=14 --spawn=153,50,19 --yaw=180 --pitch=-2 --fov=60 --screenshot=jamb-28.png` |
 | jamb-29 | A GATE, UNCHANGED: the Netters', its own posts and beam | `--time=10 --spawn=171,96,19 --yaw=180 --screenshot=jamb-29.png` |
+
+## Weather, 2026-09-25
+
+Four skies, render-only. Roadmap D15 ruled it yes on the one condition that
+the sim never reads it, and `DECISIONS.md` has the row. Clear, overcast,
+harbour fog and wind, each with an intensity that eases in over an hour and
+out over an hour, two to four periods a day, drawn off (seed, calendar day,
+clock) and nothing else. Live by default in the game and in every capture;
+for photography, pin one with `--weather=STATE` and it sits at full for the
+whole run. The summary line says what the frame was shot under either way:
+`weather=fog 1.00` pinned, `weather=fog 0.83` a live fog most of the way in,
+`weather=clear 0.00` the sky every frame above was drawn under.
+
+Weather is mood, not a feature demo. If a frame reads as "a weather effect"
+rather than "a harbour morning", it is wrong.
+
+Every command below is
+
+```
+dist\granadad.exe --smoke=0 --hold --width=1280 --height=720 --scale=1 --spawn=152,63,19 --yaw=270
+```
+
+plus what the table says, from the repo root, on a build of this lane. The
+wip exe in `dist\` predates `--weather=` and will refuse it; the Tarwalk
+spawn looks west down the street with the Gull's door on the left.
+
+| frame | what it should look like | add |
+|---|---|---|
+| clear 07:00 | the reference: dawn's sodium wash along the horizon, the lamps still carrying, the street sharp to its far end. Byte-identical to the same frame shot without `--weather` on a build before this lane. | `--time=7 --weather=clear --screenshot=weather-clear-07.png` |
+| clear 14:00 | flat overcast harbour light, the Tarwalk read to its end, the King's Bond's brick past the Gull | `--time=14 --weather=clear --screenshot=weather-clear-14.png` |
+| clear 22:00 | near-black, lamp pools, the far end of the street swallowed at seventeen tiles | `--time=22 --weather=clear --screenshot=weather-clear-22.png` |
+| overcast 07:00 | the dawn wash mostly gone under a lid: the sky one cool grey from zenith to horizon, a touch dimmer, a lit window warm by contrast | `--time=7 --weather=overcast --screenshot=weather-overcast-07.png` |
+| overcast 14:00 | the lid on at noon: no gradient in the sky, the light cooler and flatter, a little more haze down the street and no more than that | `--time=14 --weather=overcast --screenshot=weather-overcast-14.png` |
+| overcast 22:00 | barely different from clear night, the zenith a shade flatter. If you cannot tell, that is right | `--time=22 --weather=overcast --screenshot=weather-overcast-22.png` |
+| fog 07:00 | harbour fog at first light: milky with a little of the dawn's sodium in it, the far end of the street gone inside ten tiles, the near lamps haloed, faces flat | `--time=7 --weather=fog --screenshot=weather-fog-07.png` |
+| fog 14:00 | milky grey-white, eight tiles at full. The sky is the fog. The Gull's frontage is there; the brick beyond it is not | `--time=14 --weather=fog --screenshot=weather-fog-14.png` |
+| fog 22:00 | cold grey-blue, six and a half tiles, the blacks lifted a shade by the lamps' own scatter. A lamp pool is a lamp pool; the street past it is nothing | `--time=22 --weather=fog --screenshot=weather-fog-22.png` |
+| wind 07:00 | clear-ish and a shade crisper than clear, every flame's halo at two-thirds, the wind bed up if you are listening | `--time=7 --weather=wind --screenshot=weather-wind-07.png` |
+| wind 14:00 | the air scoured: further down the street than clear, the zenith a touch deeper. Mostly heard | `--time=14 --weather=wind --screenshot=weather-wind-14.png` |
+| wind 22:00 | night with the lanterns guttering, the far end a little further off than clear night | `--time=22 --weather=wind --screenshot=weather-wind-22.png` |
+| the quay in fog | the long view down the quay at first light, `--spawn=150,59,19 --yaw=300 --pitch=-6` in place of the Tarwalk spawn and yaw: the water, the rowboats, the piers and the cranes stepping back into the fog, the nearest crane there and the pier heads gone | `--spawn=150,59,19 --yaw=300 --pitch=-6 --time=7 --weather=fog --screenshot=weather-quay-fog.png` |
+
+Shoot any of them twice as separate processes: same seed, same day, same
+hour, same sky, byte for byte. That is the whole contract, and
+`native/tests/test_weather.cpp` holds the code to it: the clear sky is the
+old sky at every minute, a fogged session steps to the clear run's tavern
+and population digests, and two sessions under one fog draw one frame.
+
+How the fog is drawn: the 3D pass has never had a fog shader (rlsw has no
+shader at all), so the weather's fog is geometry. Nested translucent shells
+round the eye, nineteen of them out to fifty-six tiles and closer together
+near the eye, each coloured the fog's colour below the horizon and the sky's
+own above it, each with the alpha of the fog between it and the one inside,
+drawn last in the pass far to near with the depth test on. Whatever stands
+inside a shell is clear of it; whatever stands beyond it is seen through it.
+The rlsw frame and the GPU frame are the same picture. It is banded where a
+shader would be smooth; at eight tiles the eye reads it as fog.
+
+Honest gaps: the hands are still lit under the clear sky (`viewmodel.cpp`
+belongs to a live session and was left alone); the software `--2d` pass has
+the fog by distance only, no veil; the sky dome sits at the far plane, so a
+veil over open sky is the sky's own colour and the fog is only ever on the
+world in front of it.

@@ -2436,10 +2436,14 @@ TEST_CASE("the one-wide cobble leftovers along a frontage wear setts") {
 
 TEST_CASE("a flame's halo faces the eye from wherever the eye is") {
     // THE BILLBOARD, through the world scene: the same lantern described
-    // from two eyes yaws its one quad toward each, about the same centre,
-    // so a body walking past never sees it edge-on. And the description
-    // stays a pure function of the eye: the same eye twice is the same
-    // yaw and the same hash.
+    // from four eyes turns its one quad toward each -- yawed to an eye
+    // along the street, PITCHED to an eye under the lamp or on the roof
+    // over it -- about the same centre, so a body walking past, standing
+    // under it or looking down on it never sees it edge-on. A yaw alone
+    // left the quad plumb, a bar to an eye beneath it: the placement
+    // critic's "edge at arm's length". And the description stays a pure
+    // function of the eye: the same eye twice is the same turn and the
+    // same hash.
     HouseWorld house;
     const StaticCatalogue& catalogue = shippedCatalogue();
     std::vector<render::Lamp> lamps(1);
@@ -2454,25 +2458,54 @@ TEST_CASE("a flame's halo faces the eye from wherever the eye is") {
     WorldScene scene(house.tiles, proceduralAtlas(), &glow, &catalogue, &lamps);
     WorldSceneParams params;
     params.timeOfDaySeconds = 21 * 3600;
-    const auto describe = [&](float ex, float ey) {
+    const auto describe = [&](float ex, float ey, float height, float look) {
         render::Camera eye;
         eye.x = ex;
         eye.y = ey;
-        eye.z = render::bandSurface(19) + 1.7F;
+        eye.z = render::bandSurface(19) + height;
         eye.yaw = std::atan2(20.5F - ex, -(19.5F - ey));
-        eye.pitch = 0.0F;
+        eye.pitch = look;
         eye.hfovTan = 1.0F;
         SceneDescription out;
         scene.refresh(out, eye, 16.0F / 9.0F, params);
         return out;
     };
-    const SceneDescription fromSouth = describe(20.5F, 23.5F);
-    const SceneDescription fromEast = describe(24.5F, 19.5F);
-    const SceneDescription fromSouthAgain = describe(20.5F, 23.5F);
+    const SceneDescription fromSouth = describe(20.5F, 23.5F, 1.7F, 0.0F);
+    const SceneDescription fromEast = describe(24.5F, 19.5F, 1.7F, 0.0F);
+    const SceneDescription fromSouthAgain = describe(20.5F, 23.5F, 1.7F, 0.0F);
+    // Under the lamp, a hand's breadth off plumb, looking up: the lantern
+    // hangs 0.42 out from the wall's face over the lamp's own tile, so
+    // the eye stands a tenth east of it and a hair north.
+    const SceneDescription fromBelow = describe(20.6F, 19.5F, 1.7F, 1.2F);
+    // Two storeys up and a tile south, looking down: the roof's edge.
+    const SceneDescription fromAbove = describe(20.5F, 20.5F, 7.7F, -1.2F);
     CHECK(sceneHash(fromSouth) == sceneHash(fromSouthAgain));
+    // THE LANTERN'S flame -- the house's hearth across the street has one
+    // too, placed first -- by the lamp cell it is lit from; its anchor is
+    // the flame's own point, in the lantern's glass, over the eye of a
+    // body on the street and under one on the roof.
+    const PieceSpec* flame = catalogue.piece(PieceRole::Flame);
+    REQUIRE(flame != nullptr);
+    const StaticPlacements placed = placeStaticPieces(house.tiles, catalogue, lamps);
+    const StaticPlacement* hung = nullptr;
+    for (const StaticPlacement& p : placed.placements) {
+        if (p.role == PieceRole::Flame && p.lightX == 20 && p.lightY == 19) {
+            hung = &p;
+        }
+    }
+    REQUIRE(hung != nullptr);
+    REQUIRE(hung->billboard);
+    const Vec3 anchor = hung->anchor;
+    CHECK(anchor.y > render::bandSurface(19) + 1.7F);
+    CHECK(anchor.y < render::bandSurface(19) + 2.5F);
+    // In a description: the halo whose origin lies within a metre of that
+    // anchor (the hearth's is ten tiles off).
     const auto flameOf = [&](const SceneDescription& d) -> const StaticInstance* {
         for (const StaticInstance& at : d.statics) {
-            if (at.mode == kDrawHalo) {
+            const float dx = at.position.x - anchor.x;
+            const float dy = at.position.y - anchor.y;
+            const float dz = at.position.z - anchor.z;
+            if (at.mode == kDrawHalo && dx * dx + dy * dy + dz * dz < 1.0F) {
                 return &at;
             }
         }
@@ -2480,34 +2513,77 @@ TEST_CASE("a flame's halo faces the eye from wherever the eye is") {
     };
     const StaticInstance* south = flameOf(fromSouth);
     const StaticInstance* east = flameOf(fromEast);
+    const StaticInstance* below = flameOf(fromBelow);
+    const StaticInstance* above = flameOf(fromAbove);
     REQUIRE(south != nullptr);
     REQUIRE(east != nullptr);
-    // The centre held: the origin is half a width along the quad's own +X
-    // from it, so the two origins differ but their centres agree.
-    const PieceSpec* flame = catalogue.piece(PieceRole::Flame);
-    REQUIRE(flame != nullptr);
+    REQUIRE(below != nullptr);
+    REQUIRE(above != nullptr);
+    // The centre: the origin is half a width along the quad's own +X and
+    // half a height along its own +Y from it -- the +Y tipped by the pitch
+    // to (0, cos, sin) and both turned by the yaw, the adapter's own order.
+    // From every eye it sits ON THAT EYE'S OWN RAY through the flame,
+    // floated toward the eye by no more than half the quad's height and
+    // never past the eye: the same pixel as the flame from wherever it is
+    // looked at, its plane clear of the lantern's body.
     const auto centreOf = [flame](const StaticInstance& at) {
         const float w = flame->width * at.scale.x;
-        return Vec3{at.position.x + 0.5F * w * std::cos(at.yaw), at.position.y,
-                    at.position.z + 0.5F * w * std::sin(at.yaw)};
+        const float h = flame->height * at.scale.y;
+        const float c = std::cos(at.yaw);
+        const float s = std::sin(at.yaw);
+        const float cp = std::cos(at.pitch);
+        const float sp = std::sin(at.pitch);
+        return Vec3{at.position.x + 0.5F * w * c - 0.5F * h * sp * s, at.position.y + 0.5F * h * cp,
+                    at.position.z + 0.5F * w * s + 0.5F * h * sp * c};
     };
-    const Vec3 a = centreOf(*south);
-    const Vec3 b = centreOf(*east);
-    CHECK(std::fabs(a.x - b.x) < 0.01F);
-    CHECK(std::fabs(a.z - b.z) < 0.01F);
-    CHECK(std::fabs(a.y - b.y) < 0.01F);
-    // And from each eye the quad's normal (-sin, cos) lies along the line
-    // from the centre to that eye: never edge-on, wherever the eye is.
-    const auto faces = [](const StaticInstance& at, const Vec3& centre, float ex, float ez) {
+    const auto onTheRay = [&](const StaticInstance& at, float ex, float ey, float ez) {
+        const Vec3 centre = centreOf(at);
+        const float h = flame->height * at.scale.y;
+        // From the anchor: toward the eye, and how far.
+        const float rx = ex - anchor.x, ry = ey - anchor.y, rz = ez - anchor.z;
+        const float reach = std::sqrt(rx * rx + ry * ry + rz * rz);
+        const float fx = centre.x - anchor.x, fy = centre.y - anchor.y, fz = centre.z - anchor.z;
+        const float floated = std::sqrt(fx * fx + fy * fy + fz * fz);
+        const float along = (fx * rx + fy * ry + fz * rz) / reach;
+        CHECK(floated > 0.05F);
+        CHECK(floated < 0.5F * h + 0.01F);
+        CHECK(floated < 0.5F * reach);
+        // On the ray: the whole float lies along it.
+        CHECK(along > 0.999F * floated);
+        return centre;
+    };
+    const float street = render::bandSurface(19) + 1.7F;
+    const Vec3 a = onTheRay(*south, 20.5F, street, 23.5F);
+    const Vec3 b = onTheRay(*east, 24.5F, street, 19.5F);
+    const Vec3 u = onTheRay(*below, 20.6F, street, 19.5F);
+    const Vec3 o = onTheRay(*above, 20.5F, render::bandSurface(19) + 7.7F, 20.5F);
+    // And from each eye the quad's normal -- local +Z, which the pitch
+    // takes to (0, -sin, cos) and the yaw to (-sin cos, -sin, cos cos) --
+    // lies along the line from the centre to that eye IN THREE
+    // DIMENSIONS: never edge-on, wherever the eye is, under it included.
+    const auto faces = [](const StaticInstance& at, const Vec3& centre, float ex, float ey, float ez) {
         const float dx = ex - centre.x;
+        const float dy = ey - centre.y;
         const float dz = ez - centre.z;
-        const float along = -std::sin(at.yaw) * dx + std::cos(at.yaw) * dz;
-        return std::fabs(along) > 0.99F * std::sqrt(dx * dx + dz * dz);
+        const float nx = -std::sin(at.yaw) * std::cos(at.pitch);
+        const float ny = -std::sin(at.pitch);
+        const float nz = std::cos(at.yaw) * std::cos(at.pitch);
+        const float along = nx * dx + ny * dy + nz * dz;
+        return std::fabs(along) > 0.99F * std::sqrt(dx * dx + dy * dy + dz * dz);
     };
-    CHECK(faces(*south, a, 20.5F, 23.5F));
-    CHECK(faces(*east, b, 24.5F, 19.5F));
-    CHECK_FALSE(faces(*south, a, 24.5F, 19.5F));
+    CHECK(faces(*south, a, 20.5F, street, 23.5F));
+    CHECK(faces(*east, b, 24.5F, street, 19.5F));
+    CHECK(faces(*below, u, 20.6F, street, 19.5F));
+    CHECK(faces(*above, o, 20.5F, render::bandSurface(19) + 7.7F, 20.5F));
+    CHECK_FALSE(faces(*south, a, 24.5F, street, 19.5F));
+    CHECK_FALSE(faces(*south, a, 20.6F, street, 19.5F));
     CHECK(south->yaw != east->yaw);
+    // Along the street the quad stands nearly plumb (a few degrees up to
+    // a lamp over head height); under the lamp it tips hard toward the
+    // ground, and on the roof it tips the other way, toward the sky.
+    CHECK(std::fabs(south->pitch) < 0.2F);
+    CHECK(below->pitch > 1.0F);
+    CHECK(above->pitch < -0.8F);
 }
 
 TEST_CASE("a pair of lone posts two cells apart on a street carries a hitching rail") {
@@ -2587,5 +2663,246 @@ TEST_CASE("a pair of lone posts two cells apart on a street carries a hitching r
         }
     }
     CHECK(boards == 2);
+}
+
+// ---------------------------------------------------------------------------
+// THE LIGHT LAW -- the ward after dark
+// ---------------------------------------------------------------------------
+
+namespace {
+
+/// A lot whose draws come out as asked: the candle and the owl are read as
+/// `lot % 100` and `(lot >> 8) % 100` over the whole word, so the low
+/// sixteen bits are searched for the pair once the bedtime and rising bytes
+/// (16..23, 24..31) are set.
+std::uint32_t lotOf(int candle, int owl, std::uint32_t bed, std::uint32_t rise) {
+    const std::uint32_t top = (rise << 24) | (bed << 16);
+    for (std::uint32_t low = 0; low < 65536U; ++low) {
+        const std::uint32_t lot = top | low;
+        if (static_cast<int>(lot % 100U) == candle && static_cast<int>((lot >> 8) % 100U) == owl) {
+            return lot;
+        }
+    }
+    return top;
+}
+
+bool windowPane(PieceRole role) {
+    return role == PieceRole::WallWindow || role == PieceRole::PaneTimber;
+}
+
+bool warmPane(const StaticInstance& piece, const Rgba8& warm) {
+    return windowPane(static_cast<PieceRole>(piece.role)) && piece.pane.r == warm.r &&
+           piece.pane.g == warm.g && piece.pane.b == warm.b;
+}
+
+}  // namespace
+
+TEST_CASE("the light law answers the hour, and a house's windows draw one lot") {
+    // The rule alone, on lots built by hand, with the shipped hours.
+    RuleKnobs knobs;
+    knobs.houseCandlePercent = 85;
+    knobs.houseOwlPercent = 10;
+    knobs.houseBedtimeFrom = 21.5F;
+    knobs.houseBedtimeTo = 26.5F;
+    knobs.houseRisingFrom = 4.0F;
+    knobs.houseRisingTo = 6.5F;
+    knobs.storeLampPercent = 15;
+    // A plain household: a candle, no owl, bedtime at the window's middle
+    // (midnight), rising at the middle of its own (a quarter past five).
+    const std::uint32_t plain = lotOf(0, 50, 128U, 128U);
+    REQUIRE(plain % 100U == 0U);
+    REQUIRE((plain >> 8) % 100U == 50U);
+    CHECK(paneGlows(HouseKind::Household, plain, 20.0F, knobs));
+    CHECK(paneGlows(HouseKind::Household, plain, 23.5F, knobs));
+    CHECK_FALSE(paneGlows(HouseKind::Household, plain, 0.5F, knobs));
+    CHECK_FALSE(paneGlows(HouseKind::Household, plain, 3.0F, knobs));
+    CHECK_FALSE(paneGlows(HouseKind::Household, plain, 5.0F, knobs));
+    CHECK(paneGlows(HouseKind::Household, plain, 5.5F, knobs));
+    // The earliest bedtime and the latest: half past nine, half past two.
+    CHECK(paneGlows(HouseKind::Household, lotOf(0, 50, 0U, 128U), 21.4F, knobs));
+    CHECK_FALSE(paneGlows(HouseKind::Household, lotOf(0, 50, 0U, 128U), 21.6F, knobs));
+    CHECK(paneGlows(HouseKind::Household, lotOf(0, 50, 255U, 128U), 2.0F, knobs));
+    CHECK_FALSE(paneGlows(HouseKind::Household, lotOf(0, 50, 255U, 128U), 3.0F, knobs));
+    // No candle: dark whatever the hour. An owl: up whatever the hour.
+    CHECK_FALSE(paneGlows(HouseKind::Household, lotOf(90, 50, 128U, 128U), 20.0F, knobs));
+    CHECK(paneGlows(HouseKind::Household, lotOf(0, 5, 128U, 128U), 3.0F, knobs));
+    // The named houses, whatever their lot: lit is lit, dark is a
+    // watchman's lamp in one window in so many, none is none.
+    CHECK(paneGlows(HouseKind::Lit, lotOf(90, 50, 0U, 0U), 3.0F, knobs));
+    CHECK(paneGlows(HouseKind::Dark, lotOf(10, 50, 0U, 0U), 3.0F, knobs));
+    CHECK_FALSE(paneGlows(HouseKind::Dark, lotOf(20, 50, 0U, 0U), 22.0F, knobs));
+    CHECK_FALSE(paneGlows(HouseKind::None, lotOf(0, 5, 0U, 0U), 22.0F, knobs));
+    // The defaults are the old rule: two panes in three, up all night.
+    const RuleKnobs old{};
+    CHECK(paneGlows(HouseKind::Household, lotOf(0, 50, 128U, 128U), 3.0F, old));
+    CHECK(paneGlows(HouseKind::Household, lotOf(66, 50, 128U, 128U), 3.0F, old));
+    CHECK_FALSE(paneGlows(HouseKind::Household, lotOf(67, 50, 128U, 128U), 22.0F, old));
+
+    // On the house world every window on the ring looks into the one room,
+    // so every pane carries the one lot -- the household's, since no sign
+    // of the Docks stands here.
+    HouseWorld house;
+    const StaticCatalogue& catalogue = shippedCatalogue();
+    const StaticPlacements placed = placeStaticPieces(house.tiles, catalogue, {});
+    std::size_t panes = 0;
+    std::uint32_t lot = 0;
+    for (const StaticPlacement& p : placed.placements) {
+        if (!windowPane(p.role)) {
+            continue;
+        }
+        REQUIRE(p.hasInside);
+        CHECK(p.homely);
+        CHECK(p.house == HouseKind::Household);
+        CHECK(p.houseLot != 0U);
+        if (panes == 0) {
+            lot = p.houseLot;
+        }
+        CHECK(p.houseLot == lot);
+        ++panes;
+    }
+    CHECK(panes >= 2);
+}
+
+TEST_CASE("the light law on the Docks: up at ten, abed at three, and the Gull never sleeps") {
+    const sim::TileQuery tilesA(docksWorld());
+    const sim::TileQuery tilesB(docksWorld());
+    const StaticCatalogue& catalogue = shippedCatalogue();
+    const RuleKnobs& knobs = catalogue.knobs();
+    REQUIRE(knobs.houseBedtimeTo > knobs.houseBedtimeFrom);
+    REQUIRE_FALSE(knobs.litAllNight.empty());
+    REQUIRE_FALSE(knobs.keptDark.empty());
+    const std::vector<render::Lamp> lamps =
+        render::loadLamps(content::contentDir(), sim::docks::kWorldName);
+    const StaticPlacements first = placeStaticPieces(tilesA, catalogue, lamps);
+    const StaticPlacements second = placeStaticPieces(tilesB, catalogue, lamps);
+    REQUIRE(first.placements.size() == second.placements.size());
+
+    // Every pane knows its house the same way twice, and a timber frame
+    // carries a pane of its own.
+    std::size_t households = 0;
+    std::size_t litHouses = 0;
+    std::size_t darkHouses = 0;
+    std::size_t yards = 0;
+    for (std::size_t i = 0; i < first.placements.size(); ++i) {
+        const StaticPlacement& p = first.placements[i];
+        const StaticPlacement& q = second.placements[i];
+        REQUIRE(p.role == q.role);
+        if (!windowPane(p.role)) {
+            continue;
+        }
+        REQUIRE(p.hasInside);
+        REQUIRE(p.house == q.house);
+        REQUIRE(p.houseLot == q.houseLot);
+        REQUIRE(p.insideX == q.insideX);
+        REQUIRE(p.insideY == q.insideY);
+        REQUIRE(p.insideZ == q.insideZ);
+        CHECK(p.homely == (p.house != HouseKind::None));
+        switch (p.house) {
+            case HouseKind::None: ++yards; break;
+            case HouseKind::Household: ++households; break;
+            case HouseKind::Lit: ++litHouses; break;
+            case HouseKind::Dark: ++darkHouses; break;
+        }
+    }
+    const std::size_t timberPanes = countRole(first.placements, PieceRole::PaneTimber);
+    CHECK(timberPanes > 10);
+    CHECK(timberPanes == countRole(first.placements, PieceRole::WindowTimber));
+    CHECK(households >= 40);
+    CHECK(litHouses >= 4);
+    CHECK(darkHouses >= 4);
+    MESSAGE("Docks panes: " << households << " household, " << litHouses << " lit all night, "
+                            << darkHouses << " kept dark, " << yards << " on no room");
+
+    // The law's own count at an hour (a lamp's glow is on top of this).
+    const auto upAt = [&](float hour, HouseKind kind) {
+        std::size_t n = 0;
+        for (const StaticPlacement& p : first.placements) {
+            if (windowPane(p.role) && p.house == kind && paneGlows(p.house, p.houseLot, hour, knobs)) {
+                ++n;
+            }
+        }
+        return n;
+    };
+    const std::size_t up20 = upAt(20.0F, HouseKind::Household);
+    const std::size_t up22 = upAt(22.0F, HouseKind::Household);
+    const std::size_t up3 = upAt(3.0F, HouseKind::Household);
+    MESSAGE("Docks households up: " << up20 << " at eight, " << up22 << " at ten, " << up3 << " at three");
+    // At eight nobody has gone to bed; at ten most are up; at three only
+    // the owls.
+    CHECK(up20 >= up22);
+    CHECK(up22 >= 20);
+    CHECK(up22 * 3 > households);
+    CHECK(up3 * 2 < up22);
+    CHECK(up3 * 3 < households);
+    // A watchman's lamp in a few of the stores' windows, never most.
+    CHECK(upAt(3.0F, HouseKind::Dark) * 2 < darkHouses);
+    CHECK(upAt(3.0F, HouseKind::Lit) == litHouses);
+    CHECK(upAt(22.0F, HouseKind::None) == 0);
+
+    // The Gilded Gull (its sign's footprint, tavern.hpp: x 146..160, y
+    // 66..79, its oak storey over its granite one) keeps every pane lit at
+    // both hours; the King's Bond across the Tarwalk is kept dark.
+    std::size_t gull = 0;
+    std::size_t bond = 0;
+    for (const StaticPlacement& p : first.placements) {
+        if (!windowPane(p.role) || p.insideZ < 19 || p.insideZ > 21) {
+            continue;
+        }
+        if (p.insideX >= 146 && p.insideX <= 160 && p.insideY >= 66 && p.insideY <= 79) {
+            CHECK(p.house == HouseKind::Lit);
+            CHECK(paneGlows(p.house, p.houseLot, 22.0F, knobs));
+            CHECK(paneGlows(p.house, p.houseLot, 3.0F, knobs));
+            ++gull;
+        }
+        if (p.insideX >= 114 && p.insideX <= 130 && p.insideY >= 66 && p.insideY <= 78) {
+            CHECK(p.house == HouseKind::Dark);
+            ++bond;
+        }
+    }
+    CHECK(gull >= 2);
+    CHECK(bond >= 1);
+
+    // Through the world scene, from the Tarwalk before the Gull's frontage
+    // (frame 16's vantage), no baked lamps: the panes the eye sees are warm
+    // by the law alone, the same twice, fewer at three than at ten, none at
+    // noon.
+    const render::TileAtlas& atlas = proceduralAtlas();
+    render::Camera eye;
+    eye.x = 150.5F;
+    eye.y = 63.5F;
+    eye.z = render::bandSurface(19) + static_cast<float>(sim::kEyeHeightTilesQ8) / 256.0F;
+    eye.yaw = 150.0F * 3.14159265358979323846F / 180.0F;
+    eye.pitch = 0.0F;
+    eye.hfovTan = 1.0F;
+    WorldScene worldA(tilesA, atlas, nullptr, &catalogue, &lamps);
+    WorldScene worldB(tilesB, atlas, nullptr, &catalogue, &lamps);
+    WorldSceneParams params;
+    params.timeOfDaySeconds = 22 * 3600;
+    SceneDescription sceneA;
+    SceneDescription sceneB;
+    worldA.refresh(sceneA, eye, 16.0F / 9.0F, params);
+    worldB.refresh(sceneB, eye, 16.0F / 9.0F, params);
+    CHECK(sceneHash(sceneA) == sceneHash(sceneB));
+    const Rgba8 warm = knobs.litPane;
+    const auto warmSeen = [&warm](const SceneDescription& scene) {
+        std::size_t n = 0;
+        for (const StaticInstance& piece : scene.statics) {
+            n += warmPane(piece, warm) ? 1 : 0;
+        }
+        return n;
+    };
+    const std::size_t warm22 = warmSeen(sceneA);
+    CHECK(warm22 >= 2);
+    params.timeOfDaySeconds = 3 * 3600;
+    worldA.refresh(sceneA, eye, 16.0F / 9.0F, params);
+    worldB.refresh(sceneB, eye, 16.0F / 9.0F, params);
+    CHECK(sceneHash(sceneA) == sceneHash(sceneB));
+    const std::size_t warm3 = warmSeen(sceneA);
+    MESSAGE("Docks panes warm from the Gull's frontage: " << warm22 << " at ten, " << warm3 << " at three");
+    CHECK(warm3 >= 1);
+    CHECK(warm3 <= warm22);
+    params.timeOfDaySeconds = 12 * 3600;
+    worldA.refresh(sceneA, eye, 16.0F / 9.0F, params);
+    CHECK(warmSeen(sceneA) == 0);
 }
 

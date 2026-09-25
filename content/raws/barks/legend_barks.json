@@ -1,0 +1,90 @@
+{
+  "id": "legend_barks",
+  "notes": "THE RUNG PLATE (lane/rung, roadmap 21b). What the ward says about you the moment a Legend rung rises, in a docker's mouth and never the game's. One row per rung per track, keyed legend.<track>.<rung> (wire, roofs, flame, trade, law; rungs 1 to 4, legend.hpp's kLegendRungs), plus legend.top for the line a topped-out track gets under its own row. Each is ONE row on purpose: a rung is taken once a game, so there is nothing to rotate. Every row fits one line of the 4x6 font inside the plate at 320x180 (fifty-six glyphs and under), draws whole, and has no dash in it. The plate itself (native/src/render/rung_plate.cpp) prints the track's word and the new title from legend.cpp's own table over the row; NOTHING in the code writes a spoken line. Salted city-folk register, common words: the learned name for the priests' quarry stays in a priest's mouth and is not here.",
+  "tables": [
+    {
+      "key": "legend.wire.1",
+      "rows": ["The rope hands know your face now. That is not nothing."]
+    },
+    {
+      "key": "legend.wire.2",
+      "rows": ["Coats get held shut when you walk by. They have heard."]
+    },
+    {
+      "key": "legend.wire.3",
+      "rows": ["Finch pours before you ask. That is a robber's welcome."]
+    },
+    {
+      "key": "legend.wire.4",
+      "rows": ["Nobody sees your hands. That is all the name means."]
+    },
+    {
+      "key": "legend.roofs.1",
+      "rows": ["You went up and came down whole. The roofs noticed."]
+    },
+    {
+      "key": "legend.roofs.2",
+      "rows": ["Slates do not creak under you now. Someone was counting."]
+    },
+    {
+      "key": "legend.roofs.3",
+      "rows": ["The alley is a step to you now. The snug drinks to it."]
+    },
+    {
+      "key": "legend.roofs.4",
+      "rows": ["Nobody looks up. You are what they'd see if they did."]
+    },
+    {
+      "key": "legend.flame.1",
+      "rows": ["You followed the trail. The Mission wrote you down."]
+    },
+    {
+      "key": "legend.flame.2",
+      "rows": ["The priests nod to you first now. The dockers saw it."]
+    },
+    {
+      "key": "legend.flame.3",
+      "rows": ["Doors open before you knock. Some folk cross the street."]
+    },
+    {
+      "key": "legend.flame.4",
+      "rows": ["You went down there and came back. Nobody asks you why."]
+    },
+    {
+      "key": "legend.trade.1",
+      "rows": ["Paid and on time. The counter remembers that first."]
+    },
+    {
+      "key": "legend.trade.2",
+      "rows": ["Your word buys on credit now. Not much. But some."]
+    },
+    {
+      "key": "legend.trade.3",
+      "rows": ["The Weighhouse stamps your paper without reading it."]
+    },
+    {
+      "key": "legend.trade.4",
+      "rows": ["Half this quay owes you. The other half is asking to."]
+    },
+    {
+      "key": "legend.law.1",
+      "rows": ["The Watch has your name and is not sour about it. Yet."]
+    },
+    {
+      "key": "legend.law.2",
+      "rows": ["Cull calls you by name across the room. On purpose."]
+    },
+    {
+      "key": "legend.law.3",
+      "rows": ["Folk lower their voices when you pass now. Even sober."]
+    },
+    {
+      "key": "legend.law.4",
+      "rows": ["When it goes bad, Vess says your name first."]
+    },
+    {
+      "key": "legend.top",
+      "rows": ["There is no rung above that one. Mind how you wear it."]
+    }
+  ]
+}
