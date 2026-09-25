@@ -13199,24 +13199,174 @@ void lookAtFace(Session& session, std::int32_t xQ8, std::int32_t yQ8, sim::WardT
     return who != nullptr ? figureForRole(who->role(), who->id()) : sim::WardType::Serf;
 }
 
-/// OFF THE PLATE. The crosshair's own name plate is drawn at the middle of
-/// the frame and runs to the right of it (`hudAimRect`), so a body put DEAD
-/// CENTRE wears it: three of the six committed frames had "<SOMEBODY> SERF
-/// / E - TALK" printed across the speaker's eyes and mouth -- and because
-/// the prompt names the nearest body in REACH rather than the one you are
-/// looking at, two of them named somebody else while doing it. The prompt's
-/// own rule is not this lane's to change (every verb in the game reads it),
-/// but where this lane stands its camera is. A composed look puts its
-/// subject a sixth of the frame to the LEFT of centre -- twelve degrees at
-/// ninety of view, the thirds a photographer would use anyway -- which
-/// leaves the plate on the wall behind them and the face clear.
-constexpr sim::Angle kOffThePlate = sim::angle_from_degrees(12);
+/// THE PLATE'S OWN WIDTH, as a fraction of the half-frame in tan space:
+/// the crosshair's name plate starts at the middle of the frame and runs
+/// RIGHT about four tenths of the way to the edge ("PETRA BARNACRE SERF" at
+/// the minor scale). Measured off the frames rather than read out of the
+/// HUD, deliberately -- this file composes a camera and has no business
+/// linking the layout -- and kept generous, because a longer name is a
+/// wider plate.
+constexpr double kPlateHalfWidths = 0.46;
+/// And how far off the middle a composed subject may stand, as a fraction
+/// of the half-frame ANGLE: a sixth of the way out is the thirds a
+/// photographer would use, and past a bit over half is a body heading for
+/// the edge. Fractions, not degrees, because the field of view is a slider
+/// in the options page: twelve degrees is a sixth of a 90-degree frame and
+/// most of the way out of a 70-degree one, and the first draft of this
+/// pushed the overheard trio clean off a --fov=70 frame.
+constexpr double kSubjectOffMin = 0.22;
+constexpr double kSubjectOffMax = 0.56;
 
-/// Turns the body to look at whoever the row names -- at their face, off
-/// the plate -- so the frame is a picture of the speaker and not of the
-/// wall the walk ended against; a step to sync the facing, which the row's
-/// hold outlasts many times over. `yawOffset` as lookAtFace's.
-void faceTheSpeaker(Session& session, sim::Angle yawOffset = kOffThePlate) {
+/// A body's own half-width in radians at that distance -- 0.4 of a tile
+/// either side of its middle, the figure width the crowd filter uses.
+[[nodiscard]] double bodyHalfAngle(double apartTiles) noexcept {
+    return std::atan(0.4 / std::max(0.6, apartTiles));
+}
+
+/// THE COMPOSED YAW: which way to turn so the subject stands clear of the
+/// crosshair's name plate AND THE PLATE STANDS CLEAR OF EVERYBODY ELSE.
+///
+/// The first pass at this was a constant twelve degrees to the left, and it
+/// solved the wrong half of the problem: the speaker's face came out from
+/// under the label and three bystanders' faces went under it instead (the
+/// `pass` frame printed "PETRA BARNACRE SERF" across three serfs at the end
+/// of the street, naming a fourth who was behind the camera). The plate is a
+/// rectangle at the middle of the frame; what matters is whether a DRAWN
+/// BODY falls inside it, which is a question about the lens and not about a
+/// bearing. So: walk candidate turns out from the smallest that clears the
+/// plate, both sides, and take the first that puts the subject (and its
+/// group) in the clear with NOBODY under the label. If the street is too
+/// full for that -- a queue along a wall can cover every candidate -- take
+/// the one that leaves the fewest faces under it, nearest counted worst,
+/// and the frame is as good as that corner allows.
+///
+/// `groupHalf` widens the subject to a pair or a knot of three (the
+/// overheard shot aims at a midpoint). Render side; doubles legal.
+[[nodiscard]] sim::Angle composeYawOffset(const Session& session, std::int32_t xQ8,
+                                          std::int32_t yQ8, std::int32_t band,
+                                          std::int32_t speakerId, double groupHalf) noexcept {
+    constexpr double kTwoPi = 6.283185307179586;
+    const double hfovTan = static_cast<double>(session.camera().hfovTan);
+    const double halfFov = std::atan(hfovTan);
+    const double plateRight = std::atan(kPlateHalfWidths * hfovTan);
+    const auto bamOf = [&](double radians) {
+        return static_cast<sim::Angle>(std::lround(radians * static_cast<double>(sim::kTurnFull) / kTwoPi));
+    };
+    const auto radiansOf = [&](std::int32_t bam) {
+        return static_cast<double>(bam) * kTwoPi / static_cast<double>(sim::kTurnFull);
+    };
+    const sim::Angle subject = bearingToward(session, xQ8, yQ8);
+    const double apartSubject =
+        std::hypot(static_cast<double>(xQ8 - session.body().x()),
+                   static_cast<double>(yQ8 - session.body().y())) / static_cast<double>(sim::kSubOne);
+    const double subjectHalf = groupHalf + bodyHalfAngle(apartSubject);
+
+    // Everybody the lens could draw near this shot, with their bearing and
+    // their own width: the Gull's roster at the sim's Q8, the ward's on its
+    // slide. Eight tiles is the room and then some.
+    struct Seen {
+        sim::Angle bearing;
+        double half;
+        double apart;
+    };
+    std::vector<Seen> seen;
+    const auto note = [&](std::int32_t bx, std::int32_t by, std::int32_t id) {
+        if (id == speakerId) {
+            return;
+        }
+        const double apart = std::hypot(static_cast<double>(bx - session.body().x()),
+                                        static_cast<double>(by - session.body().y())) /
+                             static_cast<double>(sim::kSubOne);
+        if (apart < 0.3 || apart > 14.0) {
+            return;
+        }
+        seen.push_back(Seen{bearingToward(session, bx, by), bodyHalfAngle(apart), apart});
+    };
+    for (const sim::Actor& actor : session.tavern().actors()) {
+        if (actor.present() && actor.band() == band && actor.role() != sim::ActorRole::Vermin &&
+            !sim::isFloored(actor.activity())) {
+            note(actor.x(), actor.y(), actor.id());
+        }
+    }
+    for (const sim::WardActor& actor : session.people().actors()) {
+        if (actor.visible() && actor.band == band && sim::isPerson(actor.type)) {
+            const std::pair<std::int32_t, std::int32_t> at = wardDrawnQ8(session, actor);
+            note(at.first, at.second, actor.id + sim::kWardSpeakerIdBase);
+        }
+    }
+
+    sim::Angle best = bamOf(kSubjectOffMin * halfFov);
+    double bestCost = 1.0e18;
+    for (int step = 0; step <= 24; ++step) {
+        const double fraction =
+            kSubjectOffMin + (kSubjectOffMax - kSubjectOffMin) * static_cast<double>(step) / 24.0;
+        for (const int side : {1, -1}) {
+            const double off = fraction * halfFov;
+            // THE SUBJECT'S OWN CLEARANCE, and it is not the same either
+            // side: the plate runs RIGHTWARD from the middle of the frame,
+            // so a subject stood to the LEFT of it need only clear the
+            // middle by its own shoulder, while one stood to the RIGHT has
+            // to clear the whole width of the label. (The first draft
+            // guarded only the left case, and the search promptly chose the
+            // right one and printed the name across the face it was
+            // composing.)
+            const double clearance = side > 0 ? 0.0 : plateRight;
+            if (off - subjectHalf < clearance) {
+                continue;
+            }
+            if (off + subjectHalf > halfFov * 0.92) {
+                continue;  // and it must still be inside the frame, whole
+            }
+            const sim::Angle candidate = static_cast<sim::Angle>(side * bamOf(off));
+            const sim::Angle cameraYaw = static_cast<sim::Angle>(subject + candidate);
+            // What the plate covers, in this camera: from the middle of the
+            // frame rightward. A body whose own width overlaps that band is
+            // under the label.
+            double cost = 0.0;
+            for (const Seen& body : seen) {
+                double rel = radiansOf(static_cast<std::int32_t>(
+                    ((body.bearing - cameraYaw) & (sim::kTurnFull - 1))));
+                if (rel > kTwoPi / 2.0) {
+                    rel -= kTwoPi;
+                }
+                if (std::abs(rel) > halfFov) {
+                    continue;  // off frame; the plate cannot reach it
+                }
+                if (rel + body.half >= 0.0 && rel - body.half <= plateRight) {
+                    cost += 8.0 / std::max(1.0, body.apart);  // nearest faces count worst
+                }
+            }
+            // A tie goes to the smaller turn: the subject nearer the thirds
+            // than the edge.
+            cost += fraction;
+            if (cost < bestCost) {
+                bestCost = cost;
+                best = candidate;
+            }
+        }
+    }
+    return best;
+}
+
+/// Turns the body to look at whoever the row names -- at their face, and
+/// composed so the plate misses every face in the frame (composeYawOffset)
+/// -- so the frame is a picture of the speaker and not of the wall the walk
+/// ended against; a step to sync the facing, which the row's hold outlasts
+/// many times over. A caller with its own reason to stand somewhere else
+/// (the watch reveal, which also has a drawn blade to clear) passes its own
+/// offset instead.
+void faceTheSpeaker(Session& session) {
+    std::int32_t x = 0;
+    std::int32_t y = 0;
+    std::int32_t band = 0;
+    if (speakerDrawnQ8(session, x, y, band)) {
+        lookAtFace(session, x, y, speakerFigure(session),
+                   composeYawOffset(session, x, y, band, session.voice().current().actorId, 0.0));
+    }
+}
+
+/// The same, with the turn chosen by the caller.
+void faceTheSpeakerAt(Session& session, sim::Angle yawOffset) {
     std::int32_t x = 0;
     std::int32_t y = 0;
     std::int32_t band = 0;
@@ -13334,15 +13484,17 @@ void faceThePair(Session& session, bool mayWalk) {
             walkToTile(session, bestX, bestY);
         }
     }
-    // The look is at the pair's MIDPOINT, so the plate has to clear the whole
-    // group and not just that midpoint: the offset carries half the angle
-    // they open from here AND a body's own width beside it -- a pair is
-    // rarely a pair on the street, and the third serf who stopped to listen
-    // wore the label when the offset was the midpoint's alone.
-    constexpr sim::Angle kAFigureWide = sim::angle_from_degrees(8);
-    const std::int32_t half = opening(session.body().x(), session.body().y()) / 2;
-    lookAtFace(session, (ax + bx) / 2, (ay + by) / 2, figure,
-               static_cast<sim::Angle>(kOffThePlate + half + kAFigureWide));
+    // The look is at the pair's MIDPOINT, so the composed turn is given the
+    // half-angle they open from here and clears the group as one body --
+    // and the search does the rest, including the third serf who stopped to
+    // listen, who wore the label when the offset was a constant.
+    constexpr double kTwoPi = 6.283185307179586;
+    const double groupHalf = static_cast<double>(opening(session.body().x(), session.body().y())) *
+                             kTwoPi / static_cast<double>(sim::kTurnFull) / 2.0;
+    const std::int32_t midX = (ax + bx) / 2;
+    const std::int32_t midY = (ay + by) / 2;
+    lookAtFace(session, midX, midY, figure,
+               composeYawOffset(session, midX, midY, band, line.actorId, groupHalf));
 }
 
 /// What `--voice=watch` owes. See runWatchRevealLine.
@@ -13552,9 +13704,9 @@ constexpr std::int32_t kWatchRevealBeats = 4;
     // prompt, and the frame read as his.
     constexpr sim::Angle kOffTheBlade = -sim::angle_from_degrees(18);
     if (voiceRowUpFrom(session, "watch.approach")) {
-        faceTheSpeaker(session, kOffTheBlade);
+        faceTheSpeakerAt(session, kOffTheBlade);
         session.stepMany(sim::MoveInput{}, kPageEaseSteps + 1);
-        faceTheSpeaker(session, kOffTheBlade);
+        faceTheSpeakerAt(session, kOffTheBlade);
         if (voiceRowUpFrom(session, "watch.approach")) {
             ++landed;  // 4
         }
@@ -13697,7 +13849,9 @@ constexpr std::int32_t kWatchRevealBeats = 4;
             if (const sim::WardActor* who = session.people().byId(street.actorId);
                 who != nullptr && who->visible()) {
                 const std::pair<std::int32_t, std::int32_t> at = wardDrawnQ8(session, *who);
-                lookAtFace(session, at.first, at.second, who->type, kOffThePlate);
+                lookAtFace(session, at.first, at.second, who->type,
+                           composeYawOffset(session, at.first, at.second, who->band,
+                                            who->id + sim::kWardSpeakerIdBase, 0.0));
             }
             return landed;
         }
@@ -13728,7 +13882,9 @@ constexpr std::int32_t kWatchRevealBeats = 4;
         if (const sim::WardActor* who = session.people().byId(street.actorId);
             who != nullptr && who->visible()) {
             const std::pair<std::int32_t, std::int32_t> at = wardDrawnQ8(session, *who);
-            lookAtFace(session, at.first, at.second, who->type, kOffThePlate);
+            lookAtFace(session, at.first, at.second, who->type,
+                       composeYawOffset(session, at.first, at.second, who->band,
+                                        who->id + sim::kWardSpeakerIdBase, 0.0));
         }
         return landed;
     }

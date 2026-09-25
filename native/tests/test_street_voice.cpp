@@ -107,6 +107,19 @@ const BarkTables& barks() {
     return play(run);
 }
 
+/// The same ending through a different LENS. The field of view is a slider
+/// on the options page (45 to 110), and a shot composed in degrees rather
+/// than in fractions of the frame comes apart at the ends of it: the first
+/// off-the-plate pass pushed the overheard trio clean off a 70-degree
+/// frame, which the build's own inview= proof caught and no case did.
+[[nodiscard]] render::SmokeRunResult playVoiceAt(const char* ending, int fovDegrees) {
+    render::SmokeRunConfig run;
+    run.voice = true;
+    run.voiceEnd = ending;
+    run.session.fovDegrees = fovDegrees;
+    return play(run);
+}
+
 /// The room's and the ward's digests, test_street_panic's own shape.
 [[nodiscard]] std::pair<std::uint64_t, std::uint64_t> hashesOf(const render::Session& session) {
     HashSink room(0x564F494345524F4Dull);  // "VOICEROM"
@@ -1309,6 +1322,29 @@ TEST_CASE("--voice=hold: the one you talk to in the Gull holds ten seconds and i
 // ===========================================================================
 // THE HUD ROW
 // ===========================================================================
+
+TEST_CASE("the frame is of the speaker through every lens the options page offers") {
+    // THE COMPOSED TURN IS A FRACTION OF THE FRAME, NOT A COUNT OF DEGREES.
+    // Every composed ending, at the narrowest and the widest the view-angle
+    // slider goes to and at the default between them: the body the frame is
+    // about is still in it, whole, with a clear lens line and nobody drawn in
+    // the way. A constant twelve degrees passed this at ninety and failed it
+    // at seventy, which is what this case exists to catch.
+    for (const int fov : {70, 90, 110}) {
+        for (const char* ending : {"pass", "overheard", "farewell", "moved", "react", "watch"}) {
+            const render::SmokeRunResult played = playVoiceAt(ending, fov);
+            INFO("--voice=", ending, " --fov=", fov, ": ", played.summary);
+            CHECK(played.ok);
+            CHECK_FALSE(played.scriptFellShort());
+            CHECK(played.voiceSpeakerInView);
+            // And still off the plate at the middle of the frame, and still
+            // inside it: a tenth of the half-frame out at the least, and
+            // never past the edge's own margin.
+            CHECK(played.voiceSpeakerOffDeg >= 6);
+            CHECK(played.voiceSpeakerOffDeg <= fov / 2 - 6);
+        }
+    }
+}
 
 TEST_CASE("the voice row draws its speaker and its line, and a hand-built HudState without it is untouched") {
     render::Framebuffer plain(960, 540);
