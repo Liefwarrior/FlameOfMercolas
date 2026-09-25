@@ -67,11 +67,18 @@ Cull's table with real coin. Nothing reaches into the sim sideways.
 Every path is beats the smoke already walks, reused whole. The hour is the
 borrowed line's own hour unless you pass `--time=`.
 
+One rule runs through all five: **nothing walks after a rung.** The plate holds
+five seconds and a scripted walk spends them faster than anything else in the
+build, so the frame is made first and the rung is the last thing that happens.
+`--trail=opened` has said the same about the lead-opened notice since the
+casebook pass. Two of these tracks were written the other way round and neither
+of them landed a plate.
+
 | track | what the drive does | why that's the shortest | hour |
 |---|---|---|---|
-| `wire` | The burglary's own beats. Crouch, in at the door, up the stair, the wire in a guest's box (room 2), the pins worked, a shoulder if the wire ruined it, the box emptied. Then back onto the landing looking at the room just done. | A cracked box is 8 points of THE WIRE, the first threshold exactly. Four caught lifts would do it too, but every caught lift is a bouncer's warning, which outranks the plate. | 2 |
+| `wire` | The burglary's own beats. Crouch, in at the door, up the stair, the wire in a guest's box (room 2), the pins worked, a shoulder if the wire ruined it. Then the eye goes up the landing the burglar came up, and then the lid. | A cracked box is 8 points of THE WIRE, the first threshold exactly. Four caught lifts would do it too, but every caught lift is a bouncer's warning, which outranks the plate. The lid is the rung, so it goes last: `--burgle` walks back to the landing to shoot the room and that walk, crouched, costs more than the plate has. | 2 |
 | `roofs` | In at the door, up the stair, out over the north wall onto the lead, then the alley leapt west and east until the roofs will have it. Stops on the roof, pitched down at the alley. | A roof-run is 3, skyrunning is 2 a level, a leap is two uses. The skyrun line's own alley beat, bounded the same way (24 leaps). | 1 |
-| `flame` | The trail's loop for its first two leads. Nearest open lead on this band, walked to by the district's router, read with Q, twice. Then the trail's own stand-back so the frame is the room and not a wall. | A lead read is 6. Two is 12. | 9 |
+| `flame` | The trail's loop for its first two leads. Nearest open lead on this band, backed off four tiles the way the body came in, and read from there with Q, twice. Onto the anchor itself only if it will not read from off it. | A lead read is 6. Two is 12. The trail stands back after it reads; this stands back first. Four tiles is inside kLookRangeTiles so the clue reads the same, and the flagstones are indoors, so the trail's seven-tile step back is out of the door, round the almshouse and down to the quay. Fifty tiles. The plate has five seconds. | 9 |
 | `trade` | The bounty line, whole, played to `away`. Take the job off Cull, do it, turn it in across his table. | A paid job is 6 and the coin over four is the rest. The smallest bounty on the board (`bounty_kennel`, two units at four) pays 8, so 6 + 2 lands on the threshold exactly. The plate comes up the step the talk closes. | 21 |
 | `law` | Talk to Watchman Cull, stand him four drinks, close the talk, stand back. | A bought drink is a deed worth 2 of standing with the drinker's own guild. The Watch at 8 on a clean sheet is KNOWN TO THE WATCH. The bounty alone leaves you three short. | 23 |
 
@@ -135,7 +142,7 @@ second into its hold, which is the same picture.
 
 | frame | drive | what it proves |
 |---|---|---|
-| `rung-wire-960.png` | `granadad.exe --smoke=0 --hold --width=960 --height=540 --scale=1 --rung=wire --settle-steps=0 --screenshot=docs\frames\rung\rung-wire-960.png` | One cracked box at two in the morning. `THE WIRE  --  LIGHT FINGERS` on the plate, the wire.1 row under it, the landing and the done room behind. Summary reads `rung=wire 0->1 row="The rope hands know your face now. That is not nothing." plate=up found=yes`. |
+| `rung-wire-960.png` | `granadad.exe --smoke=0 --hold --width=960 --height=540 --scale=1 --rung=wire --settle-steps=0 --screenshot=docs\frames\rung\rung-wire-960.png` | One cracked box at two in the morning. `THE WIRE  --  LIGHT FINGERS` on the plate, the wire.1 row under it, the landing away in front and the done room behind. Summary reads `rung=wire 0->1 row="The rope hands know your face now. That is not nothing." plate=up found=yes`. |
 | `rung-roofs-960.png` | the same with `--rung=roofs` | The alley leapt until the roofs will have it. `THE ROOFS  --  TENANT` over the lead, the alley under the eye. `SKYRUNNING RISES TO n` may be queued behind it in the corner, and the plate is up first. |
 | `rung-flame-960.png` | the same with `--rung=flame` | Two leads read at the Mission at nine. `THE FLAME  --  DISCIPLE`, the back room stood back from. The pull line under the ribbon still reads the next lead. |
 | `rung-trade-960.png` | the same with `--rung=trade` | The bounty paid across Cull's table. `THE TRADE  --  STALLKEEP` the step the talk closes, Cull still in frame. |
