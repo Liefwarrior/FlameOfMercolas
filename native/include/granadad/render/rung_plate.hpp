@@ -58,6 +58,17 @@
 //     the same event said twice, and the plate has already told it.
 //   * Its own cue, heavier than the toast's chime -- audio::SoundId::LegendRung,
 //     the Kenney heavy bell -- played when the plate actually shows.
+//   * THE ALERT ROW STANDS AT HALF WEIGHT under it. The amber line at the
+//     foot of the frame (a cracked box's take, a leap's length, a watchman's
+//     word across the table) is news of its own, so it is not cut the way the
+//     toast is -- its four-second hold would be lost whole under a five-
+//     second plate -- and not deferred either, since a leap's length said
+//     five seconds after the leap is a notice out of its moment. It is scaled
+//     instead, on the plate's own fade, so the two cross rather than snap and
+//     the plate is the one thing on the frame at full strength while it
+//     holds. A bouncer's WARNING rides that same row and dismisses the plate
+//     outright, so the one line the player must not miss is never the one
+//     dimmed.
 
 #include <array>
 #include <cstdint>
@@ -135,9 +146,26 @@ inline constexpr std::int32_t kRungPlateHoldSteps = 300;
 
 /// The longest a prose row may be and still draw WHOLE on one line of the
 /// plate at 320x180, the smallest window this game runs at: the frame's 64
-/// cells less the two border cells, the two cells of padding and a cell of
-/// margin either side. Pinned by test_rung_plate against every authored row.
+/// cells less the two border cells, the two cells of gutter either side
+/// (kRungPlateGutterCells) and a cell of margin either side. Pinned by
+/// test_rung_plate against every authored row.
 inline constexpr int kRungPlateRowCells = 56;
+
+/// The air either side of the widest row, inside the pane's borders, in
+/// cells: two, at every size, the composed pages' own gutter. One was the
+/// critic's finding -- a row all but touching its keyline on a plate that
+/// keeps a whole row of air between its head and its prose.
+inline constexpr int kRungPlateGutterCells = 2;
+
+/// The alert row's weight under a plate at full strength: half. The rule is
+/// stated at the top of this file.
+inline constexpr float kRungPlateAlertWeight = 0.5F;
+
+/// The factor the alert row's own fade is multiplied by for a plate at this
+/// fade (0 gone .. 1 fully up): 1 with no plate, kRungPlateAlertWeight under
+/// one at full strength, the straight line between -- the row dims as the
+/// plate rises and recovers as it lifts, on the plate's own ease.
+[[nodiscard]] float alertWeightUnderRungPlate(float plateFade) noexcept;
 
 /// Where the plate SEATS vertically, as a share of the spare height above and
 /// below it, out of 100. A quarter: high, under the compass band, clear of

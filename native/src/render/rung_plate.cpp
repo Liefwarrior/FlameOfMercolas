@@ -137,13 +137,16 @@ struct PlateLayout {
     out.rows = 1 + (hasProse ? 2 : 0) + (state.top.empty() ? 0 : 1);
     // SIZED TO ITS CONTENT (the spec's "size to content where content is
     // static"): the widest row, where the head wears a cell of the accent
-    // fill either side of its words; a cell of padding inside each edge; the
-    // two border cells. NEVER PAST THE WINDOW less a cell of margin a side --
-    // a row wider than that is clipped by the cell drawer's own mark, which
-    // the authored sheet is pinned never to need at 320x180.
+    // fill either side of its words; TWO CELLS OF GUTTER inside each edge
+    // (kRungPlateGutterCells -- one was the critic's finding, a row all but
+    // touching its keyline); the two border cells. NEVER PAST THE WINDOW less
+    // a cell of margin a side -- a row wider than that is clipped by the cell
+    // drawer's own mark, which the authored sheet is pinned never to need at
+    // 320x180: 56 glyphs, two gutters, two borders is the 64-cell frame less
+    // its margin exactly.
     const int widest = std::max(out.headCells + 2, std::max(out.proseCells, out.topCells));
     const int room = out.metric.cellsIn(width) - 2;
-    out.cells = std::min(widest + 4, room);
+    out.cells = std::min(widest + 2 + 2 * kRungPlateGutterCells, room);
     if (out.cells < 6) {
         return out;
     }
@@ -152,6 +155,11 @@ struct PlateLayout {
 }
 
 }  // namespace
+
+float alertWeightUnderRungPlate(float plateFade) noexcept {
+    const float fade = std::clamp(plateFade, 0.0F, 1.0F);
+    return 1.0F - (1.0F - kRungPlateAlertWeight) * fade;
+}
 
 RungPlateBox rungPlateBox(int width, int height, const RungPlateState& state) {
     RungPlateBox box;

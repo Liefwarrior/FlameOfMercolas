@@ -1028,6 +1028,12 @@ public:
     /// three lines, the fade (zero under anything that owns the screen), the
     /// signed drift. Public so a case reads it instead of a screenshot.
     [[nodiscard]] RungPlateState rungPlateState() const noexcept;
+    /// The alert row's fade exactly as drawFrame composes it: its own ease,
+    /// at half weight under the plate (alertWeightUnderRungPlate on the
+    /// plate's own fade -- which is zero under a bouncer's WARNING, so the
+    /// one line the player must not miss is never the one dimmed). Public so
+    /// a case reads it instead of a screenshot.
+    [[nodiscard]] float alertFadeNow() const noexcept;
 
     // --- THE MOMENT LEADS OPEN ------------------------------------------------
     //

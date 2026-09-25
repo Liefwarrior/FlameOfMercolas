@@ -3941,6 +3941,24 @@ void Session::composeRungPlate(Framebuffer& target) const {
     drawRungPlate(target, rungPlateState());
 }
 
+float Session::alertFadeNow() const noexcept {
+    // THE ALERT ROW STANDS AT HALF WEIGHT UNDER THE PLATE. The critic's
+    // finding on the record plate: the amber line at the foot of the frame
+    // fired in the same frame as the plate, wider and equally bright, and
+    // outweighed it. Not dismissed, the way stepPull cuts the skill toast: the
+    // row is news of its own (the take off a cracked box, a leap's length, a
+    // watchman's word across the table) and its four-second hold would be
+    // lost whole under a five-second plate. Not deferred either: a leap's
+    // length said five seconds after the leap is a notice out of its moment.
+    // Scaled instead, on the plate's OWN fade, so the two cross rather than
+    // snap and the plate is the one thing on the frame at full strength
+    // while it holds. rungPlateState() zeroes that fade under anything that
+    // outranks the plate -- a bouncer's WARNING rides this same row and
+    // dismisses the plate outright -- so the one line the player must not
+    // miss is never the one dimmed.
+    return alertAnim_.value() * alertWeightUnderRungPlate(rungPlateState().fade);
+}
+
 int Session::mapPlaceForLead(std::int32_t leadIndex) const {
     // COURIER CASE. THE ACTIVE BOOK'S INDEX SPACE, because every caller
     // (the page's routable flag, commitCasebookLead, showLeadOnMap) indexes
@@ -11622,8 +11640,9 @@ FrameStats Session::drawFrame(Framebuffer& target, FramePasses passes) const {
     // TASK #83. Eased in step()/syncPanelAnim(), not here -- see
     // HudState::alertFade's own note. 1 when nothing has changed since
     // construction, which is the whole of what every caller before this field
-    // existed drew.
-    hud.alertFade = alertAnim_.value();
+    // existed drew. AT HALF WEIGHT UNDER THE RUNG PLATE (alertFadeNow's own
+    // note): one arithmetic, read by the case that pins it and drawn here.
+    hud.alertFade = alertFadeNow();
     // VOICE LANE. The street's own line, on its own toggle, down while a
     // panel owns the screen (the partner's lines are the panel's).
     hud.voiceName = std::string_view{voice_.current().name};

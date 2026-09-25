@@ -441,7 +441,9 @@ struct HudState {
     /// only the alert row's own alpha; every other HUD row is unaffected.
     /// Defaults to 1, which is what every hand-built HudState already meant
     /// before this field existed, so `* alertFade` is a no-op for a caller
-    /// that never heard of it.
+    /// that never heard of it. Session also halves it under the rung plate
+    /// (Session::alertFadeNow, rung_plate.hpp's alertWeightUnderRungPlate):
+    /// the row is drawn exactly as before at whatever weight it is handed.
     float alertFade = 1.0F;
     /// HARDENING PASS. THE SAME alertFade PATTERN, ONE PER ROW. #83 eased the
     /// alert row in and out and left every other row on this HUD popping --

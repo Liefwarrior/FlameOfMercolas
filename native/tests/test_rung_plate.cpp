@@ -1,6 +1,6 @@
 // THE RUNG PLATE, PINNED -- the ward says so, and the simulation cannot tell.
 //
-// Seven claims, each its own case (the sixth is one case per track):
+// Eight claims, each its own case (the sixth is one case per track):
 //
 //   1. THE WATCH seeds silently and reports a rise per track, never a fall.
 //      A session that loads with rungs on the sheet has not just earned
@@ -8,7 +8,8 @@
 //      skipped; the same rise after a fall is reported again, honestly.
 //   2. THE SHEET: every legend.<track>.<rung> key and legend.top resolves,
 //      one row each, fifty-six glyphs and under (one line of the 4x6 font
-//      inside the plate at 320x180), no dash, the priests' word absent. The
+//      inside the plate at 320x180), no dash, no numeral (a count is the
+//      alert row's register, never this prose's), the priests' word absent. The
 //      head comes off legend.cpp's own two tables and nothing else; a key
 //      nobody authored draws an empty row, never a sentence the code chose.
 //   3. THE PLATE fires on a real rung, holds its five seconds, queues a
@@ -28,8 +29,13 @@
 //      tracks; a word that names none of the five lands neither and says so.
 //   7. THE GEOMETRY, at 320x180, 960x540 and 1920x1080: the plate seats
 //      under the ribbon block and the announce plate's row, above the
-//      reticle's fence, inside the frame less a cell a side, centred, and
-//      every authored row draws whole with no ink outside its own pane.
+//      reticle's fence, inside the frame less a cell a side, centred, two
+//      cells of gutter inside each keyline at every size, and every
+//      authored row draws whole with no ink outside its own pane.
+//   8. THE ALERT ROW stands at half weight under the plate, on the plate's
+//      own fade -- dimming as it rises, whole again once it has lifted --
+//      and a bouncer's WARNING, which dismisses the plate instead, is never
+//      the line dimmed.
 
 #include <doctest/doctest.h>
 
@@ -314,7 +320,7 @@ TEST_CASE("the watch seeds silently, reports a rise per track and never a fall")
 // 2. THE SHEET
 // ===========================================================================
 
-TEST_CASE("every legend key resolves: one row each, fifty-six glyphs and under, no dash, nothing a priest would say") {
+TEST_CASE("every legend key resolves: one row each, fifty-six glyphs and under, no dash, no numeral, nothing a priest would say") {
     const sim::BarkTables& sheet = barks();
     REQUIRE(sheet.loaded());
     const std::vector<std::string> keys = everyLegendKey();
@@ -338,6 +344,11 @@ TEST_CASE("every legend key resolves: one row each, fifty-six glyphs and under, 
         CHECK(row.find('-') == std::string::npos);
         CHECK(row.find("\xE2\x80\x93") == std::string::npos);
         CHECK(row.find("\xE2\x80\x94") == std::string::npos);
+        // No numeral in anything the plate says. The record critic read
+        // "OVER 3 TILES." under a plate and called it a numeric fragment out
+        // of register; that row is the alert row's (Session::leap's own
+        // announce), and the plate's prose stays words.
+        CHECK(row.find_first_of("0123456789") == std::string::npos);
         // The learned name for the priests' quarry stays in a priest's mouth.
         CHECK(lowered(row).find("bloodletter") == std::string::npos);
     }
@@ -643,6 +654,87 @@ TEST_CASE("a bouncer's warning dismisses the plate; a rung under it queues and s
     CHECK(session.rungPlateState().fade > 0.0F);
 }
 
+TEST_CASE("the alert row stands at half weight under the plate, on the plate's own fade, and is whole again once it lifts") {
+    // The line itself: whole with no plate, half under one at full strength,
+    // the straight line between, clamped past both ends.
+    CHECK(alertWeightUnderRungPlate(0.0F) == 1.0F);
+    CHECK(alertWeightUnderRungPlate(1.0F) == kRungPlateAlertWeight);
+    CHECK(alertWeightUnderRungPlate(0.5F) ==
+          doctest::Approx(1.0F - 0.5F * (1.0F - kRungPlateAlertWeight)));
+    CHECK(alertWeightUnderRungPlate(-1.0F) == 1.0F);
+    CHECK(alertWeightUnderRungPlate(2.0F) == kRungPlateAlertWeight);
+    CHECK(kRungPlateAlertWeight > 0.0F);
+    CHECK(kRungPlateAlertWeight < 1.0F);
+
+    // On the frame: the rung, and the plate up at full strength with a
+    // little of its hold still to run.
+    Session session(configAt("mission-backroom"));
+    wake(session);
+    session.stepMany(sim::MoveInput{}, kPageEaseSteps + 2);
+    REQUIRE_FALSE(session.rungPlateWanted());
+    crackABox(session);
+    session.stepMany(sim::MoveInput{}, 1);
+    REQUIRE(session.rungPlateWanted());
+    session.stepMany(sim::MoveInput{}, kPageEaseSteps);
+    REQUIRE(session.rungPlateFade() == 1.0F);
+    session.stepMany(sim::MoveInput{}, kRungPlateHoldSteps - 4 * kPageEaseSteps - 24);
+    REQUIRE(session.rungPlateWanted());
+    REQUIRE(session.rungPlateFade() == 1.0F);
+
+    // A lead read puts its line on the alert row (test_pull's own verb) --
+    // eased in as ever, but never past half while the plate holds.
+    session.examine();
+    for (int i = 0; i < kPageEaseSteps + 2; ++i) {
+        session.stepMany(sim::MoveInput{}, 1);
+        CHECK(session.alertFadeNow() <= kRungPlateAlertWeight);
+    }
+    REQUIRE(session.rungPlateWanted());
+    CHECK(session.alertFadeNow() == doctest::Approx(kRungPlateAlertWeight));
+
+    // The plate lifts: the row recovers on the plate's own ease, never
+    // stepping down, and stands whole once the plate is gone -- its own
+    // four-second hold outlasts what was left of the plate's.
+    float last = session.alertFadeNow();
+    int steps = 0;
+    while (session.rungPlateState().fade > 0.0F && steps < kRungPlateHoldSteps) {
+        session.stepMany(sim::MoveInput{}, 1);
+        const float now = session.alertFadeNow();
+        CHECK(now >= last);
+        last = now;
+        ++steps;
+    }
+    REQUIRE(session.rungPlateState().fade == 0.0F);
+    CHECK_FALSE(session.rungPlateWanted());
+    CHECK(session.alertFadeNow() == 1.0F);
+}
+
+TEST_CASE("a bouncer's warning is never the line dimmed: it dismisses the plate and the row stands whole") {
+    Session session(configInTheGull(19, sim::gull::kBartenderX, sim::gull::kBarY - 1));
+    wake(session);
+    REQUIRE(session.tavern().playerInside());
+    REQUIRE(session.tavern().playerStanding() == sim::Standing::Welcome);
+    crackABox(session);
+    session.stepMany(sim::MoveInput{}, 1);
+    REQUIRE(session.rungPlateWanted());
+    session.stepMany(sim::MoveInput{}, kPageEaseSteps);
+    REQUIRE(session.rungPlateFade() == 1.0F);
+
+    session.tavern().reportOffence(sim::Offence::Brawled);
+    int steps = 0;
+    while (session.tavern().playerStanding() != sim::Standing::Warned && steps < 200) {
+        session.stepMany(sim::MoveInput{}, 1);
+        ++steps;
+    }
+    REQUIRE(session.tavern().playerStanding() == sim::Standing::Warned);
+    REQUIRE_FALSE(session.tavern().lastWarning().empty());
+    session.stepMany(sim::MoveInput{}, 30);
+    CHECK_FALSE(session.rungPlateWanted());
+    CHECK(session.rungPlateState().fade == 0.0F);
+    // The warning holds the row up for as long as the house says it, and at
+    // full strength: the plate's fade is zero under it, so its weight is one.
+    CHECK(session.alertFadeNow() == 1.0F);
+}
+
 // ===========================================================================
 // 5. OUTSIDE EVERY HASH
 // ===========================================================================
@@ -834,9 +926,15 @@ TEST_CASE("the plate seats under the ribbon and the announce row, above the reti
             CHECK(box.x >= metric.cellW());
             CHECK(box.x + box.w <= width - metric.cellW());
             CHECK(std::abs((box.x + box.w / 2) - width / 2) <= metric.cellW());
-            // Wide enough for the longest row whole with its padding and
-            // borders; exactly tall enough for its rows and the two rules.
-            CHECK(box.w >= metric.widthOf(static_cast<int>(longestRow.size()) + 4));
+            // EXACTLY the widest row plus two cells of gutter a side and the
+            // two border cells -- the head wears a cell of fill either side
+            // of its words, so it counts two wider than it reads; exactly
+            // tall enough for its rows and the two rules.
+            const int widest = std::max(
+                static_cast<int>(widestHead.size()) + 2,
+                std::max(static_cast<int>(longestRow.size()),
+                         static_cast<int>(state.top.size())));
+            CHECK(box.w == metric.widthOf(widest + 2 + 2 * kRungPlateGutterCells));
             // ONE ROW TALLER than before the leading pass: head, a blank row
             // of air, the prose, and the top row when the track is capped.
             CHECK(box.h == metric.heightOf((topped ? 4 : 3) + 2));
@@ -888,8 +986,9 @@ TEST_CASE("the plate seats under the ribbon and the announce row, above the reti
         CHECK(rungPlateBox(320, 180, dark).draws);
     }
 
-    // Every authored row at the smallest window: its own pane, whole, with
-    // a cell of air off either edge -- what kRungPlateRowCells promises.
+    // Every authored row at the smallest window: its own pane, whole, two
+    // cells of gutter inside each keyline, a cell of air off either edge --
+    // what kRungPlateRowCells promises.
     for (const sim::LegendTrack track : kTracks) {
         for (std::int32_t rung = 1; rung <= sim::kLegendRungs; ++rung) {
             INFO(legendTrackKey(track), " ", rung);
@@ -902,8 +1001,14 @@ TEST_CASE("the plate seats under the ribbon and the announce row, above the reti
             const RungPlateBox box = rungPlateBox(320, 180, state);
             REQUIRE(box.draws);
             const PanelMetric metric = panelMetric(180);
-            CHECK(box.w >= metric.widthOf(static_cast<int>(text.prose.size()) + 4));
-            CHECK(box.w >= metric.widthOf(static_cast<int>(text.head.size()) + 6));
+            const int widest = std::max(
+                static_cast<int>(text.head.size()) + 2,
+                std::max(static_cast<int>(text.prose.size()), static_cast<int>(text.top.size())));
+            CHECK(box.w == metric.widthOf(widest + 2 + 2 * kRungPlateGutterCells));
+            CHECK(box.w >= metric.widthOf(static_cast<int>(text.prose.size()) + 2 +
+                                          2 * kRungPlateGutterCells));
+            CHECK(box.w >= metric.widthOf(static_cast<int>(text.head.size()) + 4 +
+                                          2 * kRungPlateGutterCells));
             CHECK(box.x >= metric.cellW());
             CHECK(box.x + box.w <= 320 - metric.cellW());
         }
