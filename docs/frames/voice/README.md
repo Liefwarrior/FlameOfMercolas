@@ -1,7 +1,7 @@
 # The street talks
 
 Every frame in here is the real `dist\granadad.exe` on the gated Windows build (branch
-`lane/voice`, commit `becfb333`, with wip's street senses, kit and pull pack merged under it),
+`lane/voice`, commit `c2f2e7e9`, with wip's street senses, kit and pull pack merged under it),
 playing the voice channel through the real verbs. Nothing is staged. Each run prints a summary
 line next to the picture (`voice end=... beats=n/N ... key=... speaker="..." row="..."
 inview=yes|no off=Ndeg apart=T.T`) and the exact line that shot each frame is in the table. A run
@@ -9,7 +9,9 @@ that fell short says so and can't pass as one that didn't. The last three are th
 proof: `inview` says the body the frame is about was inside the field of view at the shutter,
 with a clear lens line to it and nobody drawn in the way; `off` is how far from the middle of
 the frame it sat, in degrees, because ninety degrees of view is wide enough to hide a man at its
-edge in; `apart` is how far away it was, in tiles. The suite pins all three.
+edge in; `apart` is how far away it was, in tiles. The suite pins all three -- including a
+FLOOR under `off`, because dead centre is where the crosshair's own name plate is drawn and a
+body put there wears it.
 
 You said it on the 10th. "I'd expect the watch and crowd to react appropriately to the violence
 they're witnessing." And the Oblivion thing where talking to somebody feels like talking to a
@@ -208,6 +210,47 @@ buys and talks and never swings -- hashes byte for byte as it did, and the taver
 unmoved (`0x63F354D02A6B600F`, twin-run, re-read on the gated exe). `test_street_voice.cpp` pins
 both halves: a witness to a landed blow ends up facing the player, and the memory says `Struck`.
 
+**And the third round, which was one defect in three frames and three things that are not this
+lane's.** The critic's own first question of any frame -- can I tell who is talking -- and half
+the set failed it.
+
+THE PLATE WAS ON THE FACE. The crosshair's name plate is drawn at the middle of the frame and
+runs to the right of it, so a body composed DEAD CENTRE wears it: `pass`, `react` and
+`overheard` all had "<SOMEBODY> SERF / E - TALK" printed across the speaker's eyes and mouth,
+and because the prompt names the nearest body in REACH rather than the one you are looking at,
+two of them named somebody else while doing it. The prompt's rule is not this lane's to change
+(every verb in the game reads it, and a look-based prompt is the crosshair's own pass), but
+where this lane stands its camera is: every composed look now puts its subject a sixth of the
+frame off centre -- twelve degrees at ninety of view, the thirds a photographer would use --
+and the plate lands on the wall behind them. The overheard shot carries half the angle the pair
+opens plus a body's width beside it, because a pair on the street is rarely just a pair and the
+third serf who stopped to listen wore the label. `off` has a floor in the suite now as well as
+a ceiling: a frame that drifts back to centre goes red.
+
+AND THE ROOM GETS A SECOND AND A HALF. `react` fired the shutter the step the row landed and
+caught a bouncer crossing the lens half in frame, his head wider at that range than the
+witness's. The same beat ninety steps on is the same line with the doorway clear -- the row
+holds four seconds at the least -- so the drive waits and re-aims before the shutter.
+
+Three the critic named that this lane is NOT the place to fix, said plainly rather than
+quietly left:
+
+- **WATCHMAN CULL IS DRAWN AS A DRINKER.** In the reveal he wears a red tunic and no helmet,
+  and the crosshair calls him `WATCHMAN CULL  PATRON`, because the Gull's roster gives him the
+  PATRON role (he is off shift with a drink in his hand -- `tickWatch`'s own words) and
+  `figureForRole` picks the rig off the role. It is the right fiction and the wrong read for
+  the one frame that exists to be a reveal. Fixing it means rigging by JOB FAMILY rather than
+  role, which moves the scene hash and every 3D frame in the repo: the 3D lane's, declared here.
+- **THE OVERHEARD PAIR DO NOT FACE EACH OTHER.** The emitter names both halves now and the
+  camera walks to see both, but nothing turns them: two bodies standing together talking is a
+  `WardPopulation` behaviour and a hashed one, so it is the same declared population move as
+  the ward hold below.
+- **FISTS UP CAN BE DROPPED AT 960x540.** With the alert row and the voice row both up, the
+  bottom band runs out of slots before the stance row, and the band's own rule is that a row
+  which cannot reach the play space does not get one. The priority order is the UI-EA spec's
+  argument (an event outranks a state, and a raised fist is also visible in the hand), so
+  re-ordering it is that spec's pass and not this lane's.
+
 One of the seven endings is NOT composed this way and says so: `--voice=hold` (the address's own
 proof -- the Gull man you talk to holds where the talk found him for ten seconds) still stands back
 through `standBackFrom`, which asks the SIM's line of sight for its spot and can leave another
@@ -239,10 +282,12 @@ a farewell table, the back key says one, and walking off throws one after you. T
 to in the Gull holds still. The worded reaction is never a number. Two pass lines are never closer
 than the cooldown. All seven `--voice=` endings land every beat they owe, AND THE FRAME IS OF THE
 SPEAKER: at the shutter of every composed ending the body the frame is about is in the field of
-view with a clear lens line and nobody drawn in the way (`inview=yes`), and in the MIDDLE of it
-and not at its edge -- eight degrees off at the most for the five composed shots, fifteen for the
-overheard pair (the look is at their midpoint), and between ten and twenty-five for the watch
-reveal, which stands Cull clear of the drawn blade on purpose. The farewell and moved stands sit a
+view with a clear lens line and nobody drawn in the way (`inview=yes`), and OFF THE PLATE but
+inside the frame -- at least a tenth of the frame off centre so the crosshair's own label does
+not land on the speaker's face, and at most a third of it so nobody is heading for the edge
+(further out again for the overheard group, which has to clear three bodies, and between ten and
+twenty-five degrees for the watch reveal, which stands Cull clear of the drawn blade on purpose).
+The farewell and moved stands sit a
 diagonal off at the least (never the tile beside) and the talk reach at the most; the watch
 reveal's stand is three tiles from Cull's stool at the least. The lens's line and the sim's
 are held against each other on the table at (151,69). A placed body leaves the street's last
