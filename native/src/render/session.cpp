@@ -14745,18 +14745,21 @@ constexpr std::int32_t kRungBeats = 2;
 ///          caught lift is a bouncer's warning, which OUTRANKS the plate.
 ///          The frame is the burglary's own: back on the landing, looking
 ///          at the room just done.
-///   roofs  THE FIRST ROOF-RUN (three) AND SKYRUNNING (two a level): up
-///          onto the Gull's lead the roof line's way, then the alley leapt
-///          west and east -- a leap is two uses -- until the roofs will
-///          have it. Stopped on the roof it rose on, the alley under the eye.
+///   roofs  THE FIRST ROOF-RUN (three) AND SKYRUNNING (two a level): in at
+///          the Gull's door and up onto its lead the roof line's own way,
+///          then the alley leapt west and east -- a leap is two uses --
+///          until the roofs will have it. Stopped on the roof it rose on,
+///          the alley under the eye.
 ///   flame  TWO LEADS READ (six apiece): the trail's own first two, the
 ///          Mission's back room and its flagstones, walked to by the
-///          district's router and read with the same Q, then the trail's
-///          own stand-back so the frame is the room and not a wall.
+///          district's router and read with the same Q, at the trail's own
+///          hour (nine, the Mission's door open), then the trail's own
+///          stand-back so the frame is the room and not a wall.
 ///   trade  THE WARD'S BOUNTY, PAID: runContractLine whole. Six for the job
 ///          and the coin over four clears the threshold at the smallest
-///          bounty the board deals. The rung rises at the turn-in, across
-///          Cull's table, and the plate comes up the step the talk closes.
+///          bounty the board deals (bounty_kennel, two units at four: eight
+///          coin, two points). The rung rises at the turn-in, across Cull's
+///          table, and the plate comes up the step the talk closes.
 ///   law    FOUR DRINKS STOOD TO WATCHMAN CULL. A bought drink is a deed
 ///          worth two of standing with the drinker's own guild
 ///          (factionDeedWeight), and the Watch at eight on a clean sheet is
@@ -14806,6 +14809,10 @@ constexpr std::int32_t kRungBeats = 2;
             break;
         }
         case sim::LegendTrack::Roofs: {
+            // In at the door first -- the roof line's own first beat, because
+            // the house router is asked for the stair from the street
+            // otherwise -- then up the lead the way every roof line goes up.
+            walkToTile(session, sim::gull::kDoorX0, sim::gull::kDoorY + 1);
             upOntoTheLead(session);
             walkToTile(session, sim::gull::kFootprintX0, 70);
             // West over the two tiles of air and back east, the skyrun's own
@@ -15897,7 +15904,7 @@ int scriptedStartHour(const SmokeRunConfig& config) noexcept {
                 case sim::LegendTrack::Roofs:
                     return 1;  // the skyrun's: the Gull open, the Watch gone home
                 case sim::LegendTrack::Flame:
-                    break;  // the trail's: nobody in particular, the default hour
+                    return 9;  // the trail's: nine, the Mission's door open (test_casebook's own hour for it)
                 case sim::LegendTrack::Trade:
                     return 21;  // the bounty's: Cull and Maell in one room
                 case sim::LegendTrack::Law:
