@@ -13,8 +13,10 @@
 // is placed in VIEW SPACE -- +X right, +Y up, -Z forward, tiles -- and rides
 // the eye wherever it turns, jolting WITH the camera impulses rather than
 // against them. The adapter squeezes that pass's depth into the front of
-// the depth range, so a wall the body stands against never cuts the fists
-// off, and the fists still occlude each other correctly.
+// the depth range and the world's own pass into the back, so the two bands
+// never touch: nothing of the world -- a wall the body stands against, a
+// body the shutter walked into, a limb thrown where it should not be -- can
+// cut the fists off, and the fists still occlude each other correctly.
 //
 // TWO LOOKS, ONE DESCRIPTION. Every build -- every test, the docker gate,
 // today's client -- draws the PLACEHOLDER: two box forearms and two box
@@ -157,12 +159,18 @@ struct ViewmodelRigPlacement {
 /// metre taller than the block clip the other fists framings stand on); a
 /// weapon keeps the eye over the left shoulder, level with the hand.
 /// RAISES THE STANCE by construction -- a cast with the hands down still
-/// poses up here.
+/// poses up here. HELD for the whole cast window, never eased out of the
+/// guard: the guard is an eye on the block clip's crouch and the line
+/// between the two framings runs straight through the spell clip's own
+/// shoulder.
 [[nodiscard]] ViewmodelRigPlacement viewmodelCastPlacement(ViewmodelKind kind) noexcept;
 /// The swing: where the rig sits for a charge, a hold and a swing -- the
-/// punches lunge half a metre, so bare fists step the rig back and level
-/// it; a weapon keeps its guard. Eased to over a charge's first steps and
-/// eased back to the guard over a swing's last third.
+/// punches lunge half a metre and take the shoulders and the head with
+/// them, so bare fists put the eye high up the rig and lean it hard back,
+/// clear of the whole lunge; a weapon keeps its guard. HELD from the first
+/// step of a charge to the last of a swing, never eased out of the guard --
+/// see the note above kCastPlacement in viewmodel.cpp for what easing
+/// between two clips' framings does to a frame.
 [[nodiscard]] ViewmodelRigPlacement viewmodelSwingPlacement(ViewmodelKind kind) noexcept;
 
 /// THE CLIP POLICY: which of the arms glb's eight clips a state plays and

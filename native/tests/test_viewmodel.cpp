@@ -1,6 +1,6 @@
 // THE VIEWMODEL + HUD LANE, ASSERTED.
 //
-// Three claims, each a case the docker gate names:
+// Four claims, each a case the docker gate names:
 //
 //   1. THE HANDS FOLLOW THE FIGHT. Session::viewmodel() -- the machine
 //      stepped beside the sim -- reads Idle at rest, Charging with the real
@@ -22,6 +22,11 @@
 //      and in front of a wall thirty hundredths of a tile from the eye --
 //      the depth squeeze the adapter does in the projection, proved on the
 //      pixels rather than trusted.
+//   4. THE POSE READS AT EVERY STEP OF ITSELF. The framing a state holds,
+//      walked step by step against the licensed rig's own measured joints:
+//      the hand out past the near plane and inside the frame at every one
+//      of them, and the pauldron never sitting ON the near plane, where the
+//      GPU's clip turns it into the grey slab the reviewer scored 3/10.
 //
 // Plus the description side (kinds off the held weapon, mesh ids in their
 // range, the hash moving with the hands) and the washes riding the overlay.
@@ -696,6 +701,39 @@ TEST_CASE("the raised fists render over the Docks and in front of the nearest wa
     const render::Framebuffer again = drawOnce(*video, near, nullptr, nullptr);
     CHECK(again.pixels() == withHands.pixels());
 
+    // AND THE WALL PUSHED ONTO THE LENS. Eleven hundredths of a tile: a
+    // hair past the world's own near plane and the closest anything can
+    // legally be drawn. This is the frame the V lane came back 3/10 on --
+    // `--punch` walks the body flush into the Gull and the capture was a
+    // blank cream rectangle with the fists somewhere underneath it --
+    // because a squeeze on the HANDS alone only buys them everything past
+    // 0.125 tiles. With the world squeezed into its own band as well the
+    // two never meet, and the same fists draw over the same wall.
+    SceneDescription onTheLens = near;
+    // A NEW VERSION, because the adapter's upload cache is keyed on (id,
+    // version) and this is the same id with different vertices.
+    MeshData lensWall = wallMesh(0.11F);
+    lensWall.version = 2;
+    onTheLens.putMesh(lensWall);
+    SceneStats lensStats;
+    const render::Framebuffer overTheLens = drawOnce(*video, onTheLens, nullptr, &lensStats);
+    CHECK(lensStats.viewmodelPartsDrawn == 4U);
+    std::size_t lensHandPixels = 0;
+    for (int y = 0; y < kHeight; ++y) {
+        for (int x = 0; x < kWidth; ++x) {
+            if (channelDistance(pixelAt(overTheLens, x, y), wallColour) > 20) {
+                ++lensHandPixels;
+            }
+        }
+    }
+    MESSAGE("hand pixels over a wall on the lens: " << lensHandPixels);
+    CHECK(lensHandPixels > 1500U);
+    for (const auto& at : {std::pair<int, int>{254, 161}, std::pair<int, int>{66, 163}}) {
+        const std::uint32_t p = pixelAt(overTheLens, at.first, at.second);
+        CHECK(channelDistance(p, wallColour) > 20);
+        CHECK(channel(p, 0) > channel(p, 8));   // r > g: skin, not wall
+    }
+
     // THE DOCKS. The real district at eight in the morning from the spawn,
     // with the people, with the hands: the fists put pixels in the bottom
     // half that the world and the crowd alone did not.
@@ -878,10 +916,14 @@ TEST_CASE("the weapon socket, the framing and the clip policy are pure per kind 
     CHECK(fistsGuard.yaw > kViewmodelRigYaw - 0.3F);
     const ViewmodelRigPlacement fistsBlock = viewmodelBlockPlacement(ViewmodelKind::Fists);
     CHECK(fistsBlock.offset.z < fistsGuard.offset.z - 0.3F);
-    // The punch steps the rig back and levels it; a weapon keeps its guard.
+    // The punch puts the eye HIGH up the rig and leans it hard back -- the
+    // swing clip lunges, and the shoulders and the head go with it, so a
+    // chest-height eye a hand's breadth behind the collarbone has the torso
+    // swing straight through the near plane. A weapon keeps its guard.
     const ViewmodelRigPlacement fistsPunch = viewmodelSwingPlacement(ViewmodelKind::Fists);
-    CHECK(fistsPunch.offset.z > fistsGuard.offset.z + 0.2F);
-    CHECK(fistsPunch.pitch < fistsGuard.pitch);
+    CHECK(fistsPunch.offset.y < fistsGuard.offset.y - 0.4F);
+    CHECK(fistsPunch.pitch > fistsGuard.pitch);
+    CHECK(fistsPunch.yaw < kViewmodelRigYaw);
     CHECK(viewmodelSwingPlacement(ViewmodelKind::Sword).pitch ==
           doctest::Approx(viewmodelGuardPlacement(ViewmodelKind::Sword).pitch));
     const ViewmodelRigPlacement swordGuard = viewmodelGuardPlacement(ViewmodelKind::Sword);
@@ -989,46 +1031,51 @@ TEST_CASE("the weapon socket, the framing and the clip policy are pure per kind 
     CHECK(clip.clip == 7U);
     CHECK(clip.frame == doctest::Approx(1.0F));
 
-    // THE CAST RAISES THE STANCE: posed with the hands DOWN, a cast at its
-    // middle still sits at the cast framing, not at the guard, and a cast
-    // at its end has come back to the guard so Idle lands without a jump.
+    // THE CAST RAISES THE STANCE: posed with the hands DOWN, a cast still
+    // sits at the cast framing, not at the guard. And it HOLDS it -- the
+    // first step of the window, the middle and the last are the same eye.
+    // (It used to ease out of the guard and back into it, which walked the
+    // eye through the spell clip's own shoulder at both ends; see the note
+    // above kCastPlacement in viewmodel.cpp.)
     ViewmodelPose castDown;
     castDown.handsUp = false;
     castDown.state = ViewmodelState::Cast;
-    castDown.stateSteps = ViewmodelMachine::kCastSteps / 2;
-    ViewmodelInstance mid;
-    poseViewmodel(mid, ViewmodelKind::Fists, castDown, Rgba8{});
-    CHECK(mid.rigOffset.y == doctest::Approx(cast.offset.y));
-    CHECK(mid.rigYaw == doctest::Approx(cast.yaw));
-    CHECK(mid.rigPitch == doctest::Approx(cast.pitch));
-    CHECK(mid.rigClip == 6U);
-    castDown.stateSteps = ViewmodelMachine::kCastSteps;
-    ViewmodelInstance end;
-    poseViewmodel(end, ViewmodelKind::Fists, castDown, Rgba8{});
-    CHECK(end.rigOffset.y == doctest::Approx(fistsGuard.offset.y));
-    CHECK(end.rigPitch == doctest::Approx(fistsGuard.pitch));
+    for (const std::int32_t at : {0, ViewmodelMachine::kCastSteps / 2, ViewmodelMachine::kCastSteps}) {
+        castDown.stateSteps = at;
+        ViewmodelInstance held;
+        poseViewmodel(held, ViewmodelKind::Fists, castDown, Rgba8{});
+        CHECK(held.rigOffset.x == doctest::Approx(cast.offset.x));
+        CHECK(held.rigOffset.y == doctest::Approx(cast.offset.y));
+        CHECK(held.rigOffset.z == doctest::Approx(cast.offset.z));
+        CHECK(held.rigYaw == doctest::Approx(cast.yaw));
+        CHECK(held.rigPitch == doctest::Approx(cast.pitch));
+        CHECK(held.rigClip == 6U);
+    }
 
-    // A charge eases the rig to the swing placement, the hold sits there,
-    // and a swing comes back to the guard over its last third.
+    // The whole wind-up-and-throw is ONE framing too, held from the first
+    // step of a charge to the last of a swing: the swing clips are a third
+    // body again and the guard's eye cannot frame them either.
     ViewmodelPose charging;
     charging.state = ViewmodelState::Charging;
-    charging.stateSteps = kViewmodelEaseSteps;
-    ViewmodelInstance cocked;
-    poseViewmodel(cocked, ViewmodelKind::Fists, charging, Rgba8{});
-    CHECK(cocked.rigOffset.z == doctest::Approx(fistsPunch.offset.z));
-    CHECK(cocked.rigPitch == doctest::Approx(fistsPunch.pitch));
+    for (const std::int32_t at : {0, kViewmodelEaseSteps}) {
+        charging.stateSteps = at;
+        ViewmodelInstance cocked;
+        poseViewmodel(cocked, ViewmodelKind::Fists, charging, Rgba8{});
+        CHECK(cocked.rigOffset.y == doctest::Approx(fistsPunch.offset.y));
+        CHECK(cocked.rigOffset.z == doctest::Approx(fistsPunch.offset.z));
+        CHECK(cocked.rigPitch == doctest::Approx(fistsPunch.pitch));
+    }
     ViewmodelPose swinging;
     swinging.state = ViewmodelState::SwingLight;
     swinging.swingSeq = 1;
-    swinging.stateSteps = ViewmodelMachine::kSwingSteps / 2;
-    ViewmodelInstance flying;
-    poseViewmodel(flying, ViewmodelKind::Fists, swinging, Rgba8{});
-    CHECK(flying.rigOffset.z == doctest::Approx(fistsPunch.offset.z));
-    swinging.stateSteps = ViewmodelMachine::kSwingSteps;
-    ViewmodelInstance landed;
-    poseViewmodel(landed, ViewmodelKind::Fists, swinging, Rgba8{});
-    CHECK(landed.rigOffset.z == doctest::Approx(fistsGuard.offset.z));
-    CHECK(landed.rigPitch == doctest::Approx(fistsGuard.pitch));
+    for (const std::int32_t at : {0, ViewmodelMachine::kSwingSteps / 2, ViewmodelMachine::kSwingSteps}) {
+        swinging.stateSteps = at;
+        ViewmodelInstance flying;
+        poseViewmodel(flying, ViewmodelKind::Fists, swinging, Rgba8{});
+        CHECK(flying.rigOffset.y == doctest::Approx(fistsPunch.offset.y));
+        CHECK(flying.rigOffset.z == doctest::Approx(fistsPunch.offset.z));
+        CHECK(flying.rigPitch == doctest::Approx(fistsPunch.pitch));
+    }
 
     // The block's push eases in over its steps and the socket rides every
     // pose of an armed kind.
@@ -1063,4 +1110,192 @@ TEST_CASE("the weapon socket, the framing and the clip policy are pure per kind 
     CHECK(sceneHash(scene) != base);
     scene.viewmodel = held;
     CHECK(sceneHash(scene) == base);
+}
+
+// ---------------------------------------------------------------------------
+// THE NEAR PLANE, EVERY STEP OF EVERY POSE
+// ---------------------------------------------------------------------------
+//
+// The V lane's whole 3/10 was one sentence: "the pose reads for only ~4 of
+// ~20 steps", and under it "the rig's arm is a featureless grey slab with two
+// bands running the full frame height -- the near-plane pauldron". A slab is
+// what the GPU makes of a triangle that CROSSES the near plane: it cuts the
+// triangle against the plane and draws the remnant, magnified to whatever
+// size a twentieth of a tile subtends. So the framings have a rule, and it is
+// this case:
+//
+//   1. THE HAND IS IN THE FRAME. At every step of a cast, a swing and a
+//      guard, the hand the pose is about is at least three near planes out
+//      (0.15 tiles) and lands inside a 16:9 frame at the pass's own 55
+//      degrees. The old cast had it 0.087 BEHIND the eye at the window's
+//      ends and 317 pixels above the top edge two steps in; the old punch
+//      had it 0.558 behind at the cock and 351 pixels past the right edge
+//      by mid-swing. Both would fail here.
+//   2. THE PAULDRON IS NOT ON THE PLANE. The shoulder is either behind the
+//      near plane (clipped away whole, which is what the guard does with it)
+//      or a legible 0.30 out -- never in the [near, 0.30) band, which is the
+//      band that stretches. The old cast put it at 0.192 two steps in and
+//      0.212 two steps from the end: the slab, to the tenth.
+//
+// THE NUMBERS ARE THE RIG'S OWN, read off content/art/lot-3d/characters/
+// viewmodel_fists.glb (63 joints, Root scale 0.01) with the numpy virtual
+// shutter the V lane keeps for tuning without a build -- the same tool that
+// predicted the shipped `--cast --settle-steps=12` frame's hand to within a
+// pixel in x. They are MODEL SPACE positions of Hand_L/Hand_R and
+// Shoulder_L/Shoulder_R at the clip frame viewmodelRigClip() picks for that
+// step, so this case is about the FRAMING and not about the export: if the
+// arms are re-exported these move, and the 2026-09-25 note in
+// docs/frames/3d-slice-one/README.md says how to read them off again.
+namespace {
+
+struct RigAnchor {
+    std::int32_t step;
+    Vec3 hand;
+    Vec3 shoulder;
+};
+
+/// The cast clip (6) at steps 0, 6, 12, 18 and 24 of kCastSteps: the off
+/// hand thrown overhead and the left pauldron over it.
+constexpr RigAnchor kCastAnchors[] = {
+    {0, {0.312F, 1.868F, 0.452F}, {0.209F, 1.444F, 0.059F}},
+    {6, {0.250F, 1.879F, 0.490F}, {0.209F, 1.458F, 0.093F}},
+    {12, {0.255F, 1.896F, 0.460F}, {0.206F, 1.465F, 0.076F}},
+    {18, {0.292F, 1.885F, 0.448F}, {0.213F, 1.452F, 0.065F}},
+    {24, {0.312F, 1.868F, 0.452F}, {0.209F, 1.444F, 0.059F}},
+};
+
+/// The right punch (clip 3) at steps 0, 4, 9, 14 and 18 of kSwingSteps: the
+/// fist cocked at the hip, thrown a metre past the shoulder and drawn back.
+constexpr RigAnchor kSwingAnchors[] = {
+    {0, {-0.433F, 1.329F, -0.106F}, {-0.107F, 1.327F, -0.049F}},
+    {4, {-0.175F, 1.132F, 0.973F}, {-0.020F, 1.247F, 0.396F}},
+    {9, {-0.203F, 1.050F, 0.940F}, {-0.123F, 1.204F, 0.376F}},
+    {14, {-0.351F, 1.051F, 0.401F}, {-0.189F, 1.283F, 0.089F}},
+    {18, {-0.371F, 1.106F, 0.140F}, {-0.166F, 1.315F, -0.046F}},
+};
+
+/// The block clip (5) from its guard frame to its hold, the reference the
+/// reviewer called "far better".
+constexpr RigAnchor kBlockAnchors[] = {
+    {0, {-0.127F, 1.099F, 0.392F}, {-0.132F, 1.265F, 0.013F}},
+    {3, {-0.002F, 1.195F, 0.010F}, {-0.120F, 1.224F, -0.378F}},
+    {6, {-0.031F, 1.203F, -0.038F}, {-0.116F, 1.230F, -0.401F}},
+    {12, {-0.031F, 1.203F, -0.038F}, {-0.116F, 1.230F, -0.401F}},
+};
+
+/// rl_backend's own order, in three lines: scale, raylib's RotY(-yaw), the
+/// feet's place, then the lean about the eye. A point of the rig, in view
+/// space, where -Z is forward.
+[[nodiscard]] Vec3 rigToView(const Vec3& p, const ViewmodelRigPlacement& at) noexcept {
+    const float cy = std::cos(at.yaw);
+    const float sy = std::sin(at.yaw);
+    const float x1 = cy * p.x - sy * p.z;
+    const float z1 = sy * p.x + cy * p.z;
+    const float x2 = x1 + at.offset.x;
+    const float y2 = p.y + at.offset.y;
+    const float z2 = z1 + at.offset.z;
+    const float cp = std::cos(at.pitch);
+    const float sp = std::sin(at.pitch);
+    return Vec3{x2, cp * y2 - sp * z2, sp * y2 + cp * z2};
+}
+
+/// How far in front of the eye. Negative is behind it.
+[[nodiscard]] float forwardOf(const Vec3& view) noexcept { return -view.z; }
+
+/// The hands' pass's own near plane (rl_backend's kViewmodelNear).
+constexpr float kNearPlane = 0.05F;
+
+/// True when the point lands inside a 16:9 frame at the hands' pass's own
+/// vertical field. Points inside the near plane are never in frame.
+[[nodiscard]] bool insideFrame(const Vec3& view) noexcept {
+    const float forward = forwardOf(view);
+    if (forward <= kNearPlane) {
+        return false;
+    }
+    const float half =
+        std::tan(kViewmodelFovyDegrees * 0.5F * 3.14159265358979323846F / 180.0F);
+    const float top = half * forward;
+    const float right = top * (16.0F / 9.0F);
+    return std::fabs(view.x) <= right && std::fabs(view.y) <= top;
+}
+
+/// The placement the real pose tables produce for a state at a step.
+[[nodiscard]] ViewmodelRigPlacement placementAt(render::ViewmodelState state, std::int32_t step) {
+    render::ViewmodelPose pose;
+    pose.state = state;
+    pose.stateSteps = step;
+    pose.swingSeq = 1;  // in flight this IS the first (right) swing
+    ViewmodelInstance out;
+    poseViewmodel(out, ViewmodelKind::Fists, pose, Rgba8{});
+    return ViewmodelRigPlacement{out.rigOffset, out.rigYaw, out.rigPitch};
+}
+
+struct NearPlaneLane {
+    const char* name;
+    render::ViewmodelState state;
+    const RigAnchor* anchors;
+    std::size_t count;
+};
+
+}  // namespace
+
+TEST_CASE("the hands clear the near plane and stay in frame at every step of a pose") {
+    // The band a clipped triangle stretches across the frame from.
+    constexpr float kSlabBandEnd = 0.30F;
+    // Three near planes: what "the hand is out there, not on the lens" is.
+    constexpr float kHandOut = 0.15F;
+
+    const NearPlaneLane lanes[] = {
+        {"cast", render::ViewmodelState::Cast, kCastAnchors, 5U},
+        {"swing", render::ViewmodelState::SwingLight, kSwingAnchors, 5U},
+        {"block", render::ViewmodelState::Block, kBlockAnchors, 4U},
+    };
+    for (const NearPlaneLane& lane : lanes) {
+        CAPTURE(lane.name);
+        for (std::size_t i = 0; i < lane.count; ++i) {
+            const RigAnchor& anchor = lane.anchors[i];
+            CAPTURE(anchor.step);
+            const ViewmodelRigPlacement at = placementAt(lane.state, anchor.step);
+            const Vec3 hand = rigToView(anchor.hand, at);
+            const Vec3 shoulder = rigToView(anchor.shoulder, at);
+            // 1. the hand is out there, and on screen.
+            CHECK(forwardOf(hand) > kHandOut);
+            CHECK(insideFrame(hand));
+            // 2. the pauldron is inside the near plane or a legible
+            //    distance out -- never on the plane itself.
+            const float shoulderOut = forwardOf(shoulder);
+            CHECK((shoulderOut < kNearPlane || shoulderOut >= kSlabBandEnd));
+        }
+    }
+
+    // AND THE CHARGE IS THE SWING'S FRAMING, so a wind-up photographed at
+    // any step of it is held to the same rule.
+    const ViewmodelRigPlacement swing = viewmodelSwingPlacement(ViewmodelKind::Fists);
+    for (const std::int32_t step : {0, 3, 6, 30}) {
+        CAPTURE(step);
+        const ViewmodelRigPlacement charge = placementAt(render::ViewmodelState::Charging, step);
+        CHECK(charge.offset.y == doctest::Approx(swing.offset.y));
+        CHECK(charge.offset.z == doctest::Approx(swing.offset.z));
+        CHECK(charge.pitch == doctest::Approx(swing.pitch));
+    }
+
+    // WHY THERE IS NO LERP LEFT BETWEEN TWO CLIPS' FRAMINGS. Half way from
+    // the guard's eye to the cast's is not a framing of anything: it is an
+    // eye inside the spell clip's own shoulder. The cast used to pass
+    // through here twice a window, and that is the grey slab -- the
+    // pauldron 0.19 tiles out, right in the band. Held at its own framing
+    // the same shoulder is 0.49 out and the hand is at (457, 452) of
+    // 1280x720.
+    const ViewmodelRigPlacement guard = viewmodelGuardPlacement(ViewmodelKind::Fists);
+    const ViewmodelRigPlacement cast = viewmodelCastPlacement(ViewmodelKind::Fists);
+    ViewmodelRigPlacement halfway;
+    halfway.offset = Vec3{(guard.offset.x + cast.offset.x) * 0.5F,
+                          (guard.offset.y + cast.offset.y) * 0.5F,
+                          (guard.offset.z + cast.offset.z) * 0.5F};
+    halfway.yaw = (guard.yaw + cast.yaw) * 0.5F;
+    halfway.pitch = (guard.pitch + cast.pitch) * 0.5F;
+    const float strandedShoulder = forwardOf(rigToView(kCastAnchors[2].shoulder, halfway));
+    CHECK(strandedShoulder > kNearPlane);
+    CHECK(strandedShoulder < kSlabBandEnd);
+    CHECK(forwardOf(rigToView(kCastAnchors[2].shoulder, cast)) > kSlabBandEnd);
 }
