@@ -215,12 +215,20 @@ TEST_CASE("every voice row draws, fits beside a name, carries no dash, and keeps
 }
 
 TEST_CASE("the table pin: the voice lane's four files are on the sheet and the count moved by exactly them") {
-    // test_dialogue.cpp pins the whole sheet at 535 (393 before this lane);
-    // this counts only the lane's own keys, so a row lost from a voice file
-    // is red here by name.
+    // test_dialogue.cpp pins the WHOLE sheet; this counts only the lane's own
+    // keys, so a row lost from a voice file is red here by name.
+    //
+    // AND THE SIBLING CLAUSE IS A GREET CLAUSE. The first draft counted any
+    // key ending ".2", which is what a numbered greet sibling looks like --
+    // and then the rung lane landed `legend.<track>.<rung>` on the same
+    // sheet and four of ITS keys ended ".2" as well. A count that takes its
+    // shape from somebody else's naming is not a pin on this lane's rows.
     std::size_t tables = 0;
     for (const BarkTables::Table& table : barks().tables()) {
-        if (voiceKey(table.key) || table.key.find(".2") == table.key.size() - 2) {
+        const bool greetSibling = table.key.rfind("greet.", 0) == 0 &&
+                                  table.key.size() > 2 &&
+                                  table.key.compare(table.key.size() - 2, 2, ".2") == 0;
+        if (voiceKey(table.key) || greetSibling) {
             ++tables;
         }
     }
