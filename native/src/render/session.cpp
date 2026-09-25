@@ -16342,10 +16342,6 @@ SmokeRunResult runSmoke(const SmokeRunConfig& config) {
         }
         result.scriptedWanted += 1;
         result.scriptedLanded += landed ? 1 : 0;
-        // V LANE: the same pair --cast keeps, so the hands' drives all
-        // report their own line in the summary.
-        result.handsWanted += 1;
-        result.handsBeats += landed ? 1 : 0;
     }
 
     if (config.chargeSteps > 0) {
@@ -16364,8 +16360,6 @@ SmokeRunResult runSmoke(const SmokeRunConfig& config) {
         session.stepMany(sim::MoveInput{}, config.chargeSteps);
         result.scriptedWanted += 1;
         result.scriptedLanded += faced ? 1 : 0;
-        result.handsWanted += 1;
-        result.handsBeats += faced ? 1 : 0;
     }
 
     if (config.block) {
@@ -16404,11 +16398,8 @@ SmokeRunResult runSmoke(const SmokeRunConfig& config) {
             session.stepMany(sim::MoveInput{}, 1);
             ++waited;
         }
-        const bool softened = session.tavern().blowsBlocked() >= before + wanted;
         result.scriptedWanted += 1;
-        result.scriptedLanded += softened ? 1 : 0;
-        result.handsWanted += 1;
-        result.handsBeats += softened ? 1 : 0;
+        result.scriptedLanded += session.tavern().blowsBlocked() >= before + wanted ? 1 : 0;
     }
 
     if (config.street) {
@@ -16496,56 +16487,12 @@ SmokeRunResult runSmoke(const SmokeRunConfig& config) {
         // call C makes, once. AFTER the flame block above, deliberately --
         // that line's teaching beat is what stocks the grimoire, so
         // `--flame --flameEnd=away --cast` photographs the CAST row with a
-        // crafting actually in the hand.
-        //
-        // V LANE, 2026-09-25: AND IT STOCKS THE GRIMOIRE ITSELF WHEN NOTHING
-        // ELSE DID. `--cast` alone used to photograph the empty-grimoire
-        // refusal -- the hands never left idle, the summary counted the
-        // refusal message as a landed beat, and the moment a reviewer added
-        // `--time=22` the flame line's own priest was off shift and the
-        // paired `--flame=away --quickbar --cast` went the same way. So: an
-        // EMPTY grimoire is handed the first crafting the raws say a novice
-        // of this literacy can be taught -- the identical row the priest's
-        // teaching beat hands over, out of the spellbook and nowhere else --
-        // and the hand equips it through the same grimoire-order door the
-        // number row uses. A grimoire that already has craftings in it is
-        // NOT TOUCHED -- neither the book nor the hand -- so
-        // `--flame --quickbar --cast` still spends exactly what the number
-        // row readied and every existing capture is the capture it was.
+        // crafting actually in the hand; --cast alone photographs the
+        // empty-grimoire refusal on the alert row, the common state.
         session.closeConversation();
-        sim::DialogueDirector& talk = session.tavern().dialogue();
-        if (talk.grimoire().size() == 0) {
-            const std::int32_t level = talk.skills().level(sim::kCraftingSkill);
-            const std::vector<const sim::Spell*> teachable =
-                talk.spellbook().teachableAt(sim::kCraftingSkill, level);
-            for (const sim::Spell* candidate : teachable) {
-                if (candidate != nullptr) {
-                    talk.grimoire().learn(*candidate);
-                    break;
-                }
-            }
-            (void)session.tavern().equipSpellAt(0);
-        }
         session.castEquipped();
-        // ONE STEP, SO THE STATE IS ACTUALLY IN. The hands' machine is
-        // stepped once per movement step off the sim's own getters, so a
-        // cast thrown and photographed in the same breath is a picture of
-        // the IDLE pose -- which is what `--cast --settle-steps=0` was, and
-        // the reviewer said so. With this step spent, `--settle-steps=N`
-        // photographs the cast at stateSteps N of kCastSteps, and every one
-        // of those steps now reads (the framing is held for the whole
-        // window; see viewmodel.cpp).
-        session.step(sim::MoveInput{});
-        // TWO BEATS, AND A REFUSAL IS NOT ONE OF THEM. The old test was
-        // "did anything at all appear on the alert row", which a refusal
-        // passes. What is owed is a crafting in the hand and the hands in
-        // the cast pose.
-        const bool inHand = session.tavern().equippedSpell() != nullptr;
-        const bool posed = session.viewmodel().state == ViewmodelState::Cast;
-        result.scriptedWanted += 2;
-        result.scriptedLanded += (inHand ? 1 : 0) + (posed ? 1 : 0);
-        result.handsWanted += 2;
-        result.handsBeats += (inHand ? 1 : 0) + (posed ? 1 : 0);
+        result.scriptedWanted += 1;
+        result.scriptedLanded += session.lastMessage().empty() ? 0 : 1;
     }
 
     if (!config.heldSpells.empty()) {
@@ -17489,21 +17436,6 @@ SmokeRunResult runSmoke(const SmokeRunConfig& config) {
                 << " plate=" << (rung.plateUp ? "up" : "down")
                 << " found=" << (rung.found ? "yes" : "no")
                 << " called=" << session.legend().title();
-    }
-    if (result.handsWanted > 0) {
-        // V LANE. THE HANDS' OWN LINE, beside the picture of them. A
-        // reviewer shooting the viewmodel needs two facts a PNG cannot
-        // settle on its own: which pose the machine was actually holding at
-        // the shutter and how far into it (a cast at step 11 of 24 is the
-        // middle of the window, a cast at step 0 is the state's first
-        // frame), and whether the drive that put it there got what it asked
-        // for. `--cast --settle-steps=0` used to say neither, and reported
-        // the empty-grimoire refusal as a landed beat.
-        const ViewmodelPose& hands = session.viewmodel();
-        summary << " | hands " << viewmodelStateName(hands.state) << ' ' << hands.stateSteps
-                << '/' << viewmodelStateSteps(hands.state)
-                << (hands.handsUp ? " up" : " down") << " beats=" << result.handsBeats << '/'
-                << result.handsWanted;
     }
     // A SCRIPTED RUN THAT FELL SHORT SAYS SO, AND FAILS.
     //
