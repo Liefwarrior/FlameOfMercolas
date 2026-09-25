@@ -898,6 +898,14 @@ TEST_CASE("a door tile places the door frame") {
             const float up = flameSpec->height * p.instance.scale.y;
             CHECK(across == doctest::Approx(up));
             CHECK(across > 0.85F);
+            // AND IT IS METRES IN THE STREET, not a factor on the model it
+            // stands over: the hung lantern's disc is 1.1 across and the
+            // brazier's on the square is its own 0.9. The brazier's used to
+            // be fitted to the stand's scale as the ember tray is, which
+            // put a 0.54 m patch (0.9 of a 0.6 cage) next to a lantern's
+            // 1.1 -- the cage keeps its fire, the street gets the glow.
+            const bool overFire = p.lightX == 6 && p.lightY == 5;
+            CHECK(across == doctest::Approx(overFire ? 0.9F : 1.1F));
             CHECK(p.instance.gradientTo == doctest::Approx(catalogue.piece(PieceRole::Flame)->width));
             CHECK(p.instance.gradientToZ == doctest::Approx(catalogue.piece(PieceRole::Flame)->height));
             // A billboard, anchored on the flame's centre: the quad's
@@ -915,12 +923,20 @@ TEST_CASE("a door tile places the door frame") {
         if (p.role == PieceRole::DoorLeaf) {
             CHECK(p.mode == kDrawShaded);
         }
-        // The brazier's tray and flame sit inside its cage at the stand's
-        // own scale.
-        if (p.role == PieceRole::Ember || (p.role == PieceRole::Flame && p.lightX == 6 && p.lightY == 5)) {
+        // The brazier's tray sits inside its cage at the stand's own scale,
+        // and so does its FIRE -- which is the anchor, the flame's own
+        // point, and not the halo quad's bottom corner: the disc round it
+        // is a metre of street either way, so its corner hangs below the
+        // cage by design and always did.
+        if (p.role == PieceRole::Ember) {
             const PieceSpec* stand = catalogue.piece(PieceRole::Brazier);
             CHECK(p.instance.position.y - render::bandSurface(19) < 1.9F * stand->scale);
             CHECK(p.instance.position.y - render::bandSurface(19) > 1.0F * stand->scale);
+        }
+        if (p.role == PieceRole::Flame && p.lightX == 6 && p.lightY == 5) {
+            const PieceSpec* stand = catalogue.piece(PieceRole::Brazier);
+            CHECK(p.anchor.y - render::bandSurface(19) < 1.9F * stand->scale);
+            CHECK(p.anchor.y - render::bandSurface(19) > 1.0F * stand->scale);
         }
     }
     CHECK(lit.placements.size() == placed.placements.size() + 3 + 3 + 1);
