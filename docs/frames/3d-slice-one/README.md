@@ -54,6 +54,126 @@ stride, no swing, no falling down. A downed man is a standing box.
 `--charge=N` is new in this lane (press Attack, hold N steps, no release);
 before it every scripted swing was a tap and the wind-up had no shutter.
 
+## The bare-handed viewmodel, 2026-09-25 -- the 3/10 pass
+
+The reviewer scored the bare-handed cast 3 of 10 and named four things: the
+pose reads for only about four of its twenty-odd steps, the arm is a
+featureless grey slab with two bands running the full frame height at the
+steps where it does not, an NPC's arm draws in front of the cast hand, and
+`--cast --settle-steps=0` never enters the state at all -- the exe answers
+"landed 1 of 8 beats" and photographs the idle hands. `--punch` came back a
+blank cream rectangle. `--block` was called far better and is the reference.
+
+**The depth pass.** The hands' own pass has always squeezed its z row into
+the front fifth of the depth range. That only bought them everything past
+0.125 tiles from the eye: window depth 0.2 on the world's own 0.1..512
+projection IS 0.125 tiles, and anything nearer than that beat the hands. The
+`--punch` drive walks the body flush into the Gull's wall, so the whole
+capture came back as that wall with the fists underneath it. Now the WORLD's
+pass squeezes its own z row into the back three fifths ([0.4, 1]) in the same
+breath, so the two bands do not touch: the world has to be within six
+centimetres of the eye -- inside the skull, past where the near plane used to
+throw it away -- to land in front of a hand, against twelve centimetres
+before, which any wall the nose is against clears. It is done in the projection
+matrix on both passes and not with a depth clear, because rlgl has no
+depth-only clear and rlsw stubs glColorMask, glDepthMask and glDepthFunc to
+macros that throw their arguments away; a matrix is the one thing both rlgl
+paths take verbatim, so the twin runs the identical call order.
+(`rl_backend.cpp`: `kWorldDepthSpan`, `squeezeDepthRow`.)
+
+**The framing.** A ViewmodelRigPlacement is an eye solved off ONE clip's
+joint positions, so the numbers look like a family and are not comparable:
+the guard frames the block clip's crouch (shoulders 1.2 up the rig), the
+cast frames a body standing tall with a hand thrown to 1.9, the swing frames
+a body that lunges half a metre and takes its shoulders and head with it.
+Sliding the eye down the straight line between two of them walks it through
+the other clip's chest, and that line is the slab. Every state HOLDS its own
+framing now; the cut between framings is the state change. The block keeps
+its ease, because the guard and the block are two eyes on the SAME clip.
+
+What the virtual shutter says, walking every step of every window at
+1280x720 and 55 degrees (the numpy skinner over
+`content/art/lot-3d/characters/viewmodel_fists.glb`, validated against the
+shipped `--cast --settle-steps=12` frame to within a pixel in x):
+
+| clip | before | after |
+|---|---|---|
+| cast (24 steps) | hand in frame at 13 of 25 steps, 23 columns of solid rig at step 2 and 20 at step 19, hand 0.087 BEHIND the eye at both ends | in frame at 25 of 25, no column of the frame ever solid rig, hand 0.41..0.50 out, sitting in a box 96 px wide about (490, 328) |
+| punch (18 steps) | nothing drawn at all at 8 of 19 steps, 74 to 79 columns solid at steps 4-6, the fist at x 1206 of 1280 at step 3 | in frame at 19 of 19, nearest rig vertex 0.19..0.55 out so NOTHING crosses the near plane, fist cocked at (1087, 549), driven to (500, 161), back to (807, 486) |
+| sword cast | 21 columns solid at each end | none |
+
+`kFistsPunch` moved from `{0, -1.27, 0.45}, 0, 10` to `{0, -1.90, -0.15},
+20, 50`: the eye up the rig and leaned hard back, the way the sword's guard
+is. `kFistsCast` did not move -- it was already right; the lerp around it
+was the bug.
+
+**The drive.** `--cast` is self-sufficient now. An EMPTY grimoire is handed
+the first crafting the raws say a novice of this literacy can be taught --
+the identical row the priest's teaching beat hands over, out of the
+spellbook and nowhere else -- and the hand equips it, so `--cast` alone
+photographs the cast pose at any `--time`. A grimoire that already has
+craftings in it is untouched, so every existing `--flame ... --cast` capture
+is the capture it always was. The drive then spends one step, because the
+hands' machine only enters a state on a step: `--settle-steps=N` is step N
+of the 24-step window, and every one of those steps reads. It owes two beats
+-- a crafting in the hand, and the hands in the cast pose -- and a refusal
+is neither of them. `--punch`, `--block` and `--charge` report theirs the
+same way. The summary carries the line beside the picture:
+
+```
+... | hands cast 11/24 up beats=2/2 | compass "SW 44  MISSION OF THE FLAME"
+```
+
+**Still open: the glove's tan panel.** The reviewer read a flesh-coloured
+diamond on the back of the glove as a UV hole. It is not a hole and it is
+not a material mix-up. The arms export is ONE mesh with ONE material
+(`FantasyHero`) over one palette image
+(`PolygonFantasyHero_Texture_01_A`), and the whole rig uses exactly two
+swatches of it: a blue-grey `(74, 102, 126)` that reads as the glove and a
+tan `(209, 165, 77)` on the shoulders, the elbows, the fingers and a panel
+on the back of each hand. Under the Gull's warm standing tint that tan
+reads as skin. There is no second material to assign it to, so the fix is
+either a second material on the licensed asset (asset lane, an export
+change) or a hands-only tint that cools the tan away from flesh -- which
+would break the rule that the hand reads the light where the body stands.
+Neither is a change this pass can make render-side.
+
+### Reviewer's command lines
+
+Every one is `dist\granadad.exe --smoke=0 --hold --scale=1 --music-off`
+plus the drive, at `--width=1280 --height=720` and again at `--width=2560
+--height=1440`. `--settle-steps=N` is step N of the pose's window (24 for a
+cast, 18 for a swing, the guard holds from 6 on).
+
+| what | line |
+|---|---|
+| cast, the apex | `--cast --settle-steps=12 --fov=60 --pitch=0 --time=12 --screenshot=cast-apex.png` |
+| cast, the window's ends | `--cast --settle-steps=0` and `--settle-steps=24`, same flags |
+| cast, the fields | `--cast --settle-steps=12 --fov=50` / `--fov=60` / `--fov=75` |
+| cast, the looks | `--cast --settle-steps=12 --fov=60 --pitch=-20` / `--pitch=0` / `--pitch=20` |
+| cast, the hours | `--cast --settle-steps=12 --fov=60 --time=12` and `--time=22` |
+| punch, the throw | `--punch --settle-steps=4 --fov=60 --pitch=0 --time=12 --screenshot=punch.png` |
+| punch, the window | `--punch --settle-steps=0`, `=9`, `=18`, same flags |
+| punch, the fields and looks | `--fov=50/60/75`, `--pitch=-20/0/20` on `--settle-steps=9` |
+| punch, the hours | `--punch --settle-steps=9 --fov=60 --time=12` and `--time=22` |
+| the wind-up | `--charge=6 --settle-steps=0` and `--charge=15 --settle-steps=0` |
+| block, the reference | `--block --settle-steps=20 --fov=60 --pitch=0 --time=12` |
+| block, the fields and looks | `--fov=50/60/75`, `--pitch=-20/0/20`, `--time=12` and `--time=22` |
+| the depth band, on the lens | `--punch --settle-steps=4` -- the body ends flush inside the Gull's wall; the fists draw over it now instead of vanishing under it |
+
+Read the `| hands ...` clause of the summary beside every frame: it says
+which pose the machine was holding, how far into its window, and whether
+the drive got what it asked for. A frame whose clause says `idle` is not a
+picture of the pose, whatever the PNG looks like.
+
+Tuning without a build: the framings are solved with a numpy skinner over
+the glb (Root scale 0.01, 63 joints, inverse bind matrices) that applies
+rl_backend's own order -- scale, raylib `RotY(-yaw)`, `T(offset)`, then
+`RotX(pitch)` -- and projects at fovy 55, 16:9, near 0.05, cutting triangles
+against the near plane the way the GPU does so the slab is visible. The
+joint numbers baked into `test_viewmodel.cpp`'s near-plane case were read
+off the same tool and say where to read them again if the arms re-export.
+
 ## The HUD (criterion 4)
 
 | frame | drive | what it proves |

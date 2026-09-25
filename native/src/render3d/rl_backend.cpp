@@ -60,15 +60,21 @@
 //      after the world's, with a camera at the origin looking down -Z (the
 //      parts are described in view space), and its projection REPLACED by
 //      one whose z row is squeezed into the front fifth of the depth range
-//      (kViewmodelDepthSpan): every fragment of the hands lands in front of
-//      every fragment of the world, whatever wall the body stands against,
-//      while the hands still depth-test among themselves. That is the
-//      classic glDepthRange trick done in the matrix, because rlgl exposes
-//      no depth range, no depth-only clear and (on rlsw) no framebuffer
-//      object -- and a matrix is the one thing both rlgl paths take
-//      verbatim: rlLoadIdentity + rlMultMatrixf is RLGL.State.projection on
-//      GL 3.3 and glLoadIdentity + glMultMatrixf on the GL 1.1 shim, in
-//      the same column-major layout BeginMode3D's own view matrix uses.
+//      (kViewmodelDepthSpan) -- while the WORLD's pass, one call up, has
+//      had its own projection replaced by one squeezed into the back three
+//      fifths (kWorldDepthSpan). The two bands do not touch, so a fragment
+//      of the world has to be within six centimetres of the eye -- inside
+//      the skull, past where the near plane used to throw it away -- to
+//      land in front of a hand, where before a wall the nose was against
+//      did it at twelve. Each pass still depth-tests among itself. That is
+//      the classic
+//      glDepthRange trick done twice in the matrix, because rlgl exposes no
+//      depth range, no depth-only clear and (on rlsw) no colour mask, no
+//      depth mask and no framebuffer object -- and a matrix is the one
+//      thing both rlgl paths take verbatim: rlLoadIdentity + rlMultMatrixf
+//      is RLGL.State.projection on GL 3.3 and glLoadIdentity +
+//      glMultMatrixf on the GL 1.1 shim, in the same column-major layout
+//      BeginMode3D's own view matrix uses.
 //      The placeholder parts draw through the mesh path with a full
 //      view-space transform; a licensed arms glb (viewmodel_*.glb, clips at
 //      index == ViewmodelState) is played by phase and drawn at the rig
@@ -245,16 +251,82 @@ constexpr float kGltfForwardYaw = 3.14159265358979323846F;
 constexpr float kRadToDeg = 180.0F / 3.14159265358979323846F;
 constexpr float kDegToRad = 3.14159265358979323846F / 180.0F;
 
+/// The world's own clip planes. A district is a few hundred tiles across;
+/// the default far plane of 4000 wastes depth precision, the default near of
+/// 0.05 is fine but stated. Named here because the world pass rebuilds its
+/// own projection off them (see kWorldDepthSpan).
+constexpr double kWorldNear = 0.1;
+constexpr double kWorldFar = 512.0;
+
 /// V LANE. The viewmodel pass's own clip planes: the fists sit 0.5..1.3
 /// tiles out and nothing of the hands is ever four tiles away.
 constexpr double kViewmodelNear = 0.05;
 constexpr double kViewmodelFar = 4.0;
-/// The depth squeeze: NDC z' = kViewmodelDepthSpan * z - (1 -
-/// kViewmodelDepthSpan), so the hands occupy depth [0, 0.2] and the world --
-/// whose nearest surface is the body's own radius (90/256 of a tile) from
-/// the eye, well past the 0.125 tiles where the world's own projection
-/// crosses NDC -0.6 -- always sits behind them.
+/// TWO DEPTH BANDS. The hands' pass squeezes its z row into the FRONT of the
+/// depth range -- NDC z' = kViewmodelDepthSpan * z - (1 -
+/// kViewmodelDepthSpan), window depth [0, 0.2] -- and the world's pass
+/// squeezes its own into the BACK -- z' = kWorldDepthSpan * z + (1 -
+/// kWorldDepthSpan), window depth [0.4, 1]. Two fifths of the range sit
+/// empty between them. Each pass still depth-tests among itself inside its
+/// own band; the world gives up two fifths of its depth resolution, which
+/// at 0.1..512 tiles and a 24-bit buffer is three quarters of a bit.
+///
+/// WHAT THAT BUYS, EXACTLY. The world used to own the whole range, so a
+/// fragment beat the hands whenever its window depth fell under 0.2 -- and
+/// window depth 0.2 on the world's own 0.1..512 projection is 0.125 tiles
+/// from the eye. Twelve centimetres. That is not a corner case: `--punch`
+/// walks the body flush into the Gull's wall and the whole capture came
+/// back a blank cream rectangle with the fists drawn somewhere underneath
+/// it, which is the frame the V lane was scored 3/10 on. With the world in
+/// its own band the same arithmetic puts that crossing at 0.075 tiles, and
+/// the world only beats the hands between 0.060 and 0.075 -- inside the
+/// player's own skull, and inside the far side of the old near plane.
+///
+/// THE ONE HONEST CAVEAT. Squeezing toward the back also loosens the near
+/// CLIP (GL keeps -w <= z <= w, and the squeeze lifts z), so the world now
+/// draws a shell it used to throw away: everything from 0.060 tiles out
+/// rather than 0.1. In play nothing is ever there -- the body's own radius
+/// keeps a wall 0.35 tiles off the eye -- and in the degenerate frames
+/// where something IS (a shutter walked inside a wall), drawing the wall
+/// and putting the fists over it is the better picture of the two.
+///
+/// THE SQUEEZE, NOT A DEPTH CLEAR, and this is the reason. rlgl exposes no
+/// depth-only clear, no depth range and no framebuffer object; the one trick
+/// left -- a full-screen quad with the colour mask off and the depth test
+/// off -- cannot work on the headless twin, because at this raylib pin
+/// rlsw.h stubs glColorMask, glDepthMask and glDepthFunc to macros that
+/// discard their arguments. A matrix is the one thing BOTH rlgl paths take
+/// verbatim (rlLoadIdentity + rlMultMatrixf is RLGL.State.projection on GL
+/// 3.3 and glLoadIdentity + glMultMatrixf on the GL 1.1 shim, in the same
+/// column-major layout BeginMode3D's own view matrix uses), so both passes
+/// do it in the matrix and the two backends run the identical call order.
 constexpr float kViewmodelDepthSpan = 0.2F;
+constexpr float kWorldDepthSpan = 0.6F;
+
+/// The z row of a perspective projection, squeezed into a band of the depth
+/// range: row 2 becomes span*row2 + shift*row3, and row 3 of a perspective
+/// matrix is (0, 0, -1, 0), so only m10 and m14 move. `shift` is
+/// -(1 - span) to sit the band at the front and +(1 - span) to sit it at the
+/// back.
+void squeezeDepthRow(Matrix& proj, float span, float shift) noexcept {
+    proj.m10 = span * proj.m10 + shift * proj.m11;
+    proj.m14 = span * proj.m14 + shift * proj.m15;
+}
+
+/// Hand that matrix to rlgl as THE projection, replacing whatever
+/// BeginMode3D just built.
+void loadProjection(const Matrix& proj) noexcept {
+    rlMatrixMode(RL_PROJECTION);
+    rlLoadIdentity();
+    rlMultMatrixf(MatrixToFloat(proj));
+    rlMatrixMode(RL_MODELVIEW);
+}
+
+/// The frame's aspect, BeginMode3D's own arithmetic.
+[[nodiscard]] float renderAspect() noexcept {
+    return static_cast<float>(std::max(1, GetRenderWidth())) /
+           static_cast<float>(std::max(1, GetRenderHeight()));
+}
 
 [[nodiscard]] Color colourOf(const Rgba8& c) noexcept { return Color{c.r, c.g, c.b, c.a}; }
 
@@ -1030,21 +1102,14 @@ struct Backend::Impl {
         eye.projection = CAMERA_PERSPECTIVE;
         BeginMode3D(eye);
         // The projection BeginMode3D just built (the world's clip planes)
-        // is replaced by the hands' own with its z row squeezed: row 2 of
-        // the matrix becomes span*row2 + shift*row3, and row 3 of a
-        // perspective matrix is (0, 0, -1, 0), so only m10 and m14 move.
-        const float aspect = static_cast<float>(std::max(1, GetRenderWidth())) /
-                             static_cast<float>(std::max(1, GetRenderHeight()));
+        // is replaced by the hands' own, squeezed into the FRONT band of the
+        // depth range -- the world's pass took the back one, so nothing of
+        // the world can reach this far forward.
         Matrix proj = MatrixPerspective(static_cast<double>(hands.fovyDegrees * kDegToRad),
-                                        static_cast<double>(aspect), kViewmodelNear,
+                                        static_cast<double>(renderAspect()), kViewmodelNear,
                                         kViewmodelFar);
-        const float shift = -(1.0F - kViewmodelDepthSpan);
-        proj.m10 = kViewmodelDepthSpan * proj.m10 + shift * proj.m11;
-        proj.m14 = kViewmodelDepthSpan * proj.m14 + shift * proj.m15;
-        rlMatrixMode(RL_PROJECTION);
-        rlLoadIdentity();
-        rlMultMatrixf(MatrixToFloat(proj));
-        rlMatrixMode(RL_MODELVIEW);
+        squeezeDepthRow(proj, kViewmodelDepthSpan, -(1.0F - kViewmodelDepthSpan));
+        loadProjection(proj);
 
         RigModel* rig = handRigFor(hands.kind);
         if (rig != nullptr && rig->loaded) {
@@ -1277,10 +1342,9 @@ std::unique_ptr<Backend> Backend::open(const BackendConfig& config) {
         const int refresh = GetMonitorRefreshRate(GetCurrentMonitor());
         SetTargetFPS(refresh > 0 ? refresh : 60);
     }
-    // A district is a few hundred tiles across; the default far plane of
-    // 4000 wastes depth precision, the default near of 0.05 is fine but
-    // stated. The viewmodel lane draws its second pass with its own planes.
-    rlSetClipPlanes(0.1, 512.0);
+    // The world's clip planes (see kWorldNear/kWorldFar for why these).
+    // The viewmodel lane draws its second pass with its own.
+    rlSetClipPlanes(kWorldNear, kWorldFar);
 
     auto impl = std::make_unique<Impl>();
     impl->config = config;
@@ -1361,6 +1425,28 @@ SceneStats Backend::drawScene(const SceneDescription& scene) {
     camera.projection = CAMERA_PERSPECTIVE;
 
     BeginMode3D(camera);
+    // THE WORLD'S OWN DEPTH BAND. BeginMode3D's projection is rebuilt here
+    // with the identical planes and aspect it used and the z row squeezed
+    // into the BACK of the depth range (kWorldDepthSpan), so the whole world
+    // -- chunks, pieces, people, glass -- lives in window depth [0.4, 1] and
+    // the hands' pass owns [0, 0.2], with two fifths of the range empty
+    // between them. Nothing here changes what draws in front of what INSIDE
+    // the world: the squeeze is affine and monotonic in NDC z, so the
+    // ordering the depth buffer resolves is exactly the ordering it resolved
+    // before. It is as close to a depth clear as rlgl will do on both
+    // backends; see kWorldDepthSpan for what it buys and what it costs.
+    {
+        // BeginMode3D's OWN arithmetic, to the last bit: the field halved
+        // in double against raylib's own float DEG2RAD, the aspect a float
+        // divide of the render size, the planes the ones rlSetClipPlanes
+        // gave it. Anything else here moves the world's projection by an
+        // ulp and every committed frame with it, for nothing.
+        Matrix proj = MatrixPerspective(
+            static_cast<double>(camera.fovy) * static_cast<double>(kDegToRad),
+            static_cast<double>(renderAspect()), kWorldNear, kWorldFar);
+        squeezeDepthRow(proj, kWorldDepthSpan, 1.0F - kWorldDepthSpan);
+        loadProjection(proj);
+    }
     for (const Instance& instance : scene.instances) {
         impl.drawInstance(instance, stats);
     }

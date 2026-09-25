@@ -3531,9 +3531,22 @@ struct SmokeRunConfig {
     /// Session::castEquipped(), the same call C makes -- after whatever the
     /// other flags scripted. Paired with --flame (whose line ends with the
     /// priest's teaching) the grimoire is stocked and the equipped-crafting
-    /// HUD row has something to show; alone, the photographed truth is the
-    /// empty-grimoire refusal on the alert row, which is the COMMON state and
-    /// worth a picture of its own.
+    /// HUD row has something to show.
+    ///
+    /// V LANE, 2026-09-25: SELF-SUFFICIENT. It used to photograph the
+    /// empty-grimoire refusal when nothing had stocked the book -- the hands
+    /// never left idle, so the one drive that exists to photograph the CAST
+    /// POSE could not photograph it, and `--time=22` broke the paired
+    /// `--flame=away --quickbar --cast` the same way (the priest is off
+    /// shift). Now an EMPTY grimoire is handed the first crafting the raws
+    /// say a novice of this literacy can be taught -- the identical row the
+    /// priest's teaching beat hands over -- and the hand equips it. A
+    /// grimoire that already has craftings in it is untouched, so every
+    /// `--flame ... --cast` capture is the capture it always was. The drive
+    /// then spends ONE step, because the hands' machine only enters a state
+    /// on a step: `--settle-steps=N` is step N of the 24-step cast window,
+    /// and every one of those steps reads. Two beats: a crafting in the
+    /// hand, and the hands in the cast pose. A refusal is neither.
     bool cast = false;
     /// HELD-EFFECTS BUILD. VERIFICATION ONLY, the identical reason `cast`
     /// exists: the active-effects rows and the held-tuning outcome shift had
@@ -4085,6 +4098,15 @@ struct SmokeRunResult {
     std::int32_t courtBeats = 0;
     /// KIT BUILD: beats of the Kit line (--kit), by its ending.
     std::int32_t kitBeats = 0;
+    /// V LANE: beats owed and landed by the drives that exist to photograph
+    /// THE HANDS -- `--cast`, `--punch`, `--block`, `--charge-steps`. They
+    /// already count into scriptedWanted/scriptedLanded with everything
+    /// else; these two are the same numbers kept apart so the summary can
+    /// say "the hands' own line landed 2 of 2" beside the state the hands
+    /// were actually in at the shutter, the way --flame says stages=6/6.
+    /// Both zero when none of those drives ran.
+    std::int32_t handsBeats = 0;
+    std::int32_t handsWanted = 0;
     /// How many of the six beats of the bounty run landed.
     std::int32_t contractBeats = 0;
     /// How many of the seven beats of the nemesis arc landed.

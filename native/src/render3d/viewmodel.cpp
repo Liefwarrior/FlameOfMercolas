@@ -212,11 +212,26 @@ constexpr float kDegToRad = kPi / 180.0F;
 }
 constexpr ViewmodelRigPlacement kFistsGuard = placementOf(Vec3{0.10F, -1.34F, 0.14F}, 8.0F, 35.0F);
 constexpr ViewmodelRigPlacement kFistsBlock = placementOf(Vec3{0.0F, -1.22F, -0.41F}, 0.0F, 10.0F);
-/// The punches lunge: the shoulder comes half a metre forward through the
-/// clip, so the rig sits further back and barely leans for them, the
-/// shoulders behind the near plane in every frame and the fist flying in
-/// from the lower right to the middle rather than up through the eye.
-constexpr ViewmodelRigPlacement kFistsPunch = placementOf(Vec3{0.0F, -1.27F, 0.45F}, 0.0F, 10.0F);
+/// THE PUNCH is framed off the SWING clip, and that body is a third one
+/// again: it LUNGES. The right shoulder travels from 0.0 to 0.44 up the
+/// rig's own +Z through the clip and the head with it, so a chest-height eye
+/// a hand's breadth behind the collarbone -- the old {0, -1.27, 0.45}, 0,
+/// 10 -- has the whole torso swing THROUGH it: the virtual shutter puts 74
+/// to 79 columns of the frame under solid rig at steps 4-6 (the grey slab),
+/// nothing at all on screen at steps 0-2 and 13-18 (the fist is behind the
+/// eye), and the fist itself jammed at x 1206 of 1280 at step 3 -- which is
+/// the dark corner in the otherwise blank `--punch` capture.
+///
+/// So the eye rides HIGH and LEANS HARD here, the way the sword's guard
+/// does: 1.90 up the rig, fifteen centimetres in front of it, the body
+/// turned twenty degrees left and leaned fifty back. The whole rig then
+/// sits in front of the near plane at every step of the clip -- the closest
+/// vertex of it is 0.27 out at the cock and further at every other step --
+/// so nothing can cross the plane and there is no slab to clip. The fist
+/// is cocked low right at about (1087, 549) of 1280x720, drives to
+/// (500, 161) at the extension and falls back to (807, 486); the left
+/// punch's fist starts under the bottom edge and is in frame from step 3 on.
+constexpr ViewmodelRigPlacement kFistsPunch = placementOf(Vec3{0.0F, -1.90F, -0.15F}, 20.0F, 50.0F);
 /// The bare-handed cast is framed off the SPELL clip, and that body is not
 /// the block clip's the other fists framings stand on: the block clip
 /// crouches (shoulders 1.2 up the rig, the fists at 0.9..1.1), the spell
@@ -239,9 +254,24 @@ constexpr ViewmodelRigPlacement kSwordBlock = placementOf(Vec3{0.30F, -1.96F, 0.
 /// The armed cast: the eye over the left shoulder, level with the thrown
 /// hand, the body turned left to bring it round.
 constexpr ViewmodelRigPlacement kCastPlacement = placementOf(Vec3{0.30F, -1.88F, -0.24F}, 20.0F, -10.0F);
-/// The swing's last third eases the placement back to the guard, so the
-/// fall back to Idle lands on the framing it left.
-constexpr float kSwingReturnFrom = 0.7F;
+// A FRAMING IS NEVER EASED INTO FROM ANOTHER CLIP'S. Every placement above
+// is an eye solved off ONE clip's joint positions, so the numbers look like
+// a family and are not comparable: the guard frames the block clip's
+// crouch (shoulders 1.2 up the rig), the cast frames a body standing tall
+// with a hand thrown to 1.9, the punch frames a body lunging half a metre.
+// Sliding the eye down the straight line between two of them walks it
+// through the OTHER clip's chest, and the virtual shutter says exactly what
+// that costs: the cast used to ease out of the guard and the frame came
+// back 23 columns of solid pauldron at step 2 and 20 at step 19, with the
+// hand off the top of frame at both ends -- "the pose reads for only four
+// of twenty steps". Held at its own framing for the whole window the same
+// clip reads at every step of it, the hand never leaves the frame, and no
+// column of the frame is ever solid rig. Same story on the sword's cast
+// (21 columns at the ends, gone) and on the swing. So: a state HOLDS its
+// framing, and the cut between framings is the state change. The block is
+// the one ease left, and it is the honest kind -- guard and block are two
+// eyes on the SAME clip, six steps apart.
+
 /// HANDS DOWN: the rig drops this far below its guard framing, so the arms
 /// at the hips are under the bottom edge -- Oblivion's sheathed state shows
 /// nothing, and the block clip's first frame at the guard framing put a
@@ -499,11 +529,12 @@ void poseViewmodel(ViewmodelInstance& out, ViewmodelKind kind, const ViewmodelPo
     out.tint = tint;
     out.parts.clear();
 
-    // THE GLB PATH: the framing for the state (the guard, pushed to the
-    // block over its ease, swung to the cast and back over its window --
-    // a one-shot returns to the guard by its own end, so the fall back to
-    // Idle lands without a jump), the clip and the frame the policy picks,
-    // the socket the kind's weapon hangs by.
+    // THE GLB PATH: the framing for the state -- each one HELD for its
+    // whole window, because a placement is an eye solved off one clip and
+    // the line between two of them runs through the other clip's chest (see
+    // the note above kCastPlacement); the guard's push to the block is the
+    // one ease left, and the two are eyes on the SAME clip -- then the clip
+    // and the frame the policy picks and the socket the weapon hangs by.
     {
         const ViewmodelRigPlacement guard = viewmodelGuardPlacement(kind);
         ViewmodelRigPlacement at = guard;
@@ -511,33 +542,18 @@ void poseViewmodel(ViewmodelInstance& out, ViewmodelKind kind, const ViewmodelPo
             const float e = smooth(clamp01(static_cast<float>(pose.stateSteps) /
                                            static_cast<float>(kViewmodelEaseSteps)));
             at = lerp(guard, viewmodelBlockPlacement(kind), e);
-        } else if (pose.state == ViewmodelState::Charging) {
-            const float e = smooth(clamp01(static_cast<float>(pose.stateSteps) /
-                                           static_cast<float>(kViewmodelEaseSteps)));
-            at = lerp(guard, viewmodelSwingPlacement(kind), e);
-        } else if (pose.state == ViewmodelState::ChargedHard) {
+        } else if (pose.state == ViewmodelState::Charging ||
+                   pose.state == ViewmodelState::ChargedHard ||
+                   pose.state == ViewmodelState::SwingLight ||
+                   pose.state == ViewmodelState::SwingHard) {
+            // The whole wind-up-and-throw is ONE clip's framing, held from
+            // the first step of the charge to the last of the swing: see the
+            // note on kCastPlacement for why nothing here eases out of the
+            // guard's. (For every armed kind the swing framing IS the guard
+            // framing, so this is the same picture those kinds always had.)
             at = viewmodelSwingPlacement(kind);
-        } else if (pose.state == ViewmodelState::SwingLight || pose.state == ViewmodelState::SwingHard) {
-            const std::int32_t window = render::viewmodelStateSteps(pose.state);
-            const float k = window > 0 ? clamp01(static_cast<float>(pose.stateSteps) /
-                                                 static_cast<float>(window))
-                                       : 0.0F;
-            const float back = k > kSwingReturnFrom
-                                   ? smooth((k - kSwingReturnFrom) / (1.0F - kSwingReturnFrom))
-                                   : 0.0F;
-            at = lerp(viewmodelSwingPlacement(kind), guard, back);
         } else if (pose.state == ViewmodelState::Cast) {
-            const std::int32_t window = render::viewmodelStateSteps(pose.state);
-            const float k = window > 0 ? clamp01(static_cast<float>(pose.stateSteps) /
-                                                 static_cast<float>(window))
-                                       : 0.0F;
-            float e = 1.0F;
-            if (k < 0.3F) {
-                e = easeOut(k / 0.3F);
-            } else if (k > 0.6F) {
-                e = 1.0F - smooth((k - 0.6F) / 0.4F);
-            }
-            at = lerp(guard, viewmodelCastPlacement(kind), e);
+            at = viewmodelCastPlacement(kind);
         } else if (pose.state == ViewmodelState::Idle) {
             // Down: the rig sinks under the bottom edge with the stance,
             // eased like the clip. Up: the breathing sway, from rest at
