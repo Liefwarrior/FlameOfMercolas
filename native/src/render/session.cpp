@@ -14927,8 +14927,8 @@ constexpr std::int32_t kRungBeats = 2;
 ///          burglary line's own box beat at two in the morning, crouched,
 ///          the doors barred. Four caught lifts would do it too, and every
 ///          caught lift is a bouncer's warning, which OUTRANKS the plate.
-///          The frame is the burglary's own: back on the landing, looking
-///          at the room just done.
+///          The eye goes up the landing BEFORE the lid does, because the
+///          lid is the rung and nothing walks after a rung (below).
 ///   roofs  THE FIRST ROOF-RUN (three) AND SKYRUNNING (two a level): in at
 ///          the Gull's door and up onto its lead the roof line's own way,
 ///          then the alley leapt west and east -- a leap is two uses --
@@ -14937,8 +14937,9 @@ constexpr std::int32_t kRungBeats = 2;
 ///   flame  TWO LEADS READ (six apiece): the trail's own first two, the
 ///          Mission's back room and its flagstones, walked to by the
 ///          district's router and read with the same Q, at the trail's own
-///          hour (nine, the Mission's door open), then the trail's own
-///          stand-back so the frame is the room and not a wall.
+///          hour (nine, the Mission's door open) -- each of them read from
+///          the trail's own stand-back rather than off it, so the frame is
+///          the room and not a wall AND no step falls after the rung.
 ///   trade  THE WARD'S BOUNTY, PAID: runContractLine whole. Six for the job
 ///          and the coin over four clears the threshold at the smallest
 ///          bounty the board deals (bounty_kennel, two units at four: eight
@@ -14949,6 +14950,15 @@ constexpr std::int32_t kRungBeats = 2;
 ///          (factionDeedWeight), and the Watch at eight on a clean sheet is
 ///          KNOWN TO THE WATCH. The honest short road: the bounty alone
 ///          leaves a man three short of it.
+///
+/// AND NOTHING WALKS AFTER A RUNG. That is the one rule every track here
+/// keeps, and the two that broke it are why it is written down: the plate
+/// holds five seconds (kRungPlateHoldSteps) and a scripted walk spends them
+/// faster than anything else in this file -- fifty tiles out of the Mission
+/// and round it, or a crouched fight for the last tile of the Gull's
+/// landing -- so the rung comes up on a body that is already framed and the
+/// drive stops there. Same rule `--trail=opened` states for the lead-opened
+/// notice, and for the same three-second reason.
 ///
 /// The line ends by stepping the plate all the way up (its own eight-step
 /// rise), bounded, so `--settle-steps=0` photographs it at full strength and
@@ -14982,14 +14992,23 @@ constexpr std::int32_t kRungBeats = 2;
             if ((session.tavern().openedLocks() & (1 << 2)) == 0) {
                 session.forceLock();
             }
-            session.steal();
-            // The burglary's own frame: back down the landing, looking at
-            // the room that has just been done rather than nose-first
-            // against the bed block.
-            walkToTile(session, 152, 72);
+            // THE FRAME IS AIMED BEFORE THE LID GOES, AND NOTHING WALKS
+            // AFTER IT. The burglary shoots this room from the landing, four
+            // tiles out, and walks there once the box is empty -- which is
+            // right for `--burgle` and wrong here, because here the box IS
+            // the rung. The plate holds five seconds (kRungPlateHoldSteps)
+            // and that walk spends them: off the bed-foot, crouched at half
+            // pace, with the last tile fought for and never won. Same rule
+            // `--trail=opened` states in as many words -- stop on the step
+            // the notice fires and do nothing afterwards -- so the eye is
+            // put on the landing the burglar came up FIRST, with the room he
+            // is doing behind him, and then the lid.
             session.body().setYaw(sim::bearingTo(session.body().tileX(), session.body().tileY(),
-                                                 box.bedX, box.bedY));
+                                                 152, 72));
             session.body().setPitch(sim::angle_from_degrees(-8));
+            // The empty IS the burgle, so this is the step the rung rises on
+            // and the last step this track takes.
+            session.steal();
             break;
         }
         case sim::LegendTrack::Roofs: {
@@ -15019,8 +15038,22 @@ constexpr std::int32_t kRungBeats = 2;
             // The trail's own loop for its first two leads: the nearest OPEN
             // lead on this band, walked to by the district's router, read
             // with the same Q -- stopped the moment the track rises.
+            //
+            // WITH THE TRAIL'S STAND-BACK MOVED AHEAD OF THE KEY, and that
+            // is the whole of the difference. The trail reads standing on
+            // the anchor and walks off it afterwards, which is right for
+            // `--trail` and fatal here: the Mission's flagstones sit inside
+            // the almshouse, the tile seven south of them is out on the
+            // quay, and the router's honest answer is out of the north
+            // door, round the building and back down -- fifty-odd tiles,
+            // where the plate holds five seconds (kRungPlateHoldSteps).
+            // kLookRangeTiles is four and the trail's own tail says so:
+            // four tiles off, the clue still reads. So the body backs off
+            // FIRST -- toward the side it is already on, which is the side
+            // the door is on -- turns, and reads from there. The rung rises
+            // with the frame already made and the drive takes no step after
+            // it. `--trail=opened`'s rule, applied to a rung.
             const sim::CasebookRaws* raws = session.casebook().raws();
-            std::int32_t last = -1;
             for (int guard = 0; raws != nullptr && guard < 4 && !risen(); ++guard) {
                 std::int32_t best = -1;
                 std::int32_t bestDistance = 0;
@@ -15044,37 +15077,48 @@ constexpr std::int32_t kRungBeats = 2;
                     break;
                 }
                 const sim::Lead& lead = raws->leads()[static_cast<std::size_t>(best)];
-                bool got = walkAcrossDistrict(session, lead.site.x, lead.site.y);
-                for (const std::int32_t offset : {1, -1, 2, -2}) {
-                    if (got) {
-                        break;
-                    }
-                    got = walkAcrossDistrict(session, lead.site.x + offset, lead.site.y) ||
-                          walkAcrossDistrict(session, lead.site.x, lead.site.y + offset);
-                }
                 const std::int32_t before = session.casebook().readCount();
-                session.examine();
-                if (session.casebook().readCount() <= before) {
-                    break;
-                }
-                last = best;
-            }
-            if (raws != nullptr && last >= 0) {
-                // STAND BACK, THEN LOOK AT IT -- the trail's own tail, for
-                // the trail's own reason: a body on the flagstones is a
-                // photograph of a wall.
-                const sim::Lead& lead = raws->leads()[static_cast<std::size_t>(last)];
-                for (const std::int32_t back : {7, 6, 5, 4, 3}) {
-                    if (walkAcrossDistrict(session, lead.site.x, lead.site.y + back) ||
-                        walkAcrossDistrict(session, lead.site.x + back, lead.site.y) ||
-                        walkAcrossDistrict(session, lead.site.x, lead.site.y - back) ||
-                        walkAcrossDistrict(session, lead.site.x - back, lead.site.y)) {
+                // 1. OFF THE ANCHOR, THE WAY THE BODY CAME. Four tiles, then
+                //    three -- both inside kLookRangeTiles -- and the sign is
+                //    taken off where the body already stands, so the step
+                //    back is into the room it is walking into rather than
+                //    out of its door.
+                const std::int32_t awayX = session.body().tileX() < lead.site.x ? -1 : 1;
+                const std::int32_t awayY = session.body().tileY() < lead.site.y ? -1 : 1;
+                for (const std::int32_t back : {4, 3}) {
+                    if (walkAcrossDistrict(session, lead.site.x, lead.site.y + awayY * back) ||
+                        walkAcrossDistrict(session, lead.site.x + awayX * back, lead.site.y) ||
+                        walkAcrossDistrict(session, lead.site.x, lead.site.y - awayY * back) ||
+                        walkAcrossDistrict(session, lead.site.x - awayX * back, lead.site.y)) {
                         break;
                     }
                 }
                 session.body().setYaw(sim::bearingTo(session.body().tileX(),
                                                      session.body().tileY(), lead.site.x,
                                                      lead.site.y));
+                session.examine();
+                // 2. AND ONTO IT IF IT WOULD NOT READ FROM THERE -- the
+                //    trail's own walk, unchanged, so a lead that cannot be
+                //    stood off is still read where the trail reads it. A
+                //    nose against masonry is a worse frame than the landing
+                //    and a better one than no plate at all.
+                if (session.casebook().readCount() <= before) {
+                    bool got = walkAcrossDistrict(session, lead.site.x, lead.site.y);
+                    for (const std::int32_t offset : {1, -1, 2, -2}) {
+                        if (got) {
+                            break;
+                        }
+                        got = walkAcrossDistrict(session, lead.site.x + offset, lead.site.y) ||
+                              walkAcrossDistrict(session, lead.site.x, lead.site.y + offset);
+                    }
+                    session.body().setYaw(sim::bearingTo(session.body().tileX(),
+                                                         session.body().tileY(), lead.site.x,
+                                                         lead.site.y));
+                    session.examine();
+                }
+                if (session.casebook().readCount() <= before) {
+                    break;
+                }
             }
             break;
         }
