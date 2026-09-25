@@ -46,6 +46,7 @@
 #include "granadad/render/map_view.hpp"
 #include "granadad/render/menu_view.hpp"
 #include "granadad/render/pull.hpp"
+#include "granadad/render/rung_plate.hpp"
 #include "granadad/render/viewmodel_machine.hpp"
 #include "granadad/render/world_renderer.hpp"
 #include "granadad/sim/casebook.hpp"
@@ -998,6 +999,34 @@ public:
     /// test_pull.cpp compares with and without a followed lead. Reads only;
     /// public for exactly that proof.
     [[nodiscard]] std::uint64_t simHash() const;
+
+    // --- THE RUNG PLATE (render/rung_plate.hpp) -------------------------------
+    //
+    // A Legend rung rising gets a plate: the track and the new title over one
+    // authored line of what the ward now says about you, centred high, held
+    // five seconds, on its own ease and its own bell. LegendRiseWatch diffs
+    // the five rungs once a step (the skill toast's own shape); the queue,
+    // the priority rule and the dismissal live in stepRungPlate(). RENDER
+    // STATE, never hashed -- test_rung_plate.cpp proves the room's and the
+    // ward's digests identical with the plate up, drawn, dismissed and
+    // queued.
+
+    /// True while the plate is WANTED -- its hold still running. The drawn
+    /// alpha is its EasedToggle's business; this is the target a case
+    /// asserts on, casePlateWanted()'s own shape.
+    [[nodiscard]] bool rungPlateWanted() const noexcept { return rungPlateShowSteps_ > 0; }
+    /// What the plate reads (head, prose, top), held through the fade so
+    /// the notice ends with its own words. Empty before any rung has risen.
+    [[nodiscard]] const RungPlateText& rungPlateText() const noexcept { return rungPlateText_; }
+    /// 0 (gone) .. 1 (fully up): the plate's own ease, as drawn.
+    [[nodiscard]] float rungPlateFade() const noexcept { return rungPlateAnim_.value(); }
+    /// Rungs waiting their turn behind the plate on screen (or behind a page,
+    /// a warning or the court that outranks it). Queued, never dropped.
+    [[nodiscard]] std::size_t rungPlateQueued() const noexcept { return rungPlateQueue_.size(); }
+    /// The plate's own draw state exactly as drawFrame composes it -- the
+    /// three lines, the fade (zero under anything that owns the screen), the
+    /// signed drift. Public so a case reads it instead of a screenshot.
+    [[nodiscard]] RungPlateState rungPlateState() const noexcept;
 
     // --- THE MOMENT LEADS OPEN ------------------------------------------------
     //
@@ -2561,6 +2590,30 @@ private:
     [[nodiscard]] const sim::CasebookRaws& rawsOf(CaseBookId id) const noexcept;
     /// The CASES shelf rows, for casebookPageState().
     [[nodiscard]] std::vector<CasebookShelfRow> casebookShelfRows() const;
+    // --- THE RUNG PLATE's own state (see the public block above) ------------
+    /// Per-track rung cache the plate diffs against, once a step -- the
+    /// skill toast's skillRise_, for the Legend.
+    LegendRiseWatch legendRise_;
+    /// The plate's EVENT triple (text held through the fade, countdown,
+    /// ease) -- the toast's exact shape -- and the rungs waiting behind it.
+    RungPlateText rungPlateText_;
+    int rungPlateShowSteps_ = 0;
+    EasedToggle rungPlateAnim_{kPageEaseSteps, kPageEaseSteps};
+    std::vector<RungPlateText> rungPlateQueue_;
+    /// True when something that outranks the plate owns the screen right
+    /// now: a page or a talk (conversingNow), the court's plates and custody,
+    /// the death and rope ceremonies, a bouncer's WARNING -- the alert row's
+    /// own priority rule, applied whole.
+    [[nodiscard]] bool rungPlateOutranked() const noexcept;
+    /// The one step hook: the Legend diff into the queue, the countdown, the
+    /// dismissal under anything that outranks it, the next plate up off the
+    /// queue with its bell. Runs BEFORE stepPull() so a rung and a skill
+    /// level in the same step resolve with the plate first and the toast
+    /// waiting.
+    void stepRungPlate();
+    /// The one draw hook: the plate over the HUD, under the ceremonies and
+    /// the court's own plate. A no-op while nothing is up.
+    void composeRungPlate(Framebuffer& target) const;
     /// Which named place (mapPlaces() index) a lead of ANY book stands in, or
     /// -1 -- mapPlaceForLead's own two rules (the sign's name, then the
     /// smallest footprint under the site) freed from the active book's index
@@ -3832,6 +3885,37 @@ struct SmokeRunConfig {
     /// frame itself, standing over the mouth, with the plate up. Only read
     /// when `threshold` is set.
     std::string thresholdEnd = "in";
+
+    /// THE RUNG PLATE, VERIFICATION ONLY: `--rung=TRACK` plays the real verbs
+    /// until a Legend rung rises on that track and STOPS ON THE PLATE, fully
+    /// up. The same hole every plate flag in this struct states: the plate is
+    /// on screen for five seconds after a rung and for no other reason, and
+    /// without a drive it could be unit-tested for its words and never
+    /// looked at. TRACK is wire, roofs, flame, trade or law -- the bark keys'
+    /// own words -- and each takes the shortest path the smoke's own lines
+    /// already walk (see runRungLine): a guest's strongbox cracked at two in
+    /// the morning, the roof and the alley leapt, the Mission's two leads
+    /// read, the ward's bounty paid, the Watch stood four drinks.
+    std::string rung;
+};
+
+/// THE RUNG PLATE. What a `--rung` run actually did, so a case can assert
+/// the arc -- a real rise on the named track, and the plate up with that
+/// rung's own authored words on it -- rather than reading pixels.
+struct RungLineResult {
+    /// The track word was one of the five.
+    bool found = false;
+    sim::LegendTrack track = sim::LegendTrack::Wire;
+    /// The rung before the line and at the shutter.
+    std::int32_t from = 0;
+    std::int32_t to = 0;
+    /// `to` is above `from`: the verbs genuinely moved the counters.
+    bool rose = false;
+    /// The plate is WANTED and fully risen when the line returns.
+    bool plateUp = false;
+    /// What the plate reads: the head and the authored row.
+    std::string head;
+    std::string row;
 };
 
 /// DISTRICT PHASE D. What a `--threshold` run actually did, so a case can
@@ -4068,6 +4152,10 @@ struct SmokeRunResult {
     /// summary for the identical reason again -- the clock moving by exactly
     /// the restated minutes is the one claim a PNG cannot make.
     TravelLineResult travelResult;
+    /// THE RUNG PLATE: what a --rung run raised and what the plate read,
+    /// printed as `rung=<track> <a>-><b> row="..."` -- a frame of a plate is
+    /// a frame of words, and the words on it are the claim.
+    RungLineResult rungResult;
     [[nodiscard]] bool scriptFellShort() const noexcept {
         return scriptedWanted > 0 && scriptedLanded < scriptedWanted;
     }
