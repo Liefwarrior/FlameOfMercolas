@@ -936,33 +936,55 @@ perfectly ordinary business, which the scan then wrongly counted as a witness. F
 that trailing `stepMany` once the kill has already landed -- nothing downstream needs it, and the
 census now reads the instant `alarm()` itself fired rather than one recovery animation later.
 
+**The critic's first pass (7/10, below the 8 gate) found two real things sidestep still owed.**
+NPCs walked through the player -- he is not a `WardActor` and was never in the occupancy index, so
+nothing refused a route that targeted his exact cell, "the loudest remaining not-a-real-crowd
+tell." And two bodies the sim placed on adjacent tiles -- far more common now that a crowd spreads
+sideways instead of queuing -- could visually interpenetrate, since the placeholder figure's
+shoulders are wider than the ~0.9 m tile grid. Two fixes, both landed before this ever shipped:
+`tryEnter` refuses the player's own tile outright (`playerX_`/`Y_`/`band_` are already hashed,
+pushed every step by `Session::step`), with `sidestep()`'s and `tryPush()`'s candidate loops
+pre-checking the same rule so neither loop's own "cannot fail" `tryEnter` call stops being true --
+nobody needed to stand where he stands, since arrests and street swings both reach him at
+adjacency already. And `actor_instances.hpp` gained a small, STABLE, per-actor render-only nudge
+within each body's own tile (`personalSpaceNudge`, an id-keyed hash, never hashed into the sim,
+never read back) so two bodies the sim placed on adjacent tiles don't lean toward each other --
+real clearance for a side-by-side pair without ever contradicting where the sim says either one is
+standing. Exposed two tests that independently computed a ward actor's expected render position
+against the un-nudged tile centre (`test_scene3d.cpp`'s "an actor is drawn where the simulation
+says the actor is", `test_render3d.cpp`'s "the ward's people render as figures in the 3D frame");
+fixed by moving `personalSpaceNudge` out of `actor_instances.cpp`'s anonymous namespace and into
+the header so both tests call the exact function production does rather than hand-copying a
+formula that would silently drift from it.
+
 ```
 at branch lane/crowd-flow,
 granadad-twin-gate --population --population-hour 16 --ticks 7200, 96 walkers
-COMBINED WORLD HASH: 0xDD3890042DD2B472 -> 0xC45435FE8EBBB41E      <- DECLARED and RE-BLESSED
+COMBINED WORLD HASH: 0xDD3890042DD2B472 -> 0x5CDF07325BAC9C75      <- DECLARED and RE-BLESSED
 ```
 
 Recorded directly from `dist\granadad-twin-gate.exe --population --population-hour 16
 --ticks 7200` on Windows/mingw, **two invocations**, each `run A` == `run B` ==
-`0xC45435FE8EBBB41E`, report text byte-identical at **23,458 bytes** in both runs (up from leg
-(c)'s 22,320: the new `sidesteps=` report field, and the crowd itself behaving differently). On
-Linux/GCC the same gate ran green in the Docker build (ctest `granadad-twin-run-gate-population`
-PASSED, `run A` == `run B`, 365.84 s).
+`0x5CDF07325BAC9C75`, report text byte-identical at **23,458 bytes** in both runs (up from leg
+(c)'s 22,320: the new `sidesteps=` report field, and the crowd itself behaving differently -- the
+player-avoidance rule moved the number again on top of sidestep's own move, same byte count both
+times since the report format itself is unchanged). On Linux/GCC the same gate ran green in the
+Docker build (ctest `granadad-twin-run-gate-population` PASSED, `run A` == `run B`).
 
 The tavern/gate-workload twin on the same exe is UNMOVED: `--tavern --ticks 900`, `run A` ==
-`run B` == `0x63F354D02A6B600F` (3,153 bytes) -- `sidestep()`/`sidesteps_` live entirely on
-`WardPopulation`; the tavern workload has no ward and never calls it.
+`run B` == `0x63F354D02A6B600F` (3,153 bytes) -- `sidestep()`/`sidesteps_`/`tryEnter`'s player
+check all live entirely on `WardPopulation`; the tavern workload has no ward and never calls it.
 
-**The population baseline is therefore re-blessed at `0xC45435FE8EBBB41E`, a real crowd-movement
+**The population baseline is therefore re-blessed at `0x5CDF07325BAC9C75`, a real crowd-movement
 change behind it.**
 
 Proved by a new case in `native/tests/test_ward_actors.cpp`, "crowds sidestep instead of gluing
 into a column at a chokepoint" (the morning commute records `sidesteps() > 0` -- the mechanism
 actually fires under a real rush, not just compiles -- while the one-body-per-cell invariant
 still holds), gated on the tree whose GATE-STAMP names it (`native/` digest
-`33ad6ba87c64de06b88d5b75a2b52dd761869b75dd2e9dd330b44d0779b0aeb1`, 328 files, ctest cases 1319
+`c84262fbf1823d6e31015e5d09eecaf6484a40aa0ef63f288e02d3a69874eb5f`, 328 files, ctest cases 1319
 (floor 537), 99/99 ctest suites green including `granadad-twin-run-gate-population` and
 `granadad-twin-run-gate-tavern`; `verify-windows.ps1` PASS -- 1,238 sim doctest cases /
-2,428,266 assertions under mingw, 0 failed, content-fingerprint and world-hash reports
+2,428,283 assertions under mingw, 0 failed, content-fingerprint and world-hash reports
 byte-identical linux/gcc vs mingw/windows, the stamp naming this tree), and confirmed visually
 against fresh screenshots at the Docks locations the critic flagged (`docs/frames/crowd-flow/`).
