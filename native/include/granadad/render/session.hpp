@@ -1488,8 +1488,11 @@ public:
     /// Everything the TRAVEL verb knows about the current selection: the cost
     /// if the walk is honest, or the one-line reason it is not.
     struct TravelPlan {
-        /// The selection contains the body: nothing to travel to, no verb --
-        /// the foot's "YOU ARE STANDING IN IT" already words it.
+        /// The selection contains the body -- or its aim point sits within
+        /// two paces of it (the HERE clause: a door can stand just outside
+        /// its own footprint, and the arrival ring lands you on it). Either
+        /// way: nothing to travel to, no verb -- the pane's HERE badge words
+        /// it, and the T press is inert.
         bool standingIn = false;
         /// Route found, ground standable, nothing refusing: the verb is live.
         bool available = false;
