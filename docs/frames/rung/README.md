@@ -37,8 +37,10 @@ Cull's table with real coin. Nothing reaches into the sim sideways.
   look seeds and says nothing. Rises only. A fall is the sheet's business.
 - The plate itself (`render/rung_plate.hpp`). A `PanelFrame` in the terminal
   register, diamond junctions, the head knocked out of an inverted accent
-  fill, the row in prose ink, the top row dim. Sized to its content. Seated a
-  quarter of the way down the spare height, so it sits under the compass
+  fill, one cell row of air, then the row in prose ink, the top row dim under
+  that. Sized to its content. Seated a quarter of the way down the spare
+  height plus one more cell row of collision clearance, clamped so that row
+  never comes out of the reticle's own fence -- it sits under the compass
   band and the announce plate and never on the reticle or the aim prompt.
   Rises through its seat and lifts on out, never slides back the way it
   came. Own ease, own bell.
@@ -48,8 +50,11 @@ Cull's table with real coin. Nothing reaches into the sim sideways.
   WARNING all outrank it. A rise under any of those queues and shows when
   the screen's free. A plate that's up when one of those takes the screen is
   dismissed on the spot, which is what "dismissable by any page key" means
-  in practice. A rung and a skill level in the same step, the plate wins and
-  the toast waits behind it. A toast already up finishes.
+  in practice. A rung and a skill level, same step or not, the plate wins:
+  a new toast waits behind it, and one already up when the plate lands goes
+  dark rather than share the corner and does not come back -- a rung and its
+  matching skill are sometimes the same event said twice, and the plate has
+  already told it.
 - The bell. `SoundId::LegendRung`, the Kenney heavy bell the harbour already
   rings, one strike on the World bus. Heavier than the toast's chime. No new
   art, no LOT row on purpose (the LOT tree's only candidates would make a
@@ -109,7 +114,7 @@ legend.cpp prints, the row is what the ward says.
 | `legend.trade.2` | THE TRADE  --  TRADER | Your word buys on credit now. Not much. But some. |
 | `legend.trade.3` | THE TRADE  --  CRAFTLORD | The Weighhouse stamps your paper without reading it. |
 | `legend.trade.4` | THE TRADE  --  THE WARD'S CREDITOR | Half this quay owes you. The other half is asking to. |
-| `legend.law.1` | THE LAW  --  KNOWN TO THE WATCH | The Watch has your name and is not sour about it. Yet. |
+| `legend.law.1` | THE LAW  --  KNOWN TO THE WATCH | The Watch has your name now. Not sour about it. Yet. |
 | `legend.law.2` | THE LAW  --  SWORN IN | Cull calls you by name across the room. On purpose. |
 | `legend.law.3` | THE LAW  --  THE SERGEANT'S MAN | Folk lower their voices when you pass now. Even sober. |
 | `legend.law.4` | THE LAW  --  THE MAN VESS SENDS FOR | When it goes bad, Vess says your name first. |
@@ -143,11 +148,35 @@ second into its hold, which is the same picture.
 | frame | drive | what it proves |
 |---|---|---|
 | `rung-wire-960.png` | `granadad.exe --smoke=0 --hold --width=960 --height=540 --scale=1 --rung=wire --settle-steps=0 --screenshot=docs\frames\rung\rung-wire-960.png` | One cracked box at two in the morning. `THE WIRE  --  LIGHT FINGERS` on the plate, the wire.1 row under it, the landing away in front and the done room behind. Summary reads `rung=wire 0->1 row="The rope hands know your face now. That is not nothing." plate=up found=yes`. |
-| `rung-roofs-960.png` | the same with `--rung=roofs` | The alley leapt until the roofs will have it. `THE ROOFS  --  TENANT` over the lead, the alley under the eye. `SKYRUNNING RISES TO n` may be queued behind it in the corner, and the plate is up first. |
+| `rung-roofs-960.png` | the same with `--rung=roofs` | The alley leapt until the roofs will have it. `THE ROOFS  --  TENANT` over the lead, the alley under the eye. Skyrunning levels on the same leaps, and `SKYRUNNING RISES TO n` stays dark the whole time the plate is up -- the same climb, told once. |
 | `rung-flame-960.png` | the same with `--rung=flame` | Two leads read at the Mission at nine. `THE FLAME  --  DISCIPLE`, the back room stood back from. The pull line under the ribbon still reads the next lead. |
 | `rung-trade-960.png` | the same with `--rung=trade` | The bounty paid across Cull's table. `THE TRADE  --  STALLKEEP` the step the talk closes, Cull still in frame. |
 | `rung-law-960.png` | the same with `--rung=law` | Four drinks stood to Cull at eleven. `THE LAW  --  KNOWN TO THE WATCH`, Cull on his stool. |
 | `rung-wire-320.png` | the first drive at `--width=320 --height=180` | The strip pin. The longest rows are 56 glyphs and the plate is 60 cells wide in a 64-cell frame, so a cell of air each side and the row whole. Under the compass band, clear of the reticle. |
+
+## Second pass, 2026-09-25
+
+The critic scored the plate a 7 and left two things in the way of an 8.
+
+- **The moment didn't own the screen.** On the roofs drive, a leap that tips
+  THE ROOFS also levels the SKYRUNNING skill, and the green `SKYRUNNING
+  RISES TO n` toast used to fire right through the plate landing on top of
+  it, clipping the compass ribbon's own bearing glyph. It's the same climb
+  said twice. Now the toast goes dark the instant the plate wants the
+  screen -- a new one waits behind it same as always, but one already
+  counting down when the plate lands is cut there and doesn't come back,
+  the identical `outranked` idiom the plate already uses on itself under a
+  page or a warning. Separately, the `NEW LEAD` box was landing close enough
+  above the plate on the flame drive that the two keylines read as one pile.
+  The seat now spends one more cell row pushing the plate down off it,
+  clamped so that push never costs the reticle its own clearance.
+- **Zero leading between the head and the prose.** The knocked-out head sat
+  flush on the row under it at every size. The plate now keeps one blank
+  cell row between them, so it grows by a row -- the geometry pins in
+  `test_rung_plate.cpp` grew with it.
+- `legend.law.1` read a half-step more writerly than its four neighbours.
+  Trimmed the connective tissue and kept the "Yet.": *The Watch has your
+  name now. Not sour about it. Yet.*
 
 ## Not in this folder yet
 

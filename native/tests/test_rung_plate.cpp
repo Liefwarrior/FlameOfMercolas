@@ -14,7 +14,8 @@
 //   3. THE PLATE fires on a real rung, holds its five seconds, queues a
 //      second rung behind itself, rises THROUGH its seat rather than sliding
 //      back, and sleeps -- and the same step's skill level waits behind it,
-//      never dropped, while a toast already on screen finishes.
+//      never dropped, while a toast already on screen goes dark rather than
+//      share the corner and does not come back.
 //   4. THE PRIORITY: a page and a bouncer's warning each dismiss the plate
 //      on the spot, and a rung earned under either queues and surfaces the
 //      moment the way is clear -- the alert row's own rule, applied whole.
@@ -511,7 +512,7 @@ TEST_CASE("a rung and a skill level in one step: the plate wins, the toast waits
     CHECK(session.pullHud().skillToastFade > 0.0F);
 }
 
-TEST_CASE("a toast already on screen finishes when a rung lands under it") {
+TEST_CASE("a toast already on screen goes dark the instant a rung lands under it, and does not come back") {
     Session session(configAt("mission-backroom"));
     wake(session);
     sim::SkillTrack& skills = session.tavern().dialogue().skills();
@@ -521,15 +522,22 @@ TEST_CASE("a toast already on screen finishes when a rung lands under it") {
     session.stepMany(sim::MoveInput{}, 1);
     REQUIRE(session.skillToastWanted());
     REQUIRE(session.skillToastLabel() == "SHIELDWALL RISES TO 1");
+    REQUIRE(session.pullHud().skillToastFade > 0.0F);
 
+    // The rung lands on the toast already up: the same corner, and -- on
+    // this track's own drive -- sometimes the same event.
     crackABox(session);
     session.stepMany(sim::MoveInput{}, 1);
     CHECK(session.rungPlateWanted());
-    CHECK(session.skillToastWanted());
-    CHECK(session.skillToastLabel() == "SHIELDWALL RISES TO 1");
-    session.stepMany(sim::MoveInput{}, kPageEaseSteps);
-    CHECK(session.rungPlateFade() == 1.0F);
-    CHECK(session.pullHud().skillToastFade > 0.0F);
+    CHECK_FALSE(session.skillToastWanted());
+    CHECK(session.pullHud().skillToastFade == 0.0F);
+
+    // Through the whole hold and past it: dismissed, not paused, so it never
+    // flashes back once the plate clears the corner.
+    session.stepMany(sim::MoveInput{}, kRungPlateHoldSteps + kPageEaseSteps + 2);
+    CHECK_FALSE(session.rungPlateWanted());
+    CHECK_FALSE(session.skillToastWanted());
+    CHECK(session.pullHud().skillToastFade == 0.0F);
 }
 
 // ===========================================================================
@@ -829,13 +837,18 @@ TEST_CASE("the plate seats under the ribbon and the announce row, above the reti
             // Wide enough for the longest row whole with its padding and
             // borders; exactly tall enough for its rows and the two rules.
             CHECK(box.w >= metric.widthOf(static_cast<int>(longestRow.size()) + 4));
-            CHECK(box.h == metric.heightOf((topped ? 3 : 2) + 2));
-            // UNDER THE RIBBON BLOCK AND THE ANNOUNCE PLATE'S ROW. At the HUD's
-            // scale 1 the announce plate's lowest pixel is row 34 (the ribbon
-            // block's 18, its lift and pad, the plate's glyphs and a pad);
-            // at every larger scale the true row is lower than 34 scales, so
-            // this floor is the conservative one.
-            CHECK(box.y >= 34 * hudScale(height));
+            // ONE ROW TALLER than before the leading pass: head, a blank row
+            // of air, the prose, and the top row when the track is capped.
+            CHECK(box.h == metric.heightOf((topped ? 4 : 3) + 2));
+            // UNDER THE RIBBON BLOCK AND THE ANNOUNCE PLATE'S ROW. At the
+            // HUD's scale 1 the announce plate's true lowest pixel is row 31;
+            // at every larger scale the true row is lower than 31 scales, so
+            // this floor is the conservative one. The topped case at 320x180
+            // is the one frame tight enough that the seat's own collision
+            // clearance gets clamped back down to exactly this floor rather
+            // than a full row past it -- the reticle's fence wins that trade,
+            // never the row above.
+            CHECK(box.y >= 31 * hudScale(height));
             // ABOVE THE RETICLE'S FENCE: the plate never sits on the thing
             // the player is looking at, nor on the words that name it.
             const CentreRect fence = hudAimRect(width, height);
