@@ -13199,11 +13199,24 @@ void lookAtFace(Session& session, std::int32_t xQ8, std::int32_t yQ8, sim::WardT
     return who != nullptr ? figureForRole(who->role(), who->id()) : sim::WardType::Serf;
 }
 
-/// Turns the body to look at whoever the row names -- at their face -- so
-/// the frame is a picture of the speaker and not of the wall the walk ended
-/// against; a step to sync the facing, which the row's hold outlasts many
-/// times over. `yawOffset` as lookAtFace's.
-void faceTheSpeaker(Session& session, sim::Angle yawOffset = 0) {
+/// OFF THE PLATE. The crosshair's own name plate is drawn at the middle of
+/// the frame and runs to the right of it (`hudAimRect`), so a body put DEAD
+/// CENTRE wears it: three of the six committed frames had "<SOMEBODY> SERF
+/// / E - TALK" printed across the speaker's eyes and mouth -- and because
+/// the prompt names the nearest body in REACH rather than the one you are
+/// looking at, two of them named somebody else while doing it. The prompt's
+/// own rule is not this lane's to change (every verb in the game reads it),
+/// but where this lane stands its camera is. A composed look puts its
+/// subject a sixth of the frame to the LEFT of centre -- twelve degrees at
+/// ninety of view, the thirds a photographer would use anyway -- which
+/// leaves the plate on the wall behind them and the face clear.
+constexpr sim::Angle kOffThePlate = sim::angle_from_degrees(12);
+
+/// Turns the body to look at whoever the row names -- at their face, off
+/// the plate -- so the frame is a picture of the speaker and not of the
+/// wall the walk ended against; a step to sync the facing, which the row's
+/// hold outlasts many times over. `yawOffset` as lookAtFace's.
+void faceTheSpeaker(Session& session, sim::Angle yawOffset = kOffThePlate) {
     std::int32_t x = 0;
     std::int32_t y = 0;
     std::int32_t band = 0;
@@ -13321,7 +13334,15 @@ void faceThePair(Session& session, bool mayWalk) {
             walkToTile(session, bestX, bestY);
         }
     }
-    lookAtFace(session, (ax + bx) / 2, (ay + by) / 2, figure, 0);
+    // The look is at the pair's MIDPOINT, so the plate has to clear the whole
+    // group and not just that midpoint: the offset carries half the angle
+    // they open from here AND a body's own width beside it -- a pair is
+    // rarely a pair on the street, and the third serf who stopped to listen
+    // wore the label when the offset was the midpoint's alone.
+    constexpr sim::Angle kAFigureWide = sim::angle_from_degrees(8);
+    const std::int32_t half = opening(session.body().x(), session.body().y()) / 2;
+    lookAtFace(session, (ax + bx) / 2, (ay + by) / 2, figure,
+               static_cast<sim::Angle>(kOffThePlate + half + kAFigureWide));
 }
 
 /// What `--voice=watch` owes. See runWatchRevealLine.
@@ -13676,7 +13697,7 @@ constexpr std::int32_t kWatchRevealBeats = 4;
             if (const sim::WardActor* who = session.people().byId(street.actorId);
                 who != nullptr && who->visible()) {
                 const std::pair<std::int32_t, std::int32_t> at = wardDrawnQ8(session, *who);
-                lookAtFace(session, at.first, at.second, who->type, 0);
+                lookAtFace(session, at.first, at.second, who->type, kOffThePlate);
             }
             return landed;
         }
@@ -13707,7 +13728,7 @@ constexpr std::int32_t kWatchRevealBeats = 4;
         if (const sim::WardActor* who = session.people().byId(street.actorId);
             who != nullptr && who->visible()) {
             const std::pair<std::int32_t, std::int32_t> at = wardDrawnQ8(session, *who);
-            lookAtFace(session, at.first, at.second, who->type, 0);
+            lookAtFace(session, at.first, at.second, who->type, kOffThePlate);
         }
         return landed;
     }
@@ -13740,7 +13761,15 @@ constexpr std::int32_t kWatchRevealBeats = 4;
         }
         if (waitForVoice(session, "react.", sim::MoveInput{}, 6 * sim::kStepsPerSecond)) {
             ++landed;  // 3. the row is up off a react key
-            // The shot turns to the witness who spoke, not the man hit.
+            // The shot turns to the witness who spoke, not the man hit --
+            // and waits a second and a half for the room to sort itself out
+            // before the shutter. The first draft fired on the row and
+            // caught a bouncer crossing the lens half in frame, his head
+            // wider at that range than the witness's; the same beat ninety
+            // steps on is the same line with the doorway clear, and the row
+            // holds four seconds at the least.
+            faceTheSpeaker(session);
+            session.stepMany(sim::MoveInput{}, 90);
             faceTheSpeaker(session);
         }
         return landed;

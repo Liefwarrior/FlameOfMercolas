@@ -1116,10 +1116,15 @@ TEST_CASE("--voice=pass: a body passing on the Tarwalk says its one line, off a 
     CHECK(played.voiceSpeakerInView);
     CHECK(played.voiceSpeakerTenths >= 0);
     CHECK(played.voiceSpeakerTenths <= 10 * (render::kPassReachTiles + 2));
-    // AND COMPOSED, not merely in view: the look is AT them, so they are in
-    // the middle of the frame and not at its edge.
-    CHECK(played.voiceSpeakerOffDeg >= 0);
-    CHECK(played.voiceSpeakerOffDeg <= 8);
+    // AND COMPOSED, not merely in view: OFF THE PLATE and inside the frame.
+    // The crosshair's own name plate is drawn at the middle of the frame, so
+    // a subject dead centre wears it (and the prompt names the nearest body
+    // in REACH, which is not always the one talking); a composed look stands
+    // its subject a sixth of the frame off centre. Between a tenth of the
+    // frame and a third of it -- a body further out than that is heading for
+    // the edge.
+    CHECK(played.voiceSpeakerOffDeg >= 8);
+    CHECK(played.voiceSpeakerOffDeg <= 32);
 }
 
 TEST_CASE("--voice=overheard: two bodies standing together are overheard, off an overheard key") {
@@ -1129,10 +1134,12 @@ TEST_CASE("--voice=overheard: two bodies standing together are overheard, off an
     CHECK_FALSE(played.scriptFellShort());
     CHECK(played.voiceBeats == 2);
     CHECK(startsWith(played.voiceKey, "overheard"));
-    // The look is at the MIDPOINT of the pair, so the speaker sits a little
-    // off centre and her partner the same the other way.
+    // The look is at the MIDPOINT of the pair and the plate has to clear the
+    // whole group, so the speaker sits further out than a lone subject does
+    // -- still inside the frame's own half-angle with room to spare.
     CHECK(played.voiceSpeakerInView);
-    CHECK(played.voiceSpeakerOffDeg <= 15);
+    CHECK(played.voiceSpeakerOffDeg >= 8);
+    CHECK(played.voiceSpeakerOffDeg <= 38);
 }
 
 TEST_CASE("--voice=farewell: the street line, then LEAVE, and the goodbye on the row as the panel closes") {
@@ -1148,7 +1155,8 @@ TEST_CASE("--voice=farewell: the street line, then LEAVE, and the goodbye on the
     // them (the lens in their hair, the critic's rope-hand frames) -- a tile
     // and a half at the least, the talk reach at the most.
     CHECK(played.voiceSpeakerInView);
-    CHECK(played.voiceSpeakerOffDeg <= 8);
+    CHECK(played.voiceSpeakerOffDeg >= 8);
+    CHECK(played.voiceSpeakerOffDeg <= 32);
     CHECK(played.voiceSpeakerTenths >= 14);
     CHECK(played.voiceSpeakerTenths <= 29);
 }
@@ -1164,7 +1172,8 @@ TEST_CASE("--voice=moved: a reply that moved them shows a worded reaction on the
     // With the panel open the frame is about the one you are talking to:
     // in the lens, at a talking distance.
     CHECK(played.voiceSpeakerInView);
-    CHECK(played.voiceSpeakerOffDeg <= 8);
+    CHECK(played.voiceSpeakerOffDeg >= 8);
+    CHECK(played.voiceSpeakerOffDeg <= 32);
     CHECK(played.voiceSpeakerTenths >= 14);
     CHECK(played.voiceSpeakerTenths <= 29);
 }
@@ -1179,7 +1188,8 @@ TEST_CASE("--voice=react: a witness to a tap in the Gull says so, and it is not 
     CHECK(played.voiceChannel == "react");
     // The shot turned to the witness: he is in it, and in the middle of it.
     CHECK(played.voiceSpeakerInView);
-    CHECK(played.voiceSpeakerOffDeg <= 8);
+    CHECK(played.voiceSpeakerOffDeg >= 8);
+    CHECK(played.voiceSpeakerOffDeg <= 32);
 }
 
 TEST_CASE("--voice=watch: steel across the room from Cull, his halt, and his readback as he crosses it, in his name and never beside his halt") {
@@ -1206,9 +1216,9 @@ TEST_CASE("--voice=watch: steel across the room from Cull, his halt, and his rea
     // onto the west face of the table at (151,69); see the case below on why
     // the sim's own line of sight said otherwise.
     CHECK(played.voiceSpeakerInView);
-    // OFF THE BLADE, and deliberately so: the drawn sword crosses the middle
-    // of the frame, so he stands a third of the way out of it and not at the
-    // edge -- between ten and twenty-five degrees.
+    // OFF THE BLADE as well as off the plate, and deliberately so: the drawn
+    // sword crosses the middle of the frame, so he stands a third of the way
+    // out of it and not at the edge -- between ten and twenty-five degrees.
     CHECK(played.voiceSpeakerOffDeg >= 10);
     CHECK(played.voiceSpeakerOffDeg <= 25);
     const bool acrossTheRoom = played.summary.find(" apart=5") != std::string::npos ||
