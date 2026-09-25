@@ -2139,6 +2139,67 @@ TEST_CASE("a timber post with a job on the street is the strapped door post, a l
     CHECK(pier);
 }
 
+TEST_CASE("on the real Docks every jamb cell carries one beam and has lost its ground storey") {
+    // THE DISTRICT, not a world built to contain the case. Whatever the map
+    // says, every cell the jamb rule names carries exactly one slim beam,
+    // and the mesher has taken that cell's box out under the head -- the
+    // Gull's door, the Eel-Pots', every door in the ward, without a
+    // coordinate hard-coded here.
+    const sim::TileQuery tiles(docksWorld());
+    const StaticCatalogue& catalogue = shippedCatalogue();
+    const PieceSpec* spec = catalogue.piece(PieceRole::DoorPost);
+    REQUIRE(spec != nullptr);
+    const StaticPlacements placed = placeStaticPieces(tiles, catalogue, {});
+    std::set<std::int64_t> seen;
+    std::size_t jambBeams = 0;
+    std::int32_t jambX = -1;
+    std::int32_t jambY = -1;
+    std::int32_t jambZ = -1;
+    for (const StaticPlacement& p : placed.placements) {
+        if (p.role != PieceRole::DoorPost || !doorPostAt(tiles, p.lightX, p.lightY, p.lightZ)) {
+            continue;
+        }
+        ++jambBeams;
+        // One beam per cell, never two stacked in the one place.
+        const std::int64_t key = (static_cast<std::int64_t>(p.lightZ) << 40) |
+                                 (static_cast<std::int64_t>(p.lightY) << 20) |
+                                 static_cast<std::int64_t>(p.lightX);
+        CHECK(seen.insert(key).second);
+        // Slim, and cut to the head: the two facts the critic asked for.
+        CHECK(spec->width * p.instance.scale.x > 0.2F);
+        CHECK(spec->width * p.instance.scale.x < 0.4F);
+        CHECK(p.instance.scale.y * spec->height == doctest::Approx(kDoorHeadHeight));
+        if (jambZ < 0) {
+            jambX = p.lightX;
+            jambY = p.lightY;
+            jambZ = p.lightZ;
+        }
+    }
+    // The ward is full of doors and every one of them has two of these.
+    CHECK(jambBeams >= 6);
+    REQUIRE(jambZ >= 0);
+    // And the mesh agrees, on the first jamb cell the rules found.
+    const render::TileAtlas& atlas = proceduralAtlas();
+    const ChunkMaterials materials = ChunkMaterials::fromAtlas(atlas);
+    const ChunkGeometry geometry =
+        buildChunkGeometry(tiles, atlas, materials, chunkOf(jambX, jambY), 0);
+    REQUIRE_FALSE(geometry.truncated);
+    const float headY = render::bandSurface(jambZ) + kDoorHeadHeight;
+    std::size_t faces = 0;
+    for (const ChunkFace& face : geometry.faces) {
+        if (face.x != jambX || face.y != jambY || face.z != jambZ) {
+            continue;
+        }
+        ++faces;
+        for (std::size_t corner = 0; corner < 4; ++corner) {
+            CHECK(geometry.positions[(face.firstVertex + corner) * 3 + 1] >= headY - 0.001F);
+        }
+    }
+    // The lintel course is still meshed: the frontage is not open over the
+    // door, it just has no block under the beam.
+    CHECK(faces > 0);
+}
+
 TEST_CASE("a door wears two jambs, on the cells that flank it, slim and cut to the head") {
     // THE JAMBS. The critic's line on the first pass: metre-square,
     // storey-tall boxes that frame no door. They stood on lone timber cells
