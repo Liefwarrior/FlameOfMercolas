@@ -38,7 +38,7 @@ constexpr std::string_view kRoleNames[kPieceRoleCount] = {
     "rowboat",     "crane",        "gunwale",     "window_timber", "rope",
     "hull",        "wall_plaster", "stool",       "quay_wall",     "roof_flag",
     "roof_batten", "shop_sign",    "floor_strip",  "post_rail",    "door_post",
-    "pane_timber", "item",
+    "pane_timber", "item",         "lintel",
 };
 
 // ---------------------------------------------------------------------------
@@ -1378,7 +1378,7 @@ private:
         if (beam == nullptr || doors_.empty()) {
             return;
         }
-        const PieceSpec* lintel = catalogue_.piece(PieceRole::Joist);
+        const PieceSpec* lintel = catalogue_.piece(PieceRole::Lintel);
         const PieceSpec* wall = catalogue_.piece(PieceRole::Wall);
         // How far the frontage's finish stands out from the cell's own
         // boundary plane: the wall piece's standoff plus half its thickness,
@@ -1439,7 +1439,7 @@ private:
                                              gap.w, 0.0F, static_cast<float>(gap.w), true, true);
             const MaterialRule* m = rule(faceX, faceY, gap.z);
             beamAlong(r, lo - section, hi + section, yBase + kDoorHeadHeight + half, proud,
-                      m != nullptr ? m->tint : Rgba8{}, light, gap.z);
+                      m != nullptr ? m->tint : Rgba8{}, light, gap.z, PieceRole::Lintel);
         }
     }
 

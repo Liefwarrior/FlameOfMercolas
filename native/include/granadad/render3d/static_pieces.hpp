@@ -316,8 +316,13 @@ enum class PieceRole : std::uint8_t {
     /// off the room's hashed list, and the renderer never removes one --
     /// TAKE does, in the sim, and the next frame simply has fewer.
     Item,
+    /// THE JAMBS' HEAD. The beam across a door opening's two jambs
+    /// (jambs()), its underside on the head: the same kit beam the
+    /// ceiling joists use, but its own role, because it lies at door-head
+    /// height on the facade's line and not under a slab on the odd grid.
+    Lintel,
 };
-inline constexpr std::size_t kPieceRoleCount = 59;
+inline constexpr std::size_t kPieceRoleCount = 60;
 
 /// The JSON key of a role ("wall", "wall_corner", ...), and back. None for
 /// an unknown key.
