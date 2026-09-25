@@ -177,13 +177,28 @@ class BottomBand {
     /// is dropped rather than drawn over the play space.
     [[nodiscard]] int take(int scale) noexcept {
         const int span = std::max(1, (rowHeight(scale) + step_ - 1) / step_);
-        const int top = base_ - (taken_ + span) * step_;
+        const int top = base_ - pad_ - (taken_ + span) * step_;
         if (top < floor_) {
             return -1;
         }
         taken_ += span;
         return top;
     }
+
+    /// KIT POLISH. Lifts every slot handed out from here on by `px` pixels
+    /// -- PIXELS, not a slot. A row that draws a plate past its own glyph
+    /// box (the alert's padY) can buy the air above it here without
+    /// spending a whole row's worth of the band on it. The band is shallow:
+    /// at 960x540 it is four minor slots between the health bar and the
+    /// exclusion rectangle (base 501, floor 422, step 16), and the alert
+    /// at full scale already spans two of them. The KIT FIX PASS bought
+    /// this same air with a bare take(minor) thrown away, which was the
+    /// fourth slot -- and the row the priority order handed it to next,
+    /// COAT TURNS 2, was refused at 421 against a floor of 422 and never
+    /// drew (docs/frames/kit/kit-dr-960x540.png, one pixel short). The
+    /// floor check in take() still sees the pad, so nothing here can put a
+    /// row in the play space.
+    void pad(int px) noexcept { pad_ += std::max(0, px); }
 
   private:
     int scale_;
@@ -193,6 +208,7 @@ class BottomBand {
     int floor_;
     int base_ = 0;
     int taken_ = 0;
+    int pad_ = 0;
 };
 
 }  // namespace
@@ -1537,11 +1553,19 @@ void drawBottomBand(Framebuffer& target, const HudState& state, BottomBand& band
             // kit-dr-960x540.png stacked "FISTS UP" against this row's own
             // plate with barely a pixel between the two. padY stays tight
             // (the comment above still holds -- a taller plate is the wrong
-            // fix), so the gap is bought here instead: one bare minor-scale
-            // slot, spent and thrown away, purely so whatever the priority
-            // order stacks above the alert next has a real gap to sit in
-            // rather than share this row's own reserved pixels.
-            (void)band.take(minor);
+            // fix), so the gap is bought here instead.
+            //
+            // KIT POLISH. BOUGHT IN PIXELS NOW, NOT A SLOT. The fix pass
+            // spent a whole bare take(minor) on this gap, and at 960x540
+            // that was the band's fourth and last slot: the alert holds two,
+            // the spacer took the third, FISTS UP the fourth, and the row
+            // the priority order stacks next -- COAT TURNS 2, the one the
+            // dr frame exists to show -- was refused one pixel over the
+            // exclusion floor and never drew. The plate's own overhang
+            // (its settled padY, never the pulse's -- the rows above must
+            // not jitter on the alert's rising edge) plus one minor unit of
+            // air is what the next row actually needs; see BottomBand::pad.
+            band.pad(std::max(1, alertScale / 2) + minor);
         }
     }
     // SPELLS BUILD. THE QUICK BAR STRIP, bottom-centre -- the hotbar slot
@@ -1642,20 +1666,30 @@ void drawBottomBand(Framebuffer& target, const HudState& state, BottomBand& band
     // and the flash read as one fact.
     takeCentred(state.blockLabel, Rgb{0.62F, 0.70F, 0.80F},
                 0.92F * std::clamp(state.blockFade, 0.0F, 1.0F));
-    // STANCE & ROOM BUILD. FIGHTING MODE, right behind the guard: "FISTS UP"
+    // KIT BUILD (defence v1). THE TURN, right behind the guard: "COAT TURNS
+    // 2" for a plate's hold after a blow the worn kit softened, in the
+    // blocked-blow wash's own steel-cool ink so the row and the wash read as
+    // one fact. An event, its own slot: a guard, raised hands and a turned
+    // blow can all be true on one step.
+    //
+    // KIT POLISH: AHEAD OF THE HANDS, NOT BEHIND THEM. The turn is an EVENT
+    // with a plate's hold; FISTS UP is a STATE the raised hands on screen
+    // already show. On a three-slot band -- which is every monitor size
+    // from 1080p up (base 1002, floor 843, step 40: a fourth slot misses
+    // by one pixel), and 960x540 with a guard held -- the bouncer's warning
+    // holds two and there is exactly one left, and it belongs to the news.
+    // hud.hpp's own argument for giving the turn its own row was that a
+    // warning "would eat every turn in a brawl"; being eaten by the hands
+    // row instead was the same loss through a different door.
+    takeCentred(state.turnLabel, Rgb{0.62F, 0.70F, 0.80F},
+                0.92F * std::clamp(state.turnFade, 0.0F, 1.0F));
+    // STANCE & ROOM BUILD. FIGHTING MODE, right behind the turn: "FISTS UP"
     // while the room's own hands-up bit is true. Bone ink -- the plate's own
     // register, neither the guard's steel-cool nor the charge's heat, because
     // a raised fist is a STATE and not a moment. A guard and raised hands can
     // both be true (a guard raises the hands), so this takes its own slot.
     takeCentred(state.handsLabel, Rgb{0.82F, 0.76F, 0.60F},
                 0.90F * std::clamp(state.handsFade, 0.0F, 1.0F));
-    // KIT BUILD (defence v1). THE TURN, right behind the hands: "COAT TURNS
-    // 2" for a plate's hold after a blow the worn kit softened, in the
-    // blocked-blow wash's own steel-cool ink so the row and the wash read as
-    // one fact. An event, its own slot: a guard, raised hands and a turned
-    // blow can all be true on one step.
-    takeCentred(state.turnLabel, Rgb{0.62F, 0.70F, 0.80F},
-                0.92F * std::clamp(state.turnFade, 0.0F, 1.0F));
     // ACTION-COMBAT BUILD (section 5, channel 2). THE HELD HARD charge row,
     // adjacent to the guard row and in the hot charge register -- the same warm
     // hue the reticle takes at the hard threshold, so the row and the reticle

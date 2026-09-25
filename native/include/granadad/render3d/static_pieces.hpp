@@ -131,7 +131,10 @@
 //                  lone 1x1 cell, or one whose single wall neighbour is of
 //                  another kind) is a square pillar the cell's size, plaster
 //                  indoors and timber out, and beside the water a tarred
-//                  boarded core with one pile driven through it.
+//                  boarded core with one pile driven through it; out of
+//                  doors with a job (within two cells of a door gap, or one
+//                  of a pair that carries a rail) it is the strapped timber
+//                  post fitted to the cell instead of the pillar.
 //   ROOFS          a building top with sky over it (a floor of a roofing
 //                  material, or any floor with a room under it, or one over
 //                  a wall at such a floor's side) wears the roof finish
@@ -281,6 +284,12 @@ enum class PieceRole : std::uint8_t {
     /// street: a hitching rail at hip height, the job that makes two
     /// metre-square piers a rail and not a gate to nowhere.
     PostRail,
+    /// A timber post WITH A JOB ON THE STREET -- a jamb or a hitching post
+    /// within two cells of a door gap, or one half of a pair that carries
+    /// a rail -- out of doors and clear of the water: the kit's strapped
+    /// timber post fitted to the cell, not the concrete pillar. A lone
+    /// pier with no door and no partner stays the pillar.
+    DoorPost,
     /// The pane set in a hung timber window's frame: the thin quad, fitted
     /// to the frame's opening a hair in front of its panels, dark by day
     /// and warm after dark by the light law. The hung frame itself has no
@@ -298,7 +307,7 @@ enum class PieceRole : std::uint8_t {
     /// TAKE does, in the sim, and the next frame simply has fewer.
     Item,
 };
-inline constexpr std::size_t kPieceRoleCount = 58;
+inline constexpr std::size_t kPieceRoleCount = 59;
 
 /// The JSON key of a role ("wall", "wall_corner", ...), and back. None for
 /// an unknown key.

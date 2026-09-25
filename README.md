@@ -17,13 +17,18 @@ The game is being rewritten in C++. **`native/` is the live tree**; read
 [`native/README.md`](native/README.md) for the two ways to build it and what the gate covers.
 
 ```
-docker compose run --rm --build build      # reproducible build -> dist/
+.\scripts\gate.ps1                         # reproducible build -> dist/, commit stamped
 .\dist\granadad.exe                        # the game
 .\dist\granadad.exe --smoke=120 --screenshot=frame.png   # a frame, no window needed
 .\dist\granadad.exe --nemesis --screenshot=rival.png    # lose three fights, watch him rise
 .\dist\granadad.exe --ward                # the compounds, two years, as text
 .\scripts\verify-windows.ps1               # finishes the cross-toolchain determinism gate
 ```
+
+`gate.ps1` (`gate.sh` off Windows) is `docker compose run --rm --build build` with
+`GRANADAD_REVISION` set to the commit you are on, `-dirty` appended if tracked files differ
+from it, so `dist\GATE-STAMP.txt` and `granadad.exe --version` name the tree that was built.
+Type the compose command by hand and it builds exactly the same; the stamp just says `unknown`.
 
 `granadad.exe --help` lists every scripted line the build plays back with no window:
 `--trail`, `--flame`, `--skyrun`, `--contract`, `--roofs`, `--nemesis`, `--burgle`.
