@@ -23,9 +23,13 @@ chargen-to-`SkillTrack` seam §2 used to have to caveat about is closed
 now. Rebuild yourself any time with:
 
 ```
-docker compose run --rm --build build
+powershell -ExecutionPolicy Bypass -File .\scripts\gate.ps1
 powershell -ExecutionPolicy Bypass -File .\scripts\verify-windows.ps1
 ```
+
+(`gate.ps1` is `docker compose run --rm --build build` with the commit you are
+on stamped into `dist\GATE-STAMP.txt`; the bare compose command works too and
+stamps `unknown`.)
 
 The screenshots in section 7 were captured earlier tonight from an
 uncertified cross-compile of an in-progress commit (`369ae59`); every system

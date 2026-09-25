@@ -406,7 +406,17 @@ TEST_CASE("ENTER on a carried row wears it or bares it; on a sheet row it does n
     const std::string enter(render::promptConfirmKey(render::InputDevice::KeyboardMouse));
     const std::string arrows{render::kMotifLeft, render::kMotifRight};
     CHECK(session.dialogueView().epithet == enter + " WEAR  " + arrows + " SLOT  X DROP");
-    session.chooseTopic(static_cast<std::size_t>(session.topicCursor()));
+    // ENTER, the way main.cpp presses it: chooseTopic() handed the cursor
+    // that FOLLOWS THE FOCUS. menuCursor() is the character tile's own
+    // characterCursor_ here, the same number the drawn panel highlights;
+    // topicCursor() is the conversation's cursor and would answer 0 on this
+    // tile whatever row is lit. (This press happens to ignore its index and
+    // read the tile's own cursor anyway -- see chooseTopic's KIT BUILD
+    // branch -- which is exactly why the old topicCursor() call here passed
+    // without proving anything.)
+    CHECK(session.menuCursor() == session.dialogueView().cursor);
+    CHECK(session.menuCursor() == coatRow);
+    session.chooseTopic(static_cast<std::size_t>(session.menuCursor()));
     CHECK(tavern.kit().isWorn(tavern.items().indexOf("coat")));
     CHECK(session.lastMessage() == "COAT - ON.");
     CHECK(session.dialogueView().epithet == enter + " BARE  " + arrows + " SLOT  X DROP");
@@ -421,10 +431,10 @@ TEST_CASE("ENTER on a carried row wears it or bares it; on a sheet row it does n
     CHECK(session.lastMessage() == "THE ROPE IS NOT WORN.");
     // A sheet row is something to read. Back to row zero exactly, by the
     // cursor's own count rather than a magic constant that would drift
-    // every time the sheet's own row count does. dialogueView().cursor,
-    // not topicCursor() -- the character tile keeps its own cursor
+    // every time the sheet's own row count does. menuCursor(), not
+    // topicCursor() -- the character tile keeps its own cursor
     // (characterCursor_), and topicCursor_ is a different field entirely.
-    session.moveTopicCursor(-session.dialogueView().cursor);
+    session.moveTopicCursor(-session.menuCursor());
     CHECK_FALSE(session.highlightedKitRow().has_value());
     const std::string before = session.lastMessage();
     session.chooseTopic(0);

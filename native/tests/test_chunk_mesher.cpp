@@ -998,6 +998,10 @@ TEST_CASE("placement is a deterministic function of the tile map") {
     CHECK(stats.byRole[static_cast<std::size_t>(PieceRole::Fireplace)] > 0);
     CHECK(stats.byRole[static_cast<std::size_t>(PieceRole::Pillar)] > 0);
     CHECK(stats.byRole[static_cast<std::size_t>(PieceRole::Post)] > 0);
+    // The Tarwalk's two pairs before the Gull and its hitching post, the
+    // yard's rail grid: door posts, while the taproom's tables and the
+    // lone piers stay pillars.
+    CHECK(stats.byRole[static_cast<std::size_t>(PieceRole::DoorPost)] > 4);
     CHECK(stats.byRole[static_cast<std::size_t>(PieceRole::QuayWall)] > 0);
     CHECK(stats.byRole[static_cast<std::size_t>(PieceRole::RoofFlag)] > 0);
     // The quay wall wears the stone piece, never the cornice: no cornice on
@@ -2015,14 +2019,106 @@ TEST_CASE("a timber post beside a door gap hangs the shop sign") {
         CHECK(p.instance.yaw == doctest::Approx(3.14159265F * 0.5F));
     }
     CHECK(signs == 1);
-    // The posts are still pillars.
-    std::size_t pillars = 0;
+    // The jambs are DOOR POSTS, not pillars: the strapped timber post
+    // fitted to each cell, the sign hung off the same face as before.
+    std::size_t doorPosts = 0;
     for (const StaticPlacement& p : placed.placements) {
-        if (p.role == PieceRole::Pillar && p.lightY == 22 && (p.lightX == 11 || p.lightX == 14)) {
-            ++pillars;
+        const bool jamb = p.lightY == 22 && (p.lightX == 11 || p.lightX == 14);
+        if (p.role == PieceRole::DoorPost && jamb) {
+            ++doorPosts;
+        }
+        if (p.role == PieceRole::Pillar) {
+            CHECK_FALSE(jamb);
         }
     }
-    CHECK(pillars == 2);
+    CHECK(doorPosts == 2);
+}
+
+TEST_CASE("a timber post with a job on the street is the strapped door post, a lone pier the pillar") {
+    // THE JAMB IS TIMBER. The Gull's door posts read as metre-square
+    // concrete columns: a lone timber cell out of doors was the kit's
+    // concrete pillar in a timber tint whatever stood beside it. Now a post
+    // within two cells of a door gap (the jamb, the hitching post against
+    // the wall beside the door) wears the kit's strapped timber post
+    // instead, fitted to the cell as the pillar was -- the sim's cell is
+    // still a metre square and the chunk box inside it is drawn whatever
+    // the catalogue says, so nothing thinner would hide it -- the storey
+    // tall, in the material's own tint. A post with no door near it and
+    // no partner stays the pillar; a post beside the water stays the pile.
+    HouseWorld house;
+    const StaticCatalogue& catalogue = shippedCatalogue();
+    const PieceSpec* spec = catalogue.piece(PieceRole::DoorPost);
+    REQUIRE(spec != nullptr);
+    const PieceSpec* pillar = catalogue.piece(PieceRole::Pillar);
+    REQUIRE(pillar != nullptr);
+    // The house's door is (11..12, 15), the street south of it. A post
+    // diagonal to the gap's mouth at (13, 16) -- a hitching post at the
+    // corner of the frontage -- and one three cells out at (12, 18): the
+    // first is a door post, the second is out of reach and a pillar, like
+    // HouseWorld's own street post at (20, 20). A pile at (24, 24).
+    house.put(13, 16, 19, content::TileForm::Wall, materialId("trudgeon_wood"));
+    house.put(12, 18, 19, content::TileForm::Wall, materialId("trudgeon_wood"));
+    house.put(24, 24, 19, content::TileForm::Wall, materialId("trudgeon_wood"));
+    house.put(25, 24, 19, content::TileForm::Open, materialId("dirt"));
+    house.world.shortLane(content::kFluidLane)[house.tiles.index(25, 24, 19)] = 3;
+    const StaticPlacements placed = placeStaticPieces(house.tiles, catalogue, {});
+    const Rgba8 timber = catalogue.materialByName("trudgeon_wood")->tint;
+    std::size_t doorPosts = 0;
+    bool farPillar = false;
+    bool streetPillar = false;
+    for (const StaticPlacement& p : placed.placements) {
+        if (p.role == PieceRole::DoorPost) {
+            ++doorPosts;
+            CHECK(p.lightX == 13);
+            CHECK(p.lightY == 16);
+            CHECK(p.lightZ == 19);
+            CHECK(p.mode == kDrawShaded);
+            CHECK(p.instance.position.x == doctest::Approx(13.5F));
+            CHECK(p.instance.position.z == doctest::Approx(16.5F));
+            CHECK(p.instance.position.y == doctest::Approx(render::bandSurface(19) + spec->lift));
+            // Fitted to the cell: its section the cell's width plus the
+            // catalogue's hair, its height the storey less a centimetre.
+            CHECK(p.instance.scale.x * spec->width == doctest::Approx(1.0F + 2.0F * spec->thickness));
+            CHECK(p.instance.scale.z == doctest::Approx(p.instance.scale.x));
+            CHECK(p.instance.scale.y * spec->height == doctest::Approx(render::kBandHeight - 0.01F));
+            CHECK(p.instance.pitch == 0.0F);
+            CHECK(p.instance.roll == 0.0F);
+            // The material's own tint over the piece's.
+            CHECK(p.instance.tint.r == static_cast<std::uint8_t>((spec->tint.r * timber.r + 127) / 255));
+            CHECK(p.instance.tint.g == static_cast<std::uint8_t>((spec->tint.g * timber.g + 127) / 255));
+            CHECK(p.instance.tint.b == static_cast<std::uint8_t>((spec->tint.b * timber.b + 127) / 255));
+        }
+        if (p.role == PieceRole::Pillar) {
+            CHECK_FALSE((p.lightX == 13 && p.lightY == 16));
+            CHECK_FALSE((p.lightX == 24 && p.lightY == 24));
+            farPillar = farPillar || (p.lightX == 12 && p.lightY == 18);
+            streetPillar = streetPillar || (p.lightX == 20 && p.lightY == 20);
+        }
+        if (p.role == PieceRole::Post) {
+            CHECK(p.lightX == 24);
+            CHECK(p.lightY == 24);
+        }
+    }
+    CHECK(doorPosts == 1);
+    CHECK(farPillar);
+    CHECK(streetPillar);
+    CHECK(countRole(placed.placements, PieceRole::Post) == 1);
+    // No sign on it: the sign wants the post on the gap's own line, four-
+    // adjacent to a gap cell, and this one is diagonal to the mouth.
+    CHECK(countRole(placed.placements, PieceRole::ShopSign) == 0);
+    // Under a roof the same cell is a plastered pier again, whatever door
+    // stands near it.
+    house.put(13, 16, 20, content::TileForm::Floor, materialId("thatch"));
+    const StaticPlacements roofed = placeStaticPieces(house.tiles, catalogue, {});
+    CHECK(countRole(roofed.placements, PieceRole::DoorPost) == 0);
+    bool pier = false;
+    for (const StaticPlacement& p : roofed.placements) {
+        if (p.role == PieceRole::Pillar && p.lightX == 13 && p.lightY == 16) {
+            pier = true;
+            CHECK(p.instance.tint.r == pillar->tint.r);
+        }
+    }
+    CHECK(pier);
 }
 
 TEST_CASE("the one-wide cobble leftovers along a frontage wear setts") {
@@ -2214,7 +2310,18 @@ TEST_CASE("a pair of lone posts two cells apart on a street carries a hitching r
     CHECK(rails == 2);
     CHECK(acrossRow);
     CHECK(downColumn);
-    CHECK(countRole(placed.placements, PieceRole::Pillar) >= 5);
+    // Both halves of each pair are door posts (the frame's timber, read
+    // from either end); the indoor table and the partition on the roof
+    // band are the pillars left.
+    CHECK(countRole(placed.placements, PieceRole::DoorPost) == 4);
+    CHECK(countRole(placed.placements, PieceRole::Pillar) == 2);
+    for (const StaticPlacement& p : placed.placements) {
+        if (p.role == PieceRole::DoorPost) {
+            const bool rowPair = p.lightY == 20 && (p.lightX == 20 || p.lightX == 22);
+            const bool columnPair = p.lightX == 25 && (p.lightY == 22 || p.lightY == 24);
+            CHECK((rowPair || columnPair));
+        }
+    }
     // And a board in each frame, hung from the first post into the gap.
     std::size_t boards = 0;
     for (const StaticPlacement& p : placed.placements) {

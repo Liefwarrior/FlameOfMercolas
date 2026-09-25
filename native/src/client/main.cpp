@@ -2395,7 +2395,17 @@ void print_usage() {
             return true;
         }
         if (confirm) {
-            session.chooseTopic(static_cast<std::size_t>(session.topicCursor()));
+            // KIT POLISH: THE ROW THE PLAYER IS LOOKING AT, not the
+            // conversation's cursor. topicCursor() is topicCursor_, the
+            // field the arrows move while somebody is TALKING; the tiles
+            // keep their own (moveTopicCursor routes by focus), so under a
+            // tile that number is whatever the last conversation left --
+            // 0 in a fresh session, the last topic picked otherwise. The
+            // Character tile never noticed (its press acts on its own
+            // cursor and ignores the index); the Letters tile opened
+            // letter number topicCursor_ instead of the highlighted one,
+            // and nothing at all once that number was past the shelf.
+            session.chooseTopic(static_cast<std::size_t>(session.menuCursor()));
             return true;
         }
         // Anything else falls through to the ordinary bindings, and every verb

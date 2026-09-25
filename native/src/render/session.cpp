@@ -2546,6 +2546,15 @@ namespace {
     return false;
 }
 
+/// The HERE clause's reach: squared tile distance from the body to the
+/// selection's aim point, at or under which a travel plan says standingIn
+/// instead of pricing a walk. Six IS the map pane's "within two paces" --
+/// the pane prints lround(sqrt(dx*dx + dy*dy)) as the paces count and calls
+/// HERE at <= 2, and sqrt(6) rounds to 2 while sqrt(7) rounds to 3 -- so
+/// this integer and the pane's float read are the same predicate, stated
+/// once each side of the render/plan line. Change one, change both.
+constexpr std::int64_t kTravelHerePacesSq = 6;
+
 /// "02:14" -- the clock as the arrival line speaks it. The wait page says
 /// whole hours because it deals in them; a walk lands mid-hour and says so.
 [[nodiscard]] std::string travelClockText(int secondOfDay) {
@@ -2596,18 +2605,42 @@ Session::TravelPlan Session::districtMapTravelPlan() const {
         plan.standingIn = true;
         return plan;
     }
-    // THE STATE REFUSALS FIRST -- they are cheap, they are the ones a player
+    // THE HERE CLAUSE -- the ship note's "zero-paces re-travel", closed on
+    // the KEY's side to match the page. The map pane already stopped selling
+    // the doorstep: within two paces of the aim the badge reads HERE and the
+    // travel row sleeps (map_view's zero-paces predicate, UI-EA-SPEC sec. 4
+    // #12). But the pane only hid the row -- the T press re-plans through
+    // THIS function, and a place's door (the anchor, the aim) can sit just
+    // OUTSIDE the footprint contains() answers for (the Counting-House's is
+    // one row north of its own rectangle), so the arrival ring lands a body
+    // at a door the strict check disowns and the key still charged a real
+    // minute to shuffle one step and re-fire the plate, with no row on
+    // screen saying it would. The predicate here is the pane's own, in the
+    // sim's integers: lround(sqrt(d2)) <= 2 paces is exactly d2 <= 6, so the
+    // page and the key can never name different doors. No band guard, also
+    // to match the page. Checked before the refusals, the way contains()
+    // above already is -- a body with nowhere to go is not refused travel,
+    // it is told it has arrived.
+    std::int32_t aimX = 0;
+    std::int32_t aimY = 0;
+    mapAimPoint(place, px, py, aimX, aimY);
+    {
+        const std::int64_t dx = aimX - px;
+        const std::int64_t dy = aimY - py;
+        if (dx * dx + dy * dy <= kTravelHerePacesSq) {
+            plan.standingIn = true;
+            return plan;
+        }
+    }
+    // THE STATE REFUSALS -- they are cheap, they are the ones a player
     // needs told about, and a refused plan owes no route.
     plan.refusal = travelRefusal();
     if (!plan.refusal.empty()) {
         return plan;
     }
     // THE ARRIVAL: the same aim point the pane's bearing and FACE IT already
-    // use (the door you knock on), snapped to standable ground on the place's
-    // own band -- the demo Cut's own landing rule.
-    std::int32_t aimX = 0;
-    std::int32_t aimY = 0;
-    mapAimPoint(place, px, py, aimX, aimY);
+    // use (the door you knock on, computed above), snapped to standable
+    // ground on the place's own band -- the demo Cut's own landing rule.
     if (!travelStandable(*tiles_, aimX, aimY, place.band, &plan.toX, &plan.toY)) {
         plan.refusal = "NO GROUND TO STAND ON.";
         return plan;
@@ -6130,6 +6163,29 @@ void Session::moveTopicCursor(int delta) {
     // that pick the ones you can see.
     wrapCursorAndPage(topicCursor_, topicPage_, delta,
                        static_cast<int>(tavern_->dialogue().topics().size()));
+}
+
+int Session::menuCursor() const noexcept {
+    // KIT POLISH. THE SAME ROUTE moveTopicCursor() TAKES, read instead of
+    // moved -- see the header. Kept beside it on purpose: a list this
+    // router learns to move is a list this has to learn to read.
+    if (keysOpen_) {
+        return caseCursor_;
+    }
+    if (casebookOpen_) {
+        switch (menuFocus_) {
+            case kMenuFocusCharacter:
+                return characterCursor_;
+            case kMenuFocusMap:
+                return mapCursor_;
+            case kMenuFocusLetters:
+                return lettersCursor_;
+            case kMenuFocusJournal:
+            default:
+                return caseCursor_;
+        }
+    }
+    return topicCursor_;
 }
 
 void Session::nextTopicPage() {
@@ -12803,6 +12859,28 @@ void standAtFacing(Session& session, std::int32_t standX, std::int32_t standY,
     facePlayerAndSync(session, sim::q8_tile_centre(faceX), sim::q8_tile_centre(faceY));
 }
 
+/// KIT POLISH. Tilts the eye onto the boards one tile ahead -- what a body
+/// does to look at a thing it has just put down, or is about to pick up.
+/// The look down IS the beat, the same mouse a player's own hand makes; the
+/// roof line and the lock line already set their frames' pitch this way.
+///
+/// THE GEOMETRY, so nobody reaches for the item table again: the eye is
+/// 1.70 tiles up (kEyeHeightTilesQ8), TAKE reaches two tiles (kReachQ8,
+/// Manhattan from the tile's centre, and the walker lands up to an eighth
+/// of a tile off centre -- so the stand is one tile back, not two). One
+/// tile ahead a thing on the floor is 59.5 degrees below the horizon; the
+/// 90-degree lens at 16:9 sees 29.4 degrees down. No scale, lift or pitch
+/// of the MESH closes that gap -- a coil would have to stand 1.14 tiles
+/// tall to break the frame's bottom edge, and a floor item is not inside a
+/// level frame until it is three tiles off, past the reach that puts TAKE
+/// on the crosshair. Fifty degrees down puts the coil just under the
+/// reticle and its prompt, clear of the hands hanging at the foot of the
+/// frame (measured on the baseline with --pitch: -40 hides it behind the
+/// fist, -45 crowds it against the fist, -60 prints the prompt over it).
+void lookDownAtBoards(Session& session) {
+    session.body().setPitch(sim::angle_from_degrees(-50));
+}
+
 [[nodiscard]] int runKitLine(Session& session, const std::string& ending) {
     int landed = 0;
     gKitNote.clear();
@@ -12828,6 +12906,10 @@ void standAtFacing(Session& session, std::int32_t standX, std::int32_t standY,
     Session::InteractTarget aim = session.interactTarget();
     noteAim("take", aim);
     if (ending == "take") {
+        // KIT POLISH: the frame is of the coil, so the eye goes onto it --
+        // on this ending only, since the line's next stop is a lantern on a
+        // table at eye height. See lookDownAtBoards for the geometry.
+        lookDownAtBoards(session);
         return aim.verb == "TAKE" && aim.subject == "ROPE" ? 1 : 0;
     }
     session.interact();
@@ -13041,6 +13123,14 @@ void standAtFacing(Session& session, std::int32_t standX, std::int32_t standY,
     // so the coil is in reach whatever side of the tile the walk landed on
     // and nobody is standing on it for the frame.
     standAtFacing(session, 196, 62, 195, 62);
+    // KIT POLISH: and the eye down onto it. "Stepped back to look at it on
+    // the boards" was only half true -- the crosshair named the coil (TAKE
+    // is by reach, not by the look-ray) while the mesh sat sixty degrees
+    // under a level frame, and the critic found it only at a --pitch of
+    // -40. Looking at it means looking down: the mouse follows what the
+    // hand put down. See lookDownAtBoards for the numbers and why no
+    // change to the mesh could have done this instead.
+    lookDownAtBoards(session);
     bool coilDown = false;
     for (const sim::GroundItem& entry : tavern.groundItems()) {
         if (entry.item == item("rope") && entry.x == 195 && entry.y == 62) {
