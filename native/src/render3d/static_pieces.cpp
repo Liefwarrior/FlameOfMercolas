@@ -34,7 +34,8 @@ constexpr std::string_view kRoleNames[kPieceRoleCount] = {
     "barrel_rack", "fireplace",    "pillar",      "post",         "parapet",     "roof_tile",
     "rowboat",     "crane",        "gunwale",     "window_timber", "rope",
     "hull",        "wall_plaster", "stool",       "quay_wall",     "roof_flag",
-    "roof_batten", "shop_sign",    "floor_strip",  "post_rail",
+    "roof_batten", "shop_sign",    "floor_strip",  "post_rail",    "door_post",
+    "item",
 };
 
 // ---------------------------------------------------------------------------
@@ -158,6 +159,10 @@ constexpr float kSignLift = 2.35F;
 constexpr float kSignScale = 0.55F;
 /// A hitching rail between a pair of posts runs at this height.
 constexpr float kRailLift = 1.05F;
+/// A timber post this many cells (Chebyshev) from a door gap's cell is a
+/// door post: the jamb itself, or the hitching post against the wall
+/// beside the door.
+constexpr std::int32_t kDoorReach = 2;
 
 [[nodiscard]] constexpr float yawOf(int side) noexcept {
     return static_cast<float>(side) * kHalfPi;
@@ -505,6 +510,43 @@ private:
     /// core carries the pile -- on the quay, or under a pier's deck.
     [[nodiscard]] bool boardedPost(std::int32_t x, std::int32_t y, std::int32_t z) const noexcept {
         return isPost(x, y, z) && besideWater(x, y, z);
+    }
+
+    /// A timber post WITH A JOB ON THE STREET, out of doors and clear of
+    /// the water: within kDoorReach cells of a door gap's cell (the jamb
+    /// itself, the hitching post against the wall beside the door), or one
+    /// half of a pair two cells apart with a walkable cell between and sky
+    /// over both -- the pair railBetweenPosts() rails, read from either
+    /// end. Such a post is the strapped timber post fitted to its cell
+    /// (posts()); a lone pier with neither is the pillar. The caller has
+    /// already asked isPost().
+    [[nodiscard]] bool doorPostAt(std::int32_t x, std::int32_t y, std::int32_t z) const noexcept {
+        if (cellRoofed(tiles_, x, y, z) || boardedPost(x, y, z)) {
+            return false;
+        }
+        for (std::int32_t dy = -kDoorReach; dy <= kDoorReach; ++dy) {
+            for (std::int32_t dx = -kDoorReach; dx <= kDoorReach; ++dx) {
+                if (gapAt(x + dx, y + dy, z) != nullptr) {
+                    return true;
+                }
+            }
+        }
+        for (int s = 0; s < 4; ++s) {
+            const std::int32_t px = x + 2 * kSideDx[s];
+            const std::int32_t py = y + 2 * kSideDy[s];
+            if (!isWalkableForm(tiles_, x + kSideDx[s], y + kSideDy[s], z) || cellRoofed(tiles_, px, py, z)) {
+                continue;
+            }
+            // The first of the pair rails east or south to a lone post; the
+            // second is the lone post a first (no pile) rails to.
+            const bool first = (s == kEast || s == kSouth) && lonePost(px, py, z);
+            const bool second = (s == kWest || s == kNorth) && lonePost(x, y, z) && isPost(px, py, z) &&
+                                !boardedPost(px, py, z);
+            if (first || second) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /// The harbour at a cell: open water, or one of the piles that stand in
@@ -1723,11 +1765,19 @@ private:
     /// kind): a square pillar the cell's own size (the chunk box inside it),
     /// plaster indoors and timber out of doors; beside the water the tarred
     /// boarded core keeps its boards (walls()) and one pile is driven
-    /// through it, its head over the top.
+    /// through it, its head over the top. Out of doors WITH A JOB -- within
+    /// two cells of a door gap, or one of a pair that carries a rail
+    /// (doorPostAt()) -- it is the strapped timber post fitted to the cell
+    /// the same way: a door frame's own timber, not a concrete column,
+    /// beside the Gull's door. The cell stays a metre square and a storey
+    /// tall whatever stands in it -- that is the sim's own wall cell, and
+    /// the chunk box inside it is drawn whatever the catalogue says -- so
+    /// the post is fitted to it edge to edge like the pillar, never thin.
     void posts() {
         const PieceSpec* pillar = catalogue_.piece(PieceRole::Pillar);
         const PieceSpec* pile = catalogue_.piece(PieceRole::Post);
-        if (pillar == nullptr && pile == nullptr) {
+        const PieceSpec* doorPost = catalogue_.piece(PieceRole::DoorPost);
+        if (pillar == nullptr && pile == nullptr && doorPost == nullptr) {
             return;
         }
         const std::int32_t zLo = std::max(0, catalogue_.minBand());
@@ -1754,6 +1804,26 @@ private:
                         }
                         continue;
                     }
+                    const MaterialRule* r = rule(x, y, z);
+                    const bool indoors = cellRoofed(tiles_, x, y, z);
+                    if (doorPost != nullptr && doorPostAt(x, y, z)) {
+                        // THE DOOR POST. The kit's strapped timber post
+                        // fitted to the cell as the pillar is (its section
+                        // the cell's width plus a hair, so the chunk box is
+                        // inside it), the storey tall, turned by cell, in
+                        // the material's own tint -- what its boards wear.
+                        // The sign and the rail hang off the cell's faces
+                        // exactly as they do off the pillar's.
+                        const float w = std::max(0.01F, doorPost->width);
+                        const float s = (1.0F + 2.0F * doorPost->thickness) / w;
+                        pointPiece(PieceRole::DoorPost, *doorPost, centre,
+                                   static_cast<float>((x + y) & 3) * kHalfPi, x, y, z,
+                                   r != nullptr ? r->tint : Rgba8{}, Vec3{s, heightScale(*doorPost), s},
+                                   false, 3.0F);
+                        signOnPost(x, y, z, indoors);
+                        railBetweenPosts(x, y, z, indoors);
+                        continue;
+                    }
                     if (pillar == nullptr) {
                         continue;
                     }
@@ -1763,8 +1833,6 @@ private:
                     // tint out of doors (a timber post).
                     const float w = std::max(0.01F, pillar->width);
                     const float s = (1.0F + 2.0F * pillar->thickness) / w;
-                    const MaterialRule* r = rule(x, y, z);
-                    const bool indoors = cellRoofed(tiles_, x, y, z);
                     const Rgba8 tint = indoors ? Rgba8{} : (r != nullptr ? liftTint(r->topTint, kPostLift) : Rgba8{});
                     pointPiece(PieceRole::Pillar, *pillar, centre, 0.0F, x, y, z, tint,
                                Vec3{s, heightScale(*pillar), s}, false, 3.0F);
@@ -3557,6 +3625,43 @@ StaticCatalogue StaticCatalogue::fromJson(std::string_view json) {
         }
     }
 
+    // KIT BUILD. THE ITEM TABLE: one Item row per registry item id the
+    // world may draw on a tile -- "<pack>/<file>", a lift off the floor, a
+    // pitch to lay a point-up weapon flat, a scale, a yaw. Sorted by id (the
+    // parser's own object order), so the variant an id gets is the same on
+    // every machine. An id the sim's registry does not know is still a row
+    // here (the catalogue does not read the raws); the instancer simply
+    // never asks for it.
+    if (parsed.contains("items") && parsed["items"].is_object()) {
+        const nlohmann::json& items = parsed["items"];
+        std::size_t variant = 0;
+        for (const auto& [id, row] : items.items()) {
+            if (!row.is_object() || variant >= 255) {
+                continue;
+            }
+            const std::string pack = row.value("pack", std::string());
+            const std::string file = row.value("file", std::string());
+            if (file.empty()) {
+                out.warnings_.push_back("item without a file: " + id);
+                continue;
+            }
+            PieceSpec spec;
+            spec.role = PieceRole::Item;
+            spec.variant = static_cast<std::uint8_t>(variant);
+            spec.file = pack.empty() ? file : pack + "/" + file;
+            spec.lift = floatOf(row, "lift", 0.0F);
+            spec.yawOffset = floatOf(row, "yawOffsetDegrees", 0.0F) * (kPi / 180.0F);
+            spec.pitch = floatOf(row, "pitchDegrees", 0.0F) * (kPi / 180.0F);
+            spec.scale = floatOf(row, "scale", 1.0F);
+            spec.maxDistance = floatOf(row, "maxDistance", 32.0F);
+            spec.selfLit = row.value("selfLit", false);
+            spec.tint = tintFromJson(row.contains("tint") ? row["tint"] : nlohmann::json(), Rgba8{});
+            out.pieces_.push_back(std::move(spec));
+            out.itemIds_.push_back(id);
+            ++variant;
+        }
+    }
+
     if (parsed.contains("materials") && parsed["materials"].is_object()) {
         const std::span<const std::string_view> known = render::materialIds();
         for (const auto& [id, row] : parsed["materials"].items()) {
@@ -3645,6 +3750,15 @@ std::uint8_t StaticCatalogue::variantCount(PieceRole role) const noexcept {
     return n;
 }
 
+const PieceSpec* StaticCatalogue::itemPiece(std::string_view itemId) const noexcept {
+    for (std::size_t v = 0; v < itemIds_.size(); ++v) {
+        if (itemIds_[v] == itemId) {
+            return piece(PieceRole::Item, static_cast<std::uint8_t>(v));
+        }
+    }
+    return nullptr;
+}
+
 const MaterialRule* StaticCatalogue::materialByName(std::string_view id) const noexcept {
     for (const MaterialRule& rule : materials_) {
         if (rule.material == id) {
@@ -3682,6 +3796,7 @@ std::uint64_t StaticCatalogue::digest() const noexcept {
         h.mixF32(spec.height);
         h.mixF32(spec.thickness);
         h.mixF32(spec.standoff);
+        h.mixF32(spec.pitch);
         h.mixU8(static_cast<std::uint8_t>(spec.frontNegZ ? 1 : 0));
         h.mixF32(spec.minX);
         h.mixF32(spec.minZ);

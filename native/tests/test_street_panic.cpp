@@ -177,6 +177,15 @@ std::uint64_t digestOf(const sim::WardPopulation& people) {
     return sink.finished();
 }
 
+/// How many bodies are UNDER THE FLEE GATE right now, by either response: a
+/// serf's Flee and a shopkeeper's Cower are one gate, two reactions. The count
+/// the panic cases care about, since 9a's completion split the policy in two.
+std::int32_t underGate(const sim::WardPopulation& people) {
+    const sim::WardCensus roll = people.census();
+    return roll.byPolicy[static_cast<std::size_t>(sim::WardPolicy::Flee)] +
+           roll.byPolicy[static_cast<std::size_t>(sim::WardPolicy::Cower)];
+}
+
 /// A session standing on the street at `hour`, test_stance's own shape.
 render::SessionConfig streetAt(int hour, std::int32_t x, std::int32_t y, std::int32_t band) {
     render::SessionConfig config;
@@ -267,20 +276,31 @@ TEST_CASE("an alarm within sight drops Safety below critical and the Flee policy
     // thirty ticks after an eight o'clock bake, and the case says so rather
     // than assuming it.
     own->run(1);
-    std::int32_t fleeing = 0;
+    std::int32_t underGateCount = 0;
     for (const std::int32_t id : seen) {
         const sim::WardActor& actor = *people.byId(id);
         INFO("actor ", id, " ", sim::wardTypeName(actor.type), " hunger ",
              actor.need(sim::Need::Hunger), " policy ", sim::wardPolicyName(actor.policy));
         REQUIRE(actor.need(sim::Need::Hunger) >= sim::kNeedCritical);
-        CHECK(actor.policy == sim::WardPolicy::Flee);
-        if (actor.policy == sim::WardPolicy::Flee) {
-            ++fleeing;
+        // The gate wins the next tick -- FLEE for a serf, COWER for a
+        // shopkeeper or a priest (9a completion), and each type keeps its own.
+        const bool gate =
+            actor.policy == sim::WardPolicy::Flee || actor.policy == sim::WardPolicy::Cower;
+        CHECK(gate);
+        // And the split is by TYPE, not by chance: a cowering type never flees
+        // and a fleeing type never cowers.
+        if (sim::wardTypeCowers(actor.type)) {
+            CHECK(actor.policy == sim::WardPolicy::Cower);
+        } else {
+            CHECK(actor.policy == sim::WardPolicy::Flee);
+        }
+        if (gate) {
+            ++underGateCount;
         }
     }
-    CHECK(fleeing == static_cast<std::int32_t>(seen.size()));
+    CHECK(underGateCount == static_cast<std::int32_t>(seen.size()));
     // The census sees the same street scattering that the ids do.
-    CHECK(people.census().byPolicy[static_cast<std::size_t>(sim::WardPolicy::Flee)] >= fleeing);
+    CHECK(underGate(people) >= underGateCount);
 }
 
 // ---------------------------------------------------------------------------
@@ -362,6 +382,7 @@ TEST_CASE("out of sight, another band, or beyond the radius does nothing") {
         }
         INFO("actor ", actor.id, " ", sim::wardTypeName(actor.type));
         CHECK(actor.policy != sim::WardPolicy::Flee);
+        CHECK(actor.policy != sim::WardPolicy::Cower);
     }
 }
 
@@ -392,6 +413,7 @@ TEST_CASE("the Watch holds where the crowd runs") {
     own->run(1);
     CHECK(safetyOf(*watchman) >= sim::kNeedCritical);
     CHECK(watchman->policy != sim::WardPolicy::Flee);
+    CHECK(watchman->policy != sim::WardPolicy::Cower);
 }
 
 TEST_CASE("the radius is the radius: one tile past it nobody hears") {
@@ -457,15 +479,22 @@ TEST_CASE("panic recovers, as long as the severity says and no longer") {
         CHECK(safetyOf(*kill->people().byId(id)) == sim::kPanicSafetyKill);
     }
 
+    // The gate, by either response: recovery timing is type-agnostic (the same
+    // kPanicRecoverPerTick drives a cowering shopkeeper and a fleeing serf), so
+    // the claim is "under the gate" and "off it", not one policy.
+    const auto onGate = [](const sim::WardActor& a) {
+        return a.policy == sim::WardPolicy::Flee || a.policy == sim::WardPolicy::Cower;
+    };
+
     // Twenty seconds on, both crowds are still running.
     steel->run(20);
     kill->run(20);
     for (const std::int32_t id : seen) {
         INFO("actor ", id, " at 20");
         CHECK(safetyOf(*steel->people().byId(id)) < sim::kNeedCritical);
-        CHECK(steel->people().byId(id)->policy == sim::WardPolicy::Flee);
+        CHECK(onGate(*steel->people().byId(id)));
         CHECK(safetyOf(*kill->people().byId(id)) < sim::kNeedCritical);
-        CHECK(kill->people().byId(id)->policy == sim::WardPolicy::Flee);
+        CHECK(onGate(*kill->people().byId(id)));
     }
     // Forty: the blade's crowd is over the gate and back to whatever it was
     // doing; the killing's is still running, and is at fifty.
@@ -474,9 +503,9 @@ TEST_CASE("panic recovers, as long as the severity says and no longer") {
     for (const std::int32_t id : seen) {
         INFO("actor ", id, " steel at 40 / kill at 50");
         CHECK(safetyOf(*steel->people().byId(id)) >= sim::kNeedCritical);
-        CHECK(steel->people().byId(id)->policy != sim::WardPolicy::Flee);
+        CHECK_FALSE(onGate(*steel->people().byId(id)));
         CHECK(safetyOf(*kill->people().byId(id)) < sim::kNeedCritical);
-        CHECK(kill->people().byId(id)->policy == sim::WardPolicy::Flee);
+        CHECK(onGate(*kill->people().byId(id)));
     }
     // Two hundred: everybody is back, and the reserve climbed only as far as
     // the panic rate took it -- past the gate it is the raws' own half a
@@ -486,7 +515,7 @@ TEST_CASE("panic recovers, as long as the severity says and no longer") {
         INFO("actor ", id, " kill at 200");
         CHECK(safetyOf(*kill->people().byId(id)) >= sim::kNeedCritical);
         CHECK(safetyOf(*kill->people().byId(id)) < sim::kNeedLow);
-        CHECK(kill->people().byId(id)->policy != sim::WardPolicy::Flee);
+        CHECK_FALSE(onGate(*kill->people().byId(id)));
     }
 }
 
@@ -567,15 +596,18 @@ TEST_CASE("the population twin-run stays byte-identical run-to-run after an alar
     quiet->run(30);
     CHECK(digestOf(a->people()) == digestOf(b->people()));
     CHECK(digestOf(a->people()) != digestOf(quiet->people()));
-    CHECK(a->people().census().byPolicy[static_cast<std::size_t>(sim::WardPolicy::Flee)] >= 3);
-    CHECK(quiet->people().census().byPolicy[static_cast<std::size_t>(sim::WardPolicy::Flee)] == 0);
+    // Under the gate is Flee OR Cower now (a shopkeeper stands where a serf
+    // runs); the claim is that at least three of the seen are frightened, by
+    // whichever response their type keeps.
+    CHECK(underGate(a->people()) >= 3);
+    CHECK(underGate(quiet->people()) == 0);
 
     // And long after: everybody back, and the two runs still one district.
     a->run(300);
     b->run(300);
     CHECK(digestOf(a->people()) == digestOf(b->people()));
     CHECK(a->people().reportLine() == b->people().reportLine());
-    CHECK(a->people().census().byPolicy[static_cast<std::size_t>(sim::WardPolicy::Flee)] == 0);
+    CHECK(underGate(a->people()) == 0);
 }
 
 // ---------------------------------------------------------------------------
@@ -648,11 +680,12 @@ TEST_CASE("steel up on the Tarwalk scatters the street through the client's one 
         INFO("actor ", id, " ", sim::wardTypeName(actor.type), " policy ",
              sim::wardPolicyName(actor.policy));
         REQUIRE(actor.need(sim::Need::Hunger) >= sim::kNeedCritical);
-        CHECK(actor.policy == sim::WardPolicy::Flee);
+        // Flee for a serf, Cower for a shopkeeper or a priest -- the gate, by
+        // whichever response the type keeps.
+        CHECK((actor.policy == sim::WardPolicy::Flee || actor.policy == sim::WardPolicy::Cower));
         CHECK(safetyOf(actor) < sim::kNeedCritical);
     }
-    CHECK(session.people().census().byPolicy[static_cast<std::size_t>(sim::WardPolicy::Flee)] >=
-          static_cast<std::int32_t>(seen.size()));
+    CHECK(underGate(session.people()) >= static_cast<std::int32_t>(seen.size()));
 
     // Blade down, and a minute later the street is back at work: the blade's
     // panic is half a minute (kPanicSafetySteel), and with the hands lowered
@@ -665,6 +698,128 @@ TEST_CASE("steel up on the Tarwalk scatters the street through the client's one 
         INFO("actor ", id, " ", sim::wardTypeName(actor.type), " after a minute");
         CHECK(safetyOf(actor) >= sim::kNeedCritical);
         CHECK(actor.policy != sim::WardPolicy::Flee);
+        CHECK(actor.policy != sim::WardPolicy::Cower);
     }
-    CHECK(session.people().census().byPolicy[static_cast<std::size_t>(sim::WardPolicy::Flee)] == 0);
+    CHECK(underGate(session.people()) == 0);
+}
+
+// ---------------------------------------------------------------------------
+// 9a COMPLETION: the two responses, and the away-vector
+// ---------------------------------------------------------------------------
+
+TEST_CASE("a shopkeeper cowers where a serf flees") {
+    // The gate splits the street in two: a shopkeeper, a priest and a disciple
+    // COWER -- frightened but standing -- where everyone else FLEES. Proved on
+    // one body of each, frightened at its OWN tile (the alarm skips the sight
+    // test for its own cell, so a lone body is always frightened there).
+    const std::unique_ptr<WardRun> own = privateWard(kHour);
+    own->run(kSettleTicks);
+    sim::WardPopulation& people = own->people();
+
+    const sim::WardActor* cowerer = nullptr;
+    const sim::WardActor* fleer = nullptr;
+    for (const sim::WardActor& actor : people.actors()) {
+        if (!actor.visible() || !sim::isPerson(actor.type) ||
+            actor.type == sim::WardType::MilitiaWatch) {
+            continue;
+        }
+        if (cowerer == nullptr && sim::wardTypeCowers(actor.type)) {
+            cowerer = &actor;
+        }
+        if (fleer == nullptr && !sim::wardTypeCowers(actor.type)) {
+            fleer = &actor;
+        }
+    }
+    REQUIRE_MESSAGE(cowerer != nullptr, "no shopkeeper, priest or disciple on the roll at eight");
+    REQUIRE(fleer != nullptr);
+    const std::int32_t cowerId = cowerer->id;
+    const std::int32_t fleeId = fleer->id;
+    INFO("cowerer ", cowerId, " ", sim::wardTypeName(people.byId(cowerId)->type), "; fleer ",
+         fleeId, " ", sim::wardTypeName(people.byId(fleeId)->type));
+
+    // Frighten each at its own tile. A Kill empties the reserve to zero, so one
+    // tick's recovery leaves it far under the gate.
+    people.alarm(people.byId(cowerId)->x, people.byId(cowerId)->y, people.byId(cowerId)->band,
+                 sim::kAlarmRadiusKill, sim::AlarmSeverity::Kill);
+    people.alarm(people.byId(fleeId)->x, people.byId(fleeId)->y, people.byId(fleeId)->band,
+                 sim::kAlarmRadiusKill, sim::AlarmSeverity::Kill);
+    CHECK(safetyOf(*people.byId(cowerId)) < sim::kNeedCritical);
+    CHECK(safetyOf(*people.byId(fleeId)) < sim::kNeedCritical);
+
+    own->run(1);
+    CHECK(people.byId(cowerId)->policy == sim::WardPolicy::Cower);
+    CHECK(people.byId(fleeId)->policy == sim::WardPolicy::Flee);
+    // And still frightened: one tick of recovery cannot clear a killing's zero.
+    CHECK(safetyOf(*people.byId(cowerId)) < sim::kNeedCritical);
+    CHECK(safetyOf(*people.byId(fleeId)) < sim::kNeedCritical);
+}
+
+TEST_CASE("with the player known, the crowd flees away from him") {
+    // The whole point of setPlayer: a frightened body breaks AWAY from where
+    // the blow was, not in a drawn direction. Two wards from one bake and one
+    // alarm at one spot -- one told where the player is (setPlayer, the
+    // client's push), one not (9a's drawn shuffle) -- and the away ward opens
+    // more distance between the crowd and the fright than the drawn one does.
+    const std::unique_ptr<WardRun> away = privateWard(kHour);
+    const std::unique_ptr<WardRun> drawn = privateWard(kHour);
+    away->run(kSettleTicks);
+    drawn->run(kSettleTicks);
+    const Spot spot = findSpot(away->people(), sim::kAlarmRadiusKill, 5);
+    REQUIRE(spot.found);
+
+    // The FLEEING types who see it -- cowering types hold their ground by
+    // design and open no gap, so they are not part of the away claim. Same bake
+    // on both wards, so the same ids and the same start distances.
+    std::vector<std::int32_t> fleers;
+    for (const sim::WardActor& actor : away->people().actors()) {
+        if (wouldSee(actor, spot.x, spot.y, spot.band, sim::kAlarmRadiusKill) &&
+            !sim::wardTypeCowers(actor.type)) {
+            fleers.push_back(actor.id);
+        }
+    }
+    REQUIRE(fleers.size() >= 3);
+
+    const auto distTo = [&](const sim::WardActor& a) {
+        return std::max(std::abs(a.x - spot.x), std::abs(a.y - spot.y));
+    };
+    std::vector<std::int32_t> startDist;
+    startDist.reserve(fleers.size());
+    for (const std::int32_t id : fleers) {
+        startDist.push_back(distTo(*away->people().byId(id)));
+        REQUIRE(distTo(*drawn->people().byId(id)) == startDist.back());
+    }
+
+    // AWAY: the client says where the player is, then the blow lands there.
+    away->people().setPlayer(spot.x, spot.y, spot.band);
+    away->people().alarm(spot.x, spot.y, spot.band, sim::kAlarmRadiusKill, sim::AlarmSeverity::Kill);
+    // DRAWN: the blow lands, but no player was ever pushed -- 9a's shuffle.
+    drawn->people().alarm(spot.x, spot.y, spot.band, sim::kAlarmRadiusKill,
+                          sim::AlarmSeverity::Kill);
+
+    // A few ticks of fleeing: the away-vector's reading. A fleer with an open
+    // away step gets FARTHER from the blow every tick; a body boxed by its
+    // neighbours falls to the drawn shuffle for a tick and opens up as the
+    // crowd thins. Over five ticks the farther vastly outnumber the closer --
+    // which a direction-blind shuffle, stepping toward as readily as away,
+    // cannot claim.
+    away->run(5);
+    drawn->run(5);
+    std::int32_t awayFarther = 0;
+    std::int32_t awayCloser = 0;
+    for (std::size_t i = 0; i < fleers.size(); ++i) {
+        const std::int32_t now = distTo(*away->people().byId(fleers[i]));
+        if (now > startDist[i]) {
+            ++awayFarther;
+        } else if (now < startDist[i]) {
+            ++awayCloser;
+        }
+    }
+    INFO("away: ", awayFarther, " farther, ", awayCloser, " closer of ", fleers.size());
+    // The crowd broke AWAY from the blow -- the whole of "flees away from him".
+    CHECK(awayFarther > awayCloser);
+    CHECK(awayFarther > 0);
+
+    // And the push is what did it: the same alarm with no player pushed reaches
+    // different state, because the drawn shuffle is not the away-vector.
+    CHECK(digestOf(away->people()) != digestOf(drawn->people()));
 }

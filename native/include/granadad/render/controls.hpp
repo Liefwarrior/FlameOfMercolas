@@ -46,44 +46,49 @@ namespace granadad::render {
 
 /// Every verb a key can be bound to.
 ///
-/// #85 REBUILT THIS ENUM FROM SCRATCH, and that is a deliberate, one-time
-/// exception to the insert-only rule every earlier version of this comment
-/// stated. THE RULE HELD BECAUSE OF SAVED SETTINGS FILES, and there are none
-/// to protect: this game is unreleased, `granadad-controls.cfg` lives beside
-/// an executable nobody outside this repo has run, and the old 38-action
-/// table is not worth preserving byte-for-byte just to avoid a diff. See
-/// controls.cpp's own header on the migration stance this took instead of
-/// silently corrupting an old file: a clean break, stated once, here.
+/// NINE AND THE STICKS. This enum was rebuilt from scratch a SECOND time, and
+/// that is the second deliberate exception to the insert-only rule every
+/// earlier version of this comment stated -- stated once, here, exactly as
+/// #85 stated the first (see docs/design/DECISIONS.md, the controls row, and
+/// controls.cpp's fromText() for the migration a saved file gets instead of
+/// silently corrupting). THE RULE HELD BECAUSE OF SAVED SETTINGS FILES, and
+/// there are still no shipped players: `granadad-controls.cfg` lives beside an
+/// executable nobody outside this repo has run.
 ///
-/// THE SHAPE OF IT IS OBLIVION'S OWN, PER ELI'S BRIEF, VERBATIM: "a button to
-/// swing, a button to 'interact (pickpocket if sneaking)'... only 10-12
-/// buttons that need mapped for all the controls." THIRTEEN Actions below are
-/// marked CORE -- the ones a player actually has to map, movement axes and
-/// the accessibility turn keys excluded, Screenshot excluded (it is a
-/// dev/capture utility, not a Steam-Input-style gameplay action). Thirteen is
-/// ONE OVER the top of Eli's own 10-12 range, and that bend is his own
-/// doing, stated plainly rather than fudged: the first-person combat task
-/// spent the last two slots on Cast and Block, and then the owner asked for
-/// a map key directly -- "It's too difficult to locate places like the
-/// mission, let's give the player a map that they can press M to see", "and
-/// select on controller" -- which is the ceiling's own author bending it.
-/// Map is #13; the NEXT core verb somebody wants has to consolidate into an
-/// existing one, the way Interact and Vertical already did. Six verbs
-/// that used to be six keys (Interact, Examine, Steal, Lift, Rest, and the
-/// lockpick verb) now resolve out of ONE Interact press, by stance and by
-/// what is faced -- see render::Session::interact()'s own header, which is
-/// the actual resolution rule this consolidation exists to state. Six more
-/// (Jump, Traverse, DropDown) fold into Vertical the same way. Six MENU
-/// pages (Journal, Keys, Character, Map, Letters, Options) fold into ONE
-/// Menu action with PagePrev/PageNext flipping between them -- Oblivion and
-/// Skyrim's own tabbed inventory screen, not a new pattern.
+/// THE SHAPE IS THE OWNER'S RULING, VERBATIM: "I want you to work on
+/// simplifying the controls and minimizing the number of inputs necessary.
+/// Even a game like Morrowind worked on the console with just a few buttons.
+/// When I press LMB I want to enter fighting mode and hit whoever is in
+/// front of me." NINE world verbs below are marked CORE, plus MAP as the one
+/// keyboard-only direct shortcut the owner asked for by name ("a map that
+/// they can press M to see") -- down from the thirteen #85 shipped. On a pad
+/// the map is a page of NOTES (LB/RB step through your papers and the ward
+/// map is one of them, Oblivion's own tabbed menu), so it spends no button.
+///
+/// WHAT WAS CUT, AND WHERE IT WENT:
+///   QuickWheel (Q hold / R3)   -> cut. The quick bar steps on the wheel and
+///                                  on the pad's D-pad left/right (QuickNext/
+///                                  QuickPrev carry both halves now); the
+///                                  digits stay; the Grimoire is a NOTES page.
+///   PagePrev / PageNext        -> cut as ACTIONS. `[` `]` and LB/RB are page
+///                                  grammar the router reads raw (pageStep),
+///                                  the way it already read arrows and TAB.
+///   KeysPage / OptionsPage     -> cut. The pause menu's CONTROLS and SETTINGS
+///                                  rows are the door on both devices.
+///   the walk-toggle (tap RUN)  -> cut. RUN is a plain hold; SNEAK is the
+///                                  quiet stance every theft resolves off.
+///   Map's pad half (SELECT)    -> folded into NOTES; SELECT is WAIT now,
+///                                  Oblivion's own spend of that button.
+///   Attack on X, Cast on RT    -> RT swings, LT guards, RB casts -- the
+///                                  primary hand on the right trigger, the
+///                                  way the mouse's primary is the swing.
 ///
 /// ORDER IS STILL THE SETTINGS FILE'S ORDER AND THE KEYS PAGE'S ORDER, and
 /// FROM THIS POINT ON new actions go on the END again -- the insert-only
-/// rule resumes the moment this list ships, because THEN it will be
-/// protecting something.
+/// rule resumes the moment this list ships. The settings file resolves by
+/// NAME (actionKey), so reordering the survivors cost nobody a binding.
 enum class Action : std::uint8_t {
-    // --- movement axes: always separate sticks/keys, never one of the 12 ---
+    // --- movement axes: always separate sticks/keys, never one of the nine ---
     Forward = 0,
     Back,
     StrafeLeft,
@@ -95,78 +100,74 @@ enum class Action : std::uint8_t {
     TurnLeft,
     TurnRight,
 
-    // --- the 12 core gameplay buttons (#85; Cast and Block sit appended at
-    // the enum's END per the insert-only rule, but count among these) --------
+    // --- THE NINE. Every one carries a keyboard/mouse half and a pad half. ---
 
-    /// CORE. Was Punch. One button swings whatever is in the hand -- a fist or
-    /// a weapon. It is a HELD button, not a one-shot: the down edge starts a
-    /// hold clock and the release edge resolves the swing, hard iff the hold
-    /// reached the tap/hold boundary (kHardSwingHoldSteps == HoldToggle::
-    /// kTapSteps). The client arms a self-guard on the world press so a
-    /// page-consumed press fires no swing on its release. See
-    /// render::Session::attackDown() / attackUp() (punch() is the legacy tap).
+    /// CORE 1, SWING. The owner's "press LMB and hit whoever is in front of
+    /// me": one press from hands down RAISES the hands and swings, the same
+    /// press charges, so tap = raise and swing, hold = raise and hard swing
+    /// (sim::Tavern::playerHandsUp is the fighting-mode bit the room reads).
+    /// A HELD button: the down edge starts the hold clock and the release
+    /// edge resolves the swing, hard iff the hold reached kHardSwingHoldSteps
+    /// == HoldToggle::kTapSteps. MOUSE1 and the RIGHT TRIGGER -- the pad's
+    /// primary hand, where the mouse's primary is. See Session::attackDown()
+    /// / attackUp().
     Attack,
-    /// CORE. Was Interact + Examine + Steal + Lift + Rest, and the lockpick
-    /// verb Steal used to reach contextually. ONE button, resolved by stance
-    /// and by what is faced -- render::Session::interact() is the whole rule,
-    /// and render::Session::interactPrompt() is the same rule read for the
-    /// HUD instead of acted on, so the label on screen can never say
-    /// something this key would not actually do.
+    /// CORE 2, GUARD. HELD, never latched -- a latched guard is a footgun in
+    /// a brawl. From hands down it raises the hands WITHOUT a blow, the free
+    /// way into fighting mode. MOUSE2 and the LEFT TRIGGER, opposite SWING,
+    /// the Oblivion pair. Sim::Tavern::tickBrawl reads the held state.
+    Block,
+    /// CORE 3, CAST. Casts whatever the Grimoire has readied; every refusal
+    /// is spoken (nothing equipped, out of reach, cooling). C and the RIGHT
+    /// BUMPER -- Oblivion's own cast button.
+    Cast,
+    /// CORE 4, USE. ONE button for everything in reach, resolved by stance
+    /// and by what is faced -- render::Session::interact() is the whole rule
+    /// and interactPrompt() is the same rule read for the reticle, so the
+    /// label on screen can never say something the key would not do. Its
+    /// last slot before LOOK is LOWER HANDS: hands up, nothing in reach, and
+    /// the fists come down. E and A.
     Interact,
-    /// CORE. The stance every other resolution keys off -- see stealth.hpp.
-    /// Unchanged: still a render::HoldToggle, tap latches, hold holds.
+    /// CORE 5, SNEAK. The stance every theft resolves off (stealth.hpp). A
+    /// HoldToggle: tap latches, hold holds. LCTRL and B -- and B is BACK on
+    /// every page (pageBackRemap), the one contextual reuse the grammar keeps.
     Crouch,
-    /// CORE. Was Jump + Traverse + DropDown. Resolved by what is directly
-    /// ahead or below -- render::Session::vertical() is the rule, and see its
-    /// header on why the mantle half of Traverse almost never fires from a
-    /// keypress at all: MoveInput::autoTraverse already hauls a body over a
-    /// ledge it walks into, every ordinary step.
+    /// CORE 6, JUMP. Jump, mantle or drop, resolved by what is ahead or below
+    /// -- render::Session::vertical(). SPACE and Y.
     Vertical,
-    /// CORE. Was Sprint + Walk, folded into one HoldToggle: HOLD IT for a
-    /// sprint, TAP IT to toggle a persistent walk, hold it again from a
-    /// walk-toggle to cancel back to the ordinary jog. See main.cpp's own
-    /// comment where `held.sprint`/`held.walk` are derived -- HoldToggle's
-    /// existing latch-cancel rule (a press that cancels a latch does not
-    /// re-read as "held" for that press) already makes sprint and walk
-    /// mutually exclusive with no new code in controls.cpp/hpp at all.
+    /// CORE 7, RUN. A plain HOLD now: the tap-to-walk toggle is cut (a pad
+    /// picks its gait off the stick's magnitude and SNEAK is the quiet
+    /// stance). LSHIFT, and the left stick click as the pad's optional
+    /// second half -- the stick alone already sprints at full push.
     Sprint,
-    /// CORE. Was Journal + Keys + Character + Map + Letters + Options. ONE
-    /// screen, PAGES -- render::Session::toggleMenu()/menuPageNext()/
-    /// menuPagePrev() orchestrate the six pre-existing toggle*() methods,
-    /// which are UNCHANGED: this is a thin router in front of them, not a
-    /// rewrite of any one page.
+    /// CORE 8, NOTES. Your papers on one screen: the sheet, the chart, the
+    /// letters, the casebook -- and, one bumper past them, the WARD MAP and
+    /// the GRIMOIRE. LB/RB and `[` `]` page through all six (pageStep); the
+    /// key that opened it closes it. J and D-PAD UP.
     Menu,
-    /// CORE. Flips the Menu's pages backward -- LB on a pad, `[` on a
-    /// keyboard (Q and E are Interact's and Attack's near neighbours and
-    /// stay clear of them; brackets are free and sit together).
-    PagePrev,
-    /// CORE. Flips the Menu's pages forward -- RB on a pad, `]` on a
-    /// keyboard.
-    PageNext,
-    /// CORE. Was named Menu. RENAMED to say what it always was: the system
-    /// panic/save/quit screen (RESUME/SETTINGS/QUIT), kept deliberately
-    /// separate from the new Menu above -- Eli's own brief, point 7: "don't
-    /// leave [Options] reachable from both in a way that reads as two
-    /// systems." It reads as ONE system here: Pause's SETTINGS row and the
-    /// new Menu's Options page are the same optionsOpen_ state, reached two
-    /// ways, the way a real pause screen's own shortcuts usually are --
-    /// never two copies of the rebinding screen that could drift apart.
+    /// CORE 9, PAUSE. RESUME / WAIT / CONTROLS / SETTINGS / QUIT, and the
+    /// universal back: ESC (and B on a page) backs out of whatever is open.
+    /// ESC and START.
     Pause,
-    /// CORE. Was QuickSlot1-0 + QuickNext + QuickPrev on a pad: HOLD to open,
-    /// the D-pad steps the bar while it is held, release leaves the pick
-    /// live. See controls.cpp's defaults for why this is a STEPPER and not a
-    /// true radial: render::stickIntent only ever returns a direction's
-    /// SIGN, never an angle, so there is no analogue wheel to build without
-    /// new plumbing this task did not need to take on -- the D-pad is
-    /// already four wired, discrete buttons (main.cpp's kPadTable), which is
-    /// what the brief asked for when a stick angle is not readable.
-    QuickWheel,
 
-    // --- kept, but NOT one of the 12: the keyboard's plurality of input,
-    // not the controller's scarcity of it. A mouse and a full keyboard can
-    // afford instant direct shortcuts a pad cannot; QuickWheel is the one
-    // button story a controller needs and these are the desktop bonus on
-    // top of it, never the other way round. ---------------------------------
+    // --- the tenth, keyboard only: the owner's own direct shortcut ----------
+
+    /// MAP. "A map that they can press M to see." The full-screen ward plan.
+    /// M on a keyboard; on a pad it is a page of NOTES and spends no button
+    /// (SELECT, which used to open it, is WAIT). A file that still writes
+    /// "bind map M PAD_BACK" is migrated -- see fromText().
+    Map,
+
+    // --- kept, but NOT one of the nine: bonus shortcuts, Oblivion PC's own
+    // plurality of input. Each has a door elsewhere that a new player finds
+    // without learning the key. --------------------------------------------
+
+    /// WAIT. The hour-select page. The pause menu's WAIT row is the door on
+    /// both devices; T (Oblivion's own wait key) and SELECT are the direct
+    /// shortcuts. NOT core: nobody has to learn it.
+    Wait,
+    /// The number row readies a slot with nothing open. Keyboard only, the
+    /// way Oblivion PC's hotkeys are; the pad steps the bar instead.
     QuickSlot1,
     QuickSlot2,
     QuickSlot3,
@@ -177,72 +178,15 @@ enum class Action : std::uint8_t {
     QuickSlot8,
     QuickSlot9,
     QuickSlot0,
-    /// Mouse-wheel quick-bar stepping. Still real, still rebindable, just not
-    /// a pad button any more -- QuickWheel's D-pad already steps the bar on
-    /// a controller, so binding these to bumpers as well would be two
-    /// controls doing the same job.
+    /// Steps the quick bar: the mouse wheel, and the pad's D-pad right/left
+    /// (the QuickWheel's hold-and-step folded into two plain presses).
     QuickNext,
     QuickPrev,
 
     /// NOT A GAMEPLAY CONTROL. A dev/capture utility, always F12, excluded
-    /// from the ~10-12 count the way Eli's brief asked -- "not part of the
+    /// from the count the way the owner's brief asked -- "not part of the
     /// Steam Input action set."
     Screenshot,
-
-    // --- appended post-#85, per the insert-only rule: new actions go on the
-    // END, so a saved settings file's action names never shift meaning. These
-    // two therefore list AFTER the keyboard bonus bindings on the keys page,
-    // which is cosmetic; being CORE is about the count and the validation
-    // pass, not the row order. ----------------------------------------------
-
-    /// CORE. Casts the currently equipped spell -- whatever the grimoire has
-    /// selected. C on a keyboard, the right trigger on a pad (the genre's
-    /// own "magic hand" position). render::Session::castEquipped() is the
-    /// resolution rule, including every refusal (nothing equipped, out of
-    /// reach, still cooling down) -- the key never does nothing silently.
-    Cast,
-    /// CORE. HELD, like QuickWheel: down is blocking, up is not, no latch --
-    /// a latched guard is a footgun in a brawl. The right mouse button
-    /// (freed by #85, which moved Interact's old secondary to PadSouth) and
-    /// the left trigger on a pad. Blocking softens incoming blows in a
-    /// brawl, scaled by the shieldwall skill -- sim::Tavern::tickBrawl() is
-    /// where the held state is actually read.
-    Block,
-    /// CORE, #13, THE OWNER'S OWN BEND OF HIS 10-12 CEILING (see the enum
-    /// header). The ward map: a full-screen top-down render of the district
-    /// with the authored sign names on it -- Session::toggleDistrictMap() is
-    /// the toggle, render::drawDistrictMap() the page. M on a keyboard (the
-    /// owner named the key himself) and PadBack -- the SELECT button -- on a
-    /// pad, the classic Start/Select split: Pause=Start, Map=Select. PadBack
-    /// was Menu's shipped pad default before this action existed; Menu moved
-    /// to PadUp (D-pad up, previously unbound), and fromText() carries an
-    /// explicit migration for old files that still write Menu's old default
-    /// -- see the MIGRATION comment in controls.cpp's fromText().
-    ///
-    /// SETTINGS-FILE NAME COLLISION, NOTED HONESTLY: pre-#85 files (the
-    /// retired 38-action table) also had a "map" action -- the old map PAGE
-    /// key, retired into Menu at #85. A surviving pre-#85 file's "bind map
-    /// ..." line therefore parses again and lands on THIS action, which is
-    /// semantically the right key doing semantically the right thing (the
-    /// old map key opens the new map); #85's clean-break stance already
-    /// declared those files unprotected either way.
-    Map,
-
-    // --- appended for UI-EA-SPEC sec. 4 violation #5, per the insert-only
-    // rule: new actions go on the END. ---------------------------------------
-
-    /// NOT CORE -- the keyboard's plurality again, the quick slots' own
-    /// family: a desktop shortcut straight to the controls list. F1 by
-    /// default, which is what --help and the ship note have always promised
-    /// -- except until now F1 was HARD-CODED in main.cpp, outside the
-    /// binding table, so it never printed on the very page it opens and the
-    /// rebinding screen could not reach it. A pad reaches the same page
-    /// through the pause menu's CONTROLS row; no pad default is spent here.
-    KeysPage,
-    /// Its sibling: straight to the settings/rebinding page. F2 by default,
-    /// previously hard-coded beside F1 and now a bindable action for the
-    /// identical reasons. The pause menu's SETTINGS row is the pad's door.
-    OptionsPage,
     Count
 };
 
@@ -428,6 +372,30 @@ struct ControlSettings;  // declared below, with the rest of the binding table
 [[nodiscard]] std::string_view promptBackKey(InputDevice device) noexcept;     // "ESC" / "B"
 [[nodiscard]] std::string_view promptMoveKeys(InputDevice device) noexcept;    // triangles / cross
 
+/// NINE AND THE STICKS: the page grammar's two sideways steps, RAW, ahead of
+/// any binding -- the way arrows, the D-pad and TAB already were -- so the
+/// bumpers can cast in the world (RB is CAST) and still turn the page on
+/// every surface, Oblivion's own tabbed menu: LB/RB step the TABS along the
+/// top (the six pages of NOTES: sheet, chart, letters, casebook, ward map,
+/// grimoire), LT/RT step the SUB-TABS inside one page (the ward map's four
+/// views, the casebook's LEADS / THE CASE, KEYS / OPTIONS). The keyboard's
+/// halves: `[` `]` for pages, TAB for the next sub-tab (as it always was).
+///
+/// -1, 0 or +1. Said ONCE, here, so the router and every nav band read the
+/// same keys -- a band that advertised a step the router did not take is the
+/// exact drift this file exists to kill.
+[[nodiscard]] int pageStep(Key key) noexcept;  // `[`/LB = -1, `]`/RB = +1
+[[nodiscard]] int tabStep(Key key) noexcept;   // LT = -1, TAB/RT = +1
+/// The keycaps the two steps print, in the device's vocabulary: "< >" / "LB
+/// RB" for pages, "TAB" / "LT RT" for sub-tabs.
+[[nodiscard]] std::string_view promptPageKeys(InputDevice device) noexcept;
+[[nodiscard]] std::string_view promptTabKeys(InputDevice device) noexcept;
+/// The second commit a page can carry (the ward map's TRAVEL, the haggle's
+/// TAKE THEIR PRICE), on the one face button the nine leave free: X. "T" on
+/// a keyboard, the page's own raw key, exactly as it has always been.
+[[nodiscard]] std::string_view promptAltCommitKey(InputDevice device) noexcept;  // "T" / "X"
+[[nodiscard]] bool isAltCommitKey(Key key) noexcept;
+
 /// The page grammar's ONE remap, stated as a function so it is testable and
 /// so the client's router and its fall-through press cannot apply it
 /// differently: while a page owns the input (`pageOpen`), the pad's East
@@ -449,6 +417,52 @@ struct ControlSettings;  // declared below, with the rest of the binding table
 /// live key-rebinding capture, which must see the real PadEast); this
 /// function owns only the rule.
 [[nodiscard]] Key pageBackRemap(Key key, bool pageOpen) noexcept;
+
+/// THE B SEAM'S OTHER HALF: THE UP EDGE. pageBackRemap turns PadEast's DOWN
+/// edge into Escape while a page is up -- and the UP edge used to reach the
+/// client's release handler RAW, where PadEast is Crouch's binding, so the
+/// release ran setCrouched(), which put every overlay down. The page the
+/// Escape had just backed out to (the pause menu from CONTROLS, an armed
+/// QUIT disarmed, the Letters tile's open letter) was closed again by the
+/// same press's release, and the NEXT B, with nothing open, crouched you.
+///
+/// One object owns both edges so they cannot disagree: down() applies the
+/// remap and REMEMBERS it; up() answers Escape for the release of a remapped
+/// press and the raw key otherwise. The client keeps one of these per pad.
+class PadBackEdge {
+public:
+    /// The down edge: pageBackRemap's answer, remembered when it remapped.
+    [[nodiscard]] Key down(Key key, bool pageOpen) noexcept;
+    /// The up edge: Escape for the release of a press down() remapped, the
+    /// key itself for everything else. Clears the memo.
+    [[nodiscard]] Key up(Key key) noexcept;
+    [[nodiscard]] bool remapped() const noexcept { return remapped_; }
+
+private:
+    bool remapped_ = false;
+};
+
+/// WHICH WORLD VERBS A PAGE LETS THROUGH. Every page branch of the client's
+/// router used to end in "anything else falls through to the ordinary
+/// bindings, and every verb down there puts the page away first" -- and
+/// nine and the sticks made that a leak: the D-pad's left and right are
+/// QuickPrev/QuickNext now, so a sideways press on the pause menu reached
+/// the quick bar and stepped a slot with the menu still up; a bumper on the
+/// keys page cast. The documented fall-throughs, and ONLY these, reach the
+/// world from a page:
+///
+///   Pause       ESC, B-as-Escape, START -- backs out one layer
+///   Menu        the key that opened NOTES closes it
+///   Map         M swaps to the ward map (a page of NOTES)
+///   Wait        T / SELECT opens the hour page over whatever is up
+///   Screenshot  a capture key is never a verb
+///   Attack      ONLY while talking: SWING across the counter is the fight
+///               starting, which is the game (THE DOCKS DO NOT WAIT ON YOU)
+///
+/// Everything else -- the quick bar, the hands, the stance, the jump, the
+/// run -- is swallowed while a page owns the input. Said once, here, so the
+/// router and a test read the same list.
+[[nodiscard]] bool pageFallThrough(Action action, bool talking) noexcept;
 
 // ---------------------------------------------------------------------------
 // hold AND toggle, which is two features and one control

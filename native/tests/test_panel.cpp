@@ -428,10 +428,12 @@ TEST_CASE("the controls page composes at every window size the game runs at") {
         CHECK(scroll.perScreen > 0);
         CHECK(scroll.screens >= 1);
         // Better than the old nine-row topic grid at every size, and CAPPED at
-        // the EA paging rule (UI-EA-SPEC 1.7 #36): about fourteen rows
-        // visible, the rest behind `+N` -- a reference card, not a wall.
+        // the EA paging rule (UI-EA-SPEC 1.7 #36) PER COLUMN: no column runs
+        // past fifteen rows, and a wide pane is not made to fold what it can
+        // show -- nine and the sticks' "the nine on one screen, no forty
+        // percent empty pane". Two screens at most for the twenty-nine.
         CHECK(scroll.perScreen > 9);
-        CHECK(scroll.perScreen <= 15);
+        CHECK(scroll.perScreen <= 15 * 3);
         CHECK(scroll.screens <= 2);
 
         // The cursor on the last row lands on the last screenful, and the
@@ -443,11 +445,12 @@ TEST_CASE("the controls page composes at every window size the game runs at") {
         CHECK(end.firstRow <= state.cursor);
     }
 
-    // At the baseline the table is two even screens of fifteen and fourteen --
-    // the paging rule, not the pane, decides.
+    // At the baseline the whole table is ONE screen: the pane holds two
+    // columns of fifteen, so the twenty-nine rows never fold and no column
+    // ends in a one-row orphan.
     state.cursor = 0;
-    CHECK(keysPageScroll(state, 960, 540).screens == 2);
-    CHECK(keysPageScroll(state, 960, 540).perScreen == 15);
+    CHECK(keysPageScroll(state, 960, 540).screens == 1);
+    CHECK(keysPageScroll(state, 960, 540).perScreen >= 29);
 }
 
 TEST_CASE("a closed page and a zero ease draw nothing at all") {
@@ -915,23 +918,24 @@ TEST_CASE("the controls-page hit-test answers for every drawn binding and nothin
         state.rows.push_back(row);
     }
     state.cursor = 0;
-    // The EA paging cap (UI-EA-SPEC 1.7 #36): screen one is the first fifteen
-    // rows; the fourteen behind `+14` answer on the second screen below.
+    // The cap is per column (UI-EA-SPEC 1.7 #36, nine and the sticks): at
+    // 960x540 the whole twenty-nine-row list is one screen of two columns,
+    // and every one of its rows answers to a pixel.
     const KeysPageScroll first = keysPageScroll(state, 960, 540);
-    REQUIRE(first.screens == 2);
-    REQUIRE(first.perScreen == 15);
+    REQUIRE(first.screens == 1);
+    REQUIRE(first.perScreen >= 29);
 
     std::vector<bool> found(state.rows.size(), false);
     for (int py = 0; py < 540; py += 2) {
         for (int px = 0; px < 960; px += 2) {
             const int at = keysRowAtPixel(state, 960, 540, px, py);
             if (at >= 0) {
-                REQUIRE(at < first.perScreen);
+                REQUIRE(at < static_cast<int>(state.rows.size()));
                 found[static_cast<std::size_t>(at)] = true;
             }
         }
     }
-    CHECK(std::count(found.begin(), found.end(), true) == first.perScreen);
+    CHECK(std::count(found.begin(), found.end(), true) == static_cast<int>(state.rows.size()));
 
     // The cursor does not move the geometry (the scroll is the same screen),
     // so a hover that follows the cursor cannot chase its own tail.

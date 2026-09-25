@@ -10,12 +10,15 @@
 // computed and thrown away every single frame with nowhere on screen to read
 // them.
 //
-// WHAT THIS IS NOT. There is no item and no equipment-slot model in this
-// build -- session.hpp's own quick-bar comment says so (#77's own
-// VERIFICATION GAP) -- so this is not a paper doll and it draws no armour
-// rating. It is the state the simulation actually has, laid out where a
-// player can look themselves up: five derived standings and the four skills a
-// verb in this build actually levels.
+// WHAT THIS IS NOT. Still no paper doll and no armour rating. KIT BUILD
+// (D10): there IS an item and an equipment-slot model now (sim/items.hpp),
+// and the sheet carries it in words -- IN HAND always, a worn slot only when
+// the raws hold an item for it, the LOAD line, and every carried row with
+// its weight and worth -- after the five derived standings and the four
+// skills a verb in this build actually levels, which are unchanged. The
+// bare sheet is twenty-four rows now: the seventeen, IN HAND FISTS, the
+// four worn slots the shipped raws populate (back, head, feet, belt), LOAD,
+// and the five picks every body starts with.
 //
 // WHAT IS AND IS NOT TESTED HERE. Session owns toggleCharacter/characterRows,
 // and dialogueView()'s characterOpen_ branch, and none of it touches SDL, so
@@ -31,12 +34,15 @@
 #include <vector>
 
 #include "granadad/content/content_dir.hpp"
+#include "granadad/render/controls.hpp"
 #include "granadad/render/hud.hpp"
 #include "granadad/render/menu_view.hpp"
 #include "granadad/render/session.hpp"
 #include "granadad/sim/dialogue.hpp"
 #include "granadad/sim/faction.hpp"
+#include "granadad/sim/brawl.hpp"
 #include "granadad/sim/legend.hpp"
+#include "granadad/sim/social.hpp"
 
 using namespace granadad::sim;
 namespace content = granadad::content;
@@ -101,20 +107,23 @@ TEST_CASE("a man who arrived this morning reads NOBODY IN PARTICULAR, not a blan
     CHECK(view.epithet == std::string(kReputationUnremarkable));
 }
 
-TEST_CASE("the character sheet lists all five Legend tracks and the four skills this build levels") {
+TEST_CASE("the character sheet lists all five Legend tracks, the skills the track has moved, and the four attributes") {
     render::Session session = standing();
     session.toggleCharacter();
     REQUIRE(session.characterOpen());
 
     const std::vector<std::string> rows = session.characterRows();
-    // Five tracks, four wired skills, five faction ladders, and
-    // REPUTATION/COIN/HEAT -- seventeen rows, fixed, because the simulation
-    // has exactly this much to say about a player and no item system to pad
-    // it with. See toggleCharacter's own header on why the fifth track's
-    // neighbours are not sixteen more skill rows: the raws carry them,
-    // nothing in this build levels them yet, and a wall of LV 0 would claim
-    // the game is watching a skill it is not.
-    REQUIRE(rows.size() == kLegendTracks + 4 + 5 + 3);
+    // Five tracks, the four always-shown skills (a fresh arrival has moved
+    // none), the four attributes, five faction ladders, and
+    // REPUTATION/COIN/HEAT -- twenty-one rows, because the simulation has
+    // exactly this much to say about a fresh player and no item system to
+    // pad it with. THE HONEST SHEET (PULL PACK): the skill rows come off
+    // the SkillTrack itself now -- any skill with a level above zero or uses
+    // banked toward one prints, and the sixteen a verb has never touched
+    // stay off, so a wall of LV 0 still cannot claim the game is watching a
+    // skill it is not. KIT BUILD: +7 more -- IN HAND, four worn slots, LOAD,
+    // the starting picks.
+    REQUIRE(rows.size() == kLegendTracks + 4 + kAttributeCount + 5 + 3 + 7);
 
     // THE FIVE TRACKS, IN legend.hpp's OWN ORDER -- Wire, Roofs, Flame, Trade,
     // Law -- each a short name and a rung title, "THE " dropped off the front
@@ -137,17 +146,24 @@ TEST_CASE("the character sheet lists all five Legend tracks and the four skills 
         CHECK(rows[i].find(firstRung) != std::string::npos);
     }
 
-    // THE FOUR SKILLS A VERB IN THIS BUILD ACTUALLY LEVELS, each at LV 0 for a
-    // fresh arrival -- streetlevel, not raws-vocabulary. See sim::kRoofSkill,
-    // kThieverySkill, kHaggleSkill (social.hpp) and kCraftingSkill
-    // (spellforge.hpp): the only four call sites in this build that ever call
-    // SkillTrack::use.
-    CHECK(rows[5].rfind("SKYRUNNING", 0) == 0);
-    CHECK(rows[6].rfind("CRACKSMANSHIP", 0) == 0);
-    CHECK(rows[7].rfind("STREETWISE", 0) == 0);
-    CHECK(rows[8].rfind("LINKCRAFT", 0) == 0);
-    for (std::size_t i = 5; i < 9; ++i) {
-        CHECK(rows[i].find("LV 0") != std::string::npos);
+    // THE FOUR SKILLS THE SHEET ALWAYS SHOWS, each at LV 0 for a fresh
+    // arrival, in the track's own id order (ascending, the raws' discipline)
+    // -- and BARE: what the next level costs prints once a skill has moved
+    // (see the case below), so a fresh sheet's rows stay whole in the
+    // narrowest tile the game draws.
+    CHECK(rows[5] == "CRACKSMANSHIP LV 0");
+    CHECK(rows[6] == "LINKCRAFT LV 0");
+    CHECK(rows[7] == "SKYRUNNING LV 0");
+    CHECK(rows[8] == "STREETWISE LV 0");
+
+    // THE FOUR ATTRIBUTES, with no held delta on a fresh sheet: the chargen
+    // base and the effective read agree, so the row is the bare number.
+    CHECK(rows[9].rfind("MGT ", 0) == 0);
+    CHECK(rows[10].rfind("AGI ", 0) == 0);
+    CHECK(rows[11].rfind("VIG ", 0) == 0);
+    CHECK(rows[12].rfind("WIT ", 0) == 0);
+    for (std::size_t i = 9; i < 13; ++i) {
+        CHECK(rows[i].find("(") == std::string::npos);
     }
 
     // THE FIVE LADDERS, WITH THE NUMBERS ON -- the owner's ruling for this
@@ -158,25 +174,67 @@ TEST_CASE("the character sheet lists all five Legend tracks and the four skills 
     // arrival is on no roll, so every row reads its JOIN cost -- the first
     // rung is earned exactly like every later one, and ranks.json prices
     // them at 8/10/8/10/10 standing.
-    CHECK(rows[9].rfind("DOCKHANDS", 0) == 0);
-    CHECK(rows[10].rfind("MERCHANTS", 0) == 0);
-    CHECK(rows[11].rfind("SKYRUNNERS", 0) == 0);
-    CHECK(rows[12].rfind("TEMPLE", 0) == 0);
-    CHECK(rows[13].rfind("WATCH", 0) == 0);
-    for (std::size_t i = 9; i < 14; ++i) {
+    CHECK(rows[13].rfind("DOCKHANDS", 0) == 0);
+    CHECK(rows[14].rfind("MERCHANTS", 0) == 0);
+    CHECK(rows[15].rfind("SKYRUNNERS", 0) == 0);
+    CHECK(rows[16].rfind("TEMPLE", 0) == 0);
+    CHECK(rows[17].rfind("WATCH", 0) == 0);
+    for (std::size_t i = 13; i < 18; ++i) {
         CHECK(rows[i].find(" 0  JOIN ") != std::string::npos);
     }
-    CHECK(rows[11].find("JOIN 8") != std::string::npos);
-    CHECK(rows[13].find("JOIN 10") != std::string::npos);
+    CHECK(rows[15].find("JOIN 8") != std::string::npos);
+    CHECK(rows[17].find("JOIN 10") != std::string::npos);
 
     // AND WHAT THE WARD AND THE PURSE SAY, always present -- see
     // characterRows' own comment on why a sheet opened on purpose prints a
     // zero rather than dropping the row the way the ambient HUD would.
-    CHECK(rows[14].rfind("REPUTATION", 0) == 0);
-    CHECK(rows[14].find("NOBODY IN PARTICULAR") != std::string::npos);
-    CHECK(rows[15].rfind("COIN", 0) == 0);
-    CHECK(rows[16].rfind("HEAT", 0) == 0);
-    CHECK(rows[16].find("HEAT  0") != std::string::npos);
+    CHECK(rows[18].rfind("REPUTATION", 0) == 0);
+    CHECK(rows[18].find("NOBODY IN PARTICULAR") != std::string::npos);
+    CHECK(rows[19].rfind("COIN", 0) == 0);
+    CHECK(rows[20].rfind("HEAT", 0) == 0);
+    CHECK(rows[20].find("HEAT  0") != std::string::npos);
+}
+
+TEST_CASE("a skill the world has moved appears on the sheet, and a held tuning shows beside the attribute") {
+    // THE HONEST SHEET (PULL PACK). The old sheet was a hand-typed table of
+    // four while the combat build trained shieldwall on every softened blow
+    // and the scalp skill on a take -- two lived skills that never printed.
+    // Now the rows come off the track: one use of shieldwall banks toward
+    // its first level and the row appears, NEXT counting down what is still
+    // owed; a level reads LV n.
+    render::Session session = standing();
+    SkillTrack& skills = session.tavern().dialogue().skills();
+    REQUIRE(skills.find(kBlockSkill) != nullptr);
+    const auto rowFor = [&](std::string_view name) -> std::string {
+        for (const std::string& row : session.characterRows()) {
+            if (row.rfind(name, 0) == 0) {
+                return row;
+            }
+        }
+        return {};
+    };
+    CHECK(rowFor("SHIELDWALL").empty());
+    (void)skills.use(kBlockSkill);
+    const std::string banked = rowFor("SHIELDWALL");
+    INFO("row: ", banked);
+    REQUIRE_FALSE(banked.empty());
+    // "SHIELDWALL LV 0  4 TO NEXT": uses, not standing, so it cannot be read
+    // as the ladders' own NEXT price -- off scaledUsesForLevel (NEGLECTED, 4
+    // x 320 / 256 = 5) less the one banked.
+    CHECK(banked == "SHIELDWALL LV 0  " +
+                        std::to_string(skills.scaledUsesForLevel(kBlockSkill, 0) - 1) + " TO NEXT");
+    while (!skills.use(kBlockSkill)) {
+    }
+    CHECK(rowFor("SHIELDWALL").rfind("SHIELDWALL LV 1  ", 0) == 0);
+    CHECK(rowFor("SHIELDWALL").find(" TO NEXT") != std::string::npos);
+    // The always-shown four stay bare until they move.
+    CHECK(rowFor("SKYRUNNING") == "SKYRUNNING LV 0");
+    // Every skill row still reads as a sentence the font can draw.
+    for (const std::string& row : session.characterRows()) {
+        for (const char c : row) {
+            CHECK(render::isDrawableGlyph(c));
+        }
+    }
 }
 
 TEST_CASE("a joined ladder's sheet row carries the rank title, the standing number and the next rung's price") {
@@ -194,7 +252,7 @@ TEST_CASE("a joined ladder's sheet row carries the rank title, the standing numb
 
     session.toggleCharacter();
     const std::vector<std::string> rows = session.characterRows();
-    const std::string& row = rows[11];
+    const std::string& row = rows[15];
     INFO("row: ", row);
     CHECK(row.rfind("SKYRUNNERS TENANT", 0) == 0);
     // The standing number itself: 40 granted, minus whatever the join and the
@@ -204,35 +262,51 @@ TEST_CASE("a joined ladder's sheet row carries the rank title, the standing numb
     CHECK(row.find("NEXT 22/LV5") != std::string::npos);
 }
 
-TEST_CASE("the sheet grows an IN HAND row the moment the world arms you, and not before") {
-    // EVICTOR BUILD. The reference sheet's w slot ("cane 1-6 Impact",
-    // UI-REFERENCE-TERMINAL.md) lands here the day something is actually in
-    // the player's hand -- and ONLY that day. This build has no item system,
-    // so an empty-handed sheet printing IN HAND FISTS would claim an
-    // equipment model nothing simulates; seventeen rows stays the bare
-    // truth, eighteen the armed one. Page arithmetic holds: page two carried
-    // eight rows bare against kTopicPageSize nine, so the new row turns no
-    // page anybody has to go looking for.
+TEST_CASE("IN HAND is always printed once the Kit exists: FISTS bare, THE EVICTOR when the world arms you") {
+    // EVICTOR BUILD, re-ruled by D10 (KIT BUILD): the reference sheet's w
+    // slot ("cane 1-6 Impact", UI-REFERENCE-TERMINAL.md) is ALWAYS here now,
+    // because fists are a real state once an equipment model exists -- the
+    // old "no furniture claiming a state we do not simulate" rule is what
+    // the Kit retired. The grant puts THE EVICTOR in the Kit as a THING, so
+    // the sheet gains a carried row for it too. Base is the honest sheet's
+    // twenty-one (five tracks, four skills, four attributes, five ladders,
+    // REPUTATION/COIN/HEAT) plus the Kit's own seven (IN HAND, four worn
+    // slots, LOAD, the starting picks): twenty-eight bare, twenty-nine
+    // armed, the IN HAND row itself in the same seat both times.
     render::Session session = standing();
     const std::vector<std::string> bare = session.characterRows();
-    REQUIRE(bare.size() == 17);
-    for (const std::string& row : bare) {
-        CHECK(row.rfind("IN HAND", 0) != 0);
-    }
+    REQUIRE(bare.size() == 28);
+    CHECK(bare[21] == "IN HAND  FISTS 3-5 IMPACT");
+    CHECK(bare[22] == "ON THE BACK  NOTHING");
+    CHECK(bare[23] == "ON THE HEAD  NOTHING");
+    CHECK(bare[24] == "ON THE FEET  NOTHING");
+    CHECK(bare[25] == "AT THE BELT  NOTHING");
+    CHECK(bare[26].rfind("LOAD  ", 0) == 0);
+    CHECK(bare[26].find(" / 240 DRAMS") != std::string::npos);
+    CHECK(bare[27].rfind("5 PICKS", 0) == 0);
 
     // The same grant seam the eviction case's close beat calls, by the same
     // authored id -- see Tavern::grantPlayerWeapon.
     REQUIRE(session.tavern().grantPlayerWeapon(kEvictorWeaponId));
     const std::vector<std::string> armed = session.characterRows();
-    REQUIRE(armed.size() == 18);
-    CHECK(armed.back() == "IN HAND  THE EVICTOR 7-9 IMPACT");
+    REQUIRE(armed.size() == 29);
+    CHECK(armed[21] == "IN HAND  THE EVICTOR 7-9 IMPACT");
+    bool carried = false;
+    for (const std::string& row : armed) {
+        if (row.rfind("THE EVICTOR  44DR  30C  IN HAND", 0) == 0) {
+            carried = true;
+        }
+    }
+    CHECK(carried);
+    // And the load moved by the cudgel's own drams.
+    CHECK(armed[26].rfind("LOAD  49 / 240 DRAMS", 0) == 0);
 }
 
-TEST_CASE("seventeen rows is two pages, and the character sheet turns like every other list here") {
+TEST_CASE("twenty-eight rows is more than three pages, and the character sheet turns like every other list here") {
     render::Session session = standing();
     session.toggleCharacter();
     REQUIRE(session.characterOpen());
-    REQUIRE(session.characterRows().size() == 17);
+    REQUIRE(session.characterRows().size() == 28);
 
     render::DialogueViewState view = session.dialogueView();
     CHECK(view.page == 0);
@@ -249,15 +323,164 @@ TEST_CASE("seventeen rows is two pages, and the character sheet turns like every
     CHECK(render::topicPageOf(view.cursor) == view.page);
 
     // 0 -- the MORE key -- turns the page directly, same as F1 and the
-    // casebook.
+    // casebook: page two (the carried rows), then a fourth page for the
+    // twenty-eighth row twenty-eight rows leaves over on its own (three
+    // full pages of nine spend twenty-seven), then round to the first.
+    session.nextTopicPage();
+    view = session.dialogueView();
+    CHECK(view.page == 2);
+    CHECK(view.cursor == 18);
+    session.nextTopicPage();
+    view = session.dialogueView();
+    CHECK(view.page == 3);
+    CHECK(view.cursor == 27);
     session.nextTopicPage();
     view = session.dialogueView();
     CHECK(view.page == 0);
+    CHECK(view.cursor == 0);
 
-    // The cursor wraps rather than stopping dead at either end.
+    // The cursor wraps rather than stopping dead at either end, to the last
+    // of the twenty-eight rows.
     session.moveTopicCursor(-1);
     view = session.dialogueView();
-    CHECK(view.cursor == 16);
+    CHECK(view.cursor == 27);
+}
+
+// ---------------------------------------------------------------------------
+// KIT BUILD: the Kit on the tile
+// ---------------------------------------------------------------------------
+
+TEST_CASE("a carried row prints its weight, its worth and its marks; a worn slot names what is on it") {
+    render::Session session = standing();
+    Tavern& tavern = session.tavern();
+    REQUIRE(tavern.giveItem("coat"));
+    REQUIRE(tavern.giveItem("cudgel"));
+    REQUIRE(tavern.giveItem("rope"));
+    REQUIRE(tavern.giveItem("dust", 2));
+    const std::int32_t coat = tavern.items().indexOf("coat");
+    const std::int32_t cudgel = tavern.items().indexOf("cudgel");
+    REQUIRE(tavern.wearItem(coat).result == ServiceResult::Served);
+    REQUIRE(tavern.wearItem(cudgel).result == ServiceResult::Served);
+    REQUIRE(tavern.bindItemToSlot(2, cudgel));
+
+    const std::vector<std::string> rows = session.characterRows();
+    // Twenty-eight bare, plus four carried rows (the picks were already one).
+    REQUIRE(rows.size() == 32);
+    CHECK(rows[21] == "IN HAND  CUDGEL 7-9 IMPACT");
+    CHECK(rows[22] == "ON THE BACK  COAT  DR 2");
+    CHECK(rows[26] == "LOAD  " + std::to_string(tavern.loadDrams()) + " / 240 DRAMS");
+    // Registry order: the cudgel, the coat, the rope, the picks, the dust.
+    CHECK(rows[27] == "CUDGEL  40DR  6C  IN HAND  SLOT 3");
+    CHECK(rows[28] == "COAT  60DR  12C  WORN");
+    CHECK(rows[29] == "ROPE  48DR  6C");
+    CHECK(rows[30] == "5 PICKS  5DR  10C");
+    CHECK(rows[31] == "2 DUST  6DR  32C  HOT");
+    CHECK(session.loadLine() == rows[26]);
+    CHECK(session.characterKitOffset() == 27);
+    // The composed list behind the rows: the Kit's own rows are the only
+    // ones a verb can act on.
+    const std::vector<render::Session::KitRow> kit = session.kitRows();
+    REQUIRE(kit.size() == 5);
+    CHECK(kit[0].inKit);
+    CHECK(kit[2].inKit);
+    CHECK_FALSE(kit[3].inKit);  // the picks
+    CHECK_FALSE(kit[4].inKit);  // the sack
+}
+
+TEST_CASE("ENTER on a carried row wears it or bares it; on a sheet row it does nothing") {
+    render::Session session = standing();
+    Tavern& tavern = session.tavern();
+    REQUIRE(tavern.giveItem("coat"));
+    REQUIRE(tavern.giveItem("rope"));
+    session.toggleCharacter();
+    REQUIRE(session.characterOpen());
+    // Walk the cursor onto the coat: offset 27, the coat is the first
+    // carried row (registry order puts it before the rope and the picks).
+    const int coatRow = static_cast<int>(session.characterKitOffset());
+    for (int i = 0; i < coatRow; ++i) {
+        session.moveTopicCursor(1);
+    }
+    REQUIRE(session.highlightedKitRow().has_value());
+    CHECK(session.highlightedKitRow()->item == tavern.items().indexOf("coat"));
+    // The tile says what the press does, in the keyboard's own words.
+    const std::string enter(render::promptConfirmKey(render::InputDevice::KeyboardMouse));
+    const std::string arrows{render::kMotifLeft, render::kMotifRight};
+    CHECK(session.dialogueView().epithet == enter + " WEAR  " + arrows + " SLOT  X DROP");
+    // ENTER, the way main.cpp presses it: chooseTopic() handed the cursor
+    // that FOLLOWS THE FOCUS. menuCursor() is the character tile's own
+    // characterCursor_ here, the same number the drawn panel highlights;
+    // topicCursor() is the conversation's cursor and would answer 0 on this
+    // tile whatever row is lit. (This press happens to ignore its index and
+    // read the tile's own cursor anyway -- see chooseTopic's KIT BUILD
+    // branch -- which is exactly why the old topicCursor() call here passed
+    // without proving anything.)
+    CHECK(session.menuCursor() == session.dialogueView().cursor);
+    CHECK(session.menuCursor() == coatRow);
+    session.chooseTopic(static_cast<std::size_t>(session.menuCursor()));
+    CHECK(tavern.kit().isWorn(tavern.items().indexOf("coat")));
+    CHECK(session.lastMessage() == "COAT - ON.");
+    CHECK(session.dialogueView().epithet == enter + " BARE  " + arrows + " SLOT  X DROP");
+    session.chooseTopic(0);
+    CHECK_FALSE(tavern.kit().isWorn(tavern.items().indexOf("coat")));
+    CHECK(session.lastMessage() == "COAT - OFF.");
+    // The rope: not worn, said so, and its epithet offers only the drop.
+    session.moveTopicCursor(1);
+    CHECK(session.highlightedKitRow()->item == tavern.items().indexOf("rope"));
+    CHECK(session.dialogueView().epithet == "X DROP");
+    session.chooseTopic(0);
+    CHECK(session.lastMessage() == "THE ROPE IS NOT WORN.");
+    // A sheet row is something to read. Back to row zero exactly, by the
+    // cursor's own count rather than a magic constant that would drift
+    // every time the sheet's own row count does. menuCursor(), not
+    // topicCursor() -- the character tile keeps its own cursor
+    // (characterCursor_), and topicCursor_ is a different field entirely.
+    session.moveTopicCursor(-session.menuCursor());
+    CHECK_FALSE(session.highlightedKitRow().has_value());
+    const std::string before = session.lastMessage();
+    session.chooseTopic(0);
+    CHECK(session.lastMessage() == before);
+}
+
+TEST_CASE("LEFT and RIGHT on a carried row walk its quick slot, and X drops it at the feet") {
+    render::Session session = standing();
+    Tavern& tavern = session.tavern();
+    REQUIRE(tavern.giveItem("cudgel"));
+    session.toggleCharacter();
+    const int row = static_cast<int>(session.characterKitOffset());
+    for (int i = 0; i < row; ++i) {
+        session.moveTopicCursor(1);
+    }
+    REQUIRE(session.highlightedKitRow().has_value());
+    const std::int32_t cudgel = tavern.items().indexOf("cudgel");
+    session.adjustKitSlot(1);
+    CHECK(tavern.slotItemIndex(0) == cudgel);
+    CHECK(session.lastMessage() == "CUDGEL -- SLOT 1.");
+    session.adjustKitSlot(1);
+    CHECK(tavern.slotItemIndex(0) == -1);
+    CHECK(tavern.slotItemIndex(1) == cudgel);
+    session.adjustKitSlot(-2);
+    CHECK(tavern.slotItemIndex(1) == -1);
+    CHECK(session.lastMessage() == "CUDGEL -- NO SLOT.");
+    // The strip and the number key read the item slot: bind to 3, press 3.
+    session.adjustKitSlot(3);
+    CHECK(tavern.slotItemIndex(2) == cudgel);
+    session.selectQuickSlot(2);
+    CHECK(session.lastMessage() == "SLOT 3 - CUDGEL.");
+    CHECK(tavern.playerWeapon() == Weapon::Blunt);
+    CHECK(session.characterRows()[21] == "IN HAND  CUDGEL 7-9 IMPACT");
+    // X: dropped at the feet, the row gone, the hand bare, the slot stale.
+    // The tile is still up with its cursor on the cudgel's row (the number
+    // key never puts the Menu down).
+    REQUIRE(session.characterOpen());
+    REQUIRE(session.highlightedKitRow().has_value());
+    const std::size_t rowsBefore = session.characterRows().size();
+    session.dropHighlightedKitRow();
+    CHECK(session.lastMessage() == "DROPPED - CUDGEL.");
+    CHECK(session.characterRows().size() == rowsBefore - 1);
+    CHECK(tavern.playerWeapon() == Weapon::Fists);
+    CHECK(tavern.groundItemInReach() >= 0);
+    session.selectQuickSlot(2);
+    CHECK(session.lastMessage() == "SLOT 3 - CUDGEL. NOT ON YOU.");
 }
 
 TEST_CASE("a printed number moves the cursor on the character sheet and does nothing else") {

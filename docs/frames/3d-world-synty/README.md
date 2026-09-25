@@ -130,7 +130,10 @@ every test draws). The pieces are a skin over it, placed by
   room is a hearth.
 - **posts**. A timber post (a lone 1x1 cell, or one against a wall of another
   kind) is a square pillar, plastered indoors and timber out of doors. Within
-  two cells of the water it is a tarred core with one pile through it.
+  two cells of the water it is a tarred core with one pile through it. Out of
+  doors with a job -- within two cells of a door gap, or one of a pair that
+  carries a rail -- it is the strapped timber post fitted to the cell instead
+  (the jambs section below).
 - **lamps**. Every baked lamp. A fire is a brazier with an ember tray and a
   flame. A lantern beside a wall hangs from a bracket arm, a lantern beside a
   door hangs beside it, a lantern under or beside a roof hangs on a chain, a
@@ -188,3 +191,73 @@ Tavern baseline `0x86E05F527E54E795` and population baseline
 `--smoke=40 --time=20` twice as separate processes, `0xA47D544D1681F761` both
 times with byte-identical PNGs (sha256 `FD3D16BB...4A70A1`). 19,234 pieces
 placed over the district, about 3,600 described from the spawn.
+
+## The jambs, 2026-09-16
+
+The critic's line: the Gull's door posts are metre-square 3 m pillars. They
+were. The four lone timber cells on the quay's back edge before the Gull --
+world (149,61)/(151,61) and (155,61)/(157,61), the Tarwalk's two sign frames
+with their rails and boards -- and the oak hitching post against the frontage
+at (156,65), two cells from the door, all wore `SM_Bld_Base_Pillar_01`: a
+concrete column with a plinth and a capital, fitted to the cell at 2.8x and
+tinted brown. Brown concrete either side of a tavern door, a plinth each.
+
+What moved. Code is `native/src/render3d/static_pieces.cpp` (`posts()`,
+`doorPostAt()`), the role is `door_post` in
+`content/raws/world3d/docks-pieces.json`.
+
+- A lone timber cell out of doors WITH A JOB -- within two cells of a door
+  gap's cell (the jamb itself, the hitching post against the wall beside the
+  door), or one half of a pair two cells apart that carries the hitching rail
+  (the pair `post_rail` already finds, read from either end) -- is a DOOR
+  POST: the Knights' strapped timber post (`SM_Prop_Beam_01`, the piece the
+  piles are driven from), fitted to the cell as the pillar was, the storey
+  tall, turned by cell, in the material's own tint. No plinth, no capital, no
+  concrete: a squared oak post with two iron straps.
+- A lone timber cell with no door near it and no partner is the pillar it
+  was. Indoors it is the plastered pier with its stools (the taproom's tables
+  in the sim's terms). Beside the water it is the tarred core with its pile.
+  None of those moved.
+- The sign and the rail hang exactly where they did -- off the cell's faces,
+  not the piece's -- so the Gull's boards still hang in their frames and the
+  rails still run post to post.
+
+What did not move, and why. The cell is still a metre square and three tall.
+That is the sim's own wall cell, and the chunk box inside it is drawn
+whatever the catalogue says (the placeholder rule: no art, the box stands),
+so nothing thinner than the cell can stand in it without the box showing
+through -- the pile beside the water hides its box under tarred boards for
+the same reason, and this post hides it the way the pillar did, edge to edge
+plus a hair. A jamb that is genuinely 0.3 m thick needs the mesher to leave
+that cell's box out (`chunk_mesher.cpp`'s `CellCache`, keyed off the same
+`doorPostAt()` test, and the street's fill laid over the ground the box hid,
+since the fill under the Tarwalk's posts is a bare wall top), which is a
+lane of its own: the box is what the body collides with, the 2D pass and the
+no-art build both draw it, and the frame test pins it standing. This pass
+takes the concrete out of the jamb. It does not take the metre out of the
+cell.
+
+On the map, off `docks_surface.tmx` with the same rules: 31 cells change --
+the Gull's four and its hitching post; the Eel-Pots' oak post at (135,65)
+beside its door; the post before the timber house's door in the lane at
+(137,82); the yard's rail grid at x 52..58 on rows 72..87 (23 of its 24:
+(58,78) has no partner and stays a pillar); the pair at (75,100)/(77,100).
+53 outdoor posts stay pillars, 45 indoor ones stay piers, 44 piles stay
+piles. Nothing in the sim moved: the tavern and population baselines are
+where they were.
+
+Reshoot on this commit's exe once it is gated (the vantages were checked on
+`d23ba091`, the BEFORE, where every one of them shows the column). Every
+line is `dist\granadad.exe --smoke=0 --hold --width=1280 --height=720
+--scale=1` plus:
+
+| frame | vantage | command |
+|---|---|---|
+| jambs-01 | the Gull's door from the street, zoomed (frame 12's own): the inner pair at the frame's edges | `--time=14 --spawn=153,58,19 --yaw=180 --pitch=-6 --fov=45 --screenshot=jambs-01.png` |
+| jambs-02 | the frontage from the water side: both pairs, rails and boards, the door between | `--time=14 --spawn=153,50,19 --yaw=180 --pitch=-2 --fov=60 --screenshot=jambs-02.png` |
+| jambs-03 | angled from the east: the east pair close, the hitching post on the wall, the door beyond | `--time=14 --spawn=161,57,19 --yaw=220 --pitch=-4 --fov=60 --screenshot=jambs-03.png` |
+| jambs-04 | inside the taproom looking out: the east post and its rail through the doorway (the bouncer stands in it) | `--time=14 --spawn=153,70,19 --yaw=0 --pitch=2 --fov=60 --screenshot=jambs-04.png` |
+| jambs-05 | ANOTHER DOOR: the Eel-Pots', its oak post against the wall beside it | `--time=14 --spawn=136,58,19 --yaw=180 --pitch=-4 --fov=60 --screenshot=jambs-05.png` |
+| jambs-06 | ANOTHER DOOR: the timber house in the lane, the post two cells before its door | `--time=14 --spawn=131,78,19 --yaw=135 --pitch=-6 --fov=80 --screenshot=jambs-06.png` |
+| jambs-07 | UNCHANGED: the lone pillar in the lane behind the Gull, no door within two, no partner | `--time=14 --spawn=148,82,19 --yaw=90 --pitch=-2 --fov=80 --screenshot=jambs-07.png` |
+| jambs-08 | UNCHANGED: the taproom's plastered piers with their stools (frame 22's vantage) | `--time=20 --spawn=156,67,19 --yaw=250 --pitch=-3 --screenshot=jambs-08.png` |

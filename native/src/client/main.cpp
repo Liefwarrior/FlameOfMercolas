@@ -62,6 +62,7 @@
 #include "granadad/render3d/backend.hpp"
 #include "granadad/render3d/scene.hpp"
 #include "granadad/render3d/actor_instances.hpp"
+#include "granadad/render3d/ground_items.hpp"
 #include "granadad/render3d/viewmodel.hpp"
 #include "granadad/render3d/world_scene.hpp"
 #include "granadad/sim/angle.hpp"
@@ -371,6 +372,11 @@ struct Options {
     /// overrode it would silently undo the options page on every launch.
     int sensitivity = 14;
     bool sensitivityGiven = false;
+    /// --fov=, the same shape: the settings file's fov is the source of
+    /// truth (the VIEW ANGLE slider saves it), and the command line only
+    /// overrides it for one launch when it was actually given. It used to
+    /// clobber the file's value with the default 90 on every launch.
+    bool fovGiven = false;
     bool invertY = false;
     /// Where the bindings live. Overridable so a capture, a case or a second
     /// player on the same machine can have their own.
@@ -448,9 +454,27 @@ struct PadBeat {
     /// Stick beats: which axis, and which way past the deadzone.
     SDL_GamepadAxis axis = SDL_GAMEPAD_AXIS_LEFTX;
     Sint16 value = 0;
+    /// Where the axis goes back to on the release beat. A stick rests at 0; a
+    /// TRIGGER rests at the raw axis MINIMUM -- see kTriggerRest.
+    Sint16 rest = 0;
     int millis = 0;
     std::string name;
 };
+
+/// THE RAW REST VALUE OF A VIRTUAL TRIGGER, AND WHY IT IS NOT ZERO. SDL maps a
+/// joystick axis bound to a trigger from the axis's full signed range onto
+/// the trigger's 0..32767, so a raw 0 reads back as a HALF-PULLED trigger
+/// (about 16383 -- well past the shipped 12% deadzone). The virtual pad's
+/// axes attach at raw 0, and its trigger beats used to release to 0: both
+/// triggers therefore read PRESSED from the moment the pad attached, and a
+/// trigger beat's "release" never crossed back under the threshold at all.
+/// Under the old scheme (RT cast on its down edge, LT blocked while down)
+/// nobody looked; under nine and the sticks RT is SWING -- a HELD button
+/// whose release resolves the swing -- and the first LOWER HANDS capture
+/// came back with the charge row still up two seconds after the pull. The
+/// game's own trigger edge was right; the harness's idea of "at rest" was a
+/// half-pull. Raw minimum is a trigger fully released.
+constexpr Sint16 kTriggerRest = -32768;
 
 /// Parses "back,wait:400,down,down,shot:pad-map,a" into beats. Unknown words are
 /// reported and refuse the run rather than being skipped -- a capture that
@@ -472,14 +496,19 @@ struct PadBeat {
         const char* word;
         SDL_GamepadAxis axis;
         Sint16 value;
+        Sint16 rest;
     };
     // PAST kNavStickOn (18000) BY A MARGIN, so the latch in the frame loop is
     // being crossed and not grazed.
     static constexpr NamedStick kSticks[] = {
-        {"lsup", SDL_GAMEPAD_AXIS_LEFTY, -28000},
-        {"lsdown", SDL_GAMEPAD_AXIS_LEFTY, 28000},
-        {"lsleft", SDL_GAMEPAD_AXIS_LEFTX, -28000},
-        {"lsright", SDL_GAMEPAD_AXIS_LEFTX, 28000},
+        {"lsup", SDL_GAMEPAD_AXIS_LEFTY, -28000, 0},
+        {"lsdown", SDL_GAMEPAD_AXIS_LEFTY, 28000, 0},
+        {"lsleft", SDL_GAMEPAD_AXIS_LEFTX, -28000, 0},
+        {"lsright", SDL_GAMEPAD_AXIS_LEFTX, 28000, 0},
+        // The right stick's vertical, the ward map's zoom (nine and the
+        // sticks) -- the same latch the left stick's nav uses.
+        {"rsup", SDL_GAMEPAD_AXIS_RIGHTY, -28000, 0},
+        {"rsdown", SDL_GAMEPAD_AXIS_RIGHTY, 28000, 0},
         // THE TRIGGERS ARE AXES, NOT BUTTONS, and that is SDL's rule rather
         // than this harness's: S13's own note in the frame loop is that
         // SDL reports LT/RT through SDL_GAMEPAD_AXIS_*_TRIGGER and never as a
@@ -487,8 +516,9 @@ struct PadBeat {
         // polling. So they are driven here the way the game reads them --
         // well past the shipped triggerDeadzonePercent, and back to rest on
         // the release beat, which is the release edge.
-        {"lt", SDL_GAMEPAD_AXIS_LEFT_TRIGGER, 28000},
-        {"rt", SDL_GAMEPAD_AXIS_RIGHT_TRIGGER, 28000},
+        // A trigger's rest is the raw minimum, not 0 -- see kTriggerRest.
+        {"lt", SDL_GAMEPAD_AXIS_LEFT_TRIGGER, 28000, kTriggerRest},
+        {"rt", SDL_GAMEPAD_AXIS_RIGHT_TRIGGER, 28000, kTriggerRest},
     };
 
     std::size_t at = 0;
@@ -531,6 +561,7 @@ struct PadBeat {
                 beat.kind = PadBeat::Kind::Stick;
                 beat.axis = row.axis;
                 beat.value = row.value;
+                beat.rest = row.rest;
                 out.push_back(beat);
                 found = true;
                 break;
@@ -589,6 +620,13 @@ struct PadDriver {
             return false;
         }
         device = SDL_OpenJoystick(id);
+        // THE TRIGGERS ATTACH RELEASED, not half-pulled -- see kTriggerRest.
+        if (device != nullptr) {
+            (void)SDL_SetJoystickVirtualAxis(device, static_cast<int>(SDL_GAMEPAD_AXIS_LEFT_TRIGGER),
+                                             kTriggerRest);
+            (void)SDL_SetJoystickVirtualAxis(
+                device, static_cast<int>(SDL_GAMEPAD_AXIS_RIGHT_TRIGGER), kTriggerRest);
+        }
         std::printf("granadad: --padscript: virtual pad attached, %d beats\n",
                     static_cast<int>(beats.size()));
         // FLUSHED, EVERY LINE. A harness whose progress is invisible until it
@@ -665,7 +703,7 @@ struct PadDriver {
             if (beat.kind == PadBeat::Kind::Button) {
                 pushButton(beat.button, false);
             } else if (beat.kind == PadBeat::Kind::Stick) {
-                (void)SDL_SetJoystickVirtualAxis(device, static_cast<int>(beat.axis), 0);
+                (void)SDL_SetJoystickVirtualAxis(device, static_cast<int>(beat.axis), beat.rest);
             }
             held = false;
             ++at;
@@ -753,7 +791,7 @@ void print_usage() {
         "                       mouse (default 0): shoot down at a doorstep or\n"
         "                       up at a roof line without touching the mouse\n"
         "  --sensitivity=N      mouse look, BAM per count (default 14). The\n"
-        "                       OPTIONS page (F2) has a slider for this and\n"
+        "                       SETTINGS page (PAUSE) has a slider for this and\n"
         "                       it is what survives between runs -- this only\n"
         "                       overrides it for one launch\n"
         "  --invert-y           invert the look axis for one launch\n"
@@ -799,7 +837,16 @@ void print_usage() {
         "  --case-lead=ID       THE CASEBOOK PASS: open the casebook page with\n"
         "                       its cursor on this casebook.json lead id\n"
         "                       (weighhouse-ledger)\n"
-        "  --case-tab=VIEW      leads or case\n"
+        "  --case-tab=VIEW      leads, case or cases (the CASES shelf)\n"
+        "  --follow=ID          THE PULL PACK: open the casebook page, put the\n"
+        "                       cursor on the lead by its casebook.json id and\n"
+        "                       press FOLLOW (F), leaving the book up. Runs\n"
+        "                       after the trail flags, so --trail=mission can\n"
+        "                       have opened the lead first\n"
+        "  --follow-end=street  ...then put the book down, so the shutter is the\n"
+        "                       compass ribbon carrying the lead\n"
+        "  --follow-walk=N      ...and walk N steps forward first, so the paces\n"
+        "                       on the ribbon are a picture of movement\n"
         "  --case-route         press the casebook's commit verb, which routes\n"
         "                       the highlighted lead onto the ward map. The\n"
         "                       only headless path to a picture of the route\n"
@@ -834,16 +881,18 @@ void print_usage() {
         "                       hold threshold) or the held hard tier (at or\n"
         "                       past it) is on the frame. Pair with\n"
         "                       --settle-steps=0 for an exact count\n"
-        "  --block              VERIFICATION ONLY: pick that same fight, raise\n"
-        "                       the guard, hold it until a blow is softened\n"
+        "  --block[=N]          VERIFICATION ONLY: pick that same fight, raise\n"
+        "                       the guard, hold it until N blows are softened\n"
+        "                       (default 1; 5 earns shieldwall's first level\n"
+        "                       and the SHIELDWALL RISES TO 1 toast mid-fight)\n"
         "  --cast               VERIFICATION ONLY: press the cast key once\n"
         "                       (pair with --flame to have a spell to cast)\n"
         "  --held=ID[,ID]       VERIFICATION ONLY: equip each crafting by id\n"
         "                       and cast until its link opens, waiting out\n"
         "                       cooldowns -- photographs live holds with\n"
         "                       their clocks. Pair with --flame\n"
-        "  --grimoire           VERIFICATION ONLY: open the Grimoire page (the\n"
-        "                       same page a tap of the QuickWheel key opens)\n"
+        "  --grimoire           VERIFICATION ONLY: open the Grimoire page (a\n"
+        "                       page of NOTES, one bumper past the ward map)\n"
         "                       before the shutter goes; pair with --flame so\n"
         "                       the list has craftings on it\n"
         "  --wait               VERIFICATION ONLY: open the Wait page through\n"
@@ -869,7 +918,8 @@ void print_usage() {
         "                       controller plugged in. Beats: a b x y back\n"
         "                       start lb rb up down left right (buttons),\n"
         "                       lsup lsdown lsleft lsright (a left-stick push\n"
-        "                       past the deadzone and back), lt rt (the\n"
+        "                       past the deadzone and back), rsup rsdown (the\n"
+        "                       right stick, the ward map's zoom), lt rt (the\n"
         "                       triggers, which SDL reports as axes and not\n"
         "                       as buttons), wait:MS, shot:NAME. An unknown\n"
         "                       beat REFUSES THE WHOLE SCRIPT rather than\n"
@@ -963,12 +1013,34 @@ void print_usage() {
         "  --watch-halt[=WHERE] draw steel in the Gull in Watchman Cull's sight\n"
         "                       and stand there: the halt, the arrest at reach,\n"
         "                       the street. WHERE is halt or street\n"
+        "  --street-assault[=WHERE]\n"
+        "                       stand in the crowd on the Tarwalk at 16:00.\n"
+        "                       WHERE empty: raise steel, the street scatters\n"
+        "                       (pair with --settle-steps=N, 0/180/360). blow: a\n"
+        "                       fist lands on a docker. down: taps until he is on\n"
+        "                       the floor. up: and six seconds on, back on his\n"
+        "                       feet, bloodied, running. kill: steel, hard swings,\n"
+        "                       a corpse and WANTED FOR BLOOD. hearing: the\n"
+        "                       killing, then Cull at ten, the rope hearing page\n"
+        "                       reading the street's own witness count. watch-halt:\n"
+        "                       a fist within a watchman's sight, HALT on his own\n"
+        "                       row. watch-sheathe: steel within his sight, SHEATHE\n"
+        "                       IT. watch-offence: the same held past its grace\n"
         "  --court[=WHERE]      lift in Cull's sight until WANTED, be taken to the\n"
         "                       Mission's bench. WHERE is wanted, cull (his line, his\n"
         "                       hand on you), taken (the plate), page, paper, armed,\n"
         "                       plea, deny, hand (the Skyrunners' oath first), serve,\n"
         "                       bloodtag, ropepage, rope or newman (--flame first to\n"
         "                       have what you gave at the door weighed)\n"
+        "  --kit[=WHERE]        play the Kit: name and take the coil on the\n"
+        "                       Tarwalk, lift the house's lantern, knife and\n"
+        "                       coat (THEIRS) at four, open the Character tile\n"
+        "                       on the carried rows, wear the coat and the\n"
+        "                       knife, slot the knife, take Ox's blow on the\n"
+        "                       coat, put him down and search him, load up to\n"
+        "                       the budget, put the coil down and look at it.\n"
+        "                       WHERE is take, theirs, sheet, equip, slot, dr,\n"
+        "                       search, load, drop or empty for the whole line\n"
         "  --nemesis[=WHERE]    lose a fist fight to a named laborer three\n"
         "                       times and watch him rise: a rung, a guild\n"
         "                       with members in it, a permanent cut of the\n"
@@ -1050,15 +1122,21 @@ void print_usage() {
         "                       from a script without ears\n"
         "  --version            print the build banner and exit\n"
         "\n"
-        "IN THE GAME: WASD moves, the mouse looks, SHIFT sprints, CTRL\n"
-        "crouches (both HOLD and TAP), SPACE jumps, E talks, M opens the\n"
-        "ward map, J opens your casebook, F1 lists every key and F2\n"
-        "rebinds them.\n"
+        "IN THE GAME: NINE VERBS AND THE STICKS. WASD moves and the mouse\n"
+        "looks. MOUSE1 SWINGS (hands down, one press brings them up and\n"
+        "hits whoever is in front of you; hold it to swing hard), MOUSE2\n"
+        "GUARDS, C CASTS, E USES whatever is in reach, CTRL SNEAKS (hold\n"
+        "or tap), SPACE JUMPS, SHIFT RUNS, J opens your NOTES (sheet,\n"
+        "chart, letters, casebook, and past them the ward map and the\n"
+        "grimoire on [ and ]), ESC PAUSES. M is the ward map's own key.\n"
+        "On a pad: RT swings, LT guards, RB casts, A uses, B sneaks, Y\n"
+        "jumps, the stick runs, D-pad up is NOTES, START pauses, SELECT\n"
+        "waits, D-pad left/right step the quick bar. LB/RB page, LT/RT\n"
+        "tab, B backs out of every page.\n"
         "\n"
-        "WALK INTO A LEDGE TO CLIMB IT. There is no climb key to learn --\n"
-        "though V still works if you would rather line a leap up yourself.\n"
-        "The keys are IN the game and every one of them is rebindable; this\n"
-        "page is a convenience and not the reference.\n");
+        "WALK INTO A LEDGE TO CLIMB IT. There is no climb key to learn.\n"
+        "The keys are IN the game (PAUSE, CONTROLS) and every one of them\n"
+        "is rebindable; this page is a convenience and not the reference.\n");
 }
 
 [[nodiscard]] Options parse(int argc, char** argv, bool& stop, int& exitCode) {
@@ -1146,6 +1224,7 @@ void print_usage() {
             options.smoke.session.timeOfDayGiven = true;
         } else if (starts_with(arg, "--fov=", &value)) {
             options.smoke.session.fovDegrees = std::clamp(std::atoi(value), 40, 130);
+            options.fovGiven = true;
         } else if (starts_with(arg, "--yaw=", &value)) {
             options.smoke.session.spawnYaw = sim::angle_from_degrees(std::atoi(value));
             options.smoke.session.spawnYawGiven = true;
@@ -1212,6 +1291,7 @@ void print_usage() {
             options.smoke.caseLead = value;
             options.wantsSmoke = true;
         } else if (starts_with(arg, "--case-tab=", &value)) {
+            // THE PULL PACK: `cases` is the third view, the shelf.
             options.smoke.caseTab = value;
             options.wantsSmoke = true;
         } else if (std::strcmp(arg, "--case-route") == 0) {
@@ -1259,6 +1339,21 @@ void print_usage() {
         } else if (std::strcmp(arg, "--block") == 0) {
             // VERIFICATION ONLY. See SmokeRunConfig::block's own header.
             options.smoke.block = true;
+            options.wantsSmoke = true;
+        } else if (starts_with(arg, "--block=", &value)) {
+            // THE PULL PACK. See SmokeRunConfig::blockBlows' own header.
+            options.smoke.block = true;
+            options.smoke.blockBlows = std::max(1, std::atoi(value));
+            options.wantsSmoke = true;
+        } else if (starts_with(arg, "--follow=", &value)) {
+            // THE PULL PACK. See SmokeRunConfig::follow's own header.
+            options.smoke.follow = value;
+            options.wantsSmoke = true;
+        } else if (starts_with(arg, "--follow-end=", &value)) {
+            options.smoke.followEnd = value;
+            options.wantsSmoke = true;
+        } else if (starts_with(arg, "--follow-walk=", &value)) {
+            options.smoke.followWalk = std::max(0, std::atoi(value));
             options.wantsSmoke = true;
         } else if (std::strcmp(arg, "--cast") == 0) {
             // VERIFICATION ONLY. See SmokeRunConfig::cast's own header.
@@ -1389,12 +1484,26 @@ void print_usage() {
         } else if (starts_with(arg, "--watch-halt=", &value)) {
             options.smoke.watchHalt = true;
             options.smoke.watchHaltEnd = value;
+        } else if (std::strcmp(arg, "--street-assault") == 0) {
+            // STREET SENSES (9a completion). See SmokeRunConfig::streetAssault.
+            options.smoke.streetAssault = true;
+            options.wantsSmoke = true;
+        } else if (starts_with(arg, "--street-assault=", &value)) {
+            options.smoke.streetAssault = true;
+            options.smoke.streetAssaultWhere = value;
+            options.wantsSmoke = true;
         } else if (std::strcmp(arg, "--court") == 0) {
             // JUSTICE BUILD (HEARING PAGE LANE). See SmokeRunConfig::court.
             options.smoke.court = true;
         } else if (starts_with(arg, "--court=", &value)) {
             options.smoke.court = true;
             options.smoke.courtEnd = value;
+        } else if (std::strcmp(arg, "--kit") == 0) {
+            // KIT BUILD. See SmokeRunConfig::kit.
+            options.smoke.kit = true;
+        } else if (starts_with(arg, "--kit=", &value)) {
+            options.smoke.kit = true;
+            options.smoke.kitEnd = value;
             options.wantsSmoke = true;
         } else if (std::strcmp(arg, "--nemesis") == 0) {
             options.smoke.nemesis = true;
@@ -1596,15 +1705,40 @@ void print_usage() {
     // key, so it is read the same way and outranks its own binding there --
     // which is what takes PadUp off Menu for as long as a NON-Menu list is up
     // (the violation-#3 rule above carves out the Menu surface itself).
+    // THE WHEEL WALKS A LIST -- and ONLY the wheel: QuickNext/QuickPrev carry
+    // the pad's D-pad right/left as their second half now (nine and the
+    // sticks), and on a page those two are sideways list movement, raw,
+    // three lines down. Without the device gate a D-pad right would read as
+    // "down" here first and win.
+    const bool wheelPrev = action == render::Action::QuickPrev && !render::keyIsPad(key);
+    const bool wheelNext = action == render::Action::QuickNext && !render::keyIsPad(key);
     const bool up = key == render::Key::Up || key == render::Key::PadUp ||
-                    action == render::Action::Forward || action == render::Action::QuickPrev;
+                    action == render::Action::Forward || wheelPrev;
     const bool downward = key == render::Key::Down || key == render::Key::PadDown ||
-                          action == render::Action::Back || action == render::Action::QuickNext;
+                          action == render::Action::Back || wheelNext;
     const bool leftward = key == render::Key::Left || key == render::Key::PadLeft ||
                           action == render::Action::StrafeLeft;
     const bool rightward = key == render::Key::Right || key == render::Key::PadRight ||
                            action == render::Action::StrafeRight;
     const bool confirm = key == render::Key::Enter || action == render::Action::Interact;
+    // NINE AND THE STICKS: the two sideways steps of the page grammar, RAW,
+    // ahead of any binding -- LB/RB and `[` `]` turn the PAGE (the six pages
+    // of NOTES), LT/RT and TAB step the SUB-TABS inside one page. Read here
+    // for the same reason the arrows and the D-pad are: a page owns the
+    // input while it is up, so the bumpers can be free to CAST in the world
+    // and the triggers to SWING and GUARD, and still be Oblivion's tab keys
+    // the moment a page comes up. render::pageStep/tabStep are the one rule
+    // every nav band prints (promptPageKeys/promptTabKeys).
+    const int page = render::pageStep(key);
+    const int tab = render::tabStep(key);
+    // WHAT A PAGE LETS THROUGH TO pressed() WHEN ITS OWN BRANCH DECLINES A
+    // KEY. Every branch below ends in this instead of a bare `return false`:
+    // the documented fall-throughs (render::pageFallThrough -- Pause, Menu,
+    // Map, Wait, Screenshot, and SWING across a counter) still reach the
+    // world; every other verb is SWALLOWED while a page owns the input. The
+    // leak this closes: the D-pad's left and right are QuickPrev/QuickNext,
+    // and a sideways press on the pause menu used to reach the quick bar.
+    const auto declined = [&]() { return !render::pageFallThrough(action, session.talking()); };
     // The printed number beside a row. Ten of them, and the tenth turns the page
     // -- see kTopicPageSize.
     const int slotBase = static_cast<int>(render::Action::QuickSlot1);
@@ -1649,11 +1783,24 @@ void print_usage() {
             // the menu, which is what it used to do before this branch existed.
             return true;
         }
+        // NINE AND THE STICKS: A SUB-TAB STEP ON A PAGE WITH NO TABS IS
+        // SWALLOWED, the digit-0 rule above. The triggers are SWING and GUARD
+        // in the world; a pull that reached pressed() from here would put
+        // the menu down and throw a punch at whoever is in front of you --
+        // the exact class of surprise sec. 4 exists to kill. Same on the
+        // wait page, the grimoire and the tiled Menu below.
+        // AND THE PAGE STEP, for the same reason: RB is CAST in the world, and
+        // a bumper that reached pressed() from a page that has no pages would
+        // put the page down and cast the readied crafting at whoever is in
+        // front of you. Every page that is not in the NOTES ring swallows it.
+        if (tab != 0 || page != 0) {
+            return true;
+        }
         // ESCAPE FALLS THROUGH ON PURPOSE, same as the options page below: the
         // key that opened this closes it, and closeConversation() already
         // knows to disarm QUIT on the first press rather than leaving the page
         // entirely.
-        return false;
+        return declined();
     }
 
     // JUSTICE BUILD (HEARING PAGE LANE). THE BENCH. Below the pause branch on
@@ -1677,11 +1824,13 @@ void print_usage() {
         // direction lands the other one. The pause-return note travels with
         // the swap: toggleKeys/toggleOptions re-derive it from pauseReturn_
         // (see Session::pageOpenedFromPause_'s own header).
-        if (key == render::Key::Tab || action == render::Action::PageNext ||
-            action == render::Action::PagePrev) {
+        if (tab != 0) {
             session.armCommitPulse();  // rule 2: a tab step answers instantly
             session.toggleKeys();
             return true;
+        }
+        if (page != 0) {
+            return true;  // not a page of NOTES -- swallowed, see the pause branch
         }
         if (up) {
             session.moveOptionCursor(-1);
@@ -1716,7 +1865,7 @@ void print_usage() {
         }
         // ESCAPE AND F2 FALL THROUGH on purpose, so the key that opened the
         // page always closes it and Menu always backs out of it.
-        return false;
+        return declined();
     }
 
     if (session.grimoireOpen()) {
@@ -1725,6 +1874,22 @@ void print_usage() {
         // own slider shape, and the reason a pad can bind at all), the
         // printed number or ENTER readies one, 0 pages a long list. ESC
         // falls through, so the key that closes every page closes this one.
+        //
+        // NINE AND THE STICKS: A PAGE OF NOTES. The QuickWheel tap that used
+        // to open this is cut; the bumpers page here from the ward map and
+        // on round to the sheet -- Session::menuPageNext/Prev own the ring.
+        if (page != 0) {
+            session.armCommitPulse();
+            if (page > 0) {
+                session.menuPageNext();
+            } else {
+                session.menuPagePrev();
+            }
+            return true;
+        }
+        if (tab != 0) {
+            return true;  // no sub-tabs here -- swallowed, see the pause branch
+        }
         if (up) {
             session.moveGrimoireCursor(-1);
             return true;
@@ -1756,7 +1921,7 @@ void print_usage() {
                                       session.grimoirePage() * render::kTopicPageSize);
             return true;
         }
-        return false;
+        return declined();
     }
 
     if (session.waitOpen()) {
@@ -1764,6 +1929,9 @@ void print_usage() {
         // printed number or ENTER passes them (or is refused out loud), 0
         // pages the list. ESC falls through, so the key that closes every
         // page closes this one.
+        if (tab != 0 || page != 0) {
+            return true;  // no sub-tabs, not a page of NOTES -- swallowed, see the pause branch
+        }
         if (up) {
             session.moveWaitCursor(-1);
             return true;
@@ -1787,7 +1955,7 @@ void print_usage() {
                                   session.waitPage() * render::kTopicPageSize);
             return true;
         }
-        return false;
+        return declined();
     }
 
     if (session.districtMapOpen()) {
@@ -1816,31 +1984,29 @@ void print_usage() {
             session.moveDistrictMapCursor(render::MapStep::East);
             return true;
         }
-        if (key == render::Key::Tab) {
-            // TAB CYCLES THE VIEWS while the map is up, and does NOT open the
-            // casebook underneath it. The key that means "the next tab" on
-            // every other tabbed surface in the world means it here too, and a
-            // page that let its own tab key fall through to a different page
-            // would be the split-brain bug toggleOptions' comment describes.
+        // NINE AND THE STICKS: OBLIVION'S OWN MAP GRAMMAR. The four views
+        // step on the SUB-TAB keys -- TAB on a keyboard (as it always did:
+        // the key that means "the next tab" on every tabbed surface means it
+        // here too, and does NOT open the casebook underneath), LT/RT on a
+        // pad. The PAGE keys -- `[` `]`, LB/RB -- leave the map for its
+        // neighbours in NOTES (the casebook behind it, the grimoire ahead),
+        // because on a pad the ward map IS a page of NOTES and spends no
+        // button of its own. The triggers used to zoom here; the zoom rides
+        // `=` `-` and the right stick now (the stickNav block below routes
+        // the stick as those two raw keys), so nothing on this page wears
+        // another mode's clothes.
+        if (tab != 0) {
             session.armCommitPulse();  // rule 2: a tab step answers instantly
-            session.cycleDistrictMapTab(1);
+            session.cycleDistrictMapTab(tab);
             return true;
         }
-        // THE PARITY PASS: THE BUMPERS ARE THE PAD'S TAB KEY. Tab above is a
-        // keyboard key and the pad's Tab (PadUp, Action::Menu) is now the
-        // cursor's own UP -- so without this the four views the tab row prints
-        // were reachable by keyboard and mouse and by no pad button at all.
-        // PagePrev/PageNext is where "the next page of this thing" already
-        // lives, LB/RB is where a thumb expects a tab, and `[`/`]` come along
-        // for free on the keyboard side.
-        if (action == render::Action::PageNext) {
+        if (page != 0) {
             session.armCommitPulse();
-            session.cycleDistrictMapTab(1);
-            return true;
-        }
-        if (action == render::Action::PagePrev) {
-            session.armCommitPulse();
-            session.cycleDistrictMapTab(-1);
+            if (page > 0) {
+                session.menuPageNext();
+            } else {
+                session.menuPagePrev();
+            }
             return true;
         }
         if (key == render::Key::Equals) {
@@ -1851,37 +2017,16 @@ void print_usage() {
             session.adjustDistrictMapZoom(-1);
             return true;
         }
-        // THE ZOOM LADDER, ON THE TRIGGERS. Same argument as the bumpers: `=`
-        // and `-` are keyboard keys, and the owner's own complaint about this
-        // page -- "hard to figure out where the place you're looking for is" --
-        // was answered by a zoom a pad could not reach. Cast/Block are the two
-        // pad keys a full-screen map has no other use for (S13 gave them RT and
-        // LT), and this is the same "a verb wearing a different mode's clothes"
-        // the haggle branch below already spends PageNext on.
-        if (action == render::Action::Cast) {
-            session.adjustDistrictMapZoom(1);
-            return true;
-        }
-        if (action == render::Action::Block) {
-            session.adjustDistrictMapZoom(-1);
-            return true;
-        }
-        // FAST TRAVEL (TRAVEL lane). The page's second commit: T is a raw
-        // map-page key exactly as Tab/=/- are, and Attack is the pad's own
-        // half of the verb -- X (PadWest), the one face button unclaimed on
-        // this page (A is FACE IT, B backs out, Y is free but Attack is what
-        // X binds), the same "verb wearing a different mode's clothes" the
-        // zoom triggers above argue. NOT Interact: Interact's pad half is
-        // PadSouth, which is confirm/FACE IT, so travelling on it would steal
-        // the existing commit. The verb row at the detail foot names whichever
-        // half is in the player's hands. Refusals are the Session's to say,
-        // out loud, with the page staying up.
-        // The Attack half is PAD ONLY -- keyIsPad gates it -- because Attack's
-        // keyboard binding is MouseLeft, and a left-click on the map is
-        // already the pointer's select-then-FACE-IT (session_pointer below).
-        // Without the gate a mouse click would both face AND travel.
-        if (key == render::Key::T ||
-            (render::keyIsPad(key) && action == render::Action::Attack)) {
+        // FAST TRAVEL (TRAVEL lane). The page's second commit, on the one
+        // second-commit key the grammar keeps: T on a keyboard (a raw
+        // map-page key exactly as Tab/=/- are -- it outranks T's world
+        // binding, WAIT, while the map is up, the way every raw page key
+        // outranks the world), X on a pad -- the face button the nine leave
+        // free everywhere. NOT Interact: A is FACE IT, the existing commit.
+        // The verb row at the detail foot names whichever half is in the
+        // player's hands (promptAltCommitKey). Refusals are the Session's to
+        // say, out loud, with the page staying up.
+        if (render::isAltCommitKey(key)) {
             // Contract (b): the commit beat, armed at commit routing.
             session.armCommitPulse();
             session.travelDistrictMapSelection();
@@ -1915,7 +2060,7 @@ void print_usage() {
             // `0` to the detail page-turn. Inert-but-swallowed until then.
             return true;
         }
-        return false;
+        return declined();
     }
 
     if (session.picking()) {
@@ -1940,10 +2085,21 @@ void print_usage() {
             session.forceLock();
             return true;
         }
-        return false;
+        if (tab != 0 || page != 0) {
+            return true;  // the wire has no pages -- swallowed, see the pause branch
+        }
+        return declined();
     }
 
     if (session.talking()) {
+        // NINE AND THE STICKS: a conversation has no pages and no sub-tabs;
+        // the bumpers and triggers are swallowed here rather than reaching
+        // CAST, SWING and GUARD through pressed() and putting the counter
+        // down with a spell or a punch. The forge and the haggle below take
+        // their own keys first and inherit this for the rest.
+        if (tab != 0 || page != 0) {
+            return true;
+        }
         if (session.forging()) {
             // The workbench takes the keyboard the way the counter does. Up and
             // down walk the five fields, left and right change the one under the
@@ -1990,28 +2146,20 @@ void print_usage() {
             }
             // #85. Lift RETIRED into Interact, which this branch already
             // spends on `confirm` (making YOUR OWN offer) -- the two cannot
-            // share a key inside one haggle. PageNext is free here (nothing
-            // in a haggle pages anything) and reused for "take the number on
-            // the table", the same "a verb wearing a different mode's
-            // clothes" pattern route_menu_key already uses throughout --
-            // Forward/Back become movePick in the lockpicking branch above,
-            // for instance.
-            if (action == render::Action::PageNext) {
+            // share a key inside one haggle. "Take the number on the table"
+            // is the page's SECOND COMMIT, and nine and the sticks gives
+            // every second commit one home: T on a keyboard (the band has
+            // advertised "T - TAKE THEIR PRICE" since the haggle shipped),
+            // X on a pad (the face button the nine leave free; RB is CAST
+            // now and casts nothing across a counter). A raw page key
+            // outranks T's world binding, WAIT, exactly as TAB outranks
+            // nothing and the arrows outrank Forward: the page owns the
+            // input while it is up.
+            if (render::isAltCommitKey(key)) {
                 session.takeAskingPrice();
                 return true;
             }
-            // SHIP NOTE MOVE 3, in passing: the band has advertised
-            // "T - TAKE THEIR PRICE" since the haggle shipped, and T was
-            // never routed -- only PageNext above was. The advertised key
-            // now does the advertised thing; PageNext stays for the pad's
-            // RB, which is what the band prints with a pad in hand. Same
-            // yield rule as F1/F2/F3: a verb somebody BINDS to T outranks
-            // the convenience.
-            if (key == render::Key::T && action == render::Action::Count) {
-                session.takeAskingPrice();
-                return true;
-            }
-            return false;
+            return declined();
         }
         if (up) {
             session.moveTopicCursor(-1);
@@ -2036,7 +2184,7 @@ void print_usage() {
             session.interact();
             return true;
         }
-        return false;
+        return declined();
     }
 
     if (session.casebookPageOpen()) {
@@ -2062,18 +2210,37 @@ void print_usage() {
             session.moveCasebookCursor(1);
             return true;
         }
-        if (key == render::Key::Tab || action == render::Action::PageNext) {
-            session.armCommitPulse();  // rule 2: a tab step answers instantly
-            session.cycleCasebookTab(1);
-            return true;
-        }
-        if (action == render::Action::PagePrev) {
+        // NINE AND THE STICKS: THE JOURNAL TILE IS THIS PAGE (casebookPageOpen
+        // is the tiled Menu focused on the Journal), so it is a page of the
+        // ring like the other three tiles -- the page step walks on to the
+        // ward map from here. Ahead of the sub-tab step, which stays the
+        // page's own LEADS / THE CASE. Without this a bumper here fell
+        // through to the world and CAST, which is the exact "a verb wearing
+        // another mode's clothes" the grammar exists to end.
+        if (page != 0) {
             session.armCommitPulse();
-            session.cycleCasebookTab(-1);
+            if (page > 0) {
+                session.menuPageNext();
+            } else {
+                session.menuPagePrev();
+            }
             return true;
         }
+        if (tab != 0) {
+            session.armCommitPulse();  // rule 2: a tab step answers instantly
+            session.cycleCasebookTab(tab);
+            return true;
+        }
+        // NINE AND THE STICKS: LEFT/RIGHT STEP THE TWO VIEWS TOO. The foot
+        // has printed the left/right arrowheads beside CASE / LEADS since the
+        // casebook pass, and the press sat "reserved" and inert underneath
+        // it -- a band advertising a verb the router did not take, the exact
+        // drift the grammar exists to kill. Two views, one sideways step: the
+        // D-pad and the arrows do what the foot says, the sub-tab keys above
+        // do the same from the other thumb.
         if (leftward || rightward) {
-            // Reserved -- see the header note above.
+            session.armCommitPulse();
+            session.cycleCasebookTab(rightward ? 1 : -1);
             return true;
         }
         if (numbered) {
@@ -2091,6 +2258,19 @@ void print_usage() {
             session.commitCasebookLead();
             return true;
         }
+        // THE PULL PACK: FOLLOW. F is a raw page key exactly as the map's T
+        // is, and Attack is the pad's own half of the verb -- X (PadWest),
+        // the one face button unclaimed on this page (A is the commit, B
+        // backs out) -- the map's travel precedent to the letter, keyIsPad
+        // gate included: Attack's keyboard binding is MouseLeft, and a
+        // left-click on the book is already the pointer's select-then-commit.
+        // A verb somebody BINDS to F outranks the convenience (the T rule).
+        if ((key == render::Key::F && action == render::Action::Count) ||
+            (render::keyIsPad(key) && action == render::Action::Attack)) {
+            session.armCommitPulse();
+            session.followCasebookSelection();
+            return true;
+        }
         if (pageKey) {
             // UI-EA-SPEC sec. 4 violation #6: `0` IS MORE WHERE A LIST PAGES,
             // INERT ELSEWHERE -- never BACK. Today the lead list follows its
@@ -2102,21 +2282,70 @@ void print_usage() {
         }
         // Anything else falls through to the ordinary bindings, and every verb
         // down there puts the page away first.
-        return false;
+        return declined();
     }
 
     if (session.casebookOpen() || session.keysOpen() || session.characterOpen() ||
         session.mapOpen() || session.lettersOpen()) {
         // UI-EA-SPEC sec. 4 violation #2, the other half: from the keys page,
-        // TAB and the bumpers step to the sibling Options page. Scoped to
-        // keysOpen -- on the tiled Menu the bumpers already step tile focus
-        // through pressed()'s PagePrev/PageNext dispatch, and that stays.
-        if (session.keysOpen() &&
-            (key == render::Key::Tab || action == render::Action::PageNext ||
-             action == render::Action::PagePrev)) {
+        // TAB and the triggers step to the sibling Options page (the sub-tab
+        // grammar). Scoped to keysOpen -- on the tiled Menu the PAGE keys
+        // step tile focus, below.
+        if (session.keysOpen() && tab != 0) {
             session.armCommitPulse();  // rule 2
             session.toggleOptions();
             return true;
+        }
+        // KIT BUILD. THE CHARACTER TILE'S THREE PRESSES OVER A CARRIED ROW,
+        // and only there: LEFT/RIGHT walk the row's quick slot (the
+        // Grimoire's own cycle, D-pad-reachable for the same reason), and X
+        // -- the keyboard's own unbound X, or the pad's X, which is the
+        // Attack binding wearing the tile's clothes exactly as PageNext
+        // wears the haggle's -- DROPS it at the feet. ENTER already wears it
+        // through chooseTopic. A sheet row takes none of these, so the
+        // tiled Menu's own bumper/tab grammar (below) is untouched
+        // everywhere else. Checked first and ahead of the ring, since it
+        // reads leftward/rightward/X rather than page/tab and only claims
+        // them while a kit row is actually highlighted.
+        // CONTROLS LANE: the X prompt on this tile is the one to re-key if
+        // the pad's X leaves Attack.
+        if (session.casebookOpen() && session.menuFocus() == render::kMenuFocusCharacter &&
+            session.highlightedKitRow().has_value()) {
+            if (leftward) {
+                session.adjustKitSlot(-1);
+                return true;
+            }
+            if (rightward) {
+                session.adjustKitSlot(1);
+                return true;
+            }
+            if ((key == render::Key::X && action == render::Action::Count) ||
+                action == render::Action::Attack) {
+                session.armCommitPulse();  // contract (b): a drop commits
+                session.dropHighlightedKitRow();
+                return true;
+            }
+        }
+        // NINE AND THE STICKS: THE RING. LB/RB and `[` `]` step the tiles --
+        // sheet, chart, letters, casebook -- and on past the last of them to
+        // the ward map and the grimoire, Session::menuPageNext/Prev's own
+        // order. This used to be pressed()'s PagePrev/PageNext dispatch; the
+        // two are raw page grammar now and the router is where page grammar
+        // lives. The keys page has no tiles to step and is not in the ring.
+        if (page != 0) {
+            if (session.keysOpen()) {
+                return true;  // the keys page is not a page of NOTES -- swallowed
+            }
+            session.armCommitPulse();
+            if (page > 0) {
+                session.menuPageNext();
+            } else {
+                session.menuPagePrev();
+            }
+            return true;
+        }
+        if (tab != 0) {
+            return true;  // the tiles have no sub-tabs -- swallowed, see the pause branch
         }
         if (up) {
             session.moveTopicCursor(-1);
@@ -2135,12 +2364,22 @@ void print_usage() {
             return true;
         }
         if (confirm) {
-            session.chooseTopic(static_cast<std::size_t>(session.topicCursor()));
+            // KIT POLISH: THE ROW THE PLAYER IS LOOKING AT, not the
+            // conversation's cursor. topicCursor() is topicCursor_, the
+            // field the arrows move while somebody is TALKING; the tiles
+            // keep their own (moveTopicCursor routes by focus), so under a
+            // tile that number is whatever the last conversation left --
+            // 0 in a fresh session, the last topic picked otherwise. The
+            // Character tile never noticed (its press acts on its own
+            // cursor and ignores the index); the Letters tile opened
+            // letter number topicCursor_ instead of the highlighted one,
+            // and nothing at all once that number was past the shelf.
+            session.chooseTopic(static_cast<std::size_t>(session.menuCursor()));
             return true;
         }
         // Anything else falls through to the ordinary bindings, and every verb
         // down there puts the page away first.
-        return false;
+        return declined();
     }
     return false;
 }
@@ -2300,6 +2539,17 @@ bool session_pointer(render::Session& session, int frameWidth, int frameHeight, 
         const int at = render::casebookLeadAtPixel(page, frameWidth, frameHeight, px, py);
         if (at < 0) {
             return true;
+        }
+        if (page.tab == render::CasebookTab::Cases) {
+            // THE PULL PACK: the pointer on a LEAD while the shelf is up is
+            // the pointer asking for the leads -- step the view back first,
+            // so the click commits the lead it landed on and not the shelf
+            // row the keyboard cursor happened to be resting on.
+            if (!click) {
+                return true;
+            }
+            session.cycleCasebookTab(static_cast<int>(render::CasebookTab::Leads) -
+                                     static_cast<int>(page.tab));
         }
         session.setCasebookCursor(at);
         if (click) {
@@ -3578,6 +3828,16 @@ struct SceneRig {
         params.timeOfDaySeconds = session.timeOfDay();
         params.dynamicLamps = session.tavernLights();
         world->refresh(scene, session.camera(), aspect, params);
+        // KIT BUILD: the things on the tiles -- the room's hashed ground
+        // list, the four strongboxes and the snug's bale -- as Item pieces
+        // off the same catalogue, appended after the placed pieces (whose
+        // table they index). Per frame, off sim state, never written back:
+        // TAKE removes a thing in the sim and the next frame has one fewer.
+        {
+            const std::vector<render3d::StaticInstance> things =
+                render3d::groundItemInstances(session, catalogue, session.camera());
+            scene.statics.insert(scene.statics.end(), things.begin(), things.end());
+        }
         // A LANE: the people. Sixteen placeholder rigs put once (the adapter
         // swaps in the glb by name where it has one), and the instances
         // rewritten every frame off the roster with wardSprites' own slide.
@@ -4254,7 +4514,14 @@ int run_client(const Options& options, const render::CreationResult& chosen,
     if (options.invertY) {
         controls.mouse.invertY = true;
     }
-    controls.fovDegrees = start.fovDegrees;
+    // THE FILE'S FOV SURVIVES A RELAUNCH. Only an explicit --fov= overrides
+    // it, for this launch; the slider's saved value is otherwise what the
+    // camera reads. (start.fovDegrees is the option's default, 90, whenever
+    // nobody passed --fov=, and writing that over the file every boot was
+    // the VIEW ANGLE slider "saving" into a value nothing ever read back.)
+    if (options.fovGiven) {
+        controls.fovDegrees = start.fovDegrees;
+    }
     controls.sanitise();
     session.setControls(controls);
     // SHIP NOTE SEAM #2, CLOSED: THE FEET READ THE HAND FROM THE DOOR. The
@@ -4465,25 +4732,16 @@ int run_client(const Options& options, const render::CreationResult& chosen,
     // and crouch should latch and the argument has no winner, so the same key
     // does both: a tap latches, a hold holds. render::HoldToggle owns the rule
     // and tests/test_controls.cpp owns the proof.
-    render::HoldToggle sprint;
+    // NINE AND THE STICKS: RUN IS A PLAIN HOLD. The tap-to-walk toggle is
+    // cut (a pad picks its gait off the stick's magnitude, and SNEAK is the
+    // quiet stance every theft resolves off), so sprint no longer needs a
+    // HoldToggle's tap/hold judgement -- down is running, up is not. Crouch
+    // keeps the HoldToggle: tap latches, hold holds.
+    bool sprintHeld = false;
     render::HoldToggle crouch;
     std::int64_t stepClock = 0;
     int quickSlot = 0;
-    // #85. THE QUICK WHEEL. Plain held-down state, not a HoldToggle: there is
-    // no tap-vs-hold ambiguity to resolve here the way Sprint/Crouch have --
-    // it is open for exactly as long as QuickWheel is down and never latches.
-    //
-    // SPELLS BUILD: A TAP OF IT IS THE GRIMOIRE PAGE NOW. Held, the key is
-    // still the wheel, exactly as above; released within HoldToggle's own
-    // kTapSteps without ever stepping a slot, the press plainly was not FOR
-    // the wheel -- it used to do nothing at all -- and the one key that
-    // means "craftings" opens the list page instead. No new binding, no new
-    // Menu tile, per the owner's ruling. The two trackers below are what
-    // tells the taps apart.
-    bool quickWheelOpen = false;
-    std::int64_t quickWheelDownAt = 0;
-    bool quickWheelStepped = false;
-    // COMBAT. THE ATTACK-ARMED SELF-GUARD, the QuickWheel's exact shape. Attack
+    // COMBAT. THE ATTACK-ARMED SELF-GUARD, a plain held bool. Attack
     // is now a down-edge/release-edge pair: the down edge starts the sim's hold
     // clock, the release edge resolves the swing. But every UP edge in this loop
     // reaches released() DIRECTLY, bypassing route_menu_key -- so a press the
@@ -4503,10 +4761,20 @@ int run_client(const Options& options, const render::CreationResult& chosen,
     // quiet behind a menu): livePad reading null is an ordinary release edge.
     bool leftTriggerDown = false;
     bool rightTriggerDown = false;
+    // THE B SEAM, BOTH EDGES. The down edge of PadEast is remapped to Escape
+    // while a page is up (pageBackRemap); this remembers that it was, so the
+    // UP edge is released as Escape too and never reaches Crouch's release
+    // -- which ran setCrouched() and put the page the Escape had just backed
+    // out to straight back down. See render::PadBackEdge.
+    render::PadBackEdge padBack;
     // THE PARITY PASS. The left stick's own latch state while a page owns the
-    // input -- see the stickNav block in the frame loop.
+    // input -- see the stickNav block in the frame loop. The third is the
+    // RIGHT stick's vertical latch, the ward map's zoom (nine and the sticks:
+    // the triggers are the map's sub-tabs now, so the zoom went to the stick
+    // nobody else reads under a page).
     bool navStickVertical = false;
     bool navStickHorizontal = false;
+    bool navStickZoom = false;
     // UI-EA-SPEC sec. 2, contract (c): the device edge. noteInputDevice()
     // is called on every press and is deliberately quiet about whether the
     // hand actually CHANGED; the tutor bands want the change alone, so the
@@ -4551,36 +4819,18 @@ int run_client(const Options& options, const render::CreationResult& chosen,
             // any binding lookup, because the whole point of "press a key" is
             // that the key's current meaning does not matter.
             if (session.awaitingKey()) {
-                session.bindAwaited(key == render::Key::Escape ? render::Key::None : key);
-                if (key != render::Key::Escape) {
+                // ESC cancels, and so do the pad's B and START -- the universal
+                // back and the pause button, which the settings page says out
+                // loud ("PRESS A KEY. B CANCELS.") and which can therefore not
+                // be bound to anything, exactly as ESC cannot. A grammar key
+                // that could be captured into a verb would strand the grammar.
+                const bool cancel = key == render::Key::Escape || key == render::Key::PadEast ||
+                                    key == render::Key::PadStart;
+                session.bindAwaited(cancel ? render::Key::None : key);
+                if (!cancel) {
                     (void)render::saveControls(session.controls(), controlsFile);
                 }
                 return;
-            }
-            // #85. THE QUICK WHEEL'S OWN DIRECTIONS, AHEAD OF THE ORDINARY
-            // BINDING LOOKUP -- the same reason route_menu_key's up/downward/
-            // etc. read raw keys as well as actions: while the wheel is open
-            // the D-pad (or arrows, on a keyboard) IS the wheel, whatever
-            // either one happens to be bound to otherwise. See controls.hpp's
-            // own note on why this is a STEPPER and not a true radial: no
-            // stick-angle primitive exists to build one off, and the D-pad is
-            // the direction source that is already wired as four discrete
-            // buttons.
-            if (quickWheelOpen) {
-                if (key == render::Key::PadUp || key == render::Key::Up ||
-                    key == render::Key::PadRight || key == render::Key::Right) {
-                    quickWheelStepped = true;
-                    quickSlot = (quickSlot + 1) % 10;
-                    session.selectQuickSlot(quickSlot);
-                    return;
-                }
-                if (key == render::Key::PadDown || key == render::Key::Down ||
-                    key == render::Key::PadLeft || key == render::Key::Left) {
-                    quickWheelStepped = true;
-                    quickSlot = (quickSlot + 9) % 10;
-                    session.selectQuickSlot(quickSlot);
-                    return;
-                }
             }
             const render::Action action = session.controls().actionFor(key);
             switch (action) {
@@ -4612,63 +4862,39 @@ int run_client(const Options& options, const render::CreationResult& chosen,
                     crouch.press(stepClock);
                     session.setCrouched(crouch.active());
                     return;
-                // #85. Was Sprint + Walk, one HoldToggle now -- see
-                // controls.hpp's own note and the `held.sprint`/`held.walk`
-                // derivation below, where the two are read back apart.
+                // NINE AND THE STICKS: RUN is a plain hold -- see sprintHeld.
                 case render::Action::Sprint:
-                    sprint.press(stepClock);
+                    sprintHeld = true;
                     return;
                 // #85. ONE SCREEN, PAGES. Was Journal + Keys + Character +
-                // Map + Letters + Options.
+                // Map + Letters + Options. The pages step on the raw bumpers
+                // and brackets inside route_menu_key now (the ring), so there
+                // is no PagePrev/PageNext case here any more.
                 case render::Action::Menu:
                     session.toggleMenu();
                     return;
-                case render::Action::PagePrev:
-                    session.menuPagePrev();
-                    return;
-                case render::Action::PageNext:
-                    session.menuPageNext();
-                    return;
-                // #85. HELD. The D-pad/arrow interception that steps the
-                // quick bar while this is down lives ABOVE this switch, in
-                // `pressed`'s own early return -- see the comment there.
-                case render::Action::QuickWheel:
-                    quickWheelOpen = true;
-                    // SPELLS BUILD: the strip comes up the moment the wheel
-                    // does, and the release decides tap-or-hold -- see the
-                    // trackers' own note above.
-                    quickWheelDownAt = stepClock;
-                    quickWheelStepped = false;
-                    session.showQuickBar();
-                    return;
                 // S13. THE COMBAT PAIR. Cast is an ordinary press, exactly
-                // like Attack; Block is HELD, the QuickWheel's plain-bool
-                // shape rather than a HoldToggle -- a latched guard is a
-                // footgun in a fight, and Session::setBlocking's own header
-                // says where the hold actually becomes the room's fact.
+                // like Attack; Block is HELD, a plain bool rather than a
+                // HoldToggle -- a latched guard is a footgun in a fight, and
+                // Session::setBlocking's own header says where the hold
+                // actually becomes the room's fact.
                 case render::Action::Cast:
                     session.castEquipped();
                     return;
                 case render::Action::Block:
                     session.setBlocking(true);
                     return;
-                // CORE ACTION #13. THE WARD MAP -- the owner's own ask: "a map
-                // that they can press M to see... and select on controller".
-                // The same key closes it; ESC closes it through the Pause
-                // branch below (districtMapOpen is part of menuOpen()).
+                // THE TENTH. THE WARD MAP -- the owner's own ask: "a map that
+                // they can press M to see". The same key closes it; ESC (and
+                // B) closes it through the Pause branch below (districtMapOpen
+                // is part of menuOpen()). A pad reaches it as a page of NOTES.
                 case render::Action::Map:
                     session.toggleDistrictMap();
                     return;
-                // UI-EA-SPEC sec. 4 violation #5: the two F-key pages, through
-                // the table like everything else. The same action closes the
-                // page it opened (toggleKeys/toggleOptions are toggles), which
-                // is the enter/back law's "the key that opened a page closes
-                // it" holding for these two by construction.
-                case render::Action::KeysPage:
-                    session.toggleKeys();
-                    return;
-                case render::Action::OptionsPage:
-                    session.toggleOptions();
+                // WAIT. Oblivion's own T and SELECT; the pause menu's WAIT row
+                // is the same door. toggleWait() closes it when it is up.
+                case render::Action::Wait:
+                    session.toggleWait();
                     return;
                 case render::Action::QuickNext:
                     quickSlot = (quickSlot + 1) % 10;
@@ -4740,23 +4966,7 @@ int run_client(const Options& options, const render::CreationResult& chosen,
                 crouch.release(stepClock);
                 session.setCrouched(crouch.active());
             } else if (action == render::Action::Sprint) {
-                sprint.release(stepClock);
-            } else if (action == render::Action::QuickWheel) {
-                // #85. CLOSES THE WHEEL. Nothing else to do: selectQuickSlot
-                // already committed live as the D-pad stepped it, the same
-                // way QuickNext/QuickPrev always applied immediately -- there
-                // is no separate "confirm" beyond letting go.
-                quickWheelOpen = false;
-                // SPELLS BUILD: unless the press was a TAP -- down and up
-                // inside HoldToggle's own kTapSteps with no slot stepped --
-                // in which case it was never a wheel at all, and the Grimoire
-                // page is what it asked for. toggleGrimoire() guards itself
-                // (inert while talking or picking), so a tap mid-conversation
-                // stays inert exactly like every other page toggle.
-                if (!quickWheelStepped &&
-                    stepClock - quickWheelDownAt <= render::HoldToggle::kTapSteps) {
-                    session.toggleGrimoire();
-                }
+                sprintHeld = false;
             } else if (action == render::Action::Attack) {
                 // COMBAT. RESOLVES THE SWING on the release edge -- hard iff the
                 // hold reached kHardSwingHoldSteps, measured room-side. GUARDED
@@ -4830,9 +5040,8 @@ int run_client(const Options& options, const render::CreationResult& chosen,
                         SDL_GetGamepadID(pad) == event.gdevice.which) {
                         SDL_CloseGamepad(pad);
                         pad = nullptr;
-                        sprint.clear();
+                        sprintHeld = false;
                         crouch.clear();
-                        quickWheelOpen = false;
                     }
                     int count = 0;
                     SDL_JoystickID* liveIds = SDL_GetGamepads(&count);
@@ -4855,7 +5064,7 @@ int run_client(const Options& options, const render::CreationResult& chosen,
                     // is listening for a key: a rebinding must capture the
                     // real PadEast. See render::pageBackRemap and
                     // route_menu_key's own header.
-                    const render::Key key = render::pageBackRemap(
+                    const render::Key key = padBack.down(
                         key_of_pad_button(event.gbutton.button),
                         pointer_page_open(session) && !session.awaitingKey());
                     if (!route_menu_key(session, key)) {
@@ -4864,7 +5073,9 @@ int run_client(const Options& options, const render::CreationResult& chosen,
                     break;
                 }
                 case SDL_EVENT_GAMEPAD_BUTTON_UP:
-                    released(key_of_pad_button(event.gbutton.button));
+                    // The release of a remapped B is Escape's release (which
+                    // nothing listens for), never Crouch's -- see padBack.
+                    released(padBack.up(key_of_pad_button(event.gbutton.button)));
                     break;
                 case SDL_EVENT_KEY_DOWN: {
                     const render::Key key = key_of_scancode(event.key.scancode);
@@ -4879,35 +5090,13 @@ int run_client(const Options& options, const render::CreationResult& chosen,
                         (void)route_menu_key(session, key);
                         break;
                     }
-                    // THE JOURNAL TOOK TAB AT #85 (it is on J now, the
-                    // owner's own convention call), so freeing the mouse
-                    // moved to F3 -- see the keys page. A player who wants
-                    // their cursor back is almost always a player who wants
-                    // to alt-tab, and alt-tab already works.
-                    //
-                    // AND IT YIELDS TO A BINDING. F3 is unbound by default, so
-                    // this is free; the moment somebody binds a verb to it, the
-                    // verb wins and the window keeps the mouse. A hard-coded key
-                    // that quietly outranks the rebinding screen is the exact
-                    // shape of bug the rest of this task was about.
-                    if (key == render::Key::F3 &&
-                        session.controls().actionFor(key) == render::Action::Count) {
-                        // FLIPS THE INTENT, NOT THE WINDOW. The top of the
-                        // frame owns the one SDL_SetWindowRelativeMouseMode
-                        // call now, so F3 and an open page cannot each set the
-                        // mode and disagree about which of them was last.
-                        mouseLook = !mouseLook;
-                        break;
-                    }
-                    // F1 AND F2 ARE ORDINARY ACTIONS NOW (UI-EA-SPEC sec. 4
-                    // violation #5). They were advertised in --help, hard-
-                    // coded right here with a yield-to-binding guard, and
-                    // invisible to the very page F1 opens. Action::KeysPage
-                    // and Action::OptionsPage carry them through the binding
-                    // table instead -- they print on the keys page, the
-                    // rebinding screen can move them, and the pressed()
-                    // switch below dispatches them like every other verb.
-                    // Nothing is left hard-coded here.
+                    // NINE AND THE STICKS: NOTHING IS HARD-CODED HERE ANY
+                    // MORE. F3's free-mouse toggle is cut (alt-tab already
+                    // gives the cursor back, and every page brings it out on
+                    // its own -- see pointerLive); F1/F2 are cut with the
+                    // KeysPage/OptionsPage actions (the pause menu's CONTROLS
+                    // and SETTINGS rows are the door on both devices). Every
+                    // key goes router first, then the binding table.
                     if (route_menu_key(session, key)) {
                         break;
                     }
@@ -5092,17 +5281,13 @@ int run_client(const Options& options, const render::CreationResult& chosen,
             if (down(render::Action::TurnLeft)) {
                 held.turn -= 1;
             }
-            // #85. PACE, OFF ONE HoldToggle NOW -- was Sprint + Walk, two
-            // separate actions. latched() is the tap-toggled WALK; active()
-            // that is NOT latched is the momentary SPRINT -- and the two can
-            // never both read true, by construction: HoldToggle::press()
-            // cancels a latch the instant a new press starts (see its own
-            // header), so the very press that would otherwise make both true
-            // in the same step is the one press activeNow() reports as NOT
-            // held for. See controls.hpp's Sprint entry for the fuller
-            // version of this note.
-            held.walk = sprint.latched();
-            held.sprint = sprint.active() && !sprint.latched();
+            // NINE AND THE STICKS: PACE IS A HOLD. Down is sprinting, up is
+            // the ordinary jog; the tap-to-walk toggle is cut (see
+            // sprintHeld's own note). A pad still picks its gait off the
+            // stick's magnitude below, which is where the slow walk lives on
+            // a controller.
+            held.walk = false;
+            held.sprint = sprintHeld;
         }
 
         // --- the pad --------------------------------------------------------
@@ -5148,8 +5333,10 @@ int run_client(const Options& options, const render::CreationResult& chosen,
         // gives PadSettings::triggerDeadzonePercent -- persisted, sanitised
         // and parsed since the pad-readiness pass, read by nothing until now
         // -- its one reader. An edge, not a level, so a held trigger behaves
-        // exactly like any held key: Block=LT stays down for as long as the
-        // finger does, Cast=RT fires once per pull. Runs OUTSIDE the
+        // exactly like any held key: GUARD=LT stays down for as long as the
+        // finger does, SWING=RT charges from its down edge and resolves on
+        // its release (nine and the sticks: the two hands on the two
+        // triggers, the owner's Oblivion pair). Runs OUTSIDE the
         // `livePad != nullptr` stick block on purpose -- a pad unplugged
         // mid-pull reads as an ordinary release edge instead of a stuck guard.
         //
@@ -5242,12 +5429,26 @@ int run_client(const Options& options, const render::CreationResult& chosen,
                      render::Key::Down);
             stickNav(navStickHorizontal, SDL_GAMEPAD_AXIS_LEFTX, render::Key::Left,
                      render::Key::Right);
+            // NINE AND THE STICKS: THE RIGHT STICK ZOOMS THE WARD MAP. The
+            // triggers are the map's sub-tabs now (Oblivion's own LT/RT), so
+            // the zoom ladder rides the one stick nothing reads under a page
+            // -- up is in, down is out, the same latch, routed as the `=` and
+            // `-` the map branch already reads raw. Only while the map is up:
+            // no other page has a zoom, and a leaned right stick over the
+            // casebook must not arrive at the map already latched.
+            if (session.districtMapOpen()) {
+                stickNav(navStickZoom, SDL_GAMEPAD_AXIS_RIGHTY, render::Key::Equals,
+                         render::Key::Minus);
+            } else {
+                navStickZoom = false;
+            }
         } else {
             // CLEARED THE MOMENT THE PAGE CLOSES, so a stick still leaned when
             // the map goes away does not arrive at the next page already
             // latched and swallow its first push.
             navStickVertical = false;
             navStickHorizontal = false;
+            navStickZoom = false;
         }
 
         held.crouch = crouch.active();
@@ -5558,6 +5759,12 @@ int main(int argc, char** argv) {
         }
         if (options.wantsSmoke) {
             render::SmokeRunConfig smoke = options.smoke;
+            // An EXPLICIT --controls= reaches the headless path too, so a
+            // capture can be taken under a rebound table; the default file
+            // beside the exe is deliberately NOT read here, which is what
+            // keeps every shipped frame byte-stable against a player's own
+            // bindings. Same for --fov=: given, it rides the config.
+            smoke.controlsFile = options.controlsFile;
             if (!smoke.screenshot.empty()) {
                 // 3D BUILD: the capture is composited through the backend the
                 // window uses, so the PNG is the picture the window shows.

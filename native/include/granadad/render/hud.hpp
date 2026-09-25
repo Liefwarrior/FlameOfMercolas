@@ -101,6 +101,7 @@
 #include <cstdint>
 #include <string>
 #include <string_view>
+#include <vector>
 
 #include "granadad/render/anim.hpp"
 #include "granadad/render/framebuffer.hpp"
@@ -264,11 +265,23 @@ struct HudState {
     /// STANCE & ROOM BUILD: "FISTS UP" / "CUDGEL UP" / "STEEL UP" exactly
     /// while the room's own fighting-mode bit (Tavern::playerHandsUp) is true
     /// -- the state the owner could not see. Bottom band, centred, right
-    /// behind the guard row: the two CAN share the band (a guard raises the
-    /// hands), and both read as one fact -- what the hands are doing. Empty
-    /// draws nothing, the usual state, so every hand-built HudState that
-    /// predates it is pixel-identical.
+    /// behind the guard row and the turn row: the three CAN share the band
+    /// (a guard raises the hands), and all read as one fact -- what the
+    /// hands are doing. Empty draws nothing, the usual state, so every
+    /// hand-built HudState that predates it is pixel-identical.
     std::string_view handsLabel;
+    /// KIT BUILD (defence v1): "COAT TURNS 2" for kPlateHoldSteps after a
+    /// landed blow the worn kit softened -- the piece with the most DR on
+    /// the body and what the blow lost to it. An EVENT row (the Law of
+    /// Earned Text: said when it happens, never furniture), centred right
+    /// behind the guard row in the blocked-blow wash's own steel-cool ink,
+    /// so the row and the wash read as one fact. Its own row rather than
+    /// the alert, because a bouncer's warning outranks the alert for as
+    /// long as the house minds you and would eat every turn in a brawl --
+    /// and AHEAD of the hands row (KIT POLISH) for the same reason: on the
+    /// three-slot band every monitor size gets, a warning plus FISTS UP
+    /// would eat it just as surely. Empty draws nothing, the usual state.
+    std::string_view turnLabel;
     /// SPELLS BUILD: the quick bar strip -- BOTTOM-CENTRE, which is this
     /// file's own header giving Barony's hotbar its place ("hotbar
     /// bottom-centre"). Ten cells out of the bottom band's slot grid, never
@@ -283,12 +296,12 @@ struct HudState {
     int quickSelected = -1;
     int quickEquipped = -1;
     float quickBarFade = 0.0F;
-    /// UI-EA (LANE HUD): THE Q-HOLD TUTOR TOAST -- "Q HOLD - WHEEL" (the key
-    /// through promptLabel, so a pad reads its own button). The grimoire's
-    /// tap-vs-hold split is a modern idiom and stays undiscoverable by
-    /// accident (flow map violation #9, ruled KEPT); this toast is how it is
-    /// taught: Session raises it the first two times the quick bar comes up,
-    /// riding the strip's own countdown, and never again. TUTOR tier: it
+    /// UI-EA (LANE HUD): THE QUICK BAR'S TUTOR TOAST -- "WHEEL - STEP" on a
+    /// keyboard, the D-pad's left and right on a pad (the keys through
+    /// promptLabel, so a rebind re-words it). Nine and the sticks cut the
+    /// QuickWheel hold, so the STEP is what is taught: Session raises it the
+    /// first two times the quick bar comes up, riding the strip's own
+    /// countdown, and never again. TUTOR tier: it
     /// takes a bottom-band slot directly after the strip, in the quiet
     /// reference ink, and both empty-and-zero defaults draw nothing at all.
     std::string_view wheelHint;
@@ -469,6 +482,9 @@ struct HudState {
     /// STANCE & ROOM BUILD. The fighting-mode row's own ease, its own
     /// Session-side EasedToggle, the same no-op-by-default reasoning.
     float handsFade = 1.0F;
+    /// KIT BUILD. The turn row's own ease, its own Session-side EasedToggle,
+    /// the same no-op-by-default reasoning.
+    float turnFade = 1.0F;
     /// INNOVATION SPRINT ITEM #3. 1 the instant a NEW bouncer's warning
     /// arrives, easing down to 0 over a handful of frames -- see
     /// render::ImpactPulse's own header and Session::alertPulse_'s. Unlike
@@ -568,6 +584,37 @@ struct HudState {
     /// Where the plate is in its own rise, signed. See placePlateDrift: the
     /// identical contract, driven off the identical toggle shape.
     float casePlateDrift = 0.0F;
+
+    // --- THE PULL PACK (render/pull.hpp) --------------------------------------
+    //
+    // THE STREET SAYS WHERE NEXT. Three additions to the top band, every one
+    // of them defaulting to "draw nothing" so every hand-built HudState that
+    // predates them is pixel-identical.
+
+    /// STATE tier: "NE 40  THE WEIGHHOUSE" -- the ONE lead the player chose to
+    /// FOLLOW (or the authored next lead standing in for a choice), on the
+    /// ribbon's own sub-label row, from the same bearing/paces arithmetic the
+    /// casebook page prints. Up every frame while a lead is followed; that is
+    /// the one line the UI-EA rest budget grew by (spec 1.2 #11). Empty draws
+    /// nothing. Never a person, never a clue -- the marker doctrine.
+    std::string_view pullLabel;
+    /// The followed lead's own bearing, BAM 0..65535, or -1: drawn as the
+    /// amber tick on the ribbon, under the strip, so the eye can line the
+    /// fixed mark up on it without reading a word.
+    std::int32_t pullTickBam = -1;
+    /// Bearings of DISCOVERED NAMED PLACES (a heard lead names them, or the
+    /// body has stood in them), BAM 0..65535 each: the bone ticks on the
+    /// ribbon. Only the ones inside the strip's 180-degree window draw.
+    std::vector<std::int32_t> placeTickBams;
+
+    /// EVENT tier: the skill-up toast, top-left -- "SKYRUNNING RISES TO 12" --
+    /// Oblivion's own beat in this HUD's own register. Rises through its
+    /// resting row and fades, on Session's own EasedToggle, in situ (mid-fight,
+    /// mid-climb) and never pausing anything. Empty or zero fade draws nothing.
+    std::string_view skillToast;
+    float skillToastFade = 0.0F;
+    /// Signed drift, the plates' own contract: -1 rising in, +1 drifting out.
+    float skillToastDrift = 0.0F;
 };
 
 /// The size the HUD's own register is drawn at: the compass, the hour, the
@@ -624,6 +671,10 @@ enum class AimKind : int {
     /// this one and a player who cannot tell it from a doorway is the player
     /// who thought the Bloodletter trail ended at the Weighhouse.
     Clue = 4,
+    /// KIT BUILD. SOMEBODY'S THING: taking it is theft, and the crosshair
+    /// says so before the press -- the reference's red hand. Its own
+    /// accent, and the THEIRS note beside the name.
+    Owned = 5,
 };
 
 /// THE ONE REGION OF THE PLAY SPACE THE HUD MAY ENTER, and it is a clamp

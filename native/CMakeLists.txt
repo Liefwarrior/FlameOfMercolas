@@ -141,6 +141,12 @@ add_library(granadad-sim STATIC
     # S6 -- the goods, the law that takes them off you, and the radiant work
     # that is the reason to be carrying them in the first place.
     src/sim/contraband.cpp
+    # KIT BUILD -- the item record and what is on the body: the registry off
+    # content/raws/items/items.json (the spellbook's tolerant loader shape),
+    # the Kit (the Stash's dense-count pattern, hashed, byte-encodable), the
+    # ground list's codec and the load rule. Listed BEFORE tavern.cpp because
+    # the taproom is what owns a Kit, the stands and the corpse kits.
+    src/sim/items.cpp
     src/sim/watch.cpp
     # JUSTICE BUILD -- the court: the plea, the priest's weighing and the
     # judgment, rules only, beside watch.cpp (what the paper asks for) and
@@ -359,6 +365,11 @@ add_library(granadad-render STATIC
     # This is the surface the owner's playthrough stalled on: three leads opened
     # at the Weighhouse and nothing on the screen said so. See the header.
     src/render/casebook_page.cpp
+    # THE PULL PACK -- the street says where next: the followed lead's line
+    # and the named-place ticks on the compass ribbon, the skill-up toast,
+    # the book-change watcher. Render state only, never hashed; the marker
+    # doctrine (owner ruling D8) kept by construction. See the header.
+    src/render/pull.cpp
     # JUSTICE BUILD (HEARING PAGE LANE) -- the Flame's bench as a page: the
     # paper laid, the charge off the ledger, the three rows, the priest's
     # weighing in the reference's own four-line check block, the judgment
@@ -491,6 +502,10 @@ add_library(granadad-render3d-core STATIC
     # StaticInstances beside the chunks. Pure over the tile bytes; the
     # adapter draws the glTF files, or nothing where they are absent.
     src/render3d/static_pieces.cpp
+    # KIT BUILD: the things on the tiles -- the room's hashed ground list
+    # and its two fixtures as Item pieces off the catalogue's `items` table,
+    # per frame, never written back.
+    src/render3d/ground_items.cpp
     src/render3d/actor_instances.cpp
     src/render3d/viewmodel.cpp
 )
@@ -707,6 +722,18 @@ if(GRANADAD_BUILD_TESTS)
         # casebook and the keys page already prove, and drawn from counters
         # that were being computed and thrown away every frame before it.
         tests/test_character.cpp
+        # KIT BUILD -- the item record: the raws load and every hand item's
+        # span is its class's, the Kit's codec by id and its hash coverage,
+        # the load budget and the slowdown, THE EVICTOR through the Kit, a
+        # quick slot that is a spell OR an item, TAKE / DROP / WEAR through
+        # the room, THEIRS as a witnessed lift, the corpse search list, and
+        # defence v1's flat DR floored at one.
+        tests/test_kit.cpp
+        # KIT BUILD, the screen half -- the crosshair naming a thing on the
+        # ground with THEIRS before the press, a named lead outranking it,
+        # the corpse's SEARCH list on the Grimoire widget, the load slowing
+        # the legs at the one movement seam, the hands row naming the item.
+        tests/test_kit_page.cpp
         # #82 -- THE DISTRICT MAP. Daggerfall's own travel map, scaled to one
         # district: known ground, open leads (each with a bearing and a range
         # from where the player is standing) and who among the named will
@@ -741,6 +768,14 @@ if(GRANADAD_BUILD_TESTS)
         # session actually settles into, and the Q-hold tutor toast's
         # two-showings-then-retired life. The diet cannot regress silently.
         tests/test_hud_diet.cpp
+        # THE PULL PACK -- the followed lead is provably outside every hash
+        # (tavern and world byte-identical with and without one), the ribbon
+        # line reads the page's own bearing, the toast fires on a real level
+        # and queues behind itself, the watcher announces the two silent
+        # hears and a stage, the shelf fronts a book, the strip is pinned at
+        # 320x180 and 1920x1080, and the doctrine holds (never a person,
+        # never a clue, nothing on the plan).
+        tests/test_pull.cpp
         # And every scripted line the demo advertises, accepted -- see the file
         # header for the sprint --skyrun spent landing 2 of 9 beats with nothing
         # in the suite to notice.
@@ -782,6 +817,21 @@ if(GRANADAD_BUILD_TESTS)
         # twin-run byte-identical after an alarm -- the one declared
         # population baseline move of the Oblivion-feel program.
         tests/test_street_panic.cpp
+        # STREET SENSES leg (b) -- A BODY TO HIT. The street's ray is the
+        # Gull's ray (the same integer projection, computed independently);
+        # a struck docker goes down and gets up; a struck sailor swings back
+        # and a struck serf routs; a street blow scatters the crowd; a street
+        # kill is murder with the witnesses counted, through the client's
+        # own attack path; the population twin-runs byte-identical under it.
+        tests/test_street_bodies.cpp
+        # STREET SENSES leg (c) -- THE WATCH ON THE BEATS GETS EYES. A
+        # watchman who sees a blow closes on it and arrests at reach through
+        # the Gull's own seam; steel alone is a demand with a grace, and only
+        # an ignored one becomes an offence, never an arrest by itself; a
+        # presented Wielder is never given cause and standing one down stands
+        # every closing watchman down; the population twin-runs
+        # byte-identical under all three.
+        tests/test_street_watch.cpp
         # #80 -- THE ORIGIN-SELECT AND CUSTOMIZE FLOW. Three cards, a name
         # field, and a real sim::Chargen sheet hosted rather than reinvented
         # -- see creation.hpp's own header on why this reuses

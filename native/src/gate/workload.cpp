@@ -1,8 +1,10 @@
 #include "granadad/gate/workload.hpp"
 
+#include <algorithm>
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <cstdlib>
 #include <map>
 #include <memory>
 #include <string>
@@ -395,6 +397,205 @@ private:
 };
 
 // ---------------------------------------------------------------------------
+// street assault -- phase tick-begin (STREET SENSES, the violence leg)
+// ---------------------------------------------------------------------------
+//
+// THE NUMBER HAS TO PROVE THE BEHAVIOUR. The population workload had no player
+// and called nothing that frightened anybody, so 9a's street panic -- built,
+// hashed and re-blessed -- moved NOTHING in the one run the population baseline
+// is taken from: the gate compared a district nobody ever startled to itself.
+// The lane brief's own words: "a scripted street assault so the new number
+// proves the new behaviour (a blow on the Tarwalk at 16:00 scatters the crowd
+// within 8 tiles and LOS)."
+//
+// So this driver throws one. It runs in the SAME phase and the SAME shape as
+// the tavern driver above -- TickBegin, before the Actors phase decides, so the
+// crowd reacts to the fright the same tick -- and it does through the REAL
+// verbs (setPlayer + alarm), never a back door: a fixed point on the Tarwalk,
+// found once by the roster's own order, held for a window so the scatter is
+// sustained and legible in the twin run. Draw-free and deterministic: the point
+// is the first standing body on the quay by ascending id, and the window is
+// absolute ticks, so run A and run B assault the same tile on the same ticks.
+//
+// It fires only for a run long enough to have settled first (the ward walks to
+// its posts over the first minutes), which the population baseline's 7200 ticks
+// always is; a short population run never reaches the window and is untouched.
+
+class StreetAssaultDriver final : public sim::SimulationSystem {
+public:
+    explicit StreetAssaultDriver(const sim::WardPopulation* people) noexcept
+        : people_(const_cast<sim::WardPopulation*>(people)) {}
+
+    [[nodiscard]] const sim::SystemId& id() const noexcept override { return id_; }
+    [[nodiscard]] sim::TickPhase phase() const noexcept override {
+        return sim::TickPhase::TickBegin;
+    }
+
+    void tick(const sim::TickContext& context) override {
+        ++ticks_;
+        // STREET SENSES leg (b): the mailbox of blows thrown at the phantom
+        // player is drained every tick -- the gate has no sheet to land them
+        // on, and a mailbox nobody reads is the one thing this file must not
+        // leave growing. Drained BEFORE the window check so a fight that
+        // outlives the window is drained too. Leg (c): the Watch's mailbox the
+        // same, and its ARRESTS COUNTED -- the gate has nobody to take, so the
+        // arrest at reach is reported rather than served (the tavern driver's
+        // own rule for the roof-run and the concession), said out loud here.
+        (void)people_->takeStreetBlows();
+        for (const sim::WatchEvent& event : people_->takeWatchEvents()) {
+            if (event.kind == sim::WatchEventKind::Arrest) {
+                arrests_ = sim::wrap_add(arrests_, 1);
+                // TAKEN. Once the docker has been put down, the first arrest at
+                // reach ends the assault: a man in custody throws no more
+                // blows and frightens nobody, so the alarms stop and the street
+                // is left to recover on the compared report.
+                if (downedOnce_) {
+                    arrested_ = true;
+                }
+            }
+        }
+        if (ticks_ < kFromTick || ticks_ > kToTick || arrested_) {
+            return;
+        }
+        // The point, found ONCE and held: a person standing on the Tarwalk on
+        // walking ground -- a docker where the day trades are -- and, leg (c),
+        // one a WATCHMAN CAN SEE (kWatchSightTiles, same band, line of sight)
+        // so the blow has a beat to answer it; failing that, the first docker
+        // at all. Ascending id, deterministic and draw-free. Latched, so the
+        // fright's origin stays where the blow landed while the crowd breaks
+        // away from it (actFlee reads exactly that vector).
+        if (!located_) {
+            std::int32_t fallback = -1;
+            for (const sim::WardActor& actor : people_->actors()) {
+                if (!actor.visible() || !sim::isPerson(actor.type) ||
+                    actor.type == sim::WardType::MilitiaWatch) {
+                    continue;
+                }
+                if (actor.x < sim::wardplaces::kTarwalkX0 ||
+                    actor.x > sim::wardplaces::kTarwalkX1 ||
+                    actor.y < sim::wardplaces::kTarwalkY0 ||
+                    actor.y > sim::wardplaces::kTarwalkY1) {
+                    continue;
+                }
+                if (!people_->onWalkingGround(actor.x, actor.y, actor.band)) {
+                    continue;
+                }
+                if (fallback < 0) {
+                    fallback = actor.id;
+                }
+                if (people_->witnessesInSight(actor.x, actor.y, actor.band, sim::kWatchSightTiles,
+                                              actor.id) > 0 &&
+                    watchmanInSight(actor)) {
+                    fallback = actor.id;
+                    break;
+                }
+            }
+            if (fallback >= 0) {
+                const sim::WardActor& victim = *people_->byId(fallback);
+                x_ = victim.x;
+                y_ = victim.y;
+                band_ = victim.band;
+                victimId_ = victim.id;
+                located_ = true;
+            }
+        }
+        if (!located_) {
+            return;
+        }
+        // THE BLOW ON THE TARWALK, re-asserted every tick of the window the way
+        // the client re-asserts a raised blade once a second: the player stands
+        // where the blow landed, and everyone who can SEE it (same band, in
+        // range, line of sight -- the ward's own rule) is driven under the FLEE
+        // gate. A BLOW is the widest of the three tiers a bar-fight punch would
+        // never reach past the door; here it is a punch on the open quay.
+        people_->setPlayer(x_, y_, band_);
+        people_->alarm(x_, y_, band_, sim::alarmRadius(sim::AlarmSeverity::Blow),
+                       sim::AlarmSeverity::Blow);
+
+        // STREET SENSES leg (b): AND THE BLOW LANDS ON HIM. The docker the point
+        // was found on takes a fist a tick -- the Gull's own strike() on his
+        // sheet, the brawl class (Fists, Subdue: nobody dies), one draw per
+        // blow on this driver's own salt (the gate's stand-in for the swing's
+        // drawForPlayerAction, said out loud) -- until he goes down. Then he is
+        // left alone, lies his kStreetFloorSeconds and STANDS UP at a quarter,
+        // and the report shows downed= rise and fall. That is the number
+        // proving "a docker struck goes down and gets up", not asserting it.
+        if (!downedOnce_) {
+            const sim::WardActor* victim = people_->byId(victimId_);
+            if (victim != nullptr && victim->downedUntil >= 0) {
+                downedOnce_ = true;
+            } else if (victim != nullptr && victim->visible()) {
+                sim::Fighter sheet;
+                sheet.actorId = victimId_;
+                sheet.weapon = sim::Weapon::Fists;
+                sheet.intent = sim::Intent::Subdue;
+                sheet.hp = victim->hp;
+                sheet.hpMax = sim::kActorHealth;
+                const std::uint64_t roll =
+                    context.draw(static_cast<std::uint64_t>(victimId_), blows_);
+                blows_ = sim::wrap_add(blows_, 1);
+                const sim::Blow blow = sim::strike(sim::Weapon::Fists, sheet, roll);
+                (void)people_->applyStreetBlow(victimId_, sheet.hp, blow, /*lethal=*/false);
+            }
+        }
+    }
+
+    void hash_into(sim::HashSink& sink) const override {
+        // Its own tick, blow and arrest counts only: the fright, the floor and
+        // the closing are the population's state to hash, and two systems
+        // folding the same numbers would make one divergence look like two.
+        // The tavern driver's own rule.
+        sink.put_long(static_cast<std::uint64_t>(ticks_));
+        sink.put_int(static_cast<std::uint32_t>(blows_));
+        sink.put_int(static_cast<std::uint32_t>(arrests_));
+    }
+
+private:
+    /// Whether a watchman can see this body: the street Watch's own three
+    /// clauses (same band, kWatchSightTiles, a line), asked of the roll.
+    [[nodiscard]] bool watchmanInSight(const sim::WardActor& body) const {
+        for (const sim::WardActor& actor : people_->actors()) {
+            if (actor.type != sim::WardType::MilitiaWatch || !actor.visible() ||
+                actor.band != body.band) {
+                continue;
+            }
+            if (std::max(std::abs(actor.x - body.x), std::abs(actor.y - body.y)) >
+                sim::kWatchSightTiles) {
+                continue;
+            }
+            return true;
+        }
+        return false;
+    }
+
+    /// 16:30 on a 16:00-start run: past the minutes the ward spends walking to
+    /// its posts, so the crowd is on the Tarwalk to be scattered.
+    static constexpr std::int64_t kFromTick = 1800;
+    /// Six minutes of it -- longer than a BLOW's ~80 s panic, so the scatter is
+    /// sustained across the window and the recovery is visible after it.
+    static constexpr std::int64_t kToTick = 2160;
+
+    sim::SystemId id_ = sim::SystemId::of("street.assault", "STAS");
+    sim::WardPopulation* people_;
+    std::int64_t ticks_ = 0;
+    std::int32_t x_ = 0;
+    std::int32_t y_ = 0;
+    std::int32_t band_ = 0;
+    bool located_ = false;
+    /// STREET SENSES leg (b): the docker the point was found on, the fists
+    /// thrown at him (the draw index), and whether he has been put down once.
+    std::int32_t victimId_ = -1;
+    std::int32_t blows_ = 0;
+    bool downedOnce_ = false;
+    /// STREET SENSES leg (c): the Watch's arrests at reach, counted since the
+    /// gate has no sheet to land one on (hash_into's own note), and the
+    /// assault's give-up once the docker taken has already gone down once
+    /// (the tick() comment above this field's use).
+    std::int32_t arrests_ = 0;
+    bool arrested_ = false;
+};
+
+// ---------------------------------------------------------------------------
 // ledger -- phase tick-end
 // ---------------------------------------------------------------------------
 
@@ -515,6 +716,12 @@ RunResult run_workload(const WorkloadConfig& config) {
             *tiles, config.population_start_second, config.seed, content::contentDir());
         people_view = people.get();
         engine.register_system(std::move(people));
+        // STREET SENSES, the violence leg: the scripted assault, registered
+        // right after the people it frightens. TickBegin, so it lands the fright
+        // before the Actors phase decides that tick -- and it moves the number
+        // the population baseline is taken from, which 9a's panic never did in a
+        // player-less run. See StreetAssaultDriver.
+        engine.register_system(std::make_unique<StreetAssaultDriver>(people_view));
     }
 
     const sim::Tavern* tavern_view = nullptr;

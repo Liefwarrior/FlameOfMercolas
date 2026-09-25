@@ -17,13 +17,18 @@ The game is being rewritten in C++. **`native/` is the live tree**; read
 [`native/README.md`](native/README.md) for the two ways to build it and what the gate covers.
 
 ```
-docker compose run --rm --build build      # reproducible build -> dist/
+.\scripts\gate.ps1                         # reproducible build -> dist/, commit stamped
 .\dist\granadad.exe                        # the game
 .\dist\granadad.exe --smoke=120 --screenshot=frame.png   # a frame, no window needed
 .\dist\granadad.exe --nemesis --screenshot=rival.png    # lose three fights, watch him rise
 .\dist\granadad.exe --ward                # the compounds, two years, as text
 .\scripts\verify-windows.ps1               # finishes the cross-toolchain determinism gate
 ```
+
+`gate.ps1` (`gate.sh` off Windows) is `docker compose run --rm --build build` with
+`GRANADAD_REVISION` set to the commit you are on, `-dirty` appended if tracked files differ
+from it, so `dist\GATE-STAMP.txt` and `granadad.exe --version` name the tree that was built.
+Type the compose command by hand and it builds exactly the same; the stamp just says `unknown`.
 
 `granadad.exe --help` lists every scripted line the build plays back with no window:
 `--trail`, `--flame`, `--skyrun`, `--contract`, `--roofs`, `--nemesis`, `--burgle`.
@@ -37,8 +42,8 @@ open on the right. It is eight in the morning and the street has people on it: b
 eighteen and thirty of the ward's six hundred and sixty-one are drawn in that first frame,
 depending on the hour. You have a case open and one lead in it: a body came up against the
 outfall grate at low tide. `E` talks to anybody standing in front of you, in the street or in
-the taproom. `Q` looks at what is in front of you, `J` opens your casebook, `F1` lists
-every key and `F2` rebinds them. The trail is twelve leads long, two of them dead ends that
+the taproom. `MOUSE1` swings at whoever is in front of you, `J` opens your notes, `M` the ward
+map, and PAUSE lists every key and rebinds them. The trail is twelve leads long, two of them dead ends that
 are the point, and it runs from the Mission's back room to the doors of a warehouse that has
 been condemned for nine years.
 

@@ -20,10 +20,12 @@
 // the other side of the district.
 
 #include <array>
+#include <climits>
 #include <cstdint>
 #include <filesystem>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -42,6 +44,7 @@
 #include "granadad/render/lamps.hpp"
 #include "granadad/render/map_view.hpp"
 #include "granadad/render/menu_view.hpp"
+#include "granadad/render/pull.hpp"
 #include "granadad/render/viewmodel_machine.hpp"
 #include "granadad/render/world_renderer.hpp"
 #include "granadad/sim/casebook.hpp"
@@ -913,6 +916,65 @@ public:
     /// a case reads it instead of a screenshot.
     [[nodiscard]] CasebookPageState casebookPageState() const;
 
+    // --- THE PULL PACK (render/pull.hpp) --------------------------------------
+    //
+    // THE STREET SAYS WHERE NEXT. One lead the player chose to FOLLOW rides
+    // the compass ribbon as "NE 40  THE WEIGHHOUSE" with the paces running
+    // down as they walk; discovered named places tick the ribbon; a skill
+    // rising toasts in situ; every book change lands on the plate with a
+    // cue; and the casebook page grows a CASES shelf so "follow" means
+    // something across three books. ALL OF IT IS RENDER STATE -- nothing
+    // below is hashed, encoded or read by the simulation -- test_pull.cpp
+    // proves the tavern and world hashes are byte-identical with and without
+    // a followed lead. The marker doctrine (owner ruling D8) is kept by
+    // construction: the line names a PLACE, never a person and never a clue;
+    // the ticks are bearings on the ribbon, never an arrow in the world;
+    // nothing is drawn on the map plan.
+
+    /// The ONE lead the ribbon follows this frame -- the player's pick while
+    /// it is still Open, else the fronted book's authored next lead.
+    [[nodiscard]] PullTarget pullTarget() const noexcept;
+    /// What the player chose, raw. lead < 0 when they chose nothing.
+    [[nodiscard]] const FollowedLead& followedLead() const noexcept { return followedLead_; }
+    /// FOLLOW a lead by book and index. False (and nothing changes) for a
+    /// lead that is not Open in that book -- there is nowhere to go. Picking
+    /// the lead already followed UNFOLLOWS it (back to the authored default),
+    /// so the one verb is its own undo. Speaks a line either way.
+    bool followLead(CaseBookId book, std::int32_t lead);
+    /// THE FOLLOW VERB ON THE CASEBOOK PAGE (F, or the pad's X): on the LEADS
+    /// and THE CASE views, the highlighted lead; on the CASES shelf, the
+    /// highlighted case's own next lead.
+    void followCasebookSelection();
+    /// "NE 40  THE WEIGHHOUSE", or empty. What the ribbon prints.
+    [[nodiscard]] std::string pullLineNow() const;
+    /// Which book the page and the case row are reading -- the player's
+    /// pick from the CASES shelf while that book is begun and has not since
+    /// closed, else the courier chassis's own auto rule (eviction live, then
+    /// courier live, then the Bloodletter).
+    [[nodiscard]] CaseBookId frontedBook() const noexcept;
+    /// FRONT a book for the page (the CASES shelf's commit). False for a book
+    /// the player has not been handed yet.
+    bool frontCase(CaseBookId book);
+    /// The CASES shelf's own cursor -- a row index into
+    /// CasebookPageState::shelf.
+    [[nodiscard]] int casebookShelfCursor() const noexcept { return caseShelfCursor_; }
+    /// The skill-up toast: what it says, and whether it is wanted -- the
+    /// targets test_pull.cpp asserts on, casePlateWanted()'s own shape.
+    [[nodiscard]] std::string_view skillToastLabel() const noexcept {
+        return std::string_view{skillToastText_};
+    }
+    [[nodiscard]] bool skillToastWanted() const noexcept { return skillToastShowSteps_ > 0; }
+    /// The pull's own HUD fields -- the ribbon line, the two kinds of tick,
+    /// the toast -- on an otherwise default HudState, exactly as drawFrame
+    /// composes them. Public so a case reads the ticks instead of a
+    /// screenshot (keysPageState()'s own reason).
+    [[nodiscard]] HudState pullHud() const;
+    /// The combined hash of the engine's world and every registered system
+    /// (the Gull, the ward, the population) plus the three books -- what
+    /// test_pull.cpp compares with and without a followed lead. Reads only;
+    /// public for exactly that proof.
+    [[nodiscard]] std::uint64_t simHash() const;
+
     // --- THE MOMENT LEADS OPEN ------------------------------------------------
     //
     // A NOTICE, NOT A NAG. It fires on the RISING EDGE of a look that opened
@@ -1012,14 +1074,25 @@ public:
     /// closes it otherwise -- the same "the key that opened it closes it"
     /// rule Keys, Options and Pause each still have on their own.
     void toggleMenu();
-    /// Steps menuFocus() forward one tile, wrapping Journal -> Character ->
-    /// Map -> Letters -> (back to Journal). Does nothing while the tiled
-    /// Menu is not open -- a bumper press with nothing open is not what
-    /// opens it, and Keys/Options/Pause have no tiles of their own to step
-    /// between.
+    /// NINE AND THE STICKS: THE RING. Steps one page forward through your
+    /// papers -- the four tiles (Character -> Map -> Letters -> Journal),
+    /// then the WARD MAP, then the GRIMOIRE, then round to Character. On a
+    /// pad the ward map and the grimoire are reachable by NO button of their
+    /// own (SELECT is WAIT, the QuickWheel is cut), so this ring is how a
+    /// controller reaches them: NOTES, then the bumpers -- Oblivion's own
+    /// tabbed menu, where the map is a tab. Does nothing while none of the
+    /// three surfaces is open (a bumper with nothing open opens nothing) and
+    /// nothing from Keys/Options/Pause, which are not pages of NOTES.
     void menuPageNext();
-    /// The same cycle, backward.
+    /// The same ring, backward.
     void menuPagePrev();
+    /// WAIT, the verb: opens the hour-select page (openWait(false)) or closes
+    /// it if it is up -- T and SELECT's own toggle; the pause menu's WAIT row
+    /// is the same door.
+    void toggleWait();
+    /// One turn of the paper -- the BookFlip every step of the ring and every
+    /// tile focus change speaks, in one place.
+    void pageTurnSound();
     /// THE POINTER PASS: focus by NAME rather than by cycling -- a hover or a
     /// click landing on a tile, setCasebookCursor's "a printed digit, or a
     /// mouse click" shape. One BookFlip when the focus actually moves; a
@@ -1206,15 +1279,22 @@ public:
     // menu_view.hpp's drawMenuTiles() rather than filling the whole
     // conversation surface the way it did as one of #85's six pages.
     //
-    // NO PAPER DOLL AND NO ARMOUR RATING, ON PURPOSE. There is no item and no
-    // equipment-slot model in this build -- the quick bar's own comment says so
-    // (VERIFICATION GAP #77, above) -- so a screen that drew ten empty slots
-    // would be furniture claiming a state the simulation does not have. What
-    // the simulation DOES have is five derived standings and four skills
-    // actually wired to a verb (SKYRUNNING, CRACKSMANSHIP, STREETWISE,
-    // LINKCRAFT -- the other sixteen entries in content/raws/skills/skills.json
-    // are authored vocabulary with nothing in this build that levels them yet),
-    // and this page is exactly that, no more.
+    // NO PAPER DOLL AND NO ARMOUR RATING, STILL. KIT BUILD (D10): there IS
+    // an item and an equipment-slot model now -- sim/items.hpp, owned by the
+    // Tavern -- and this tile is where it lives (Oblivion's own Inventory and
+    // Character are two tabs of one screen; the four-tile Morrowind layout
+    // stays as ruled). So the sheet grows, in the reference's own worded
+    // grammar and never as a doll: IN HAND is ALWAYS printed once the Kit
+    // exists (fists are a real state then), a worn slot prints ONLY when the
+    // raws hold at least one item for it, then the LOAD line against the
+    // budget off MIGHT, then every carried row with its weight and its worth
+    // and its WORN / IN HAND / SLOT marks. The five derived standings and the
+    // four wired skills stay exactly what they were above it.
+    //
+    // THE VERBS ON A ROW, through the Menu's own grammar and nothing new:
+    // ENTER/A on a carried row WEARS it (or bares it), LEFT/RIGHT walk which
+    // quick slot it rides (the Grimoire's own cycle), and X drops it at the
+    // feet. The tile's epithet says so in the device's own words.
     void toggleCharacter();
     /// True while the tiled Menu is open -- the same bool casebookOpen() is;
     /// see that accessor's own note.
@@ -1225,8 +1305,61 @@ public:
     /// title, standing, next-rung cost -- the owner's numbers-on-the-sheet
     /// ruling; NPCs still talk in words only), and what the ward and the
     /// purse currently say -- one row a line, built fresh from the same
-    /// counters the HUD's corner rows read.
+    /// counters the HUD's corner rows read. KIT BUILD: then the equipment
+    /// block, the load line and the carried rows (kitRows()).
     [[nodiscard]] std::vector<std::string> characterRows() const;
+
+    // --- THE KIT on the tile (KIT BUILD) ------------------------------------
+
+    /// One carried row of the composed list: the Kit's own rows, the sack's
+    /// (contraband.hpp's counts, viewed), the bale on the shoulder and the
+    /// picks, all in the registry's document order, every row with a count
+    /// above zero. `inKit` is a row the Kit itself holds -- the only kind
+    /// WEAR, DROP and a quick slot can act on.
+    struct KitRow {
+        std::int32_t item = -1;
+        std::int32_t count = 0;
+        bool inKit = false;
+    };
+    [[nodiscard]] std::vector<KitRow> kitRows() const;
+    /// How many rows the sheet prints BEFORE the carried list (the standings,
+    /// the equipment block, the load line): the cursor offset the tile's
+    /// verbs subtract.
+    [[nodiscard]] std::size_t characterKitOffset() const;
+    /// The carried row under the Character tile's cursor, or nullopt on a
+    /// sheet row.
+    [[nodiscard]] std::optional<KitRow> highlightedKitRow() const;
+    /// ENTER on the Character tile: WEAR the highlighted row in its slot, or
+    /// bare it if worn. Refusals are said out loud in the room's own words.
+    void wearHighlightedKitRow();
+    /// X on the Character tile: DROP one of the highlighted row at the feet.
+    void dropHighlightedKitRow();
+    /// LEFT/RIGHT on the Character tile: walk which quick slot the
+    /// highlighted row is bound to, NONE and 1..10 round, the Grimoire's own
+    /// cycle -- a slot is a spell OR an item, so binding an item clears a
+    /// crafting from that slot exactly as a crafting would clear it.
+    void adjustKitSlot(int delta);
+    /// The load line: "LOAD  212 / 240 DRAMS".
+    [[nodiscard]] std::string loadLine() const;
+
+    // --- THE SEARCH LIST (KIT BUILD) ----------------------------------------
+    //
+    // A dead roster body in reach opens a list of what he carried -- the
+    // authored corpse kit for his name or his role, less what was taken --
+    // on the ONE list widget every page is, wearing the Grimoire page's own
+    // flag: grimoireOpen_ with searchActorId_ set is the search list, and
+    // every stand-down that puts the Grimoire away puts this away, so no
+    // fifteenth page flag was added and no new key was spent. A row is TAKE
+    // (the printed number, ENTER); the last row is TAKE ALL.
+
+    /// Opens the list over the dead body in reach. False with nobody dead
+    /// in reach. Refused in custody, while talking or picking.
+    bool searchNearestCorpse();
+    /// True while the Grimoire widget is showing a corpse's kit.
+    [[nodiscard]] bool searchOpen() const noexcept {
+        return grimoireOpen_ && searchActorId_ >= 0;
+    }
+    [[nodiscard]] std::int32_t searchActorId() const noexcept { return searchActorId_; }
 
     // --- #82: the district map ------------------------------------------------
     //
@@ -1282,9 +1415,10 @@ public:
     // Pure render-layer reads: nothing here reaches the simulation, nothing
     // is hashed, and the world hash is byte-identical with the page open.
 
-    /// M (or PadBack -- Select -- on a pad). Toggles the ward map; inert
-    /// while talking or picking, exactly like toggleGrimoire, and every
-    /// other overlay stands down when it opens.
+    /// M on a keyboard; on a pad the map is a page of NOTES (the ring, see
+    /// menuPageNext) and has no button of its own. Toggles the ward map;
+    /// inert while talking or picking, exactly like toggleGrimoire, and
+    /// every other overlay stands down when it opens.
     void toggleDistrictMap();
     [[nodiscard]] bool districtMapOpen() const noexcept { return districtMapOpen_; }
 
@@ -1473,11 +1607,11 @@ public:
     void selectQuickSlot(int slot);
     [[nodiscard]] int quickSlot() const noexcept { return quickSlot_; }
     /// Keeps the bottom-centre quick bar strip on screen for a couple of
-    /// seconds -- called by the client when the QuickWheel goes down, and by
-    /// selectQuickSlot itself, so the strip is up exactly while it is being
+    /// seconds -- called by selectQuickSlot itself (every digit, wheel and
+    /// D-pad step lands there), so the strip is up exactly while it is being
     /// used and stands down after (its own EasedToggle does the easing).
     void showQuickBar();
-    /// True while the strip is WANTED (held wheel or recent selection). The
+    /// True while the strip is WANTED (a recent selection). The
     /// drawn alpha is its EasedToggle's business; this is the target a test
     /// can assert on.
     [[nodiscard]] bool quickBarWanted() const noexcept { return quickBarShowSteps_ > 0; }
@@ -1567,13 +1701,11 @@ public:
 
     // --- the Grimoire page (SPELLS BUILD) ------------------------------------
     //
-    // OWNER RULING: QuickWheel + a Grimoire list page, NO new Menu tile. The
-    // page is the same DialogueViewState/drawDialogue panel every other page
-    // is -- one list widget, proven once -- and it opens off the key the
-    // quick bar already owns: a TAP of QuickWheel (held, the key is the
-    // wheel; released inside HoldToggle's own kTapSteps without stepping a
-    // slot, it is this page). No new binding, no new tile, and the one key
-    // that means "craftings" covers both surfaces.
+    // A list page, NO new Menu tile. The page is the same DialogueViewState/
+    // drawDialogue panel every other page is -- one list widget, proven once.
+    // NINE AND THE STICKS: it is a PAGE OF NOTES now -- one bumper past the
+    // ward map in the ring menuPageNext()/menuPagePrev() walk -- since the
+    // QuickWheel tap that used to open it is cut. No binding of its own.
 
     /// Opens or closes the page. Inert while talking or picking, exactly like
     /// toggleKeys; every other overlay stands down when it opens.
@@ -1771,6 +1903,9 @@ public:
     /// visible, the reticle carries the light one. PUBLIC so a case can pin
     /// what it says and that it stays on its edge, the same as blockLine.
     [[nodiscard]] std::string chargeLine() const;
+    /// KIT BUILD. "COAT TURNS 2" while the turn row's hold is running, else
+    /// empty -- the row the coat's own softening of a blow earns.
+    [[nodiscard]] std::string turnLine() const;
     /// STANCE & ROOM BUILD. "FISTS UP" / "CUDGEL UP" / "THE EVICTOR UP" /
     /// "STEEL UP" exactly while the room's own playerHandsUp() is true, and
     /// empty otherwise -- fighting mode made visible, the ONE presentation
@@ -1812,8 +1947,25 @@ public:
     /// wrapCursorAndPage's nine-key arithmetic included -- so every input
     /// path lands where it always did; only the drawing changed register.
     [[nodiscard]] CreationPage stripCard() const;
-    /// Which topic the cursor is on. An index into the WHOLE list.
+    /// Which topic the cursor is on. An index into the WHOLE list -- the
+    /// CONVERSATION's list, and only that one: this is topicCursor_, the
+    /// field the arrows move while somebody is talking. The tiled Menu's
+    /// tiles and the keys page keep their own cursors (moveTopicCursor
+    /// routes by focus); a caller reading this under one of them is reading
+    /// the wrong list. menuCursor(), right below, is the one that follows
+    /// the focus.
     [[nodiscard]] int topicCursor() const noexcept { return topicCursor_; }
+    /// KIT POLISH. The row the cursor is on, on WHICHEVER list has the keys
+    /// -- routed exactly as moveTopicCursor() routes the arrows: the keys
+    /// page's caseCursor_, then the tiled Menu's own per-tile cursor
+    /// (characterCursor_, mapCursor_, lettersCursor_, the Journal's
+    /// caseCursor_), then the conversation's topicCursor_. The same number
+    /// dialogueView().cursor answers, without composing the panel to get
+    /// it. This is what ENTER hands chooseTopic(): main.cpp used to hand it
+    /// topicCursor() on the tiled Menu, which the Character tile got away
+    /// with (its press reads its own cursor and ignores the index) and the
+    /// Letters tile did not (it OPENS the index it is given).
+    [[nodiscard]] int menuCursor() const noexcept;
     /// Which page of the list is showing.
     [[nodiscard]] int topicPage() const noexcept { return topicPage_; }
     void moveTopicCursor(int delta);
@@ -1945,6 +2097,23 @@ private:
     /// final attempt was anything other than TooFar, which is interact()'s
     /// cue to fall through to the investigation look instead.
     bool stealNearestThing();
+    /// KIT BUILD. The nearest registry thing on the ground within reach,
+    /// through Tavern::takeGroundItem -- the interact walk's 3b. Says the
+    /// line itself and answers whether anything was in reach at all, the
+    /// stealNearestThing contract.
+    bool takeNearestItem();
+    /// True when one of the three books has a heard lead under the look:
+    /// the investigation outranks a thing on the ground and the lower of the
+    /// hands alike. The one three-book walk both rules read.
+    [[nodiscard]] bool leadNamedInReach() const;
+    /// KIT BUILD. The corpse the press would SEARCH: the dead body in reach
+    /// of the BODY's own position when no living roster body is nearer --
+    /// the one rule both walks read.
+    [[nodiscard]] const sim::Actor* corpseToSearch() const;
+    /// KIT BUILD. The crosshair's read of the thing on the ground the press
+    /// would TAKE (both walks, both stances): false when nothing is in reach,
+    /// the thing is fixed, or a named lead outranks it.
+    [[nodiscard]] bool groundTargetFor(InteractTarget& out) const;
 
     /// MORROWIND ROUND. Opens/refocuses the tiled Menu on tile `focus`
     /// (kMenuFocusCharacter/Map/Letters/Journal, mod 4): if the Menu is
@@ -2261,11 +2430,16 @@ private:
     /// then the courier's errand, then the Bloodletter. Still fixed members
     /// in fixed declaration order, still no switcher UI -- the same flagged
     /// scope cut, one book deeper.
+    ///
+    /// THE PULL PACK GAVE IT THE SWITCHER: frontedBook() is the auto rule
+    /// above unless the player picked a book off the casebook page's CASES
+    /// shelf (caseFront_), which is the "no switcher UI" scope cut closed --
+    /// render state, so the world hash cannot see which book the page reads.
     [[nodiscard]] const sim::CasebookRaws& activeCaseRaws() const noexcept {
-        return evictCaseLive() ? evictRaws_ : (sheetCaseLive() ? sheetRaws_ : caseRaws_);
+        return rawsOf(frontedBook());
     }
     [[nodiscard]] const sim::Casebook& activeCasebook() const noexcept {
-        return evictCaseLive() ? evictBook_ : (sheetCaseLive() ? sheetBook_ : casebook_);
+        return bookOf(frontedBook());
     }
     bool keysOpen_ = false;
     /// SPELLS BUILD. The Grimoire page: whether it is up, which crafting the
@@ -2309,6 +2483,62 @@ private:
     /// key IS the pointer, and every notice ends at the same door (the Menu).
     /// One place builds it so six announcement sites cannot drift apart.
     void armCasePlate(std::string news);
+    // --- THE PULL PACK's own state (see the public block above) -------------
+    /// The player's choice. Render state, never hashed -- pull.hpp's header.
+    FollowedLead followedLead_;
+    /// The CASES shelf's pick: -1 for the auto rule. Cleared on the step the
+    /// picked book closes, so the page falls back to whatever is live.
+    int caseFront_ = -1;
+    int caseShelfCursor_ = 0;
+    /// Per-skill level cache the toast diffs against, once a step.
+    SkillRiseWatch skillRise_;
+    /// The toast's own EVENT triple (text held through the fade, countdown,
+    /// ease) -- the case plate's exact shape. A second rise while one is up
+    /// queues behind it rather than overwriting the words mid-fade.
+    std::string skillToastText_;
+    int skillToastShowSteps_ = 0;
+    EasedToggle skillToastAnim_{kPageEaseSteps, kPageEaseSteps};
+    std::vector<std::string> skillToastQueue_;
+    /// The book-change watcher, once a step.
+    BookNewsWatch bookNews_;
+    /// A site armed the plate in its own words THIS step (examine()'s "3 NEW
+    /// LEADS", the courier's "A MISSION SHEET"), so the watcher does not say
+    /// the same change twice. Set by armCasePlate, cleared in stepPull().
+    bool casePlateArmedThisStep_ = false;
+    /// "NE 40  THE WEIGHHOUSE", rebuilt once a step (and on the press that
+    /// changes it) -- the storage HudState::pullLabel points into.
+    std::string pullLineCache_;
+    /// THE FOLLOW VERB'S ANSWER, readable: "THE COMPASS HOLDS THE
+    /// WEIGHHOUSE.", "A DEAD END IS NOT A DIRECTION." -- in the casebook
+    /// page's own header band for the plate's hold (the alert row is stood
+    /// down under a page), and on the message row once the book goes down.
+    std::string pageNote_;
+    int pageNoteSteps_ = 0;
+    void notePage(std::string line);
+    /// Named places (mapPlaces() indices) the body has stood in -- the other
+    /// half of "discovered" for the ribbon ticks. Render state.
+    std::vector<std::uint8_t> placesStood_;
+    std::int32_t placesStoodTileX_ = INT32_MIN;
+    std::int32_t placesStoodTileY_ = INT32_MIN;
+    /// The three books as pull.hpp sees them, in fixed member order.
+    [[nodiscard]] BookSet bookSet() const noexcept;
+    /// The one step hook: the skill diff, the book news, the toast's
+    /// countdown, the fronted book's close edge, the places stood.
+    void stepPull();
+    /// The one draw hook: the ribbon line, the ticks and the toast onto the
+    /// HudState drawFrame is assembling.
+    void composePullHud(HudState& hud) const;
+    /// The book whose leads the page lists, by id -- activeCasebook() reads
+    /// through this.
+    [[nodiscard]] const sim::Casebook& bookOf(CaseBookId id) const noexcept;
+    [[nodiscard]] const sim::CasebookRaws& rawsOf(CaseBookId id) const noexcept;
+    /// The CASES shelf rows, for casebookPageState().
+    [[nodiscard]] std::vector<CasebookShelfRow> casebookShelfRows() const;
+    /// Which named place (mapPlaces() index) a lead of ANY book stands in, or
+    /// -1 -- mapPlaceForLead's own two rules (the sign's name, then the
+    /// smallest footprint under the site) freed from the active book's index
+    /// space, for the ribbon's notches and its line.
+    [[nodiscard]] int placeIndexOfLead(const sim::Lead& lead) const;
     /// THE CHARACTER TILE'S OWN CURSOR AND PAGE. Read-only (nothing on this
     /// tile is a choice to make), so there is no "entry" to remember.
     int characterCursor_ = 0;
@@ -2449,6 +2679,10 @@ private:
     /// with a guard going up (a guard RAISES the hands, but a swing raises
     /// them too and the guard does not follow), so they do not share one.
     EasedToggle handsAnim_;
+    /// KIT BUILD. The "COAT TURNS 2" row's own EasedToggle, the per-row
+    /// convention: a turned blow has nothing to do with the hands or the
+    /// guard, and it is an EVENT with a hold (turnSteps_), not a state.
+    EasedToggle turnAnim_;
     /// FATIGUE BUILD. The fatigue bar's own visibility ease -- its OWN
     /// EasedToggle per the pinned convention, mirroring the health bar's one
     /// visibility rule (down for the length of a conversation, up otherwise)
@@ -2515,10 +2749,10 @@ private:
     std::string lastGuildSeen_;
     std::string lastObjectiveSeen_;
     bool lastBookOpen_ = false;
-    /// UI-EA (LANE HUD): THE Q-HOLD TUTOR TOAST. The grimoire's tap-vs-hold
-    /// split stays (flow map #9, ruled a kept modern idiom); this is how it
-    /// is taught -- "Q HOLD - WHEEL", through promptLabel so a pad names its
-    /// own button, raised on the quick bar's first TWO risings ever and
+    /// UI-EA (LANE HUD): THE QUICK BAR'S TUTOR TOAST. Nine and the sticks
+    /// cut the QuickWheel hold, so what is taught is the STEP -- "WHEEL -
+    /// STEP", through promptLabel so a pad names its own D-pad halves and a
+    /// rebind re-words it, raised on the quick bar's first TWO risings ever and
     /// riding the strip's own countdown, then retired for the session. Two
     /// exposures because one can land while the player is looking at the
     /// street, and a third is nagging. The band itself is hud.hpp's
@@ -2614,6 +2848,13 @@ private:
     /// STANCE & ROOM BUILD. The fighting-mode row's cache, kept through the
     /// fade-out the identical way blockCache_ is.
     std::string handsCache_;
+    /// KIT BUILD. The turn row's cache and its hold: kPlateHoldSteps from
+    /// the step a blow was softened, counted down in step(); the label is
+    /// composed on that edge (the piece, the number) and held through the
+    /// fade-out the identical way blockCache_ is.
+    std::string turnCache_;
+    std::string turnLine_;
+    std::int32_t turnSteps_ = 0;
     /// HELD-EFFECTS BUILD. One toggle and one cache PER ROW, the pinned
     /// convention: a warmth lapsing has nothing to do with a tuning arriving,
     /// so slot i eases on its own. Slots are table order (oldest hold first);
@@ -2694,6 +2935,13 @@ private:
     /// its two siblings.
     ImpactPulse blockPulse_;
     std::int32_t lastBlowsBlocked_ = 0;
+    /// KIT BUILD. The blowsTurned edge: a blow the worn kit softened says
+    /// so once on the row ("COAT TURNS 2."), the blocked-blow shape.
+    std::int32_t lastBlowsTurned_ = 0;
+    /// KIT BUILD. The corpse whose kit the Grimoire widget is showing, or
+    /// -1 (the widget is the Grimoire). UI state, never hashed: what he
+    /// carries is the Tavern's corpseRows(), a pure function of hashed state.
+    std::int32_t searchActorId_ = -1;
     /// STREET PANIC BUILD (feel/build, 9a). What the room looked like last
     /// step, so step() can tell the street what just happened to it: the sum
     /// of every non-vermin hp on the tavern roster (a drop under lethal rules
@@ -2938,6 +3186,13 @@ private:
 /// What a scripted capture run was asked to do.
 struct SmokeRunConfig {
     SessionConfig session;
+    /// NINE AND THE STICKS: an EXPLICIT settings file for the headless path
+    /// (`--controls=`), applied through the same loadControls/setControls
+    /// pair the window makes at boot, so a capture can be taken under a
+    /// rebound table. Empty leaves the shipped defaults -- the default file
+    /// beside the exe is never read here, which keeps every shipped frame
+    /// byte-stable against a player's own bindings.
+    std::filesystem::path controlsFile;
     /// Movement steps to run before the frame is taken. 0 captures the spawn.
     int steps = 0;
     /// Where the PNG goes. Empty writes nothing.
@@ -3178,6 +3433,12 @@ struct SmokeRunConfig {
     /// room's own blowsBlocked() moving) or a bounded wait runs out -- a
     /// brawl whose every swing whiffed leaves nothing on screen to prove.
     bool block = false;
+    /// THE PULL PACK: how many blows the held guard waits to have softened
+    /// before the shutter -- `--block=5`. One is the old drive; five is what
+    /// shieldwall's first level costs (NEGLECTED: 4 x 320 / 256), so the
+    /// skill-up toast is photographed IN the fight it was earned in, through
+    /// the same guard the right mouse button holds.
+    int blockBlows = 1;
     /// FIRST-PERSON COMBAT (S13). VERIFICATION ONLY. One press of Cast --
     /// Session::castEquipped(), the same call C makes -- after whatever the
     /// other flags scripted. Paired with --flame (whose line ends with the
@@ -3251,6 +3512,21 @@ struct SmokeRunConfig {
     /// arc, the arrest line on the row).
     bool watchHalt = false;
     std::string watchHaltEnd = "street";
+    /// STREET SENSES (9a completion). PROOF. Stand in a crowd on the Tarwalk
+    /// and raise STEEL -- an Edged weapon in the hand, the hands up, no blow --
+    /// the stance the ward reads as violence (Tavern::violenceInView), so the
+    /// crowd within the blade's radius and line of sight gives him room: serfs
+    /// flee, shopkeepers and priests cower. The drive finds the densest
+    /// Tarwalk spot the hour offers (deterministic, ascending id) and stands
+    /// the player one tile off it, facing in; the SETTLE window then does the
+    /// scattering, so `--street-assault --shot=F.png --settle-steps=N` shoots
+    /// the crowd N sim-steps into the panic (N=0 the blade just up, N=180
+    /// three flee ticks, N=360 scattered). Nothing here reaches into the sim
+    /// sideways -- setPlayerCombat and setBlocking are the same calls the
+    /// weapon grant and the right mouse button make; the alarm fires through
+    /// Session::step's own one call site. WHERE is reserved (unused today).
+    bool streetAssault = false;
+    std::string streetAssaultWhere;
     /// JUSTICE BUILD (HEARING PAGE LANE). Play the court: walk into the Gull
     /// at Cull's hour, lift in his sight until the row reads WANTED, stand
     /// still with steel up until he takes you at reach -- his own line on
@@ -3273,6 +3549,18 @@ struct SmokeRunConfig {
     /// waits for Cull through the wait page and THE DOOR is weighed.
     bool court = false;
     std::string courtEnd = "page";
+    /// KIT BUILD. Play the Kit: the coil on the Tarwalk named and taken,
+    /// the house's lantern named THEIRS and lifted with the knife and the
+    /// coat at four in the morning, the Character tile on the carried rows,
+    /// the coat worn and the knife in hand by the tile's press, the knife on
+    /// slot 3 and the strip, the coat turning Ox's blow (COAT TURNS n), Ox
+    /// put down and SEARCHed, everything off him and the legs at half with
+    /// the tile on the LOAD line, the coil put down on the Tarwalk through
+    /// the tile and looked at. WHERE is take, theirs, sheet, equip, slot,
+    /// dr, search, load, drop, or empty for the whole line (the tile on
+    /// what is left).
+    bool kit = false;
+    std::string kitEnd;
     /// S9. Play a burglary: crouch, cross a dark taproom unseen, lift a purse
     /// off somebody who does not feel it, up the stair, wire into a guest's
     /// strongbox, work the pins, and empty it. WHERE is "box" (standing over
@@ -3398,6 +3686,18 @@ struct SmokeRunConfig {
     std::string caseLead;
     std::string caseTab;
     bool caseRoute = false;
+    /// THE PULL PACK. `--follow=ID` presses FOLLOW on a lead by its
+    /// casebook.json id, through the page's own verbs -- the book opened by
+    /// the Menu key's call, the cursor put on the lead, the FOLLOW verb
+    /// pressed -- and leaves the book up, so the frame is FOLLOWING on the
+    /// row and the badge. `--follow-end=street` puts the book down again,
+    /// so the frame is the ribbon carrying the lead; `--follow-walk=N` then
+    /// walks N steps forward first, so two frames show the paces running
+    /// down. Runs AFTER the trail flags (so `--trail=mission` can have opened
+    /// the lead) and BEFORE the menu flags.
+    std::string follow;
+    std::string followEnd;
+    int followWalk = 0;
 
     /// THE WARD MAP (core action #13), VERIFICATION ONLY: open the district
     /// map through the same Session::toggleDistrictMap() the M key calls,
@@ -3664,6 +3964,8 @@ struct SmokeRunResult {
     std::int32_t watchHaltBeats = 0;
     /// JUSTICE BUILD: beats of the court line (--court), by its ending.
     std::int32_t courtBeats = 0;
+    /// KIT BUILD: beats of the Kit line (--kit), by its ending.
+    std::int32_t kitBeats = 0;
     /// How many of the six beats of the bounty run landed.
     std::int32_t contractBeats = 0;
     /// How many of the seven beats of the nemesis arc landed.
@@ -3715,6 +4017,10 @@ struct SmokeRunResult {
     /// never asked for a refocus, which is what a hand-built result already
     /// means.
     float characterFocusAtCapture = 0.0F;
+    /// THE PULL PACK: what the compass ribbon read at the shutter -- "NE 40
+    /// THE WEIGHHOUSE" -- so a case can pin which door a scripted line left
+    /// the street pointing at (test_pull's --case=taken pin).
+    std::string pullLineAtCapture;
     float mapFocusAtCapture = 0.0F;
     float lettersFocusAtCapture = 0.0F;
     float journalFocusAtCapture = 0.0F;
@@ -3809,6 +4115,14 @@ struct CaseWatchDrive {
 /// evidence for "a dockhand and a watchman do not sound alike" is a key and a
 /// sentence, not a screenshot.
 StreetLineResult runStreetLine(Session& session, const std::string& who, int topic);
+
+/// STREET SENSES (9a completion). PROOF. Stands the player in the densest
+/// crowd on the Tarwalk and raises steel (an Edged weapon, hands up, no blow),
+/// so the SETTLE window that follows scatters the street. See
+/// SmokeRunConfig::streetAssault. `found` is whether a crowd tile was found;
+/// `actorId` the body the player was stood beside. Exposed for runStreetLine's
+/// reason: a case can drive it and read the ward's Safety directly.
+StreetLineResult runStreetAssault(Session& session, const std::string& where);
 
 /// TIME-AND-TENURE BUILD. Plays the leasehold petition end to end -- see
 /// SmokeRunConfig::petition. Exposed for exactly runStreetLine's reason: the

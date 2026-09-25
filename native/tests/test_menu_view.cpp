@@ -80,7 +80,12 @@ TEST_CASE("the four tiles compose one frame at every size the game runs at") {
         CHECK(layout.journal.w == layout.metric.widthOf(interiorCells));
         CHECK(layout.journal.y > layout.character.bottom());
         const int journalRows = layout.metric.rowsIn(layout.journal.h);
-        CHECK(layout.topRows + 1 + journalRows == interiorRows);
+        // NINE AND THE STICKS: two rows under the Journal are the foot -- a
+        // rule and the nav band that names the ring.
+        CHECK(layout.topRows + 1 + journalRows + 2 == interiorRows);
+        CHECK(layout.footRuleRow == layout.topRows + 1 + journalRows);
+        CHECK(layout.metric.rowsIn(layout.nav.h) == 1);
+        CHECK(layout.nav.y > layout.journal.bottom());
         // Roughly a third: 9/25 of the interior, never starved to nothing and
         // never eating the tiles above it.
         CHECK(journalRows * 100 >= interiorRows * 30);
