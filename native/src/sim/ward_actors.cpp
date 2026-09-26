@@ -895,6 +895,15 @@ WardPolicy WardPopulation::selectPolicy(const WardActor& actor) const {
 
 // --- movement --------------------------------------------------------------
 
+void WardPopulation::shiftCameFrom(WardActor& actor) noexcept {
+    actor.cameFrom2X = actor.cameFromX;
+    actor.cameFrom2Y = actor.cameFromY;
+    actor.cameFrom2Band = actor.cameFromBand;
+    actor.cameFromX = actor.x;
+    actor.cameFromY = actor.y;
+    actor.cameFromBand = actor.band;
+}
+
 bool WardPopulation::tryEnter(WardActor& actor, std::int32_t nx, std::int32_t ny,
                               std::int32_t nband) {
     if (occupancy_.at(cellKey(nx, ny, nband)) >= kMaxOccupantsPerCell) {
@@ -909,12 +918,7 @@ bool WardPopulation::tryEnter(WardActor& actor, std::int32_t nx, std::int32_t ny
     if (playerKnown_ && nx == playerX_ && ny == playerY_ && nband == playerBand_) {
         return false;
     }
-    // Recorded BEFORE the position changes, and on every real move -- this is
-    // the one write cameFromX/Y/Band ever gets. See the field's own comment
-    // for why prevX/Y cannot do this job.
-    actor.cameFromX = actor.x;
-    actor.cameFromY = actor.y;
-    actor.cameFromBand = actor.band;
+    shiftCameFrom(actor);
     occupancy_.remove(cellKey(actor.x, actor.y, actor.band));
     actor.x = nx;
     actor.y = ny;
@@ -983,6 +987,11 @@ bool WardPopulation::tryPush(WardActor& pusher, std::int32_t cx, std::int32_t cy
             continue;  // never shove a body onto the player's own tile
         }
         occupancy_.remove(cellKey(cx, cy, cband));
+        // Same write tryEnter makes, for the same reason: a shoved body's
+        // cameFrom has to say where it actually just stood, or the very next
+        // sidestep it takes could walk it straight back into the cell it was
+        // just shoved out of.
+        shiftCameFrom(*occupant);
         occupant->x = tx;
         occupant->y = ty;
         occupant->band = tz;
@@ -1007,6 +1016,11 @@ bool WardPopulation::tryPush(WardActor& pusher, std::int32_t cx, std::int32_t cy
     const std::uint32_t there = cellKey(cx, cy, cband);
     occupancy_.remove(here);
     occupancy_.remove(there);
+    // Same reason as the displacement branch above: both bodies genuinely
+    // moved, so both need a real cameFrom, not the stale one either was
+    // carrying from whenever it last passed through tryEnter.
+    shiftCameFrom(*occupant);
+    shiftCameFrom(pusher);
     occupant->x = pusher.x;
     occupant->y = pusher.y;
     occupant->band = pusher.band;
@@ -1101,9 +1115,11 @@ bool WardPopulation::sidestep(WardActor& actor, std::int32_t tx, std::int32_t ty
     // tiles and never actually going anywhere. A
     // strictly closer cell, when one exists, is taken over a level one
     // regardless of rotation order, so a body only ever mills sideways when
-    // there is truly nothing better -- and never NEVER back onto the one
-    // cell it just left (cameFromX/Y/Band, not prevX/Y -- see that field's
-    // own comment for why prevX/Y could never do this job).
+    // there is truly nothing better -- and never back onto either of the
+    // last two cells it stood on (cameFromX/Y/Band and cameFrom2X/Y/Band,
+    // not prevX/Y -- see cameFromX's own comment for why prevX/Y could never
+    // do this job, and for the two-deep U-V-U-W cycle a single step of
+    // memory still let through).
     static constexpr std::int32_t dx[8] = {-1, 1, 0, 0, -1, 1, -1, 1};
     static constexpr std::int32_t dy[8] = {0, 0, -1, 1, -1, -1, 1, 1};
     const std::int32_t here = distanceFrom(actor.x, actor.y, actor.band, tx, ty, tband);
@@ -1122,6 +1138,11 @@ bool WardPopulation::sidestep(WardActor& actor, std::int32_t tx, std::int32_t ty
             }
             if (nx == actor.cameFromX && ny == actor.cameFromY && nz == actor.cameFromBand) {
                 continue;  // never step straight back onto the tile just left
+            }
+            if (nx == actor.cameFrom2X && ny == actor.cameFrom2Y && nz == actor.cameFrom2Band) {
+                continue;  // nor the one before that -- see the field's own
+                           // comment for the U-V-U-W cycle one step of memory
+                           // still let through
             }
             if (n >= 4 &&
                 (tiles_->stepBand(actor.x, actor.y, actor.band, nx, actor.y) ==
@@ -1490,6 +1511,7 @@ bool WardPopulation::standUp(WardActor& actor) {
         if (occupancy_.at(cellKey(tx, ty, tz)) != 0) {
             continue;
         }
+        shiftCameFrom(actor);
         actor.x = tx;
         actor.y = ty;
         actor.band = tz;
@@ -1760,6 +1782,16 @@ bool WardPopulation::revivePrey(WardActor& prey) {
                 prey.prevX = nx;
                 prey.prevY = ny;
                 prey.prevBand = nb;
+                // A fresh appearance, not a walked step -- BOTH cameFrom and
+                // cameFrom2 are snapped to match, the same as prev*, so
+                // nothing forbids a direction the mouse never actually came
+                // from.
+                prey.cameFromX = nx;
+                prey.cameFromY = ny;
+                prey.cameFromBand = nb;
+                prey.cameFrom2X = nx;
+                prey.cameFrom2Y = ny;
+                prey.cameFrom2Band = nb;
                 prey.downedUntil = -1;
                 prey.route.clear();
                 prey.routeTargetX = -1;
@@ -2222,6 +2254,16 @@ void WardPopulation::settleToSchedule() {
         actor.prevX = actor.x;
         actor.prevY = actor.y;
         actor.prevBand = actor.band;
+        // A settle is a teleport, not a walked step -- BOTH cameFrom and
+        // cameFrom2 are snapped to match, the same as prev*, so a body
+        // settled beside a doorway does not find its own genuinely-just-
+        // arrived tile forbidden.
+        actor.cameFromX = actor.x;
+        actor.cameFromY = actor.y;
+        actor.cameFromBand = actor.band;
+        actor.cameFrom2X = actor.x;
+        actor.cameFrom2Y = actor.y;
+        actor.cameFrom2Band = actor.band;
         actor.moveAccumTicks = 0;
         actor.goalWorkTicks = 0;
         actor.legMark = 0;
@@ -2875,14 +2917,17 @@ void WardPopulation::hash_into(HashSink& sink) const {
         sink.put_int(static_cast<std::uint32_t>(actor.x));
         sink.put_int(static_cast<std::uint32_t>(actor.y));
         sink.put_int(static_cast<std::uint32_t>(actor.band));
-        // cameFromX/Y/Band, appended -- sidestep() reads it to refuse
-        // stepping straight back onto the cell just left, so the hash must
-        // cover it like every other scalar a policy reads (prevX/Y stay
-        // unhashed on purpose: the renderer's own interpolation state, read
-        // by no policy).
+        // cameFromX/Y/Band and cameFrom2X/Y/Band, appended -- sidestep()
+        // reads both to refuse stepping back onto either of the last two
+        // cells, so the hash must cover them like every other scalar a
+        // policy reads (prevX/Y stay unhashed on purpose: the renderer's own
+        // interpolation state, read by no policy).
         sink.put_int(static_cast<std::uint32_t>(actor.cameFromX));
         sink.put_int(static_cast<std::uint32_t>(actor.cameFromY));
         sink.put_int(static_cast<std::uint32_t>(actor.cameFromBand));
+        sink.put_int(static_cast<std::uint32_t>(actor.cameFrom2X));
+        sink.put_int(static_cast<std::uint32_t>(actor.cameFrom2Y));
+        sink.put_int(static_cast<std::uint32_t>(actor.cameFrom2Band));
         sink.put_short(static_cast<std::uint32_t>(actor.facing));
         for (std::size_t n = 0; n < kNeedCount; ++n) {
             sink.put_short(static_cast<std::uint32_t>(actor.needs[n]));

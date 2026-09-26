@@ -171,39 +171,73 @@ inline constexpr std::uint32_t kSaltLook = 0x4C4F4F4BU;  // "LOOK"
     return static_cast<std::uint32_t>(stepCount + static_cast<std::int64_t>(actorId) * 17);
 }
 
-/// A SMALL, STABLE, PER-TILE nudge within a body's own tile. Purely visual:
-/// nothing here is hashed, and it never moves a body off the sim's own
-/// one-tile grid -- the sim's one-per-cell rule is the only thing that says
-/// where a body IS, and this reads that position and never writes it back.
-/// It exists because the placeholder figure's shoulders are wider than the
-/// ~0.9 m tile it stands on, so two bodies the sim has legitimately placed on
-/// ADJACENT tiles -- exactly what WardPopulation::sidestep now does far more
-/// often, on purpose -- could still read as one fused silhouette from some
-/// angles.
+/// A SMALL, STABLE, PER-NEIGHBOUR nudge within a body's own tile. Purely
+/// visual: it never writes back to a WardActor's real position, and nothing
+/// here touches the SIM's own world hash -- but it IS hashed into the
+/// RENDERER's own SceneDescription digest, same as every other float
+/// actorInstances() derives (see this header's own top comment), so two
+/// sessions driven by the same script still describe the same crowd byte for
+/// byte. It exists because the placeholder figure's shoulders are wider than
+/// the ~0.9 m tile it stands on, so two bodies the sim has legitimately
+/// placed on ADJACENT tiles -- exactly what WardPopulation::sidestep does far
+/// more often, on purpose -- could still read as one fused silhouette from
+/// some angles.
 ///
-/// NOT AN ID-KEYED HASH, AND THE FIRST VERSION WAS. An id-keyed offset knows
-/// nothing about where the actor's NEIGHBOUR is, so it is exactly as likely
-/// to lean two adjacent bodies together as apart -- the auditor hat measured
-/// it: averaged over every id pair, an orthogonally-adjacent pair's own
-/// clearance SHRANK in very close to half of them, sometimes to 0.70 of a
-/// tile from the 1.00 the grid itself guarantees. A push keyed on the TILE's
-/// own coordinates instead is provably correct instead of a coin flip: two
-/// cells that differ by exactly one step on an axis always differ in that
-/// axis's parity, so pushing toward -X on an even x and +X on an odd x (and
-/// the same on y) sends any orthogonally- or diagonally-adjacent pair's
-/// pushes in OPPOSITE directions on every axis they differ on, by
-/// construction -- not luck.
+/// TWO EARLIER VERSIONS OF THIS WERE BOTH WRONG, THE SAME WAY. The first
+/// nudged by an id-keyed hash, which cannot know where a neighbour actually
+/// is and is exactly as likely to lean two bodies together as apart. The
+/// second nudged by the tile's own coordinate parity, reasoning that two
+/// cells one step apart always differ in parity so their pushes must be
+/// "opposite" -- true, but opposite is not the same claim as apart: pushing
+/// -X on even x and +X on odd x sends the pair (0,1) apart and the very next
+/// pair (1,2) together, alternating forever, so it separated exactly the
+/// same HALF of all adjacent pairs the id hash did, by a different route --
+/// the auditor hat proved it both ways, by exhaustive computation the first
+/// time and by the same method again the second -- and it added a new
+/// visible snap at every tile boundary the id version never had (a body's
+/// own id never changes; its destination tile's parity flips every time it
+/// crosses one). Both were PROVABLY UNFIXABLE by tweaking the formula: no
+/// function of one cell's own coordinate, with a fixed rule, can push away
+/// from every possible neighbour, because the same cell would need to push
+/// in opposite directions depending on which side the neighbour actually
+/// stood on -- the missing information was never "which formula," it was
+/// "where is my neighbour."
 ///
-/// EXPOSED, NOT FILE-LOCAL: test_scene3d.cpp pins every drawn instance
-/// against an independently computed expected position, so the test has to
-/// apply the identical nudge to agree with production -- a second hand-copied
-/// formula would silently drift from this one the first time either changed.
+/// THIS VERSION LOOKS. Given the same actor roster actorInstances() is about
+/// to draw, it finds every OTHER visible body within one tile -- the same
+/// eight-neighbour footprint WardPopulation::sidestep itself walks -- and
+/// pushes away from wherever they actually stand: correct by construction
+/// for any real adjacent pair, not a coin flip, because it finally answers
+/// the question a per-cell formula never could.
+///
+/// EXPOSED, NOT FILE-LOCAL: test_scene3d.cpp and test_render3d.cpp pin every
+/// drawn instance against an independently computed expected position, so
+/// both call this exact function -- a hand-copied formula would silently
+/// drift from it the first time either changed.
 inline constexpr float kPersonalSpaceTiles = 0.15F;
 
-inline void personalSpaceNudge(std::int32_t tileX, std::int32_t tileY, float& px,
-                               float& py) noexcept {
-    px += ((tileX & 1) == 0 ? -1.0F : 1.0F) * kPersonalSpaceTiles;
-    py += ((tileY & 1) == 0 ? -1.0F : 1.0F) * kPersonalSpaceTiles;
+inline void personalSpaceNudge(std::int32_t selfId, std::int32_t tileX, std::int32_t tileY,
+                               std::int32_t band, const std::vector<sim::WardActor>& actors,
+                               float& px, float& py) noexcept {
+    std::int32_t awayX = 0;
+    std::int32_t awayY = 0;
+    for (const sim::WardActor& other : actors) {
+        if (other.id == selfId || other.band != band || (!other.visible() && !other.floored())) {
+            continue;
+        }
+        const std::int32_t dx = other.x - tileX;
+        const std::int32_t dy = other.y - tileY;
+        if (dx < -1 || dx > 1 || dy < -1 || dy > 1 || (dx == 0 && dy == 0)) {
+            continue;
+        }
+        awayX -= (dx > 0) - (dx < 0);
+        awayY -= (dy > 0) - (dy < 0);
+    }
+    if (awayX == 0 && awayY == 0) {
+        return;
+    }
+    px += static_cast<float>((awayX > 0) - (awayX < 0)) * kPersonalSpaceTiles;
+    py += static_cast<float>((awayY > 0) - (awayY < 0)) * kPersonalSpaceTiles;
 }
 
 /// The placeholder figure for a kind: a closed box figure standing on y = 0,

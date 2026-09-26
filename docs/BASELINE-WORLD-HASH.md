@@ -1003,7 +1003,9 @@ lane lives on `WardPopulation`, `actor_instances`, or `Session::step`'s player-p
 tavern workload has no ward, no renderer and no live player, and never calls any of it.
 
 **The population baseline is therefore re-blessed at `0x66B5A1B2F32270B9`, a real crowd-movement
-change behind it -- gated and critic-passed on all three hats, not just one.**
+change behind it. This number is NOT the lane's last word: it is superseded by round 4 below,
+which the auditor's own re-review of this number caught two further real gaps in before the
+three-hat gate actually closed.**
 
 Proved by three cases in `native/tests/test_ward_actors.cpp`: "crowds sidestep instead of gluing
 into a column at a chokepoint" (`sidesteps() > 0` under a real rush, one-body-per-cell holds), "a

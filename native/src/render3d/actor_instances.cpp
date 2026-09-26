@@ -414,11 +414,16 @@ std::vector<ActorInstance> actorInstances(const render::Session& session,
         float py = down ? static_cast<float>(actor.y) + 0.5F
                         : static_cast<float>(actor.prevY) +
                               static_cast<float>(actor.y - actor.prevY) * slide + 0.5F;
-        personalSpaceNudge(actor.x, actor.y, px, py);
+        // Culled BEFORE the nudge now: the nudge looks at every other body
+        // within a tile, so it is worth skipping for anyone about to be
+        // culled anyway. The un-nudged position is close enough for this
+        // check either way -- the nudge moves nothing by more than
+        // kPersonalSpaceTiles, negligible against params.maxDistance.
         const float distance = planarDistance(view, px, py);
         if (distance > params.maxDistance) {
             continue;
         }
+        personalSpaceNudge(actor.id, actor.x, actor.y, actor.band, people.actors(), px, py);
         ActorInstance body;
         // The look by kind, name and id; the placeholder by kind alone.
         body.rig = actorRigFor(actor.type, actor.id, people.identity(actor.id).name);

@@ -386,7 +386,8 @@ TEST_CASE("an actor is drawn where the simulation says the actor is") {
         // The same per-actor personal-space nudge actorInstances() applies --
         // shared, not hand-copied, so this can never quietly drift from
         // production: see personalSpaceNudge's own comment.
-        personalSpaceNudge(actor.x, actor.y, px, py);
+        personalSpaceNudge(actor.id, actor.x, actor.y, actor.band, session.people().actors(),
+                           px, py);
         const float dx = px - eye.x;
         const float dy = py - eye.y;
         if (std::sqrt(dx * dx + dy * dy) > 64.0F) {
@@ -471,7 +472,8 @@ TEST_CASE("an actor is drawn where the simulation says the actor is") {
                    static_cast<float>(actor.x - actor.prevX) * 0.5F + 0.5F;
         float py = static_cast<float>(actor.prevY) +
                    static_cast<float>(actor.y - actor.prevY) * 0.5F + 0.5F;
-        personalSpaceNudge(actor.x, actor.y, px, py);
+        personalSpaceNudge(actor.id, actor.x, actor.y, actor.band, session.people().actors(),
+                           px, py);
         const float dx = px - eyeLater.x;
         const float dy = py - eyeLater.y;
         if (std::sqrt(dx * dx + dy * dy) > 64.0F) {
