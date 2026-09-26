@@ -28,17 +28,17 @@ constexpr float kDegToRad = kPi / 180.0F;
 
 /// The JSON keys, in PieceRole order.
 constexpr std::string_view kRoleNames[kPieceRoleCount] = {
-    "none",        "wall",         "wall_corner", "wall_window",  "wall_door",   "roof_edge",
+    "none",        "wall",         "wall_corner", "wall_window",  "roof_edge",
     "floor_plank", "floor_cobble", "floor_flag",  "water",        "prop_barrel", "prop_crate",
     "prop_sack",   "lamp_wall",    "lamp_post",   "brazier",      "floor_fill",  "wall_cap",
-    "ceiling",     "wall_timber",  "chimney",     "lip_plank",    "lip_stone",   "door_inside",
+    "ceiling",     "wall_timber",  "chimney",     "lip_plank",    "lip_stone",
     "door_leaf",   "gate_post",    "flame",       "ember",        "lamp_bracket", "lamp_chain",
     "joist",       "table",        "bench",       "mug",          "bottle",      "shelf",
     "barrel_rack", "fireplace",    "pillar",      "post",         "parapet",     "roof_tile",
     "rowboat",     "crane",        "gunwale",     "window_timber", "rope",
     "hull",        "wall_plaster", "stool",       "quay_wall",     "roof_flag",
     "roof_batten", "shop_sign",    "floor_strip",  "post_rail",    "door_post",
-    "pane_timber", "lintel",       "item",
+    "pane_timber", "lintel",       "soffit",       "item",
 };
 
 // ---------------------------------------------------------------------------
@@ -173,9 +173,15 @@ constexpr float kPaneCoreFraction = 0.45F;
 /// the facade plane.
 constexpr float kLeafOffReveal = 0.14F;
 constexpr float kLeafOffFacade = 0.06F;
-/// The return quad over a frame's end stops this far behind the frame's
-/// outer face, inside its jamb post.
-constexpr float kReturnInset = 0.004F;
+/// A jamb's reveal quad stands this far into the opening off the jamb
+/// cell's own boundary plane -- a hair inboard of the post's inner face,
+/// which stands ON that plane, so the two never fight and the post reads
+/// as the reveal's own edge.
+constexpr float kRevealFlush = 0.006F;
+/// The soffit over a doorway lies this far above the head, inside the two
+/// lintels' bodies, so it closes the box between them without touching
+/// either underside.
+constexpr float kSoffitLift = 0.004F;
 /// A gate's lintel beam height.
 constexpr float kGateLintelLift = 2.85F;
 /// The joist's half-height under a ceiling (the kit beam's section is 0.36).
@@ -480,6 +486,54 @@ private:
     [[nodiscard]] bool faceOutdoor(std::int32_t x, std::int32_t y, std::int32_t z,
                                    int side) const noexcept {
         return !cellRoofed(tiles_, x + kSideDx[side], y + kSideDy[side], z);
+    }
+
+    /// What one face of a WALL cell wears when walls() dresses it: the
+    /// piece, which side of it looks out, how far its centre stands off the
+    /// cell's boundary plane and how far its finish does, and its tint.
+    /// The door frame reads it so the posts stand IN the finish beside them
+    /// and the wall over the head closes in the same finish -- brick over a
+    /// brick door, boards over a boarded one, plaster over a rendered one.
+    /// The choice is walls()' own, written once more here rather than
+    /// pulled out of its run loop, and the two must say the same thing.
+    struct Finish {
+        const PieceSpec* spec = nullptr;
+        PieceRole role = PieceRole::None;
+        bool frontOut = true;
+        float standoff = 0.0F;
+        /// The finish's own face off the boundary plane: the standoff plus
+        /// half the piece's thickness (a thin quad IS its standoff).
+        float proud = kJambProudFallback;
+        Rgba8 tint{};
+    };
+
+    [[nodiscard]] Finish finishOf(std::int32_t x, std::int32_t y, std::int32_t z,
+                                  int side) const noexcept {
+        Finish f;
+        const MaterialRule* r = rule(x, y, z);
+        const WallClass cls = wallClassAt(x, y, z);
+        if (r == nullptr || cls == WallClass::None) {
+            return f;
+        }
+        const PieceSpec* wall = catalogue_.piece(PieceRole::Wall);
+        const PieceSpec* timber = catalogue_.piece(PieceRole::WallTimber);
+        const PieceSpec* plasterQuad = catalogue_.piece(PieceRole::WallPlaster);
+        const bool outdoor = faceOutdoor(x, y, z, side);
+        const bool boards = cls == WallClass::Timber && timber != nullptr;
+        const bool brickOut = outdoor && cls == WallClass::Masonry && !r->plasterOut;
+        const bool thinPlaster = !boards && !brickOut && plasterQuad != nullptr;
+        f.spec = boards ? timber : thinPlaster ? plasterQuad : wall;
+        f.role = boards ? PieceRole::WallTimber : thinPlaster ? PieceRole::WallPlaster : PieceRole::Wall;
+        // A board or plaster quad has one face and it looks out; the kit
+        // wall shows its brick or its plaster.
+        f.frontOut = boards || brickOut || thinPlaster;
+        f.tint = (cls == WallClass::Masonry && !outdoor) ? r->insideTint : r->tint;
+        if (f.spec == nullptr) {
+            return f;
+        }
+        f.standoff = f.spec->standoffSet ? f.spec->standoff : f.spec->thickness * 0.5F;
+        f.proud = f.standoff + f.spec->thickness * 0.5F;
+        return f;
     }
 
     /// How many WALL neighbours a cell has on its own level.
@@ -1172,20 +1226,24 @@ private:
     }
 
     /// The facade plane of a gap as a face run over the gap's interval
-    /// [lo, hi], and the jamb cell at its a0 end.
+    /// [lo, hi], and its west (or north) jamb cell. `room` asks for the
+    /// wall's OTHER face instead: the gap row's room edge, looking into the
+    /// room, read in that side's own a-order -- the plane the frame's
+    /// second set of posts stands in.
     [[nodiscard]] FaceRun gapFace(const DoorGap& gap, float& lo, float& hi, std::int32_t& jambX,
-                                  std::int32_t& jambY) const noexcept {
+                                  std::int32_t& jambY, bool room = false) const noexcept {
         FaceRun r;
         r.z = gap.z;
-        r.side = gap.side;
+        r.side = room ? opposite(gap.side) : gap.side;
         float dummy = 0.0F;
         jambX = gap.x;
         jambY = gap.y;
         if (gap.alongX) {
-            // The facade plane: the gap row's north or south edge.
-            setBase(r, static_cast<float>(gap.side == kNorth ? gap.y : gap.y + 1));
+            // The plane: the gap row's north or south edge, whichever this
+            // face is.
+            setBase(r, static_cast<float>(r.side == kNorth ? gap.y : gap.y + 1));
             const std::int32_t x1 = gap.x + gap.w - 1;
-            if (gap.side == kNorth) {
+            if (r.side == kNorth) {
                 cellInterval(kNorth, gap.x, gap.y, lo, dummy);
                 cellInterval(kNorth, x1, gap.y, dummy, hi);
             } else {
@@ -1194,9 +1252,9 @@ private:
             }
             jambX = gap.x - 1;
         } else {
-            setBase(r, static_cast<float>(gap.side == kWest ? gap.x : gap.x + 1));
+            setBase(r, static_cast<float>(r.side == kWest ? gap.x : gap.x + 1));
             const std::int32_t y1 = gap.y + gap.w - 1;
-            if (gap.side == kEast) {
+            if (r.side == kEast) {
                 cellInterval(kEast, gap.x, gap.y, lo, dummy);
                 cellInterval(kEast, gap.x, y1, dummy, hi);
             } else {
@@ -1210,24 +1268,23 @@ private:
         return r;
     }
 
-    /// The frames: one per gap, in the plane of the facade, the building's
-    /// own finish to the street; behind it, on a rendered building, the
-    /// plaster the room should see; a leaf hung open on each jamb; a post
-    /// and a lintel for a gate.
+    /// The gates and the leaves: a post and a lintel for a gate (no frame
+    /// fits a four-tile mouth without walling half of it), and a leaf hung
+    /// open on each jamb of a door. THE DOOR'S OWN FRAME IS NOT HERE ANY
+    /// MORE -- it is the timber jambs() stands. The kit's door wall stood
+    /// here once, stretched over the gap: its own grey surround round a
+    /// hole narrower than the gap, a plaster margin either side, and the
+    /// post at the gap's edge a third of a metre outboard of the opening it
+    /// was meant to be the edge of. A pilaster pair, not a jamb.
     void doors() {
-        const PieceSpec* door = catalogue_.piece(PieceRole::WallDoor);
-        const PieceSpec* wall = catalogue_.piece(PieceRole::Wall);
-        const PieceSpec* inside = catalogue_.piece(PieceRole::DoorInside);
         const PieceSpec* leaf = catalogue_.piece(PieceRole::DoorLeaf);
         const PieceSpec* gatePost = catalogue_.piece(PieceRole::GatePost);
         const PieceSpec* lintel = catalogue_.piece(PieceRole::Joist);
-        const float wallThick = wall != nullptr ? wall->thickness : 0.225F;
         for (const DoorGap& gap : doors_) {
             float lo = 0.0F, hi = 0.0F;
             std::int32_t jambX = 0, jambY = 0;
             const FaceRun r = gapFace(gap, lo, hi, jambX, jambY);
             const MaterialRule* jamb = rule(jambX, jambY, gap.z);
-            const bool brickOut = jamb == nullptr || !jamb->plasterOut;
             const std::int32_t farX = gap.x + (gap.alongX ? gap.w - 1 : 0);
             const std::int32_t farY = gap.y + (gap.alongX ? 0 : gap.w - 1);
             // Lit across the gap in the facade's own a-order, and at each
@@ -1239,7 +1296,6 @@ private:
             const FaceLight light = runLight(forward ? gap.x : farX, forward ? gap.y : farY, gdx, gdy, gap.w,
                                              0.0F, static_cast<float>(gap.w), true, true);
             const Rgba8 outTint = jamb != nullptr ? jamb->tint : Rgba8{};
-            const Rgba8 inTint = jamb != nullptr ? jamb->insideTint : Rgba8{};
             const float yBase = render::bandSurface(gap.z);
             ++out_.stats.doorGaps;
 
@@ -1264,95 +1320,14 @@ private:
                 }
                 continue;
             }
-            if (door == nullptr) {
-                continue;
-            }
-            const float standoff = door->standoffSet ? door->standoff : wallThick * 0.5F;
-            FaceOpts o;
-            o.frontOut = brickOut;
-            o.standoff = standoff;
-            o.yBase = yBase;
-            o.tint = outTint;
-            o.light = light;
-            facePiece(r, PieceRole::WallDoor, *door, lo, hi, o);
-
-            // The inside: on a rendered building the frame was turned to
-            // show its plaster to the street, so its brick faces the room.
-            // The thin plaster wall stands a hair behind the frame's inner
-            // face, cut to the frame's header and jambs so the opening
-            // stays open.
-            const float sx = (hi - lo) / std::max(0.01F, door->width);
-            const float hs = heightScale(*door);
-            const float jambW = door->cutX * sx;
-            const float openTop = door->cutY * hs;
-            if (!brickOut && inside != nullptr && door->cutX > 0.0F && door->cutY > 0.0F) {
-                FaceOpts in;
-                in.frontOut = false;
-                in.standoff = standoff - door->thickness * 0.5F - 0.015F;
-                in.yBase = yBase;
-                in.tint = inTint;
-                in.light = light;
-                // The header, over the whole gap.
-                in.height = render::kBandHeight - 0.01F - openTop - 0.005F;
-                in.yBase = yBase + openTop + 0.005F;
-                facePiece(r, PieceRole::DoorInside, *inside, lo, hi, in);
-                // The jambs, from the floor to the header.
-                in.height = openTop + 0.005F;
-                in.yBase = yBase;
-                if (jambW > 0.02F) {
-                    facePiece(r, PieceRole::DoorInside, *inside, lo, lo + jambW - 0.005F, in);
-                    facePiece(r, PieceRole::DoorInside, *inside, hi - jambW + 0.005F, hi, in);
-                }
-            }
-            // The frame's ends stand in the reveal planes, their brick
-            // cross-section facing into the doorway: a plaster quad over
-            // each, inside the frame's hollow end, over the WALL's thickness
-            // (the frame's own thickness counts its trim, which stands
-            // proud of the wall on both sides but does not reach the end)
-            // less a hair each way -- proud of either face, the quad's
-            // edge is a bright hairline beside the frame from the street.
-            if (inside != nullptr) {
-                const float outer = standoff + wallThick * 0.5F - kReturnInset;
-                const float inner = standoff - wallThick * 0.5F + kReturnInset;
-                for (int end = 0; end < 2; ++end) {
-                    // The reveal plane at the a0 end faces +tangent (into
-                    // the gap); at the a1 end -tangent. As a face run: the
-                    // side one quarter turn from the facade's.
-                    const int face = end == 0 ? (r.side + 1) & 3 : (r.side + 3) & 3;
-                    FaceRun jambFace;
-                    jambFace.z = gap.z;
-                    jambFace.side = face;
-                    const float a = end == 0 ? lo : hi;
-                    // The plane's base point is the jamb edge on the facade
-                    // plane; the quad runs from `outer` out of doors to the
-                    // reveal inset in.
-                    const float edgeX = r.baseX + kTangentX[r.side] * a;
-                    const float edgeZ = r.baseZ + kTangentZ[r.side] * a;
-                    jambFace.baseX = edgeX;
-                    jambFace.baseZ = edgeZ;
-                    // Along this face's tangent, the street lies toward the
-                    // facade's normal: for the a0-end face (a quarter turn
-                    // on) that is -tangent; for the a1-end face +tangent.
-                    const float sign = end == 0 ? -1.0F : 1.0F;
-                    const float b0 = std::min(sign * outer, sign * inner);
-                    const float b1 = std::max(sign * outer, sign * inner);
-                    FaceOpts ret;
-                    ret.frontOut = true;
-                    ret.standoff = 0.006F;
-                    ret.yBase = yBase;
-                    ret.tint = inTint;
-                    ret.light = cellLight(gap.x, gap.y);
-                    facePiece(jambFace, PieceRole::DoorInside, *inside, b0, b1, ret);
-                }
-            }
-            // The leaves: one on each jamb, hinged at the jamb's inner
-            // edge, swung inward to lie along the reveal.
+            // The leaves: one on each jamb, hinged just inside the post's
+            // inner face, swung inward to lie along the reveal.
             if (leaf != nullptr) {
                 const float leafLength = std::max(0.1F, leaf->maxX - leaf->minX);
                 for (int end = 0; end < 2; ++end) {
-                    // The hinge: just inside the jamb's edge, a little off
-                    // the reveal, at the facade plane.
-                    const float a = end == 0 ? lo + jambW + kLeafOffReveal : hi - jambW - kLeafOffReveal;
+                    // The hinge: just inside the opening's edge, a little
+                    // off the reveal, a little behind the facade plane.
+                    const float a = end == 0 ? lo + kLeafOffReveal : hi - kLeafOffReveal;
                     Vec3 hinge{r.baseX + kTangentX[r.side] * a - kNormalX[r.side] * kLeafOffFacade,
                                yBase + leaf->lift,
                                r.baseZ + kTangentZ[r.side] * a - kNormalZ[r.side] * kLeafOffFacade};
@@ -1379,23 +1354,31 @@ private:
         }
     }
 
-    /// THE JAMBS, 2026-09-25. A door has exactly two of them and they are
-    /// the two wall cells the door rule already demands: the cell hard
-    /// against the left of the opening and the cell hard against its right.
-    /// Each carries the kit's strapped timber post AT ITS OWN SECTION -- a
-    /// quarter of a metre, not the metre the cell is -- standing on the
-    /// ground, cut off at the head, its section straddling the frontage's
-    /// finish so it reads proud of the plaster and never floats off a thin
-    /// timber wall. A beam lies across the two heads. No cap, no plinth,
-    /// no capital: a squared oak jamb with two straps, the height of the
-    /// door and no more.
+    /// THE FRAME, 2026-09-25, second cut. A door has exactly two jambs and
+    /// they are the two wall cells the door rule already demands: the cell
+    /// hard against the left of the opening and the cell hard against its
+    /// right. On each of them, ON EACH FACE OF THE WALL, stands the kit's
+    /// strapped timber post at its own section -- a quarter of a metre,
+    /// not the metre the cell is -- its inner face ON the edge of the
+    /// opening, its section straddling that face's finish (half in the
+    /// plaster, half proud of it), the threshold to the head; a beam lies
+    /// across the two heads. Between the street post and the room post the
+    /// reveal is the wall's plaster a hair inboard of the posts' faces
+    /// (walls()), so the post IS the edge of the reveal: no strip of
+    /// plaster between the timber and the opening, no kit surround round
+    /// the hole. Over the head the wall's own finish closes the frontage
+    /// to the storey top on both faces -- brick over a brick door, boards
+    /// over a boarded one, plaster over a rendered one -- and a plaster
+    /// soffit lies across the head between the two lintels, so the lintel
+    /// course is a closed box from every side and from below.
     ///
-    /// This is the half the 2026-09-16 pass deferred. The chunk mesher
-    /// takes the same two cells' boxes out under the head (door_jambs.hpp
-    /// is the one test both read), which is what lets the beam be thin.
-    /// Every other face of those cells is still drawn -- the frontage
-    /// panel, the plaster inside, the reveal into the opening, the wall
-    /// above the head, the threshold below -- so nothing is see-through.
+    /// The chunk mesher takes the same two cells' boxes out under the head
+    /// (door_jambs.hpp is the one test both read), which is what lets the
+    /// beam be thin. The frame's timber wears its own oak, not the wall's
+    /// tint: a granite-grey post under a lantern read as unlit. Each post
+    /// is lit at the cut between its jamb cell and the gap cell beside it,
+    /// the value the wall's own piece ends on, with the wall's facing, so
+    /// the timber takes the lamp exactly as the plaster it stands in does.
     /// A GATE keeps its own posts and beam (doors()): four cells of mouth
     /// is not a door frame.
     void jambs() {
@@ -1404,68 +1387,153 @@ private:
             return;
         }
         const PieceSpec* lintel = catalogue_.piece(PieceRole::Lintel);
-        const PieceSpec* wall = catalogue_.piece(PieceRole::Wall);
-        // How far the frontage's finish stands out from the cell's own
-        // boundary plane: the wall piece's standoff plus half its thickness,
-        // the same sum doors() takes its reveal returns from.
-        const float proud =
-            wall != nullptr
-                ? (wall->standoffSet ? wall->standoff : wall->thickness * 0.5F) + wall->thickness * 0.5F
-                : kJambProudFallback;
+        const PieceSpec* soffit = catalogue_.piece(PieceRole::Soffit);
         const float section = std::max(0.01F, beam->width * beam->scale);
         const float sy = kDoorHeadHeight / std::max(0.01F, beam->height);
+        const float half =
+            lintel != nullptr ? 0.5F * (lintel->maxX - lintel->minX) * lintel->scale : 0.0F;
         for (const DoorGap& gap : doors_) {
             if (gap.gate()) {
                 continue;
             }
-            float lo = 0.0F, hi = 0.0F;
-            std::int32_t faceX = 0, faceY = 0;
-            const FaceRun r = gapFace(gap, lo, hi, faceX, faceY);
-            std::int32_t gdx = 0, gdy = 0;
-            runStep(gap.side, gdx, gdy);
-            const bool forward = gdx + gdy > 0;
+            const float yBase = render::bandSurface(gap.z);
             const std::int32_t farX = gap.x + (gap.alongX ? gap.w - 1 : 0);
             const std::int32_t farY = gap.y + (gap.alongX ? 0 : gap.w - 1);
-            // The cell before the opening in the facade's own a-order (the
-            // lo end) and the cell after it (the hi end).
-            const std::int32_t cellX[2] = {(forward ? gap.x : farX) - gdx,
-                                           (forward ? farX : gap.x) + gdx};
-            const std::int32_t cellY[2] = {(forward ? gap.y : farY) - gdy,
-                                           (forward ? farY : gap.y) + gdy};
-            const float yBase = render::bandSurface(gap.z);
-            int stood = 0;
-            for (int end = 0; end < 2; ++end) {
-                const std::int32_t cx = cellX[end];
-                const std::int32_t cy = cellY[end];
-                if (!doorPostAt(tiles_, cx, cy, gap.z)) {
-                    // The mesher left this cell's box standing, so a thin
-                    // beam would hide in it: nothing goes here.
-                    continue;
+            // The two faces of the wall, the street's and the room's, each
+            // in its own a-order; what each face's finish stands proud of
+            // its plane by, kept for the soffit between them.
+            FaceRun street;
+            float streetLo = 0.0F, streetHi = 0.0F;
+            float proudOf[2] = {kJambProudFallback, kJambProudFallback};
+            Rgba8 soffitTint{};
+            for (int face = 0; face < 2; ++face) {
+                float lo = 0.0F, hi = 0.0F;
+                std::int32_t westX = 0, westY = 0;
+                const FaceRun r = gapFace(gap, lo, hi, westX, westY, face == 1);
+                std::int32_t gdx = 0, gdy = 0;
+                runStep(r.side, gdx, gdy);
+                const bool forward = gdx + gdy > 0;
+                // The gap cell at each end in a-order, and the jamb beyond
+                // it.
+                const std::int32_t gapX[2] = {forward ? gap.x : farX, forward ? farX : gap.x};
+                const std::int32_t gapY[2] = {forward ? gap.y : farY, forward ? farY : gap.y};
+                const std::int32_t cellX[2] = {gapX[0] - gdx, gapX[1] + gdx};
+                const std::int32_t cellY[2] = {gapY[0] - gdy, gapY[1] + gdy};
+                const Finish f = finishOf(cellX[0], cellY[0], gap.z, r.side);
+                const float proud = f.proud;
+                proudOf[face] = proud;
+                if (face == 0) {
+                    street = r;
+                    streetLo = lo;
+                    streetHi = hi;
+                    const MaterialRule* m = rule(cellX[0], cellY[0], gap.z);
+                    soffitTint = m != nullptr ? m->insideTint : Rgba8{};
                 }
-                ++stood;
-                // Hard against the edge of the opening, its whole section
-                // inside the jamb cell.
-                const float a = end == 0 ? lo - 0.5F * section : hi + 0.5F * section;
-                const MaterialRule* m = rule(cx, cy, gap.z);
-                const Vec3 at{r.baseX + kTangentX[r.side] * a + kNormalX[r.side] * proud, yBase,
-                              r.baseZ + kTangentZ[r.side] * a + kNormalZ[r.side] * proud};
-                pointPiece(PieceRole::DoorPost, *beam, at, yawOf(r.side), cx, cy, gap.z,
-                           m != nullptr ? m->tint : Rgba8{}, Vec3{1.0F, sy, 1.0F}, false, 2.5F);
+                const float facing = (r.side == kNorth || r.side == kSouth) ? render::kFacingY
+                                                                            : render::kFacingX;
+                // Lit across the gap in this face's a-order, and at each
+                // edge between the last gap cell and the jamb beyond it:
+                // the value the wall's piece takes where it meets the frame.
+                const FaceLight light = runLight(gapX[0], gapY[0], gdx, gdy, gap.w, 0.0F,
+                                                 static_cast<float>(gap.w), true, true);
+                int stood = 0;
+                for (int end = 0; end < 2; ++end) {
+                    const std::int32_t cx = cellX[end];
+                    const std::int32_t cy = cellY[end];
+                    if (!doorPostAt(tiles_, cx, cy, gap.z)) {
+                        // The mesher left this cell's box standing, so a
+                        // thin beam would hide in it: nothing goes here,
+                        // and the count says so.
+                        if (face == 0) {
+                            ++out_.stats.bareJambs;
+                        }
+                        continue;
+                    }
+                    ++stood;
+                    // Its inner face on the edge of the opening, its whole
+                    // section inside the jamb cell.
+                    const float a = end == 0 ? lo - 0.5F * section : hi + 0.5F * section;
+                    const Vec3 at{r.baseX + kTangentX[r.side] * a + kNormalX[r.side] * proud, yBase,
+                                  r.baseZ + kTangentZ[r.side] * a + kNormalZ[r.side] * proud};
+                    pointPiece(PieceRole::DoorPost, *beam, at, yawOf(r.side), cx, cy, gap.z, Rgba8{},
+                               Vec3{1.0F, sy, 1.0F}, false, 2.5F);
+                    // Lit at the cut between the jamb and the gap cell
+                    // beside it -- the two cells averaged -- as the wall's
+                    // piece is at that same cut, and facing as it faces.
+                    StaticPlacement& p = out_.placements.back();
+                    p.lightX2 = gapX[end];
+                    p.lightY2 = gapY[end];
+                    p.facing = facing;
+                }
+                // The head beam: from the outer face of one jamb to the
+                // outer face of the other, its underside ON the head, so
+                // the two posts and the beam are one frame. No jambs, no
+                // head: a beam on its own is a bar across a doorway.
+                if (lintel != nullptr && stood > 0) {
+                    beamAlong(r, lo - section, hi + section, yBase + kDoorHeadHeight + half, proud,
+                              Rgba8{}, light, gap.z, PieceRole::Lintel);
+                }
+                // The wall over the head, in this face's own finish, from
+                // the head to the storey top over the whole gap, in the
+                // plane of the finish beside it -- a thin quad overlapping
+                // its neighbours by the hair every plaster cut does.
+                if (f.spec != nullptr) {
+                    const float overlap = f.role == PieceRole::WallPlaster ? kCutOverlap : 0.0F;
+                    FaceOpts o;
+                    o.frontOut = f.frontOut;
+                    o.standoff = f.standoff;
+                    o.yBase = yBase + kDoorHeadHeight;
+                    o.height = render::kBandHeight - 0.01F - kDoorHeadHeight;
+                    o.tint = f.tint;
+                    o.light = light;
+                    facePiece(r, f.role, *f.spec, lo - overlap, hi + overlap, o);
+                }
             }
-            if (lintel == nullptr || stood == 0) {
-                continue;
+            // The soffit: the plaster ceiling piece laid face down across
+            // the head, from inside the street lintel's body to inside the
+            // room lintel's, over the whole gap, a hair above the two
+            // undersides. With the wall over the head closed on both faces
+            // and the jamb cells' own boxes standing either side of it, the
+            // course over the door is a box that shows nothing but its
+            // finish from anywhere a body can stand.
+            if (soffit != nullptr) {
+                const float outN = proudOf[0];
+                const float inN = -(1.0F + proudOf[1]);
+                const float xA = street.baseX + kTangentX[street.side] * streetLo + kNormalX[street.side] * outN;
+                const float zA = street.baseZ + kTangentZ[street.side] * streetLo + kNormalZ[street.side] * outN;
+                const float xB = street.baseX + kTangentX[street.side] * streetHi + kNormalX[street.side] * inN;
+                const float zB = street.baseZ + kTangentZ[street.side] * streetHi + kNormalZ[street.side] * inN;
+                soffitQuad(*soffit, std::min(xA, xB), std::min(zA, zB), std::max(xA, xB), std::max(zA, zB),
+                           yBase + kDoorHeadHeight + kSoffitLift, soffitTint, gap.x, gap.y, farX, farY,
+                           gap.z);
             }
-            // The head beam: from the outer face of one jamb to the outer
-            // face of the other, its underside ON the head, so the two
-            // posts and the beam are one frame. No jambs, no head: a beam
-            // on its own is a bar across a doorway.
-            const float half = 0.5F * (lintel->maxX - lintel->minX) * lintel->scale;
-            const FaceLight light = runLight(forward ? gap.x : farX, forward ? gap.y : farY, gdx, gdy,
-                                             gap.w, 0.0F, static_cast<float>(gap.w), true, true);
-            const MaterialRule* m = rule(faceX, faceY, gap.z);
-            beamAlong(r, lo - section, hi + section, yBase + kDoorHeadHeight + half, proud,
-                      m != nullptr ? m->tint : Rgba8{}, light, gap.z, PieceRole::Lintel);
         }
+    }
+
+    /// A flat quad laid face down over a rectangle of the scene's XZ, its
+    /// underside at exactly `y` (the piece's own lift is not applied: the
+    /// caller names the plane), lit as an underside averaged over the cells
+    /// (lx0..lx1, ly0..ly1): the soffit over a doorway.
+    void soffitQuad(const PieceSpec& spec, float x0, float z0, float x1, float z1, float y,
+                    Rgba8 tint, std::int32_t lx0, std::int32_t ly0, std::int32_t lx1,
+                    std::int32_t ly1, std::int32_t lz) {
+        const float sx = (x1 - x0) / std::max(0.01F, spec.maxX - spec.minX);
+        const float sz = (z1 - z0) / std::max(0.01F, spec.maxZ - spec.minZ);
+        StaticPlacement p;
+        p.role = PieceRole::Soffit;
+        p.instance.piece = indexOf(spec.role, spec.variant);
+        p.instance.position = Vec3{x0 - spec.minX * sx * spec.scale, y, z0 - spec.minZ * sz * spec.scale};
+        p.instance.yaw = wrapYaw(spec.yawOffset);
+        p.instance.scale = Vec3{sx * spec.scale, spec.flipY ? -spec.scale : spec.scale, sz * spec.scale};
+        p.instance.tint = mulTint(spec.tint, tint);
+        p.lightX = p.endAX = p.endBX = lx0;
+        p.lightY = p.endAY = p.endBY = ly0;
+        p.lightX2 = lx1;
+        p.lightY2 = ly1;
+        p.lightZ = lz;
+        p.facing = render::kUndersideLift;
+        p.radius = std::max(x1 - x0, z1 - z0) + 1.0F;
+        emit(std::move(p));
     }
 
     /// A beam laid along a face run at [a0, a1] on the run's plane
@@ -1529,6 +1597,7 @@ private:
         const PieceSpec* timberPane = catalogue_.piece(PieceRole::PaneTimber);
         const PieceSpec* plasterQuad = catalogue_.piece(PieceRole::WallPlaster);
         const PieceSpec* quayWall = catalogue_.piece(PieceRole::QuayWall);
+        const PieceSpec* beam = catalogue_.piece(PieceRole::DoorPost);
         const RuleKnobs& knobs = catalogue_.knobs();
 
         std::vector<FaceRun> runs;
@@ -1657,21 +1726,45 @@ private:
             } else if (r.convexA1) {
                 hi += ext;
             }
-            if (r.revealA0) {
-                lo = r.a0 + kRevealInset;
-            }
-            if (r.revealA1) {
-                hi = r.a1 - kRevealInset;
+            // A jamb's reveal, where the door frame's post stands with its
+            // inner face on the cell's own boundary plane (jambs()): the
+            // quad runs from the street post's back to the room post's
+            // back, a hair inboard of the posts' faces (kRevealFlush), so
+            // the post is the edge of the reveal and nothing but timber and
+            // plaster meets the eye at the opening. Any other reveal (a
+            // gate's) starts behind the frame that stands in the facade
+            // plane, as it always did.
+            const bool jambReveal =
+                r.reveal && beam != nullptr && doorPostAt(tiles_, r.firstX, r.firstY, r.z);
+            if (jambReveal) {
+                const DoorGap* g = gapAt(r.firstX + kSideDx[r.side], r.firstY + kSideDy[r.side], r.z);
+                const float section = std::max(0.01F, beam->width * beam->scale);
+                const float outBack = finishOf(r.firstX, r.firstY, r.z, g->side).proud - 0.5F * section;
+                const float inBack =
+                    finishOf(r.firstX, r.firstY, r.z, opposite(g->side)).proud - 0.5F * section;
+                lo = r.a0 - (r.revealA0 ? outBack : inBack);
+                hi = r.a1 + (r.revealA1 ? outBack : inBack);
+            } else {
+                if (r.revealA0) {
+                    lo = r.a0 + kRevealInset;
+                }
+                if (r.revealA1) {
+                    hi = r.a1 - kRevealInset;
+                }
             }
             // A one-sided quad on an INDOOR face that ends at a door's jamb
             // extends past it too: the reveal's quad closes the slot behind
             // this one, and this one closes the slot behind the reveal's --
-            // out of doors the frame's own body does that.
+            // out of doors the frame's own body does that. At a jamb that
+            // carries the door frame's post the post's body and the reveal
+            // quad behind it close the slot on both faces, so this quad
+            // stops at the opening's edge and shows no strip beside the
+            // post.
             if ((boards || thinPlaster) && !r.outdoor) {
-                if (r.gapA0 && !r.reveal) {
+                if (r.gapA0 && !r.reveal && !doorPostAt(tiles_, r.firstX, r.firstY, r.z)) {
                     lo -= ext;
                 }
-                if (r.gapA1 && !r.reveal) {
+                if (r.gapA1 && !r.reveal && !doorPostAt(tiles_, r.lastX, r.lastY, r.z)) {
                     hi += ext;
                 }
             }
@@ -1807,9 +1900,15 @@ private:
                 }
                 // A thin quad overlaps whatever it meets by a hair, proud of
                 // the kit pieces by a hair, every second one a hair more.
+                // A jamb's reveal is the exception: a hair off the boundary
+                // plane, cut exactly to the two posts' backs, no overlap --
+                // past either end it would show in front of the post's
+                // inner face.
                 float qa0 = pa0;
                 float qa1 = pa1;
-                if (thinPlaster && spec == &piece) {
+                if (jambReveal) {
+                    o.standoff = kRevealFlush;
+                } else if (thinPlaster && spec == &piece) {
                     qa0 -= kCutOverlap;
                     qa1 += kCutOverlap;
                     o.standoff += (i & 1) != 0 ? 2.0F * kCutStagger : kCutStagger;
@@ -3967,8 +4066,6 @@ StaticCatalogue StaticCatalogue::fromJson(std::string_view json) {
                 spec.scale = floatOf(row, "scale", 1.0F);
                 spec.tint = tintFromJson(row.contains("tint") ? row["tint"] : nlohmann::json(), Rgba8{});
                 spec.maxDistance = floatOf(row, "maxDistance", 64.0F);
-                spec.cutX = floatOf(row, "cutX", 0.0F);
-                spec.cutY = floatOf(row, "cutY", 0.0F);
                 out.pieces_.push_back(std::move(spec));
             }
         }
@@ -4165,8 +4262,6 @@ std::uint64_t StaticCatalogue::digest() const noexcept {
         h.mixU8(spec.tint.g);
         h.mixU8(spec.tint.b);
         h.mixF32(spec.maxDistance);
-        h.mixF32(spec.cutX);
-        h.mixF32(spec.cutY);
     }
     h.mixU32(static_cast<std::uint32_t>(materials_.size()));
     for (const MaterialRule& rule : materials_) {

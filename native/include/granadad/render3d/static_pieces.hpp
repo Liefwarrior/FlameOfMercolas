@@ -179,7 +179,6 @@ enum class PieceRole : std::uint8_t {
     Wall,
     WallCorner,
     WallWindow,
-    WallDoor,
     RoofEdge,
     FloorPlank,
     FloorCobble,
@@ -213,10 +212,6 @@ enum class PieceRole : std::uint8_t {
     LipPlank,
     /// The same on a stone floor: the plaster quad, tinted.
     LipStone,
-    /// The plaster quad behind a door frame's header and jambs on a
-    /// rendered (plaster-out) building, so the room never sees the frame's
-    /// brick side.
-    DoorInside,
     /// A door leaf standing open against the reveal, hinged on the jamb.
     DoorLeaf,
     /// A post at each jamb of a gate wider than a door.
@@ -311,6 +306,12 @@ enum class PieceRole : std::uint8_t {
     /// ceiling joists use, but its own role, because it lies at door-head
     /// height on the facade's line and not under a slab on the odd grid.
     Lintel,
+    /// THE DOORWAY'S SOFFIT. The plaster ceiling piece laid face down
+    /// across a door's head between the street lintel and the room lintel
+    /// (jambs()): its own role, because it lies at door-head height inside
+    /// the wall's thickness, not at the slab plane over a room where every
+    /// Ceiling hangs.
+    Soffit,
     /// KIT BUILD. A THING ON A TILE: an item of the player's registry
     /// (sim/items.hpp) lying where the room says it lies -- a dropped
     /// knife, the cudgel under the bar, the four strongboxes, the snug's
@@ -322,7 +323,7 @@ enum class PieceRole : std::uint8_t {
     /// TAKE does, in the sim, and the next frame simply has fewer.
     Item,
 };
-inline constexpr std::size_t kPieceRoleCount = 60;
+inline constexpr std::size_t kPieceRoleCount = 59;
 
 /// The JSON key of a role ("wall", "wall_corner", ...), and back. None for
 /// an unknown key.
@@ -401,11 +402,6 @@ struct PieceSpec {
     /// The cheap cull: pieces farther than this from the eye are not
     /// described. Props draw closer than walls.
     float maxDistance = 64.0F;
-    /// A door frame's opening in its own module: the jamb width on each
-    /// side (`cutX`, from either end) and the opening's height (`cutY`).
-    /// What the inside plaster is cut around.
-    float cutX = 0.0F;
-    float cutY = 0.0F;
     /// A flat quad drawn on both sides (its scale is mirrored, which the
     /// adapter draws without back-face culling).
     bool twoSided = false;
@@ -677,6 +673,10 @@ struct StaticPlacementStats {
     std::size_t byRole[kPieceRoleCount] = {};
     std::size_t wallRuns = 0;
     std::size_t doorGaps = 0;
+    /// Flank cells of a door (not a gate) the jamb rule (door_jambs.hpp)
+    /// refused, so no post stood there and the mesher left the box: zero
+    /// on a well-formed map, and the district test says it must be.
+    std::size_t bareJambs = 0;
     [[nodiscard]] std::size_t total() const noexcept {
         std::size_t n = 0;
         for (const std::size_t count : byRole) {
