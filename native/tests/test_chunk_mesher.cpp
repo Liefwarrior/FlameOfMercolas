@@ -824,18 +824,44 @@ TEST_CASE("a door tile places the door frame") {
         }
     }
     CHECK(headers == 2);
+    // Behind each header its backing: the same quad three centimetres
+    // behind the plane, six wider at each end, from over the soffit (the
+    // mesher's cut) to the storey top -- what the pixels a seam drops
+    // show, plaster and not the hollow.
+    std::size_t backings = 0;
+    for (const StaticPlacement& p : placed.placements) {
+        if (p.role != PieceRole::WallPlaster || p.lightY != 15 ||
+            !(p.instance.position.y == doctest::Approx(render::bandSurface(19) + kDoorHeadCut))) {
+            continue;
+        }
+        ++backings;
+        CHECK(p.instance.scale.y * plaster->height ==
+              doctest::Approx(render::kBandHeight - 0.01F - kDoorHeadCut));
+        CHECK(p.gradient);
+        if (p.instance.position.z > 15.5F) {
+            CHECK(p.instance.position.z == doctest::Approx(streetZ - 0.03F));
+            CHECK(p.instance.scale.x * plaster->width == doctest::Approx(2.0F + 2.0F * (0.04F + 0.06F)));
+        } else {
+            CHECK(p.instance.position.z == doctest::Approx(roomZ + 0.03F));
+            CHECK(p.instance.scale.x * plaster->width == doctest::Approx(2.0F + 2.0F * (0.005F + 0.06F)));
+        }
+    }
+    CHECK(backings == 2);
     // And the soffit across the head between the two lintels: the ceiling
     // piece face down over the gap, from inside one lintel's body to
-    // inside the other's, a hair over the head, lit as an underside.
+    // inside the other's, three centimetres over the head, lit as an
+    // underside.
     std::size_t soffits = 0;
     for (const StaticPlacement& p : placed.placements) {
         if (p.role != PieceRole::Soffit) {
             continue;
         }
         ++soffits;
-        // From the room lintel's back face to the street lintel's: never
-        // under either, and three centimetres over the head.
-        const float back = proud - 0.03F - 0.5F * section;
+        // From the room lintel's centre plane to the street lintel's,
+        // three centimetres over their undersides: it crosses each back
+        // face, never meets one edge to edge, and never lies within a hair
+        // of an underside.
+        const float back = proud - 0.03F;
         CHECK(p.instance.position.y == doctest::Approx(render::bandSurface(19) + kDoorSoffitHeight));
         // Three centimetres past each reveal, into the jamb cell.
         CHECK(p.instance.scale.x * 2.5F == doctest::Approx(2.0F + 0.06F));
@@ -2565,9 +2591,10 @@ TEST_CASE("the mesher leaves the jamb cells' ground storey out and meshes the wa
             CHECK(highest <= floorY + render::kBandHeight + 0.001F);
             if (face.dir == FaceDir::Bottom) {
                 jambSoffit = true;
-                // The cut is over the soffit now (kDoorHeadCut), not at the head: the
-    // stone course starts where the closed head box hides it.
-    CHECK(lowest == doctest::Approx(render::bandSurface(19) + kDoorHeadCut));
+                // The cut is over the soffit (kDoorHeadCut), not at the
+                // head: the stone course starts where the closed head box
+                // hides it.
+                CHECK(lowest == doctest::Approx(render::bandSurface(19) + kDoorHeadCut));
             }
         }
         // The wall cell next along the run still reaches the ground, and

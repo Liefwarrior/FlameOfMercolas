@@ -31,12 +31,18 @@ namespace granadad::render3d {
 /// across here.
 inline constexpr float kDoorHeadHeight = 2.03F;
 
-/// The soffit over the opening, between the two lintels: AT the head, the
-/// level of the beams' undersides, ending at their back faces (adjacent,
-/// never overlapping, so nothing fights). At the beams' top level the
-/// whole inner face of each lintel hung below the soffit, hewn facets and
-/// all, and read as a dark tent in the head from the street.
-inline constexpr float kDoorSoffitHeight = kDoorHeadHeight;
+/// The soffit over the opening, between the two lintels: three centimetres
+/// over the head, running INTO each beam's body to its centre plane, so
+/// the beams stand that much proud of it. Level with their undersides and
+/// ending at their back faces it met each underside edge to edge, and the
+/// join leaked -- a broken black hairline along it, a wedge of the dark
+/// head box mid-span (two pieces that share an edge line but not its
+/// vertices drop pixels along it). At the beams' top level the whole inner
+/// face of each lintel hung below it and read as a dark tent. Three
+/// centimetres up, the plane CROSSES the back face instead of meeting it,
+/// and three centimetres is what the depth buffer needs to tell it from
+/// the underside it overlaps inside the beam.
+inline constexpr float kDoorSoffitHeight = kDoorHeadHeight + 0.03F;
 
 /// Where the mesher cuts the jamb cell's box off: not at the head but three
 /// centimetres OVER the soffit. The reveal quad stands a centimetre inside

@@ -226,12 +226,25 @@ constexpr float kBoxRetract = 0.04F;
 /// lintel's body: on the head exactly, its bottom edge lay in the lintel's
 /// underside plane and drew as a hairline of plaster under the beam.
 constexpr float kHeaderInset = 0.02F;
+/// The header's backing: the wall's finish once more this far BEHIND its
+/// plane, from over the soffit (the mesher's cut) to the storey top, and
+/// kHeaderBackReach past each end of the header. The header meets the
+/// wall's own piece beside each jamb edge to edge (overlapped, the two
+/// fought at the cuts' two-millimetre stagger), and an edge-to-edge join
+/// between two pieces leaks: a sliver at grazing angles where their planes
+/// differ by the stagger, dropped pixels where two edges share a line but
+/// not their vertices (a kit box beside a header box). Through either you
+/// saw the hollow behind the finish, a hairline crack over every post.
+/// Now you see plaster: the backing is what stands behind every seam over
+/// the door, three centimetres back so it fights nothing, and it shows
+/// nowhere else.
+constexpr float kHeaderBack = 0.03F;
+constexpr float kHeaderBackReach = 0.06F;
 /// (The soffit's own height is kDoorSoffitHeight in door_jambs.hpp, where
-/// the mesher reads it too: the level of the lintels' tops less a hair,
-/// so the beams stand proud of the soffit between them and their tops hide
-/// in the closed head box. At three centimetres over the head the soffit
-/// left the jamb cell's stone course showing through the rebate over every
-/// open leaf.)
+/// the mesher reads it too: three centimetres over the head, into the
+/// lintels' bodies. At the head it met their undersides edge to edge and
+/// the join leaked; at their top level the jamb cell's stone course showed
+/// through the rebate over every open leaf.)
 /// The soffit runs this far past each reveal into the jamb cell's stone
 /// course over the head, where its edge is buried: an edge that lay on the
 /// reveal's own plane tied with it and drew as a black hairline.
@@ -1575,7 +1588,12 @@ private:
                 // beside each jamb ends (walls() retracts that end into the
                 // post: a hair for a thin quad, kBoxRetract for a kit box),
                 // abutting it -- an overlap fought at the stagger's two
-                // millimetres, a gap showed the stone course behind.
+                // millimetres, a gap showed the stone course behind. And
+                // behind that seam, its backing (kHeaderBack): the finish
+                // again three centimetres back, wider by kHeaderBackReach
+                // each end, from over the soffit to the storey top, so the
+                // pixels an edge-to-edge join drops show plaster and not
+                // the hollow.
                 if (f.spec != nullptr) {
                     const float overA0 = retractAt(cellX[0], cellY[0], r.side, gap.z);
                     const float overA1 = retractAt(cellX[1], cellY[1], r.side, gap.z);
@@ -1587,21 +1605,29 @@ private:
                     o.tint = f.tint;
                     o.light = light;
                     facePiece(r, f.role, *f.spec, lo - overA0, hi + overA1, o);
+                    o.standoff -= kHeaderBack;
+                    o.yBase = yBase + kDoorHeadCut;
+                    o.height = render::kBandHeight - 0.01F - kDoorHeadCut;
+                    facePiece(r, f.role, *f.spec, lo - overA0 - kHeaderBackReach,
+                              hi + overA1 + kHeaderBackReach, o);
                 }
             }
             // The soffit: the plaster ceiling piece laid face down across
-            // the opening at the lintels' top level, from the street
-            // lintel's back face to the room lintel's, over the whole gap
-            // -- never UNDER either beam (a soffit that ran on beneath a
-            // lintel's underside four millimetres apart fought it at four
-            // metres), the two beams standing proud of it. With the wall
-            // over the head closed on both faces, the reveals closing the
-            // sides and the jamb cells' own boxes cut to over the soffit,
-            // the course over the door is a box that shows nothing but its
-            // finish from anywhere a body can stand.
+            // the opening three centimetres over the head
+            // (kDoorSoffitHeight), from the street lintel's centre plane to
+            // the room lintel's, over the whole gap: it runs INTO each
+            // beam's body, crossing the back face three centimetres over
+            // the underside (level with it and ending at the back face the
+            // join leaked a black hairline; beneath it four millimetres
+            // apart it fought), and the beams stand three centimetres
+            // proud of it. With the wall over the head closed on both faces
+            // and backed, the reveals closing the sides and the jamb cells'
+            // own boxes cut to over the soffit, the course over the door is
+            // a box that shows nothing but its finish from anywhere a body
+            // can stand.
             if (soffit != nullptr) {
-                const float outN = proudOf[0] + kLintelProud - 0.5F * section;
-                const float inN = -(1.0F + proudOf[1] + kLintelProud - 0.5F * section);
+                const float outN = proudOf[0] + kLintelProud;
+                const float inN = -(1.0F + proudOf[1] + kLintelProud);
                 // Across the opening and on past each reveal into the jamb
                 // cell's own stone course over the head, so its edge is
                 // buried and the reveal quad crosses it as a clean line.
