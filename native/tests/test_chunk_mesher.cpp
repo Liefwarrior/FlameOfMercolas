@@ -782,9 +782,11 @@ TEST_CASE("a door tile places the door frame") {
             continue;
         }
         ++lintels;
-        CHECK((p.instance.position.z == doctest::Approx(streetZ) ||
-               p.instance.position.z == doctest::Approx(roomZ)));
-        CHECK(p.instance.position.y == doctest::Approx(head + 0.5F * lintel->core * lintel->scale));
+        // Two millimetres prouder than its posts and one lower than their
+        // heads: no face of it coplanar with a face of theirs.
+        CHECK((p.instance.position.z == doctest::Approx(streetZ + 0.002F) ||
+               p.instance.position.z == doctest::Approx(roomZ - 0.002F)));
+        CHECK(p.instance.position.y == doctest::Approx(head + 0.5F * lintel->core * lintel->scale - 0.001F));
         CHECK(p.instance.pitch == doctest::Approx(3.14159265F * 0.5F));
         CHECK(p.instance.scale.y * lintel->height == doctest::Approx(2.0F + 2.0F * section));
         CHECK(p.mode == kDrawFaced);
@@ -824,11 +826,14 @@ TEST_CASE("a door tile places the door frame") {
             continue;
         }
         ++soffits;
+        // From the room lintel's back face to the street lintel's: never
+        // under either.
+        const float back = proud + 0.002F - 0.5F * section;
         CHECK(p.instance.position.y == doctest::Approx(head + 0.004F));
         CHECK(p.instance.scale.x * 2.5F == doctest::Approx(2.0F));
-        CHECK(p.instance.scale.z * 2.5F == doctest::Approx(1.0F + 2.0F * proud));
+        CHECK(p.instance.scale.z * 2.5F == doctest::Approx(1.0F + 2.0F * back));
         CHECK(p.instance.position.x == doctest::Approx(11.0F));
-        CHECK(p.instance.position.z == doctest::Approx(roomZ));
+        CHECK(p.instance.position.z == doctest::Approx(15.0F - back));
         CHECK(p.facing == doctest::Approx(render::kUndersideLift));
         CHECK(p.lightZ == 19);
     }
@@ -2427,11 +2432,11 @@ TEST_CASE("a door wears two jambs, on the cells that flank it, slim and cut to t
     std::size_t heads = 0;
     for (const StaticPlacement& p : placed.placements) {
         if (p.role == PieceRole::Lintel && p.lightZ == 19 &&
-            (p.instance.position.z == doctest::Approx(16.0F + proud) ||
-             p.instance.position.z == doctest::Approx(15.0F - proud))) {
+            (p.instance.position.z == doctest::Approx(16.0F + proud + 0.002F) ||
+             p.instance.position.z == doctest::Approx(15.0F - proud - 0.002F))) {
             ++heads;
             CHECK(p.instance.position.y ==
-                  doctest::Approx(render::bandSurface(19) + kDoorHeadHeight + half + lintel->lift));
+                  doctest::Approx(render::bandSurface(19) + kDoorHeadHeight + half - 0.001F + lintel->lift));
         }
     }
     CHECK(heads == 2);
@@ -2473,11 +2478,11 @@ TEST_CASE("the reveal is the post's own edge, and the room's plaster stops at it
             continue;
         }
         ++reveals;
-        // Half a millimetre into the opening: under a pixel, and never
-        // overlapping the post that stands on the plane itself.
-        const float off = std::fabs(p.instance.position.x - (east ? 11.0F : 13.0F));
-        CHECK(off > 0.0F);
-        CHECK(off < 0.001F);
+        // On the plane the post's inner face stands on, never overlapping
+        // the post (it starts where the post's back ends), and drawn from
+        // both sides so no hair between the two can show the hollow.
+        CHECK(p.instance.position.x == doctest::Approx(east ? 11.0F : 13.0F));
+        CHECK(p.instance.scale.z < 0.0F);
         CHECK(std::fabs(p.instance.scale.x) * plaster->width == doctest::Approx(1.0F + 2.0F * back));
         CHECK(p.instance.position.y == doctest::Approx(render::bandSurface(19)));
     }

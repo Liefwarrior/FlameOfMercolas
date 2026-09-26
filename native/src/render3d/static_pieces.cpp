@@ -183,12 +183,21 @@ constexpr float kLeafOffReveal = 0.0F;
 constexpr float kLeafOffPost = 0.01F;
 constexpr float kLeafOffFacade = 0.06F;
 /// A jamb's reveal quad stands this far into the opening off the jamb
-/// cell's own boundary plane -- half a millimetre inboard of the post's
-/// inner face, which stands ON that plane. The two never overlap (the quad
-/// starts where the post's back ends), so they cannot fight, and half a
-/// millimetre is under a pixel from anywhere: at six the slot showed the
-/// hollow behind the one-sided quad from any angle off the axis.
-constexpr float kRevealFlush = 0.0005F;
+/// cell's own boundary plane: nothing -- ON the plane the post's inner
+/// face stands on. The two never overlap (the quad starts where the
+/// post's back ends), so they cannot fight, and there is no slot between
+/// them to look down: at six millimetres the slot showed the hollow behind
+/// the one-sided quad from any angle off the axis, at half of one it was
+/// still a dark hairline at 1440p. The quad is drawn from both sides too,
+/// so whatever hair a mesh's own bounds leave reads as plaster, never as
+/// the hollow.
+constexpr float kRevealFlush = 0.0F;
+/// The lintel stands this much prouder than its posts and this much lower
+/// than their heads, so no face of it is coplanar with a face of theirs:
+/// the same beam at the same standoff, its underside on the post's top,
+/// fought that top along the whole junction.
+constexpr float kLintelProud = 0.002F;
+constexpr float kLintelSink = 0.001F;
 /// The wall over a door's head starts this far above the head, inside the
 /// lintel's body: on the head exactly, its bottom edge lay in the lintel's
 /// underside plane and drew as a hairline of plaster under the beam.
@@ -449,6 +458,9 @@ struct FaceOpts {
     Rgba8 tint{255, 255, 255, 255};
     FaceLight light;
     bool selfLit = false;
+    /// Draw the quad from both sides, whatever the piece says (a jamb's
+    /// reveal, which must never show the wall's hollow through a hair).
+    bool twoSided = false;
 };
 
 class Placer {
@@ -938,7 +950,7 @@ private:
             p.instance.position.y -= spec.minZ * sz;
         } else {
             const float ys = spec.height > 0.01F ? height / spec.height : 1.0F;
-            const float thick = spec.twoSided ? -spec.scale : spec.scale;
+            const float thick = (spec.twoSided || o.twoSided) ? -spec.scale : spec.scale;
             p.instance.scale = Vec3{(a1 - a0) / spec.width * spec.scale, ys * spec.scale, thick};
         }
         p.instance.tint = mulTint(spec.tint, o.tint);
@@ -1509,9 +1521,10 @@ private:
                     const float a0 = lo - section;
                     const float span = (hi + section) - a0;
                     const float lintelHalf = 0.5F * coreOf(*lintel) * lintel->scale;
-                    const Vec3 at{r.baseX + kTangentX[r.side] * a0 + kNormalX[r.side] * proud,
-                                  yBase + kDoorHeadHeight + lintelHalf,
-                                  r.baseZ + kTangentZ[r.side] * a0 + kNormalZ[r.side] * proud};
+                    const float lintelOut = proud + kLintelProud;
+                    const Vec3 at{r.baseX + kTangentX[r.side] * a0 + kNormalX[r.side] * lintelOut,
+                                  yBase + kDoorHeadHeight + lintelHalf - kLintelSink,
+                                  r.baseZ + kTangentZ[r.side] * a0 + kNormalZ[r.side] * lintelOut};
                     // Its length is its local +Y; a quarter turn about X
                     // lays that along local +Z, and the yaw beamAlong()
                     // uses puts local +Z along the run's tangent.
@@ -1542,15 +1555,17 @@ private:
                 }
             }
             // The soffit: the plaster ceiling piece laid face down across
-            // the head, from inside the street lintel's body to inside the
-            // room lintel's, over the whole gap, a hair above the two
-            // undersides. With the wall over the head closed on both faces
-            // and the jamb cells' own boxes standing either side of it, the
+            // the head, from the street lintel's back face to the room
+            // lintel's, over the whole gap, a hair above the two undersides
+            // -- and never UNDER either: a soffit that ran on beneath a
+            // lintel's underside four millimetres apart fought it at four
+            // metres. With the wall over the head closed on both faces and
+            // the jamb cells' own boxes standing either side of it, the
             // course over the door is a box that shows nothing but its
             // finish from anywhere a body can stand.
             if (soffit != nullptr) {
-                const float outN = proudOf[0];
-                const float inN = -(1.0F + proudOf[1]);
+                const float outN = proudOf[0] + kLintelProud - 0.5F * section;
+                const float inN = -(1.0F + proudOf[1] + kLintelProud - 0.5F * section);
                 const float xA = street.baseX + kTangentX[street.side] * streetLo + kNormalX[street.side] * outN;
                 const float zA = street.baseZ + kTangentZ[street.side] * streetLo + kNormalZ[street.side] * outN;
                 const float xB = street.baseX + kTangentX[street.side] * streetHi + kNormalX[street.side] * inN;
@@ -1979,6 +1994,7 @@ private:
                 float qa1 = pa1;
                 if (jambReveal) {
                     o.standoff = kRevealFlush;
+                    o.twoSided = true;
                 } else if (thinPlaster && spec == &piece) {
                     qa0 += (i == 0 && postA0) ? kCutOverlap : -kCutOverlap;
                     qa1 += (i == k - 1 && postA1) ? -kCutOverlap : kCutOverlap;
