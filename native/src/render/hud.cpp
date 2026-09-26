@@ -1540,16 +1540,24 @@ void drawBottomBand(Framebuffer& target, const HudState& state, BottomBand& band
             const int pulsePad = static_cast<int>(std::round(static_cast<float>(alertScale) * pulse));
             const int padX = alertScale * 2 + pulsePad;
             const int padY = std::max(1, alertScale / 2) + pulsePad;
-            // Under the rung plate the backing plate takes half the row's
-            // alpha again: at half weight its bone rails outshone the amber
-            // words they back (the director's zoom on the third pass).
+            // UNDER THE RUNG PLATE THE FIELD STAYS AND THE RAILS HALVE: the
+            // field at the row's own ease (fine print over the Gull's lit
+            // plaster is still print -- a half-weight field let the wall
+            // through and the amber read as mud), the bone rails at half so
+            // they never outshine the dimmed words, and the words at the
+            // plate's weight on their ink (HudState::alertInkWeight).
+            if (state.alertStepsDown) {
+                target.fillRect(textX - padX, y - padY, drawn + 2 * padX,
+                                kGlyphH * alertScale + 2 * padY, kPlateBlack, rowAlpha);
+            }
             drawTextPlate(target, textX - padX, y - padY, textX + drawn + padX,
                           y + kGlyphH * alertScale + padY,
                           std::max(1, alertScale / 2 + pulsePad),
                           state.alertStepsDown ? 0.5F * rowAlpha : rowAlpha);
             // TASK #83. Eased in Session, not here -- see HudState::alertFade.
             // A caller that never set it gets 1, which is 0.95F unchanged.
-            drawText(target, textX, y, alert, Rgb{0.90F, 0.62F, 0.30F}, 0.95F * rowAlpha,
+            drawText(target, textX, y, alert, Rgb{0.90F, 0.62F, 0.30F},
+                     0.95F * rowAlpha * std::clamp(state.alertInkWeight, 0.0F, 1.0F),
                      alertScale);
             // KIT FIX PASS. THE ONE SLOT THE COMMENT ABOVE WARNED ABOUT.
             // band.take(alertScale) reserves this row's SPAN off the bare
@@ -1644,16 +1652,26 @@ void drawBottomBand(Framebuffer& target, const HudState& state, BottomBand& band
             // line, the turn on the lower.
             const int top = y2 >= 0 ? y2 : y;
             const int bottom = y2 >= 0 ? y : y;
+            // THE RUNG PLATE'S WEIGHT ON THE INK (HudState::voiceInkWeight),
+            // the alert row's own rule: the field keeps the row's ease, the
+            // rails halve while the words are dimmed, the words take the
+            // weight.
+            const float ink = std::clamp(state.voiceInkWeight, 0.0F, 1.0F);
+            if (ink < 1.0F) {
+                target.fillRect(textX - padX, top - padY, drawn + 2 * padX,
+                                (bottom - top) + kGlyphH * minor + 2 * padY, kPlateBlack, fade);
+            }
             drawTextPlate(target, textX - padX, top - padY, textX + drawn + padX,
-                          bottom + kGlyphH * minor + padY, std::max(1, minor / 2), fade);
+                          bottom + kGlyphH * minor + padY, std::max(1, minor / 2),
+                          ink < 1.0F ? 0.5F * fade : fade);
             const Rgb dim{0.74F, 0.72F, 0.64F};
             if (!name.empty()) {
                 drawText(target, textX, top, name, aimAccent(static_cast<int>(AimKind::Person)),
-                         0.95F * fade, minor);
+                         0.95F * fade * ink, minor);
             }
-            drawText(target, textX + nameW + gutter, top, first, dim, 0.92F * fade, minor);
+            drawText(target, textX + nameW + gutter, top, first, dim, 0.92F * fade * ink, minor);
             if (y2 >= 0) {
-                drawText(target, textX, bottom, second, dim, 0.92F * fade, minor);
+                drawText(target, textX, bottom, second, dim, 0.92F * fade * ink, minor);
             }
         }
     }

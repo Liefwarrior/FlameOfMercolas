@@ -19,8 +19,9 @@
 // is, three lines at most --
 //
 //     THE WIRE  --  LIGHT FINGERS                       the track, the new title
-//     The rope hands know your face now. That is not nothing.   what the ward says
-//     There is no rung above that one. Mind how you wear it.    only at the top
+//     Ropewynd locks its boxes twice these days. That is you.   what the ward says
+//     There is nothing above that. Mind how you wear it.        only at the top
+//     CRACKSMANSHIP RISES TO 2                          the same step's skill, dim
 //
 // The head is legend.cpp's own vocabulary (the track name, the title -- the
 // same twenty words the casebook page prints), and the prose is AUTHORED, one
@@ -75,7 +76,13 @@
 //     full strength while it holds; the compass, the aim prompt and the
 //     corner stacks are the HUD's furniture and stay. A bouncer's WARNING
 //     rides the alert row too and dismisses the plate outright, so the one
-//     line the player must not miss is never the one dimmed.
+//     line the player must not miss is never the one dimmed. AND NOTHING
+//     COMES BACK UNTIL THE PLATE HAS LEFT: the stand-down follows the plate
+//     ON SCREEN (its drawn fade), not its hold, so the lift is the plate's
+//     too -- the rows and the slot return once it has gone, and a line said
+//     with the rung finishes its capped two seconds in the small type and
+//     never swells. The weight is on the INK: the rows' backing keeps the
+//     row's own ease, so fine print over a lit wall is still print.
 //   * A SKILL THAT LEVELS ON THE SAME STEP AS THE RUNG is the plate's own
 //     dim last row ("SKYRUNNING RISES TO 2" under the prose), not a toast
 //     after it: the same climb, told once, on the card. A skill that levels
@@ -98,6 +105,7 @@
 
 #include "granadad/render/anim.hpp"
 #include "granadad/render/framebuffer.hpp"
+#include "granadad/render/panel.hpp"
 #include "granadad/sim/barks.hpp"
 #include "granadad/sim/legend.hpp"
 
@@ -182,9 +190,22 @@ inline constexpr int kRungPlateLiftUnits = 6;
 /// five seconds late for long.
 inline constexpr std::int32_t kRungPlateRowAfterSteps = 120;
 
+/// THE PLATE'S REGISTER: the terminal register (panelMetric, the minor
+/// scale) like every composed page -- except where the minor scale has
+/// bottomed out at one under a HUD at two or more (640x360): the plate is a
+/// notice in the play space, not a page, and a card in 6-pixel caps under a
+/// 12-pixel compass was the smallest type on the screen at its own moment
+/// (both critics, fourth pass). There, and only there, it takes the glance
+/// scale: a 64-cell frame at scale 2 is exactly 640 pixels, so the widest
+/// card still fits with its margin, and the band between the floor and the
+/// aim prompt holds it with a row to spare.
+[[nodiscard]] PanelMetric rungPlateMetric(int height) noexcept;
+
 /// The plate's FLOOR, in rows of the glance scale: the lowest pixel of the
-/// announce plate's slot under the compass ribbon at scale 1 (31), which is
-/// also under the top-right stat stack at 320x180. The seat never rises
+/// announce plate's slot under the compass ribbon at scale 1 (31). The
+/// top-right stat stack at 320x180 reaches two rows lower when all four of
+/// its rows are up, which is why the smallest window keeps five units
+/// between its keyline and this floor (rungPlateBox). The seat never rises
 /// past it, and the tick row is spent only where the frame has a row between
 /// this floor and the aim prompt's fence to spend on it.
 inline constexpr int kRungPlateFloorRows = 31;

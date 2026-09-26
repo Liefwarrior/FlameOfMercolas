@@ -1034,6 +1034,20 @@ public:
     /// one line the player must not miss is never the one dimmed). Public so
     /// a case reads it instead of a screenshot.
     [[nodiscard]] float alertFadeNow() const noexcept;
+    /// The plate ON SCREEN: wanted, or still lifting (its drawn fade above
+    /// zero). What every stand-down follows -- the alert row's register and
+    /// clock, the voice row's ink, the announce slot's fade and clock -- so
+    /// nothing comes back until the plate has left, not the step its hold
+    /// ends (both critics, fourth pass).
+    [[nodiscard]] bool rungPlateOnScreen() const noexcept;
+    /// The plate's weight on the alert and voice rows' INK: 1 with no plate,
+    /// half under one at full strength, on the plate's own fade. The rows'
+    /// backing keeps their own ease (HudState::alertInkWeight).
+    [[nodiscard]] float alertInkWeightNow() const noexcept;
+    /// Whether the alert row draws in the small register: while the plate is
+    /// on screen, and for the rest of a line that was on the row under it
+    /// (its capped two seconds) -- it never swells back.
+    [[nodiscard]] bool alertStepsDownNow() const noexcept;
     /// The announce slot's drawn fades exactly as drawFrame composes them:
     /// ZERO the instant the rung plate is wanted (the slot waits behind the
     /// plate with its clock held -- the plate's own `outranked ? 0` rule,
@@ -2660,11 +2674,18 @@ private:
     /// the row holds it (rungPlateOutranked). say() clears it; the three
     /// Watch sites set it.
     bool messageDemand_ = false;
+    /// The line on the alert row was up under the plate and had its clock
+    /// capped when the hold ended: it finishes in the small register and
+    /// never swells back to the glance size. say() clears it.
+    bool messageCapped_ = false;
     /// True when something that outranks the plate owns the screen right
     /// now: a page or a talk (conversingNow), the court's plates and custody,
     /// the death and rope ceremonies, a bouncer's WARNING -- the alert row's
     /// own priority rule, applied whole.
     [[nodiscard]] bool rungPlateOutranked() const noexcept;
+    /// The bouncer's WARNING is on the alert row: drawFrame's and
+    /// syncPanelAnim's own three-line test, in one place at last.
+    [[nodiscard]] bool bouncerWarned() const noexcept;
     /// The one step hook: the Legend diff into the queue, the countdown, the
     /// dismissal under anything that outranks it, the next plate up off the
     /// queue with its bell. Runs BEFORE stepPull() so a rung and a skill

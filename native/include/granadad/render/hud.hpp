@@ -452,6 +452,13 @@ struct HudState {
     /// it is there to back. False (every caller before the plate) draws
     /// exactly as before.
     bool alertStepsDown = false;
+    /// THE RUNG PLATE'S WEIGHT, ON THE INK ONLY (rung_plate.hpp): the words'
+    /// alpha is multiplied by this; the backing field keeps alertFade, the
+    /// row's own ease, so fine print over a lit wall is still print (the
+    /// half-weight backing let the Gull's plaster through and the amber
+    /// read as mud -- the director's finding, fourth pass). 1 for every
+    /// caller that never heard of it.
+    float alertInkWeight = 1.0F;
     /// HARDENING PASS. THE SAME alertFade PATTERN, ONE PER ROW. #83 eased the
     /// alert row in and out and left every other row on this HUD popping --
     /// see this file's own header on the rule these rows draw under and
@@ -616,6 +623,10 @@ struct HudState {
     /// 0 (gone) .. 1 (full strength). Defaults to 0 for placePlateFade's
     /// reason: this row's ordinary state is "not there".
     float voiceFade = 0.0F;
+    /// The rung plate's weight on this row's ink, the alert row's own rule
+    /// (alertInkWeight): the words dim under the plate, the backing keeps
+    /// the row's ease, and its rails take half while the words are dimmed.
+    float voiceInkWeight = 1.0F;
 
     // --- THE PULL PACK (render/pull.hpp) --------------------------------------
     //

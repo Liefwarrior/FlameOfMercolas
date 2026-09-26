@@ -3719,23 +3719,41 @@ void Session::stepPull() {
     // state the render side may read, so the diff happens here, once a
     // step, in situ. A rise while one is up queues behind it.
     for (const SkillRise& rise : skillRise_.diff(talk.skills())) {
+        // THE LATEST LEVEL SUPERSEDES. A toast still waiting for the same
+        // skill -- SKYRUNNING RISES TO 2 queued behind RISES TO 1's own hold
+        // when the leap that tips THE ROOFS levels it to 3 -- is stale the
+        // moment a newer level exists: it would play after the plate with a
+        // number going backwards (both critics, fourth pass). The queue
+        // keeps one entry per skill, the newest; the Character tile has the
+        // rest.
+        const std::string label = skillToastFor(rise);
+        const std::string_view skill = std::string_view{label}.substr(0, label.rfind(" RISES TO "));
+        skillToastQueue_.erase(
+            std::remove_if(skillToastQueue_.begin(), skillToastQueue_.end(),
+                           [skill](const std::string& queued) {
+                               return std::string_view{queued}.substr(
+                                          0, queued.rfind(" RISES TO ")) == skill;
+                           }),
+            skillToastQueue_.end());
         // FOLDED INTO THE PLATE when the rung rose on this same step (the
         // leap that tips THE ROOFS levels SKYRUNNING; the box that tips THE
         // WIRE levels CRACKSMANSHIP; the bounty that tips THE TRADE levels
         // FIELDCRAFT): the plate's own dim last row, the same climb told
         // once, on the card -- never a toast five seconds late in bigger
         // type. The plate that rose this step is the one on screen if it
-        // started, else the last one queued. A second skill on the same
-        // step, or one later in the hold, queues as a toast.
+        // started, else the last one queued -- and when two tracks rise on
+        // one step, the tick rides the second, queued plate, whichever
+        // track that is. A second skill on the same step, or one later in
+        // the hold, queues as a toast.
         if (rungRoseThisStep_) {
             RungPlateText& plate =
                 rungPlateQueue_.empty() ? rungPlateText_ : rungPlateQueue_.back();
             if (plate.tick.empty()) {
-                plate.tick = skillToastFor(rise);
+                plate.tick = label;
                 continue;
             }
         }
-        skillToastQueue_.push_back(skillToastFor(rise));
+        skillToastQueue_.push_back(label);
     }
     if (skillToastShowSteps_ > 0) {
         --skillToastShowSteps_;
@@ -3757,7 +3775,8 @@ void Session::stepPull() {
     // the step the hold ended crossed the plate's own lift (the player's and
     // the director's finding), so it waits for the ease to settle at zero.
     if (skillToastShowSteps_ == 0 && !skillToastQueue_.empty() && skillToastAnim_.settled() &&
-        !rungPlateWanted() && rungPlateAnim_.settled() && !rungPlateAnim_.target()) {
+        !rungPlateWanted() && rungPlateAnim_.settled() && !rungPlateAnim_.target() &&
+        rungPlateQueue_.empty()) {
         skillToastText_ = std::move(skillToastQueue_.front());
         skillToastQueue_.erase(skillToastQueue_.begin());
         skillToastShowSteps_ = kCasePlateShowSteps;
@@ -3883,8 +3902,7 @@ bool Session::rungPlateOutranked() const noexcept {
     // everything else that owns the screen: a page or a talk (the one
     // formula, conversingNow), the court's beats, plate and page and the
     // rope's ceremony (inCustody), and the death ceremony's veil.
-    const bool warned = !tavern_->lastWarning().empty() &&
-                        tavern_->playerStanding() != sim::Standing::Welcome;
+    const bool warned = bouncerWarned();
     // THE WATCH'S WORD (fourth pass, the auditor's finding): a street
     // watchman's HALT, SHEATHE or OFFENCE rides the alert row through say()
     // and an ignored halt ends in an arrest at reach -- exactly the row a
@@ -3928,6 +3946,7 @@ void Session::stepRungPlate() {
         // seconds, so a leap's length is not five seconds late for long.
         if (rungPlateShowSteps_ == 0) {
             messageSteps_ = std::min(messageSteps_, kRungPlateRowAfterSteps);
+            messageCapped_ = messageSteps_ > 0;
         }
     }
     // 3. DISMISSED UNDER ANYTHING THAT OWNS THE SCREEN. A page key, a talk,
@@ -3940,6 +3959,11 @@ void Session::stepRungPlate() {
     const bool outranked = rungPlateOutranked();
     if (rungPlateShowSteps_ > 0 && outranked) {
         rungPlateShowSteps_ = 0;
+        // AND THE ROW'S CLOCK IS CAPPED HERE TOO: a live hold cut by a page
+        // or a warning left the frozen clock whole, so a leap's length
+        // could surface six seconds after the leap (the auditor's finding).
+        messageSteps_ = std::min(messageSteps_, kRungPlateRowAfterSteps);
+        messageCapped_ = messageSteps_ > 0;
     }
     // 4. THE NEXT ONE UP, off the queue, on a free screen, and only once the
     //    last has eased all the way down -- `!target()` is what puts a beat
@@ -3985,6 +4009,32 @@ void Session::composeRungPlate(Framebuffer& target) const {
     drawRungPlate(target, rungPlateState());
 }
 
+bool Session::bouncerWarned() const noexcept {
+    return !tavern_->lastWarning().empty() &&
+           tavern_->playerStanding() != sim::Standing::Welcome;
+}
+
+bool Session::rungPlateOnScreen() const noexcept {
+    // THE DRAWN FADE AND NOTHING ELSE. rungPlateState() re-reads the
+    // outranking live, so on the very frame a warning or a demand lands --
+    // which advanceSecond says after stepRungPlate has run -- this is
+    // already false, and the row that carries the one line the player must
+    // not miss is drawn at its full size from its first frame (the auditor's
+    // finding). While the plate is wanted its fade is never zero.
+    return rungPlateState().fade > 0.0F;
+}
+
+float Session::alertInkWeightNow() const noexcept {
+    return alertWeightUnderRungPlate(rungPlateState().fade);
+}
+
+bool Session::alertStepsDownNow() const noexcept {
+    // A line capped under the plate stays small; a WARNING on the row is
+    // never small (drawFrame puts the warning on the row in the line's
+    // place, and its own first frame is the one that matters).
+    return rungPlateOnScreen() || (messageCapped_ && !bouncerWarned());
+}
+
 float Session::casePlateFadeNow() const noexcept {
     // THE ANNOUNCE SLOT WAITS BEHIND THE PLATE, AND IT IS NOT SEEN GOING.
     // syncPanelAnim drops the slot's target while the plate is wanted and
@@ -3994,11 +4044,11 @@ float Session::casePlateFadeNow() const noexcept {
     // director's finding, third pass). The plate's own rule for itself
     // under a page -- drawn at zero the instant something outranks it --
     // applied to the slot the plate outranks.
-    return rungPlateWanted() ? 0.0F : casePlateAnim_.value();
+    return rungPlateOnScreen() ? 0.0F : casePlateAnim_.value();
 }
 
 float Session::placePlateFadeNow() const noexcept {
-    return rungPlateWanted() ? 0.0F : placePlateAnim_.value();
+    return rungPlateOnScreen() ? 0.0F : placePlateAnim_.value();
 }
 
 float Session::alertFadeNow() const noexcept {
@@ -4011,7 +4061,7 @@ float Session::alertFadeNow() const noexcept {
     // lost whole under a five-second plate. Not deferred either: a leap's
     // length said five seconds after the leap is a notice out of its moment.
     // Scaled instead, on the plate's OWN fade, so the two cross rather than
-    // snap and the plate is the one thing on the frame at full strength
+    // snap and the plate is the one notice on the frame at full strength
     // while it holds. rungPlateState() zeroes that fade under anything that
     // outranks the plate -- a bouncer's WARNING rides this same row and
     // dismisses the plate outright -- so the one line the player must not
@@ -5020,7 +5070,7 @@ void Session::step(const sim::MoveInput& input) {
     // THE RUNG PLATE STOPS THIS CLOCK (rung_plate.hpp's rule): a line said
     // with the rung stands at half weight under the plate and gets what it
     // has left, capped, once the plate lifts -- stepRungPlate caps it.
-    if (messageSteps_ > 0 && !rungPlateWanted()) {
+    if (messageSteps_ > 0 && !rungPlateOnScreen()) {
         --messageSteps_;
     }
 
@@ -5203,7 +5253,7 @@ void Session::step(const sim::MoveInput& input) {
     // neither plate's clock runs while the rung plate is wanted, and their
     // targets drop with it (syncOverlays below), so a notice already up
     // eases out, waits, and rises again on its own ease with what it had.
-    if (placePlateShowSteps_ > 0 && !rungPlateWanted()) {
+    if (placePlateShowSteps_ > 0 && !rungPlateOnScreen()) {
         --placePlateShowSteps_;
     }
     placePlateAnim_.advance();
@@ -5211,7 +5261,7 @@ void Session::step(const sim::MoveInput& input) {
     // for the identical reason: run down HERE and only here, once a step, so
     // its three seconds do not depend on how many keys were pressed during
     // them.
-    if (casePlateShowSteps_ > 0 && !rungPlateWanted()) {
+    if (casePlateShowSteps_ > 0 && !rungPlateOnScreen()) {
         --casePlateShowSteps_;
     }
     casePlateAnim_.advance();
@@ -5643,6 +5693,10 @@ void Session::step(const sim::MoveInput& input) {
     if (tavern_->lastDemand() != lastDemandSpoken_) {
         lastDemandSpoken_ = tavern_->lastDemand();
         say(lastDemandSpoken_);
+        // THE GULL'S OWN WATCHMAN'S DEMAND (Cull's halt, a contraband
+        // demand, an arrest at reach behind it) outranks the plate exactly
+        // as the street's does -- the auditor's finding, fifth pass.
+        messageDemand_ = true;
         (void)voice_.dropIfSpeaker(alertSpeakerOf(lastDemandSpoken_));
     }
     // VOICE LANE, THE ADDRESS: THE WALK-OFF CLOSE. A conversation on foot
@@ -5777,6 +5831,8 @@ void Session::say(std::string line) {
     // An ordinary line. The three Watch sites in step() set this back after
     // their own say() -- see rungPlateOutranked.
     messageDemand_ = false;
+    // A new line, at whatever register the frame gives it.
+    messageCapped_ = false;
     // UI-EA (LANE HUD): FOUR SECONDS, the spec's own message-row narration
     // hold (sec. 2, EVENT tier). Six was the pre-diet number; a line the
     // player is reading is re-armed by the next line anyway, and the bottom
@@ -11044,8 +11100,8 @@ void Session::syncPanelAnim() noexcept {
         placePlateShowSteps_ = 0;
     }
     // AND NEITHER SHOWS UNDER THE RUNG PLATE: the slot waits behind it.
-    placePlateAnim_.setTarget(placePlateShowSteps_ > 0 && !rungPlateWanted());
-    casePlateAnim_.setTarget(casePlateShowSteps_ > 0 && !rungPlateWanted());
+    placePlateAnim_.setTarget(placePlateShowSteps_ > 0 && !rungPlateOnScreen());
+    casePlateAnim_.setTarget(casePlateShowSteps_ > 0 && !rungPlateOnScreen());
 }
 
 std::string Session::rivalLine() const {
@@ -11721,8 +11777,9 @@ FrameStats Session::drawFrame(Framebuffer& target, FramePasses passes) const {
     // note): one arithmetic, read by the case that pins it and drawn here.
     // And stepped DOWN to the plate's own register while the plate is wanted
     // (HudState::alertStepsDown): never a tier above the plate.
-    hud.alertFade = alertFadeNow();
-    hud.alertStepsDown = rungPlateWanted();
+    hud.alertFade = alertAnim_.value();
+    hud.alertInkWeight = alertInkWeightNow();
+    hud.alertStepsDown = alertStepsDownNow();
     // VOICE LANE. The street's own line, on its own toggle, down while a
     // panel owns the screen (the partner's lines are the panel's).
     hud.voiceName = std::string_view{voice_.current().name};
@@ -11736,9 +11793,9 @@ FrameStats Session::drawFrame(Framebuffer& target, FramePasses passes) const {
     // sat at full strength at the foot of the trade and law frames, wider
     // than the plate, while the alert row beside it was halved (all three
     // critics' finding). The same weight, on the same fade.
-    hud.voiceFade = (conversing ? std::min(voiceAnim_.value(), 1.0F - panelAnim_.value())
-                                : voiceAnim_.value()) *
-                    alertWeightUnderRungPlate(rungPlateState().fade);
+    hud.voiceFade = conversing ? std::min(voiceAnim_.value(), 1.0F - panelAnim_.value())
+                               : voiceAnim_.value();
+    hud.voiceInkWeight = alertInkWeightNow();
     // INNOVATION SPRINT ITEM #3. See HudState::alertPulse's own header.
     hud.alertPulse = alertPulse_.value();
     hud.caseLabel = std::string_view{caseCache_};
@@ -12718,25 +12775,51 @@ void standBackFrom(Session& session, std::string_view name) {
     // inside of a table, and the first version of this was.
     const std::int32_t band = who->band();
     const std::int32_t offsets[6][2] = {{0, -3}, {0, 3}, {-3, 0}, {3, 0}, {0, -2}, {2, 0}};
-    for (const auto& offset : offsets) {
-        const std::int32_t x = who->tileX() + offset[0];
-        const std::int32_t y = who->tileY() + offset[1];
-        if (!session.tiles().standable(x, y, band) ||
-            !session.tiles().lineOfSight(x, y, who->tileX(), who->tileY(), band)) {
-            continue;
+    // A CLEAR LINE TO THEM FIRST (rung plate, fifth pass). lineOfSight is
+    // the simulation's: it sees over a table and through a standing man,
+    // which is right for a sightline and wrong for a photograph -- the trade
+    // and law frames showed a patron's back and a hood on a table under the
+    // reticle with Cull, the man the card is about, behind them. So the
+    // first pass over the offsets wants every tile between the spot and
+    // them to be floor with nobody standing on it; only if no offset gives
+    // that does the old rule stand in.
+    const auto clearBetween = [&session, who, band](std::int32_t x, std::int32_t y) {
+        const std::int32_t sx = who->tileX() > x ? 1 : (who->tileX() < x ? -1 : 0);
+        const std::int32_t sy = who->tileY() > y ? 1 : (who->tileY() < y ? -1 : 0);
+        for (std::int32_t tx = x + sx, ty = y + sy; tx != who->tileX() || ty != who->tileY();
+             tx += sx, ty += sy) {
+            if (!session.tiles().standable(tx, ty, band)) {
+                return false;
+            }
+            for (const sim::Actor& other : session.tavern().actors()) {
+                if (&other != who && other.present() && other.band() == band &&
+                    other.tileX() == tx && other.tileY() == ty) {
+                    return false;
+                }
+            }
         }
-        walkToTile(session, x, y);
-        if (session.body().tileX() != x || session.body().tileY() != y) {
-            continue;
+        return true;
+    };
+    for (const bool strict : {true, false}) {
+        for (const auto& offset : offsets) {
+            const std::int32_t x = who->tileX() + offset[0];
+            const std::int32_t y = who->tileY() + offset[1];
+            if (!session.tiles().standable(x, y, band) ||
+                !session.tiles().lineOfSight(x, y, who->tileX(), who->tileY(), band)) {
+                continue;
+            }
+            if (strict && !clearBetween(x, y)) {
+                continue;
+            }
+            walkToTile(session, x, y);
+            if (session.body().tileX() != x || session.body().tileY() != y) {
+                continue;
+            }
+            // Faced by their own bearing, which for these cardinal offsets
+            // is the cardinal the old rule chose.
+            session.body().setYaw(sim::bearingTo(x, y, who->tileX(), who->tileY()));
+            return;
         }
-        const std::int32_t dx = who->tileX() - x;
-        const std::int32_t dy = who->tileY() - y;
-        if ((dx < 0 ? -dx : dx) >= (dy < 0 ? -dy : dy)) {
-            session.body().setYaw(dx > 0 ? sim::kFacingEast : sim::kFacingWest);
-        } else {
-            session.body().setYaw(dy > 0 ? sim::kFacingSouth : sim::kFacingNorth);
-        }
-        return;
     }
 }
 
@@ -16513,6 +16596,11 @@ constexpr std::int32_t kRungBeats = 2;
                                                      session.body().tileY(), lead.site.x,
                                                      lead.site.y));
                 session.examine();
+                // THE EYE DOWN ONTO THE ANCHOR once it has read: from four
+                // tiles back at eye level the frame was the room's far wall
+                // and the flagstones the card is about were under the
+                // bottom edge (both critics). A turn, not a walk.
+                session.body().setPitch(sim::angle_from_degrees(-18));
                 // 2. AND ONTO IT IF IT WOULD NOT READ FROM THERE -- the
                 //    trail's own walk, unchanged, so a lead that cannot be
                 //    stood off is still read where the trail reads it. A
@@ -16543,7 +16631,9 @@ constexpr std::int32_t kRungBeats = 2;
             // queued behind Cull's table can come up. Then FACE HIM: the
             // turn-in leaves the body at his table looking wherever the walk
             // left it (a patron, on the third pass's frame), and the man who
-            // paid is the picture under the plate. A turn, not a walk.
+            // paid is the picture under the plate -- standBackFrom's
+            // clear-line rule puts him there; this is belt to it. A turn,
+            // not a walk.
             (void)runContractLine(session, "away");
             if (const sim::Actor* cull = actorNamed(session, "Watchman Cull"); cull != nullptr) {
                 session.body().setYaw(sim::bearingTo(session.body().tileX(),
@@ -16562,9 +16652,9 @@ constexpr std::int32_t kRungBeats = 2;
                 session.closeConversation();
             }
             standBackFrom(session, "Watchman Cull");
-            // By his own bearing, not the cardinal standBackFrom faces: three
-            // tiles off at a diagonal put a hood on the table under the
-            // reticle and Cull off the frame.
+            // By his own bearing -- which for standBackFrom's cardinal spots
+            // is the cardinal it already faces; the frame's fix is
+            // standBackFrom's own clear-line rule, this is belt to it.
             if (const sim::Actor* cull = actorNamed(session, "Watchman Cull"); cull != nullptr) {
                 session.body().setYaw(sim::bearingTo(session.body().tileX(),
                                                      session.body().tileY(), cull->tileX(),

@@ -124,7 +124,7 @@ struct PlateLayout {
 
 [[nodiscard]] PlateLayout layoutFor(int width, int height, const RungPlateState& state) {
     PlateLayout out;
-    out.metric = panelMetric(height);
+    out.metric = rungPlateMetric(height);
     if (state.head.empty()) {
         return out;
     }
@@ -143,9 +143,10 @@ struct PlateLayout {
     // plate's floor (kRungPlateFloorRows) and the aim prompt's fence the
     // smallest window has room for the card and nothing else; a tick there
     // would put the keyline on the stat stack or the prompt on the card. So
-    // it is dropped, whole, at 320x180 (and at any size for a topped-out
-    // track whose card is already a row taller), and the Character tile has
-    // the level. rungPlateBox's own clearance rule, asked before the seat.
+    // it is dropped, whole, at 320x180, and at 1920x1080 for a topped-out
+    // track whose card is already a row taller (640x360 and 960x540 hold
+    // both), and the Character tile has the level. A row of clearance is
+    // what it asks for; the seat then splits what is left.
     if (out.tickCells > 0) {
         const int floorY = kRungPlateFloorRows * hudScale(height);
         const CentreRect fence = hudAimRect(width, height);
@@ -174,6 +175,15 @@ struct PlateLayout {
 }
 
 }  // namespace
+
+PanelMetric rungPlateMetric(int height) noexcept {
+    const PanelMetric minor = panelMetric(height);
+    const int glance = hudScale(height);
+    if (minor.scale == 1 && glance >= 2) {
+        return PanelMetric{glance};
+    }
+    return minor;
+}
 
 float alertWeightUnderRungPlate(float plateFade) noexcept {
     const float fade = std::clamp(plateFade, 0.0F, 1.0F);
@@ -219,7 +229,17 @@ RungPlateBox rungPlateBox(int width, int height, const RungPlateState& state) {
     if (ceilY - floorY >= 2 * cellH) {
         box.y = std::clamp(rawSeatY, floorY, ceilY - cellH);
     } else {
-        box.y = floorY + std::max(0, ceilY - floorY) / 2;
+        // NO ROW TO SPEND: the card keeps at least five glance units
+        // between its keyline and whatever is above it, and splits the
+        // rest. The fourth pass split evenly, and at 320x180 -- where the
+        // top-right stat stack's fourth row reaches two rows UNDER this
+        // floor -- that put the keyline two pixels under the stack's ink
+        // while the aim prompt below had four to spare; the prompt
+        // tolerates a tight neighbour, a keyline touching text does not
+        // (the director's finding). Elsewhere the band is wider and the
+        // split is what shows.
+        const int room = std::max(0, ceilY - floorY);
+        box.y = floorY + std::max(room / 2, std::min(room, 5 * hudScale(height)));
     }
     box.draws = true;
     return box;
@@ -266,11 +286,17 @@ void drawRungPlate(Framebuffer& target, const RungPlateState& state) {
     // or a dash starts on the border cell's first column and ends a unit
     // short of its last -- a composed page sits on a dark frame and nobody
     // sees it; on a bright wall (the trade drive's) the director saw a black
-    // card with its keyline off centre. Two units of slab outside the ink on
-    // every side, the same on all four.
+    // card with its keyline off centre. TWO UNITS OF SLAB outside the rules'
+    // dashes above and below and outside the side bars' column left and
+    // right, the same on each pair of edges; the corner diamonds, a column
+    // wider than the bars and a row taller than the dashes, sit one unit
+    // inside that on every side, and a tilde's second row sits one closer
+    // below. (The dash is the font's own, row two of six; the bar is
+    // panel.cpp's kBar, column one of four; the diamond rows one to three
+    // and columns nought to three.)
     style.groundAlpha = 0.0F;
     const int s = metric.scale;
-    target.fillRect(bounds.x - 2 * s, bounds.y, bounds.w + 3 * s, bounds.h - 2 * s, style.ground,
+    target.fillRect(bounds.x - s, bounds.y, bounds.w, bounds.h - 2 * s, style.ground,
                     kPageGroundAlpha * fade);
     PanelFrame pane(target, bounds, metric, style);
     pane.draw();
@@ -315,9 +341,16 @@ void drawRungPlate(Framebuffer& target, const RungPlateState& state) {
         // THE TICK, folded in: the skill that levelled on the rung's own
         // step, in the dateline's ink and slot -- the game's word under the
         // ward's, told once. layoutFor has already dropped it where the
-        // frame has no row for it.
-        (void)drawCellText(target, body, metric, std::max(0, (interior - layout.tickCells) / 2),
-                           row, state.tick, ink.dim, fade);
+        // frame has no row for it. SET TWO UNITS LOW IN ITS ROW: set solid
+        // under the prose it read as the docker's second line in the
+        // system's voice (both critics); the row's own spare unit and two
+        // more make three of air above it, and the bottom rule's ink is
+        // still two units under its feet.
+        PanelRect tickBody = body;
+        tickBody.y += 2 * s;
+        (void)drawCellText(target, tickBody, metric,
+                           std::max(0, (interior - layout.tickCells) / 2), row, state.tick,
+                           ink.dim, fade);
         ++row;
     }
 }

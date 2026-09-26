@@ -4,7 +4,7 @@
   "tables": [
     {
       "key": "legend.wire.1",
-      "rows": ["Word travels. The rope hands have your name already."]
+      "rows": ["Ropewynd locks its boxes twice these days. That is you."]
     },
     {
       "key": "legend.wire.2",
@@ -20,7 +20,7 @@
     },
     {
       "key": "legend.roofs.1",
-      "rows": ["You went up and came down whole. The roofs noticed."]
+      "rows": ["Up and over, and the roofs had no objection."]
     },
     {
       "key": "legend.roofs.2",
@@ -36,7 +36,7 @@
     },
     {
       "key": "legend.flame.1",
-      "rows": ["The priests saw you read. You are in the Mission's book."]
+      "rows": ["You are in the Mission's book. Nobody asked you first."]
     },
     {
       "key": "legend.flame.2",
@@ -48,11 +48,11 @@
     },
     {
       "key": "legend.flame.4",
-      "rows": ["You went down there and came back. Folk stopped asking."]
+      "rows": ["Down there and back. The quay stopped asking why."]
     },
     {
       "key": "legend.trade.1",
-      "rows": ["Paid and on time. The counter remembers that first."]
+      "rows": ["A job done and coin taken for it. The counter remembers."]
     },
     {
       "key": "legend.trade.2",
@@ -76,7 +76,7 @@
     },
     {
       "key": "legend.law.3",
-      "rows": ["Folk lower their voices when you pass. Even sober."]
+      "rows": ["Voices drop when you pass. Even sober ones."]
     },
     {
       "key": "legend.law.4",
