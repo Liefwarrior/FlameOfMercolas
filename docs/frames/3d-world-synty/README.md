@@ -636,7 +636,71 @@ where the law's field is black); a lantern's glass out-valuing its metal after d
 the metal at its catalogue tint by day; the catalogue's glass cut on the
 hung lantern and on the ref the adapter reads.
 
-**Reshoot.** `dist\granadad.exe --smoke=0 --hold --settle-steps=0 --scale=1 --weather=clear --time=HH --spawn=X,Y,Z --yaw=DEG [--pitch=DEG] [--fov=DEG] --screenshot=path.png`
+**Fix round one (the three critics on 0e072010: director 6, player 7,
+auditor 7).** What they found and what moved:
+
+- *The halo up close and in fog.* Inside two metres the metre-and-a-half
+  disc, floating toward the eye, laid one cream veil over cap, cage, glass
+  and whoever stood under the lamp; in fog its five-ring skirt showed its
+  facets once the veil lifted the background to grey, and lanterns went to
+  fog grey before the sacks beside them. The world scene fades the halo's
+  alpha with the eye's distance now (`kHaloNearGone`/`kHaloNearFull`,
+  `kHaloNearFloor`), takes half the fog's e-folding off it by distance
+  (`kHaloFogShare`), the fan has nine rings, and the adapter draws the halos
+  PAST the weather's veils so a glow is seen through a fog rather than
+  veiled with the wall behind it. Clear frames only see the fade.
+- *The spill is a light on the wall, not a board's tint.* Plaster windows
+  cast nothing and the timber spill stopped dead at a plank seam. It is a
+  map of cells now (`WorldScene::spill`, `buildSpill`): every pane that is
+  up lays `kSpillGlow` on its own wall cell and half of it on the two cells
+  along the wall and the street cell before it, rebuilt on the minute the
+  relight moves, read by the chunk colour stage (`ChunkLighting::spill`),
+  the piece relight (through `surfaceAt`), the bodies and the ground items.
+  A kit window on plaster casts it as a hung timber window does; a board
+  half's end at the module's cut shares the value with the module beyond
+  it, so nothing stops at the seam; and a body talking under a lit window
+  is no longer a silhouette against it.
+- *The pool on the ground.* A grey cobble under the law's near-white
+  lantern colour came out a pale beige-grey. The pool has its own deeper
+  warmths (`kLanternPoolColour`, `kFirePoolColour`), a wider core (1.4
+  tiles at 0.7 share) and a peak a little over the law's (`kPoolPeakScale`,
+  under the 1.15 surface clamp), and it gutters with the wind as the halos
+  do (`SkyState::haloScale`) -- a candle behind glass does not.
+- *One amber at one value.* Every lit pane wore `litPane` exactly. A
+  household's candle draws its own strength off its lot now
+  (`kCandleSpread`, down to two thirds), per pane on a house lit all
+  night, so a frontage is a row of candles and not a strip.
+- *The rim ring's sawtooth.* The cut classed a triangle by its centroid, so
+  the octagonal ring where the glass meets the cap (y -0.818..-0.790, across
+  the band's edge) went half hot, half metal. A triangle is glass only when
+  EVERY vertex is in the band and on the patch; the ring is metal whole.
+- *Posts capped with no glass.* `hasLampGlass()` capped the lamp post's
+  whole body at half after dark with nothing hot on it. The post's glass is
+  named now (its pale swatch on the lamp head, y 2.25..2.65), and the cap
+  applies only to a lamp whose catalogue row cuts a glass.
+- *The software path and the cut metal.* The rebuilt metal mesh carried a
+  white colour array, which on the GL 1.1 path REPLACES the material colour
+  (`tinted()`): rlsw would have dropped the metal's tint and its cap. The
+  metal carries no colour array now; only glass does. An all-glass mesh
+  keeps its slot instead of leaving an empty one; the scene hash covers the
+  cut's fields; the dead `kPoolRadiusFloor` is gone.
+- *Ground items read the law's raw glow* (the rope beside the Gull's lamp
+  outshone the setts it lay on). They read the pool and the spill now, and a
+  self-lit item's cut glass is hot after dark and dark glass by day.
+- *Tests.* A lit pane is read by `candlePane()` (the law's tint at the
+  house's strength, never dark glass); the spill map is pinned on the Docks
+  with masonry panes among the lit and a spread of strengths, and empty at
+  noon; the bodies are pinned against the same roster described without the
+  pool (the pool moves the tint of dozens and brightens those in a skirt);
+  every hung window has exactly two halves.
+
+Out of this lane, on the record from the same reports: the crosshair prompt
+fires through the Gull's roof; the scripted night section opens in daylight
+and `--demo-capture`/`--framedump` write HUD-only PNGs; urchins wear the
+watchman rig; the 02:00 crowd is the 22:00 crowd; cloned townswomen crowd a
+doorway.
+
+**Reshoot.** `dist\granadad.exe --smoke=0 --hold --scale=1 --weather=clear --time=HH --spawn=X,Y,Z --yaw=DEG [--pitch=DEG] [--fov=DEG] --screenshot=path.png`
 
 | vantage | flags | what to see |
 |---|---|---|
