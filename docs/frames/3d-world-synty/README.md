@@ -686,6 +686,42 @@ Reshoot. Every line is `dist\granadad.exe --smoke=0 --hold --width=1280
 | jamb-28 | UNCHANGED: the Tarwalk's sign frames, still timber, still fitted to their cells | `--time=14 --spawn=153,50,19 --yaw=180 --pitch=-2 --fov=60 --screenshot=jamb-28.png` |
 | jamb-29 | A GATE, UNCHANGED: the Netters', its own posts and beam | `--time=10 --spawn=171,96,19 --yaw=180 --screenshot=jamb-29.png` |
 
+## The post is the reveal, 2026-09-25 (jambs, second cut)
+
+The first cut scored 7/10. The critic's four, and where each one landed.
+Code is `native/src/render3d/static_pieces.cpp` unless said otherwise.
+
+| # | the defect | what changed |
+|---|---|---|
+| 1 | the timber post stands a third of a metre outboard of the opening, a plaster strip between it and a grey stone surround: a pilaster pair, not a jamb | the grey surround WAS the kit's door wall (`SM_Bld_Base_Wall_Door_Double_01`), stretched over the gap with its own trim round a hole narrower than the gap and its own plaster margin either side; the post stood at the gap's edge, outside all of that. The kit door wall is gone (`doors()` keeps the gates and the leaves, nothing else). The post's inner face is ON the opening's edge, and the jamb's reveal quad (`walls()`) stands 6 mm inboard of that face, cut from the street post's back to the room post's back: the post is the edge of the reveal. Over the head the wall's own finish closes the frontage to the storey top -- plaster over a rendered door, brick over a brick one, boards over a boarded one (`finishOf()`) -- and a plaster soffit lies across the head between the two lintels (its own role, `soffit`, the ceiling piece face down: a door-head soffit is not a room ceiling) |
+| 2 | from the taproom the door is a bare cut in plaster | the frame is mirrored onto the room face: two more posts and a lintel in the plane of the room's plaster, the header over the head in the room's tint, and the room-side panel that ends at the jamb no longer reaches a quarter of a metre past it into the opening (the slot it closed is closed by the post and the reveal now) |
+| 3 | the Bilge's door gets the lintel and no posts | the frame the critic shot (`A81_bilge_face`) is the Gilded Gull's, from the Tarwalk facing south -- the lantern to the right of the door and the hitching post to its left are the Gull's, the Bilge's hitch stands the other side -- and both posts are in it, the left one behind a body and the LOOK label. The Bilge's own door (world 137..138 on row 66) has its four. The rule was never false on either: `doorPostAt()` is unchanged, and `StaticPlacementStats::bareJambs` now counts every flank of a door the rule refuses, which the district test pins at zero along with four posts, two lintels and one soffit for every door that is not a gate |
+| 4 | at 22:00 the posts take no light from the wall lantern a metre away | two things. The post wore the wall material's tint -- granite's blue-grey [156,160,168] over dark oak, which is a post at a quarter of the plaster's brightness under any light -- and was lit from its own wall cell alone. The frame's timber wears its own oak now, and each post is lit at the cut between its jamb cell and the gap cell beside it (the two averaged), which is the value the wall's own piece ends on at that jamb, with the wall's facing factor. Same light law, same numbers, the timber just shows them |
+
+What did not change: the jamb rule (`door_jambs.hpp`), the mesher's cut
+under the head, the gates (their own two posts and beam, as before), the
+leaves (hinged just inside the post's face now, still swung open along
+the reveal), foot seating, proportion.
+
+Render only. `TileQuery::solid()` is untouched and the cell is still a
+wall. Tavern and population baselines unchanged by construction; the
+scene hash moves (every door in the ward is four posts, two lintels, two
+headers and a soffit now, and two catalogue rows are gone).
+
+### Reshoot
+
+Every line is `dist\granadad.exe --smoke=0 --hold --width=1280 --height=720 --scale=1` plus:
+
+| frame | vantage | command |
+|---|---|---|
+| jambs2-01 | the Gull's door from the street, the 3/4 view from the west: posts on the opening's edge, no plaster strip, no grey surround, the header in the frontage's plaster | `--time=14 --spawn=149,58,19 --yaw=152 --pitch=-4 --fov=60 --screenshot=jambs2-01.png` |
+| jambs2-02 | square on, zoomed: the reveal is the post | `--time=10 --spawn=153,58,19 --yaw=180 --pitch=-6 --fov=45 --screenshot=jambs2-02.png` |
+| jambs2-03 | the head from inside the Gull: the room-side posts, lintel and header | `--time=20 --spawn=153,68,19 --yaw=0 --pitch=18 --screenshot=jambs2-03.png` |
+| jambs2-04 | inside, standing back: the frame from the taproom | `--time=14 --spawn=154,70,19 --yaw=350 --pitch=0 --fov=70 --screenshot=jambs2-04.png` |
+| jambs2-05 | the Bilge's own door, from the street | `--time=14 --spawn=137,61,19 --yaw=180 --pitch=-4 --fov=60 --screenshot=jambs2-05.png` |
+| jambs2-06 | 22:00, the Gull's door under its lantern: the timber takes the lamp | `--time=22 --spawn=153,59,19 --yaw=180 --pitch=-2 --fov=60 --screenshot=jambs2-06.png` |
+| jambs2-07 | a gate, unchanged: the Netters' | `--time=10 --spawn=171,96,19 --yaw=180 --screenshot=jambs2-07.png` |
+
 ## Weather, 2026-09-25
 
 Four skies, render-only. Roadmap D15 ruled it yes on the one condition that

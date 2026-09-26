@@ -93,6 +93,7 @@
 #include <vector>
 
 #include "granadad/render/framebuffer.hpp"
+#include "granadad/render/voxel_classify.hpp"
 
 namespace granadad::render3d {
 
@@ -270,7 +271,13 @@ constexpr float kViewmodelDepthSpan = 0.2F;
 /// SHADED piece (2) darkens faces that look down (to half) and lifts faces
 /// that look up (by an eighth) from the mesh's own normals, the vertical
 /// faces untouched: the volume a prop needs when nothing lights it, and the
-/// difference between a rowboat and a dome.
+/// difference between a rowboat and a dome. A FACED piece (3) does that
+/// and gives its upright faces the chunk's own facing factors by their
+/// normal (render::kFacingX east and west, kFacingY north and south, the
+/// two numbers printed into the source below at load), so a door post's
+/// front and its inner face split the way the wall's own faces do. The
+/// source is a format string for that reason, and the two %s are the only
+/// ones in it.
 /// A HALO (1) is NOT here any more, and that is the point of it: its
 /// falloff used to be a radial alpha in this fragment shader, which rlsw
 /// has not got, so the headless twin drew a flat pale rectangle where the
@@ -297,9 +304,13 @@ constexpr const char* kBlendVertexShader =
     "    float tz = clamp((vertexPosition.z - tintSpan.z) * tintSpan.w, 0.0, 1.0);\n"
     "    fragTexCoord = vertexTexCoord;\n"
     "    vec4 tint = mix(mix(tintA, tintB, tx), mix(tintC, tintD, tx), tz);\n"
-    "    if (pieceMode == 2) {\n"
+    "    if (pieceMode >= 2) {\n"
     "        vec3 n = normalize(vec3(matNormal * vec4(vertexNormal, 0.0)));\n"
     "        float f = n.y < 0.0 ? 1.0 + 0.5 * n.y : 1.0 + 0.125 * n.y;\n"
+    "        if (pieceMode == 3) {\n"
+    "            float h = abs(n.x) + abs(n.z);\n"
+    "            if (h > 0.001) f *= (abs(n.x) * %s + abs(n.z) * %s) / h;\n"
+    "        }\n"
     "        tint.rgb *= f;\n"
     "    }\n"
     "    fragColor = vertexColor * tint;\n"
@@ -414,7 +425,16 @@ struct Backend::Impl {
         }
         blendTried = true;
 #if !defined(GRAPHICS_API_OPENGL_11)
-        blend = LoadShaderFromMemory(kBlendVertexShader, kBlendFragmentShader);
+        // The facing factors are the chunk's (voxel_classify.hpp), printed
+        // into the source so a faced piece and the wall it stands in read
+        // one rule.
+        char facingX[16];
+        char facingY[16];
+        std::snprintf(facingX, sizeof facingX, "%.4f", static_cast<double>(render::kFacingX));
+        std::snprintf(facingY, sizeof facingY, "%.4f", static_cast<double>(render::kFacingY));
+        char vertexSource[4096];
+        std::snprintf(vertexSource, sizeof vertexSource, kBlendVertexShader, facingX, facingY);
+        blend = LoadShaderFromMemory(vertexSource, kBlendFragmentShader);
         if (blend.id != 0 && blend.id != rlGetShaderIdDefault()) {
             blendTintA = GetShaderLocation(blend, "tintA");
             blendTintB = GetShaderLocation(blend, "tintB");
@@ -714,7 +734,7 @@ struct Backend::Impl {
         // or they do not. A halo never gets here.
         const bool spanned = tints.to > tints.from || tints.toZ > tints.fromZ;
         const bool blended =
-            blend.id != 0 && ((spanned && !tints.uniform()) || tints.mode == kDrawShaded);
+            blend.id != 0 && ((spanned && !tints.uniform()) || tints.mode >= kDrawShaded);
         const Color tint = blended ? Color{255, 255, 255, tints.a.a} : averageColour(tints);
         const Color base = model.baseColour[static_cast<std::size_t>(m)];
         const auto ch = [](unsigned char a, unsigned char b) {

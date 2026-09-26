@@ -356,13 +356,18 @@ struct StaticInstance {
     /// gradientFrom..To across and gradientFromZ..ToZ up, a flame's glow);
     /// kDrawShaded (the tint darkened on faces that look down and lifted on
     /// faces that look up, from the mesh's own normals: the volume a prop
-    /// needs when nothing lights it).
+    /// needs when nothing lights it); kDrawFaced (kDrawShaded, and the
+    /// upright faces take the chunk's own facing factors by their normal,
+    /// render::kFacingX east and west, render::kFacingY north and south --
+    /// a timber that stands IN a wall reads its two faces apart the way
+    /// the wall's own faces do, instead of as one flat cut-out).
     std::uint8_t mode = 0;
 };
 
 inline constexpr std::uint8_t kDrawPlain = 0;
 inline constexpr std::uint8_t kDrawHalo = 1;
 inline constexpr std::uint8_t kDrawShaded = 2;
+inline constexpr std::uint8_t kDrawFaced = 3;
 
 /// THE HALO IS GEOMETRY, NOT A SHADER. It used to be the flame's quad with a
 /// radial alpha in the GL 3.3 blend shader -- which rlsw has not got, so the

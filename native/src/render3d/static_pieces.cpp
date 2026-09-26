@@ -169,19 +169,30 @@ constexpr float kTimberPaneOut = -0.02F;
 /// THE CRITIC'S SECOND: the sill-side share of the pane's own height that
 /// draws as the hot core (world_scene.cpp's kPaneEdgeLit is the rest).
 constexpr float kPaneCoreFraction = 0.45F;
-/// The door leaf's clearance off the reveal it hangs open against; how far
-/// its hinge sits inside the street post's back corner (the corner a leaf
-/// hangs from, so the swung-open leaf's edge meets the post and no sliver
-/// of reveal shows between the two); and where the hinge falls, behind the
-/// facade plane, when the catalogue has no post to hang it from.
-constexpr float kLeafOffReveal = 0.14F;
+/// The door leaf hung open against the reveal: how far its inner face
+/// stands off the post's inner face -- nothing: ON the post's own plane,
+/// with the reveal quad (half a millimetre into the opening) inside the
+/// leaf's thickness, so there is no slot between timber and timber to look
+/// down (at sixteen millimetres a body in the taproom saw the street
+/// through it, and from the street the hollow behind the one-sided quad);
+/// how far its hinge sits inside the street post's back corner (the corner
+/// a leaf hangs from, so the swung-open leaf's edge meets the post); and
+/// where the hinge falls, behind the facade plane, when the catalogue has
+/// no post to hang it from.
+constexpr float kLeafOffReveal = 0.0F;
 constexpr float kLeafOffPost = 0.01F;
 constexpr float kLeafOffFacade = 0.06F;
 /// A jamb's reveal quad stands this far into the opening off the jamb
-/// cell's own boundary plane -- a hair inboard of the post's inner face,
-/// which stands ON that plane, so the two never fight and the post reads
-/// as the reveal's own edge.
-constexpr float kRevealFlush = 0.006F;
+/// cell's own boundary plane -- half a millimetre inboard of the post's
+/// inner face, which stands ON that plane. The two never overlap (the quad
+/// starts where the post's back ends), so they cannot fight, and half a
+/// millimetre is under a pixel from anywhere: at six the slot showed the
+/// hollow behind the one-sided quad from any angle off the axis.
+constexpr float kRevealFlush = 0.0005F;
+/// The wall over a door's head starts this far above the head, inside the
+/// lintel's body: on the head exactly, its bottom edge lay in the lintel's
+/// underside plane and drew as a hairline of plaster under the beam.
+constexpr float kHeaderInset = 0.02F;
 /// The soffit over a doorway lies this far above the head, inside the two
 /// lintels' bodies, so it closes the box between them without touching
 /// either underside.
@@ -1339,9 +1350,10 @@ private:
                                           0.5F * std::max(0.01F, beam->width * beam->scale) - kLeafOffPost
                                     : -kLeafOffFacade;
                 for (int end = 0; end < 2; ++end) {
-                    // The hinge: just inside the opening's edge, a little
-                    // off the reveal.
-                    const float a = end == 0 ? lo + kLeafOffReveal : hi - kLeafOffReveal;
+                    // The hinge: the leaf's inner face on the opening's
+                    // edge, the plane of the post's inner face.
+                    const float off = 0.5F * (leaf->maxZ - leaf->minZ) + kLeafOffReveal;
+                    const float a = end == 0 ? lo + off : hi - off;
                     Vec3 hinge{r.baseX + kTangentX[r.side] * a + kNormalX[r.side] * hingeOut,
                                yBase + leaf->lift,
                                r.baseZ + kTangentZ[r.side] * a + kNormalZ[r.side] * hingeOut};
@@ -1404,8 +1416,6 @@ private:
         const PieceSpec* soffit = catalogue_.piece(PieceRole::Soffit);
         const float section = std::max(0.01F, beam->width * beam->scale);
         const float sy = kDoorHeadHeight / std::max(0.01F, beam->height);
-        const float half =
-            lintel != nullptr ? 0.5F * (lintel->maxX - lintel->minX) * lintel->scale : 0.0F;
         for (const DoorGap& gap : doors_) {
             if (gap.gate()) {
                 continue;
@@ -1443,8 +1453,6 @@ private:
                     const MaterialRule* m = rule(cellX[0], cellY[0], gap.z);
                     soffitTint = m != nullptr ? m->insideTint : Rgba8{};
                 }
-                const float facing = (r.side == kNorth || r.side == kSouth) ? render::kFacingY
-                                                                            : render::kFacingX;
                 // Lit across the gap in this face's a-order, and at each
                 // edge between the last gap cell and the jamb beyond it:
                 // the value the wall's piece takes where it meets the frame.
@@ -1473,31 +1481,48 @@ private:
                                Vec3{1.0F, sy, 1.0F}, false, 2.5F);
                     // Lit at the cut between the jamb and the gap cell
                     // beside it -- the two cells averaged -- as the wall's
-                    // piece is at that same cut, and facing as it faces.
-                    StaticPlacement& p = out_.placements.back();
-                    p.lightX2 = gapX[end];
-                    p.lightY2 = gapY[end];
-                    p.facing = facing;
+                    // piece is at that same cut; FACED, so its front and
+                    // its inner face take the wall's own factors by their
+                    // normals and the timber's depth reads.
+                    faced(gapX[end], gapY[end]);
                 }
-                // The head beam: from the outer face of one jamb to the
-                // outer face of the other, its underside ON the head, so
-                // the two posts and the beam are one frame. No jambs, no
-                // head: a beam on its own is a bar across a doorway.
+                // The head beam: the posts' own strapped timber laid on its
+                // side across the two heads, outer face to outer face, its
+                // own section, its underside ON the head, so the two posts
+                // and the beam are one timber. (The kit joist carried
+                // three notches along its five metres, and squashed to a
+                // door's width one of them sat on every lintel's face like
+                // a stamp.) No jambs, no head: a beam on its own is a bar
+                // across a doorway.
                 if (lintel != nullptr && stood > 0) {
-                    beamAlong(r, lo - section, hi + section, yBase + kDoorHeadHeight + half, proud,
-                              Rgba8{}, light, gap.z, PieceRole::Lintel);
+                    const float a0 = lo - section;
+                    const float span = (hi + section) - a0;
+                    const float lintelHalf = 0.5F * lintel->width * lintel->scale;
+                    const Vec3 at{r.baseX + kTangentX[r.side] * a0 + kNormalX[r.side] * proud,
+                                  yBase + kDoorHeadHeight + lintelHalf,
+                                  r.baseZ + kTangentZ[r.side] * a0 + kNormalZ[r.side] * proud};
+                    // Its length is its local +Y; a quarter turn about X
+                    // lays that along local +Z, and the yaw beamAlong()
+                    // uses puts local +Z along the run's tangent.
+                    pointPiece(PieceRole::Lintel, *lintel, at, yawOf(r.side) + 3.0F * kHalfPi, gapX[0],
+                               gapY[0], gap.z, Rgba8{},
+                               Vec3{1.0F, span / std::max(0.01F, lintel->height), 1.0F}, false,
+                               span + 1.0F);
+                    out_.placements.back().instance.pitch = kHalfPi;
+                    faced(gapX[1], gapY[1]);
                 }
                 // The wall over the head, in this face's own finish, from
-                // the head to the storey top over the whole gap, in the
-                // plane of the finish beside it -- a thin quad overlapping
-                // its neighbours by the hair every plaster cut does.
+                // just over the head (inside the lintel's body) to the
+                // storey top over the whole gap, in the plane of the finish
+                // beside it -- a thin quad overlapping its neighbours by
+                // the hair every plaster cut does.
                 if (f.spec != nullptr) {
                     const float overlap = f.role == PieceRole::WallPlaster ? kCutOverlap : 0.0F;
                     FaceOpts o;
                     o.frontOut = f.frontOut;
                     o.standoff = f.standoff;
-                    o.yBase = yBase + kDoorHeadHeight;
-                    o.height = render::kBandHeight - 0.01F - kDoorHeadHeight;
+                    o.yBase = yBase + kDoorHeadHeight + kHeaderInset;
+                    o.height = render::kBandHeight - 0.01F - kDoorHeadHeight - kHeaderInset;
                     o.tint = f.tint;
                     o.light = light;
                     facePiece(r, f.role, *f.spec, lo - overlap, hi + overlap, o);
@@ -1522,6 +1547,19 @@ private:
                            gap.z);
             }
         }
+    }
+
+    /// The frame's timber, just placed: lit as the average of its own cell
+    /// and (x2, y2) -- the cut the wall's piece ends on -- and FACED
+    /// (kDrawFaced, scene.hpp): its facing factor left at one for the
+    /// shader to set per face by the normal, as the chunk's own faces are.
+    void faced(std::int32_t x2, std::int32_t y2) {
+        StaticPlacement& p = out_.placements.back();
+        p.lightX2 = x2;
+        p.lightY2 = y2;
+        p.facing = 1.0F;
+        p.mode = kDrawFaced;
+        p.instance.mode = kDrawFaced;
     }
 
     /// A flat quad laid face down over a rectangle of the scene's XZ, its
@@ -1750,6 +1788,12 @@ private:
             // plane, as it always did.
             const bool jambReveal =
                 r.reveal && beam != nullptr && doorPostAt(tiles_, r.firstX, r.firstY, r.z);
+            // The run ends at a jamb that carries the frame's post: the
+            // quad's end is inside the post, never the hair past it every
+            // other cut overlaps by (that hair drew as a plaster line down
+            // the post's inner face).
+            const bool postA0 = r.gapA0 && beam != nullptr && doorPostAt(tiles_, r.firstX, r.firstY, r.z);
+            const bool postA1 = r.gapA1 && beam != nullptr && doorPostAt(tiles_, r.lastX, r.lastY, r.z);
             if (jambReveal) {
                 const DoorGap* g = gapAt(r.firstX + kSideDx[r.side], r.firstY + kSideDy[r.side], r.z);
                 const float section = std::max(0.01F, beam->width * beam->scale);
@@ -1923,8 +1967,8 @@ private:
                 if (jambReveal) {
                     o.standoff = kRevealFlush;
                 } else if (thinPlaster && spec == &piece) {
-                    qa0 -= kCutOverlap;
-                    qa1 += kCutOverlap;
+                    qa0 += (i == 0 && postA0) ? kCutOverlap : -kCutOverlap;
+                    qa1 += (i == k - 1 && postA1) ? -kCutOverlap : kCutOverlap;
                     o.standoff += (i & 1) != 0 ? 2.0F * kCutStagger : kCutStagger;
                 }
                 facePiece(r, role, *spec, qa0, qa1, o);

@@ -759,10 +759,19 @@ TEST_CASE("a door tile places the door frame") {
         CHECK(p.instance.tint.r == beam->tint.r);
         CHECK(p.instance.tint.g == beam->tint.g);
         CHECK(p.instance.tint.b == beam->tint.b);
-        CHECK(p.facing == doctest::Approx(render::kFacingY));
+        // Faced: the shader sets the factor per face, so the placement's
+        // own is one.
+        CHECK(p.mode == kDrawFaced);
+        CHECK(p.instance.mode == kDrawFaced);
+        CHECK(p.facing == doctest::Approx(1.0F));
     }
     CHECK(posts == 4);
-    // A lintel on each face, in the plane of its posts, over the head.
+    // A lintel on each face, in the plane of its posts, over the head: the
+    // posts' own beam on its side (a quarter turn about X), its underside
+    // on the head, outer face to outer face.
+    const PieceSpec* lintel = catalogue.piece(PieceRole::Lintel);
+    REQUIRE(lintel != nullptr);
+    CHECK(lintel->file == beam->file);
     std::size_t lintels = 0;
     for (const StaticPlacement& p : placed.placements) {
         if (p.role != PieceRole::Lintel) {
@@ -771,23 +780,27 @@ TEST_CASE("a door tile places the door frame") {
         ++lintels;
         CHECK((p.instance.position.z == doctest::Approx(streetZ) ||
                p.instance.position.z == doctest::Approx(roomZ)));
-        CHECK(p.instance.position.y > head);
+        CHECK(p.instance.position.y == doctest::Approx(head + 0.5F * lintel->width * lintel->scale));
+        CHECK(p.instance.pitch == doctest::Approx(3.14159265F * 0.5F));
+        CHECK(p.instance.scale.y * lintel->height == doctest::Approx(2.0F + 2.0F * section));
+        CHECK(p.mode == kDrawFaced);
     }
     CHECK(lintels == 2);
-    // The wall over the head: the plaster quad from the head to the storey
-    // top over the whole gap (plus the hair every plaster cut overlaps
-    // by), one a face, in the plane of the finish beside it. To the street
-    // it is lit from jamb to jamb (the south face runs west): its A end is
-    // the cut between the east jamb (13) and the gap cell beside it.
+    // The wall over the head: the plaster quad from just over the head
+    // (inside the lintel's body) to the storey top over the whole gap
+    // (plus the hair every plaster cut overlaps by), one a face, in the
+    // plane of the finish beside it. To the street it is lit from jamb to
+    // jamb (the south face runs west): its A end is the cut between the
+    // east jamb (13) and the gap cell beside it.
     std::size_t headers = 0;
     for (const StaticPlacement& p : placed.placements) {
         if (p.role != PieceRole::WallPlaster || p.lightY != 15 ||
-            !(p.instance.position.y == doctest::Approx(head))) {
+            !(p.instance.position.y == doctest::Approx(head + 0.02F))) {
             continue;
         }
         ++headers;
         CHECK(p.instance.scale.y * plaster->height ==
-              doctest::Approx(render::kBandHeight - 0.01F - kDoorHeadHeight));
+              doctest::Approx(render::kBandHeight - 0.01F - kDoorHeadHeight - 0.02F));
         CHECK(p.instance.scale.x * plaster->width == doctest::Approx(2.0F + 2.0F * 0.005F));
         CHECK(p.gradient);
         if (p.instance.position.z == doctest::Approx(streetZ)) {
@@ -1150,7 +1163,7 @@ TEST_CASE("placement is a deterministic function of the tile map") {
             CHECK(p.lightX2 == (p.lightX == 152 ? 153 : 154));
         }
         if (p.role == PieceRole::WallPlaster && p.lightX == 152 && p.endAX == 153 &&
-            p.instance.position.y == doctest::Approx(render::bandSurface(19) + kDoorHeadHeight) &&
+            p.instance.position.y == doctest::Approx(render::bandSurface(19) + kDoorHeadHeight + 0.02F) &&
             p.instance.position.z == doctest::Approx(66.0F - gullProud)) {
             gullHeader = true;
             // Plaster to the street: the quad's face is its +Z, turned to
@@ -1366,7 +1379,7 @@ TEST_CASE("a door frame and the wall beside it share one light at the jamb") {
             continue;
         }
         if (p.role == PieceRole::WallPlaster &&
-            p.instance.position.y == doctest::Approx(render::bandSurface(19) + kDoorHeadHeight)) {
+            p.instance.position.y == doctest::Approx(render::bandSurface(19) + kDoorHeadHeight + 0.02F)) {
             frame = &p;
         }
         if (p.role == PieceRole::DoorPost) {
@@ -2371,7 +2384,7 @@ TEST_CASE("a door wears two jambs, on the cells that flank it, slim and cut to t
         }
         CHECK(p.lightY == 15);
         CHECK(p.lightZ == 19);
-        CHECK(p.mode == kDrawShaded);
+        CHECK(p.mode == kDrawFaced);
         // SLIM: the piece at its own section, a quarter of a metre across,
         // not the metre the cell is. This is the whole point.
         CHECK(p.instance.scale.x == doctest::Approx(spec->scale));
@@ -2403,7 +2416,7 @@ TEST_CASE("a door wears two jambs, on the cells that flank it, slim and cut to t
     CHECK(east == 2);
     // And the head beam across each pair of them, its underside on the
     // head, in the plane of its posts.
-    const float half = 0.5F * (lintel->maxX - lintel->minX) * lintel->scale;
+    const float half = 0.5F * lintel->width * lintel->scale;
     std::size_t heads = 0;
     for (const StaticPlacement& p : placed.placements) {
         if (p.role == PieceRole::Lintel && p.lightZ == 19 &&
@@ -2453,15 +2466,20 @@ TEST_CASE("the reveal is the post's own edge, and the room's plaster stops at it
             continue;
         }
         ++reveals;
-        CHECK(std::fabs(p.instance.position.x - (east ? 11.0F : 13.0F)) == doctest::Approx(0.006F));
+        // Half a millimetre into the opening: under a pixel, and never
+        // overlapping the post that stands on the plane itself.
+        const float off = std::fabs(p.instance.position.x - (east ? 11.0F : 13.0F));
+        CHECK(off > 0.0F);
+        CHECK(off < 0.001F);
         CHECK(std::fabs(p.instance.scale.x) * plaster->width == doctest::Approx(1.0F + 2.0F * back));
         CHECK(p.instance.position.y == doctest::Approx(render::bandSurface(19)));
     }
     CHECK(reveals == 2);
     // The room face of row 15 west of the door (cells 9..10, on the plane
-    // z = 15, its plaster proud of it into the room): its panel ends at
-    // x = 11 plus the hair every cut overlaps by, not a quarter of a
-    // metre past it into the opening.
+    // z = 15, its plaster proud of it into the room): its panel ends a
+    // hair INSIDE the post at x = 11 -- not the hair past it every other
+    // cut overlaps by, which drew as a line down the post's inner face,
+    // and not a quarter of a metre past it into the opening.
     bool westPanel = false;
     for (const StaticPlacement& p : placed.placements) {
         if (p.role != PieceRole::WallPlaster || p.lightZ != 19 || p.lightY != 15 ||
@@ -2477,7 +2495,7 @@ TEST_CASE("the reveal is the post's own edge, and the room's plaster stops at it
         const float x1 = std::max(p.instance.position.x, other);
         if (x1 > 10.5F && x1 < 11.5F && x0 < 10.0F) {
             westPanel = true;
-            CHECK(x1 == doctest::Approx(11.0F + 0.005F));
+            CHECK(x1 == doctest::Approx(11.0F - 0.005F));
         }
     }
     CHECK(westPanel);
