@@ -171,7 +171,7 @@ inline constexpr std::uint32_t kSaltLook = 0x4C4F4F4BU;  // "LOOK"
     return static_cast<std::uint32_t>(stepCount + static_cast<std::int64_t>(actorId) * 17);
 }
 
-/// A SMALL, STABLE, PER-ACTOR nudge within a body's own tile. Purely visual:
+/// A SMALL, STABLE, PER-TILE nudge within a body's own tile. Purely visual:
 /// nothing here is hashed, and it never moves a body off the sim's own
 /// one-tile grid -- the sim's one-per-cell rule is the only thing that says
 /// where a body IS, and this reads that position and never writes it back.
@@ -179,29 +179,31 @@ inline constexpr std::uint32_t kSaltLook = 0x4C4F4F4BU;  // "LOOK"
 /// ~0.9 m tile it stands on, so two bodies the sim has legitimately placed on
 /// ADJACENT tiles -- exactly what WardPopulation::sidestep now does far more
 /// often, on purpose -- could still read as one fused silhouette from some
-/// angles. Offsetting each body toward a different point in its own tile, by
-/// an id-keyed hash so two neighbours do not happen to lean toward each
-/// other, buys real clearance for an orthogonally-adjacent pair without ever
-/// contradicting where the sim says either of them is standing.
+/// angles.
+///
+/// NOT AN ID-KEYED HASH, AND THE FIRST VERSION WAS. An id-keyed offset knows
+/// nothing about where the actor's NEIGHBOUR is, so it is exactly as likely
+/// to lean two adjacent bodies together as apart -- the auditor hat measured
+/// it: averaged over every id pair, an orthogonally-adjacent pair's own
+/// clearance SHRANK in very close to half of them, sometimes to 0.70 of a
+/// tile from the 1.00 the grid itself guarantees. A push keyed on the TILE's
+/// own coordinates instead is provably correct instead of a coin flip: two
+/// cells that differ by exactly one step on an axis always differ in that
+/// axis's parity, so pushing toward -X on an even x and +X on an odd x (and
+/// the same on y) sends any orthogonally- or diagonally-adjacent pair's
+/// pushes in OPPOSITE directions on every axis they differ on, by
+/// construction -- not luck.
 ///
 /// EXPOSED, NOT FILE-LOCAL: test_scene3d.cpp pins every drawn instance
 /// against an independently computed expected position, so the test has to
 /// apply the identical nudge to agree with production -- a second hand-copied
 /// formula would silently drift from this one the first time either changed.
-[[nodiscard]] constexpr std::uint32_t personalSpaceHash(std::int32_t actorId) noexcept {
-    std::uint32_t h = static_cast<std::uint32_t>(actorId) * 0x9E3779B1u + 0x68E31DA4u;
-    h ^= h >> 15;
-    h *= 0x85EBCA6Bu;
-    h ^= h >> 13;
-    return h;
-}
+inline constexpr float kPersonalSpaceTiles = 0.15F;
 
-inline constexpr float kPersonalSpaceTiles = 0.3F;
-
-inline void personalSpaceNudge(std::int32_t actorId, float& px, float& py) noexcept {
-    const std::uint32_t h = personalSpaceHash(actorId);
-    px += (static_cast<float>(h & 0xFFu) / 255.0F - 0.5F) * kPersonalSpaceTiles;
-    py += (static_cast<float>((h >> 8) & 0xFFu) / 255.0F - 0.5F) * kPersonalSpaceTiles;
+inline void personalSpaceNudge(std::int32_t tileX, std::int32_t tileY, float& px,
+                               float& py) noexcept {
+    px += ((tileX & 1) == 0 ? -1.0F : 1.0F) * kPersonalSpaceTiles;
+    py += ((tileY & 1) == 0 ? -1.0F : 1.0F) * kPersonalSpaceTiles;
 }
 
 /// The placeholder figure for a kind: a closed box figure standing on y = 0,

@@ -191,6 +191,96 @@ TEST_CASE("crowds sidestep instead of gluing into a column at a chokepoint") {
     CHECK(std::adjacent_find(cells.begin(), cells.end()) == cells.end());
 }
 
+TEST_CASE("a blocked body does not oscillate: sidestep never doubles back on itself") {
+    // A played session found the bug a still frame could not: a body wedged
+    // against a blocked hop sidestepped off it, and the very next tick's
+    // replan routed it straight back onto the blocked hop's own cell, which
+    // sidestepped it off again -- eighty-plus ticks running, never actually
+    // going anywhere. The guard meant to stop exactly this compared against
+    // WardActor::prevX/Y, which tickActor resets to the CURRENT position at
+    // the top of every tick, before any policy runs -- so it could never
+    // fire. The fix is real cross-tick memory (cameFromX/Y/Band, written by
+    // tryEnter alone) plus preferring a strictly closer cell over a level
+    // one. This proves it over ten real minutes of the morning rush, not one
+    // frame: for every visible body, track how many ticks IN A ROW its
+    // current cell equals its cell from two ticks back -- the A-B-A-B
+    // cadence an oscillation makes -- and require the worst streak stays
+    // short. A genuine squeeze-past or a shove-and-reclaim trades a tile
+    // once or twice; it does not settle into a metronome.
+    const auto run = privateWard(7);
+    constexpr int kTicks = 600;
+    struct Recent {
+        std::int64_t twoAgo = -1;
+        std::int64_t oneAgo = -1;
+        std::int32_t streak = 0;
+    };
+    std::vector<Recent> recent(run->people().actors().size());
+    std::int32_t worstStreak = 0;
+    std::int32_t worstActor = -1;
+    for (int t = 0; t < kTicks; ++t) {
+        run->run(1);
+        for (const sim::WardActor& actor : run->people().actors()) {
+            if (!actor.visible()) {
+                continue;
+            }
+            Recent& r = recent[static_cast<std::size_t>(actor.id)];
+            const std::int64_t here = (static_cast<std::int64_t>(actor.band) << 40) |
+                                      (static_cast<std::int64_t>(actor.y) << 20) |
+                                      static_cast<std::int64_t>(actor.x);
+            r.streak = (here == r.twoAgo) ? r.streak + 1 : 0;
+            if (r.streak > worstStreak) {
+                worstStreak = r.streak;
+                worstActor = actor.id;
+            }
+            r.twoAgo = r.oneAgo;
+            r.oneAgo = here;
+        }
+    }
+    INFO("worst back-and-forth streak: ", worstStreak, " ticks, actor ", worstActor);
+    CHECK(worstStreak < 10);
+}
+
+TEST_CASE("nobody ever stands on the player's own tile") {
+    // tryEnter refuses the player's own cell outright, and sidestep's and
+    // tryPush's candidate loops pre-check the same rule -- but nothing
+    // proved it under real, sustained pressure until this. A busy corner of
+    // the Tarwalk near the authored spawn, ten real minutes of the morning
+    // rush, the player planted and never moving: if the refusal ever lapsed
+    // for even one tick, some body converging on that stretch of street
+    // would have landed on it.
+    const auto run = privateWard(7);
+    sim::WardPopulation& people = run->people();
+    std::int32_t px = 0;
+    std::int32_t py = 0;
+    std::int32_t pband = 0;
+    bool found = false;
+    for (std::int32_t dx = -3; dx <= 3 && !found; ++dx) {
+        for (std::int32_t dy = -3; dy <= 3 && !found; ++dy) {
+            const std::int32_t cx = 156 + dx;
+            const std::int32_t cy = 63 + dy;
+            if (sharedTiles().standable(cx, cy, 19) &&
+                people.nearestTo(cx, cy, 19, 0) == nullptr) {
+                px = cx;
+                py = cy;
+                pband = 19;
+                found = true;
+            }
+        }
+    }
+    REQUIRE(found);
+    people.setPlayer(px, py, pband);
+    for (int t = 0; t < 300; ++t) {
+        run->run(1);
+        for (const sim::WardActor& actor : people.actors()) {
+            if (!actor.visible()) {
+                continue;
+            }
+            INFO("tick ", t, " actor ", actor.id);
+            CHECK_FALSE((actor.x == px && actor.y == py && actor.band == pband));
+        }
+    }
+}
+
 TEST_CASE("no guard pile-ups: a watchman never shoves a watchman on duty") {
     // The Java build's own etiquette gate, and the reason the patrol yield is
     // the resolution mechanism instead of two watchmen wrestling in a doorway

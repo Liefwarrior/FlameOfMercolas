@@ -500,6 +500,25 @@ struct WardActor {
     std::int32_t prevX = 0;
     std::int32_t prevY = 0;
     std::int32_t prevBand = 0;
+    /// Where it stood immediately before its CURRENT cell -- NOT prevX/Y.
+    /// tickActor resets prevX/Y to the current position at the very top of
+    /// every tick, for the renderer's slide, before any policy runs -- so by
+    /// the time sidestep() could read it, prevX/Y already equals x/y and a
+    /// "never step straight back" check against it can never fire. Found the
+    /// hard way: a body wedged against a blocked hop sidestepped off it, and
+    /// the very next tick's replan routed it straight back onto the blocked
+    /// hop's own cell, which sidestepped it off again -- forever, one body
+    /// looping between two tiles and never actually going anywhere, an
+    /// oscillation a still frame cannot show and a play session immediately
+    /// can (a driven capture caught one running past eighty ticks in a row).
+    /// cameFromBand -1 means "never moved" (a real band is never negative).
+    /// Written by tryEnter alone, on every real move, BEFORE the position
+    /// changes, so it survives exactly one tick past the tickActor reset
+    /// that keeps ordinary prevX/Y from doing this job. HASHED: sidestep()
+    /// reads it to decide where a body may not go.
+    std::int32_t cameFromX = 0;
+    std::int32_t cameFromY = 0;
+    std::int32_t cameFromBand = -1;
     Angle facing = 0;
 
     std::int16_t needs[kNeedCount] = {0, 0, 0, 0, 0};

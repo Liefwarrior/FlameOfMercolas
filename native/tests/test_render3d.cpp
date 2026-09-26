@@ -463,7 +463,7 @@ TEST_CASE("the ward's people render as figures in the 3D frame") {
     // spot has to carry it too, or this looks for the un-nudged tile centre.
     float expectedX = static_cast<float>(subject->x) + 0.5F;
     float expectedZ = static_cast<float>(subject->y) + 0.5F;
-    personalSpaceNudge(subject->id, expectedX, expectedZ);
+    personalSpaceNudge(subject->x, subject->y, expectedX, expectedZ);
     bool subjectInstanced = false;
     for (const ActorInstance& body : scene.actors) {
         if (std::fabs(body.instance.position.x - expectedX) < 1e-4F &&

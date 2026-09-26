@@ -909,6 +909,12 @@ bool WardPopulation::tryEnter(WardActor& actor, std::int32_t nx, std::int32_t ny
     if (playerKnown_ && nx == playerX_ && ny == playerY_ && nband == playerBand_) {
         return false;
     }
+    // Recorded BEFORE the position changes, and on every real move -- this is
+    // the one write cameFromX/Y/Band ever gets. See the field's own comment
+    // for why prevX/Y cannot do this job.
+    actor.cameFromX = actor.x;
+    actor.cameFromY = actor.y;
+    actor.cameFromBand = actor.band;
     occupancy_.remove(cellKey(actor.x, actor.y, actor.band));
     actor.x = nx;
     actor.y = ny;
@@ -1079,55 +1085,72 @@ bool WardPopulation::sidestep(WardActor& actor, std::int32_t tx, std::int32_t ty
     // routeJitterHash again, the same reason the route search itself is
     // jittered: two bodies wedged shoulder to shoulder at one corner give way
     // to different sides rather than both reaching for the same open tile.
-    // A candidate only qualifies if it is standable, empty, not the tile the
-    // body just came from (no flicker-stepping back and forth), does not cut
-    // a solid corner (PathFinder's own rule, kept in step so a sidestep can
+    // A candidate only qualifies if it is standable, empty, does not cut a
+    // solid corner (PathFinder's own rule, kept in step so a sidestep can
     // never wedge a body into a pocket a route could not have planned it out
-    // of), and leaves it NO FARTHER from (tx, ty, tband) than it already
-    // stands. That last clause is the whole difference between spreading and
-    // wandering: a body may only ever sidestep level or closer, so a real
-    // crowd fans out and keeps closing rather than milling on the spot, and a
-    // genuine one-wide bottleneck -- every flank a wall or another body --
-    // finds nothing here and falls through to the ordinary wait-or-shove
-    // exactly as it always did.
+    // of), is not the player's own tile, and leaves it NO FARTHER from
+    // (tx, ty, tband) than it already stands.
+    //
+    // TWO PASSES, STRICTLY CLOSER FIRST. The first cut of this shipped with
+    // "no farther" as the only distance rule and a single pass, and a played
+    // session found the bug that left in: a body blocked at L sidesteps back
+    // to U (level, and first in its own rotation) because nothing preferred
+    // a cell that actually closes ground over one that merely does not lose
+    // any; the very next tick replans through L again, gets blocked again,
+    // and sidesteps back to U again -- forever, one body looping between two
+    // tiles and never actually going anywhere. A
+    // strictly closer cell, when one exists, is taken over a level one
+    // regardless of rotation order, so a body only ever mills sideways when
+    // there is truly nothing better -- and never NEVER back onto the one
+    // cell it just left (cameFromX/Y/Band, not prevX/Y -- see that field's
+    // own comment for why prevX/Y could never do this job).
     static constexpr std::int32_t dx[8] = {-1, 1, 0, 0, -1, 1, -1, 1};
     static constexpr std::int32_t dy[8] = {0, 0, -1, 1, -1, -1, 1, 1};
     const std::int32_t here = distanceFrom(actor.x, actor.y, actor.band, tx, ty, tband);
     const std::uint32_t rot = routeJitterHash(static_cast<std::uint32_t>(actor.id) + 1u,
                                               cellKey(actor.x, actor.y, actor.band)) &
                               7u;
-    for (int i = 0; i < 8; ++i) {
-        const int n = (static_cast<int>(rot) + i) & 7;
-        const std::int32_t nx = actor.x + dx[n];
-        const std::int32_t ny = actor.y + dy[n];
-        if (nx == actor.prevX && ny == actor.prevY && actor.band == actor.prevBand) {
-            continue;
+    for (int pass = 0; pass < 2; ++pass) {
+        const bool levelAllowed = pass == 1;
+        for (int i = 0; i < 8; ++i) {
+            const int n = (static_cast<int>(rot) + i) & 7;
+            const std::int32_t nx = actor.x + dx[n];
+            const std::int32_t ny = actor.y + dy[n];
+            const std::int32_t nz = tiles_->stepBand(actor.x, actor.y, actor.band, nx, ny);
+            if (nz == TileQuery::kNoBand) {
+                continue;
+            }
+            if (nx == actor.cameFromX && ny == actor.cameFromY && nz == actor.cameFromBand) {
+                continue;  // never step straight back onto the tile just left
+            }
+            if (n >= 4 &&
+                (tiles_->stepBand(actor.x, actor.y, actor.band, nx, actor.y) ==
+                     TileQuery::kNoBand ||
+                 tiles_->stepBand(actor.x, actor.y, actor.band, actor.x, ny) ==
+                     TileQuery::kNoBand)) {
+                continue;  // never cut a solid corner -- PathFinder's own rule
+            }
+            if (occupancy_.at(cellKey(nx, ny, nz)) >= kMaxOccupantsPerCell) {
+                continue;
+            }
+            if (playerKnown_ && nx == playerX_ && ny == playerY_ && nz == playerBand_) {
+                continue;  // his tile too -- tryEnter's own rule, checked here so
+                           // this loop's "cannot fail" stays true
+            }
+            const std::int32_t candidate = distanceFrom(nx, ny, nz, tx, ty, tband);
+            if (candidate > here) {
+                continue;
+            }
+            if (candidate == here && !levelAllowed) {
+                continue;  // pass 0: a real gain only, or wait for pass 1
+            }
+            tryEnter(actor, nx, ny, nz);  // the occupancy and player checks above mean this cannot fail
+            actor.route.clear();
+            actor.routeTargetX = -1;
+            actor.facing = facingFromDelta(nx - actor.prevX, ny - actor.prevY);
+            ++sidesteps_;
+            return true;
         }
-        const std::int32_t nz = tiles_->stepBand(actor.x, actor.y, actor.band, nx, ny);
-        if (nz == TileQuery::kNoBand) {
-            continue;
-        }
-        if (n >= 4 &&
-            (tiles_->stepBand(actor.x, actor.y, actor.band, nx, actor.y) == TileQuery::kNoBand ||
-             tiles_->stepBand(actor.x, actor.y, actor.band, actor.x, ny) == TileQuery::kNoBand)) {
-            continue;  // never cut a solid corner -- PathFinder's own rule
-        }
-        if (occupancy_.at(cellKey(nx, ny, nz)) >= kMaxOccupantsPerCell) {
-            continue;
-        }
-        if (playerKnown_ && nx == playerX_ && ny == playerY_ && nz == playerBand_) {
-            continue;  // his tile too -- tryEnter's own rule, checked here so
-                       // this loop's "cannot fail" stays true
-        }
-        if (distanceFrom(nx, ny, nz, tx, ty, tband) > here) {
-            continue;
-        }
-        tryEnter(actor, nx, ny, nz);  // the occupancy and player checks above mean this cannot fail
-        actor.route.clear();
-        actor.routeTargetX = -1;
-        actor.facing = facingFromDelta(nx - actor.prevX, ny - actor.prevY);
-        ++sidesteps_;
-        return true;
     }
     return false;
 }
@@ -2852,6 +2875,14 @@ void WardPopulation::hash_into(HashSink& sink) const {
         sink.put_int(static_cast<std::uint32_t>(actor.x));
         sink.put_int(static_cast<std::uint32_t>(actor.y));
         sink.put_int(static_cast<std::uint32_t>(actor.band));
+        // cameFromX/Y/Band, appended -- sidestep() reads it to refuse
+        // stepping straight back onto the cell just left, so the hash must
+        // cover it like every other scalar a policy reads (prevX/Y stay
+        // unhashed on purpose: the renderer's own interpolation state, read
+        // by no policy).
+        sink.put_int(static_cast<std::uint32_t>(actor.cameFromX));
+        sink.put_int(static_cast<std::uint32_t>(actor.cameFromY));
+        sink.put_int(static_cast<std::uint32_t>(actor.cameFromBand));
         sink.put_short(static_cast<std::uint32_t>(actor.facing));
         for (std::size_t n = 0; n < kNeedCount; ++n) {
             sink.put_short(static_cast<std::uint32_t>(actor.needs[n]));

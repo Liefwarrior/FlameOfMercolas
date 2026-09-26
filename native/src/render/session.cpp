@@ -5340,6 +5340,37 @@ void Session::step(const sim::MoveInput& input) {
     clearIfClosed(handsAnim_, handsCache_);
     clearIfClosed(turnAnim_, turnCache_);
 
+    // STREET SENSES (9a completion), AND CROWD FLOW: WHERE THE PLAYER IS,
+    // pushed to the district every step the way syncTavernToBody pushes it to
+    // the room -- so a frightened body flees AWAY from him (actFlee) and
+    // cowers FACING him (actCower) instead of in a drawn direction, and so a
+    // blocked body's tryEnter/sidestep refuse to route onto his own tile.
+    // Whole tiles; the ward interpolates nothing off it. This is the client
+    // side of the ONE declared population field; the sim hashes it, the
+    // client only feeds it.
+    //
+    // PUSHED BEFORE engine_->tick(), NOT AFTER -- an auditor pass caught the
+    // staleness the old order left in: pushed after the tick, the ward's own
+    // movement this second always ran against WHERE THE PLAYER STOOD AS OF
+    // THE START OF THE SECOND, up to a full second behind a player who is
+    // sprinting. A body could route onto -- or refuse to leave -- a tile the
+    // player had already left a second ago, or fail to refuse one he had
+    // already reached. Pushed here, the tick that is about to run reads
+    // wherever he is on THIS step, same as every other client-fed field.
+    if (people_ != nullptr) {
+        people_->setPlayer(body_->tileX(), body_->tileY(), body_->band());
+        // STREET SENSES leg (c): and whether he PRESENTS AS A WIELDER -- the
+        // tavern's own deference gate, pushed so the street Watch reads the
+        // same answer the Gull's does (D6: absolute, Gull and street).
+        people_->setPlayerPresentsAsWielder(tavern_->playerPresentsAsWielder());
+        // AND WHETHER HE IS INDOORS -- a house's own brawl is not street
+        // business (test_scripted_lines.cpp's nemesis line found this: the
+        // alarm below already crosses the Gull's open door on purpose, for
+        // the ordinary crowd, but the Watch has no jurisdiction over what
+        // Watchman Cull's own separate watch already polices).
+        people_->setPlayerIndoors(tavern_->playerInside());
+    }
+
     // One engine tick a simulated second. clockScale > 1 makes the world's
     // clock run faster than the body's, which is how a capture reaches a named
     // hour without simulating the whole afternoon.
@@ -5374,23 +5405,6 @@ void Session::step(const sim::MoveInput& input) {
     // only through the door. people_ is null in a session without a district
     // (the tavern fixture), and then the street is nobody.
     if (people_ != nullptr) {
-        // STREET SENSES (9a completion). WHERE THE PLAYER IS, pushed to the
-        // district every step the way syncTavernToBody pushes it to the room --
-        // so a frightened body flees AWAY from him (actFlee) and cowers FACING
-        // him (actCower), instead of in a drawn direction. Whole tiles; the
-        // ward interpolates nothing off it. This is the client side of the ONE
-        // declared population field; the sim hashes it, the client only feeds it.
-        people_->setPlayer(body_->tileX(), body_->tileY(), body_->band());
-        // STREET SENSES leg (c): and whether he PRESENTS AS A WIELDER -- the
-        // tavern's own deference gate, pushed so the street Watch reads the
-        // same answer the Gull's does (D6: absolute, Gull and street).
-        people_->setPlayerPresentsAsWielder(tavern_->playerPresentsAsWielder());
-        // AND WHETHER HE IS INDOORS -- a house's own brawl is not street
-        // business (test_scripted_lines.cpp's nemesis line found this: the
-        // alarm below already crosses the Gull's open door on purpose, for
-        // the ordinary crowd, but the Watch has no jurisdiction over what
-        // Watchman Cull's own separate watch already polices).
-        people_->setPlayerIndoors(tavern_->playerInside());
         std::int32_t roomHp = 0;
         std::int32_t corpses = 0;
         bool flooredInReach = false;

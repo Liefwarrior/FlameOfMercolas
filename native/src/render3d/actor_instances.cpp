@@ -414,7 +414,7 @@ std::vector<ActorInstance> actorInstances(const render::Session& session,
         float py = down ? static_cast<float>(actor.y) + 0.5F
                         : static_cast<float>(actor.prevY) +
                               static_cast<float>(actor.y - actor.prevY) * slide + 0.5F;
-        personalSpaceNudge(actor.id, px, py);
+        personalSpaceNudge(actor.x, actor.y, px, py);
         const float distance = planarDistance(view, px, py);
         if (distance > params.maxDistance) {
             continue;
