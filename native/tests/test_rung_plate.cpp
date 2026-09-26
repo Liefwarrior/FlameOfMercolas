@@ -817,30 +817,40 @@ TEST_CASE("a bouncer's warning is never the line dimmed: on every frame it is on
 }
 
 TEST_CASE("the drawn wiring: under a plate the alert row's amber is well under the same frame's without one") {
-    // Two sessions, the same lead read (the line on the row), a rung in one.
-    // The frames differ only where the rows differ: the plate above the
-    // aim prompt's fence, the alert row below it. Amber is r - b; summed
-    // over exactly the pixels the two frames disagree on, the plated frame
-    // carries the row at half weight and one register down -- well under
-    // the plain frame's, and not nothing.
+    // Three sessions on one world: no line at all, the same lead read (the
+    // line on the row), and the line with a rung. The frames differ only
+    // where the rows differ: the plate above the aim prompt's fence, the
+    // alert row below it. Amber is r - b, and the world under the row is
+    // warm too (the Mission's boards), so the line's own amber is what each
+    // frame carries OVER the lineless one, summed on exactly the pixels the
+    // two lined frames disagree on: the plated frame's row is at half weight
+    // and one register down -- well under the plain frame's, and not
+    // nothing.
+    Session bare(configAt("mission-backroom"));
     Session plain(configAt("mission-backroom"));
     Session plated(configAt("mission-backroom"));
+    wake(bare);
     wake(plain);
     wake(plated);
     plain.examine();
     plated.examine();
     crackABox(plated);
+    bare.stepMany(sim::MoveInput{}, kPageEaseSteps + 2);
     plain.stepMany(sim::MoveInput{}, kPageEaseSteps + 2);
     plated.stepMany(sim::MoveInput{}, kPageEaseSteps + 2);
     REQUIRE_FALSE(plain.rungPlateWanted());
     REQUIRE(plated.rungPlateWanted());
     REQUIRE(plated.rungPlateFade() == 1.0F);
     REQUIRE(plain.alertFadeNow() == 1.0F);
+    REQUIRE(bare.alertFadeNow() == 0.0F);
+    Framebuffer none(960, 540);
     Framebuffer a(960, 540);
     Framebuffer b(960, 540);
+    (void)bare.drawFrame(none);
     (void)plain.drawFrame(a);
     (void)plated.drawFrame(b);
     const CentreRect fence = hudAimRect(960, 540);
+    const auto amber = [](const Rgb& p) { return static_cast<double>(std::max(0.0F, p.r - p.b)); };
     double whole = 0.0;
     double under = 0.0;
     std::size_t differing = 0;
@@ -851,16 +861,15 @@ TEST_CASE("the drawn wiring: under a plate the alert row's amber is well under t
                 continue;
             }
             ++differing;
-            const Rgb pa = unpackRgb(a.pixels()[i]);
-            const Rgb pb = unpackRgb(b.pixels()[i]);
-            whole += static_cast<double>(std::max(0.0F, pa.r - pa.b));
-            under += static_cast<double>(std::max(0.0F, pb.r - pb.b));
+            const double ground = amber(unpackRgb(none.pixels()[i]));
+            whole += std::max(0.0, amber(unpackRgb(a.pixels()[i])) - ground);
+            under += std::max(0.0, amber(unpackRgb(b.pixels()[i])) - ground);
         }
     }
     INFO("differing ", differing, " whole ", whole, " under ", under);
     REQUIRE(differing > 0);
     REQUIRE(whole > 0.0);
-    CHECK(under < 0.6 * whole);
+    CHECK(under < 0.5 * whole);
     CHECK(under > 0.02 * whole);
 }
 
