@@ -680,10 +680,13 @@ TEST_CASE("a toast never starts ahead of a plate waiting behind a page, and a pl
     // must not start ahead of it when the page goes down -- it would only
     // be cut the moment the plate rose.
     runTheRoofs(session);
+    session.stepMany(sim::MoveInput{}, 1);
+    CHECK(session.rungPlateQueued() == 1);
+    // The skill a step LATER than the rung, so it is a toast and not the
+    // queued plate's own tick.
     while (!skills.use(sim::kBlockSkill)) {
     }
     session.stepMany(sim::MoveInput{}, 1);
-    CHECK(session.rungPlateQueued() == 1);
     CHECK_FALSE(session.skillToastWanted());
     session.toggleCasebook();
     REQUIRE_FALSE(session.casebookOpen());
@@ -698,6 +701,7 @@ TEST_CASE("a toast never starts ahead of a plate waiting behind a page, and a pl
     }
     REQUIRE(session.rungPlateWanted());
     CHECK(session.rungPlateText().head == headFor(sim::LegendTrack::Roofs, 1));
+    CHECK(session.rungPlateText().tick.empty());
     // The line said before the first plate: capped at its dismissal, so it
     // is gone well inside the second plate's hold rather than surfacing
     // whole after it.
