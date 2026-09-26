@@ -851,9 +851,21 @@ TEST_CASE("the drawn wiring: under a plate the alert row's amber is well under t
     (void)plated.drawFrame(b);
     const CentreRect fence = hudAimRect(960, 540);
     const auto amber = [](const Rgb& p) { return static_cast<double>(std::max(0.0F, p.r - p.b)); };
+    // Three readings of the same pixels. THE PEAK: the row's brightest amber
+    // over the boards, which halving the alpha halves whatever the register.
+    // THE HEIGHT: how many pixel rows the amber stands, which stepping the
+    // register down shortens whatever the alpha. THE SUM, coarsely.
     double whole = 0.0;
     double under = 0.0;
+    double aPeak = 0.0;
+    double bPeak = 0.0;
+    int aTop = 540;
+    int aBottom = -1;
+    int bTop = 540;
+    int bBottom = -1;
     std::size_t differing = 0;
+    std::size_t aInk = 0;
+    std::size_t bInk = 0;
     for (int y = fence.y1; y < 540; ++y) {
         for (int x = 0; x < 960; ++x) {
             const std::size_t i = a.index(x, y);
@@ -862,14 +874,37 @@ TEST_CASE("the drawn wiring: under a plate the alert row's amber is well under t
             }
             ++differing;
             const double ground = amber(unpackRgb(none.pixels()[i]));
-            whole += std::max(0.0, amber(unpackRgb(a.pixels()[i])) - ground);
-            under += std::max(0.0, amber(unpackRgb(b.pixels()[i])) - ground);
+            const double ea = amber(unpackRgb(a.pixels()[i])) - ground;
+            const double eb = amber(unpackRgb(b.pixels()[i])) - ground;
+            whole += std::max(0.0, ea);
+            under += std::max(0.0, eb);
+            if (ea > 0.02) {
+                ++aInk;
+                aTop = std::min(aTop, y);
+                aBottom = std::max(aBottom, y);
+                aPeak = std::max(aPeak, ea);
+            }
+            if (eb > 0.02) {
+                ++bInk;
+                bTop = std::min(bTop, y);
+                bBottom = std::max(bBottom, y);
+                bPeak = std::max(bPeak, eb);
+            }
         }
     }
-    INFO("differing ", differing, " whole ", whole, " under ", under);
+    INFO("differing ", differing, " whole ", whole, " under ", under, " aInk ", aInk, " bInk ",
+         bInk, " a rows ", aTop, "..", aBottom, " b rows ", bTop, "..", bBottom, " aPeak ", aPeak,
+         " bPeak ", bPeak);
     REQUIRE(differing > 0);
-    REQUIRE(whole > 0.0);
-    CHECK(under < 0.5 * whole);
+    REQUIRE(aInk > 0);
+    REQUIRE(bInk > 0);
+    // Half weight: the brightest amber under the plate is well under the
+    // plain frame's.
+    CHECK(bPeak < 0.7 * aPeak);
+    // One register down: the amber stands fewer pixel rows tall.
+    CHECK(bBottom - bTop < aBottom - aTop);
+    // And in sum: dimmer, and not nothing.
+    CHECK(under < 0.75 * whole);
     CHECK(under > 0.02 * whole);
 }
 
