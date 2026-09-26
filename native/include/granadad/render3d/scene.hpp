@@ -404,7 +404,10 @@ inline constexpr std::uint8_t kDrawPaneRamp = 3;
 ///
 /// The adapter uploads it ONCE and fits it to each halo's own local span.
 inline constexpr int kHaloFanSegments = 24;
-inline constexpr int kHaloFanRings = 5;
+/// Nine rings, not five: the skirt is piecewise linear between rings, and
+/// with five the kinks read as facets once a fog lifts the background to
+/// grey under a white core (the player's first).
+inline constexpr int kHaloFanRings = 9;
 /// The flat hot core is a fraction of the SPAN, and the span grew with the
 /// pool (static_pieces.cpp, kLanternFlameWidth 1.5 m now): 0.16 of 1.5 is
 /// the same 0.24 m core the 0.22 of 1.1 was, so the flame still reads as a

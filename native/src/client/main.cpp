@@ -3895,8 +3895,8 @@ struct SceneRig {
         // table they index). Per frame, off sim state, never written back:
         // TAKE removes a thing in the sim and the next frame has one fewer.
         {
-            const std::vector<render3d::StaticInstance> things =
-                render3d::groundItemInstances(session, catalogue, session.camera());
+            const std::vector<render3d::StaticInstance> things = render3d::groundItemInstances(
+                session, catalogue, session.camera(), 40.0F, world->pool(), &world->spill());
             scene.statics.insert(scene.statics.end(), things.begin(), things.end());
         }
         // A LANE: the people. Sixteen placeholder rigs put once (the adapter
@@ -3908,6 +3908,7 @@ struct SceneRig {
         // by that lantern and not drawn in its daylight coat.
         render3d::ActorSceneParams actorParams;
         actorParams.pool = world->pool();
+        actorParams.spill = &world->spill();
         scene.actors = render3d::actorInstances(session, session.camera(), actorParams);
         // V LANE: the player's own hands. The placeholder parts put once
         // (the adapter swaps in the arms glb by name where it has one), the

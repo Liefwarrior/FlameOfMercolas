@@ -48,6 +48,7 @@
 // says so on every build.
 
 #include <cstdint>
+#include <unordered_map>
 #include <vector>
 
 #include "granadad/render/atlas.hpp"
@@ -112,7 +113,20 @@ struct ChunkLighting {
     /// list): the colour stage then shapes `glow` with pooledGlow() as it
     /// always did, so a hand-built lighting reads exactly as before.
     const render::LampGlow* pool = nullptr;
+    /// THE SPILL (world_scene.cpp, spillMap): the candle a lit pane lays on
+    /// the wall cells round it, as a glow ADDED to the pool at those cells
+    /// -- keyed by cellKey(x, y, z). Null or empty means no pane is up.
+    const std::unordered_map<std::uint64_t, render::Rgb>* spill = nullptr;
 };
+
+/// The key the spill map is kept under: a cell's three coordinates packed,
+/// the same for the chunk colour stage and the piece relight.
+[[nodiscard]] constexpr std::uint64_t cellKey(std::int32_t x, std::int32_t y,
+                                              std::int32_t z) noexcept {
+    return (static_cast<std::uint64_t>(static_cast<std::uint32_t>(x)) << 42) ^
+           (static_cast<std::uint64_t>(static_cast<std::uint32_t>(y)) << 21) ^
+           static_cast<std::uint64_t>(static_cast<std::uint32_t>(z));
+}
 
 /// The key a set of dynamic lamps hashes to. Zero for an empty set.
 [[nodiscard]] std::uint32_t dynamicLampKey(const std::vector<render::Lamp>& lamps) noexcept;

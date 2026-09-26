@@ -43,6 +43,7 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <unordered_map>
 #include <vector>
 
 #include "granadad/render/lamps.hpp"
@@ -189,6 +190,15 @@ private:
     void build(Slot& s, ChunkKey key);
     void placePieces();
     void relightPieces(const ChunkLighting& lighting);
+    /// Whether placement `p`'s pane is up under this lighting: lit by a lamp
+    /// that reaches its room, or by the light law at this hour.
+    [[nodiscard]] bool paneUpUnder(const StaticPlacement& p, const ChunkLighting& lighting,
+                                   bool night, float hour) const noexcept;
+    /// THE SPILL MAP: the candle every pane that is up lays on the wall
+    /// cells round it (its own wall cell in full, the two along the wall and
+    /// the street cell before it at half), rebuilt when the lighting bucket
+    /// moves, read by the chunk colour stage and the piece relight.
+    void buildSpill(const ChunkLighting& lighting);
 
     const sim::TileQuery* tiles_;
     const render::TileAtlas* atlas_;
@@ -211,6 +221,12 @@ private:
     static constexpr std::size_t kLitSlots = 5;
     std::vector<Rgba8> litTints_;
     std::uint32_t litVersion_ = 0;
+    std::unordered_map<std::uint64_t, render::Rgb> spill_;
+
+public:
+    [[nodiscard]] const std::unordered_map<std::uint64_t, render::Rgb>& spill() const noexcept {
+        return spill_;
+    }
 };
 
 }  // namespace granadad::render3d

@@ -81,7 +81,7 @@
     "lamp_chain":  { "pack": "PolygonGeneric", "file": "SM_Gen_Prop_Chain_01.gltf",       "height": 2.25, "scale": 0.2, "maxDistance": 48 },
     "flame":       { "pack": "PolygonGeneric", "file": "SM_Bld_Base_Wall_Thin_01.gltf",   "width": 2.5, "height": 3.0, "thickness": 0.0, "front": "+z", "selfLit": true, "twoSided": true, "maxDistance": 56 },
     "ember":       { "pack": "PolygonDungeonRealms", "file": "SM_Prop_Dwarf_Fire_Pit_01.gltf", "extent": [-0.9873, -2.0785, 0.9873, 2.0785], "selfLit": true, "tint": [255, 210, 170], "maxDistance": 48 },
-    "lamp_post":   { "pack": "PolygonKnights", "file": "SM_Prop_Lampost_01.gltf",         "selfLit": true, "maxDistance": 64 },
+    "lamp_post":   { "pack": "PolygonKnights", "file": "SM_Prop_Lampost_01.gltf", "glassBand": [2.25, 2.65], "glassUv": [0.32, 0.335, 0.235, 0.25],         "selfLit": true, "maxDistance": 64 },
     "brazier":     { "pack": "PolygonKnights", "file": "SM_Prop_Brazier_01.gltf",         "scale": 0.6, "selfLit": true, "maxDistance": 48 },
     "chimney":     { "pack": "PolygonKnights", "files": ["SM_Bld_House_Chimney_02.gltf", "SM_Bld_House_Chimney_03.gltf", "SM_Bld_House_Chimney_01.gltf"], "scale": 0.45, "tint": [150, 132, 122], "maxDistance": 80 },
     "roof_tile":   { "pack": "PolygonDungeonRealms", "files": ["SM_Env_Tiles_Loose_01.gltf", "SM_Env_Tiles_Loose_02.gltf", "SM_Env_Tiles_Loose_04.gltf"], "scale": 0.55, "lift": 0.1, "tint": [178, 172, 162], "maxDistance": 48 },

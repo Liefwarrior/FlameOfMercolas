@@ -407,6 +407,12 @@ struct Backend::Impl {
     /// and not found, never asked for again.
     std::map<std::string, std::unique_ptr<StaticModel>> statics;
     std::vector<DeferredMesh> deferred;
+    /// The halos, held back further still -- past the weather's veils --
+    /// so a lamp's glow is seen THROUGH the fog rather than veiled with the
+    /// wall behind it (the player's second: lanterns went to fog grey
+    /// before the sacks beside them). The world scene has already taken the
+    /// fog's share off their alpha by distance (kHaloFogShare).
+    std::vector<DeferredMesh> halos;
     /// The blend shader (GL 3.3) and its uniform slots; id 0 = not
     /// available, and the pieces draw with the average of their two tints.
     Shader blend{};
@@ -586,7 +592,8 @@ struct Backend::Impl {
     /// (the vertex's local y), uploaded. Empty (no triangles) when none
     /// pass. The source is left alone.
     template <typename Keep, typename ColourAt>
-    [[nodiscard]] static Mesh rebuiltTriangles(const Mesh& src, Keep keep, ColourAt colourAt) {
+    [[nodiscard]] static Mesh rebuiltTriangles(const Mesh& src, Keep keep, ColourAt colourAt,
+                                               bool withColours = true) {
         Mesh out{};
         const int triangles = src.triangleCount;
         const auto index = [&src](int tri, int corner) {
@@ -607,7 +614,11 @@ struct Backend::Impl {
                                                  : nullptr;
         out.normals = src.normals != nullptr ? rlAlloc<float>(static_cast<std::size_t>(out.vertexCount) * 3U)
                                              : nullptr;
-        out.colors = rlAlloc<unsigned char>(static_cast<std::size_t>(out.vertexCount) * 4U);
+        // No colour array unless asked: on the GL 1.1 path a colour array
+        // REPLACES the material colour (see tinted()), so a metal mesh that
+        // carried one would lose its tint and its night cap there.
+        out.colors =
+            withColours ? rlAlloc<unsigned char>(static_cast<std::size_t>(out.vertexCount) * 4U) : nullptr;
         int at = 0;
         for (int tri = 0; tri < triangles; ++tri) {
             if (!keep(tri)) {
@@ -627,11 +638,13 @@ struct Backend::Impl {
                     out.normals[at * 3 + 1] = src.normals[from * 3 + 1];
                     out.normals[at * 3 + 2] = src.normals[from * 3 + 2];
                 }
-                const Rgba8 c = colourAt(src.vertices[from * 3 + 1]);
-                out.colors[at * 4] = c.r;
-                out.colors[at * 4 + 1] = c.g;
-                out.colors[at * 4 + 2] = c.b;
-                out.colors[at * 4 + 3] = c.a;
+                if (out.colors != nullptr) {
+                    const Rgba8 c = colourAt(src.vertices[from * 3 + 1]);
+                    out.colors[at * 4] = c.r;
+                    out.colors[at * 4 + 1] = c.g;
+                    out.colors[at * 4 + 2] = c.b;
+                    out.colors[at * 4 + 3] = c.a;
+                }
                 ++at;
             }
         }
@@ -681,22 +694,27 @@ struct Backend::Impl {
                 if (src.vertices == nullptr || src.triangleCount <= 0) {
                     continue;
                 }
+                // Glass is a triangle whose EVERY vertex lies in the band and
+                // on the patch: a rim ring that straddles the band's edge is
+                // metal whole, not a sawtooth of half its quads (the auditor's
+                // first).
                 const auto inGlass = [&src, &ref](int tri) {
-                    float cy = 0.0F;
-                    bool onPatch = true;
                     for (int corner = 0; corner < 3; ++corner) {
                         const int slot = tri * 3 + corner;
                         const int from = src.indices != nullptr ? static_cast<int>(src.indices[slot]) : slot;
-                        cy += src.vertices[from * 3 + 1];
+                        const float y = src.vertices[from * 3 + 1];
+                        if (y < ref.glassBandLo || y > ref.glassBandHi) {
+                            return false;
+                        }
                         if (src.texcoords != nullptr) {
                             const float u = src.texcoords[from * 2];
                             const float v = src.texcoords[from * 2 + 1];
-                            onPatch = onPatch && u >= ref.glassU0 && u <= ref.glassU1 && v >= ref.glassV0 &&
-                                      v <= ref.glassV1;
+                            if (u < ref.glassU0 || u > ref.glassU1 || v < ref.glassV0 || v > ref.glassV1) {
+                                return false;
+                            }
                         }
                     }
-                    cy /= 3.0F;
-                    return onPatch && cy >= ref.glassBandLo && cy <= ref.glassBandHi;
+                    return true;
                 };
                 float lo = 0.0F;
                 float hi = 1.0F;
@@ -709,7 +727,17 @@ struct Backend::Impl {
                 }
                 Mesh rest = rebuiltTriangles(
                     src, [&inGlass](int tri) { return !inGlass(tri); },
-                    [](float) { return Rgba8{255, 255, 255, 255}; });
+                    [](float) { return Rgba8{255, 255, 255, 255}; }, false);
+                if (rest.triangleCount == 0) {
+                    // Every triangle was glass: the glass takes the slot.
+                    UnloadMesh(m.meshes[i]);
+                    m.meshes[i] = glass;
+                    model.glass[static_cast<std::size_t>(i)] = true;
+                    model.translucent[static_cast<std::size_t>(i)] = false;
+                    model.ramped.resize(static_cast<std::size_t>(m.meshCount), false);
+                    model.ramped[static_cast<std::size_t>(i)] = true;
+                    continue;
+                }
                 // The model's arrays, one longer: the rest in the glass's old
                 // slot, the glass appended on the same material.
                 const int n = m.meshCount + 1;
@@ -878,7 +906,7 @@ struct Backend::Impl {
         // held back with the glass so it draws over the lantern's own pane
         // and over the people: one deferred entry, never one per sub-mesh.
         if (tints.mode == kDrawHalo) {
-            deferred.push_back(DeferredMesh{model, 0, full, tints, mirrored});
+            halos.push_back(DeferredMesh{model, 0, full, tints, mirrored});
             ++stats.staticsDrawn;
             ++stats.instancesDrawn;
             return;
@@ -1545,6 +1573,7 @@ struct Backend::Impl {
         }
         statics.clear();
         deferred.clear();
+        halos.clear();
         if (haloFanReady) {
             UnloadMesh(haloFan);
             haloFan = Mesh{};
@@ -1724,6 +1753,7 @@ SceneStats Backend::drawScene(const SceneDescription& scene) {
     // back until the people are in.
     impl.ensureBlendShader();
     impl.deferred.clear();
+    impl.halos.clear();
     for (const StaticInstance& piece : scene.statics) {
         impl.drawStatic(piece, scene, stats);
     }
@@ -1753,6 +1783,11 @@ SceneStats Backend::drawScene(const SceneDescription& scene) {
     for (const Instance& veil : scene.veils) {
         impl.drawInstance(veil, stats);
     }
+    // The halos, last: through the veils, depth-tested against the world.
+    for (const DeferredMesh& glow : impl.halos) {
+        impl.drawStaticMesh(*glow.model, glow.mesh, glow.transform, glow.tints, glow.mirrored, stats);
+    }
+    impl.halos.clear();
     EndMode3D();
     // The hands, last, in their own pass over everything.
     impl.drawViewmodel(scene.viewmodel, stats);

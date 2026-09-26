@@ -234,15 +234,20 @@ inline constexpr float kPoolFloor = 0.15F;
 /// lantern (luminance 18: 4.8 tiles baked, 8.4 pooled).
 inline constexpr float kPoolReach = 1.75F;
 inline constexpr float kPoolRadiusCap = 8.5F;
-inline constexpr float kPoolRadiusFloor = 6.0F;
 /// The hot core's half-value distance, in tiles, and the shares of the two
 /// terms (they sum to one, so the lamp's own cell keeps its peak).
-inline constexpr float kPoolCoreRadius = 1.0F;
-inline constexpr float kPoolCoreShare = 0.6F;
+inline constexpr float kPoolCoreRadius = 1.4F;
+inline constexpr float kPoolCoreShare = 0.7F;
 inline constexpr float kPoolVerticalWeight = 4.5F;
+/// The pool stands a little over the law's own peak -- the surface clamp is
+/// 1.15 (world_scene.cpp) -- so the cobbles and the plaster directly under a
+/// lantern come out plainly lit and the pool has a middle, not just a rim.
+/// The law's field keeps its own peak; this touches surfaces only.
+inline constexpr float kPoolPeakScale = 1.15F;
 
 /// The pool's radius for an authored luminance: the baked radius times
-/// kPoolReach, held between the floor and the cap.
+/// kPoolReach, held under the cap (the baked radius's own floor of 3.5
+/// tiles makes the pool's 6.1).
 [[nodiscard]] float poolRadiusOf(std::int32_t luminance) noexcept;
 
 /// The pool's value at `distance` tiles from a lamp of this luminance, the
@@ -286,7 +291,8 @@ private:
     /// `verticalWeight` tiles per band. The baked field and the pool share
     /// this and differ only in what they pass.
     void accumulateWith(const std::vector<Lamp>& lamps, float verticalWeight,
-                        float (*reachOf)(std::int32_t), float (*shape)(std::int32_t, float));
+                        float (*reachOf)(std::int32_t), float (*shape)(std::int32_t, float),
+                        Rgb (*colourOf)(LampWarmth));
 
     std::int32_t sizeX_ = 0;
     std::int32_t sizeY_ = 0;

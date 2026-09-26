@@ -544,6 +544,18 @@ MeshData colourChunk(const ChunkGeometry& geometry, const ChunkLighting& lightin
                                                       std::max(baked.g, live.g),
                                                       std::max(baked.b, live.b)});
             }
+            // The pool gutters with the wind as the halos do; a candle
+            // behind glass (the spill, below) does not.
+            pool = render::Rgb{pool.r * sky.haloScale, pool.g * sky.haloScale, pool.b * sky.haloScale};
+            // THE SPILL: a lit pane's candle on the cells round it.
+            if (lighting.spill != nullptr && !lighting.spill->empty()) {
+                const auto found = lighting.spill->find(cellKey(x, y, z));
+                if (found != lighting.spill->end()) {
+                    pool.r += found->second.r;
+                    pool.g += found->second.g;
+                    pool.b += found->second.b;
+                }
+            }
             surface = render::Rgb{sky.ambient.r + pool.r, sky.ambient.g + pool.g,
                                   sky.ambient.b + pool.b};
             lastX = x;

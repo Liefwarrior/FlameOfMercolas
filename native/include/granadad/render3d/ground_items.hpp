@@ -24,8 +24,10 @@
 // Floats are legal here (render-side); nothing in this file is read by the
 // simulation.
 
+#include <unordered_map>
 #include <vector>
 
+#include "granadad/render/lighting.hpp"
 #include "granadad/render3d/scene.hpp"
 #include "granadad/render3d/static_pieces.hpp"
 
@@ -41,9 +43,14 @@ namespace granadad::render3d {
 /// then the bale. Pure over the session and the catalogue; appended to
 /// SceneDescription::statics by the caller (after WorldScene::refresh wrote
 /// the placed pieces, whose piece table the instances index).
-[[nodiscard]] std::vector<StaticInstance> groundItemInstances(const render::Session& session,
-                                                              const StaticCatalogue& catalogue,
-                                                              const render::Camera& view,
-                                                              float maxDistance = 40.0F);
+/// `pool` and `spill` are WorldScene::pool() and WorldScene::spill(): the
+/// light a thing on the ground wears is the light the cobbles under it
+/// wear (the auditor's fifth: items read the law's raw glow, so a rope a
+/// tile from a lantern outshone the setts it lay on). Null falls back to
+/// the law's glow shaped by pooledGlow().
+[[nodiscard]] std::vector<StaticInstance> groundItemInstances(
+    const render::Session& session, const StaticCatalogue& catalogue, const render::Camera& view,
+    float maxDistance = 40.0F, const render::LampGlow* pool = nullptr,
+    const std::unordered_map<std::uint64_t, render::Rgb>* spill = nullptr);
 
 }  // namespace granadad::render3d

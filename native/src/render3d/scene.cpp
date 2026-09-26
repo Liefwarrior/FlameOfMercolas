@@ -326,6 +326,13 @@ std::uint64_t sceneHash(const SceneDescription& scene) noexcept {
         h.mixU64(static_cast<std::uint64_t>(piece.file.size()));
         if (!piece.file.empty()) {
             h.mix(piece.file.data(), piece.file.size());
+            // The glass cut is part of the picture a piece draws.
+            h.mixF32(piece.glassBandLo);
+            h.mixF32(piece.glassBandHi);
+            h.mixF32(piece.glassU0);
+            h.mixF32(piece.glassU1);
+            h.mixF32(piece.glassV0);
+            h.mixF32(piece.glassV1);
         }
     }
     h.mixU64(static_cast<std::uint64_t>(scene.statics.size()));

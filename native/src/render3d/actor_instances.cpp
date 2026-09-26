@@ -4,6 +4,7 @@
 #include <cmath>
 
 #include "granadad/render/lighting.hpp"
+#include "granadad/render3d/chunk_mesher.hpp"
 #include "granadad/render/session.hpp"
 #include "granadad/render/vertical.hpp"
 #include "granadad/render/world_renderer.hpp"
@@ -124,11 +125,24 @@ void pushBox(MeshData& mesh, float x0, float y0, float z0, float x1, float y1, f
 /// law's glow shaped by pooledGlow() where it did not, and the handful of
 /// live lamps under the same shape either way.
 [[nodiscard]] Rgba8 bodyTint(const render::SkyState& sky, const render::LampGlow* pool,
+                             const std::unordered_map<std::uint64_t, render::Rgb>* spill,
                              const render::LampGlow& glow, const std::vector<render::Lamp>& live,
                              std::int32_t x, std::int32_t y, std::int32_t z) noexcept {
     if (pool != nullptr) {
-        return tintFor(sky, pool->at(x, y, z),
-                       live.empty() ? render::Rgb{} : render::dynamicPoolAt(live, x, y, z));
+        render::Rgb baked = pool->at(x, y, z);
+        // The lamps gutter with the wind; a candle behind glass does not.
+        baked = render::Rgb{baked.r * sky.haloScale, baked.g * sky.haloScale, baked.b * sky.haloScale};
+        render::Rgb dyn = live.empty() ? render::Rgb{} : render::dynamicPoolAt(live, x, y, z);
+        dyn = render::Rgb{dyn.r * sky.haloScale, dyn.g * sky.haloScale, dyn.b * sky.haloScale};
+        if (spill != nullptr && !spill->empty()) {
+            const auto found = spill->find(cellKey(x, y, z));
+            if (found != spill->end()) {
+                baked.r += found->second.r;
+                baked.g += found->second.g;
+                baked.b += found->second.b;
+            }
+        }
+        return tintFor(sky, baked, dyn);
     }
     return tintFor(sky, render::pooledGlow(glow.at(x, y, z)),
                    live.empty() ? render::Rgb{} : render::pooledGlow(render::dynamicGlowAt(live, x, y, z)));
@@ -445,7 +459,8 @@ std::vector<ActorInstance> actorInstances(const render::Session& session,
         body.instance.position = toScene(px, py, render::bandSurface(actor.band));
         body.instance.yaw = yawOf(actor.facing);
         body.instance.scale = actorInstanceScale(actor.type);
-        body.instance.tint = bodyTint(sky, params.pool, glow, kNoLive, actor.x, actor.y, actor.band);
+        body.instance.tint =
+            bodyTint(sky, params.pool, params.spill, glow, kNoLive, actor.x, actor.y, actor.band);
         body.clip = actor.slain ? ActorClip::Death
                     : down     ? ActorClip::Recover
                     : actor.dead ? ActorClip::Death
@@ -479,8 +494,8 @@ std::vector<ActorInstance> actorInstances(const render::Session& session,
         body.instance.position = toScene(px, py, render::bandSurface(actor.band()));
         body.instance.yaw = yawOf(actor.facing());
         body.instance.scale = actorInstanceScale(type);
-        body.instance.tint =
-            bodyTint(sky, params.pool, glow, live, actor.tileX(), actor.tileY(), actor.band());
+        body.instance.tint = bodyTint(sky, params.pool, params.spill, glow, live, actor.tileX(),
+                                      actor.tileY(), actor.band());
         // VOICE LANE, THE ADDRESS. The one held for the talk is drawn
         // STANDING, whatever his schedule says he was doing: the hold keeps
         // his tile and his face to you (tavern.cpp, stepMovement), and a

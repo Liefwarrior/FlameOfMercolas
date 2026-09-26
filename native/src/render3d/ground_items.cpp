@@ -1,5 +1,7 @@
 #include "granadad/render3d/ground_items.hpp"
 
+#include "granadad/render3d/chunk_mesher.hpp"
+
 #include <algorithm>
 #include <cmath>
 
@@ -62,7 +64,8 @@ struct Placed {
 void describe(std::vector<StaticInstance>& out, const StaticCatalogue& catalogue,
               const Placed& at, const render::Session& session, const render::SkyState& sky,
               const std::vector<render::Lamp>& live, const render::Camera& view,
-              float maxDistance) {
+              float maxDistance, const render::LampGlow* pool,
+              const std::unordered_map<std::uint64_t, render::Rgb>* spill) {
     const PieceSpec* spec = at.spec;
     if (spec == nullptr) {
         return;
@@ -88,11 +91,37 @@ void describe(std::vector<StaticInstance>& out, const StaticCatalogue& catalogue
     piece.yaw = tileYaw(at.x, at.y, at.nth) + spec->yawOffset;
     piece.pitch = spec->pitch;
     piece.scale = Vec3{spec->scale, spec->scale, spec->scale};
-    const Rgba8 light = spec->selfLit
-                            ? Rgba8{255, 255, 255, 255}
-                            : tintFor(sky, session.renderer().glow().at(at.x, at.y, at.band),
-                                      render::dynamicGlowAt(live, at.x, at.y, at.band));
+    // The light where the thing lies: the lamps' pool and a lit pane's
+    // candle, the same numbers the cobbles under it wear; the law's own
+    // glow shaped by pooledGlow() when no pool was built.
+    render::Rgb ground;
+    render::Rgb dyn;
+    if (pool != nullptr) {
+        ground = pool->at(at.x, at.y, at.band);
+        ground = render::Rgb{ground.r * sky.haloScale, ground.g * sky.haloScale, ground.b * sky.haloScale};
+        dyn = render::dynamicPoolAt(live, at.x, at.y, at.band);
+        dyn = render::Rgb{dyn.r * sky.haloScale, dyn.g * sky.haloScale, dyn.b * sky.haloScale};
+        if (spill != nullptr && !spill->empty()) {
+            const auto found = spill->find(cellKey(at.x, at.y, at.band));
+            if (found != spill->end()) {
+                ground.r += found->second.r;
+                ground.g += found->second.g;
+                ground.b += found->second.b;
+            }
+        }
+    } else {
+        ground = render::pooledGlow(session.renderer().glow().at(at.x, at.y, at.band));
+        dyn = render::pooledGlow(render::dynamicGlowAt(live, at.x, at.y, at.band));
+    }
+    const Rgba8 light = spec->selfLit ? Rgba8{255, 255, 255, 255} : tintFor(sky, ground, dyn);
     piece.tint = mulTint(spec->tint, light);
+    // A self-lit thing on the ground (the kit's lantern) has glass the
+    // adapter cuts out by the same catalogue rule as the hung lantern's
+    // (the row shares the file): hot after dark, dark glass by day.
+    if (spec->selfLit) {
+        const bool night = sky.daylight < catalogue.knobs().paneDuskBelow;
+        piece.pane = night ? Rgba8{255, 240, 205, 255} : Rgba8{64, 60, 48, 255};
+    }
     piece.tint2 = piece.tint;
     piece.tint3 = piece.tint;
     piece.tint4 = piece.tint;
@@ -102,9 +131,10 @@ void describe(std::vector<StaticInstance>& out, const StaticCatalogue& catalogue
 
 }  // namespace
 
-std::vector<StaticInstance> groundItemInstances(const render::Session& session,
-                                                const StaticCatalogue& catalogue,
-                                                const render::Camera& view, float maxDistance) {
+std::vector<StaticInstance> groundItemInstances(
+    const render::Session& session, const StaticCatalogue& catalogue, const render::Camera& view,
+    float maxDistance, const render::LampGlow* pool,
+    const std::unordered_map<std::uint64_t, render::Rgb>* spill) {
     std::vector<StaticInstance> out;
     if (catalogue.itemIds().empty()) {
         return out;
@@ -160,7 +190,7 @@ std::vector<StaticInstance> groundItemInstances(const render::Session& session,
         }
     }
     for (const Placed& at : placed) {
-        describe(out, catalogue, at, session, sky, live, view, maxDistance);
+        describe(out, catalogue, at, session, sky, live, view, maxDistance, pool, spill);
     }
     return out;
 }

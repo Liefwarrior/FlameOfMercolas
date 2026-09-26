@@ -49,10 +49,12 @@
 
 #include <cstdint>
 #include <string_view>
+#include <unordered_map>
 #include <vector>
 
 #include "granadad/render3d/scene.hpp"
 #include "granadad/sim/actor.hpp"
+#include "granadad/render/lighting.hpp"
 #include "granadad/sim/ward_actors.hpp"
 
 namespace granadad::render {
@@ -203,6 +205,10 @@ struct ActorSceneParams {
     /// no pool) falls back to the law's own glow shaped by pooledGlow(),
     /// the way the pieces do.
     const render::LampGlow* pool = nullptr;
+    /// THE SPILL (WorldScene::spill): a lit pane's candle on the cells round
+    /// it, so a body talking under a lit window is not a silhouette against
+    /// it. Null means none.
+    const std::unordered_map<std::uint64_t, render::Rgb>* spill = nullptr;
 };
 
 /// The instances for one frame: every visible ward body and every present
