@@ -736,8 +736,12 @@ TEST_CASE("a door tile places the door frame") {
     // Four posts, two a face, each with its inner face ON the opening's
     // edge (x = 11 and x = 13) and its section inside its own jamb cell,
     // in its own oak, lit at the cut between its jamb and the gap cell
-    // beside it, faced as the wall is.
-    const float section = beam->width * beam->scale;
+    // beside it, faced as the wall is. The section is the SHAFT's: the
+    // kit's post is 0.209 m of timber in 0.261 m of iron collars, and the
+    // frame is placed by the timber.
+    REQUIRE(beam->core > 0.2F);
+    REQUIRE(beam->core < beam->width);
+    const float section = beam->core * beam->scale;
     std::size_t posts = 0;
     for (const StaticPlacement& p : placed.placements) {
         if (p.role != PieceRole::DoorPost) {
@@ -780,7 +784,7 @@ TEST_CASE("a door tile places the door frame") {
         ++lintels;
         CHECK((p.instance.position.z == doctest::Approx(streetZ) ||
                p.instance.position.z == doctest::Approx(roomZ)));
-        CHECK(p.instance.position.y == doctest::Approx(head + 0.5F * lintel->width * lintel->scale));
+        CHECK(p.instance.position.y == doctest::Approx(head + 0.5F * lintel->core * lintel->scale));
         CHECK(p.instance.pitch == doctest::Approx(3.14159265F * 0.5F));
         CHECK(p.instance.scale.y * lintel->height == doctest::Approx(2.0F + 2.0F * section));
         CHECK(p.mode == kDrawFaced);
@@ -2404,23 +2408,22 @@ TEST_CASE("a door wears two jambs, on the cells that flank it, slim and cut to t
         // that face's finish.
         CHECK((p.instance.position.z == doctest::Approx(16.0F + proud) ||
                p.instance.position.z == doctest::Approx(15.0F - proud)));
-        // Hard against the edge of the opening, inside its own cell.
+        // Its shaft's inner face on the edge of the opening, inside its
+        // own cell: the centre half a shaft off the edge.
         if (p.lightX == 10) {
             ++west;
-            CHECK(p.instance.position.x > 10.5F);
-            CHECK(p.instance.position.x < 11.0F);
+            CHECK(p.instance.position.x == doctest::Approx(11.0F - 0.5F * spec->core * spec->scale));
         }
         if (p.lightX == 13) {
             ++east;
-            CHECK(p.instance.position.x > 13.0F);
-            CHECK(p.instance.position.x < 13.5F);
+            CHECK(p.instance.position.x == doctest::Approx(13.0F + 0.5F * spec->core * spec->scale));
         }
     }
     CHECK(west == 2);
     CHECK(east == 2);
     // And the head beam across each pair of them, its underside on the
     // head, in the plane of its posts.
-    const float half = 0.5F * lintel->width * lintel->scale;
+    const float half = 0.5F * lintel->core * lintel->scale;
     std::size_t heads = 0;
     for (const StaticPlacement& p : placed.placements) {
         if (p.role == PieceRole::Lintel && p.lightZ == 19 &&
@@ -2452,8 +2455,8 @@ TEST_CASE("the reveal is the post's own edge, and the room's plaster stops at it
     REQUIRE(plaster != nullptr);
     const StaticPlacements placed = placeStaticPieces(house.tiles, catalogue, {});
     // How far a post's back stands off the boundary plane: the finish's
-    // standoff less half the post's section.
-    const float back = plaster->standoff - 0.5F * beam->width * beam->scale;
+    // standoff less half the post's shaft.
+    const float back = plaster->standoff - 0.5F * beam->core * beam->scale;
     // The west jamb (10, 15): its east face is the reveal, on the plane
     // x = 11, the quad 6 mm into the opening, on the ground, from the
     // street post's back (z = 16 + back) to the room post's back (z = 15

@@ -402,6 +402,13 @@ struct PieceSpec {
     /// The cheap cull: pieces farther than this from the eye are not
     /// described. Props draw closer than walls.
     float maxDistance = 64.0F;
+    /// A strapped timber's own section inside its iron: the shaft, not the
+    /// collars that ring it (`width` is the collars, the bounds). The door
+    /// frame is placed by this -- the shaft's inner face on the opening's
+    /// edge, the lintel's shaft on the head -- and placed by the collars
+    /// it stood 2.6 cm short of everything it should have met. 0 = the
+    /// width.
+    float core = 0.0F;
     /// A flat quad drawn on both sides (its scale is mirrored, which the
     /// adapter draws without back-face culling).
     bool twoSided = false;

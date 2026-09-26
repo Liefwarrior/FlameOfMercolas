@@ -229,6 +229,12 @@ constexpr std::int32_t kDoorReach = 2;
 /// catalogue has no wall piece to ask: the kit wall's own 0.225.
 constexpr float kJambProudFallback = 0.225F;
 
+/// The section the door frame is placed by: a strapped timber's shaft
+/// (PieceSpec::core), or its width when the catalogue names no shaft.
+[[nodiscard]] float coreOf(const PieceSpec& spec) noexcept {
+    return spec.core > 0.0F ? spec.core : spec.width;
+}
+
 [[nodiscard]] constexpr float yawOf(int side) noexcept {
     return static_cast<float>(side) * kHalfPi;
 }
@@ -1347,7 +1353,7 @@ private:
                 // catalogue, a little behind the facade plane as before.
                 const float hingeOut =
                     beam != nullptr ? finishOf(jambX, jambY, gap.z, gap.side).proud -
-                                          0.5F * std::max(0.01F, beam->width * beam->scale) - kLeafOffPost
+                                          0.5F * std::max(0.01F, coreOf(*beam) * beam->scale) - kLeafOffPost
                                     : -kLeafOffFacade;
                 for (int end = 0; end < 2; ++end) {
                     // The hinge: the leaf's inner face on the opening's
@@ -1414,7 +1420,12 @@ private:
         }
         const PieceSpec* lintel = catalogue_.piece(PieceRole::Lintel);
         const PieceSpec* soffit = catalogue_.piece(PieceRole::Soffit);
-        const float section = std::max(0.01F, beam->width * beam->scale);
+        // THE SHAFT, not the collars: the kit's strapped post is 0.209 m of
+        // timber inside 0.261 m of iron, and the frame is placed by the
+        // timber -- its inner face on the opening's edge, its back where
+        // the reveal quad starts, the lintel's underside on the head. The
+        // collars stand proud of all of that, as collars do.
+        const float section = std::max(0.01F, coreOf(*beam) * beam->scale);
         const float sy = kDoorHeadHeight / std::max(0.01F, beam->height);
         for (const DoorGap& gap : doors_) {
             if (gap.gate()) {
@@ -1497,7 +1508,7 @@ private:
                 if (lintel != nullptr && stood > 0) {
                     const float a0 = lo - section;
                     const float span = (hi + section) - a0;
-                    const float lintelHalf = 0.5F * lintel->width * lintel->scale;
+                    const float lintelHalf = 0.5F * coreOf(*lintel) * lintel->scale;
                     const Vec3 at{r.baseX + kTangentX[r.side] * a0 + kNormalX[r.side] * proud,
                                   yBase + kDoorHeadHeight + lintelHalf,
                                   r.baseZ + kTangentZ[r.side] * a0 + kNormalZ[r.side] * proud};
@@ -1798,7 +1809,7 @@ private:
             const bool postA1 = r.gapA1 && beam != nullptr && doorPostAt(tiles_, r.lastX, r.lastY, r.z);
             if (jambReveal) {
                 const DoorGap* g = gapAt(r.firstX + kSideDx[r.side], r.firstY + kSideDy[r.side], r.z);
-                const float section = std::max(0.01F, beam->width * beam->scale);
+                const float section = std::max(0.01F, coreOf(*beam) * beam->scale);
                 const float outBack = finishOf(r.firstX, r.firstY, r.z, g->side).proud - 0.5F * section;
                 const float inBack =
                     finishOf(r.firstX, r.firstY, r.z, opposite(g->side)).proud - 0.5F * section;
@@ -4126,6 +4137,7 @@ StaticCatalogue StaticCatalogue::fromJson(std::string_view json) {
                 spec.scale = floatOf(row, "scale", 1.0F);
                 spec.tint = tintFromJson(row.contains("tint") ? row["tint"] : nlohmann::json(), Rgba8{});
                 spec.maxDistance = floatOf(row, "maxDistance", 64.0F);
+                spec.core = floatOf(row, "core", 0.0F);
                 out.pieces_.push_back(std::move(spec));
             }
         }
@@ -4322,6 +4334,7 @@ std::uint64_t StaticCatalogue::digest() const noexcept {
         h.mixU8(spec.tint.g);
         h.mixU8(spec.tint.b);
         h.mixF32(spec.maxDistance);
+        h.mixF32(spec.core);
     }
     h.mixU32(static_cast<std::uint32_t>(materials_.size()));
     for (const MaterialRule& rule : materials_) {
