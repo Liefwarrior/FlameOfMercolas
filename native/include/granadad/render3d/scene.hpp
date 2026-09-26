@@ -403,16 +403,22 @@ inline constexpr std::uint8_t kDrawPaneRamp = 3;
 /// is a cut nobody can see.
 ///
 /// The adapter uploads it ONCE and fits it to each halo's own local span.
-inline constexpr int kHaloFanSegments = 24;
+/// Forty-eight segments: the rings' iso-alpha contours are polygons, and at
+/// twenty-four their straight edges read on a veiled wall (the round-two
+/// player's fifth).
+inline constexpr int kHaloFanSegments = 48;
 /// Nine rings, not five: the skirt is piecewise linear between rings, and
 /// with five the kinks read as facets once a fog lifts the background to
 /// grey under a white core (the player's first).
-inline constexpr int kHaloFanRings = 9;
+inline constexpr int kHaloFanRings = 12;
 /// The flat hot core is a fraction of the SPAN, and the span grew with the
 /// pool (static_pieces.cpp, kLanternFlameWidth 1.5 m now): 0.16 of 1.5 is
 /// the same 0.24 m core the 0.22 of 1.1 was, so the flame still reads as a
 /// flame and only the skirt got longer.
-inline constexpr float kHaloCoreFraction = 0.16F;
+///
+/// ROUND TWO: a tenth. The flat core's own edge is a polygon at full alpha,
+/// and at 0.16 of a 1.5 m disc it stood past the glass on the plaster.
+inline constexpr float kHaloCoreFraction = 0.10F;
 
 [[nodiscard]] MeshData haloFanMesh();
 

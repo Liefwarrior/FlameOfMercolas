@@ -245,6 +245,22 @@ inline constexpr float kPoolVerticalWeight = 4.5F;
 /// The law's field keeps its own peak; this touches surfaces only.
 inline constexpr float kPoolPeakScale = 1.15F;
 
+/// THE SURFACE CLAMP THAT KEEPS ITS HUE. Ambient + pool + candle is clamped
+/// before it multiplies a surface's tint; clamped PER CHANNEL, a wall under
+/// a lantern saturated its red first and went on taking green and blue,
+/// and every lit plaster in the ward came out olive (the round-two
+/// director's second, the player's third). The three channels are scaled
+/// together by the brightest one instead, so a candle's light on a wall
+/// stays a candle's colour at any strength.
+[[nodiscard]] inline Rgb clampLight(const Rgb& light, float cap) noexcept {
+    const float peak = std::max(light.r, std::max(light.g, light.b));
+    if (peak <= cap || peak <= 0.0F) {
+        return light;
+    }
+    const float scale = cap / peak;
+    return Rgb{light.r * scale, light.g * scale, light.b * scale};
+}
+
 /// The pool's radius for an authored luminance: the baked radius times
 /// kPoolReach, held under the cap (the baked radius's own floor of 3.5
 /// tiles makes the pool's 6.1).

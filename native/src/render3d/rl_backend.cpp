@@ -413,6 +413,11 @@ struct Backend::Impl {
     /// before the sacks beside them). The world scene has already taken the
     /// fog's share off their alpha by distance (kHaloFogShare).
     std::vector<DeferredMesh> halos;
+    /// Bright glass (a lit pane, a lamp's) whose pane alpha is under 255:
+    /// the world scene's fog share. Drawn once more past the veils at that
+    /// alpha over its own veiled pixels, so it reads through the fog by the
+    /// share and goes to the fog's grey with distance.
+    std::vector<DeferredMesh> lateGlass;
     /// The blend shader (GL 3.3) and its uniform slots; id 0 = not
     /// available, and the pieces draw with the average of their two tints.
     Shader blend{};
@@ -916,6 +921,9 @@ struct Backend::Impl {
         // panels meet it where a pane stands.
         if (tints.mode == kDrawPaneRamp) {
             drawPaneRamp(full, tints, stats);
+            if (tints.pane.a < 255) {
+                lateGlass.push_back(DeferredMesh{model, -1, full, tints, mirrored});
+            }
             ++stats.staticsDrawn;
             ++stats.instancesDrawn;
             return;
@@ -1000,6 +1008,38 @@ struct Backend::Impl {
         stats.trianglesDrawn += static_cast<std::size_t>(paneRamp.triangleCount);
     }
 
+    /// BRIGHT GLASS THROUGH A FOG: the glass mesh (or the ramp quad, mesh
+    /// -1) drawn once more past the veils, blended over its own veiled
+    /// pixels at the pane's alpha -- the fog's share the world scene set --
+    /// so a lamp at five metres reads hot through the fog and one at twenty
+    /// is the fog's grey with a warmth in it. Depth-tested (equal passes),
+    /// never written.
+    void drawLateGlass(const DeferredMesh& late, SceneStats& stats) {
+        ensureMaterial();
+        const PieceTints& tints = late.tints;
+        const Rgba8 pane{tints.pane.r, tints.pane.g, tints.pane.b, tints.pane.a};
+        material.maps[MATERIAL_MAP_DIFFUSE].texture = defaultTexture;
+        material.maps[MATERIAL_MAP_DIFFUSE].color = Color{pane.r, pane.g, pane.b, pane.a};
+        rlDisableBackfaceCulling();
+        if (late.mesh < 0) {
+            const float w = tints.to - tints.from;
+            const float h = tints.toZ - tints.fromZ;
+            if (w > 0.0F && h > 0.0F) {
+                ensurePaneRamp();
+                const Matrix fit = MatrixMultiply(MatrixScale(w, h, 1.0F),
+                                                  MatrixTranslate(tints.from, tints.fromZ, 0.0F));
+                DrawMesh(tinted(paneRamp, pane), material, MatrixMultiply(fit, late.transform));
+                stats.trianglesDrawn += static_cast<std::size_t>(paneRamp.triangleCount);
+            }
+        } else if (late.model != nullptr && late.mesh < late.model->model.meshCount) {
+            const Mesh& mesh = late.model->model.meshes[late.mesh];
+            DrawMesh(tinted(mesh, pane), material, late.transform);
+            stats.trianglesDrawn += static_cast<std::size_t>(mesh.triangleCount);
+        }
+        rlEnableBackfaceCulling();
+        material.maps[MATERIAL_MAP_DIFFUSE].color = WHITE;
+    }
+
     void drawStaticMesh(StaticModel& model, int i, const Matrix& transform, const PieceTints& tints,
                         bool mirrored, SceneStats& stats) {
         // A halo does not draw the piece's mesh at all: the fan stands in
@@ -1035,7 +1075,7 @@ struct Backend::Impl {
         // chunk wall behind the frame.
         const bool glass = model.glass[static_cast<std::size_t>(i)];
         model.model.materials[m].maps[MATERIAL_MAP_DIFFUSE].color =
-            glass ? Color{tints.pane.r, tints.pane.g, tints.pane.b, tints.pane.a}
+            glass ? Color{tints.pane.r, tints.pane.g, tints.pane.b, 255}
                   : Color{ch(base.r, tint.r), ch(base.g, tint.g), ch(base.b, tint.b), ch(base.a, tint.a)};
         if (mirrored) {
             rlDisableBackfaceCulling();
@@ -1049,14 +1089,20 @@ struct Backend::Impl {
             // Glass is a colour, not a texel: drawn on the backend's own
             // white texture so the pane tint is what shows, the ramp (if
             // the mesh carries one) folded in on the software path by
-            // tinted() and multiplied in by the GL default shader.
+            // tinted() and multiplied in by the GL default shader. Opaque
+            // here; a pane alpha under 255 is the fog's share, for the
+            // late pass (lateGlass) and not for this one.
             ensureMaterial();
             const Texture2D keepTexture = material.maps[MATERIAL_MAP_DIFFUSE].texture;
             material.maps[MATERIAL_MAP_DIFFUSE].texture = defaultTexture;
             if (mirrored) {
                 rlDisableBackfaceCulling();
             }
-            const Rgba8 pane{tints.pane.r, tints.pane.g, tints.pane.b, tints.pane.a};
+            const Rgba8 pane{tints.pane.r, tints.pane.g, tints.pane.b, 255};
+            material.maps[MATERIAL_MAP_DIFFUSE].color = Color{tints.pane.r, tints.pane.g, tints.pane.b, 255};
+            if (tints.pane.a < 255) {
+                lateGlass.push_back(DeferredMesh{&model, i, transform, tints, mirrored});
+            }
             DrawMesh(tinted(model.model.meshes[i], pane), material, transform);
             if (mirrored) {
                 rlEnableBackfaceCulling();
@@ -1574,6 +1620,7 @@ struct Backend::Impl {
         statics.clear();
         deferred.clear();
         halos.clear();
+        lateGlass.clear();
         if (haloFanReady) {
             UnloadMesh(haloFan);
             haloFan = Mesh{};
@@ -1754,6 +1801,7 @@ SceneStats Backend::drawScene(const SceneDescription& scene) {
     impl.ensureBlendShader();
     impl.deferred.clear();
     impl.halos.clear();
+    impl.lateGlass.clear();
     for (const StaticInstance& piece : scene.statics) {
         impl.drawStatic(piece, scene, stats);
     }
@@ -1780,14 +1828,27 @@ SceneStats Backend::drawScene(const SceneDescription& scene) {
     // alpha, straight over, the depth test still on), so what stands inside
     // a shell is clear of it and what stands beyond is seen through it.
     // After the people and the glass so a body in the fog is in the fog.
+    // The veils write no depth: the halos and the bright glass below are
+    // depth-tested against the WORLD, not against a shell of fog round the
+    // eye (a shell that wrote depth culled every halo past it, and in a fog
+    // the lamps went out before the walls they lit -- the round-two
+    // player's fourth).
+    rlDisableDepthMask();
     for (const Instance& veil : scene.veils) {
         impl.drawInstance(veil, stats);
     }
-    // The halos, last: through the veils, depth-tested against the world.
+    // The halos, then the bright glass once more at the fog's share of it
+    // (StaticInstance::pane.a), so a lamp's light is seen further into a
+    // fog than the wall round it.
     for (const DeferredMesh& glow : impl.halos) {
         impl.drawStaticMesh(*glow.model, glow.mesh, glow.transform, glow.tints, glow.mirrored, stats);
     }
     impl.halos.clear();
+    for (const DeferredMesh& late : impl.lateGlass) {
+        impl.drawLateGlass(late, stats);
+    }
+    impl.lateGlass.clear();
+    rlEnableDepthMask();
     EndMode3D();
     // The hands, last, in their own pass over everything.
     impl.drawViewmodel(scene.viewmodel, stats);

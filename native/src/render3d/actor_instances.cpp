@@ -113,12 +113,16 @@ void pushBox(MeshData& mesh, float x0, float y0, float z0, float x1, float y1, f
 /// drew in its full daylight coat, the critic's note on the bodies.
 [[nodiscard]] Rgba8 tintFor(const render::SkyState& sky, const render::Rgb& baked,
                             const render::Rgb& dynamic) noexcept {
-    const auto ch = [](float ambient, float b, float d) {
-        const float light = std::min(1.15F, ambient + std::max(b, d));
-        return static_cast<std::uint8_t>(std::clamp(light * 255.0F, 0.0F, 255.0F));
+    // Clamped by the brightest channel (render::clampLight): the light
+    // keeps its hue at saturation.
+    const render::Rgb light = render::clampLight(
+        render::Rgb{sky.ambient.r + std::max(baked.r, dynamic.r), sky.ambient.g + std::max(baked.g, dynamic.g),
+                    sky.ambient.b + std::max(baked.b, dynamic.b)},
+        1.15F);
+    const auto ch = [](float l) {
+        return static_cast<std::uint8_t>(std::clamp(l * 255.0F, 0.0F, 255.0F));
     };
-    return Rgba8{ch(sky.ambient.r, baked.r, dynamic.r), ch(sky.ambient.g, baked.g, dynamic.g),
-                 ch(sky.ambient.b, baked.b, dynamic.b), 255};
+    return Rgba8{ch(light.r), ch(light.g), ch(light.b), 255};
 }
 
 /// The pool where a body stands: the field where the scene built one, the

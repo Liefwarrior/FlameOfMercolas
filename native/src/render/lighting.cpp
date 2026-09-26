@@ -157,7 +157,10 @@ void LampGlow::accumulateWith(const std::vector<Lamp>& lamps, float verticalWeig
         const float norm = 3.0F / weight;
         const Rgb colour{red[at] * norm * intensity[at], green[at] * norm * intensity[at],
                          blue[at] * norm * intensity[at]};
-        glow.field_[at] = packRgb(colour);
+        // Packed at one per channel: the pool's peak stands over one on the
+        // brightest lamps, so it is scaled as one colour to fit (the law's
+        // field never exceeds one and packs exactly as it did).
+        glow.field_[at] = packRgb(clampLight(colour, 1.0F));
         ++glow.litCells_;
     }
 }

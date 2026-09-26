@@ -3258,23 +3258,35 @@ TEST_CASE("a lit pane lays its candle on the wall cells round it, and each house
         REQUIRE(std::abs(p.paneX - p.insideX) + std::abs(p.paneY - p.insideY) == 1);
         const auto at = world.spill().find(cellKey(p.paneX, p.paneY, p.insideZ));
         REQUIRE(at != world.spill().end());
-        CHECK(at->second.r > 0.5F);
+        // kSpillGlow at the candle's own strength: two thirds to the whole of 0.34.
+        CHECK(at->second.r > 0.2F);
+        CHECK(at->second.r < 0.5F);
         CHECK(at->second.r > at->second.b);
         const std::int32_t nx = p.paneX - p.insideX;
         const std::int32_t ny = p.paneY - p.insideY;
         const auto side = world.spill().find(cellKey(p.paneX - ny, p.paneY + nx, p.insideZ));
         REQUIRE(side != world.spill().end());
-        CHECK(side->second.r >= 0.25F);
+        CHECK(side->second.r >= 0.09F);
+        CHECK(side->second.r < at->second.r);
         const auto street = world.spill().find(cellKey(p.paneX + nx, p.paneY + ny, p.insideZ));
         REQUIRE(street != world.spill().end());
-        CHECK(street->second.r >= 0.4F);
+        CHECK(street->second.r >= 0.18F);
+        // The light leaves through the glass: the street takes more than
+        // the wall beside the window, and the row beyond is still lit.
+        CHECK(street->second.r > side->second.r);
+        const auto beyond = world.spill().find(cellKey(p.paneX + 2 * nx, p.paneY + 2 * ny, p.insideZ));
+        REQUIRE(beyond != world.spill().end());
+        CHECK(beyond->second.r > 0.05F);
         // A lit kit window's own module is lit at both ends by its pane's
         // cell, warmer than the plaster piece beyond its cut would be.
         if (p.role == PieceRole::WallWindow) {
+            // ...and a lit kit window's wall is still darker than its pane.
             const Rgba8 endA = world.relitTint(i, 0);
             const Rgba8 endB = world.relitTint(i, 1);
-            CHECK(endA.r > 70);
-            CHECK(endB.r > 70);
+            CHECK(endA.r > 20);
+            CHECK(endB.r > 20);
+            CHECK(endA.r < pane.r);
+            CHECK(endB.r < pane.r);
         }
     }
     MESSAGE("Lit panes at ten: " << litPanes << " (" << masonryLit << " on masonry), " << strengths.size()
@@ -3284,14 +3296,53 @@ TEST_CASE("a lit pane lays its candle on the wall cells round it, and each house
     // Not one amber: the strengths spread across houses.
     CHECK(strengths.size() >= 8);
 
-    // A half at a hung window shares the value at the module's cut with the
-    // module beyond it: nothing stops at the plank seam. Every gradient
-    // piece whose `to` cut is another's `from` cut reads one value there.
-    // (The relight computes both ends off the same cells and weights.)
     // Noon: the map is empty and nothing is candle-lit.
     params.timeOfDaySeconds = 12 * 3600;
     world.refresh(scene, spawnCamera(), 320.0F / 180.0F, params);
     CHECK(world.spill().empty());
+}
+
+TEST_CASE("the surface clamp keeps its hue") {
+    // THE ROUND-TWO DIRECTOR'S SECOND: clamped per channel, a wall under a
+    // lantern saturated red first and went on taking green and blue --
+    // olive. render::clampLight scales the three together by the brightest.
+    const render::Rgb under = render::clampLight(render::Rgb{0.9F, 0.7F, 0.4F}, 1.15F);
+    CHECK(under.r == doctest::Approx(0.9F));
+    CHECK(under.b == doctest::Approx(0.4F));
+    const render::Rgb over = render::clampLight(render::Rgb{1.8F, 1.4F, 0.8F}, 1.15F);
+    CHECK(over.r == doctest::Approx(1.15F));
+    CHECK(over.g / over.r == doctest::Approx(1.4F / 1.8F));
+    CHECK(over.b / over.r == doctest::Approx(0.8F / 1.8F));
+    // On the Docks at ten: no relit piece is greener than it is red where
+    // its own tint is not (the plaster's tint leans warm), and no lit
+    // surface has red pinned while blue climbs past the tint's own ratio.
+    const sim::TileQuery tiles(docksWorld());
+    const StaticCatalogue& catalogue = shippedCatalogue();
+    const std::vector<render::Lamp> lamps =
+        render::loadLamps(content::contentDir(), sim::docks::kWorldName);
+    WorldScene world(tiles, proceduralAtlas(), nullptr, &catalogue, &lamps);
+    SceneDescription scene;
+    WorldSceneParams params;
+    params.timeOfDaySeconds = 22 * 3600;
+    world.refresh(scene, spawnCamera(), 320.0F / 180.0F, params);
+    std::size_t checked = 0;
+    for (std::size_t i = 0; i < world.placements().size(); ++i) {
+        const StaticPlacement& p = world.placements()[i];
+        if (p.selfLit || p.role == PieceRole::PaneTimber || p.instance.tint.r == 0) {
+            continue;
+        }
+        const Rgba8 lit = world.relitTint(i, 0);
+        if (lit.r < 200) {
+            continue;  // not at the clamp
+        }
+        ++checked;
+        // Blue over red never exceeds the tint's own blue over red by more
+        // than rounding: the light that got here was scaled as one.
+        const float tintRatio = static_cast<float>(p.instance.tint.b) / static_cast<float>(p.instance.tint.r);
+        const float litRatio = static_cast<float>(lit.b) / static_cast<float>(lit.r);
+        CHECK(litRatio <= tintRatio + 0.02F);
+    }
+    MESSAGE("Pieces at the clamp at ten: " << checked);
 }
 
 TEST_CASE("the surface pool carries to eight tiles and the law's field does not") {
@@ -3481,8 +3532,11 @@ TEST_CASE("a body beside a lantern after dark wears the lantern's pool, and one 
             CHECK(tint.r > 90);
             CHECK(tint.r > tint.b);
         } else if (nearest > 10.0F) {
+            // Dark -- unless a lit pane's candle reaches the cell, which the
+            // roster described without the pool (and so without the spill)
+            // does not carry: then the pool's own copy is the brighter.
             ++inDark;
-            CHECK(tint.r < 40);
+            CHECK((tint.r < 40 || tint.r > unpooled[&body - bodies.data()].instance.tint.r));
         }
     }
     MESSAGE("Bodies at ten: " << inPool << " within a tile and a half of a lantern, " << inDark

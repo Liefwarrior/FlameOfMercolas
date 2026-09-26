@@ -4047,6 +4047,23 @@ StaticCatalogue StaticCatalogue::fromJson(std::string_view json) {
             spec.pitch = floatOf(row, "pitchDegrees", 0.0F) * (kPi / 180.0F);
             spec.scale = floatOf(row, "scale", 1.0F);
             spec.maxDistance = floatOf(row, "maxDistance", 32.0F);
+            // The glass cut, the same as a placed piece's: a self-lit item
+            // sharing a lamp's file names its glass too.
+            if (row.contains("glassBand") && row["glassBand"].is_array() &&
+                row["glassBand"].size() == 2 && row.contains("glassUv") &&
+                row["glassUv"].is_array() && row["glassUv"].size() == 4) {
+                const nlohmann::json& band = row["glassBand"];
+                const nlohmann::json& uv = row["glassUv"];
+                if (band[0].is_number() && band[1].is_number() && uv[0].is_number() &&
+                    uv[1].is_number() && uv[2].is_number() && uv[3].is_number()) {
+                    spec.glassBandLo = band[0].get<float>();
+                    spec.glassBandHi = band[1].get<float>();
+                    spec.glassU0 = uv[0].get<float>();
+                    spec.glassU1 = uv[1].get<float>();
+                    spec.glassV0 = uv[2].get<float>();
+                    spec.glassV1 = uv[3].get<float>();
+                }
+            }
             spec.selfLit = row.value("selfLit", false);
             spec.tint = tintFromJson(row.contains("tint") ? row["tint"] : nlohmann::json(), Rgba8{});
             out.pieces_.push_back(std::move(spec));
