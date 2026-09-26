@@ -121,7 +121,7 @@ struct PlateLayout {
 
 [[nodiscard]] PlateLayout layoutFor(int width, int height, const RungPlateState& state) {
     PlateLayout out;
-    out.metric = panelMetric(height);
+    out.metric = panelMetric(width, height);
     if (state.head.empty()) {
         return out;
     }

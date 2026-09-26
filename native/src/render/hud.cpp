@@ -119,15 +119,53 @@ constexpr Rgb kFrame{0.55F, 0.50F, 0.40F};
 /// A drawn row is six glyph rows plus the one-pixel drop shadow under them.
 [[nodiscard]] constexpr int rowHeight(int scale) noexcept { return (kGlyphH + 1) * scale; }
 
+/// THE MINOR REGISTER IS SIZED SO THAT A BIGGER WINDOW NEVER SHOWS LESS.
+///
+/// hudMinorScale used to be hudScale(height) - 1: one step under the glance
+/// register, which read as a hierarchy and WAS one, but the flat -1 made the
+/// minor cell grow a little faster than the frame -- (height/180 - 1)/height
+/// climbs towards 1/180 from below as the height grows -- so at a fixed aspect
+/// ratio the number of cells across every terminal-register page FELL as the
+/// window grew, for ever: 640x360 dealt 128 cells, 960x540 96, 1280x720 85,
+/// 1920x1080 76, 2560x1440 73, and the chart tile that fits MISSION OF THE
+/// FLA. at 1600x900 truncated to MISSION OF THE. at 2560x1440 (the kitfix's
+/// own finding, docs/frames/kit/README.md). The panel vocabulary had learnt
+/// to live with it -- kPanelNarrowestFullInteriorCells, casebook_page.cpp's
+/// kMasterShare -- but "more monitor, less text" is not a thing to live with.
+///
+/// TWO DIVISORS, NO OFFSET, THE SMALLER WINS. The minor cell is the frame
+/// height over 240 or the frame width over 425, whichever is less, floored to
+/// a whole unit. Floored means the scale is never more than width/425, so the
+/// cells across any window at least 425 px wide are never fewer than 85 --
+/// 425 is five units a cell times 1280x720's own 85, the size the register
+/// was judged at (3 = 720/240 = 1280/425) -- at ANY aspect. The first cut of
+/// this pass keyed the register off the height alone, and both critics
+/// caught 16:10 at once: 1920x1200 dealt the old 76 and the chart read
+/// MISSION OF THE. again, on the aspect the owner's own display is. With
+/// both axes it deals 96 there, 1680x1050 112, 2560x1600 85, 1024x768 (4:3)
+/// 102, 2560x1080 (21:9) 128. At 16:9 the height term binds (width/425 is
+/// always the larger there), so the four smaller capture sizes are
+/// untouched: 320x180 and 640x360 stay at 1, 960x540 at 2, 1280x720 at 3,
+/// and everything pinned there stays pinned; 1920x1080 goes from 5 to 4 (a
+/// 16x24 glyph, 96 cells across). With an integer glyph scale the count is a
+/// sawtooth -- 1600x900 deals 106, 1920x1080 96, 2560x1440 85 -- and
+/// monotonic is not on offer, but it never again falls under the size it was
+/// judged at. hudScale keeps its own 180 and its one argument: the glance
+/// register is not a page and has no cells across to defend.
+constexpr int kMinorScaleDivisor = 240;
+constexpr int kMinorScaleWidthDivisor = 5 * 85;
+
 }  // namespace
 
 int hudScale(int height) noexcept { return std::max(1, height / 180); }
 
-int hudMinorScale(int height) noexcept { return std::max(1, hudScale(height) - 1); }
+int hudMinorScale(int width, int height) noexcept {
+    return std::max(1, std::min(height / kMinorScaleDivisor, width / kMinorScaleWidthDivisor));
+}
 
-int hudTopRightReserve(int height) noexcept {
+int hudTopRightReserve(int width, int height) noexcept {
     const int scale = hudScale(height);
-    const int minor = hudMinorScale(height);
+    const int minor = hudMinorScale(width, height);
     // WHAT IS STILL DRAWN THERE WHILE SOMEBODY IS TALKING, and nothing else.
     // Standing, heat, the sack and the stealth line all stand down for the
     // length of a conversation -- Session sets them empty -- so the corner is
@@ -158,8 +196,8 @@ class BottomBand {
   public:
     BottomBand(int width, int height) noexcept
         : scale_(hudScale(height)),
-          minor_(hudMinorScale(height)),
-          step_(rowHeight(hudMinorScale(height)) + hudMinorScale(height)),
+          minor_(hudMinorScale(width, height)),
+          step_(rowHeight(hudMinorScale(width, height)) + hudMinorScale(width, height)),
           margin_(6 * hudScale(height)),
           floor_(hudCentreRect(width, height).y1) {
         // Slot 1 is the row directly above the health bar's frame.
@@ -175,10 +213,19 @@ class BottomBand {
     /// Takes the next free slot tall enough for a row drawn at `scale`, and
     /// answers the y it should be drawn at. -1 when the band is full: the row
     /// is dropped rather than drawn over the play space.
-    [[nodiscard]] int take(int scale) noexcept {
+    ///
+    /// `clearance` is the padding a PLATED row draws above its glyph box (the
+    /// strip, the voice line): the slot is refused when the plate, not only
+    /// the glyphs, would cross the floor. The cells pass first clamped the
+    /// plate's top at the floor instead, and at 320x180 -- three slots, the
+    /// alert, the strip and the street's line all up -- the clamped rail sat
+    /// on the line's first glyph row and the player critic read "FAIHER
+    /// HAELL". A row that cannot be seated whole is dropped; nothing is
+    /// drawn under a rail.
+    [[nodiscard]] int take(int scale, int clearance = 0) noexcept {
         const int span = std::max(1, (rowHeight(scale) + step_ - 1) / step_);
         const int top = base_ - pad_ - (taken_ + span) * step_;
-        if (top < floor_) {
+        if (top - std::max(0, clearance) < floor_) {
             return -1;
         }
         taken_ += span;
@@ -199,6 +246,32 @@ class BottomBand {
     /// floor check in take() still sees the pad, so nothing here can put a
     /// row in the play space.
     void pad(int px) noexcept { pad_ += std::max(0, px); }
+
+    /// THE CELLS PASS. The air pad() bought, given back -- for a row that
+    /// asks for air it can do without: the quick bar strip tries its take
+    /// with a row of air over the hand and, refused, takes the bare slot
+    /// instead of vanishing. Never below zero.
+    void unpad(int px) noexcept { pad_ = std::max(0, pad_ - std::max(0, px)); }
+
+    /// Pixels left above the last row handed out, before the floor.
+    [[nodiscard]] int slack() const noexcept { return base_ - pad_ - taken_ * step_ - floor_; }
+
+    /// pad(), but only when a further slot would still fit under the air --
+    /// for the air a plated row buys for the row ABOVE it (the strip, the
+    /// voice line). At 320x180 the band is three slots and the strip's one
+    /// pixel of air was the pixel the street's line needed; a row of speech
+    /// outranks a pixel of air, so the air is what gives.
+    void padIfAfforded(int px) noexcept {
+        px = std::max(0, px);
+        if (slack() - px >= step_) {
+            pad_ += px;
+        }
+    }
+
+    /// Slots handed out so far. Zero means the band is empty and the next row
+    /// lands right above the health bar -- the one case the strip's air is for.
+    [[nodiscard]] int taken() const noexcept { return taken_; }
+
 
   private:
     int scale_;
@@ -257,7 +330,7 @@ struct AimBox {
 
 [[nodiscard]] AimBox aimBox(int width, int height) noexcept {
     AimBox box;
-    box.unit = hudMinorScale(height);
+    box.unit = hudMinorScale(width, height);
     box.cx = width / 2;
     box.cy = height / 2;
     box.gap = box.unit;
@@ -603,9 +676,9 @@ struct TopBand {
     int bottom;
 };
 
-[[nodiscard]] TopBand topBand(int height) noexcept {
+[[nodiscard]] TopBand topBand(int width, int height) noexcept {
     const int scale = hudScale(height);
-    const int minor = hudMinorScale(height);
+    const int minor = hudMinorScale(width, height);
     TopBand band{};
     band.stripY = 3 * scale;
     band.stripH = rowHeight(scale) + scale;
@@ -624,7 +697,7 @@ void drawCompass(Framebuffer& target, const HudState& state) {
     const int stripW = std::min(target.width() / 4, 120 * scale);
     // DISTRICT PHASE D: OFF topBand(), NOT re-derived here. Identical values,
     // one owner -- see the struct's own header on which defect that is about.
-    const TopBand band = topBand(target.height());
+    const TopBand band = topBand(target.width(), target.height());
     const int stripH = band.stripH;
     const int x = (target.width() - stripW) / 2;
     const int y = band.stripY;
@@ -737,7 +810,7 @@ void drawPullLine(Framebuffer& target, const HudState& state, int rightBlock) {
     const int width = target.width();
     const int height = target.height();
     const int scale = hudScale(height);
-    const int minor = hudMinorScale(height);
+    const int minor = hudMinorScale(width, height);
     const int margin = 6 * scale;
     // THREE SCALE UNITS OF AIR OFF THE CORNER, each side: a line that ended
     // flush against SEEN read as one word with it.
@@ -805,7 +878,7 @@ void drawPullLine(Framebuffer& target, const HudState& state, int rightBlock) {
     if (line.empty()) {
         return;
     }
-    const TopBand band = topBand(height);
+    const TopBand band = topBand(width, height);
     const int drawn = textWidth(line, minor);
     // The old sub-label's own ink and strength, so the blessed frames that
     // carried a place name here read the same weight of bone.
@@ -870,7 +943,7 @@ void drawSkillToast(Framebuffer& target, const HudState& state) {
     for (int i = 0; i < rowCount; ++i) {
         drawn = std::max(drawn, textWidth(rows[i], plateScale));
     }
-    const TopBand band = topBand(height);
+    const TopBand band = topBand(width, height);
     const int lift = 3 * scale;
     // Settles on the ribbon's own top row, so the two top blocks share a
     // line -- the corner's rule, mirrored.
@@ -925,7 +998,7 @@ void drawSkillToast(Framebuffer& target, const HudState& state) {
 /// 0 when the corner drew nothing at all.
 int drawTopRight(Framebuffer& target, const HudState& state) {
     const int scale = hudScale(target.height());
-    const int minor = hudMinorScale(target.height());
+    const int minor = hudMinorScale(target.width(), target.height());
     const int margin = 6 * scale;
     const int ceiling = hudCentreRect(target.width(), target.height()).y0;
     // The same three scale units from the edge the compass ribbon starts at, so
@@ -1159,7 +1232,7 @@ void drawAnnouncePlate(Framebuffer& target, std::string_view text, float rawFade
     }
     const int textX = (width - drawn) / 2;
 
-    const TopBand band = topBand(height);
+    const TopBand band = topBand(width, height);
     // THE WHOLE TRAVEL FITS UNDER THE RIBBON BLOCK, NOT JUST THE SETTLED ROW.
     // The plate keeps rising as it fades, so its HIGHEST point (drift == +1,
     // the last frame of the fade) is `lift` above where it settles -- and the
@@ -1568,9 +1641,196 @@ void drawBottomBand(Framebuffer& target, const HudState& state, BottomBand& band
             band.pad(std::max(1, alertScale / 2) + minor);
         }
     }
-    // VOICE LANE. THE STREET'S OWN LINE, right after the alert in priority
-    // and under it in rank: it takes the slot above the alert when both are
-    // up and the alert's own slot when the alert is down. Drawn at the minor
+    // SPELLS BUILD. THE QUICK BAR STRIP, bottom-centre -- the hotbar slot
+    // this file's own header has reserved in Barony's name since task #66,
+    // finally holding something. Right after the alert in priority, AHEAD OF
+    // THE VOICE LINE: while it is up at all, it is up because the player's
+    // hand is ON it (a held wheel, a number press), which is exactly when it
+    // must not be the row that gets dropped -- and the cells pass found it
+    // dropped at three of five capture sizes, because the street's line
+    // (drawn after this block since 2026-09-26) had taken the slot the
+    // strip's air needed. Hand-on feedback outranks a bark it can share the
+    // band with. Out of the band's slot grid like every row here, so
+    // it can never land in the play space or on another row's pixels; behind
+    // its own plate, because ten dim digits over open floor is the alert's
+    // own S8 legibility failure again; and TRANSIENT (quickBarFade is a
+    // Session-side EasedToggle), because Barony's hotbar is furniture and
+    // this game's TES-quiet bar is not.
+    if (state.quickBarFade > 0.0F) {
+        const float fade = std::clamp(state.quickBarFade, 0.0F, 1.0F);
+        // KITFIX LANE. ONE ROW OF AIR BOUGHT BEFORE THE TAKE -- not only when
+        // an earlier row happened to pad it there (and, since the cells pass
+        // below, only when the band is empty). With nothing
+        // else on the band (the common case a wheel/number press interrupts:
+        // no alert, no guard, no held-effect row), take() alone lands the
+        // strip on the FIRST slot, right above the health bar, which is
+        // exactly the screen real estate the drawn hand and its blade rest
+        // in -- a capture at --kit=slot showed the strip's own plate sitting
+        // in that footprint, the viewmodel's edge reading through it. The
+        // strip is drawn on top of the 3D frame already (present_frame()
+        // composites the HUD overlay after drawScene()/drawViewmodel()), so
+        // the plate's OWN alpha is what let the blade read through it, not
+        // the paint order -- lifting the row clear of the hand's usual
+        // resting height is the fix this file can make without touching the
+        // 3D pass or the hand's own rig.
+        // THE CELLS PASS. THE AIR IS BOUGHT ONLY WHEN THE BAND IS EMPTY, AND
+        // GIVEN BACK WHEN THE TAKE IS REFUSED. Bought always, the row of air
+        // was the difference between a strip and no strip: with the alert's
+        // two slots and the voice line's one already taken, a four-slot band
+        // (1280x720, 2560x1440) refused the padded take and the strip -- the
+        // feature under test -- was not drawn at all. The air exists to lift
+        // the strip off the hand's resting height when NOTHING else does; a
+        // band with rows on it has lifted the strip already.
+        const int air = band.taken() == 0 ? rowHeight(minor) : 0;
+        band.pad(air);
+        // The plate's own padding above the glyph box, carried into the take
+        // as clearance so the plate never crosses the floor (BottomBand::take).
+        const int padY = std::max(1, minor / 2);
+        int y = band.take(minor, padY);
+        if (y < 0 && air > 0) {
+            band.unpad(air);
+            y = band.take(minor, padY);
+        }
+        if (y >= 0) {
+            constexpr int kQuickSlots = 10;
+            // SLOTS, NOT A NUMBER. The critic's line on the first strip
+            // (2026-09-25, docs/frames/kit/README.md): "1234567890 runs as
+            // one number". Ten digits at a seven-unit pitch on one bare
+            // plate is a number; ten CELLS, each ruled off from the next
+            // and each holding its digit with near two units of air a side,
+            // are ten places a thing can go. The rule between cells is the
+            // plate's own border weight, so the strip reads as one ruled
+            // row and not as ten little plates, and the closing rule after
+            // the tenth cell is drawn so the last slot is a cell too and
+            // not the start of the name.
+            const int rail = std::max(1, minor / 2);
+            const int cellW = (kGlyphW + 4) * minor;
+            const int cellsW = kQuickSlots * cellW + rail;
+            // The selected slot's own name rides the same row -- the digits
+            // say which slots are loaded, the name says with what.
+            //
+            // THE WHEEL'S TUTOR TOAST RIDES THIS PLATE TOO (the cells pass,
+            // 2026-09-26). It used to take its own slot off the band as a
+            // fourth tier of bare grey text, which the player critic found
+            // squeezed between the voice line and the strip and unreadable
+            // under the drawn fist; a hint about the strip belongs ON the
+            // strip. It takes the plate's right end, after the name, in the
+            // reference ink, and costs the band no slot.
+            const bool hinted = !state.wheelHint.empty() && state.wheelHintFade > 0.0F;
+            const int hintW =
+                hinted ? 2 * kGlyphAdvance * minor + textWidth(state.wheelHint, minor) : 0;
+            std::string name;
+            if (state.quickSelected >= 0 && state.quickSelected < kQuickSlots) {
+                const std::string_view picked =
+                    state.quickSlots[static_cast<std::size_t>(state.quickSelected)];
+                name = clipToWidth(picked,
+                                   rowBudget - cellsW - hintW - 2 * kGlyphAdvance * minor, minor);
+            }
+            const int nameW =
+                name.empty() ? 0 : 2 * kGlyphAdvance * minor + textWidth(name, minor);
+            const int x0 = std::max(margin, (width - cellsW - nameW - hintW) / 2);
+            // THE CELLS PASS: the half unit the plate stands above the glyph
+            // box is bought back for the row above, the way the alert buys
+            // its own air -- the director found this plate's top rail one
+            // pixel under the case tracker's drop shadow. Only where a further
+            // slot still fits under it: see BottomBand::padIfAfforded.
+            band.padIfAfforded(padY);
+            // THE CELL BOX HOLDS THE GLYPH AND ITS DROP-SHADOW ROW, so nothing
+            // hangs under the plate (the auditor's dark dashes under every
+            // cell, at every scale from 2 up); the plate is the same box, run
+            // out under the name. With padY the plate's own border weight,
+            // the box is the slot's step tall and crosses no neighbour.
+            const int boxY0 = y - padY;
+            const int boxY1 = y + (kGlyphH + 1) * minor + padY;
+            // At 0.92 the plate is opaque enough that the world behind it no
+            // longer decides a cell's colour -- the director's cells 8 and 9
+            // went red over a patron's shirt at 0.80, and the drawn fist read
+            // through the whole strip.
+            drawTextPlate(target, x0 - 2 * minor, boxY0,
+                          x0 + cellsW + nameW + hintW + 2 * minor, boxY1, rail, 0.92F * fade);
+            for (int slot = 0; slot < kQuickSlots; ++slot) {
+                const int cx = x0 + slot * cellW;
+                const bool loaded = !state.quickSlots[static_cast<std::size_t>(slot)].empty();
+                const bool equipped = slot == state.quickEquipped;
+                const bool selected = slot == state.quickSelected;
+                // The cell's own rule, on its left; the tenth cell's right
+                // rule closes the row below.
+                target.fillRect(cx, boxY0, rail, boxY1 - boxY0, kPlateBone, 0.45F * fade);
+                if (equipped) {
+                    // INVERTED, the strongest mark on the strip: this cell is
+                    // what the next press of Cast spends, the same fact the
+                    // CAST row reads off the same equipped id.
+                    target.fillRect(cx + rail, boxY0, cellW - rail, boxY1 - boxY0, kPlateBone,
+                                    0.90F * fade);
+                } else if (selected) {
+                    // THE SELECTED CELL IS TINTED, faintly gold, under its
+                    // frame: at the small scales the frame is one pixel and
+                    // the tint is what the eye lands on.
+                    target.fillRect(cx + rail, boxY0, cellW - rail, boxY1 - boxY0,
+                                    Rgb{0.85F, 0.80F, 0.60F}, 0.28F * fade);
+                } else if (loaded) {
+                    // A LOADED CELL IS FILLED, faintly -- a slot with a thing
+                    // in it is a different shape from an empty one before
+                    // the digit is read, which is how a hotbar is read: the
+                    // eye counts filled cells, it does not read ten digits.
+                    target.fillRect(cx + rail, boxY0, cellW - rail, boxY1 - boxY0, kPlateBone,
+                                    0.30F * fade);
+                }
+                if (selected) {
+                    // FRAMED, in gold: where the wheel or the number row last
+                    // pointed, which need not be the equipped cell (an empty
+                    // slot can be selected and says so). Drawn over the
+                    // cell's own rule so the frame owns all four sides, at the
+                    // rule's own weight so it sits in the padding and never
+                    // over the digit (a minor-thick frame overlapped the glyph
+                    // by minor - padY, the auditor's finding).
+                    const Rgb gold{0.85F, 0.80F, 0.60F};
+                    target.fillRect(cx, boxY0, cellW, rail, gold, fade);
+                    target.fillRect(cx, boxY1 - rail, cellW, rail, gold, fade);
+                    target.fillRect(cx, boxY0, rail, boxY1 - boxY0, gold, fade);
+                    target.fillRect(cx + cellW - rail, boxY0, rail, boxY1 - boxY0, gold, fade);
+                }
+                const char digit[2] = {static_cast<char>(slot == 9 ? '0' : '1' + slot), '\0'};
+                // THE DIGIT'S INK. The kitfix pass lifted unselected digits
+                // from kPlateBone at a 0.35 alpha (near-invisible against
+                // the plate in every capture) to kAimNote at a 0.75 floor;
+                // the critic's second look still read them as a wash. A
+                // loaded slot's digit is the plate's own bone now, at full
+                // strength -- the brightest warm ink this HUD has, the ink
+                // the strip's rails and the picked name already wear -- and
+                // an empty slot's digit is kAimNote at 0.60, well under it
+                // (the director measured the 0.80 step at seventeen percent
+                // and could not read it), so LOADED and EMPTY are two inks on
+                // two cell
+                // fills and not two alphas of one grey. The equipped cell
+                // keeps its black knockout on the inverted fill -- the one
+                // digit that is meant to read as SELECTED rather than as a
+                // slot merely present.
+                const Rgb ink = equipped ? kPlateBlack : (loaded ? kPlateBone : kAimNote);
+                const float inkAlpha = equipped ? fade : (loaded ? 1.0F : 0.60F) * fade;
+                drawText(target, cx + rail + (cellW - rail - kGlyphW * minor) / 2, y, digit, ink,
+                         inkAlpha, minor);
+            }
+            target.fillRect(x0 + kQuickSlots * cellW, boxY0, rail, boxY1 - boxY0, kPlateBone,
+                            0.45F * fade);
+            if (!name.empty()) {
+                drawText(target, x0 + cellsW + 2 * kGlyphAdvance * minor, y, name,
+                         Rgb{0.90F, 0.87F, 0.76F}, 0.92F * fade, minor);
+            }
+            if (hinted) {
+                drawText(target, x0 + cellsW + nameW + 2 * kGlyphAdvance * minor, y,
+                         state.wheelHint, Rgb{0.62F, 0.60F, 0.54F},
+                         0.85F * std::clamp(state.wheelHintFade, 0.0F, 1.0F) * fade, minor);
+            }
+        }
+    }
+    // VOICE LANE. THE STREET'S OWN LINE, right after the alert and the quick
+    // bar strip in priority and under both in rank (the strip's tutor toast
+    // rides the strip's own plate and takes no slot): it takes the slot above
+    // the alert when both are up (above
+    // the strip too, while the player's hand is on that -- the cells pass,
+    // 2026-09-26) and the alert's own slot when the alert is down. Drawn at
+    // the minor
     // size -- it is read, not heeded -- on the same plate the alert stands
     // on, the speaker in the person accent (aimAccent(AimKind::Person),
     // the colour a body already wears under the crosshair) and the row in
@@ -1611,11 +1871,15 @@ void drawBottomBand(Framebuffer& target, const HudState& state, BottomBand& band
                 first.resize(cut);
             }
         }
-        const int y = band.take(minor);
+        // The plate's own padding above the glyph box, carried into both
+        // takes as clearance so the plate never crosses the floor and never
+        // sits on the line's first row (BottomBand::take).
+        const int padY = std::max(1, minor / 2);
+        const int y = band.take(minor, padY);
         if (y >= 0) {
             int y2 = -1;
             if (!second.empty()) {
-                y2 = band.take(minor);
+                y2 = band.take(minor, padY);
                 if (y2 < 0) {
                     // No second slot: one line, clipped and marked.
                     first = clipToWidth(state.voiceLine, firstBudget, minor);
@@ -1631,7 +1895,12 @@ void drawBottomBand(Framebuffer& target, const HudState& state, BottomBand& band
             const int drawn = std::max(firstW, secondW);
             const int textX = std::max(margin, (width - drawn) / 2);
             const int padX = minor * 2;
-            const int padY = std::max(1, minor / 2);
+            // THE CELLS PASS: the half unit the plate stands above the glyph
+            // box is bought back for the row above, the way the alert buys
+            // its own air -- the director found this plate's top rail one
+            // pixel under the case tracker's drop shadow. Only where a further
+            // slot still fits under it: see BottomBand::padIfAfforded.
+            band.padIfAfforded(padY);
             // The second slot is ABOVE the first in the band's own order,
             // so the row reads down: the name and the opening on the upper
             // line, the turn on the lower.
@@ -1649,112 +1918,6 @@ void drawBottomBand(Framebuffer& target, const HudState& state, BottomBand& band
                 drawText(target, textX, bottom, second, dim, 0.92F * fade, minor);
             }
         }
-    }
-    // SPELLS BUILD. THE QUICK BAR STRIP, bottom-centre -- the hotbar slot
-    // this file's own header has reserved in Barony's name since task #66,
-    // finally holding something. Right after the alert in priority: while it
-    // is up at all, it is up because the player's hand is ON it (a held
-    // wheel, a number press), which is exactly when it must not be the row
-    // that gets dropped. Out of the band's slot grid like every row here, so
-    // it can never land in the play space or on another row's pixels; behind
-    // its own plate, because ten dim digits over open floor is the alert's
-    // own S8 legibility failure again; and TRANSIENT (quickBarFade is a
-    // Session-side EasedToggle), because Barony's hotbar is furniture and
-    // this game's TES-quiet bar is not.
-    if (state.quickBarFade > 0.0F) {
-        const float fade = std::clamp(state.quickBarFade, 0.0F, 1.0F);
-        // KITFIX LANE. ONE ROW OF AIR BOUGHT BEFORE THE TAKE, ALWAYS -- not
-        // only when an earlier row happened to pad it there. With nothing
-        // else on the band (the common case a wheel/number press interrupts:
-        // no alert, no guard, no held-effect row), take() alone lands the
-        // strip on the FIRST slot, right above the health bar, which is
-        // exactly the screen real estate the drawn hand and its blade rest
-        // in -- a capture at --kit=slot showed the strip's own plate sitting
-        // in that footprint, the viewmodel's edge reading through it. The
-        // strip is drawn on top of the 3D frame already (present_frame()
-        // composites the HUD overlay after drawScene()/drawViewmodel()), so
-        // the plate's OWN alpha is what let the blade read through it, not
-        // the paint order -- lifting the row clear of the hand's usual
-        // resting height is the fix this file can make without touching the
-        // 3D pass or the hand's own rig.
-        band.pad(rowHeight(minor));
-        const int y = band.take(minor);
-        if (y >= 0) {
-            constexpr int kQuickSlots = 10;
-            const int cellW = (kGlyphAdvance + 2) * minor;
-            const int cellsW = kQuickSlots * cellW;
-            // The selected slot's own name rides the same row -- the digits
-            // say which slots are loaded, the name says with what.
-            std::string name;
-            if (state.quickSelected >= 0 && state.quickSelected < kQuickSlots) {
-                const std::string_view picked =
-                    state.quickSlots[static_cast<std::size_t>(state.quickSelected)];
-                name = clipToWidth(picked, rowBudget - cellsW - 2 * kGlyphAdvance * minor,
-                                   minor);
-            }
-            const int nameW =
-                name.empty() ? 0 : 2 * kGlyphAdvance * minor + textWidth(name, minor);
-            const int x0 = std::max(margin, (width - cellsW - nameW) / 2);
-            const int padY = std::max(1, minor / 2);
-            drawTextPlate(target, x0 - 2 * minor, y - padY, x0 + cellsW + nameW + 2 * minor,
-                          y + kGlyphH * minor + padY, std::max(1, minor / 2), 0.80F * fade);
-            for (int slot = 0; slot < kQuickSlots; ++slot) {
-                const int cx = x0 + slot * cellW;
-                const bool loaded = !state.quickSlots[static_cast<std::size_t>(slot)].empty();
-                const bool equipped = slot == state.quickEquipped;
-                const bool selected = slot == state.quickSelected;
-                if (equipped) {
-                    // INVERTED, the strongest mark on the strip: this cell is
-                    // what the next press of Cast spends, the same fact the
-                    // CAST row reads off the same equipped id.
-                    target.fillRect(cx, y - padY, cellW - minor, kGlyphH * minor + 2 * padY,
-                                    kPlateBone, 0.90F * fade);
-                }
-                if (selected) {
-                    // FRAMED, one pixel-row of border: where the wheel or the
-                    // number row last pointed, which need not be the equipped
-                    // cell (an empty slot can be selected and says so).
-                    const Rgb gold{0.85F, 0.80F, 0.60F};
-                    const int frameY0 = y - padY;
-                    const int frameY1 = y + kGlyphH * minor + padY;
-                    target.fillRect(cx, frameY0, cellW - minor, minor, gold, fade);
-                    target.fillRect(cx, frameY1 - minor, cellW - minor, minor, gold, fade);
-                    target.fillRect(cx, frameY0, minor, frameY1 - frameY0, gold, fade);
-                    target.fillRect(cx + cellW - 2 * minor, frameY0, minor,
-                                    frameY1 - frameY0, gold, fade);
-                }
-                const char digit[2] = {static_cast<char>(slot == 9 ? '0' : '1' + slot), '\0'};
-                // KITFIX LANE. UNSELECTED DIGITS READ AS SECONDARY HUD TEXT
-                // NOW, NOT AS A WASH. A capture (docs/frames/kit/) of an
-                // unloaded slot at kPlateBone's own 0.35 alpha photographed
-                // as near-invisible against the plate -- the aim reticle's
-                // own note row solved the identical problem (see kAimNote's
-                // header, "a note this close to mid-grey still loses to a
-                // bright sky"), so every digit that is not the equipped one
-                // takes that same bright, warm ink and its own visible floor
-                // instead of a second, dimmer vocabulary invented for one
-                // row. The equipped cell keeps its inverted knockout -- the
-                // one digit that is meant to read as SELECTED rather than as
-                // a slot merely present.
-                const Rgb ink = equipped ? kPlateBlack : kAimNote;
-                const float inkAlpha = equipped ? fade : (loaded ? 0.95F : 0.75F) * fade;
-                drawText(target, cx + (cellW - kGlyphW * minor) / 2, y, digit, ink, inkAlpha,
-                         minor);
-            }
-            if (!name.empty()) {
-                drawText(target, x0 + cellsW + 2 * kGlyphAdvance * minor, y, name,
-                         Rgb{0.90F, 0.87F, 0.76F}, 0.92F * fade, minor);
-            }
-        }
-    }
-    // UI-EA (LANE HUD): THE Q-HOLD TUTOR TOAST, directly under the strip it
-    // teaches. Session raises it the first two times the bar ever comes up
-    // and never again; it rides the bar's own countdown, takes a slot out of
-    // the same grid (so it can never land in the play space or on another
-    // row), and speaks in the quiet reference ink -- a hint, not a shout.
-    if (!state.wheelHint.empty() && state.wheelHintFade > 0.0F) {
-        takeCentred(state.wheelHint, Rgb{0.62F, 0.60F, 0.54F},
-                    0.85F * std::clamp(state.wheelHintFade, 0.0F, 1.0F));
     }
     // THE CROSSHAIR PASS TOOK A ROW OFF THIS BAND AND DID NOT REPLACE IT.
     //

@@ -94,8 +94,10 @@ Nothing about the look. Same 4x6 font, same colours, same corners, same rule
 about the middle of the screen (`hudCentreRect`, and the test that proves it).
 
 1. **Two sizes, not one.** `hudScale()` is the register you read at a glance:
-   compass, hour, health bar, a shout. `hudMinorScale()` is one step down and is
-   what everything you read *deliberately* is drawn at: place name, purse,
+   compass, hour, health bar, a shout. `hudMinorScale()` is the smaller register
+   (one step down at the 16:9 capture sizes up to 720 tall, further under it
+   above that, and keyed on the width too since the cells pass) and is what
+   everything you read *deliberately* is drawn at: place name, purse,
    standing, heat, sack, stealth, case, rung, objective, rival, room. Ten
    sprints added ten rows and drew every one at the size of the health bar.
 
@@ -261,14 +263,24 @@ the map key no longer has to turn three pages to find out this game has one.
 |---|---|---|---|
 | 320x180   | 64x25 cells  | detail pane collapses, list takes the body, 2 columns | 1 |
 | 640x360   | 128x51 cells | master/detail, 2 columns | 1 |
-| 960x540   | 96x38 cells  | master/detail, 2 columns | 1 |
-| 1280x720  | 85x34 cells  | master/detail, 2 columns | 1 |
-| 1920x1080 | 76x30 cells  | master/detail, 1 column  | 2 |
+| 960x540   | 96x38 cells  | master/detail, 2 columns | 2 (re-measured 2026-09-26: the table has grown past one screen, `+3` at the foot) |
+| 1280x720  | 85x34 cells  | master/detail, 2 columns | 2 (re-measured 2026-09-26: `+3` at the foot) |
+| 1920x1080 | 96x38 cells  | as 960x540: master/detail, 2 columns | as 960x540: 2 |
 
-The biggest window is the narrowest in CELLS, because `hudMinorScale` steps up
-with the frame height — 1920x1080 has 76 cells across where 960x540 has 96. That
-inversion is why the composition's minimum detail width is 26 cells and not 30,
-and it is why 1920 is the one size that still pages.
+1920x1080 is the same 96x38 grid as 960x540, at twice the pixel, so it composes
+the same page. Measured off the gated exe on 2026-09-26, both show the keys in
+two columns with `+3` at the foot of the master: the table has grown since the
+rows above were measured, and it pages at both sizes now. It used to be the
+narrowest window in CELLS — `hudMinorScale` was `height/180 - 1`, and that flat
+step dealt 1920x1080 just 76 cells across (30 down) where 960x540 has 96, which
+is why the old row had it alone on a single column. The register is the smaller
+of `height/240` and `width/425` now, with no offset, so no window at least 425 px
+wide, at any aspect, deals fewer than 1280x720's 85 cells across (1920x1200
+deals 96; the height alone would have dealt it the old 76).
+2560x1440 is 1280x720's 85x34 grid at twice the pixel the same way. The minimum
+detail width stays at 26 cells rather than 30 because a split that only survives
+at the sizes we capture is not a split; 320x180's 64 cells is the window that
+binds it now.
 
 **Stable geometry, measured rather than asserted.** `keys-960x540.png` and
 `keys-960-cursor-lock.png` are the same page with the cursor eighteen rows
@@ -332,7 +344,7 @@ delivers per pixel is the other half.
 | 640x360   | 128x51 cells | master/detail | master/detail, 2 columns |
 | 960x540   | 96x38 cells  | master/detail | master/detail, 2 columns |
 | 1280x720  | 85x34 cells  | master/detail | master/detail, 2 columns |
-| 1920x1080 | 76x30 cells  | master/detail | master/detail, 2 columns |
+| 1920x1080 | 96x38 cells  | master/detail | master/detail, 2 columns |
 
 At 320x180 the split collapses and the consequence pane is not shown. That is
 the honest limit of this composition rather than two panes too thin to read, and
@@ -449,7 +461,7 @@ rather than dropped in silence.
 | 320x180   | 64x25 cells | master/detail holds; plan at 1 px/tile, pans to the cursor; `LEGEND` drops off the tab row; the nav band takes two rows |
 | 960x540   | 96x38 cells | master/detail, plan at 3 px/tile, the whole ward, 30 names on its face |
 | 1280x720  | 85x34 cells | master/detail, plan at **4** px/tile, 35 names on its face |
-| 1920x1080 | 76x30 cells | master/detail, plan at 5 px/tile, 40 names on its face |
+| 1920x1080 | 96x38 cells | as 960x540 at twice the pixel: master/detail, the whole ward, the same names on its face; the plan at 6 px/tile (off the gated exe, 2026-09-26; under the old `height/180 - 1` register this row was 76x30 cells, 5 px/tile and 40 names) |
 
 Two of those numbers are the composition asking a question rather than assuming
 an answer, and both were worth asking. The MAP PANE`S SHARE of the body is the
@@ -597,11 +609,14 @@ space.
 |---|---|---|---|
 | 320x180 | 1 | 6x6 px, ticks 2x1 | 29 glyphs |
 | 960x540 | 2 | 12x12 px, ticks 4x2 | 44 glyphs |
-| 1920x1080 | 5 | 30x30 px, ticks 10x5 | 35 glyphs |
+| 1920x1080 | 4 | 24x24 px, ticks 8x4 | 44 glyphs |
 
-The biggest window has the least room, and that is the same inversion the panel
-pass documented: `hudMinorScale` steps up with height, so the glyphs grow faster
-than the frame does. A name too long for the room is clipped, and the qualifier
+The 1920x1080 row is 960x540's at twice the pixel: `hudMinorScale` is the
+smaller of `height/240` and `width/425` now, so the two are one grid, and the
+biggest window no longer has
+the least room. (Under the old `height/180 - 1` it was unit 5, a 30x30 reticle
+and 35 glyphs, the same inversion the panel pass documented: the glyphs grew
+faster than the frame.) A name too long for the room is clipped, and the qualifier
 beside it is **dropped whole** rather than cut to a stub — `ALREADY R..`
 qualifies nothing.
 
@@ -675,18 +690,25 @@ own reference frames and like the controls page and the ward map before it.
 
 | window | interior cells | the split (master / detail) | the nav band | the list |
 |---|---|---|---|---|
-| 320x180 | 62 | **collapses** — the list takes the whole body | two rows | all 12 leads, no detail pane |
-| 640x360 | 126 | 63 / 61 | one row | all 12 |
-| 960x540 | 94 | 47 / 45 | one row | all 12 |
-| 1280x720 | 83 | 41 / 40 | **two rows** | all 12 |
-| 1920x1080 | 74 | 37 / 35 | **two rows** | all 12 |
+| 320x180 | 62 | **collapses** — the list takes the whole body | two rows | 8 + `+4`, no detail pane (re-measured 2026-09-26) |
+| 640x360 | 126 | 63 / 61 | two rows (re-measured 2026-09-26; the resting keycap form stacks at every size) | 8 + `+4` |
+| 960x540 | 94 | 47 / 45 | two rows (re-measured 2026-09-26; the resting keycap form stacks) | 8 + `+4` (the book pages at eight rows since the diet) |
+| 1280x720 | 83 | 41 / 40 | **two rows** | 8 + `+4` |
+| 1920x1080 | 94 | 47 / 45 | as 960x540: two rows | as 960x540: 8 + `+4` |
 
-The biggest window is the narrowest in cells — `hudMinorScale` steps up with
-height, so 1920x1080 has 74 interior cells where 960x540 has 94 — and both of
-the adaptive decisions above are that inversion being paid for. A case pins
-every one of them, including that the nav band still names the key that closes
-the book after it re-columns, because the one-row band silently dropped that
-entry at 1920x1080 and a screenshot is what found it.
+1920x1080 deals the same 94 interior cells as 960x540 now — `hudMinorScale` is
+the smaller of `height/240` and `width/425`, so the two are one grid at two pixel
+sizes, and whatever the nav
+band and the list do at 960x540 they do here by construction. Off the gated
+exe on 2026-09-26 both show the nav band's keycaps stacked on two rows, the
+resting form the 960x540 row above predates, on a three-lead case. Under the
+old `height/180 - 1` register 1920x1080 dealt 74 (37 / 35). Both of the
+adaptive decisions above were that inversion being paid for, and they stay:
+1280x720 still deals 83 and still spends the second row, and a page that only
+composes at the sizes we capture is not composed. A case pins the nav band
+still naming the key that closes the book after it re-columns (`navShown` in
+test_casebook_page.cpp), because the one-row band silently dropped that entry
+at 1920x1080 and a screenshot is what found it.
 
 ---
 

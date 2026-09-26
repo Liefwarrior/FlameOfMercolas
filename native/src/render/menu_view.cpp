@@ -473,7 +473,7 @@ MenuTileHit menuTileHitAtPixel(const MenuTileState& state, int width, int height
 
 MenuTileLayout menuTileLayout(int width, int height) {
     MenuTileLayout out;
-    out.metric = panelMetric(height);
+    out.metric = panelMetric(width, height);
     const int cells = out.metric.cellsIn(width);
     const int rows = out.metric.rowsIn(height);
     // Below this there is no composition: four panes need a border, a rule,

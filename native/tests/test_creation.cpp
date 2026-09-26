@@ -2068,10 +2068,16 @@ TEST_CASE("THE NAME measures to its keyboard, and the narrower prose is counted 
     CHECK(layout.bodyRows == 8);
 
     // The measure is in CELLS, so it holds at every window whose cell count
-    // affords it -- and where the window is narrower than the measure (1920's
-    // 76 cells, 320's 64) the clamp lands at the window: full width by
-    // construction, no special case.
-    for (const auto& size : {std::pair{960, 540}, std::pair{1280, 720}}) {
+    // affords it. 1920x1080 used to be the one capture size that did NOT --
+    // the register stepped up faster than the height and dealt it 76 cells
+    // against a 77-cell measure, so the clamp landed at the window there --
+    // and it deals 96 now (hudMinorScale is the smaller of height/240 and
+    // width/425, and no window at least 425 px wide deals under 85), so the
+    // biggest window composes the
+    // same 77-cell card as the two under it, seated by the one rule. The
+    // clamp-at-the-window half of the contract is 320x180's now, and the
+    // next case proves it.
+    for (const auto& size : {std::pair{960, 540}, std::pair{1280, 720}, std::pair{1920, 1080}}) {
         const render::CreationLayout wide =
             render::creationLayout(page, size.first, size.second);
         INFO("window ", size.first, "x", size.second);
@@ -2079,28 +2085,39 @@ TEST_CASE("THE NAME measures to its keyboard, and the narrower prose is counted 
         CHECK(wide.metric.cellsIn(wide.bounds.w) == 77);
         CHECK(wide.bounds.x == render::panelSeatX(size.first, wide.bounds.w));
     }
-    const render::CreationLayout narrowest = render::creationLayout(page, 1920, 1080);
-    REQUIRE(narrowest.usable);
-    CHECK(narrowest.metric.cellsIn(narrowest.bounds.w) == narrowest.metric.cellsIn(1920));
 }
 
 TEST_CASE("a page that earns the window keeps it by construction, not by special case") {
-    // hudMinorScale steps with height, so THE BIGGEST WINDOW IS THE NARROWEST
-    // IN CELLS: 1920x1080 has 76 across, and every measured creation step
-    // wants 77 or more -- so at 1920 the clamp lands on the window and each
-    // page is exactly the full-width composition it always was. No
-    // is-this-page branch anywhere; that is the whole point of the clamp,
-    // and it is also why the ward map and the controls page (which never
-    // call the measure) cannot be touched by it.
+    // A window with fewer cells across than a measured step wants lands the
+    // page on the window, full width, with no is-this-page branch anywhere;
+    // that is the whole point of the clamp, and it is also why the ward map
+    // and the controls page (which never call the measure) cannot be touched
+    // by it. That window used to be the BIGGEST one -- the register stepped
+    // up faster than the height, so 1920x1080 dealt 76 cells where every
+    // measured step wants 77 or more -- and it is the SMALLEST now:
+    // hudMinorScale is the smaller of height/240 and width/425, no window at
+    // least 425 px wide deals under 85, and 320x180's 64 is the one capture
+    // size narrower than any
+    // measure. So the proof is 320x180's, for both pages.
     render::CreationFlow sheet = atSheet();
     for (const render::CreationPage& page : {fresh().page(), sheet.page()}) {
-        const render::CreationLayout layout = render::creationLayout(page, 1920, 1080);
+        const render::CreationLayout layout = render::creationLayout(page, 320, 180);
         REQUIRE(layout.usable);
-        CHECK(layout.metric.cellsIn(layout.bounds.w) == layout.metric.cellsIn(1920));
+        CHECK(layout.metric.cellsIn(layout.bounds.w) == layout.metric.cellsIn(320));
         // And the seat degenerates to the sub-cell remainder, just as the
         // centring it replaced did.
         CHECK(layout.bounds.x <= layout.metric.cellW());
     }
+    // And the other half, at the size that used to be the proof: a window
+    // with cells to spare deals the measure and seats it by the one rule.
+    // It does not hand the door the whole frame because the frame is big --
+    // 96 cells across at 1920x1080 now, and the door's card is 77 of them,
+    // the same 77 it is at 640x360.
+    const render::CreationLayout door = render::creationLayout(fresh().page(), 1920, 1080);
+    REQUIRE(door.usable);
+    CHECK(door.metric.cellsIn(1920) == 96);
+    CHECK(door.metric.cellsIn(door.bounds.w) == 77);
+    CHECK(door.bounds.x == render::panelSeatX(1920, door.bounds.w));
 }
 
 // ---------------------------------------------------------------------------

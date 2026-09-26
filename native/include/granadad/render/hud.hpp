@@ -30,8 +30,10 @@
 //   1. TWO SIZES, NOT ONE. hudScale() is the register the player reads at a
 //      glance -- the compass, the hour, the health bar, a shout. Everything
 //      else is reference material they look at deliberately, and it is drawn
-//      at hudMinorScale(), one step down. That is a hierarchy rather than a
-//      shrink: the frame says what to read first.
+//      at hudMinorScale(), one step down at the 16:9 capture sizes up to
+//      720 tall and further under it above that or at a narrower aspect
+//      (see hudMinorScale below). That is a hierarchy rather than a shrink:
+//      the frame says what to read first.
 //
 //   2. ABSENCE COSTS NOTHING. A row that says nothing happened does not get a
 //      row. "NOBODY IN PARTICULAR" is the ward having no opinion of you, and
@@ -645,9 +647,10 @@ struct HudState {
 /// keeps the same apparent size at every resolution.
 [[nodiscard]] int hudScale(int height) noexcept;
 
-/// One step down, and the size everything the player looks at DELIBERATELY is
-/// drawn at: the place name, the purse, standing, heat, the sack, the stealth
-/// line, the case, the rung, the objective, the rival, the room.
+/// The size everything the player looks at DELIBERATELY is drawn at: the place
+/// name, the purse, standing, heat, the sack, the stealth line, the case, the
+/// rung, the objective, the rival, the room -- and, through panelMetric(),
+/// every composed page in the game.
 ///
 /// It is a hierarchy and not a shrink. Ten sprints put ten rows on this HUD and
 /// drew every one of them at the size of the health bar, so the frame had no
@@ -656,12 +659,20 @@ struct HudState {
 /// the size the whole HUD is at 640x360 -- a resolution the game already calls
 /// legible -- and at 320x180 it is the same as hudScale(), because there is
 /// nothing below a 4x6 font to step down to.
-[[nodiscard]] int hudMinorScale(int height) noexcept;
+///
+/// THE SMALLER OF HEIGHT / 240 AND WIDTH / 425, WITH NO OFFSET, and that is
+/// the property that matters. It used to be hudScale() - 1, and the flat step
+/// made a bigger window deal FEWER cells across every page. Now the cells
+/// across any window at least 425 px wide never fall under 1280x720's 85, at
+/// any size and any aspect (16:10 included, which the height alone got
+/// wrong). It is no longer always one step under hudScale(): 720 tall is 4
+/// and 3, 1080 tall is 6 and 4. The arithmetic is on the definition.
+[[nodiscard]] int hudMinorScale(int width, int height) noexcept;
 
 /// How wide the top-right stack is at its widest, so the conversation surface
 /// can wrap clear of it instead of guessing. A spoken line running under the
 /// hour is unreadable and looks like a bug.
-[[nodiscard]] int hudTopRightReserve(int height) noexcept;
+[[nodiscard]] int hudTopRightReserve(int width, int height) noexcept;
 
 /// The fraction of the screen, on each axis, that the HUD may occupy from an
 /// edge. Anything between these on both axes is play space and must stay clear.

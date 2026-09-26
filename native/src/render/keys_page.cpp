@@ -100,10 +100,12 @@ inline constexpr int kKeysPageRows = 15;
 inline constexpr int kMasterShare = 58;
 inline constexpr int kMinMasterCells = 18;
 // Twenty-six cells is a paragraph that still reads. It is deliberately not
-// larger, because the biggest WINDOW is not the widest in CELLS: hudMinorScale
-// steps up with the frame height, so 1920x1080 has 76 cells across where
-// 960x540 has 96. The split has to survive that inversion or the detail pane
-// would vanish at the resolution with the most pixels in it.
+// larger: the split has to survive every window the game runs, and the one
+// that binds is the smallest -- 320x180's 64 cells across. (It used to be the
+// biggest: the old height/180 - 1 register dealt 1920x1080 just 76 cells where
+// 960x540 has 96, and the detail pane would have vanished at the resolution
+// with the most pixels in it. hudMinorScale is the smaller of height/240 and
+// width/425 now and no window at least 425 px wide deals under 85.)
 inline constexpr int kMinDetailCells = 26;
 
 /// The shares the composition will try for the master pane, WIDEST LAST.
@@ -119,7 +121,7 @@ constexpr int kMasterShares[] = {58, 62, 66};
 
 [[nodiscard]] Composition compose(int frameWidth, int frameHeight) {
     Composition out;
-    out.metric = panelMetric(frameHeight);
+    out.metric = panelMetric(frameWidth, frameHeight);
     const int cells = out.metric.cellsIn(frameWidth);
     const int rows = out.metric.rowsIn(frameHeight);
     if (cells < 8 || rows < 10) {
