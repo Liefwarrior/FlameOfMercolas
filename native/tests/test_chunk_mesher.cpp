@@ -787,7 +787,7 @@ TEST_CASE("a door tile places the door frame") {
         // hair the depth buffer cannot tell apart.
         CHECK((p.instance.position.z == doctest::Approx(streetZ - 0.03F) ||
                p.instance.position.z == doctest::Approx(roomZ + 0.03F)));
-        CHECK(p.instance.position.y == doctest::Approx(head + 0.5F * lintel->core * lintel->scale - 0.03F));
+        CHECK(p.instance.position.y == doctest::Approx(head + 0.5F * lintel->core * lintel->scale));
         CHECK(p.instance.pitch == doctest::Approx(3.14159265F * 0.5F));
         CHECK(p.instance.scale.y * lintel->height == doctest::Approx(2.0F + 2.0F * section));
         CHECK(p.mode == kDrawFaced);
@@ -808,13 +808,19 @@ TEST_CASE("a door tile places the door frame") {
         ++headers;
         CHECK(p.instance.scale.y * plaster->height ==
               doctest::Approx(render::kBandHeight - 0.01F - kDoorHeadHeight - 0.02F));
-        CHECK(p.instance.scale.x * plaster->width == doctest::Approx(2.0F + 4.0F * 0.005F));
         CHECK(p.gradient);
         if (p.instance.position.z == doctest::Approx(streetZ)) {
             CHECK(p.lightX == 13);
             CHECK(p.endAX == 12);
+            // The street face has a WINDOW box beside each jamb (the rhythm
+            // starts on the door's bay), retreated 4 cm into the post: the
+            // header abuts both.
+            CHECK(p.instance.scale.x * plaster->width == doctest::Approx(2.0F + 2.0F * 0.04F));
         } else {
             CHECK(p.instance.position.z == doctest::Approx(roomZ));
+            // The room face has thin plaster beside each jamb, retreated a
+            // hair.
+            CHECK(p.instance.scale.x * plaster->width == doctest::Approx(2.0F + 2.0F * 0.005F));
         }
     }
     CHECK(headers == 2);
@@ -1184,7 +1190,10 @@ TEST_CASE("placement is a deterministic function of the tile map") {
             // Plaster to the street: the quad's face is its +Z, turned to
             // look north.
             CHECK(p.instance.yaw == doctest::Approx(3.14159265F));
-            CHECK(p.instance.scale.x == doctest::Approx((2.0F + 0.02F) / 2.5F));
+            // To wherever the wall's own pieces beside the jambs end: a hair
+            // or a kit box's retreat past the opening on each side.
+            CHECK(p.instance.scale.x > 2.0F / 2.5F);
+            CHECK(p.instance.scale.x < 2.1F / 2.5F);
         }
     }
     CHECK(gullPosts == 4);
@@ -2438,7 +2447,7 @@ TEST_CASE("a door wears two jambs, on the cells that flank it, slim and cut to t
              p.instance.position.z == doctest::Approx(15.0F - proud + 0.03F))) {
             ++heads;
             CHECK(p.instance.position.y ==
-                  doctest::Approx(render::bandSurface(19) + kDoorHeadHeight + half - 0.03F + lintel->lift));
+                  doctest::Approx(render::bandSurface(19) + kDoorHeadHeight + half + lintel->lift));
         }
     }
     CHECK(heads == 2);

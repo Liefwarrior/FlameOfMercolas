@@ -31,11 +31,12 @@ namespace granadad::render3d {
 /// across here.
 inline constexpr float kDoorHeadHeight = 2.03F;
 
-/// The soffit over the opening, between the two lintels: the level of the
-/// beams' tops less a hair, so the beams stand proud of it and their top
-/// faces hide inside the closed head box (the lintel is 0.209 m of timber
-/// seated three centimetres into the posts' heads: 2.03 - 0.03 + 0.209).
-inline constexpr float kDoorSoffitHeight = 2.20F;
+/// The soffit over the opening, between the two lintels: AT the head, the
+/// level of the beams' undersides, ending at their back faces (adjacent,
+/// never overlapping, so nothing fights). At the beams' top level the
+/// whole inner face of each lintel hung below the soffit, hewn facets and
+/// all, and read as a dark tent in the head from the street.
+inline constexpr float kDoorSoffitHeight = kDoorHeadHeight;
 
 /// Where the mesher cuts the jamb cell's box off: not at the head but three
 /// centimetres OVER the soffit. The reveal quad stands a centimetre inside

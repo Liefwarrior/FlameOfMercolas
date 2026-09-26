@@ -206,7 +206,22 @@ constexpr float kRevealFlush = -0.01F;
 /// apart. Three centimetres it can. The posts' top three centimetres are
 /// inside the beam; the beam's face sits a finger behind theirs.
 constexpr float kLintelProud = -0.03F;
-constexpr float kLintelSink = 0.03F;
+constexpr float kLintelSink = 0.0F;
+/// The open leaf's top: the kit door is 1.967 m and the lintel's iron
+/// collars hang 2.6 cm under the head, three millimetres over the leaf's
+/// top, which fought it as a comb of dark teeth on the reveal at every
+/// door. The leaf is scaled to stop here, five centimetres under the
+/// collars; the eight centimetres of plaster over it are a door's own gap.
+constexpr float kLeafTop = 1.95F;
+/// A kit box (a wall or window piece) or a board quad that ends at a jamb
+/// post runs this far INTO the post: its end cap would otherwise stand on
+/// the opening's edge a centimetre in front of the rebated reveal and read
+/// as a plaster plane over the back half of the post's inner face -- which
+/// it did, on the one jamb of the Gull's door that has the window beside
+/// it. Four centimetres puts the cap three behind the reveal quad, out of
+/// the depth buffer's reach; the post and the lintel cover the retreat,
+/// and over the lintel the header abuts the cap's new end exactly.
+constexpr float kBoxRetract = 0.04F;
 /// The wall over a door's head starts this far above the head, inside the
 /// lintel's body: on the head exactly, its bottom edge lay in the lintel's
 /// underside plane and drew as a hairline of plaster under the beam.
@@ -1374,6 +1389,9 @@ private:
             // along the reveal.
             if (leaf != nullptr) {
                 const float leafLength = std::max(0.1F, leaf->maxX - leaf->minX);
+                // Its top under the lintel's collars (kLeafTop).
+                const float leafTall =
+                    leaf->height > 0.01F ? (kLeafTop - leaf->lift) / leaf->height : 1.0F;
                 // Where the hinge falls along the facade's normal: the
                 // street post's back (the finish's face less half the
                 // post's section) less a hair, or, with no post in the
@@ -1406,8 +1424,8 @@ private:
                         hinge.z -= kNormalZ[r.side] * leafLength;
                     }
                     pointPiece(PieceRole::DoorLeaf, *leaf, hinge, yaw, end == 0 ? gap.x : farX,
-                               end == 0 ? gap.y : farY, gap.z, outTint, Vec3{1.0F, 1.0F, 1.0F}, false,
-                               2.5F);
+                               end == 0 ? gap.y : farY, gap.z, outTint, Vec3{1.0F, leafTall, 1.0F},
+                               false, 2.5F);
                 }
             }
         }
@@ -1553,12 +1571,14 @@ private:
                 // The wall over the head, in this face's own finish, from
                 // just over the head (inside the lintel's body) to the
                 // storey top over the whole gap, in the plane of the finish
-                // beside it -- a thin quad overlapping its neighbours by
-                // twice the hair every plaster cut does, because those
-                // neighbours stop a hair INSIDE the post (walls()) and
-                // above the head there is no post to hide the seam.
+                // beside it. It runs to exactly where the wall's own piece
+                // beside each jamb ends (walls() retracts that end into the
+                // post: a hair for a thin quad, kBoxRetract for a kit box),
+                // abutting it -- an overlap fought at the stagger's two
+                // millimetres, a gap showed the stone course behind.
                 if (f.spec != nullptr) {
-                    const float overlap = f.role == PieceRole::WallPlaster ? 2.0F * kCutOverlap : 0.0F;
+                    const float overA0 = retractAt(cellX[0], cellY[0], r.side, gap.z);
+                    const float overA1 = retractAt(cellX[1], cellY[1], r.side, gap.z);
                     FaceOpts o;
                     o.frontOut = f.frontOut;
                     o.standoff = f.standoff;
@@ -1566,7 +1586,7 @@ private:
                     o.height = render::kBandHeight - 0.01F - kDoorHeadHeight - kHeaderInset;
                     o.tint = f.tint;
                     o.light = light;
-                    facePiece(r, f.role, *f.spec, lo - overlap, hi + overlap, o);
+                    facePiece(r, f.role, *f.spec, lo - overA0, hi + overA1, o);
                 }
             }
             // The soffit: the plaster ceiling piece laid face down across
@@ -2022,6 +2042,24 @@ private:
                     qa0 += (i == 0 && postA0) ? kCutOverlap : -kCutOverlap;
                     qa1 += (i == k - 1 && postA1) ? -kCutOverlap : kCutOverlap;
                     o.standoff += (i & 1) != 0 ? 2.0F * kCutStagger : kCutStagger;
+                } else if (!r.reveal) {
+                    // A kit box (the wall, a window) or a board quad ending
+                    // at a jamb post retreats into the post (kBoxRetract).
+                    if (i == 0 && postA0) {
+                        qa0 += kBoxRetract;
+                    }
+                    if (i == k - 1 && postA1) {
+                        qa1 -= kBoxRetract;
+                    }
+                }
+                // What the header over the door must run to at this jamb.
+                if (!r.reveal && i == 0 && postA0) {
+                    jambEndRetract_[cellKey(r.z, r.side, r.firstX, r.firstY)] =
+                        (thinPlaster && spec == &piece) ? kCutOverlap : kBoxRetract;
+                }
+                if (!r.reveal && i == k - 1 && postA1) {
+                    jambEndRetract_[cellKey(r.z, r.side, r.lastX, r.lastY)] =
+                        (thinPlaster && spec == &piece) ? kCutOverlap : kBoxRetract;
                 }
                 facePiece(r, role, *spec, qa0, qa1, o);
                 if (role == PieceRole::WallWindow) {
@@ -4005,6 +4043,14 @@ private:
     std::vector<std::uint8_t> covered_;
     std::vector<DoorGap> doors_;
     std::map<std::uint64_t, std::size_t> gapOf_;
+    /// How far into a jamb post the wall's own piece on (side of jamb cell)
+    /// retreats (walls()), so the header over the door can abut its end.
+    std::map<std::uint64_t, float> jambEndRetract_;
+
+    [[nodiscard]] float retractAt(std::int32_t x, std::int32_t y, int side, std::int32_t z) const {
+        const auto found = jambEndRetract_.find(cellKey(z, side, x, y));
+        return found == jambEndRetract_.end() ? kCutOverlap : found->second;
+    }
     /// Every room cell a window has asked about, by cellKey(z, 0, x, y),
     /// to its room's anchor cell.
     std::map<std::uint64_t, std::pair<std::int32_t, std::int32_t>> roomAnchorOf_;
