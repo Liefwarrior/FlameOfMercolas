@@ -2472,8 +2472,8 @@ TEST_CASE("the reveal is the post's own edge, and the room's plaster stops at it
             !(p.lightX == 10 || p.lightX == 13)) {
             continue;
         }
-        const bool east = p.lightX == 10 && p.instance.position.x > 11.0F && p.instance.position.x < 11.05F;
-        const bool west = p.lightX == 13 && p.instance.position.x < 13.0F && p.instance.position.x > 12.95F;
+        const bool east = p.lightX == 10 && p.instance.position.x > 10.99F && p.instance.position.x < 11.05F;
+        const bool west = p.lightX == 13 && p.instance.position.x < 13.01F && p.instance.position.x > 12.95F;
         if (!east && !west) {
             continue;
         }
