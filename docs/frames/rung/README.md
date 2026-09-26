@@ -133,8 +133,14 @@ books. Byte identical at every checkpoint. The gate agrees.
 
 | baseline | number |
 |---|---|
-| population, `--population --population-hour 16 --ticks 7200`, twice | `0x2646C1AAA2BA38DF` |
+| population, `--population --population-hour 16 --ticks 7200`, twice | `0xDD3890042DD2B472` |
 | tavern twin, `--tavern --ticks 900`, twice | `0x63F354D02A6B600F` |
+
+Both are `dist\granadad-twin-gate.exe` runs. The population number here read
+`0x2646C1AAA2BA38DF` until the third pass; that was the digest from before
+street senses moved it (wip d23ba091, the tree this lane was cut from), copied
+in without being re-run. Re-run on the third pass's gated exe, both twice,
+both IDENTICAL, and neither moved by the plate.
 
 ## The frames
 
@@ -152,7 +158,7 @@ second into its hold, which is the same picture.
 | `rung-flame-960.png` | the same with `--rung=flame` | Two leads read at the Mission at nine. `THE FLAME  --  DISCIPLE`, the back room stood back from. The pull line under the ribbon still reads the next lead. |
 | `rung-trade-960.png` | the same with `--rung=trade` | The bounty paid across Cull's table. `THE TRADE  --  STALLKEEP` the step the talk closes, Cull still in frame. |
 | `rung-law-960.png` | the same with `--rung=law` | Four drinks stood to Cull at eleven. `THE LAW  --  KNOWN TO THE WATCH`, Cull on his stool. |
-| `rung-wire-320.png` | the first drive at `--width=320 --height=180` | The strip pin. The longest rows are 56 glyphs and the plate is 60 cells wide in a 64-cell frame, so a cell of air each side and the row whole. Under the compass band, clear of the reticle. |
+| `rung-wire-320.png` | the first drive at `--width=320 --height=180` | The strip pin. The longest rows are 56 glyphs and the plate is 62 cells wide in a 64-cell frame: a cell of margin off each edge, two cells of gutter inside each keyline, and the row whole. Under the compass band, clear of the reticle. |
 
 ## Second pass, 2026-09-25
 
@@ -178,11 +184,43 @@ The critic scored the plate a 7 and left two things in the way of an 8.
   Trimmed the connective tissue and kept the "Yet.": *The Watch has your
   name now. Not sour about it. Yet.*
 
+## Third pass, 2026-09-25
+
+The record critic on e3e7a600 held the plate at 7 and named three things.
+
+- **The gold banner outweighed the plate.** The amber alert row at the foot
+  of the frame -- `CRACKED IT - 14C AND 1 PIECE...` on the wire drive,
+  `WATCHMAN CULL: THAT IS HONEST WORK...` on the trade -- fired in the same
+  frame, wider and just as bright. It's not cut the way the skill toast was:
+  the toast is the same climb said twice, but the take off a box or the
+  length of a leap is news of its own, and its four-second hold would be
+  lost whole under a five-second plate. It's not held back either; a leap's
+  length five seconds after the leap is a notice out of its moment. It
+  stands at **half weight** while the plate is up, scaled on the plate's own
+  fade so the two cross rather than snap: dims as the plate rises, whole
+  again as it lifts. A bouncer's WARNING rides that same row and dismisses
+  the plate outright, so the one line you must not miss is never the one
+  dimmed. `Session::alertFadeNow` is the one arithmetic, drawn and pinned.
+- **One cell of gutter.** The widest row all but touched its keyline while
+  the plate kept a whole row of air between its head and its prose. Two
+  cells inside each keyline now, at every size (`kRungPlateGutterCells`).
+  The strip pin still holds exactly: 56 glyphs, two gutters a side, two
+  borders is the 64-cell frame less its margin, so `kRungPlateRowCells`
+  stands at 56 and the geometry pins are exact widths now, not floors.
+- **`OVER 3 TILES.`** isn't the plate's. It's the alert row's own leap
+  announce (`Session::leap`, said the moment the jump is armed), on screen
+  because the roofs drive ends on the leap that tips the rung. The plate's
+  prose has no numeral in any of its twenty-one rows and the sheet is now
+  pinned that way, so a count can never turn up in a docker's mouth on this
+  card. The leap line itself keeps its number: coin and tiles are the alert
+  row's register, and at half weight under the plate it reads as what it is.
+
+The doubled speaker on the law drive (`WATCHMAN CULL: WATCHMAN CULL TAKES
+THE DRINK.`) is the drink line's own composition, not the plate's, and has
+its own chip.
+
 ## Not in this folder yet
 
-- The PNGs. The exe in `dist\` is the wip baseline and doesn't have the plate.
-  Once the gate builds this tree, run `scripts\shoot-rung.ps1` and the six
-  land here with their log.
 - A frame of the plate dismissed by a warning, or queued behind a page. Those
   are timing, not a picture. `test_rung_plate.cpp` pins both, plus the toast
   waiting behind the plate and the plate never moving a hash.
