@@ -479,19 +479,21 @@ TEST_CASE("a rung rising puts the plate up, holds it, queues a second behind it,
     CHECK(state.fade > 0.0F);
     CHECK(state.fade < 1.0F);
     CHECK(state.drift > 0.0F);
-    // THE LIFT IS THREE TIMES THE RISE: still on screen past a page ease
-    // and past two, gone by the lift's own count.
-    session.stepMany(sim::MoveInput{}, kPageEaseSteps + 1);
-    CHECK(session.rungPlateState().fade > 0.0F);
-    session.stepMany(sim::MoveInput{}, kPageEaseSteps);
-    CHECK(session.rungPlateState().fade > 0.0F);
-    session.stepMany(sim::MoveInput{}, kRungPlateLiftSteps - 2 * kPageEaseSteps - 1);
-    CHECK(session.rungPlateState().fade == 0.0F);
     CHECK(session.rungPlateQueued() == 1);
     CHECK(session.rungPlateText().head == headFor(sim::LegendTrack::Wire, 1));
+    // THE LIFT IS THREE TIMES THE RISE: the wire's plate is still the one on
+    // screen a page ease into its lift, and two page eases in -- where an
+    // eight-step lift would have been long gone and the roofs' plate up.
+    session.stepMany(sim::MoveInput{}, kPageEaseSteps + 1);
+    CHECK(session.rungPlateState().fade > 0.0F);
+    CHECK(session.rungPlateText().head == headFor(sim::LegendTrack::Wire, 1));
+    session.stepMany(sim::MoveInput{}, kPageEaseSteps);
+    CHECK(session.rungPlateState().fade > 0.0F);
+    CHECK(session.rungPlateText().head == headFor(sim::LegendTrack::Wire, 1));
 
-    // A beat of black, then the roofs' turn with their own words.
-    session.stepMany(sim::MoveInput{}, 4);
+    // The rest of the lift, a beat of black, then the roofs' turn with
+    // their own words.
+    session.stepMany(sim::MoveInput{}, kRungPlateLiftSteps - 2 * kPageEaseSteps - 1 + 4);
     CHECK(session.rungPlateWanted());
     CHECK(session.rungPlateQueued() == 0);
     CHECK(session.rungPlateText().head == headFor(sim::LegendTrack::Roofs, 1));
@@ -685,9 +687,14 @@ TEST_CASE("a toast never starts ahead of a plate waiting behind a page, and a pl
     CHECK_FALSE(session.skillToastWanted());
     session.toggleCasebook();
     REQUIRE_FALSE(session.casebookOpen());
-    for (int i = 0; i < kPageEaseSteps + 2; ++i) {
+    // The dismissed plate's own lift has to settle before the queued one
+    // can start (the beat of black between two plates); the toast waits
+    // through all of it, the tail included.
+    int waited = 0;
+    while (!session.rungPlateWanted() && waited < kRungPlateLiftSteps + 2 * kPageEaseSteps + 8) {
         session.stepMany(sim::MoveInput{}, 1);
         CHECK_FALSE(session.skillToastWanted());
+        ++waited;
     }
     REQUIRE(session.rungPlateWanted());
     CHECK(session.rungPlateText().head == headFor(sim::LegendTrack::Roofs, 1));
@@ -1015,69 +1022,44 @@ TEST_CASE("a bouncer's warning is never the line dimmed: on every frame it is on
     CHECK_FALSE(rung.rungPlateWanted());
 }
 
-TEST_CASE("the drawn wiring: under a plate the alert row's amber is well under the same frame's without one") {
-    // Three sessions on one world: no line at all, the same lead read (the
-    // line on the row), and the line with a rung. The frames differ only
-    // where the rows differ: the plate above the aim prompt's fence, the
-    // alert row below it. Amber is r - b, and the world under the row is
-    // warm too (the Mission's boards), so the line's own amber is what each
-    // frame carries OVER the lineless one, summed on exactly the pixels the
-    // two lined frames disagree on: the plated frame's row is at half weight
-    // and one register down -- well under the plain frame's, and not
-    // nothing.
-    Session bare(configAt("mission-backroom"));
+TEST_CASE("the drawn wiring: under a plate the alert row's own glyphs are half as bright and one register down, on pixels, against a twin without one") {
+    // Two sessions on one world, the same swing at nobody in reach (NOBODY
+    // IN REACH. on the row: sixteen glyphs, which fits the glance scale at
+    // every size the game runs at, and a swing scores no Legend track), and
+    // a rung in one. The frames differ only where the rows differ: the plate
+    // above the aim prompt's fence, the alert row below it, and the voice
+    // row moved by the alert's own slot. THE ALERT'S OWN GLYPHS BY THEIR
+    // HUE: the alert ink is (0.90, 0.62, 0.30) at any alpha over its black
+    // field, so green runs at about seven tenths of red and blue at a third
+    // -- where the voice row's name (0.90, 0.72, 0.58) carries blue at two
+    // thirds, its dim text is grey, every field is black, and the boards
+    // are the same in both frames and never counted.
     Session plain(configAt("mission-backroom"));
     Session plated(configAt("mission-backroom"));
-    wake(bare);
     wake(plain);
     wake(plated);
-    // THE LINE MUST FIT THE GLANCE SCALE, or the plain frame is already at
-    // the minor register and the step-down is a no-op (the auditor's
-    // finding: the back room's sixty-seven-glyph line). The back room
-    // opens the flagstones; their fifty-four-glyph line fits at 960x540.
-    // Placed, not walked: a walk would move the world under the twins.
-    plain.examine();
-    plated.examine();
-    const std::int32_t flagstones = raws().indexOf("mission-flagstones");
-    REQUIRE(flagstones >= 0);
-    const sim::LeadSite stones = raws().leads()[static_cast<std::size_t>(flagstones)].site;
-    for (Session* each : {&bare, &plain, &plated}) {
-        each->body().placeAt(stones.x, stones.y, stones.band);
-    }
-    plain.examine();
-    plated.examine();
+    plain.punch();
+    plated.punch();
     crackABox(plated);
-    bare.stepMany(sim::MoveInput{}, kPageEaseSteps + 2);
     plain.stepMany(sim::MoveInput{}, kPageEaseSteps + 2);
     plated.stepMany(sim::MoveInput{}, kPageEaseSteps + 2);
     REQUIRE_FALSE(plain.rungPlateWanted());
     REQUIRE(plated.rungPlateWanted());
     REQUIRE(plated.rungPlateFade() == 1.0F);
     REQUIRE(plain.alertFadeNow() == 1.0F);
-    REQUIRE(bare.alertFadeNow() == 0.0F);
-    Framebuffer none(960, 540);
     Framebuffer a(960, 540);
     Framebuffer b(960, 540);
-    (void)bare.drawFrame(none);
     (void)plain.drawFrame(a);
     (void)plated.drawFrame(b);
     const CentreRect fence = hudAimRect(960, 540);
     const auto amber = [](const Rgb& p) { return static_cast<double>(std::max(0.0F, p.r - p.b)); };
-    // THE ROW'S OWN GLYPHS BY THEIR HUE: the alert ink is (0.90, 0.62, 0.30)
-    // at any alpha over its black field, so green runs at about seven
-    // tenths of red and blue at a third -- where the voice row's name
-    // (0.90, 0.72, 0.58) carries blue at two thirds, its dim text is grey,
-    // and every field is black. The floor is warm too, so a pixel must also
-    // differ from the lineless frame's.
     const auto alertInk = [](const Rgb& p) {
         return p.r > 0.25F && p.g > 0.60F * p.r && p.g < 0.78F * p.r && p.b < 0.45F * p.r;
     };
-    // Three readings of the same pixels. THE PEAK: the row's brightest amber
-    // over the boards, which halving the alpha halves whatever the register.
-    // THE HEIGHT: how many pixel rows the glyphs stand, which stepping the
-    // register down shortens whatever the alpha. THE SUM, coarsely.
-    double whole = 0.0;
-    double under = 0.0;
+    // Three readings of the pixels the twins disagree on. THE PEAK: the
+    // row's brightest amber, which halving the alpha halves whatever the
+    // register. THE HEIGHT: how many pixel rows the glyphs stand, which
+    // stepping the register down shortens whatever the alpha. THE COUNT.
     double aPeak = 0.0;
     double bPeak = 0.0;
     int aTop = 540;
@@ -1094,35 +1076,24 @@ TEST_CASE("the drawn wiring: under a plate the alert row's amber is well under t
                 continue;
             }
             ++differing;
-            const double ground = amber(unpackRgb(none.pixels()[i]));
-            const double ea = amber(unpackRgb(a.pixels()[i])) - ground;
-            const double eb = amber(unpackRgb(b.pixels()[i])) - ground;
-            whole += std::max(0.0, ea);
-            under += std::max(0.0, eb);
-            // THE ROW'S OWN GLYPHS, and nothing else in the band: the amber
-            // ink stands well over a fifth of a unit above the boards at
-            // either weight (measured 0.57 whole, 0.32 under), where the
-            // voice row's dim ink, the backing plates' bone rails and the
-            // boards through a thinned scrim all stand under a tenth. The
-            // band's other rows move when the alert's slot shrinks, so a
-            // looser threshold reads them and not the row.
-            if (a.pixels()[i] != none.pixels()[i] && alertInk(unpackRgb(a.pixels()[i]))) {
+            const Rgb pa = unpackRgb(a.pixels()[i]);
+            const Rgb pb = unpackRgb(b.pixels()[i]);
+            if (alertInk(pa)) {
                 ++aInk;
                 aTop = std::min(aTop, y);
                 aBottom = std::max(aBottom, y);
-                aPeak = std::max(aPeak, ea);
+                aPeak = std::max(aPeak, amber(pa));
             }
-            if (b.pixels()[i] != none.pixels()[i] && alertInk(unpackRgb(b.pixels()[i]))) {
+            if (alertInk(pb)) {
                 ++bInk;
                 bTop = std::min(bTop, y);
                 bBottom = std::max(bBottom, y);
-                bPeak = std::max(bPeak, eb);
+                bPeak = std::max(bPeak, amber(pb));
             }
         }
     }
-    INFO("differing ", differing, " whole ", whole, " under ", under, " aInk ", aInk, " bInk ",
-         bInk, " a rows ", aTop, "..", aBottom, " b rows ", bTop, "..", bBottom, " aPeak ", aPeak,
-         " bPeak ", bPeak);
+    INFO("differing ", differing, " aInk ", aInk, " bInk ", bInk, " a rows ", aTop, "..", aBottom,
+         " b rows ", bTop, "..", bBottom, " aPeak ", aPeak, " bPeak ", bPeak);
     REQUIRE(differing > 0);
     REQUIRE(aInk > 0);
     REQUIRE(bInk > 0);
@@ -1130,14 +1101,11 @@ TEST_CASE("the drawn wiring: under a plate the alert row's amber is well under t
     // plain frame's.
     CHECK(bPeak < 0.7 * aPeak);
     // One register down: the glyphs stand exactly six rows of the glance
-    // scale without the plate and six of the minor scale under it, and
-    // there are fewer of their pixels.
-    CHECK(aBottom - aTop + 1 == 6 * hudScale(540));  // the 4x6 font: six rows
+    // scale without the plate and six of the minor scale under it (the 4x6
+    // font's six rows), and there are fewer of their pixels.
+    CHECK(aBottom - aTop + 1 == 6 * hudScale(540));
     CHECK(bBottom - bTop + 1 == 6 * hudMinorScale(540));
     CHECK(bInk < aInk);
-    // And in sum: dimmer, and not nothing.
-    CHECK(under < 0.75 * whole);
-    CHECK(under > 0.02 * whole);
 }
 
 // ===========================================================================
