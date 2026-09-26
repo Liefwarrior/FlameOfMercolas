@@ -58,6 +58,7 @@
 namespace granadad::render {
 class Session;
 struct Camera;
+class LampGlow;
 }  // namespace granadad::render
 
 namespace granadad::render3d {

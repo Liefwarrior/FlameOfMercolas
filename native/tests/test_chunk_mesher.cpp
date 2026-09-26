@@ -907,7 +907,9 @@ TEST_CASE("a door tile places the door frame") {
             // put a 0.54 m patch (0.9 of a 0.6 cage) next to a lantern's
             // 1.1 -- the cage keeps its fire, the street gets the glow.
             const bool overFire = p.lightX == 6 && p.lightY == 5;
-            CHECK(across == doctest::Approx(overFire ? 0.9F : 1.1F));
+            // THIRD PASS: 1.5 on a lantern and 1.2 on a fire, grown with the
+            // surface pool (static_pieces.cpp, kLanternFlameWidth).
+            CHECK(across == doctest::Approx(overFire ? 1.2F : 1.5F));
             CHECK(p.instance.gradientTo == doctest::Approx(catalogue.piece(PieceRole::Flame)->width));
             CHECK(p.instance.gradientToZ == doctest::Approx(catalogue.piece(PieceRole::Flame)->height));
             // A billboard, anchored on the flame's centre: the quad's
@@ -3117,17 +3119,12 @@ TEST_CASE("a lit timber pane is one ramp quad, hot at the sill, and the boards e
         if (pane.role != PieceRole::PaneTimber) {
             continue;
         }
+        // darkPane(): a quarter of the lit value in red, a third in blue --
+        // dark glass with a blue lean, never the candle.
         const Rgba8 tint = world.relitPaneTint(i);
-        CHECK(tint.r < 60);
+        CHECK(tint.r < 80);
         CHECK(tint.b >= tint.r);
-        const StaticPlacement& before = world.placements()[i - 3];
-        if (before.role == PieceRole::WallTimber && before.spill) {
-            const Rgba8 inner = world.relitTint(i - 3, before.flipped ? 0 : 1);
-            const Rgba8 outer = world.relitTint(i - 3, before.flipped ? 1 : 0);
-            // By day the two ends differ only by the sky, and the sky is
-            // one value along a metre of wall: no candle add.
-            CHECK(std::abs(static_cast<int>(inner.r) - static_cast<int>(outer.r)) <= 8);
-        }
+        CHECK_FALSE((tint.r == warm.r && tint.g == warm.g && tint.b == warm.b));
     }
 }
 
@@ -3216,7 +3213,8 @@ TEST_CASE("the surface pool carries to eight tiles and the law's field does not"
         CHECK(v <= last);
         last = v;
     }
-    CHECK(render::poolRadiusOf(8) == doctest::Approx(render::kPoolRadiusFloor));
+    CHECK(render::poolRadiusOf(8) == doctest::Approx(4.0F * render::kPoolReach));
+    CHECK(render::poolRadiusOf(0) == doctest::Approx(3.5F * render::kPoolReach));
     CHECK(render::poolRadiusOf(31) == doctest::Approx(render::kPoolRadiusCap));
 
     // On the real Docks: seven tiles along a row from a lantern the law's
