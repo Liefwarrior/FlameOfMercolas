@@ -1064,6 +1064,10 @@ TEST_CASE("placement is a deterministic function of the tile map") {
         } else if (p.role == PieceRole::LipPlank || p.role == PieceRole::LipStone) {
             CHECK(p.instance.pitch == doctest::Approx(-3.14159265F / 2.0F));
             CHECK(p.instance.scale.z == doctest::Approx((render::kFloorSlab - 0.01F) / 2.5F));
+        } else if (p.role == PieceRole::Lintel) {
+            // The door post's beam laid on its side across the head: a
+            // quarter turn about X puts its length along the run.
+            CHECK(p.instance.pitch == doctest::Approx(3.14159265F / 2.0F));
         } else if (!upright) {
             CHECK(p.instance.pitch == 0.0F);
         }
