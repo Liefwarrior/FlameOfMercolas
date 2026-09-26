@@ -1011,9 +1011,56 @@ Proved by three cases in `native/tests/test_ward_actors.cpp`: "crowds sidestep i
 into a column at a chokepoint" (`sidesteps() > 0` under a real rush, one-body-per-cell holds), "a
 blocked body does not oscillate: sidestep never doubles back on itself" (an A-B-A-B detector over
 600 ticks, the round-3 regression test), and "nobody ever stands on the player's own tile" (a
-sustained refusal check under real foot traffic) -- gated on the tree whose GATE-STAMP names it
-(`native/` digest `80d06b0f65f1374d6aab092bdcf115553cde55e0bb487f46ba871a70ea1c8fbb`, 334 files,
-ctest cases 1367 (floor 537); `verify-windows.ps1` PASS -- 1,286 sim doctest cases / 2,682,177
-assertions under mingw, 0 failed, content-fingerprint and world-hash reports byte-identical
-linux/gcc vs mingw/windows, the stamp naming this tree), and confirmed visually against fresh
-screenshots at the Docks locations the critic flagged (`docs/frames/crowd-flow/`).
+sustained refusal check under real foot traffic).
+
+## Round 4 -- what the round-3 three-hat re-review actually found, and what it did not close
+
+The round-3 numbers above never shipped past this worktree either. Re-reviewed under the same
+three-hat gate, the AUDITOR (4/10) and the PLAYER (5/10) each found real gaps round 3 missed:
+
+**Auditor, confirmed and fixed:** `cameFromX/Y/Band` was written by `tryEnter` alone, but four
+other places move an actor's tile directly without going through it -- both of `tryPush`'s
+branches, `standUp`, `revivePrey`, `settleToSchedule` -- so a shoved or just-stood-up body could
+carry a stale `cameFrom` into its very next sidestep. Consolidated into one
+`WardPopulation::shiftCameFrom()` so a sixth write site can't quietly repeat the gap. The auditor
+also proved a single step of memory isn't enough on its own: a body with two level, unpreferred
+flanks either side of a blocked doorway can cycle through both forever (neither flank is ever the
+OTHER flank's own `cameFrom`). Extended to two steps (`cameFrom2X/Y/Band`), both hashed, both
+excluded by `sidestep()`'s candidate loop. And the auditor proved BY EXHAUSTIVE COMPUTATION, a
+second time, that round 3's tile-parity `personalSpaceNudge` was the SAME defect as round 2's
+id-keyed one by a different route -- provably unfixable by formula, since no function of one
+cell's own coordinate can push away from every possible neighbour. Rebuilt a second time: given
+the same actor roster `actorInstances()` is about to draw, it now finds every other visible body
+within one tile and pushes away from where they actually are -- correct by construction.
+
+**Player, found but NOT yet closed:** driven play at street level (not the overhead vantage the
+round-3 capture used) reproduced the oscillation in a DIFFERENT shape -- a 3-4 tile cycle through
+ORDINARY route-replanning, not `sidestep()`'s own candidate loop. `cameFrom`/`cameFrom2` only
+gate `sidestep()`; a fresh A* search from a sidestepped-to tile has no awareness of which cells
+the body recently abandoned, and if the target is still blocked, the shortest path very often
+routes straight back through the same chokepoint as an ORDINARY planned hop (via `tryEnter`, not
+`sidestep`), which round 4's guard never touches. This needs either the search itself, or a
+short-lived per-actor avoid-list feeding it, to carry that awareness -- materially bigger than a
+`sidestep()`-local fix, and not attempted in round 4. The existing regression test cannot see it
+either: it only detects a period-2 A-B-A-B pattern, not the longer cycle.
+
+```
+at branch merge/crowd-flow-into-wip, round 4,
+granadad-twin-gate --population --population-hour 16 --ticks 7200, 96 walkers
+COMBINED WORLD HASH: 0x66B5A1B2F32270B9 -> 0x499B2D62A49840B5      <- DECLARED, NOT YET RE-BLESSED
+```
+
+Recorded directly from `dist\granadad-twin-gate.exe --population --population-hour 16
+--ticks 7200` on Windows/mingw, **two invocations**, each `run A` == `run B` ==
+`0x499B2D62A49840B5`, report text byte-identical at **23,419 bytes**. Tavern unmoved at
+`0x63F354D02A6B600F` (3,153 bytes). Gated on the tree whose GATE-STAMP names it (`native/` digest
+`d2a9590ff7edfe6ee1c17950908c9c5890a6a716f3bd13300754e8b89a4f0686`, 334 files, ctest cases 1367
+(floor 537), 99/99 ctest suites green; `verify-windows.ps1` PASS -- 1,286 sim doctest cases /
+2,682,185 assertions under mingw, 0 failed, content-fingerprint and world-hash reports
+byte-identical linux/gcc vs mingw/windows).
+
+**Marked NOT YET RE-BLESSED on purpose: this number is real and reproducible, but the lane has not
+cleared the three-hat gate, and Eli has not been asked how he wants to proceed** -- close the
+route-replan gap properly (a bigger pathfinding change), or land the substantial, verified
+improvement over the original bug with the remaining edge case written up honestly. See
+DECISIONS.md for the full account.
