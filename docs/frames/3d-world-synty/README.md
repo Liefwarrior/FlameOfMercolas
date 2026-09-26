@@ -661,9 +661,8 @@ auditor 7).** What they found and what moved:
   quarters of its pane's own cell at both ends (`kSpillWindowModuleShare`),
   since its cuts stand a tile and a quarter off the glass; a board half's
   end at the module's cut shares the value with the module beyond it, so
-  nothing stops at the seam; the street cell takes three quarters
-  (`kSpillStreetShare`), so a body talking under a lit window is no longer a
-  silhouette against it. The map keys off the pane's own wall cell
+  nothing stops at the seam; the street cell took three quarters
+  then (`kSpillStreetShare`; the second round below re-spreads it). The map keys off the pane's own wall cell
   (`StaticPlacement::paneX/paneY`, set by `houseOf()`), not a run piece's
   first cut.
 - *The pool on the ground.* A grey cobble under the law's near-white
@@ -705,6 +704,54 @@ fires through the Gull's roof; the scripted night section opens in daylight
 and `--demo-capture`/`--framedump` write HUD-only PNGs; urchins wear the
 watchman rig; the 02:00 crowd is the 22:00 crowd; cloned townswomen crowd a
 doorway.
+
+**Fix round two (the three critics on 702f0a48: director 6, player 5,
+auditor 5).** The first round's spill was a regression in clear weather and
+the halo's move past the veils put the lamps out in fog. What moved:
+
+- *The clamp keeps its hue.* Ambient + pool + candle was clamped per channel
+  before it multiplied a surface's tint, so a wall under a lantern
+  saturated its red first and went on taking green and blue: every lit
+  plaster in the ward came out olive, at noon luminance, with a hue seam
+  beside the Gull's lamp. `render::clampLight` scales the three channels
+  together by the brightest (the pieces, the chunks, the bodies and the
+  ground items all go through it), so a candle's light on a wall is a
+  candle's colour at any strength. Pinned: a piece at the clamp is never
+  bluer over red than its own tint.
+- *The spill is a third of what it was, and blended.* `kSpillGlow` 0.62 ->
+  0.34 on the pane's own cell, so the wall beside a window stays under the
+  pane that lights it (pinned); along the wall 0.45 of it at one tile and a
+  tail at two; out into the street more, since the light leaves through the
+  glass -- 0.9 on the cell before the window, half on its neighbours and the
+  row beyond, so a body talking under a lit window stands in it. The chunk
+  colour stage reads the map AT THE VERTEX as the mean of the four cells
+  that meet at its corner, so a plaster wall no longer breaks into slabs at
+  cell seams; a run piece's cuts already fall between cells.
+- *The veils write no depth.* The halos, drawn past the veils since round
+  one, were depth-tested against the fog shells round the eye and every
+  halo past the first shell was culled: in a fog the lamps went out before
+  the walls they lit. `rlDisableDepthMask` round the veils; the halos and
+  the bright glass are tested against the world alone.
+- *Bright glass through a fog.* A lit pane's or a lamp's glass is a light,
+  and a light is seen further into a fog than the wall round it. The world
+  scene puts the fog's share by the eye's distance into the pane's alpha
+  (`kHaloFogShare`, the halo's own rule) and the adapter draws such glass
+  once more past the veils at that alpha over its own veiled pixels
+  (`lateGlass`, `drawLateGlass`): hot at five metres, the fog's grey with a
+  warmth in it at twenty. 255 in clear air, where nothing changes.
+- *The fan is rounder.* Forty-eight segments, twelve rings, the flat core a
+  tenth of the span: the iso-alpha contours of a twenty-four-gon read as
+  straight edges on a veiled wall, and the core's own edge stood on the
+  plaster past the glass. The near fade reaches four metres now
+  (`kHaloNearFull`) with a floor of 0.08, so the cap is copper at two and
+  three metres and not cream.
+- *The rise comes forward.* `houseRisingFrom`/`To` 3.5 / 5.25: the fishers
+  are up by five, and the street at five is not the street at two.
+
+Declared, not built: the wind's dim on the pool is steady (a gutter in
+motion would want a per-frame relight; the relight runs on the minute); a
+kit window has no muntins and no room behind its glass (the Synty piece is
+a card; the ramp is what the card can carry).
 
 **Reshoot.** `dist\granadad.exe --smoke=0 --hold --scale=1 --weather=clear --time=HH --spawn=X,Y,Z --yaw=DEG [--pitch=DEG] [--fov=DEG] --screenshot=path.png`
 
