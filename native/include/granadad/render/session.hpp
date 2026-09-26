@@ -1048,6 +1048,13 @@ public:
     /// on screen, and for the rest of a line that was on the row under it
     /// (its capped two seconds) -- it never swells back.
     [[nodiscard]] bool alertStepsDownNow() const noexcept;
+    /// What the aim prompt names under the reticle right now ("WATCHMAN
+    /// CULL  WATCHMAN", "THE STRONGBOX  ROOM 3  EMPTIED"), refreshed every
+    /// step by syncPanelAnim. Public so a drive can put the cause of a rung
+    /// in the picture by reading it, and a case can pin that it did.
+    [[nodiscard]] std::string_view aimSubjectNow() const noexcept {
+        return std::string_view{interactSubjectCache_};
+    }
     /// The announce slot's drawn fades exactly as drawFrame composes them:
     /// ZERO the instant the rung plate is wanted (the slot waits behind the
     /// plate with its clock held -- the plate's own `outranked ? 0` rule,
@@ -4039,6 +4046,9 @@ struct RungLineResult {
     /// What the plate reads: the head and the authored row.
     std::string head;
     std::string row;
+    /// What the aim prompt named under the reticle at the shutter ("WATCHMAN
+    /// CULL  WATCHMAN"): the cause of the rung in the picture, or not.
+    std::string aim;
 };
 
 /// DISTRICT PHASE D. What a `--threshold` run actually did, so a case can

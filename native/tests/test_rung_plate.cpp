@@ -1198,7 +1198,7 @@ namespace {
 
 /// Both beats on one track: the rung rose off the real verbs, and the plate
 /// is up, fully risen, reading that rung's own head and row.
-void checkRung(const char* word, sim::LegendTrack track) {
+void checkRung(const char* word, sim::LegendTrack track, const char* under = nullptr) {
     SmokeRunConfig run;
     run.rung = word;
     const SmokeRunResult played = play(run);
@@ -1219,6 +1219,12 @@ void checkRung(const char* word, sim::LegendTrack track) {
     CHECK(played.summary.find("row=\"" + rung.row + "\"") != std::string::npos);
     CHECK(played.summary.find("plate=up") != std::string::npos);
     CHECK(played.summary.find("found=yes") != std::string::npos);
+    // THE CAUSE IN THE PICTURE, where the drive promises one: what the aim
+    // prompt named at the shutter starts with them, and the summary says so.
+    if (under != nullptr) {
+        CHECK(rung.aim.rfind(under, 0) == 0);
+        CHECK(played.summary.find(std::string("aim=\"") + under) != std::string::npos);
+    }
 }
 
 }  // namespace
@@ -1236,11 +1242,11 @@ TEST_CASE("--rung=flame: the Mission's two leads read, and the plate reads DISCI
 }
 
 TEST_CASE("--rung=trade: the ward's bounty paid across Cull's table, and the plate reads STALLKEEP") {
-    checkRung("trade", sim::LegendTrack::Trade);
+    checkRung("trade", sim::LegendTrack::Trade, "WATCHMAN CULL");
 }
 
 TEST_CASE("--rung=law: four drinks stood to Watchman Cull, and the plate reads KNOWN TO THE WATCH") {
-    checkRung("law", sim::LegendTrack::Law);
+    checkRung("law", sim::LegendTrack::Law, "WATCHMAN CULL");
 }
 
 TEST_CASE("--rung=bloodletter names no track: neither beat lands, and the summary says so") {

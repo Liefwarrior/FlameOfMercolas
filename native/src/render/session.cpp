@@ -13172,10 +13172,15 @@ void comeDownstairs(Session& session) {
         ++landed;
     }
 
-    if (ending == "away") {
+    if (ending == "away" || ending == "table") {
         session.closeConversation();
     }
-    standBackFrom(session, "Watchman Cull");
+    // `table`: closed, and left where the talk left it -- the rung drive
+    // frames Cull its own way (faceUnderReticle) and a walk after a rung
+    // spends the plate's hold.
+    if (ending != "table") {
+        standBackFrom(session, "Watchman Cull");
+    }
     return landed;
 }
 
@@ -16408,6 +16413,48 @@ constexpr std::int32_t kEvictRefuseBeats = 8;
     return talk.journal().stagesDone(questId);
 }
 
+/// FACES THEM WITH THEM UNDER THE RETICLE, or says it could not. The aim
+/// prompt's own subject (Session::aimSubjectNow, refreshed every step) is the
+/// one honest test of "in the picture": the sim's line of sight sees over a
+/// table and through a patron's back, and standBackFrom's clear-line rule
+/// found no spot at Cull's stool that passed it. So: the ring of spots a
+/// tile, two and three off them in the four cardinals, nearest first; each
+/// standable one walked to, faced by bearing, and the prompt read after a
+/// step; the first spot whose prompt names them is the frame. None does:
+/// the old stand-back, and false, so the summary says so.
+[[nodiscard]] bool faceUnderReticle(Session& session, std::string_view name) {
+    const sim::Actor* who = actorNamed(session, name);
+    if (who == nullptr) {
+        return false;
+    }
+    std::string want(name);
+    for (char& c : want) {
+        c = (c >= 'a' && c <= 'z') ? static_cast<char>(c - 'a' + 'A') : c;
+    }
+    const std::int32_t band = who->band();
+    const std::int32_t dirs[4][2] = {{-1, 0}, {1, 0}, {0, -1}, {0, 1}};
+    for (std::int32_t ring = 1; ring <= 3; ++ring) {
+        for (const auto& dir : dirs) {
+            const std::int32_t x = who->tileX() + dir[0] * ring;
+            const std::int32_t y = who->tileY() + dir[1] * ring;
+            if (!session.tiles().standable(x, y, band)) {
+                continue;
+            }
+            walkToTile(session, x, y);
+            if (session.body().tileX() != x || session.body().tileY() != y) {
+                continue;
+            }
+            session.body().setYaw(sim::bearingTo(x, y, who->tileX(), who->tileY()));
+            session.stepMany(sim::MoveInput{}, 1);
+            if (session.aimSubjectNow().substr(0, want.size()) == want) {
+                return true;
+            }
+        }
+    }
+    standBackFrom(session, name);
+    return false;
+}
+
 // ---------------------------------------------------------------------------
 // THE RUNG PLATE: --rung, a rung raised through the real verbs
 // ---------------------------------------------------------------------------
@@ -16596,11 +16643,6 @@ constexpr std::int32_t kRungBeats = 2;
                                                      session.body().tileY(), lead.site.x,
                                                      lead.site.y));
                 session.examine();
-                // THE EYE DOWN ONTO THE ANCHOR once it has read: from four
-                // tiles back at eye level the frame was the room's far wall
-                // and the flagstones the card is about were under the
-                // bottom edge (both critics). A turn, not a walk.
-                session.body().setPitch(sim::angle_from_degrees(-18));
                 // 2. AND ONTO IT IF IT WOULD NOT READ FROM THERE -- the
                 //    trail's own walk, unchanged, so a lead that cannot be
                 //    stood off is still read where the trail reads it. A
@@ -16624,22 +16666,23 @@ constexpr std::int32_t kRungBeats = 2;
                     break;
                 }
             }
+            // THE EYE DOWN ONTO THE FLAGSTONES once the last read has tipped
+            // the track: from four tiles back at eye level the frame was the
+            // room's far wall and the flagstones the card is about were under
+            // the bottom edge (both critics). Set after the loop, because the
+            // walk to the second lead reset it. A turn, not a walk.
+            session.body().setPitch(sim::angle_from_degrees(-18));
             break;
         }
         case sim::LegendTrack::Trade: {
-            // The bounty, whole, and closed at the end so the plate that
-            // queued behind Cull's table can come up. Then FACE HIM: the
-            // turn-in leaves the body at his table looking wherever the walk
-            // left it (a patron, on the third pass's frame), and the man who
-            // paid is the picture under the plate -- standBackFrom's
-            // clear-line rule puts him there; this is belt to it. A turn,
-            // not a walk.
-            (void)runContractLine(session, "away");
-            if (const sim::Actor* cull = actorNamed(session, "Watchman Cull"); cull != nullptr) {
-                session.body().setYaw(sim::bearingTo(session.body().tileX(),
-                                                     session.body().tileY(), cull->tileX(),
-                                                     cull->tileY()));
-            }
+            // The bounty, whole, closed at the table so the plate that
+            // queued behind Cull's table can come up -- and THE MAN WHO PAID
+            // UNDER THE RETICLE, read off the prompt (faceUnderReticle): a
+            // patron's back and a hood on his table took the frame on three
+            // passes, and facing his bearing from the stand-back's spot was
+            // facing them.
+            (void)runContractLine(session, "table");
+            (void)faceUnderReticle(session, "Watchman Cull");
             break;
         }
         case sim::LegendTrack::Law: {
@@ -16651,15 +16694,10 @@ constexpr std::int32_t kRungBeats = 2;
                 }
                 session.closeConversation();
             }
-            standBackFrom(session, "Watchman Cull");
-            // By his own bearing -- which for standBackFrom's cardinal spots
-            // is the cardinal it already faces; the frame's fix is
-            // standBackFrom's own clear-line rule, this is belt to it.
-            if (const sim::Actor* cull = actorNamed(session, "Watchman Cull"); cull != nullptr) {
-                session.body().setYaw(sim::bearingTo(session.body().tileX(),
-                                                     session.body().tileY(), cull->tileX(),
-                                                     cull->tileY()));
-            }
+            // The man the four drinks bought UNDER THE RETICLE, read off the
+            // prompt (faceUnderReticle) -- the stand-back's spot put a hood
+            // on his table there on three passes.
+            (void)faceUnderReticle(session, "Watchman Cull");
             break;
         }
     }
@@ -16677,6 +16715,7 @@ constexpr std::int32_t kRungBeats = 2;
     out.plateUp = plateFullyUp();
     out.head = session.rungPlateText().head;
     out.row = session.rungPlateText().prose;
+    out.aim = std::string(session.aimSubjectNow());
     return out;
 }
 
@@ -19141,7 +19180,7 @@ SmokeRunResult runSmoke(const SmokeRunConfig& config) {
                 << " head=\"" << rung.head << '"'
                 << " plate=" << (rung.plateUp ? "up" : "down")
                 << " found=" << (rung.found ? "yes" : "no")
-                << " called=" << session.legend().title();
+                << " called=" << session.legend().title() << " aim=\"" << rung.aim << '"';
     }
     // A SCRIPTED RUN THAT FELL SHORT SAYS SO, AND FAILS.
     //

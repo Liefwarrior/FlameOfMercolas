@@ -164,8 +164,8 @@ branch carries the frames and not the log). Or run them by hand.
 | `rung-wire-960.png` | `granadad.exe --smoke=0 --hold --width=960 --height=540 --scale=1 --rung=wire --settle-steps=0 --screenshot=docs\frames\rung\rung-wire-960.png` | One cracked box at two in the morning. `THE WIRE  --  LIGHT FINGERS` on the plate, the wire.1 row under it, the landing away in front and the done room behind. Summary reads `rung=wire 0->1 row="Ropewynd locks its boxes twice these days. That is you." plate=up found=yes`. |
 | `rung-roofs-960.png` | the same with `--rung=roofs` | The alley leapt until the roofs will have it. `THE ROOFS  --  TENANT` over the lead, the alley under the eye. Skyrunning levels on the same leap, and `SKYRUNNING RISES TO n` is the plate's own dim last row -- the same climb, told once, on the card. |
 | `rung-flame-960.png` | the same with `--rung=flame` | Two leads read at the Mission at nine. `THE FLAME  --  DISCIPLE`, the back room stood back from. The pull line under the ribbon still reads the next lead. |
-| `rung-trade-960.png` | the same with `--rung=trade` | The bounty paid across Cull's table. `THE TRADE  --  STALLKEEP` once the talk's close tail is down; the stand-back's clear-line rule puts Cull under the reticle. |
-| `rung-law-960.png` | the same with `--rung=law` | Four drinks stood to Cull at eleven. `THE LAW  --  KNOWN TO THE WATCH`, Cull faced from the stand-back. |
+| `rung-trade-960.png` | the same with `--rung=trade` | The bounty paid across Cull's table. `THE TRADE  --  STALLKEEP` once the talk's close tail is down, and Cull under the reticle: the drive walks the ring round him until the prompt names him, and the summary's `aim="WATCHMAN CULL..."` says so. |
+| `rung-law-960.png` | the same with `--rung=law` | Four drinks stood to Cull at eleven. `THE LAW  --  KNOWN TO THE WATCH`, Cull under the reticle the same way. |
 | `rung-wire-320.png` | the first drive at `--width=320 --height=180` | The strip pin. `wire.1` is 52 glyphs, so this plate is 58 cells wide; the 56-glyph row (`flame.3`) makes the widest plate the sheet can build, 62 cells in a 64-cell frame -- a cell of margin off each edge, two cells of gutter inside each keyline -- and the test pins them at that width rather than a drive. Seated in the middle of what the smallest window has between the stat stack and the aim prompt. |
 
 ## Second pass, 2026-09-25
@@ -369,8 +369,14 @@ was left was the choreography round it and the frames under it.
 - **The cause in the picture.** `standBackFrom` wants a clear line now --
   every tile between the spot and the man floor, nobody on it -- before it
   settles for the sim's own line of sight, which sees over a table and
-  through a patron's back (the trade and law frames, twice). The flame
-  drive pitches the eye down onto the flagstones once it has read them.
+  through a patron's back. At Cull's stool no spot passes that, so the trade
+  and law drives stop guessing and read the aim prompt: the ring of spots a
+  tile, two and three off him in the four cardinals, nearest first, each
+  faced by bearing, and the first whose prompt names him is the frame
+  (`faceUnderReticle`). The summary prints what the prompt named
+  (`aim="..."`) and the drive tests pin it on both. The flame drive pitches
+  the eye down onto the flagstones once the last read has tipped the track
+  (after the loop: the walk to the second lead reset it the first time).
   The wire drive stays as it is: the box is under the reticle at two in the
   morning with the lanterns out, and a burglary is dark.
 - **The Gull's own watchman.** Cull's halt and a contraband demand ride the
