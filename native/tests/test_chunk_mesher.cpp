@@ -801,7 +801,7 @@ TEST_CASE("a door tile places the door frame") {
         ++headers;
         CHECK(p.instance.scale.y * plaster->height ==
               doctest::Approx(render::kBandHeight - 0.01F - kDoorHeadHeight - 0.02F));
-        CHECK(p.instance.scale.x * plaster->width == doctest::Approx(2.0F + 2.0F * 0.005F));
+        CHECK(p.instance.scale.x * plaster->width == doctest::Approx(2.0F + 4.0F * 0.005F));
         CHECK(p.gradient);
         if (p.instance.position.z == doctest::Approx(streetZ)) {
             CHECK(p.lightX == 13);
@@ -1173,7 +1173,7 @@ TEST_CASE("placement is a deterministic function of the tile map") {
             // Plaster to the street: the quad's face is its +Z, turned to
             // look north.
             CHECK(p.instance.yaw == doctest::Approx(3.14159265F));
-            CHECK(p.instance.scale.x == doctest::Approx((2.0F + 0.01F) / 2.5F));
+            CHECK(p.instance.scale.x == doctest::Approx((2.0F + 0.02F) / 2.5F));
         }
     }
     CHECK(gullPosts == 4);

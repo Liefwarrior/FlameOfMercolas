@@ -1515,9 +1515,11 @@ private:
                 // just over the head (inside the lintel's body) to the
                 // storey top over the whole gap, in the plane of the finish
                 // beside it -- a thin quad overlapping its neighbours by
-                // the hair every plaster cut does.
+                // twice the hair every plaster cut does, because those
+                // neighbours stop a hair INSIDE the post (walls()) and
+                // above the head there is no post to hide the seam.
                 if (f.spec != nullptr) {
-                    const float overlap = f.role == PieceRole::WallPlaster ? kCutOverlap : 0.0F;
+                    const float overlap = f.role == PieceRole::WallPlaster ? 2.0F * kCutOverlap : 0.0F;
                     FaceOpts o;
                     o.frontOut = f.frontOut;
                     o.standoff = f.standoff;
