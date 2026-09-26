@@ -789,6 +789,10 @@ TEST_CASE("a door tile places the door frame") {
                p.instance.position.z == doctest::Approx(roomZ + 0.03F)));
         CHECK(p.instance.position.y == doctest::Approx(head + 0.5F * lintel->core * lintel->scale));
         CHECK(p.instance.pitch == doctest::Approx(3.14159265F * 0.5F));
+        // And a half turn about its own Z, its front for its back: the
+        // beam's two hewn corners land on its front-bottom arris and its
+        // hidden back-top edge, never in the head.
+        CHECK(p.instance.roll == doctest::Approx(3.14159265F));
         CHECK(p.instance.scale.y * lintel->height == doctest::Approx(2.0F + 2.0F * section));
         CHECK(p.mode == kDrawFaced);
     }
@@ -825,9 +829,9 @@ TEST_CASE("a door tile places the door frame") {
     }
     CHECK(headers == 2);
     // Behind each header its backing: the same quad three centimetres
-    // behind the plane, six wider at each end, from over the soffit (the
-    // mesher's cut) to the storey top -- what the pixels a seam drops
-    // show, plaster and not the hollow.
+    // behind the plane, on over the whole jamb cell at each end, from over
+    // the soffit (the mesher's cut) to the storey top -- what a seam lets
+    // through at any angle shows plaster and not the hollow.
     std::size_t backings = 0;
     for (const StaticPlacement& p : placed.placements) {
         if (p.role != PieceRole::WallPlaster || p.lightY != 15 ||
@@ -840,10 +844,10 @@ TEST_CASE("a door tile places the door frame") {
         CHECK(p.gradient);
         if (p.instance.position.z > 15.5F) {
             CHECK(p.instance.position.z == doctest::Approx(streetZ - 0.03F));
-            CHECK(p.instance.scale.x * plaster->width == doctest::Approx(2.0F + 2.0F * (0.04F + 0.06F)));
+            CHECK(p.instance.scale.x * plaster->width == doctest::Approx(2.0F + 2.0F * 1.0F));
         } else {
             CHECK(p.instance.position.z == doctest::Approx(roomZ + 0.03F));
-            CHECK(p.instance.scale.x * plaster->width == doctest::Approx(2.0F + 2.0F * (0.005F + 0.06F)));
+            CHECK(p.instance.scale.x * plaster->width == doctest::Approx(2.0F + 2.0F * 1.0F));
         }
     }
     CHECK(backings == 2);
@@ -1084,7 +1088,8 @@ TEST_CASE("placement is a deterministic function of the tile map") {
     // Timber stands the plank quad on its edge: a quarter turn about X. A
     // hull's boards stand ACROSS -- a quarter turn about Z -- and lean
     // outward from it by the catalogue's flare. A lip is the slab's own
-    // height; a parapet the coping's. Nothing else pitches or rolls.
+    // height; a parapet the coping's. A lintel pitches a quarter turn and
+    // rolls a half. Nothing else pitches or rolls.
     const float flare = catalogue.knobs().hullFlareDegrees * 3.14159265F / 180.0F;
     std::size_t hulls = 0;
     for (const StaticPlacement& p : first.placements) {
@@ -1096,6 +1101,8 @@ TEST_CASE("placement is a deterministic function of the tile map") {
             CHECK(p.instance.pitch == 0.0F);
             CHECK(p.instance.roll == doctest::Approx(3.14159265F / 2.0F + flare));
             CHECK(p.alongZ);
+        } else if (p.role == PieceRole::Lintel) {
+            CHECK(p.instance.roll == doctest::Approx(3.14159265F));
         } else {
             CHECK(p.instance.roll == 0.0F);
         }

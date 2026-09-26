@@ -207,6 +207,17 @@ constexpr float kRevealFlush = -0.01F;
 /// inside the beam; the beam's face sits a finger behind theirs.
 constexpr float kLintelProud = -0.03F;
 constexpr float kLintelSink = 0.0F;
+/// The lintel is the beam turned a half turn about its own Z -- its front
+/// for its back, its start for its end. The kit's beam is hewn at two
+/// corners on opposite edges, a diagonal cut a hand long on each (measured
+/// off its vertices: the -x/+z arris from 0.75 to 1.04 m along, the +x/-z
+/// arris from 1.07 to 1.85), and laid the other way one of them sat on the
+/// beam's inner-bottom arris, in the head, where its facet -- looking down
+/// and in, darkened as an underside -- read as a dark tent over every door
+/// from every side. Turned, that one is a stopped chamfer on the lintel's
+/// front-bottom arris, where a carpenter would put one, and the other is on
+/// the back-top edge inside the closed head box.
+constexpr float kLintelRoll = kPi;
 /// The open leaf's top: the kit door is 1.967 m and the lintel's iron
 /// collars hang 2.6 cm under the head, three millimetres over the leaf's
 /// top, which fought it as a comb of dark teeth on the reveal at every
@@ -228,18 +239,23 @@ constexpr float kBoxRetract = 0.04F;
 constexpr float kHeaderInset = 0.02F;
 /// The header's backing: the wall's finish once more this far BEHIND its
 /// plane, from over the soffit (the mesher's cut) to the storey top, and
-/// kHeaderBackReach past each end of the header. The header meets the
-/// wall's own piece beside each jamb edge to edge (overlapped, the two
-/// fought at the cuts' two-millimetre stagger), and an edge-to-edge join
-/// between two pieces leaks: a sliver at grazing angles where their planes
-/// differ by the stagger, dropped pixels where two edges share a line but
-/// not their vertices (a kit box beside a header box). Through either you
-/// saw the hollow behind the finish, a hairline crack over every post.
-/// Now you see plaster: the backing is what stands behind every seam over
-/// the door, three centimetres back so it fights nothing, and it shows
-/// nowhere else.
+/// on past each end of the header over the whole jamb cell
+/// (kHeaderBackReach, the cell's width). The header meets the wall's own
+/// piece beside each jamb edge to edge (overlapped, the two fought at the
+/// cuts' two-millimetre stagger), and an edge-to-edge join between two
+/// pieces leaks: a sliver at grazing angles where their planes differ by
+/// the stagger, dropped pixels where two edges share a line but not their
+/// vertices (a kit box beside a header box). Through either you saw the
+/// hollow behind the finish, a hairline crack over every post. Now you see
+/// plaster: the backing is what stands behind every seam over the door,
+/// three centimetres back so it fights nothing, and it shows nowhere else.
+/// The reach is the whole cell because a ray through the seam at a grazing
+/// angle meets the backing's depth well to the side of the seam -- seven
+/// centimetres at the angle a body walking the street sees the far jamb
+/// at, a hand's breadth from inside the taproom -- and six centimetres of
+/// reach left both leaking; a metre leaks under two degrees.
 constexpr float kHeaderBack = 0.03F;
-constexpr float kHeaderBackReach = 0.06F;
+constexpr float kHeaderBackReach = 1.0F;
 /// (The soffit's own height is kDoorSoffitHeight in door_jambs.hpp, where
 /// the mesher reads it too: three centimetres over the head, into the
 /// lintels' bodies. At the head it met their undersides edge to edge and
@@ -1565,20 +1581,27 @@ private:
                 // across a doorway.
                 if (lintel != nullptr && stood > 0) {
                     const float a0 = lo - section;
-                    const float span = (hi + section) - a0;
+                    const float a1 = hi + section;
+                    const float span = a1 - a0;
                     const float lintelHalf = 0.5F * coreOf(*lintel) * lintel->scale;
                     const float lintelOut = proud + kLintelProud;
-                    const Vec3 at{r.baseX + kTangentX[r.side] * a0 + kNormalX[r.side] * lintelOut,
+                    // Anchored at the a1 end: turned the half turn below,
+                    // the beam grows back toward a0.
+                    const Vec3 at{r.baseX + kTangentX[r.side] * a1 + kNormalX[r.side] * lintelOut,
                                   yBase + kDoorHeadHeight + lintelHalf - kLintelSink,
-                                  r.baseZ + kTangentZ[r.side] * a0 + kNormalZ[r.side] * lintelOut};
+                                  r.baseZ + kTangentZ[r.side] * a1 + kNormalZ[r.side] * lintelOut};
                     // Its length is its local +Y; a quarter turn about X
                     // lays that along local +Z, and the yaw beamAlong()
-                    // uses puts local +Z along the run's tangent.
+                    // uses puts local +Z along the run's tangent -- after
+                    // the half turn about its own Z (kLintelRoll) that
+                    // keeps the beam's hewn corners off its inner-bottom
+                    // arris.
                     pointPiece(PieceRole::Lintel, *lintel, at, yawOf(r.side) + 3.0F * kHalfPi, gapX[0],
                                gapY[0], gap.z, Rgba8{},
                                Vec3{1.0F, span / std::max(0.01F, lintel->height), 1.0F}, false,
                                span + 1.0F);
                     out_.placements.back().instance.pitch = kHalfPi;
+                    out_.placements.back().instance.roll = kLintelRoll;
                     faced(gapX[1], gapY[1]);
                 }
                 // The wall over the head, in this face's own finish, from
@@ -1590,10 +1613,10 @@ private:
                 // abutting it -- an overlap fought at the stagger's two
                 // millimetres, a gap showed the stone course behind. And
                 // behind that seam, its backing (kHeaderBack): the finish
-                // again three centimetres back, wider by kHeaderBackReach
-                // each end, from over the soffit to the storey top, so the
-                // pixels an edge-to-edge join drops show plaster and not
-                // the hollow.
+                // again three centimetres back, on over the whole jamb cell
+                // at each end (kHeaderBackReach), from over the soffit to
+                // the storey top, so whatever an edge-to-edge join lets
+                // through, at any angle, shows plaster and not the hollow.
                 if (f.spec != nullptr) {
                     const float overA0 = retractAt(cellX[0], cellY[0], r.side, gap.z);
                     const float overA1 = retractAt(cellX[1], cellY[1], r.side, gap.z);
@@ -1608,8 +1631,7 @@ private:
                     o.standoff -= kHeaderBack;
                     o.yBase = yBase + kDoorHeadCut;
                     o.height = render::kBandHeight - 0.01F - kDoorHeadCut;
-                    facePiece(r, f.role, *f.spec, lo - overA0 - kHeaderBackReach,
-                              hi + overA1 + kHeaderBackReach, o);
+                    facePiece(r, f.role, *f.spec, lo - kHeaderBackReach, hi + kHeaderBackReach, o);
                 }
             }
             // The soffit: the plaster ceiling piece laid face down across
