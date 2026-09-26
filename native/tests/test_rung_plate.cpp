@@ -878,13 +878,20 @@ TEST_CASE("the drawn wiring: under a plate the alert row's amber is well under t
             const double eb = amber(unpackRgb(b.pixels()[i])) - ground;
             whole += std::max(0.0, ea);
             under += std::max(0.0, eb);
-            if (ea > 0.02) {
+            // THE ROW'S OWN GLYPHS, and nothing else in the band: the amber
+            // ink stands well over a fifth of a unit above the boards at
+            // either weight (measured 0.57 whole, 0.32 under), where the
+            // voice row's dim ink, the backing plates' bone rails and the
+            // boards through a thinned scrim all stand under a tenth. The
+            // band's other rows move when the alert's slot shrinks, so a
+            // looser threshold reads them and not the row.
+            if (ea > 0.15) {
                 ++aInk;
                 aTop = std::min(aTop, y);
                 aBottom = std::max(aBottom, y);
                 aPeak = std::max(aPeak, ea);
             }
-            if (eb > 0.02) {
+            if (eb > 0.15) {
                 ++bInk;
                 bTop = std::min(bTop, y);
                 bBottom = std::max(bBottom, y);
@@ -901,8 +908,10 @@ TEST_CASE("the drawn wiring: under a plate the alert row's amber is well under t
     // Half weight: the brightest amber under the plate is well under the
     // plain frame's.
     CHECK(bPeak < 0.7 * aPeak);
-    // One register down: the amber stands fewer pixel rows tall.
+    // One register down: the glyphs stand fewer pixel rows tall, and there
+    // are fewer of their pixels.
     CHECK(bBottom - bTop < aBottom - aTop);
+    CHECK(bInk < aInk);
     // And in sum: dimmer, and not nothing.
     CHECK(under < 0.75 * whole);
     CHECK(under > 0.02 * whole);
