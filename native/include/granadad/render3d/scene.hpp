@@ -302,6 +302,11 @@ struct ViewmodelSocket {
 /// description is a function of the tiles AND the catalogue.
 struct StaticPieceRef {
     std::string file;
+    /// Over zero: the adapter squares the mesh's shaft at load
+    /// (shaft_square.hpp), this being half its section in the mesh's own
+    /// metres. A squared shaft is its own loaded model; the same file may
+    /// dress another row as it comes.
+    float squareHalf = 0.0F;
 };
 
 /// S LANE. ONE SYNTY BUILDING PIECE, PLACED: a wall segment on a wall tile's

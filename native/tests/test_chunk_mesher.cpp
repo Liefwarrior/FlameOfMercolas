@@ -40,6 +40,7 @@
 #include "granadad/render/world_renderer.hpp"
 #include "granadad/render3d/chunk_mesher.hpp"
 #include "granadad/render3d/door_jambs.hpp"
+#include "granadad/render3d/shaft_square.hpp"
 #include "granadad/render3d/scene.hpp"
 #include "granadad/render3d/static_pieces.hpp"
 #include "granadad/render3d/world_scene.hpp"
@@ -460,6 +461,22 @@ TEST_CASE("the shipped piece catalogue loads and names a piece for every rule") 
     // The door frame is timber (jambs()), and the soffit across its head is
     // the ceiling piece under its own name.
     CHECK(catalogue.piece(PieceRole::Soffit)->file.find("Ceiling") != std::string::npos);
+    // The frame's timber is the strapped Knights beam SQUARED at load (its
+    // hewn corners pushed out to the arris): the posts and the lintel ask
+    // for it, and the piece table the adapter reads carries half the shaft.
+    CHECK(catalogue.piece(PieceRole::DoorPost)->square);
+    CHECK(catalogue.piece(PieceRole::Lintel)->square);
+    {
+        const std::vector<StaticPieceRef> refs = catalogue.pieceRefs();
+        bool squaredBeam = false;
+        for (const StaticPieceRef& ref : refs) {
+            if (ref.file.find("SM_Prop_Beam_01") != std::string::npos && ref.squareHalf > 0.0F) {
+                squaredBeam = true;
+                CHECK(ref.squareHalf == doctest::Approx(0.5F * 0.209F));
+            }
+        }
+        CHECK(squaredBeam);
+    }
     CHECK(catalogue.piece(PieceRole::Flame)->twoSided);
     CHECK(catalogue.piece(PieceRole::Flame)->selfLit);
     // The kit's own module: 2.5 m walls, 3 m storeys, the brick on -Z.
@@ -789,10 +806,7 @@ TEST_CASE("a door tile places the door frame") {
                p.instance.position.z == doctest::Approx(roomZ + 0.03F)));
         CHECK(p.instance.position.y == doctest::Approx(head + 0.5F * lintel->core * lintel->scale));
         CHECK(p.instance.pitch == doctest::Approx(3.14159265F * 0.5F));
-        // And a half turn about its own Z, its front for its back: the
-        // beam's two hewn corners land on its front-bottom arris and its
-        // hidden back-top edge, never in the head.
-        CHECK(p.instance.roll == doctest::Approx(3.14159265F));
+        CHECK(p.instance.roll == 0.0F);
         CHECK(p.instance.scale.y * lintel->height == doctest::Approx(2.0F + 2.0F * section));
         CHECK(p.mode == kDrawFaced);
     }
@@ -1088,8 +1102,7 @@ TEST_CASE("placement is a deterministic function of the tile map") {
     // Timber stands the plank quad on its edge: a quarter turn about X. A
     // hull's boards stand ACROSS -- a quarter turn about Z -- and lean
     // outward from it by the catalogue's flare. A lip is the slab's own
-    // height; a parapet the coping's. A lintel pitches a quarter turn and
-    // rolls a half. Nothing else pitches or rolls.
+    // height; a parapet the coping's. Nothing else pitches or rolls.
     const float flare = catalogue.knobs().hullFlareDegrees * 3.14159265F / 180.0F;
     std::size_t hulls = 0;
     for (const StaticPlacement& p : first.placements) {
@@ -1101,8 +1114,6 @@ TEST_CASE("placement is a deterministic function of the tile map") {
             CHECK(p.instance.pitch == 0.0F);
             CHECK(p.instance.roll == doctest::Approx(3.14159265F / 2.0F + flare));
             CHECK(p.alongZ);
-        } else if (p.role == PieceRole::Lintel) {
-            CHECK(p.instance.roll == doctest::Approx(3.14159265F));
         } else {
             CHECK(p.instance.roll == 0.0F);
         }
@@ -2556,6 +2567,44 @@ TEST_CASE("the reveal is the post's own edge, and the room's plaster stops at it
         }
     }
     CHECK(westPanel);
+}
+
+TEST_CASE("squaring a shaft pushes a hewn corner's vertices out to the arris and nothing else") {
+    // The Knights beam's own numbers: a 0.209 m shaft (its faces at 0.1045
+    // and 0.1042 off the axis), collars at 0.13, and at one hewn corner a
+    // vertex on the -x face 0.0465 in from the +z face beside a vertex on
+    // the +z face 0.0511 in from the -x face.
+    float v[] = {
+        0.1045F, 0.0F,   0.1042F,   // a corner: on both faces
+        -0.1043F, 0.85F, 0.0465F,   // the cut: on -x, short of +z
+        -0.0511F, 0.821F, 0.1042F,  // the cut: on +z, short of -x
+        0.1304F, 0.4F,  0.1302F,    // a collar: outside the section
+        0.0F,    0.0F,  0.0F,       // an end cap's middle: on neither
+    };
+    float n[] = {
+        1.0F, 0.0F, 0.0F, -0.767F, -0.188F, 0.614F, -0.568F, 0.395F, 0.722F, 0.0F, 1.0F, 0.0F, 0.0F, -1.0F, 0.0F,
+    };
+    CHECK(squareShaft(v, n, 5, 0.5F * 0.209F) == 2);
+    CHECK(v[0] == doctest::Approx(0.1045F));
+    CHECK(v[2] == doctest::Approx(0.1042F));
+    // Out to the arris along the axis it was short on, to the face's own
+    // plane, its normal the face it was on.
+    CHECK(v[3] == doctest::Approx(-0.1043F));
+    CHECK(v[5] == doctest::Approx(0.1042F));
+    CHECK(n[3] == doctest::Approx(-1.0F));
+    CHECK(n[4] == doctest::Approx(0.0F));
+    CHECK(n[5] == doctest::Approx(0.0F));
+    CHECK(v[6] == doctest::Approx(-0.1045F));
+    CHECK(v[8] == doctest::Approx(0.1042F));
+    CHECK(n[6] == doctest::Approx(0.0F));
+    CHECK(n[8] == doctest::Approx(1.0F));
+    CHECK(v[9] == doctest::Approx(0.1304F));
+    CHECK(v[11] == doctest::Approx(0.1302F));
+    CHECK(v[12] == doctest::Approx(0.0F));
+    CHECK(v[14] == doctest::Approx(0.0F));
+    // Nothing to square: no shaft, or no half.
+    CHECK(squareShaft(v, n, 5, 0.0F) == 0);
+    CHECK(squareShaft(nullptr, nullptr, 0, 0.1F) == 0);
 }
 
 TEST_CASE("the mesher leaves the jamb cells' ground storey out and meshes the wall over it") {

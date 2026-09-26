@@ -75,6 +75,7 @@
 //      offset, with the static weapon .gltf hung on its Hand_R bone.
 
 #include "granadad/render3d/backend.hpp"
+#include "granadad/render3d/shaft_square.hpp"
 
 #include <raylib.h>
 #include <raymath.h>
@@ -551,11 +552,14 @@ struct Backend::Impl {
 
     /// S LANE. The model for a piece file, loading it the first time it is
     /// asked for. Null when there is none: the caller draws nothing.
-    StaticModel* staticFor(const std::string& file) {
+    StaticModel* staticFor(const std::string& file, float squareHalf) {
         if (file.empty() || config.staticDir.empty()) {
             return nullptr;
         }
-        auto found = statics.find(file);
+        // A squared shaft is its own model: the same file may dress a
+        // hitching post as it comes.
+        const std::string key = squareHalf > 0.0F ? file + "#square" : file;
+        auto found = statics.find(key);
         if (found != statics.end()) {
             return found->second.get();
         }
@@ -566,6 +570,23 @@ struct Backend::Impl {
             candidate->model = LoadModel(path.c_str());
             if (candidate->model.meshCount > 0) {
                 candidate->loaded = true;
+                if (squareHalf > 0.0F) {
+                    // The catalogue asked for a square shaft
+                    // (shaft_square.hpp): the hewn corners pushed out to
+                    // the arris, then the buffers on the GPU again.
+                    for (int i = 0; i < candidate->model.meshCount; ++i) {
+                        Mesh& mesh = candidate->model.meshes[i];
+                        const int bytes = mesh.vertexCount * 3 * static_cast<int>(sizeof(float));
+                        if (squareShaft(mesh.vertices, mesh.normals,
+                                        static_cast<std::size_t>(mesh.vertexCount), squareHalf) > 0 &&
+                            mesh.vboId != nullptr) {
+                            UpdateMeshBuffer(mesh, 0, mesh.vertices, bytes, 0);
+                            if (mesh.normals != nullptr) {
+                                UpdateMeshBuffer(mesh, 2, mesh.normals, bytes, 0);
+                            }
+                        }
+                    }
+                }
                 candidate->baseColour.resize(static_cast<std::size_t>(candidate->model.materialCount));
                 for (int m = 0; m < candidate->model.materialCount; ++m) {
                     Material& material = candidate->model.materials[m];
@@ -605,7 +626,7 @@ struct Backend::Impl {
             }
         }
         StaticModel* result = loaded.get();
-        statics.emplace(file, std::move(loaded));
+        statics.emplace(key, std::move(loaded));
         return result;
     }
 
@@ -628,7 +649,8 @@ struct Backend::Impl {
             ++stats.staticsMissing;
             return;
         }
-        StaticModel* model = staticFor(scene.pieces[piece.piece].file);
+        StaticModel* model =
+            staticFor(scene.pieces[piece.piece].file, scene.pieces[piece.piece].squareHalf);
         if (model == nullptr || !model->loaded) {
             ++stats.staticsMissing;
             return;

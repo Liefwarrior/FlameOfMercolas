@@ -207,17 +207,6 @@ constexpr float kRevealFlush = -0.01F;
 /// inside the beam; the beam's face sits a finger behind theirs.
 constexpr float kLintelProud = -0.03F;
 constexpr float kLintelSink = 0.0F;
-/// The lintel is the beam turned a half turn about its own Z -- its front
-/// for its back, its start for its end. The kit's beam is hewn at two
-/// corners on opposite edges, a diagonal cut a hand long on each (measured
-/// off its vertices: the -x/+z arris from 0.75 to 1.04 m along, the +x/-z
-/// arris from 1.07 to 1.85), and laid the other way one of them sat on the
-/// beam's inner-bottom arris, in the head, where its facet -- looking down
-/// and in, darkened as an underside -- read as a dark tent over every door
-/// from every side. Turned, that one is a stopped chamfer on the lintel's
-/// front-bottom arris, where a carpenter would put one, and the other is on
-/// the back-top edge inside the closed head box.
-constexpr float kLintelRoll = kPi;
 /// The open leaf's top: the kit door is 1.967 m and the lintel's iron
 /// collars hang 2.6 cm under the head, three millimetres over the leaf's
 /// top, which fought it as a comb of dark teeth on the reveal at every
@@ -1581,27 +1570,24 @@ private:
                 // across a doorway.
                 if (lintel != nullptr && stood > 0) {
                     const float a0 = lo - section;
-                    const float a1 = hi + section;
-                    const float span = a1 - a0;
+                    const float span = (hi + section) - a0;
                     const float lintelHalf = 0.5F * coreOf(*lintel) * lintel->scale;
                     const float lintelOut = proud + kLintelProud;
-                    // Anchored at the a1 end: turned the half turn below,
-                    // the beam grows back toward a0.
-                    const Vec3 at{r.baseX + kTangentX[r.side] * a1 + kNormalX[r.side] * lintelOut,
+                    const Vec3 at{r.baseX + kTangentX[r.side] * a0 + kNormalX[r.side] * lintelOut,
                                   yBase + kDoorHeadHeight + lintelHalf - kLintelSink,
-                                  r.baseZ + kTangentZ[r.side] * a1 + kNormalZ[r.side] * lintelOut};
+                                  r.baseZ + kTangentZ[r.side] * a0 + kNormalZ[r.side] * lintelOut};
                     // Its length is its local +Y; a quarter turn about X
                     // lays that along local +Z, and the yaw beamAlong()
-                    // uses puts local +Z along the run's tangent -- after
-                    // the half turn about its own Z (kLintelRoll) that
-                    // keeps the beam's hewn corners off its inner-bottom
-                    // arris.
+                    // uses puts local +Z along the run's tangent. (The
+                    // beam's hewn corners are squared at load -- the
+                    // catalogue row asks for it, shaft_square.hpp -- so
+                    // there is no turning it to hide one: turned either
+                    // way, one cut sat on a bottom arris in plain view.)
                     pointPiece(PieceRole::Lintel, *lintel, at, yawOf(r.side) + 3.0F * kHalfPi, gapX[0],
                                gapY[0], gap.z, Rgba8{},
                                Vec3{1.0F, span / std::max(0.01F, lintel->height), 1.0F}, false,
                                span + 1.0F);
                     out_.placements.back().instance.pitch = kHalfPi;
-                    out_.placements.back().instance.roll = kLintelRoll;
                     faced(gapX[1], gapY[1]);
                 }
                 // The wall over the head, in this face's own finish, from
@@ -4271,6 +4257,7 @@ StaticCatalogue StaticCatalogue::fromJson(std::string_view json) {
                 spec.tint = tintFromJson(row.contains("tint") ? row["tint"] : nlohmann::json(), Rgba8{});
                 spec.maxDistance = floatOf(row, "maxDistance", 64.0F);
                 spec.core = floatOf(row, "core", 0.0F);
+                spec.square = row.value("square", false);
                 out.pieces_.push_back(std::move(spec));
             }
         }
@@ -4431,7 +4418,9 @@ std::vector<StaticPieceRef> StaticCatalogue::pieceRefs() const {
     std::vector<StaticPieceRef> refs;
     refs.reserve(pieces_.size());
     for (const PieceSpec& spec : pieces_) {
-        refs.push_back(StaticPieceRef{spec.file});
+        // A squared shaft's half section, in the mesh's own metres.
+        const float core = spec.core > 0.0F ? spec.core : spec.width;
+        refs.push_back(StaticPieceRef{spec.file, spec.square ? 0.5F * core : 0.0F});
     }
     return refs;
 }
@@ -4468,6 +4457,7 @@ std::uint64_t StaticCatalogue::digest() const noexcept {
         h.mixU8(spec.tint.b);
         h.mixF32(spec.maxDistance);
         h.mixF32(spec.core);
+        h.mixU8(static_cast<std::uint8_t>(spec.square ? 1 : 0));
     }
     h.mixU32(static_cast<std::uint32_t>(materials_.size()));
     for (const MaterialRule& rule : materials_) {

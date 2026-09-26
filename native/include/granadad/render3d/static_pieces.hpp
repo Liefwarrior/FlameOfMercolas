@@ -409,6 +409,10 @@ struct PieceSpec {
     /// it stood 2.6 cm short of everything it should have met. 0 = the
     /// width.
     float core = 0.0F;
+    /// The shaft is squared at load (shaft_square.hpp): the kit's beam is
+    /// hewn at two corners, and as a lintel one cut always lands on a
+    /// bottom arris in plain view. Needs `core`.
+    bool square = false;
     /// A flat quad drawn on both sides (its scale is mirrored, which the
     /// adapter draws without back-face culling).
     bool twoSided = false;

@@ -285,6 +285,7 @@ std::uint64_t sceneHash(const SceneDescription& scene) noexcept {
         if (!piece.file.empty()) {
             h.mix(piece.file.data(), piece.file.size());
         }
+        h.mixF32(piece.squareHalf);
     }
     h.mixU64(static_cast<std::uint64_t>(scene.statics.size()));
     for (const StaticInstance& piece : scene.statics) {
