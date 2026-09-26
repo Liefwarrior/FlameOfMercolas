@@ -3719,6 +3719,22 @@ void Session::stepPull() {
     // state the render side may read, so the diff happens here, once a
     // step, in situ. A rise while one is up queues behind it.
     for (const SkillRise& rise : skillRise_.diff(talk.skills())) {
+        // FOLDED INTO THE PLATE when the rung rose on this same step (the
+        // leap that tips THE ROOFS levels SKYRUNNING; the box that tips THE
+        // WIRE levels CRACKSMANSHIP; the bounty that tips THE TRADE levels
+        // FIELDCRAFT): the plate's own dim last row, the same climb told
+        // once, on the card -- never a toast five seconds late in bigger
+        // type. The plate that rose this step is the one on screen if it
+        // started, else the last one queued. A second skill on the same
+        // step, or one later in the hold, queues as a toast.
+        if (rungRoseThisStep_) {
+            RungPlateText& plate =
+                rungPlateQueue_.empty() ? rungPlateText_ : rungPlateQueue_.back();
+            if (plate.tick.empty()) {
+                plate.tick = skillToastFor(rise);
+                continue;
+            }
+        }
         skillToastQueue_.push_back(skillToastFor(rise));
     }
     if (skillToastShowSteps_ > 0) {
@@ -3737,8 +3753,11 @@ void Session::stepPull() {
     if (skillToastShowSteps_ > 0 && rungPlateWanted()) {
         skillToastShowSteps_ = 0;
     }
+    // AND ONLY ONCE THE PLATE HAS LIFTED ALL THE WAY: a toast that started
+    // the step the hold ended crossed the plate's own lift (the player's and
+    // the director's finding), so it waits for the ease to settle at zero.
     if (skillToastShowSteps_ == 0 && !skillToastQueue_.empty() && skillToastAnim_.settled() &&
-        !rungPlateWanted()) {
+        !rungPlateWanted() && rungPlateAnim_.settled() && !rungPlateAnim_.target()) {
         skillToastText_ = std::move(skillToastQueue_.front());
         skillToastQueue_.erase(skillToastQueue_.begin());
         skillToastShowSteps_ = kCasePlateShowSteps;
@@ -3866,7 +3885,22 @@ bool Session::rungPlateOutranked() const noexcept {
     // rope's ceremony (inCustody), and the death ceremony's veil.
     const bool warned = !tavern_->lastWarning().empty() &&
                         tavern_->playerStanding() != sim::Standing::Welcome;
-    return warned || conversingNow() || inCustody() || deathCeremonySteps_ > 0;
+    // THE WATCH'S WORD (fourth pass, the auditor's finding): a street
+    // watchman's HALT, SHEATHE or OFFENCE rides the alert row through say()
+    // and an ignored halt ends in an arrest at reach -- exactly the row a
+    // burglar earns THE WIRE under. A demand on the row outranks the plate
+    // for as long as the row holds it, the warning's own shape, so it is
+    // never the line dimmed.
+    const bool demanded = messageDemand_ && messageSteps_ > 0;
+    // A PAGE'S CLOSE TAIL (the auditor's other finding): the plate is
+    // composed on the world path only, and the tiled Menu, the map and the
+    // court each draw their own eight-step tail without it. A rung that
+    // started the step a page key went down spent its whole rise under that
+    // tail unseen and popped in at full strength. The tail outranks it, so
+    // it rises where it can be seen.
+    const bool tailing = panelAnim_.value() > 0.0F || districtMapAnim_.value() > 0.0F;
+    return warned || demanded || tailing || conversingNow() || inCustody() ||
+           deathCeremonySteps_ > 0;
 }
 
 void Session::stepRungPlate() {
@@ -3876,6 +3910,9 @@ void Session::stepRungPlate() {
     //    of the detection. A rise on any track queues its plate, worded out
     //    of the authored sheet and never by this file.
     const std::vector<LegendRise> rises = legendRise_.diff(legend());
+    // Told to stepPull, which runs after this and folds a skill that levelled
+    // on this same step into the plate's own tick row rather than a toast.
+    rungRoseThisStep_ = !rises.empty();
     if (!rises.empty()) {
         const sim::BarkTables& barks = tavern_->dialogue().barks();
         for (const LegendRise& rise : rises) {
@@ -3886,6 +3923,12 @@ void Session::stepRungPlate() {
     //    family's rule (placePlateShowSteps_'s own note).
     if (rungPlateShowSteps_ > 0) {
         --rungPlateShowSteps_;
+        // THE HOLD SPENT: the alert row's own clock, stopped under the plate
+        // (step()'s countdown), gets what it has left -- capped at two
+        // seconds, so a leap's length is not five seconds late for long.
+        if (rungPlateShowSteps_ == 0) {
+            messageSteps_ = std::min(messageSteps_, kRungPlateRowAfterSteps);
+        }
     }
     // 3. DISMISSED UNDER ANYTHING THAT OWNS THE SCREEN. A page key, a talk,
     //    the court taking you, a bouncer's warning: the plate that was up is
@@ -3921,6 +3964,7 @@ RungPlateState Session::rungPlateState() const noexcept {
     state.head = std::string_view{rungPlateText_.head};
     state.prose = std::string_view{rungPlateText_.prose};
     state.top = std::string_view{rungPlateText_.top};
+    state.tick = std::string_view{rungPlateText_.tick};
     // ZERO UNDER ANYTHING THAT OWNS THE SCREEN -- the case plate's own
     // `conversing ? 0` rule. stepRungPlate has already cut the hold; this is
     // what keeps the handful of frames the ease-out spends from being painted
@@ -4957,7 +5001,10 @@ void Session::step(const sim::MoveInput& input) {
     // string itself is only cleared once alertAnim_ has actually finished
     // easing down to nothing -- which is a handful of steps later, not the
     // same step.
-    if (messageSteps_ > 0) {
+    // THE RUNG PLATE STOPS THIS CLOCK (rung_plate.hpp's rule): a line said
+    // with the rung stands at half weight under the plate and gets what it
+    // has left, capped, once the plate lifts -- stepRungPlate caps it.
+    if (messageSteps_ > 0 && !rungPlateWanted()) {
         --messageSteps_;
     }
 
@@ -5136,7 +5183,11 @@ void Session::step(const sim::MoveInput& input) {
     // times in one step (every toggle calls it) and a decrement in there would
     // make the plate's two seconds depend on how many keys were pressed
     // during them.
-    if (placePlateShowSteps_ > 0) {
+    // THE ANNOUNCE SLOT WAITS BEHIND THE RUNG PLATE (rung_plate.hpp's rule):
+    // neither plate's clock runs while the rung plate is wanted, and their
+    // targets drop with it (syncOverlays below), so a notice already up
+    // eases out, waits, and rises again on its own ease with what it had.
+    if (placePlateShowSteps_ > 0 && !rungPlateWanted()) {
         --placePlateShowSteps_;
     }
     placePlateAnim_.advance();
@@ -5144,7 +5195,7 @@ void Session::step(const sim::MoveInput& input) {
     // for the identical reason: run down HERE and only here, once a step, so
     // its three seconds do not depend on how many keys were pressed during
     // them.
-    if (casePlateShowSteps_ > 0) {
+    if (casePlateShowSteps_ > 0 && !rungPlateWanted()) {
         --casePlateShowSteps_;
     }
     casePlateAnim_.advance();
@@ -5526,12 +5577,14 @@ void Session::step(const sim::MoveInput& input) {
                             barks.resolve({std::string("street.halt"), std::string("watch.halt"),
                                            std::string("watch.demand")}),
                             salt)));
+                    messageDemand_ = true;
                     break;
                 case sim::WatchEventKind::Sheathe:
                     say(name + ": " +
                         std::string(barks.line(
                             barks.resolve({std::string("street.sheathe"), std::string("watch.demand")}),
                             salt)));
+                    messageDemand_ = true;
                     break;
                 case sim::WatchEventKind::Offence:
                     tavern_->noteStreetOffence();
@@ -5539,6 +5592,7 @@ void Session::step(const sim::MoveInput& input) {
                         std::string(barks.line(
                             barks.resolve({std::string("street.offence"), std::string("watch.demand")}),
                             salt)));
+                    messageDemand_ = true;
                     break;
                 case sim::WatchEventKind::Arrest:
                     if (!inCustody() && !tavern_->hearingPending() && !tavern_->executed()) {
@@ -5704,6 +5758,9 @@ void Session::say(std::string line) {
         line += "..";
     }
     message_ = std::move(line);
+    // An ordinary line. The three Watch sites in step() set this back after
+    // their own say() -- see rungPlateOutranked.
+    messageDemand_ = false;
     // UI-EA (LANE HUD): FOUR SECONDS, the spec's own message-row narration
     // hold (sec. 2, EVENT tier). Six was the pre-diet number; a line the
     // player is reading is re-armed by the next line anyway, and the bottom
@@ -10970,8 +11027,9 @@ void Session::syncPanelAnim() noexcept {
     if (casePlateShowSteps_ > 0) {
         placePlateShowSteps_ = 0;
     }
-    placePlateAnim_.setTarget(placePlateShowSteps_ > 0);
-    casePlateAnim_.setTarget(casePlateShowSteps_ > 0);
+    // AND NEITHER SHOWS UNDER THE RUNG PLATE: the slot waits behind it.
+    placePlateAnim_.setTarget(placePlateShowSteps_ > 0 && !rungPlateWanted());
+    casePlateAnim_.setTarget(casePlateShowSteps_ > 0 && !rungPlateWanted());
 }
 
 std::string Session::rivalLine() const {
@@ -11642,7 +11700,10 @@ FrameStats Session::drawFrame(Framebuffer& target, FramePasses passes) const {
     // construction, which is the whole of what every caller before this field
     // existed drew. AT HALF WEIGHT UNDER THE RUNG PLATE (alertFadeNow's own
     // note): one arithmetic, read by the case that pins it and drawn here.
+    // And stepped DOWN to the plate's own register while the plate is wanted
+    // (HudState::alertStepsDown): never a tier above the plate.
     hud.alertFade = alertFadeNow();
+    hud.alertStepsDown = rungPlateWanted();
     // VOICE LANE. The street's own line, on its own toggle, down while a
     // panel owns the screen (the partner's lines are the panel's).
     hud.voiceName = std::string_view{voice_.current().name};
@@ -11652,8 +11713,13 @@ FrameStats Session::drawFrame(Framebuffer& target, FramePasses passes) const {
     // drops with conversingNow), and the panel's own rise caps it so the
     // two cross rather than overprint. The full-page surfaces below zero
     // it outright, as they do the alert.
-    hud.voiceFade = conversing ? std::min(voiceAnim_.value(), 1.0F - panelAnim_.value())
-                               : voiceAnim_.value();
+    // AND AT THE RUNG PLATE'S WEIGHT: a passer-by's bark or Cull's farewell
+    // sat at full strength at the foot of the trade and law frames, wider
+    // than the plate, while the alert row beside it was halved (all three
+    // critics' finding). The same weight, on the same fade.
+    hud.voiceFade = (conversing ? std::min(voiceAnim_.value(), 1.0F - panelAnim_.value())
+                                : voiceAnim_.value()) *
+                    alertWeightUnderRungPlate(rungPlateState().fade);
     // INNOVATION SPRINT ITEM #3. See HudState::alertPulse's own header.
     hud.alertPulse = alertPulse_.value();
     hud.caseLabel = std::string_view{caseCache_};
@@ -16455,8 +16521,16 @@ constexpr std::int32_t kRungBeats = 2;
         }
         case sim::LegendTrack::Trade: {
             // The bounty, whole, and closed at the end so the plate that
-            // queued behind Cull's table can come up.
+            // queued behind Cull's table can come up. Then FACE HIM: the
+            // turn-in leaves the body at his table looking wherever the walk
+            // left it (a patron, on the third pass's frame), and the man who
+            // paid is the picture under the plate. A turn, not a walk.
             (void)runContractLine(session, "away");
+            if (const sim::Actor* cull = actorNamed(session, "Watchman Cull"); cull != nullptr) {
+                session.body().setYaw(sim::bearingTo(session.body().tileX(),
+                                                     session.body().tileY(), cull->tileX(),
+                                                     cull->tileY()));
+            }
             break;
         }
         case sim::LegendTrack::Law: {
@@ -16469,6 +16543,14 @@ constexpr std::int32_t kRungBeats = 2;
                 session.closeConversation();
             }
             standBackFrom(session, "Watchman Cull");
+            // By his own bearing, not the cardinal standBackFrom faces: three
+            // tiles off at a diagonal put a hood on the table under the
+            // reticle and Cull off the frame.
+            if (const sim::Actor* cull = actorNamed(session, "Watchman Cull"); cull != nullptr) {
+                session.body().setYaw(sim::bearingTo(session.body().tileX(),
+                                                     session.body().tileY(), cull->tileX(),
+                                                     cull->tileY()));
+            }
             break;
         }
     }
@@ -17558,7 +17640,7 @@ int scriptedStartHour(const SmokeRunConfig& config) noexcept {
                 case sim::LegendTrack::Wire:
                     return 2;  // the burglar's hour: doors barred, lanterns out
                 case sim::LegendTrack::Roofs:
-                    return 1;  // the skyrun's: the Gull open, the Watch gone home
+                    return 18;  // six in the evening: the lead, the Gull and the harbour under the plate, not a black sky (the skyrun's own one in the morning is a card over nothing)
                 case sim::LegendTrack::Flame:
                     return 9;  // the trail's: nine, the Mission's door open (test_casebook's own hour for it)
                 case sim::LegendTrack::Trade:

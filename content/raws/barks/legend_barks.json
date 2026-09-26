@@ -4,7 +4,7 @@
   "tables": [
     {
       "key": "legend.wire.1",
-      "rows": ["The rope hands know your face now. That is not nothing."]
+      "rows": ["Word travels. The rope hands have your name already."]
     },
     {
       "key": "legend.wire.2",
@@ -16,7 +16,7 @@
     },
     {
       "key": "legend.wire.4",
-      "rows": ["Nobody sees your hands. That is all the name means."]
+      "rows": ["Your hands are never seen. That is all the name means."]
     },
     {
       "key": "legend.roofs.1",
@@ -24,11 +24,11 @@
     },
     {
       "key": "legend.roofs.2",
-      "rows": ["Slates do not creak under you now. Someone was counting."]
+      "rows": ["Slates do not creak under you. Someone was counting."]
     },
     {
       "key": "legend.roofs.3",
-      "rows": ["The alley is a step to you now. The snug drinks to it."]
+      "rows": ["The alley is a step to you. The snug drinks to it."]
     },
     {
       "key": "legend.roofs.4",
@@ -36,7 +36,7 @@
     },
     {
       "key": "legend.flame.1",
-      "rows": ["You followed the trail. The Mission wrote you down."]
+      "rows": ["The priests saw you read. You are in the Mission's book."]
     },
     {
       "key": "legend.flame.2",
@@ -48,7 +48,7 @@
     },
     {
       "key": "legend.flame.4",
-      "rows": ["You went down there and came back. Nobody asks you why."]
+      "rows": ["You went down there and came back. Folk stopped asking."]
     },
     {
       "key": "legend.trade.1",
@@ -56,7 +56,7 @@
     },
     {
       "key": "legend.trade.2",
-      "rows": ["Your word buys on credit now. Not much. But some."]
+      "rows": ["Your word buys on credit. Not much. But some."]
     },
     {
       "key": "legend.trade.3",
@@ -76,7 +76,7 @@
     },
     {
       "key": "legend.law.3",
-      "rows": ["Folk lower their voices when you pass now. Even sober."]
+      "rows": ["Folk lower their voices when you pass. Even sober."]
     },
     {
       "key": "legend.law.4",
@@ -84,7 +84,7 @@
     },
     {
       "key": "legend.top",
-      "rows": ["There is no rung above that one. Mind how you wear it."]
+      "rows": ["There is nothing above that. Mind how you wear it."]
     }
   ]
 }

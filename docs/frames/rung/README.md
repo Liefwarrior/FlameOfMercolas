@@ -81,14 +81,18 @@ of them landed a plate.
 
 | track | what the drive does | why that's the shortest | hour |
 |---|---|---|---|
-| `wire` | The burglary's own beats. Crouch, in at the door, up the stair, the wire in a guest's box (room 2), the pins worked, a shoulder if the wire ruined it. Then the eye goes up the landing the burglar came up, and then the lid. | A cracked box is 8 points of THE WIRE, the first threshold exactly. Four caught lifts would do it too, but every caught lift is a bouncer's warning, which outranks the plate. The lid is the rung, so it goes last: `--burgle` walks back to the landing to shoot the room and that walk, crouched, costs more than the plate has. | 2 |
-| `roofs` | In at the door, up the stair, out over the north wall onto the lead, then the alley leapt west and east until the roofs will have it. Stops on the roof, pitched down at the alley. | A roof-run is 3, skyrunning is 2 a level, a leap is two uses. The skyrun line's own alley beat, bounded the same way (24 leaps). | 1 |
+| `wire` | The burglary's own beats. Crouch, in at the door, up the stair, the wire in a guest's box (`kRooms[2]`, ROOM 3 on its door), the pins worked, a shoulder if the wire ruined it. Then the eye goes up the landing the burglar came up, and then the lid. | A cracked box is 8 points of THE WIRE, the first threshold exactly. Four caught lifts would do it too, but every caught lift is a bouncer's warning, which outranks the plate. The lid is the rung, so it goes last: `--burgle` walks back to the landing to shoot the room and that walk, crouched, costs more than the plate has. | 2 |
+| `roofs` | In at the door, up the stair, out over the north wall onto the lead, then the alley leapt west and east until the roofs will have it. Stops on the roof it rose on, pitched down over the Gull's lead, the harbour off to the left. | A roof-run is 3, skyrunning is 2 a level, a leap is two uses. The skyrun line's own alley beat, bounded the same way (24 leaps). | 18 |
 | `flame` | The trail's loop for its first two leads. Nearest open lead on this band, backed off four tiles the way the body came in, and read from there with Q, twice. Onto the anchor itself only if it will not read from off it. | A lead read is 6. Two is 12. The trail stands back after it reads; this stands back first. Four tiles is inside kLookRangeTiles so the clue reads the same, and the flagstones are indoors, so the trail's seven-tile step back is out of the door, round the almshouse and down to the quay. Fifty tiles. The plate has five seconds. | 9 |
-| `trade` | The bounty line, whole, played to `away`. Take the job off Cull, do it, turn it in across his table. | A paid job is 6 and the coin over four is the rest. The smallest bounty on the board (`bounty_kennel`, two units at four) pays 8, so 6 + 2 lands on the threshold exactly. The plate comes up the step the talk closes. | 21 |
-| `law` | Talk to Watchman Cull, stand him four drinks, close the talk, stand back. | A bought drink is a deed worth 2 of standing with the drinker's own guild. The Watch at 8 on a clean sheet is KNOWN TO THE WATCH. The bounty alone leaves you three short. | 23 |
+| `trade` | The bounty line, whole, played to `away`. Take the job off Cull, do it, turn it in across his table, and turn to face him. | A paid job is 6 and the coin over four is the rest. The smallest bounty on the board (`bounty_kennel`, two units at four) pays 8, so 6 + 2 lands on the threshold exactly. The plate comes up the step the talk closes. | 21 (the line runs the clock to 23) |
+| `law` | Talk to Watchman Cull, stand him four drinks, close the talk, stand back, face him. | A bought drink is a deed worth 2 of standing with the drinker's own guild. The Watch at 8 on a clean sheet is KNOWN TO THE WATCH. The bounty alone leaves you three short. | 23 |
 
 A word that's none of the five (`--rung=bloodletter`) lands neither beat and
-the summary says `found=no`.
+the summary says `found=no`. `--time=` moves the clock, but the trade and the
+law need Cull at his table, so a daytime hour on either lands no plate and the
+summary says so (`0->0 plate=down`). The roofs run at six in the evening on
+purpose: the skyrun line's own hour is one in the morning, and a plate over a
+black frame is a card over nothing.
 
 ## The rows
 
@@ -98,27 +102,27 @@ legend.cpp prints, the row is what the ward says.
 
 | key | head | row |
 |---|---|---|
-| `legend.wire.1` | THE WIRE  --  LIGHT FINGERS | The rope hands know your face now. That is not nothing. |
+| `legend.wire.1` | THE WIRE  --  LIGHT FINGERS | Word travels. The rope hands have your name already. |
 | `legend.wire.2` | THE WIRE  --  CUTPURSE | Coats get held shut when you walk by. They have heard. |
 | `legend.wire.3` | THE WIRE  --  ROBBER | Finch pours before you ask. That is a robber's welcome. |
-| `legend.wire.4` | THE WIRE  --  THE QUIET TENANT | Nobody sees your hands. That is all the name means. |
+| `legend.wire.4` | THE WIRE  --  THE QUIET TENANT | Your hands are never seen. That is all the name means. |
 | `legend.roofs.1` | THE ROOFS  --  TENANT | You went up and came down whole. The roofs noticed. |
-| `legend.roofs.2` | THE ROOFS  --  ROOF-WALKER | Slates do not creak under you now. Someone was counting. |
-| `legend.roofs.3` | THE ROOFS  --  SKYRUNNER | The alley is a step to you now. The snug drinks to it. |
+| `legend.roofs.2` | THE ROOFS  --  ROOF-WALKER | Slates do not creak under you. Someone was counting. |
+| `legend.roofs.3` | THE ROOFS  --  SKYRUNNER | The alley is a step to you. The snug drinks to it. |
 | `legend.roofs.4` | THE ROOFS  --  THE WARD'S OWN SHADOW | Nobody looks up. You are what they'd see if they did. |
-| `legend.flame.1` | THE FLAME  --  DISCIPLE | You followed the trail. The Mission wrote you down. |
+| `legend.flame.1` | THE FLAME  --  DISCIPLE | The priests saw you read. You are in the Mission's book. |
 | `legend.flame.2` | THE FLAME  --  THE FLAME'S MAN | The priests nod to you first now. The dockers saw it. |
 | `legend.flame.3` | THE FLAME  --  WIELDER OF THE FLAME | Doors open before you knock. Some folk cross the street. |
-| `legend.flame.4` | THE FLAME  --  THE ONE WHO WENT DOWN THERE | You went down there and came back. Nobody asks you why. |
+| `legend.flame.4` | THE FLAME  --  THE ONE WHO WENT DOWN THERE | You went down there and came back. Folk stopped asking. |
 | `legend.trade.1` | THE TRADE  --  STALLKEEP | Paid and on time. The counter remembers that first. |
-| `legend.trade.2` | THE TRADE  --  TRADER | Your word buys on credit now. Not much. But some. |
+| `legend.trade.2` | THE TRADE  --  TRADER | Your word buys on credit. Not much. But some. |
 | `legend.trade.3` | THE TRADE  --  CRAFTLORD | The Weighhouse stamps your paper without reading it. |
 | `legend.trade.4` | THE TRADE  --  THE WARD'S CREDITOR | Half this quay owes you. The other half is asking to. |
 | `legend.law.1` | THE LAW  --  KNOWN TO THE WATCH | The Watch has your name now. Not sour about it. Yet. |
 | `legend.law.2` | THE LAW  --  SWORN IN | Cull calls you by name across the room. On purpose. |
-| `legend.law.3` | THE LAW  --  THE SERGEANT'S MAN | Folk lower their voices when you pass now. Even sober. |
+| `legend.law.3` | THE LAW  --  THE SERGEANT'S MAN | Folk lower their voices when you pass. Even sober. |
 | `legend.law.4` | THE LAW  --  THE MAN VESS SENDS FOR | When it goes bad, Vess says your name first. |
-| `legend.top` | (under any rung 4 head) | There is no rung above that one. Mind how you wear it. |
+| `legend.top` | (under any rung 4 head) | There is nothing above that. Mind how you wear it. |
 
 The font draws in caps, so on the plate the rows read in caps. The file keeps
 them in sentence case so they're readable in the redline.
@@ -139,8 +143,10 @@ books. Byte identical at every checkpoint. The gate agrees.
 Both are `dist\granadad-twin-gate.exe` runs. The population number here read
 `0x2646C1AAA2BA38DF` until the third pass; that was the digest from before
 street senses moved it (wip d23ba091, the tree this lane was cut from), copied
-in without being re-run. Re-run on the third pass's gated exe, both twice,
-both IDENTICAL, and neither moved by the plate.
+in without being re-run. Re-run on the fourth pass's gated exe, both twice,
+both IDENTICAL. They prove the SIM is where it was: the twin gate links the
+sim and never the renderer, so it cannot see the plate at all. The plate's own
+evidence is the hash case above, which draws it.
 
 ## The frames
 
@@ -149,7 +155,8 @@ plate at its first fully-up frame. Leave it off and you get the plate a
 second into its hold, which is the same picture.
 
 `scripts\shoot-rung.ps1` shoots all six and keeps every summary line in
-`shoot-rung.log` beside the PNGs. Or run them by hand.
+`shoot-rung.log` beside the PNGs (kept locally: `*.log` is gitignored, so the
+branch carries the frames and not the log). Or run them by hand.
 
 | frame | drive | what it proves |
 |---|---|---|
@@ -158,7 +165,7 @@ second into its hold, which is the same picture.
 | `rung-flame-960.png` | the same with `--rung=flame` | Two leads read at the Mission at nine. `THE FLAME  --  DISCIPLE`, the back room stood back from. The pull line under the ribbon still reads the next lead. |
 | `rung-trade-960.png` | the same with `--rung=trade` | The bounty paid across Cull's table. `THE TRADE  --  STALLKEEP` the step the talk closes, Cull still in frame. |
 | `rung-law-960.png` | the same with `--rung=law` | Four drinks stood to Cull at eleven. `THE LAW  --  KNOWN TO THE WATCH`, Cull on his stool. |
-| `rung-wire-320.png` | the first drive at `--width=320 --height=180` | The strip pin. The longest rows are 56 glyphs and the plate is 62 cells wide in a 64-cell frame: a cell of margin off each edge, two cells of gutter inside each keyline, and the row whole. Under the compass band, clear of the reticle. |
+| `rung-wire-320.png` | the first drive at `--width=320 --height=180` | The strip pin. `wire.1` is 52 glyphs, so this plate is 58 cells wide; the two 56-glyph rows (`roofs.2`, `flame.3`) make the widest plate the sheet can build, 62 cells in a 64-cell frame -- a cell of margin off each edge, two cells of gutter inside each keyline -- and the test pins them at that width rather than a drive. Seated in the middle of what the smallest window has between the stat stack and the aim prompt. |
 
 ## Second pass, 2026-09-25
 
@@ -208,8 +215,9 @@ The record critic on e3e7a600 held the plate at 7 and named three things.
   borders is the 64-cell frame less its margin, so `kRungPlateRowCells`
   stands at 56 and the geometry pins are exact widths now, not floors.
 - **`OVER 3 TILES.`** isn't the plate's. It's the alert row's own leap
-  announce (`Session::leap`, said the moment the jump is armed), on screen
-  because the roofs drive ends on the leap that tips the rung. The plate's
+  announce (composed in `Session::tryClimb` the moment the jump is armed, and
+  said through `say()`), on screen because the roofs drive ends on the leap
+  that tips the rung. The plate's
   prose has no numeral in any of its twenty-one rows and the sheet is now
   pinned that way, so a count can never turn up in a docker's mouth on this
   card. The leap line itself keeps its number: coin and tiles are the alert
@@ -218,6 +226,109 @@ The record critic on e3e7a600 held the plate at 7 and named three things.
 The doubled speaker on the law drive (`WATCHMAN CULL: WATCHMAN CULL TAKES
 THE DRINK.`) is the drink line's own composition, not the plate's, and has
 its own chip.
+
+## Fourth pass, 2026-09-26
+
+Three critics on the third pass -- a director on the frames, a player on the
+drives, an auditor on the claims -- came back 7, 7 and 6, and the lowest
+governs. Their lists, taken whole:
+
+- **Everything else stands down while the plate holds.** The third pass
+  halved the alert row and left it at the glance size, one tier bigger than
+  the plate; the voice row (a docker's bark, Cull's farewell) was never
+  dimmed at all, and `NEW LEAD` sat above the plate at full strength. Now:
+  the alert row steps down to the plate's own register (the minor scale) as
+  well as to half weight, and its backing plate takes half again so the
+  keyline never outshines the words; the voice row rides the same weight;
+  the announce slot (`NEW LEAD`, a named place crossed) holds its clock and
+  waits behind the plate, then rises on its own ease. The compass ribbon,
+  the aim prompt and the corner stacks are the HUD's furniture and stay.
+  The plate keeps the terminal register on purpose -- the reference's one
+  idiom for emphasis is the knocked-out head, never a second glyph size --
+  and it is the one *notice* at full strength.
+- **The tick is folded in.** A skill that levels on the same step as a rung
+  (skyrunning on the leap that tips THE ROOFS, cracksmanship on the box that
+  tips THE WIRE, fieldcraft on the bounty) used to fire its green toast the
+  moment the plate's hold ended -- the same climb, told twice, five seconds
+  late, in bigger type, clipping the compass line. It is the plate's own
+  dim last row now (`SKYRUNNING RISES TO 2`, the dateline slot), told once,
+  on the card. A skill that levels later in the hold still queues, and
+  starts only once the plate has lifted all the way. At 320x180 there is no
+  row to spend between the stat stack and the aim prompt, so the tick row is
+  the one thing the smallest window drops; the Character tile has the level.
+- **The alert row's clock stops under the plate.** A line said with the rung
+  (`CRACKED IT - 14C AND 1 PIECE...`) used to spend its whole four seconds
+  at half weight and be gone before the lift, so the take was never shown
+  whole. Its countdown holds while the plate is wanted and resumes when the
+  plate lifts, capped at two seconds so a leap's length is not five seconds
+  late for long. A bouncer's WARNING is not on that clock and never was.
+- **The Watch's word outranks the plate.** A street watchman's HALT, SHEATHE
+  or OFFENCE rides the alert row through `say()` like any other line, and an
+  ignored halt ends in an arrest at reach -- exactly the row a burglar earns
+  THE WIRE under. The auditor's finding. A demand on the row now dismisses
+  the plate the way a bouncer's warning does, for as long as the row holds
+  it, so it is never the line dimmed. It is pinned by reading, not by a
+  case: no test fixture in this build raises a street halt through a
+  Session, and building one is a Watch lane's job.
+- **The plate waits for a page's tail.** A rung earned under a page used to
+  start the step the page key went down and spend its whole rise under the
+  page's own eight-step close tail, then pop in at full strength. The tail
+  outranks the plate now, so it rises where it can be seen.
+- **The lift is a lift.** Eight steps and three units of drift read as
+  switched off after a five-second hold that opened on a heavy bell. The
+  rise keeps its eight; the lift takes twenty-four with twice the drift.
+- **Geometry.** A cell row of clearance between the plate and the aim
+  prompt at every size that has one to spend; the smallest window splits
+  what it has evenly between the stat stack above and the prompt below. The
+  ground slab sits symmetric about the keyline (the panel vocabulary's own
+  border cells put two units above the rule and four below, and on a bright
+  wall that read as a card with its keyline off centre). The head's gold
+  block is one unit of gold, six of glyph, one of gold, and drops the font's
+  trailing advance so its pads match.
+- **The rows, for the redline.** The player caught the first row a player
+  ever reads contradicting the screen: *The rope hands know your face now*
+  on an unseen lift with HIDDEN on the stat stack. The director counted
+  "now" in seven of twenty-one rows, "Nobody" opening three of the four
+  capstones, `flame.1` narrating the player's verb where every other first
+  rung reports how the ward reacted, and the system's word "rung" in a
+  docker's mouth on `legend.top`. Nine rows changed, each still under
+  fifty-six glyphs, no dash, no numeral, and still salted:
+
+  | key | was | is |
+  |---|---|---|
+  | `legend.wire.1` | The rope hands know your face now. That is not nothing. | Word travels. The rope hands have your name already. |
+  | `legend.wire.4` | Nobody sees your hands. That is all the name means. | Your hands are never seen. That is all the name means. |
+  | `legend.roofs.2` | Slates do not creak under you now. Someone was counting. | Slates do not creak under you. Someone was counting. |
+  | `legend.roofs.3` | The alley is a step to you now. The snug drinks to it. | The alley is a step to you. The snug drinks to it. |
+  | `legend.flame.1` | You followed the trail. The Mission wrote you down. | The priests saw you read. You are in the Mission's book. |
+  | `legend.flame.4` | You went down there and came back. Nobody asks you why. | You went down there and came back. Folk stopped asking. |
+  | `legend.trade.2` | Your word buys on credit now. Not much. But some. | Your word buys on credit. Not much. But some. |
+  | `legend.law.3` | Folk lower their voices when you pass now. Even sober. | Folk lower their voices when you pass. Even sober. |
+  | `legend.top` | There is no rung above that one. Mind how you wear it. | There is nothing above that. Mind how you wear it. |
+
+- **The drives frame their cause.** Trade and law end facing Watchman Cull
+  by his own bearing (he was off frame in both, a patron and a hood under
+  the reticle). The roofs run at six in the evening so the lead, the Gull
+  and the harbour are in the frame under the plate rather than a black sky
+  at one in the morning. The wire stays at two in the morning: a burglary
+  is dark, the box that tipped the rung is under the reticle, and the plate
+  is the light in the room.
+- **The auditor's paperwork.** `Session::leap` never existed (the leap line
+  is composed in `Session::tryClimb`); the gutter's "two" and the weight's
+  "half" are pinned as numbers now, not as the symbol the code uses; the
+  drawn wiring is pinned on pixels (the alert row's amber under a plate
+  against the same frame without one); a warning's first frames are pinned
+  step by step against a twin session with no rung; and the room index in
+  the wire drive's prose is `kRooms[2]`, ROOM 3 on its door.
+
+What is declared and left: the two-cell gutter holds at every window that
+deals the panel register 64 cells across (every 16:9 size from 320x180 up);
+a squarer window (1440x1080, 720x720) spends the gutter first and then clips
+a 56-glyph row with the cell drawer's mark. The top rung at 320x180 (fifteen
+boxes, no drive) sits on its floor with no clearance to spend. At 640x360 the
+terminal register is one pixel-scale under the glance register, as it is on
+every composed page at that size; the plate keeps the register and the rest
+of the HUD stands down under it.
 
 ## Not in this folder yet
 

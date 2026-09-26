@@ -58,17 +58,37 @@
 //     the same event said twice, and the plate has already told it.
 //   * Its own cue, heavier than the toast's chime -- audio::SoundId::LegendRung,
 //     the Kenney heavy bell -- played when the plate actually shows.
-//   * THE ALERT ROW STANDS AT HALF WEIGHT under it. The amber line at the
-//     foot of the frame (a cracked box's take, a leap's length, a watchman's
-//     word across the table) is news of its own, so it is not cut the way the
-//     toast is -- its four-second hold would be lost whole under a five-
-//     second plate -- and not deferred either, since a leap's length said
-//     five seconds after the leap is a notice out of its moment. It is scaled
-//     instead, on the plate's own fade, so the two cross rather than snap and
-//     the plate is the one thing on the frame at full strength while it
-//     holds. A bouncer's WARNING rides that same row and dismisses the plate
-//     outright, so the one line the player must not miss is never the one
-//     dimmed.
+//   * EVERYTHING ELSE STANDS DOWN WHILE IT HOLDS. The alert row (the amber
+//     line at the foot of the frame: a cracked box's take, a leap's length,
+//     a watchman's word across the table) is news of its own, so it is not
+//     cut the way the toast is -- its four-second hold would be lost whole
+//     under a five-second plate -- and not deferred either, since a leap's
+//     length said five seconds after the leap is a notice out of its
+//     moment. It steps DOWN instead: to the plate's own register (the minor
+//     scale, never a tier above the plate) and to half weight on the plate's
+//     own fade, so the two cross rather than snap; and its clock STOPS under
+//     the plate and resumes when the plate lifts, capped at two seconds, so
+//     the take is shown whole and not five seconds late for long. The voice
+//     row (a passer-by's bark, a farewell) rides the same weight. The
+//     announce slot (NEW LEAD, a named place crossed) holds its clock and
+//     waits behind the plate. The plate is the one NOTICE on the frame at
+//     full strength while it holds; the compass, the aim prompt and the
+//     corner stacks are the HUD's furniture and stay. A bouncer's WARNING
+//     rides the alert row too and dismisses the plate outright, so the one
+//     line the player must not miss is never the one dimmed.
+//   * A SKILL THAT LEVELS ON THE SAME STEP AS THE RUNG is the plate's own
+//     dim last row ("SKYRUNNING RISES TO 2" under the prose), not a toast
+//     after it: the same climb, told once, on the card. A skill that levels
+//     later in the hold queues and starts only once the plate has lifted all
+//     the way. The smallest window (320x180) has no row to spend between the
+//     stat stack and the aim prompt and drops the tick row; the Character
+//     tile has the level.
+//   * THE WATCH'S WORD OUTRANKS IT. A street watchman's HALT, SHEATHE or
+//     OFFENCE rides the alert row through say() and an ignored halt ends in
+//     an arrest at reach: a demand on the row dismisses the plate the way a
+//     bouncer's WARNING does, for as long as the row holds it. So does a
+//     page's close tail: a rung earned under a page waits for the tail
+//     rather than rising unseen beneath it.
 
 #include <array>
 #include <cstdint>
@@ -76,6 +96,7 @@
 #include <string_view>
 #include <vector>
 
+#include "granadad/render/anim.hpp"
 #include "granadad/render/framebuffer.hpp"
 #include "granadad/sim/barks.hpp"
 #include "granadad/sim/legend.hpp"
@@ -121,13 +142,17 @@ private:
 /// The one row a topped-out track gets under its own.
 inline constexpr std::string_view kLegendTopKey = "legend.top";
 
-/// The plate's three lines. `head` is never empty for a real rise; `prose` is
+/// The plate's lines. `head` is never empty for a real rise; `prose` is
 /// empty exactly when no row is authored for the key (which test_rung_plate
-/// pins never happens); `top` is empty below the top rung.
+/// pins never happens); `top` is empty below the top rung; `tick` is the
+/// skill toast's own label ("SKYRUNNING RISES TO 2") when a skill levelled on
+/// the same step as the rung, folded in by Session::stepPull, and empty
+/// otherwise.
 struct RungPlateText {
     std::string head;
     std::string prose;
     std::string top;
+    std::string tick;
     [[nodiscard]] bool empty() const noexcept { return head.empty(); }
 };
 
@@ -143,6 +168,26 @@ struct RungPlateText {
 /// twice the EVENT tier's kPlateHoldSteps, because it is three lines of prose
 /// and not one name. Steps, never seconds (anim.hpp's own rule).
 inline constexpr std::int32_t kRungPlateHoldSteps = 300;
+
+/// THE LIFT. The rise keeps the page ease (eight steps: a notice landing); the
+/// lift takes three times that with twice the drift, because eight steps and
+/// three units read as switched off after a five-second hold that opened on a
+/// heavy bell -- the director's finding on the third pass.
+inline constexpr std::int32_t kRungPlateLiftSteps = 3 * kPageEaseSteps;
+inline constexpr int kRungPlateLiftUnits = 6;
+
+/// The most of its own hold the alert row keeps once the plate lifts: two
+/// seconds. Its clock stops under the plate (Session::step), so a line said
+/// with the rung is shown whole after the lift -- but a leap's length is not
+/// five seconds late for long.
+inline constexpr std::int32_t kRungPlateRowAfterSteps = 120;
+
+/// The plate's FLOOR, in rows of the glance scale: the lowest pixel of the
+/// announce plate's slot under the compass ribbon at scale 1 (31), which is
+/// also under the top-right stat stack at 320x180. The seat never rises
+/// past it, and the tick row is spent only where the frame has a row between
+/// this floor and the aim prompt's fence to spend on it.
+inline constexpr int kRungPlateFloorRows = 31;
 
 /// The longest a prose row may be and still draw WHOLE on one line of the
 /// plate at 320x180, the smallest window this game runs at: the frame's 64
@@ -167,6 +212,15 @@ inline constexpr float kRungPlateAlertWeight = 0.5F;
 /// plate rises and recovers as it lifts, on the plate's own ease.
 [[nodiscard]] float alertWeightUnderRungPlate(float plateFade) noexcept;
 
+// PINNED AS NUMBERS, not as the symbols the code spends. The auditor's
+// finding on the third pass: every geometry pin used kRungPlateGutterCells by
+// name, so the critic's "one cell" could come back with the suite green.
+static_assert(kRungPlateGutterCells == 2, "the critic's finding was one cell; the fix is two");
+static_assert(kRungPlateRowCells == 64 - 2 - 2 * kRungPlateGutterCells - 2,
+              "56 glyphs + two gutters a side + two borders is the 64-cell frame less its margin");
+static_assert(kRungPlateAlertWeight == 0.5F, "half weight is half");
+static_assert(kRungPlateLiftSteps > kPageEaseSteps, "the lift is longer than the rise");
+
 /// Where the plate SEATS vertically, as a share of the spare height above and
 /// below it, out of 100. A quarter: high, under the compass band, clear of
 /// the reticle and the aim prompt that hangs off it at every pinned size.
@@ -178,6 +232,9 @@ struct RungPlateState {
     std::string_view head;
     std::string_view prose;
     std::string_view top;
+    /// The folded skill tick, dim, last. Drawn only where the frame has a row
+    /// to spend on it (rungPlateBox knows).
+    std::string_view tick;
     /// 0 (gone) .. 1 (full strength). The caller's own EasedToggle.
     float fade = 0.0F;
     /// Where the plate is in its own rise, signed: -1 fully below its seat

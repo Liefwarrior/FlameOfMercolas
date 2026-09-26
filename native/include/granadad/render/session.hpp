@@ -2640,8 +2640,18 @@ private:
     /// ease) -- the toast's exact shape -- and the rungs waiting behind it.
     RungPlateText rungPlateText_;
     int rungPlateShowSteps_ = 0;
-    EasedToggle rungPlateAnim_{kPageEaseSteps, kPageEaseSteps};
+    EasedToggle rungPlateAnim_{kPageEaseSteps, kRungPlateLiftSteps};
     std::vector<RungPlateText> rungPlateQueue_;
+    /// Set by stepRungPlate, read by stepPull the same step: a skill that
+    /// levelled on the step a rung rose is the plate's own tick row, never a
+    /// toast after it.
+    bool rungRoseThisStep_ = false;
+    /// The line on the alert row is a street watchman's HALT, SHEATHE or
+    /// OFFENCE -- said through say() like any other, but an ignored halt
+    /// ends in an arrest at reach, so it outranks the plate for as long as
+    /// the row holds it (rungPlateOutranked). say() clears it; the three
+    /// Watch sites set it.
+    bool messageDemand_ = false;
     /// True when something that outranks the plate owns the screen right
     /// now: a page or a talk (conversingNow), the court's plates and custody,
     /// the death and rope ceremonies, a bouncer's WARNING -- the alert row's

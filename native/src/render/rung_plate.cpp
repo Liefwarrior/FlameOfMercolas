@@ -117,6 +117,9 @@ struct PlateLayout {
     int headCells = 0;
     int proseCells = 0;
     int topCells = 0;
+    /// Zero when the state carries no tick OR the frame has no row to spend
+    /// on it (320x180): the row is dropped, never squeezed.
+    int tickCells = 0;
 };
 
 [[nodiscard]] PlateLayout layoutFor(int width, int height, const RungPlateState& state) {
@@ -134,7 +137,23 @@ struct PlateLayout {
     // air above; the top row, when a track is capped, sits directly under
     // the prose with none of its own, the dateline's own proximity.
     const bool hasProse = !state.prose.empty();
-    out.rows = 1 + (hasProse ? 2 : 0) + (state.top.empty() ? 0 : 1);
+    out.tickCells = static_cast<int>(state.tick.size());
+    out.rows = 1 + (hasProse ? 2 : 0) + (state.top.empty() ? 0 : 1) + (out.tickCells > 0 ? 1 : 0);
+    // THE TICK ROW IS SPENT ONLY WHERE THERE IS A ROW TO SPEND. Between the
+    // plate's floor (kRungPlateFloorRows) and the aim prompt's fence the
+    // smallest window has room for the card and nothing else; a tick there
+    // would put the keyline on the stat stack or the prompt on the card. So
+    // it is dropped, whole, at 320x180 (and at any size for a topped-out
+    // track whose card is already a row taller), and the Character tile has
+    // the level. rungPlateBox's own clearance rule, asked before the seat.
+    if (out.tickCells > 0) {
+        const int floorY = kRungPlateFloorRows * hudScale(height);
+        const CentreRect fence = hudAimRect(width, height);
+        if (floorY + out.metric.heightOf(out.rows + 2) + out.metric.cellH() > fence.y0) {
+            out.tickCells = 0;
+            --out.rows;
+        }
+    }
     // SIZED TO ITS CONTENT (the spec's "size to content where content is
     // static"): the widest row, where the head wears a cell of the accent
     // fill either side of its words; TWO CELLS OF GUTTER inside each edge
@@ -144,7 +163,7 @@ struct PlateLayout {
     // drawer's own mark, which the authored sheet is pinned never to need at
     // 320x180: 56 glyphs, two gutters, two borders is the 64-cell frame less
     // its margin exactly.
-    const int widest = std::max(out.headCells + 2, std::max(out.proseCells, out.topCells));
+    const int widest = std::max({out.headCells + 2, out.proseCells, out.topCells, out.tickCells});
     const int room = out.metric.cellsIn(width) - 2;
     out.cells = std::min(widest + 2 + 2 * kRungPlateGutterCells, room);
     if (out.cells < 6) {
@@ -186,7 +205,22 @@ RungPlateBox rungPlateBox(int width, int height, const RungPlateState& state) {
     // looking at.
     const int rawSeatY = ((height - box.h) * kRungPlateSeat) / 100 + layout.metric.cellH();
     const CentreRect fence = hudAimRect(width, height);
-    box.y = std::clamp(rawSeatY, 0, std::max(0, fence.y0 - box.h));
+    // A CELL ROW OF CLEARANCE above the prompt wherever the frame has one to
+    // spend (the director's finding: at 1920x1080 the slab stopped 23 px
+    // over the prompt, under one text row; at 320x180 two pixels). Between
+    // the floor and the fence less the card: room for two rows or more, and
+    // the quarter seat rides inside that band with a row kept clear under
+    // it; less than that, and what there is splits evenly -- the smallest
+    // window has seven pixels to share between the stat stack above and the
+    // prompt below, and the card sits in the middle of them.
+    const int floorY = kRungPlateFloorRows * hudScale(height);
+    const int ceilY = fence.y0 - box.h;
+    const int cellH = layout.metric.cellH();
+    if (ceilY - floorY >= 2 * cellH) {
+        box.y = std::clamp(rawSeatY, floorY, ceilY - cellH);
+    } else {
+        box.y = floorY + std::max(0, ceilY - floorY) / 2;
+    }
     box.draws = true;
     return box;
 }
@@ -205,10 +239,12 @@ void drawRungPlate(Framebuffer& target, const RungPlateState& state) {
     }
     const PanelMetric& metric = layout.metric;
     const PanelInk& ink = panelInk();
-    // THE RISE: the announce plates' own lift, three scale units, through the
-    // seat and on out -- so the same continuous value drives the alpha and
-    // the offset and the plate can never be caught bright and mid-slide.
-    const int lift = 3 * hudScale(height);
+    // THE RISE AND THE LIFT: through the seat and on out, so the same
+    // continuous value drives the alpha and the offset and the plate can
+    // never be caught bright and mid-slide. Twice the announce plates' three
+    // units, over a lift three times as long (kRungPlateLiftSteps): a card
+    // that held five seconds leaves, it is not switched off.
+    const int lift = kRungPlateLiftUnits * hudScale(height);
     const float drift = std::clamp(state.drift, -1.0F, 1.0F);
     const int y = box.y - static_cast<int>(std::round(drift * static_cast<float>(lift)));
 
@@ -223,7 +259,19 @@ void drawRungPlate(Framebuffer& target, const RungPlateState& state) {
     style.alpha = fade;
     // NEARLY OPAQUE, like every composed page: a card the ward shows through
     // is a card nobody reads. No stipple -- three rows have no dead space.
-    style.groundAlpha = kPageGroundAlpha;
+    // THE SLAB IS DRAWN HERE, SYMMETRIC ABOUT THE KEYLINE, and the frame's
+    // own ground is turned off. The panel vocabulary's border cells put the
+    // rule's ink on the third of seven rows, so a page's slab carries two
+    // units above its top rule and four below its bottom one, and a diamond
+    // or a dash starts on the border cell's first column and ends a unit
+    // short of its last -- a composed page sits on a dark frame and nobody
+    // sees it; on a bright wall (the trade drive's) the director saw a black
+    // card with its keyline off centre. Two units of slab outside the ink on
+    // every side, the same on all four.
+    style.groundAlpha = 0.0F;
+    const int s = metric.scale;
+    target.fillRect(bounds.x - 2 * s, bounds.y, bounds.w + 3 * s, bounds.h - 2 * s, style.ground,
+                    kPageGroundAlpha * fade);
     PanelFrame pane(target, bounds, metric, style);
     pane.draw();
     const PanelRect body = pane.interior();
@@ -231,10 +279,18 @@ void drawRungPlate(Framebuffer& target, const RungPlateState& state) {
 
     // THE HEAD, knocked out of an inverted fill in the body accent -- this
     // build's one idiom for emphasis (the reference's own), never a second
-    // glyph size. Centred on the interior, a cell of fill either side.
+    // glyph size. Centred on the interior, a cell of fill either side. THE
+    // BLOCK IS DRAWN BY HAND rather than by drawInvertedFill, for two units
+    // it cannot give: ONE UNIT OF GOLD ABOVE THE CAPS (the fill starts a
+    // unit into the border cell's empty last row, so the caps no longer sit
+    // on the block's own top edge with a whole row of gold under their
+    // feet), and the font's trailing advance column TRIMMED off the block's
+    // right end, so the pad after the last letter is the pad before the
+    // first. The director's finding, at every size.
     const int fillCells = std::min(interior, layout.headCells + 2);
     const int fillCell = std::max(0, (interior - fillCells) / 2);
-    drawInvertedFill(target, body, metric, fillCell, 0, fillCells, ink.accent, fade);
+    target.fillRect(body.x + metric.widthOf(fillCell), body.y - s, metric.widthOf(fillCells) - s,
+                    metric.cellH() + s, ink.accent, fade);
     (void)drawCellTextKnockout(target, body, metric, fillCell + 1, 0, state.head, ink.knockout,
                                fade);
     int row = 1;
@@ -253,6 +309,15 @@ void drawRungPlate(Framebuffer& target, const RungPlateState& state) {
         // The top of the ladder: a dateline's role, dim, read last.
         (void)drawCellText(target, body, metric, std::max(0, (interior - layout.topCells) / 2),
                            row, state.top, ink.dim, fade);
+        ++row;
+    }
+    if (layout.tickCells > 0) {
+        // THE TICK, folded in: the skill that levelled on the rung's own
+        // step, in the dateline's ink and slot -- the game's word under the
+        // ward's, told once. layoutFor has already dropped it where the
+        // frame has no row for it.
+        (void)drawCellText(target, body, metric, std::max(0, (interior - layout.tickCells) / 2),
+                           row, state.tick, ink.dim, fade);
         ++row;
     }
 }

@@ -445,6 +445,13 @@ struct HudState {
     /// (Session::alertFadeNow, rung_plate.hpp's alertWeightUnderRungPlate):
     /// the row is drawn exactly as before at whatever weight it is handed.
     float alertFade = 1.0F;
+    /// THE RUNG PLATE'S OTHER RULE FOR THIS ROW (rung_plate.hpp): while the
+    /// plate holds, the row steps DOWN to the minor register -- the plate's
+    /// own type size, never a tier above it -- and its backing plate takes
+    /// half the row's alpha again, so the keyline never outshines the words
+    /// it is there to back. False (every caller before the plate) draws
+    /// exactly as before.
+    bool alertStepsDown = false;
     /// HARDENING PASS. THE SAME alertFade PATTERN, ONE PER ROW. #83 eased the
     /// alert row in and out and left every other row on this HUD popping --
     /// see this file's own header on the rule these rows draw under and

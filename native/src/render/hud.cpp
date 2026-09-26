@@ -1497,7 +1497,10 @@ void drawBottomBand(Framebuffer& target, const HudState& state, BottomBand& band
         // FACE FIXED IN..". A line the player has to read is worth a size
         // smaller; a line nobody can finish is worth nothing. So take the
         // largest scale it fits at, down to 1, and only then clip.
-        int alertScale = scale;
+        // THE RUNG PLATE'S RULE FOR THIS ROW (HudState::alertStepsDown): under
+        // the plate the row starts from the minor register -- the plate's own
+        // type size, never a tier above it -- and shrinks from there as ever.
+        int alertScale = state.alertStepsDown ? minor : scale;
         while (alertScale > 1 && textWidth(state.alert, alertScale) > width - 2 * margin) {
             --alertScale;
         }
@@ -1537,9 +1540,13 @@ void drawBottomBand(Framebuffer& target, const HudState& state, BottomBand& band
             const int pulsePad = static_cast<int>(std::round(static_cast<float>(alertScale) * pulse));
             const int padX = alertScale * 2 + pulsePad;
             const int padY = std::max(1, alertScale / 2) + pulsePad;
+            // Under the rung plate the backing plate takes half the row's
+            // alpha again: at half weight its bone rails outshone the amber
+            // words they back (the director's zoom on the third pass).
             drawTextPlate(target, textX - padX, y - padY, textX + drawn + padX,
                           y + kGlyphH * alertScale + padY,
-                          std::max(1, alertScale / 2 + pulsePad), rowAlpha);
+                          std::max(1, alertScale / 2 + pulsePad),
+                          state.alertStepsDown ? 0.5F * rowAlpha : rowAlpha);
             // TASK #83. Eased in Session, not here -- see HudState::alertFade.
             // A caller that never set it gets 1, which is 0.95F unchanged.
             drawText(target, textX, y, alert, Rgb{0.90F, 0.62F, 0.30F}, 0.95F * rowAlpha,
