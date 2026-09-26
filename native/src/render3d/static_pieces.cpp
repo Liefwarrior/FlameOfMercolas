@@ -178,12 +178,13 @@ constexpr float kPaneCoreFraction = 0.45F;
 /// sixteen millimetres off, a body in the taproom saw the street down the
 /// slot). The rest of the leaf stands in the opening as it did; the three
 /// centimetres are buried in plaster and nobody misses them. Then how far
-/// its hinge sits inside the street post's back corner (the corner a leaf
-/// hangs from, so the swung-open leaf's edge meets the post); and where
-/// the hinge falls, behind the facade plane, when the catalogue has no
-/// post to hang it from.
+/// the leaf's hinge end runs INTO the street post's back (negative: a
+/// centimetre inside the timber, where the end is hidden -- a centimetre
+/// short of it showed a sliver of the plaster reveal between post and
+/// leaf from any stand beside the door); and where the hinge falls, behind
+/// the facade plane, when the catalogue has no post to hang it from.
 constexpr float kLeafOffReveal = -0.04F;
-constexpr float kLeafOffPost = 0.01F;
+constexpr float kLeafOffPost = -0.01F;
 constexpr float kLeafOffFacade = 0.06F;
 /// A jamb's reveal quad stands this far into the opening off the jamb
 /// cell's own boundary plane: a centimetre BEHIND it (negative), the plane
@@ -210,13 +211,12 @@ constexpr float kLintelSink = 0.03F;
 /// lintel's body: on the head exactly, its bottom edge lay in the lintel's
 /// underside plane and drew as a hairline of plaster under the beam.
 constexpr float kHeaderInset = 0.02F;
-/// The soffit over a doorway lies this far above the head, inside the two
-/// lintels' bodies: three centimetres, because the depth buffer at play
-/// distance cannot tell two surfaces four millimetres apart, and the
-/// lintels' collars hang under the head where the soffit's edge crosses
-/// them. Between the two beams the soffit reads as a soffit the beams
-/// stand proud of, which is what a soffit between two beams is.
-constexpr float kSoffitLift = 0.03F;
+/// (The soffit's own height is kDoorSoffitHeight in door_jambs.hpp, where
+/// the mesher reads it too: the level of the lintels' tops less a hair,
+/// so the beams stand proud of the soffit between them and their tops hide
+/// in the closed head box. At three centimetres over the head the soffit
+/// left the jamb cell's stone course showing through the rebate over every
+/// open leaf.)
 /// The soffit runs this far past each reveal into the jamb cell's stone
 /// course over the head, where its edge is buried: an edge that lay on the
 /// reveal's own plane tied with it and drew as a black hairline.
@@ -1570,13 +1570,14 @@ private:
                 }
             }
             // The soffit: the plaster ceiling piece laid face down across
-            // the head, from the street lintel's back face to the room
-            // lintel's, over the whole gap, a hair above the two undersides
-            // -- and never UNDER either: a soffit that ran on beneath a
+            // the opening at the lintels' top level, from the street
+            // lintel's back face to the room lintel's, over the whole gap
+            // -- never UNDER either beam (a soffit that ran on beneath a
             // lintel's underside four millimetres apart fought it at four
-            // metres. With the wall over the head closed on both faces and
-            // the jamb cells' own boxes standing either side of it, the
-            // course over the door is a box that shows nothing but its
+            // metres), the two beams standing proud of it. With the wall
+            // over the head closed on both faces, the reveals closing the
+            // sides and the jamb cells' own boxes cut to over the soffit,
+            // the course over the door is a box that shows nothing but its
             // finish from anywhere a body can stand.
             if (soffit != nullptr) {
                 const float outN = proudOf[0] + kLintelProud - 0.5F * section;
@@ -1591,8 +1592,7 @@ private:
                 const float xB = street.baseX + kTangentX[street.side] * aB + kNormalX[street.side] * inN;
                 const float zB = street.baseZ + kTangentZ[street.side] * aB + kNormalZ[street.side] * inN;
                 soffitQuad(*soffit, std::min(xA, xB), std::min(zA, zB), std::max(xA, xB), std::max(zA, zB),
-                           yBase + kDoorHeadHeight + kSoffitLift, soffitTint, gap.x, gap.y, farX, farY,
-                           gap.z);
+                           yBase + kDoorSoffitHeight, soffitTint, gap.x, gap.y, farX, farY, gap.z);
             }
         }
     }

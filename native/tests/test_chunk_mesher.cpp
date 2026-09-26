@@ -830,8 +830,8 @@ TEST_CASE("a door tile places the door frame") {
         // From the room lintel's back face to the street lintel's: never
         // under either, and three centimetres over the head.
         const float back = proud - 0.03F - 0.5F * section;
-        CHECK(p.instance.position.y == doctest::Approx(head + 0.03F));
-        // Three centimetres past each reveal, into the stone over the head.
+        CHECK(p.instance.position.y == doctest::Approx(render::bandSurface(19) + kDoorSoffitHeight));
+        // Three centimetres past each reveal, into the jamb cell.
         CHECK(p.instance.scale.x * 2.5F == doctest::Approx(2.0F + 0.06F));
         CHECK(p.instance.scale.z * 2.5F == doctest::Approx(1.0F + 2.0F * back));
         CHECK(p.instance.position.x == doctest::Approx(11.0F - 0.03F));

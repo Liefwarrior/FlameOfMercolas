@@ -27,9 +27,25 @@ class TileQuery;
 namespace granadad::render3d {
 
 /// The head of a door opening over its threshold -- the underside of the
-/// lintel. The jamb beam runs the ground to here, the mesher cuts the jamb
-/// cell's box off here, and the lintel lies across here.
+/// lintel. The jamb beam runs the ground to here and the lintel lies
+/// across here.
 inline constexpr float kDoorHeadHeight = 2.03F;
+
+/// The soffit over the opening, between the two lintels: the level of the
+/// beams' tops less a hair, so the beams stand proud of it and their top
+/// faces hide inside the closed head box (the lintel is 0.209 m of timber
+/// seated three centimetres into the posts' heads: 2.03 - 0.03 + 0.209).
+inline constexpr float kDoorSoffitHeight = 2.20F;
+
+/// Where the mesher cuts the jamb cell's box off: not at the head but three
+/// centimetres OVER the soffit. The reveal quad stands a centimetre inside
+/// the jamb cell (a rebate the post stands proud of), so any stone course
+/// starting under the soffit showed through that centimetre as a black
+/// band over every open leaf; and the box's underside three centimetres
+/// over the soffit's buried edge is out of the depth buffer's reach of it.
+/// What is left of the cell over the cut is inside the head box the
+/// headers, the soffit and the reveals close, and shows nowhere.
+inline constexpr float kDoorHeadCut = kDoorSoffitHeight + 0.03F;
 
 /// The widest opening still a door and not a gate, in cells (findDoors()
 /// calls anything wider a gate: DoorGap::gate()).
