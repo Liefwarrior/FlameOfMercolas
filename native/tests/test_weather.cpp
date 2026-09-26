@@ -607,8 +607,10 @@ TEST_CASE("the chunk version moves with the weather, and a clear version is what
 }
 
 TEST_CASE("the veil is nested shells round the eye, far to near, and none at all in clear air") {
-    REQUIRE(veilShellCount() == 19U);
-    CHECK(veilShellRadius(0) == doctest::Approx(1.5F));
+    // Twenty-six shells since the night-light lane's third pass: the inner
+    // ones 0.4 m apart so a shell's cut across a near wall is a small step.
+    REQUIRE(veilShellCount() == 26U);
+    CHECK(veilShellRadius(0) == doctest::Approx(0.6F));
     CHECK(veilShellRadius(veilShellCount() - 1) == doctest::Approx(56.0F));
     for (std::size_t shell = 1; shell < veilShellCount(); ++shell) {
         CHECK(veilShellRadius(shell) > veilShellRadius(shell - 1));
@@ -627,7 +629,7 @@ TEST_CASE("the veil is nested shells round the eye, far to near, and none at all
     REQUIRE(fogged.veil > 0.0F);
     const MeshData veil = buildVeil(fogged, 7U);
     REQUIRE(veil.triangleCount() > 0U);
-    constexpr std::size_t kRingVertices = 11U * 24U;
+    constexpr std::size_t kRingVertices = 11U * 48U;
     REQUIRE(veil.vertexCount() % kRingVertices == 0U);
     CHECK(veil.vertexCount() / kRingVertices == veilShellCount());
     REQUIRE(veil.colours.size() == veil.vertexCount() * 4U);

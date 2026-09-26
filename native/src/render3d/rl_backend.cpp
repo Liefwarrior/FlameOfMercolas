@@ -218,6 +218,11 @@ struct StaticModel {
 
 /// S LANE. The four blend corners of a piece and their spans: the light
 /// at local (x, z) = (from, fromZ), (to, fromZ), (from, toZ), (to, toZ).
+/// The late glass pass runs only where the fog takes a real share off a
+/// pane (its alpha under this): an overcast's trace of a veil is not a fog
+/// to see a lamp through.
+constexpr unsigned char kLateGlassBelow = 250;
+
 struct PieceTints {
     Color a{};
     Color b{};
@@ -921,7 +926,7 @@ struct Backend::Impl {
         // panels meet it where a pane stands.
         if (tints.mode == kDrawPaneRamp) {
             drawPaneRamp(full, tints, stats);
-            if (tints.pane.a < 255) {
+            if (tints.pane.a < kLateGlassBelow) {
                 lateGlass.push_back(DeferredMesh{model, -1, full, tints, mirrored});
             }
             ++stats.staticsDrawn;
@@ -1020,6 +1025,9 @@ struct Backend::Impl {
         const Rgba8 pane{tints.pane.r, tints.pane.g, tints.pane.b, tints.pane.a};
         material.maps[MATERIAL_MAP_DIFFUSE].texture = defaultTexture;
         material.maps[MATERIAL_MAP_DIFFUSE].color = Color{pane.r, pane.g, pane.b, pane.a};
+        // Never written: its own depth is already there from the opaque
+        // pass, and drawHaloFan puts the mask back on after itself.
+        rlDisableDepthMask();
         rlDisableBackfaceCulling();
         if (late.mesh < 0) {
             const float w = tints.to - tints.from;
@@ -1037,6 +1045,7 @@ struct Backend::Impl {
             stats.trianglesDrawn += static_cast<std::size_t>(mesh.triangleCount);
         }
         rlEnableBackfaceCulling();
+        rlEnableDepthMask();
         material.maps[MATERIAL_MAP_DIFFUSE].color = WHITE;
     }
 
@@ -1100,7 +1109,7 @@ struct Backend::Impl {
             }
             const Rgba8 pane{tints.pane.r, tints.pane.g, tints.pane.b, 255};
             material.maps[MATERIAL_MAP_DIFFUSE].color = Color{tints.pane.r, tints.pane.g, tints.pane.b, 255};
-            if (tints.pane.a < 255) {
+            if (tints.pane.a < kLateGlassBelow) {
                 lateGlass.push_back(DeferredMesh{&model, i, transform, tints, mirrored});
             }
             DrawMesh(tinted(model.model.meshes[i], pane), material, transform);
@@ -1837,17 +1846,19 @@ SceneStats Backend::drawScene(const SceneDescription& scene) {
     for (const Instance& veil : scene.veils) {
         impl.drawInstance(veil, stats);
     }
-    // The halos, then the bright glass once more at the fog's share of it
+    // The bright glass once more at the fog's share of it
     // (StaticInstance::pane.a), so a lamp's light is seen further into a
-    // fog than the wall round it.
-    for (const DeferredMesh& glow : impl.halos) {
-        impl.drawStaticMesh(*glow.model, glow.mesh, glow.transform, glow.tints, glow.mirrored, stats);
-    }
-    impl.halos.clear();
+    // fog than the wall round it -- and THEN the halos, over the glass as
+    // over everything (the round-three auditor's first: glass drawn after
+    // the halos cut a pane-shaped hole in every glow).
     for (const DeferredMesh& late : impl.lateGlass) {
         impl.drawLateGlass(late, stats);
     }
     impl.lateGlass.clear();
+    for (const DeferredMesh& glow : impl.halos) {
+        impl.drawStaticMesh(*glow.model, glow.mesh, glow.transform, glow.tints, glow.mirrored, stats);
+    }
+    impl.halos.clear();
     rlEnableDepthMask();
     EndMode3D();
     // The hands, last, in their own pass over everything.

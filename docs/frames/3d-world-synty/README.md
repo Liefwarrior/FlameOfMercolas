@@ -623,7 +623,8 @@ The window closes at 5.5 now (`houseRisingTo`), so two houses in three are
 up by five, and a test pins the rise the way the critic tried to read it:
 the ward's lit household panes through a real `Session` at eight, `skipToHour`
 to two, to five -- fewer at two than at five, fewer at five than at eight. On
-the shipped Docks that is 137 at eight, 36 at two, 97 at five (of 148
+the shipped Docks that is 137 at eight, 36 at two, 133 at five under the
+3.5..5.25 window the third round settled on (97 under 4..5.5; of 148
 household panes; the named houses and the stores' watchman's lamps on top).
 
 **Tests** (`test_chunk_mesher.cpp`): the ramp mesh's rows and one ramp pane
@@ -696,7 +697,14 @@ auditor 7).** What they found and what moved:
   cut's fields; the dead `kPoolRadiusFloor` is gone.
 - *Ground items read the law's raw glow* (the rope beside the Gull's lamp
   outshone the setts it lay on). They read the pool and the spill now, and a
-  self-lit item's cut glass is hot after dark and dark glass by day.
+  self-lit item's cut glass is hot after dark and dark glass by day; the kit's
+  own carried lantern names the same cut as the hung one (the two rows share
+  a file, and the adapter's cache is by file).
+- *Also in this round, found by its auditor:* the spill scales by the
+  candle's own strength, so a two-thirds candle lays a two-thirds spill; and
+  the kit window module's ends took the pool at their cuts plus a share of
+  the pane's cell (0.45, in place of the cuts' own spill, never on top) --
+  a rule the third round retired again, see below.
 - *Tests.* A lit pane is read by `candlePane()` (the law's tint at the
   house's strength, never dark glass); the spill map is pinned on the Docks
   with masonry panes among the lit and a spread of strengths, and empty at
@@ -757,6 +765,46 @@ Declared, not built: the wind's dim on the pool is steady (a gutter in
 motion would want a per-frame relight; the relight runs on the minute); a
 kit window has no muntins and no room behind its glass (the Synty piece is
 a card; the ramp is what the card can carry).
+
+**Fix round three (the three critics on be4b5973: director 7, player 7,
+auditor 6).** Nothing broke the spell outright this round; what held it at
+seven and what moved:
+
+- *The fog's own edges.* The "halo rim" the player had reported three
+  rounds running, in the same place each time whatever the fan did, was
+  never the fan: it is where the weather lane's innermost fog shell (1.5 m
+  round the eye) cut the plaster above the Gull's door, a sixteen-percent
+  step of that shell's own alpha, and the line that slid across every near
+  pane as you walked was the same shell crossing the glass. The inner
+  shells are 0.4 m apart to three metres now and half a metre to five and a
+  half (`kVeilRadii`, twenty-six shells), forty-eight round, so each cut is
+  a small step on a curve; the weather's own test pins the count.
+- *No seam at a cut.* The kit window module's ends carried a share of the
+  pane's cell that its neighbours' ends did not, so every lit window on the
+  quay front stood on a panel a step brighter or darker than the next. The
+  module reads its cuts exactly as every run piece does now and the pool
+  round a window is the map's own footprint, wider and gentler (three tiles
+  along the wall, three out into the street, `kSpillSide*`/`kSpillOut*`,
+  `kSpillGlow` 0.30). Pinned: on the shipped Docks at ten, every pair of run
+  pieces meeting at a cut reads one light there, channel by channel, over
+  their own tints -- hundreds of pairs, no seam.
+- *The cap at three metres.* The near fade is cubic to five and a half
+  metres: a fifth of the disc at three, two fifths at four, full past five
+  and a half. The glass carries the lamp at those ranges; the disc the air
+  round it.
+- *The small hours.* A house lit all night keeps a light whatever the hour,
+  but the sim's own tavern has its hearth banked and its candles out by
+  five (the capture summary's gull=0), while its panes burned the evening's
+  full row -- and on a frontage that never goes dark, two o'clock was five
+  o'clock. Between one and half past five a house lit all night burns at
+  `kLitHouseSmallHours` (0.55) of its strength: the taproom banked and a
+  watchman's candle. Households are untouched. Pinned: every one of the
+  Gull's panes is dimmer at three than at ten and none over the share; an
+  owl's candle is not.
+
+Declared, still: the wind's dim on the pool is steady; a kit window is a
+card; two men standing in the Whistling's own doorway at night are lit by
+nothing but its window's third tile of spill, and read dark.
 
 **Reshoot.** `dist\granadad.exe --smoke=0 --hold --scale=1 --weather=clear --time=HH --spawn=X,Y,Z --yaw=DEG [--pitch=DEG] [--fov=DEG] --screenshot=path.png`
 

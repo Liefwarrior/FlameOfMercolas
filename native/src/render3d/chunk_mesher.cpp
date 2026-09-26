@@ -574,8 +574,11 @@ MeshData colourChunk(const ChunkGeometry& geometry, const ChunkLighting& lightin
             }
         }
         const float facing = geometry.facing[i];
+        // A vertex colour is clipped at one per channel by the GPU: the
+        // clamp is at one here, as one colour, so the hue holds in the
+        // brightest band (the round-three auditor's third).
         const render::Rgb clamped = render::clampLight(
-            render::Rgb{surface.r + candle.r, surface.g + candle.g, surface.b + candle.b}, 1.15F);
+            render::Rgb{surface.r + candle.r, surface.g + candle.g, surface.b + candle.b}, 1.0F);
         render::Rgb lit{clamped.r * facing, clamped.g * facing, clamped.b * facing};
         const float wet = geometry.wetAlpha[i];
         if (wet > 0.0F) {

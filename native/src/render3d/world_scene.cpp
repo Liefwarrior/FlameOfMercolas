@@ -107,25 +107,41 @@ constexpr float kPaneLitAbove = 0.12F;
 /// two neighbours and the cell beyond it less again (buildSpill). The
 /// chunk colour stage blends the map across each vertex's four cells and
 /// a run piece's cuts fall between cells, so nothing steps at a seam.
-constexpr render::Rgb kSpillGlow{0.34F, 0.22F, 0.09F};
-constexpr float kSpillSideShare = 0.45F;
-constexpr float kSpillSideTail = 0.12F;
-constexpr float kSpillStreetShare = 0.9F;
-constexpr float kSpillStreetSide = 0.5F;
-constexpr float kSpillStreetFar = 0.5F;
-constexpr float kSpillStreetFarSide = 0.28F;
+///
+/// ROUND THREE: wider and gentler. The chunk stage blends the map at each
+/// vertex, and a quad whose four corners differ by much shows its diagonal
+/// (the director's fog diagonal above the Gull's door): the steps between
+/// neighbouring cells are small now -- three tiles along the wall and three
+/// out into the street, easing to nothing.
+constexpr render::Rgb kSpillGlow{0.30F, 0.19F, 0.08F};
+/// Along the wall at one, two and three tiles.
+constexpr float kSpillSide1 = 0.7F;
+constexpr float kSpillSide2 = 0.4F;
+constexpr float kSpillSide3 = 0.15F;
+/// Out into the street: the row before the window at nought, one and two
+/// tiles along; the second row; the third.
+constexpr float kSpillOut1 = 0.9F;
+constexpr float kSpillOut1Side1 = 0.6F;
+constexpr float kSpillOut1Side2 = 0.3F;
+constexpr float kSpillOut2 = 0.5F;
+constexpr float kSpillOut2Side1 = 0.35F;
+constexpr float kSpillOut2Side2 = 0.15F;
+constexpr float kSpillOut3 = 0.2F;
+constexpr float kSpillOut3Side1 = 0.12F;
 /// A kit window on masonry is ONE run piece with its glass in the middle
 /// cell, lit at its two cuts a tile and a quarter off the pane; the cuts'
 /// own share of the candle is a quarter, so the plaster round the glass
 /// stayed dark. The module takes this share of its pane's own cell at both
 /// ends instead, so the wall round a lit kit window is lit.
 ///
-/// ROUND TWO: the module's ends take the POOL at their cuts plus this share
-/// of the pane's cell -- not the cuts' own spill as well, which the first
-/// round added on top (the round-two auditor's second: 173 on the module's
-/// end beside 91 on the neighbour's). At 0.45, the side cells' own share,
-/// the module and the module beyond it meet at a cut within a few levels.
-constexpr float kSpillWindowModuleShare = 0.45F;
+/// ROUND THREE: gone. Any extra on the module's ends is a step at its cuts
+/// against the module beyond (the round-three director's first: 68 beside
+/// 59), because the blend across a run piece is linear between its two
+/// ends and cannot peak at the pane. The module reads its cuts exactly as
+/// every run piece does and the pool of light round a window is carried by
+/// the map's own footprint: the pane's cell and its neighbours along the
+/// wall lift the cuts either side of the module, and the modules beyond
+/// fall away from them. No seam anywhere on the run (pinned).
 
 /// THE HALO UP CLOSE (the director's first): the fan is a metre and a half
 /// across and floats toward the eye, so inside two metres it covered the
@@ -133,8 +149,14 @@ constexpr float kSpillWindowModuleShare = 0.45F;
 /// alpha fades with the eye's distance now -- full past kHaloNearFull, down
 /// to kHaloNearFloor of itself at kHaloNearGone and closer -- so a body at
 /// the Gull's door sees the lantern, not the fog.
+///
+/// ROUND THREE: cubic, to five and a half metres -- a linear ramp to four
+/// still laid three quarters of the disc over the cap at three metres, and
+/// the cap read cream (the director's third). At three metres the disc is
+/// a fifth of itself now, at four two fifths, full past five and a half;
+/// the glass carries the lamp at those ranges, the disc the air round it.
 constexpr float kHaloNearGone = 0.6F;
-constexpr float kHaloNearFull = 4.0F;
+constexpr float kHaloNearFull = 5.5F;
 constexpr float kHaloNearFloor = 0.08F;
 /// THE HALO IN FOG: drawn past the veils now (rl_backend.cpp), so the fog
 /// takes its share off the glow here instead -- half the veil's own
@@ -148,6 +170,23 @@ constexpr float kHaloFogShare = 0.5F;
 /// down to (1 - kCandleSpread) of the law's tint; a house lit all night
 /// draws per pane, so a tavern's row of windows is not one flat strip.
 constexpr float kCandleSpread = 0.32F;
+/// THE SMALL HOURS. A house lit all night (the Gull, the Mission, the
+/// Watch-Post) keeps a light whatever the hour, but between one and half
+/// past five it is the taproom banked and a watchman's candle, not the
+/// evening's full row: its panes burn at this share of their strength.
+/// The sim's own tavern has its hearth banked and its candles out by then
+/// (gull=0 in the capture summary at five), and the street should say so
+/// -- it is also what makes five o'clock a different street from two on a
+/// frontage that never goes dark (the director's fourth, three rounds).
+constexpr float kLitHouseSmallHours = 0.55F;
+constexpr float kSmallHoursFrom = 25.0F;
+constexpr float kSmallHoursTo = 29.5F;
+
+/// The small hours, on the noon-to-noon clock the light law keeps.
+[[nodiscard]] bool inSmallHours(float hour) noexcept {
+    const float h = hour < 12.0F ? hour + 24.0F : hour;
+    return h >= kSmallHoursFrom && h < kSmallHoursTo;
+}
 
 /// THE LANTERN'S METAL AFTER DARK: the cap, the cage and the base are lit
 /// like everything else now -- the sky's ambient plus the lamp's own pool
@@ -310,8 +349,15 @@ namespace {
 /// out with distance, where what contrast is left is small and a step is
 /// not. Fifty-six tiles is short of the chunk reach (64) and past anything
 /// a frame resolves through a fog worth drawing.
-constexpr float kVeilRadii[] = {1.5F,  2.5F,  3.5F,  4.5F,  5.5F,  6.75F, 8.0F,  9.5F,  11.0F, 13.0F,
-                                15.0F, 17.5F, 20.0F, 23.0F, 27.0F, 32.0F, 38.0F, 46.0F, 56.0F};
+/// NIGHT LIGHT, THIRD PASS: the inner shells are 0.4 m apart to 3 m, then
+/// half a metre to 5.5. A shell cuts every wall and pane nearer than its
+/// radius in a hard step of its own alpha -- one shell at 1.5 m was a
+/// sixteen-percent edge across the plaster above the Gull's door and a
+/// line sliding across every near pane as you walked (three rounds of the
+/// player critic, read as the halo's rim). Thinner shells, smaller steps.
+constexpr float kVeilRadii[] = {0.6F,  1.0F,  1.4F,  1.8F,  2.2F,  2.6F,  3.0F,  3.5F,  4.0F,
+                                4.5F,  5.0F,  5.5F,  6.75F, 8.0F,  9.5F,  11.0F, 13.0F, 15.0F,
+                                17.5F, 20.0F, 23.0F, 27.0F, 32.0F, 38.0F, 46.0F, 56.0F};
 constexpr std::size_t kVeilShells = sizeof(kVeilRadii) / sizeof(kVeilRadii[0]);
 /// Each shell's rings, as elevations in degrees, pole to pole. Denser round
 /// the horizon, where the fog's colour turns into the sky's. The poles are
@@ -319,7 +365,8 @@ constexpr std::size_t kVeilShells = sizeof(kVeilRadii) / sizeof(kVeilRadii[0]);
 constexpr float kVeilRingDegrees[] = {-90.0F, -50.0F, -25.0F, -10.0F, 0.0F, 8.0F,
                                       16.0F,  25.0F,  35.0F,  50.0F,  90.0F};
 constexpr std::size_t kVeilRings = sizeof(kVeilRingDegrees) / sizeof(kVeilRingDegrees[0]);
-constexpr std::size_t kVeilSegments = 24;
+/// Forty-eight round, so the curve a shell cuts across a wall is a curve.
+constexpr std::size_t kVeilSegments = 48;
 /// A shell whose inside is already this fogged over is not drawn: nothing
 /// it would add can be seen through what is inside it.
 constexpr float kVeilFloor = 0.004F;
@@ -513,14 +560,15 @@ namespace {
 /// THE CANDLE'S OWN STRENGTH (kCandleSpread): by the house's lot, or per
 /// pane on a house lit all night. The pane's tint and its spill both scale
 /// by it, so a two-thirds candle lays a two-thirds spill.
-[[nodiscard]] float candleStrengthOf(const StaticPlacement& p) noexcept {
+[[nodiscard]] float candleStrengthOf(const StaticPlacement& p, float hour) noexcept {
     const std::uint32_t draw =
         p.house == HouseKind::Lit
             ? render::variantMix(static_cast<std::uint32_t>(p.insideX) * 73856093U ^
                                  static_cast<std::uint32_t>(p.insideY) * 19349663U ^
                                  static_cast<std::uint32_t>(p.insideZ) * 83492791U ^ 0x9E3779B9U)
             : p.houseLot;
-    return 1.0F - kCandleSpread * static_cast<float>((draw >> 4) & 0xFFU) / 255.0F;
+    const float own = 1.0F - kCandleSpread * static_cast<float>((draw >> 4) & 0xFFU) / 255.0F;
+    return p.house == HouseKind::Lit && inSmallHours(hour) ? own * kLitHouseSmallHours : own;
 }
 
 }  // namespace
@@ -568,7 +616,7 @@ void WorldScene::buildSpill(const ChunkLighting& lighting) {
         if (!paneUpUnder(p, lighting, night, hour)) {
             continue;
         }
-        strength = candleStrengthOf(p);
+        strength = candleStrengthOf(p, hour);
         // The pane's own wall cell; along the wall (the tangent is the
         // normal turned) one tile and a tail at two; out into the street
         // (the normal) the cell before the window, its two neighbours and
@@ -581,16 +629,19 @@ void WorldScene::buildSpill(const ChunkLighting& lighting) {
             add(p.paneX + tx * along + nx * out, p.paneY + ty * along + ny * out, p.insideZ, share);
         };
         at(0, 0, 1.0F);
-        at(1, 0, kSpillSideShare);
-        at(-1, 0, kSpillSideShare);
-        at(2, 0, kSpillSideTail);
-        at(-2, 0, kSpillSideTail);
-        at(0, 1, kSpillStreetShare);
-        at(1, 1, kSpillStreetSide);
-        at(-1, 1, kSpillStreetSide);
-        at(0, 2, kSpillStreetFar);
-        at(1, 2, kSpillStreetFarSide);
-        at(-1, 2, kSpillStreetFarSide);
+        for (std::int32_t side = -1; side <= 1; side += 2) {
+            at(side, 0, kSpillSide1);
+            at(2 * side, 0, kSpillSide2);
+            at(3 * side, 0, kSpillSide3);
+            at(side, 1, kSpillOut1Side1);
+            at(2 * side, 1, kSpillOut1Side2);
+            at(side, 2, kSpillOut2Side1);
+            at(2 * side, 2, kSpillOut2Side2);
+            at(side, 3, kSpillOut3Side1);
+        }
+        at(0, 1, kSpillOut1);
+        at(0, 2, kSpillOut2);
+        at(0, 3, kSpillOut3);
     }
 }
 
@@ -651,12 +702,6 @@ void WorldScene::relightPieces(const ChunkLighting& lighting) {
         const render::Rgb candle = spillAt(x, y, z);
         return render::Rgb{pool.r + candle.r, pool.g + candle.g, pool.b + candle.b};
     };
-    const auto poolBetween = [&](std::int32_t ax, std::int32_t ay, std::int32_t bx, std::int32_t by,
-                                 float t, std::int32_t z) {
-        const render::Rgb a = poolAt(ax, ay, z);
-        const render::Rgb b = poolAt(bx, by, z);
-        return render::Rgb{a.r + (b.r - a.r) * t, a.g + (b.g - a.g) * t, a.b + (b.b - a.b) * t};
-    };
     // The surface light AT A CUT between two cell centres, `t` of the way
     // from the first to the second, so the two pieces meeting there share
     // one value.
@@ -711,11 +756,16 @@ void WorldScene::relightPieces(const ChunkLighting& lighting) {
                 render::Rgb{sky.ambient.r + pool.r + extra.r, sky.ambient.g + pool.g + extra.g,
                             sky.ambient.b + pool.b + extra.b},
                 cap);
-            const auto ch = [&p](float l, std::uint8_t t) {
-                return static_cast<std::uint8_t>(
-                    std::clamp(l * p.facing * static_cast<float>(t), 0.0F, 255.0F) + 0.5F);
-            };
-            return Rgba8{ch(light.r, tint.r), ch(light.g, tint.g), ch(light.b, tint.b), tint.a};
+            // The colour itself is scaled as one where it would clip at 255
+            // (the auditor's third: a clamp at 1.15 followed by a clip at
+            // 1.0 per channel undid the hue in the brightest band).
+            const render::Rgb colour = render::clampLight(
+                render::Rgb{light.r * p.facing * static_cast<float>(tint.r),
+                            light.g * p.facing * static_cast<float>(tint.g),
+                            light.b * p.facing * static_cast<float>(tint.b)},
+                255.0F);
+            const auto ch = [](float c) { return static_cast<std::uint8_t>(std::clamp(c, 0.0F, 255.0F) + 0.5F); };
+            return Rgba8{ch(colour.r), ch(colour.g), ch(colour.b), tint.a};
         };
         const auto lit = [&litWith](const render::Rgb& pool, const Rgba8& tint) {
             return litWith(pool, render::Rgb{}, tint, kLightClamp);
@@ -760,25 +810,10 @@ void WorldScene::relightPieces(const ChunkLighting& lighting) {
             // spill) is hottest at the pane's end and shares the value at
             // the module's cut with the module beyond it -- the light runs
             // on across the seam instead of stopping at a plank.
-            Rgba8 a;
-            Rgba8 b;
-            if (p.role == PieceRole::WallWindow && paneUp) {
-                // The kit window module: the POOL at its cuts plus its pane's
-                // own cell's share (kSpillWindowModuleShare) -- in place of
-                // the cuts' own spill, never on top of it.
-                const render::Rgb own = spillAt(p.paneX, p.paneY, p.insideZ);
-                const render::Rgb extra{own.r * kSpillWindowModuleShare, own.g * kSpillWindowModuleShare,
-                                        own.b * kSpillWindowModuleShare};
-                a = litWith(poolBetween(p.lightX, p.lightY, p.endAX, p.endAY, p.endAT, p.lightZ), extra,
-                            p.instance.tint, kLightClamp);
-                b = litWith(poolBetween(p.lightX2, p.lightY2, p.endBX, p.endBY, p.endBT, p.lightZ), extra,
-                            p.instance.tint, kLightClamp);
-            } else {
-                a = lit(surfaceBetween(p.lightX, p.lightY, p.endAX, p.endAY, p.endAT, p.lightZ),
-                        p.instance.tint);
-                b = lit(surfaceBetween(p.lightX2, p.lightY2, p.endBX, p.endBY, p.endBT, p.lightZ),
-                        p.instance.tint);
-            }
+            const Rgba8 a = lit(surfaceBetween(p.lightX, p.lightY, p.endAX, p.endAY, p.endAT, p.lightZ),
+                                p.instance.tint);
+            const Rgba8 b = lit(surfaceBetween(p.lightX2, p.lightY2, p.endBX, p.endBY, p.endBT, p.lightZ),
+                                p.instance.tint);
             if (p.alongZ) {
                 // The blend runs along the piece's Z: its near end (z = 0)
                 // first.
@@ -822,7 +857,7 @@ void WorldScene::relightPieces(const ChunkLighting& lighting) {
         if (paneUp && !p.selfLit) {
             // The candle's own strength (candleStrengthOf): by the house's
             // lot, or per pane on a house lit all night.
-            const float strength = candleStrengthOf(p);
+            const float strength = candleStrengthOf(p, hour);
             const auto ch = [strength](std::uint8_t c) {
                 return static_cast<std::uint8_t>(std::clamp(static_cast<float>(c) * strength, 0.0F, 255.0F) +
                                                  0.5F);
@@ -1034,8 +1069,12 @@ void WorldScene::refresh(SceneDescription& scene, const render::Camera& camera, 
             // the eye's distance (kHaloFogShare, the halo's own rule); the
             // adapter draws such glass once more past the veils at that
             // alpha (rl_backend.cpp, lateGlass). 255 in clear air.
-            if (skyState.veil > 0.0F &&
-                static_cast<int>(at.pane.r) + static_cast<int>(at.pane.g) + static_cast<int>(at.pane.b) > 450) {
+            // A light: a candle behind glass at any strength, or a lamp's
+            // glass -- red well over blue, which dark glass (darkPane, a
+            // blue lean) never is (the round-three auditor's second: a sum
+            // over 450 let two thirds of the candles through the fog as
+            // dark panes).
+            if (skyState.veil > 0.0F && at.pane.r >= 80 && at.pane.r > at.pane.b + 40) {
                 const float gx = p.instance.position.x - eye.x;
                 const float gy = p.instance.position.y - eye.y;
                 const float gz = p.instance.position.z - eye.z;
@@ -1078,8 +1117,9 @@ void WorldScene::refresh(SceneDescription& scene, const render::Camera& camera, 
                 const float flat = std::sqrt(dx * dx + dz * dz);
                 const float len = std::sqrt(flat * flat + dy * dy);
                 // THE HALO UP CLOSE: its alpha by the eye's distance.
-                const float near = std::clamp((len - kHaloNearGone) / (kHaloNearFull - kHaloNearGone),
-                                              0.0F, 1.0F);
+                const float nearT = std::clamp((len - kHaloNearGone) / (kHaloNearFull - kHaloNearGone),
+                                               0.0F, 1.0F);
+                const float near = nearT * nearT * nearT;
                 const float fade = (kHaloNearFloor + (1.0F - kHaloNearFloor) * near) *
                                    std::exp(-kHaloFogShare * skyState.veil * len);
                 const auto faded = [fade](Rgba8 c) {

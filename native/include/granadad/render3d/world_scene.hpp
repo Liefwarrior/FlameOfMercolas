@@ -194,10 +194,12 @@ private:
     /// that reaches its room, or by the light law at this hour.
     [[nodiscard]] bool paneUpUnder(const StaticPlacement& p, const ChunkLighting& lighting,
                                    bool night, float hour) const noexcept;
-    /// THE SPILL MAP: the candle every pane that is up lays on the wall
-    /// cells round it (its own wall cell in full, the two along the wall and
-    /// the street cell before it at half), rebuilt when the lighting bucket
-    /// moves, read by the chunk colour stage and the piece relight.
+    /// THE SPILL MAP: the candle every pane that is up lays on the cells
+    /// round it -- its own wall cell in full at the candle's strength,
+    /// three tiles along the wall and three out into the street easing to
+    /// nothing (world_scene.cpp kSpillSide*/kSpillOut*) -- rebuilt when the
+    /// lighting bucket moves, read by the chunk colour stage, the piece
+    /// relight, the bodies and the ground items.
     void buildSpill(const ChunkLighting& lighting);
 
     const sim::TileQuery* tiles_;

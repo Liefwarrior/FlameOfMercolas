@@ -115,10 +115,12 @@ void pushBox(MeshData& mesh, float x0, float y0, float z0, float x1, float y1, f
                             const render::Rgb& dynamic) noexcept {
     // Clamped by the brightest channel (render::clampLight): the light
     // keeps its hue at saturation.
+    // A model's tint is clipped at one per channel by the draw: the clamp
+    // is at one, as one colour, so the hue holds in the brightest band.
     const render::Rgb light = render::clampLight(
         render::Rgb{sky.ambient.r + std::max(baked.r, dynamic.r), sky.ambient.g + std::max(baked.g, dynamic.g),
                     sky.ambient.b + std::max(baked.b, dynamic.b)},
-        1.15F);
+        1.0F);
     const auto ch = [](float l) {
         return static_cast<std::uint8_t>(std::clamp(l * 255.0F, 0.0F, 255.0F));
     };

@@ -2730,9 +2730,12 @@ bool windowPane(PieceRole role) {
 /// dark glass darkPane() gives (a quarter of a lit value in red, bluer than
 /// it is red).
 bool candlePane(const Rgba8& pane, const Rgba8& warm) {
-    return pane.r >= static_cast<std::uint8_t>(warm.r * 0.66F) && pane.r <= warm.r &&
-           pane.g >= static_cast<std::uint8_t>(warm.g * 0.66F) && pane.b <= warm.b &&
-           pane.r > pane.b + 60;
+    // Two thirds of the tint at the house's own strength, and a house lit
+    // all night banks that to 0.55 in the small hours: the floor is a third
+    // and a bit, still well over darkPane()'s quarter of a lit value.
+    return pane.r >= static_cast<std::uint8_t>(warm.r * 0.35F) && pane.r <= warm.r &&
+           pane.g >= static_cast<std::uint8_t>(warm.g * 0.35F) && pane.b <= warm.b &&
+           pane.r > pane.b + 45;
 }
 
 bool warmPane(const StaticInstance& piece, const Rgba8& warm) {
@@ -3159,10 +3162,11 @@ TEST_CASE("the morning: more household panes are lit at five than at two, and mo
     // and at five showed the same panes, and the read was that the rising
     // window (houseRisingFrom/To) never relights. It does -- the three
     // households that vantage sees all drew rising hours past five under
-    // the 4..6.5 window, which is a sample of three, not a wiring fault
+    // the 4..6.5 window then in force, which is a sample of three, not a
+    // wiring fault
     // (moving the window to half past midnight in the catalogue lit them
-    // at two in the shipped exe). The window now closes at half past five
-    // so two houses in three are up by five, and THIS pins the rise the
+    // at two in the shipped exe). The window is 3.5..5.25 now, so the
+    // fishers are up by five, and THIS pins the rise the
     // way the critic tried to read it: the ward's own lit household panes
     // through a real Session's clock and a real WorldScene::refresh(), no
     // session.step() between reads (skipToHour is the sleep/travel jump),
@@ -3261,8 +3265,10 @@ TEST_CASE("a lit pane lays its candle on the wall cells round it, and each house
         REQUIRE(std::abs(p.paneX - p.insideX) + std::abs(p.paneY - p.insideY) == 1);
         const auto at = world.spill().find(cellKey(p.paneX, p.paneY, p.insideZ));
         REQUIRE(at != world.spill().end());
-        // kSpillGlow at the candle's own strength: two thirds to the whole of 0.34.
-        CHECK(at->second.r > 0.2F);
+        // kSpillGlow at the candle's own strength: a third (a house lit all
+        // night in the small hours) to the whole of 0.30 -- at ten, two
+        // thirds to the whole.
+        CHECK(at->second.r > 0.18F);
         CHECK(at->second.r < 0.5F);
         CHECK(at->second.r > at->second.b);
         const std::int32_t nx = p.paneX - p.insideX;
@@ -3273,23 +3279,17 @@ TEST_CASE("a lit pane lays its candle on the wall cells round it, and each house
         CHECK(side->second.r < at->second.r);
         const auto street = world.spill().find(cellKey(p.paneX + nx, p.paneY + ny, p.insideZ));
         REQUIRE(street != world.spill().end());
-        CHECK(street->second.r >= 0.18F);
+        CHECK(street->second.r >= 0.14F);
         // The light leaves through the glass: the street takes more than
         // the wall beside the window, and the row beyond is still lit.
         CHECK(street->second.r > side->second.r);
         const auto beyond = world.spill().find(cellKey(p.paneX + 2 * nx, p.paneY + 2 * ny, p.insideZ));
         REQUIRE(beyond != world.spill().end());
         CHECK(beyond->second.r > 0.05F);
-        // A lit kit window's own module is lit at both ends by its pane's
-        // cell, warmer than the plaster piece beyond its cut would be.
+        // A lit kit window's wall is darker than its pane.
         if (p.role == PieceRole::WallWindow) {
-            // ...and a lit kit window's wall is still darker than its pane.
             const Rgba8 endA = world.relitTint(i, 0);
             const Rgba8 endB = world.relitTint(i, 1);
-            // Ambient alone is a twentieth of the tint; the pane's share on
-            // top lifts the module's ends well past that.
-            CHECK(static_cast<float>(endA.r) > static_cast<float>(p.instance.tint.r) * 0.11F);
-            CHECK(static_cast<float>(endB.r) > static_cast<float>(p.instance.tint.r) * 0.11F);
             CHECK(endA.r < pane.r);
             CHECK(endB.r < pane.r);
         }
@@ -3298,13 +3298,228 @@ TEST_CASE("a lit pane lays its candle on the wall cells round it, and each house
                                  << " candle strengths");
     CHECK(litPanes >= 40);
     CHECK(masonryLit >= 4);
-    // Not one amber: the strengths spread across houses.
+    // Not one amber: the strengths spread across houses, and the spill
+    // with them -- the map's own values spread too, a candle's own cell
+    // never over the full glow and the dimmest well under it.
     CHECK(strengths.size() >= 8);
+    std::set<int> spillLevels;
+    float dimmestOwn = 1.0F;
+    float brightestOwn = 0.0F;
+    for (std::size_t i = 0; i < world.placements().size(); ++i) {
+        const StaticPlacement& p = world.placements()[i];
+        if (!windowPane(p.role) || !candlePane(world.relitPaneTint(i), warm)) {
+            continue;
+        }
+        const auto own = world.spill().find(cellKey(p.paneX, p.paneY, p.insideZ));
+        REQUIRE(own != world.spill().end());
+        spillLevels.insert(static_cast<int>(own->second.r * 1000.0F));
+        dimmestOwn = std::min(dimmestOwn, own->second.r);
+        brightestOwn = std::max(brightestOwn, own->second.r);
+    }
+    CHECK(spillLevels.size() >= 8);
+    CHECK(dimmestOwn < brightestOwn * 0.8F);
 
     // Noon: the map is empty and nothing is candle-lit.
     params.timeOfDaySeconds = 12 * 3600;
     world.refresh(scene, spawnCamera(), 320.0F / 180.0F, params);
     CHECK(world.spill().empty());
+}
+
+TEST_CASE("two run pieces meeting at a cut read one light there: no seam on a lit wall") {
+    // THE ROUND-THREE DIRECTOR'S FIRST AND THE PLAYER'S FOURTH: a lit
+    // frontage stepped at every module. A run piece is lit at each cut
+    // between two cell centres, and two pieces meeting at a cut read the
+    // same cells at the same weight -- so the LIGHT at the cut is one
+    // value on both, whatever tint each wears. This pins it on the shipped
+    // Docks at ten, with the lamps and every lit pane's spill in play:
+    // consecutive placements that meet at a cut agree in the light (the
+    // relit tint over the catalogue tint, channel by channel) within a
+    // rounding step.
+    const sim::TileQuery tiles(docksWorld());
+    const StaticCatalogue& catalogue = shippedCatalogue();
+    const std::vector<render::Lamp> lamps =
+        render::loadLamps(content::contentDir(), sim::docks::kWorldName);
+    WorldScene world(tiles, proceduralAtlas(), nullptr, &catalogue, &lamps);
+    SceneDescription scene;
+    WorldSceneParams params;
+    params.timeOfDaySeconds = 22 * 3600;
+    world.refresh(scene, spawnCamera(), 320.0F / 180.0F, params);
+    const auto lightOf = [&](std::size_t i, bool bEnd, int channel) {
+        const StaticPlacement& p = world.placements()[i];
+        // Slot 0 is the a end unless the piece was turned round (slot 1 then).
+        const std::size_t slot = (bEnd != p.flipped) ? 1 : 0;
+        const Rgba8 lit = world.relitTint(i, slot);
+        const Rgba8 tint = p.instance.tint;
+        const std::uint8_t l = channel == 0 ? lit.r : channel == 1 ? lit.g : lit.b;
+        const std::uint8_t t = channel == 0 ? tint.r : channel == 1 ? tint.g : tint.b;
+        return t == 0 ? -1.0F : static_cast<float>(l) / static_cast<float>(t);
+    };
+    std::size_t pairs = 0;
+    std::size_t seams = 0;
+    for (std::size_t i = 0; i + 1 < world.placements().size(); ++i) {
+        const StaticPlacement& p = world.placements()[i];
+        const StaticPlacement& q = world.placements()[i + 1];
+        if (!p.gradient || !q.gradient || p.alongZ || q.alongZ || p.lightZ != q.lightZ) {
+            continue;
+        }
+        const bool meet = p.lightX2 == q.lightX && p.lightY2 == q.lightY && p.endBX == q.endAX &&
+                          p.endBY == q.endAY && std::fabs(p.endBT - q.endAT) < 1.0e-4F &&
+                          std::fabs(p.facing - q.facing) < 1.0e-4F;
+        if (!meet) {
+            continue;
+        }
+        ++pairs;
+        bool seam = false;
+        for (int channel = 0; channel < 3; ++channel) {
+            const float a = lightOf(i, true, channel);
+            const float b = lightOf(i + 1, false, channel);
+            if (a < 0.0F || b < 0.0F) {
+                continue;
+            }
+            // One rounding step of the darker tint, and a little.
+            const std::uint8_t tp = channel == 0 ? p.instance.tint.r : channel == 1 ? p.instance.tint.g : p.instance.tint.b;
+            const std::uint8_t tq = channel == 0 ? q.instance.tint.r : channel == 1 ? q.instance.tint.g : q.instance.tint.b;
+            const float tolerance = 0.02F + 1.5F / static_cast<float>(std::min(tp, tq));
+            seam = seam || std::fabs(a - b) > tolerance;
+        }
+        if (seam) {
+            ++seams;
+            if (seams <= 5) {
+                MESSAGE("seam between placements " << i << " (" << pieceRoleName(p.role) << ") and "
+                                                    << i + 1 << " (" << pieceRoleName(q.role) << ") at ("
+                                                    << p.lightX2 << "," << p.lightY2 << "," << p.lightZ
+                                                    << "): " << lightOf(i, true, 0) << " vs "
+                                                    << lightOf(i + 1, false, 0));
+            }
+        }
+    }
+    MESSAGE("Run pieces meeting at a cut: " << pairs << " pairs, " << seams << " seams");
+    CHECK(pairs >= 200);
+    CHECK(seams == 0);
+}
+
+TEST_CASE("a house lit all night banks its candles in the small hours") {
+    // THE DIRECTOR'S FOURTH, THREE ROUNDS: the street the critic looks at is
+    // the Gull's frontage, lit all night, so two o'clock was five o'clock
+    // there. The sim's tavern has its hearth banked and its candles out by
+    // then; the panes follow -- every one of the Gull's at ten burns at
+    // its own strength, at three at kLitHouseSmallHours of it, and at ten
+    // again in the evening full. Households are untouched by it.
+    const sim::TileQuery tiles(docksWorld());
+    const StaticCatalogue& catalogue = shippedCatalogue();
+    const std::vector<render::Lamp> lamps =
+        render::loadLamps(content::contentDir(), sim::docks::kWorldName);
+    WorldScene world(tiles, proceduralAtlas(), nullptr, &catalogue, &lamps);
+    SceneDescription scene;
+    WorldSceneParams params;
+    const Rgba8 warm = catalogue.knobs().litPane;
+    const auto litPanes = [&](int hour, HouseKind kind, std::vector<std::uint8_t>& reds) {
+        params.timeOfDaySeconds = hour * 3600;
+        world.refresh(scene, spawnCamera(), 320.0F / 180.0F, params);
+        reds.clear();
+        for (std::size_t i = 0; i < world.placements().size(); ++i) {
+            const StaticPlacement& p = world.placements()[i];
+            if (!windowPane(p.role) || p.house != kind) {
+                continue;
+            }
+            const Rgba8 pane = world.relitPaneTint(i);
+            if (candlePane(pane, warm)) {
+                reds.push_back(pane.r);
+            }
+        }
+    };
+    std::vector<std::uint8_t> gullAtTen;
+    std::vector<std::uint8_t> gullAtThree;
+    litPanes(22, HouseKind::Lit, gullAtTen);
+    litPanes(3, HouseKind::Lit, gullAtThree);
+    REQUIRE(gullAtTen.size() >= 20);
+    // Still lit -- the same count -- and every pane dimmer.
+    CHECK(gullAtThree.size() == gullAtTen.size());
+    std::size_t dimmer = 0;
+    for (std::size_t k = 0; k < std::min(gullAtTen.size(), gullAtThree.size()); ++k) {
+        dimmer += gullAtThree[k] < gullAtTen[k] ? 1 : 0;
+    }
+    CHECK(dimmer == gullAtThree.size());
+    // At three, none over 0.55 of the tint; at ten, most over it.
+    std::size_t overAtThree = 0;
+    std::size_t overAtTen = 0;
+    for (const std::uint8_t r : gullAtThree) {
+        overAtThree += r > static_cast<std::uint8_t>(warm.r * 0.56F) ? 1 : 0;
+    }
+    for (const std::uint8_t r : gullAtTen) {
+        overAtTen += r > static_cast<std::uint8_t>(warm.r * 0.56F) ? 1 : 0;
+    }
+    CHECK(overAtThree == 0);
+    CHECK(overAtTen * 2 > gullAtTen.size());
+    // A household's candle, up at three (an owl), is not banked.
+    std::vector<std::uint8_t> ownersAtThree;
+    litPanes(3, HouseKind::Household, ownersAtThree);
+    std::size_t ownersOver = 0;
+    for (const std::uint8_t r : ownersAtThree) {
+        ownersOver += r > static_cast<std::uint8_t>(warm.r * 0.56F) ? 1 : 0;
+    }
+    CHECK(ownersOver * 2 > ownersAtThree.size());
+}
+
+TEST_CASE("in a fog a lit pane carries the fog's share in its alpha, by the eye's distance") {
+    // THE LATE GLASS (rl_backend.cpp drawLateGlass): the world scene puts
+    // exp(-kHaloFogShare * veil * distance) into a light's pane alpha --
+    // any candle behind glass, any lamp's glass -- and 255 in clear air,
+    // where the adapter never runs the late pass at all.
+    const sim::TileQuery tiles(docksWorld());
+    const StaticCatalogue& catalogue = shippedCatalogue();
+    const std::vector<render::Lamp> lamps =
+        render::loadLamps(content::contentDir(), sim::docks::kWorldName);
+    WorldScene world(tiles, proceduralAtlas(), nullptr, &catalogue, &lamps);
+    SceneDescription scene;
+    WorldSceneParams params;
+    params.timeOfDaySeconds = 22 * 3600;
+    world.refresh(scene, spawnCamera(), 320.0F / 180.0F, params);
+    const Rgba8 warm = catalogue.knobs().litPane;
+    std::size_t lightsClear = 0;
+    for (const StaticInstance& at : scene.statics) {
+        CHECK(at.pane.a == 255);
+        lightsClear += (at.pane.r >= 80 && at.pane.r > at.pane.b + 40) ? 1 : 0;
+    }
+    REQUIRE(lightsClear >= 10);
+
+    params.weather.kind = render::WeatherKind::Fog;
+    params.weather.intensity = 1.0F;
+    world.refresh(scene, spawnCamera(), 320.0F / 180.0F, params);
+    const render::Camera eye = spawnCamera();
+    std::size_t lights = 0;
+    std::size_t nearer = 0;
+    std::size_t dimmest = 255;
+    float farthest = 0.0F;
+    std::size_t farthestAlpha = 255;
+    for (const StaticInstance& at : scene.statics) {
+        const bool light = at.pane.r >= 80 && at.pane.r > at.pane.b + 40;
+        if (!light) {
+            CHECK(at.pane.a == 255);
+            continue;
+        }
+        ++lights;
+        CHECK(at.pane.a < 255);
+        CHECK(at.pane.a >= 1);
+        const float dx = at.position.x - eye.x;
+        const float dz = at.position.z - eye.y;
+        const float d = std::sqrt(dx * dx + dz * dz);
+        if (d < 6.0F) {
+            ++nearer;
+            CHECK(at.pane.a > 128);
+        }
+        if (d > farthest) {
+            farthest = d;
+            farthestAlpha = at.pane.a;
+        }
+        dimmest = std::min<std::size_t>(dimmest, at.pane.a);
+        (void)warm;
+    }
+    MESSAGE("Lights in the fog from the spawn: " << lights << ", " << nearer << " within six tiles; the farthest at "
+                                                 << farthest << " tiles carries alpha " << farthestAlpha);
+    CHECK(lights == lightsClear);
+    CHECK(nearer >= 1);
+    CHECK(farthestAlpha < 160);
 }
 
 TEST_CASE("the surface clamp keeps its hue") {
@@ -3341,13 +3556,41 @@ TEST_CASE("the surface clamp keeps its hue") {
             continue;  // not at the clamp
         }
         ++checked;
-        // Blue over red never exceeds the tint's own blue over red by more
-        // than rounding: the light that got here was scaled as one.
+        // Neither green nor blue over red exceeds the tint's own ratio by
+        // more than rounding: the light that got here was scaled as one.
+        // Under a per-channel clamp on a warm light red clips first and
+        // green climbs, which is exactly what this catches.
+        const float tintGr = static_cast<float>(p.instance.tint.g) / static_cast<float>(p.instance.tint.r);
+        const float litGr = static_cast<float>(lit.g) / static_cast<float>(lit.r);
+        CHECK(litGr <= tintGr + 0.02F);
         const float tintRatio = static_cast<float>(p.instance.tint.b) / static_cast<float>(p.instance.tint.r);
         const float litRatio = static_cast<float>(lit.b) / static_cast<float>(lit.r);
         CHECK(litRatio <= tintRatio + 0.02F);
     }
     MESSAGE("Pieces at the clamp at ten: " << checked);
+    CHECK(checked >= 20);
+    // The chunks too: on the same Docks at ten, no coloured vertex of any
+    // chunk is greener than it is red (the lamps are warm, the ambient a
+    // cold near-black, the candle amber: nothing lights green).
+    std::size_t vertices = 0;
+    std::size_t greener = 0;
+    for (const MeshData& mesh : scene.meshes) {
+        if (mesh.id < kChunkMeshIdBase || mesh.id >= kChunkMeshIdBase + 4096U) {
+            continue;
+        }
+        for (std::size_t v = 0; v < mesh.vertexCount(); ++v) {
+            const std::uint8_t r = mesh.colours[v * 4U];
+            const std::uint8_t g = mesh.colours[v * 4U + 1U];
+            if (r < 60) {
+                continue;  // the near-black of the night: a lean of a level is nothing
+            }
+            ++vertices;
+            greener += g > r ? 1 : 0;
+        }
+    }
+    MESSAGE("Lit chunk vertices at ten: " << vertices << ", greener than red: " << greener);
+    CHECK(vertices > 1000);
+    CHECK(greener == 0);
 }
 
 TEST_CASE("the surface pool carries to eight tiles and the law's field does not") {
@@ -3537,11 +3780,23 @@ TEST_CASE("a body beside a lantern after dark wears the lantern's pool, and one 
             CHECK(tint.r > 90);
             CHECK(tint.r > tint.b);
         } else if (nearest > 10.0F) {
-            // Dark -- unless a lit pane's candle reaches the cell, which the
-            // roster described without the pool (and so without the spill)
-            // does not carry: then the pool's own copy is the brighter.
+            // Dark -- unless a lit pane's candle reaches the very cell the
+            // body stands in (the spill map names it), which the roster
+            // described without the pool does not carry.
             ++inDark;
-            CHECK((tint.r < 40 || tint.r > unpooled[&body - bodies.data()].instance.tint.r));
+            if (tint.r >= 40) {
+                const std::int32_t cx = static_cast<std::int32_t>(std::floor(bx));
+                const std::int32_t cy = static_cast<std::int32_t>(std::floor(bz));
+                std::int32_t band = 0;
+                for (std::int32_t z = 0; z < session.tiles().sizeZ(); ++z) {
+                    if (std::fabs(render::bandSurface(z) - body.instance.position.y) < 0.5F) {
+                        band = z;
+                    }
+                }
+                const bool candleHere = world.spill().find(cellKey(cx, cy, band)) != world.spill().end();
+                CHECK(candleHere);
+                CHECK(tint.r > unpooled[&body - bodies.data()].instance.tint.r);
+            }
         }
     }
     MESSAGE("Bodies at ten: " << inPool << " within a tile and a half of a lantern, " << inDark
