@@ -308,7 +308,7 @@ private:
     /// this and differ only in what they pass.
     void accumulateWith(const std::vector<Lamp>& lamps, float verticalWeight,
                         float (*reachOf)(std::int32_t), float (*shape)(std::int32_t, float),
-                        Rgb (*colourOf)(LampWarmth));
+                        Rgb (*colourOf)(LampWarmth), bool poolColour);
 
     std::int32_t sizeX_ = 0;
     std::int32_t sizeY_ = 0;

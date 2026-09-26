@@ -3073,6 +3073,7 @@ TEST_CASE("a lit timber pane is one ramp quad, hot at the sill, and the boards e
     std::size_t halvesChecked = 0;
     std::size_t halvesLit = 0;
     std::size_t strictlyWarmer = 0;
+    std::size_t darkerAtPane = 0;
     for (std::size_t i = 3; i < world.placements().size(); ++i) {
         const StaticPlacement& pane = world.placements()[i];
         if (pane.role != PieceRole::PaneTimber) {
@@ -3110,16 +3111,16 @@ TEST_CASE("a lit timber pane is one ramp quad, hot at the sill, and the boards e
         const Rgba8 beforeOuter = world.relitTint(i - 3, before.flipped ? 1 : 0);
         const Rgba8 afterInner = world.relitTint(i - 2, after.flipped ? 1 : 0);
         const Rgba8 afterOuter = world.relitTint(i - 2, after.flipped ? 0 : 1);
-        // Under a bright lamp both ends can sit at the surface clamp and
-        // read equal; the pane end is never the darker one, and on most
-        // halves it is strictly the warmer.
-        CHECK(beforeInner.r >= beforeOuter.r);
-        CHECK(beforeInner.g >= beforeOuter.g);
-        CHECK(afterInner.r >= afterOuter.r);
-        CHECK(afterInner.g >= afterOuter.g);
+        // A lamp's pool runs across the same board, so an outer end nearer
+        // a lantern can out-light the pane end: the candle is the smaller
+        // light. Counted, not required per half -- the pane end is the
+        // warmer on most halves and the darker on few.
         ++halvesLit;
         if (beforeInner.r > beforeOuter.r && afterInner.r > afterOuter.r) {
             ++strictlyWarmer;
+        }
+        if (beforeInner.r < beforeOuter.r || afterInner.r < afterOuter.r) {
+            ++darkerAtPane;
         }
         // Warm, not white: the candle's own colour on the wood.
         CHECK(beforeInner.r > beforeInner.b);
@@ -3130,8 +3131,10 @@ TEST_CASE("a lit timber pane is one ramp quad, hot at the sill, and the boards e
     CHECK(panesChecked > 10);
     CHECK(panesLit >= 4);
     CHECK(halvesChecked >= 4);
-    MESSAGE("Lit halves: " << halvesLit << ", strictly warmer at the pane on " << strictlyWarmer);
-    CHECK(strictlyWarmer * 2 >= halvesLit);
+    MESSAGE("Lit halves: " << halvesLit << ", strictly warmer at the pane on " << strictlyWarmer
+                           << ", darker on " << darkerAtPane);
+    CHECK(strictlyWarmer * 5 >= halvesLit * 3);
+    CHECK(darkerAtPane * 4 <= halvesLit);
 
     // At noon every pane is dark glass, and no half is warmer at the pane
     // than a dark pane's own pool would make it: the spill went out with
@@ -3283,8 +3286,10 @@ TEST_CASE("a lit pane lays its candle on the wall cells round it, and each house
             // ...and a lit kit window's wall is still darker than its pane.
             const Rgba8 endA = world.relitTint(i, 0);
             const Rgba8 endB = world.relitTint(i, 1);
-            CHECK(endA.r > 20);
-            CHECK(endB.r > 20);
+            // Ambient alone is a twentieth of the tint; the pane's share on
+            // top lifts the module's ends well past that.
+            CHECK(static_cast<float>(endA.r) > static_cast<float>(p.instance.tint.r) * 0.11F);
+            CHECK(static_cast<float>(endB.r) > static_cast<float>(p.instance.tint.r) * 0.11F);
             CHECK(endA.r < pane.r);
             CHECK(endB.r < pane.r);
         }
