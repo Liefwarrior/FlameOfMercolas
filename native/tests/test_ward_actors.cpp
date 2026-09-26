@@ -203,10 +203,15 @@ TEST_CASE("a blocked body does not oscillate: sidestep never doubles back on its
     // tryEnter alone) plus preferring a strictly closer cell over a level
     // one. This proves it over ten real minutes of the morning rush, not one
     // frame: for every visible body, track how many ticks IN A ROW its
-    // current cell equals its cell from two ticks back -- the A-B-A-B
-    // cadence an oscillation makes -- and require the worst streak stays
-    // short. A genuine squeeze-past or a shove-and-reclaim trades a tile
-    // once or twice; it does not settle into a metronome.
+    // current cell equals its cell from two ticks back AND differs from
+    // last tick's -- the A-B-A-B cadence an oscillation makes, and NOT the
+    // ordinary case of a body that simply has not moved in a while (which
+    // trivially equals its own cell from two ticks back and is not a bug at
+    // all -- the first version of this case mistook a sleeping serf for an
+    // eighty-tick loop before that second clause was added) -- and require
+    // the worst streak stays short. A genuine squeeze-past or a
+    // shove-and-reclaim trades a tile once or twice; it does not settle into
+    // a metronome.
     const auto run = privateWard(7);
     constexpr int kTicks = 600;
     struct Recent {
@@ -227,7 +232,7 @@ TEST_CASE("a blocked body does not oscillate: sidestep never doubles back on its
             const std::int64_t here = (static_cast<std::int64_t>(actor.band) << 40) |
                                       (static_cast<std::int64_t>(actor.y) << 20) |
                                       static_cast<std::int64_t>(actor.x);
-            r.streak = (here == r.twoAgo) ? r.streak + 1 : 0;
+            r.streak = (here == r.twoAgo && here != r.oneAgo) ? r.streak + 1 : 0;
             if (r.streak > worstStreak) {
                 worstStreak = r.streak;
                 worstActor = actor.id;
