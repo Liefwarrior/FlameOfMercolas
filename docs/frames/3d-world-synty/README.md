@@ -670,7 +670,12 @@ auditor 7).** What they found and what moved:
   warmths (`kLanternPoolColour`, `kFirePoolColour`), a wider core (1.4
   tiles at 0.7 share) and a peak a little over the law's (`kPoolPeakScale`,
   under the 1.15 surface clamp), and it gutters with the wind as the halos
-  do (`SkyState::haloScale`) -- a candle behind glass does not.
+  do (`SkyState::haloScale`) -- a candle behind glass does not. Its field
+  normalises the lamps' hue to a PEAK of one, not the law's mean of one: the
+  law's field lifts a lantern's red to 1.25 of the intensity and clips it per
+  channel (as it always has; the 2D pass and the light law read those bytes
+  and they are unchanged), which on the pool would have flattened the lamp's
+  own cell against the tile beside it and turned it yellow-white.
 - *One amber at one value.* Every lit pane wore `litPane` exactly. A
   household's candle draws its own strength off its lot now
   (`kCandleSpread`, down to two thirds), per pane on a house lit all
