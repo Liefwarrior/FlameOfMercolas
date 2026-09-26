@@ -100,6 +100,15 @@ constexpr render::Rgb kSpillGlow{0.62F, 0.40F, 0.16F};
 /// The share of it on the cells either side along the wall and on the
 /// street cell before the window.
 constexpr float kSpillSideShare = 0.5F;
+/// The street cell before the window takes more: a body talking under a
+/// lit window (the player's third) stands in that cell.
+constexpr float kSpillStreetShare = 0.75F;
+/// A kit window on masonry is ONE run piece with its glass in the middle
+/// cell, lit at its two cuts a tile and a quarter off the pane; the cuts'
+/// own share of the candle is a quarter, so the plaster round the glass
+/// stayed dark. The module takes this share of its pane's own cell at both
+/// ends instead, so the wall round a lit kit window is lit.
+constexpr float kSpillWindowModuleShare = 0.75F;
 
 /// THE HALO UP CLOSE (the director's first): the fan is a metre and a half
 /// across and floats toward the eye, so inside two metres it covered the
@@ -524,14 +533,14 @@ void WorldScene::buildSpill(const ChunkLighting& lighting) {
         if (!paneUpUnder(p, lighting, night, hour)) {
             continue;
         }
-        // The wall cell, the two along the wall (the tangent is the
-        // normal turned), and the street cell out from the window.
-        const std::int32_t nx = p.lightX - p.insideX;
-        const std::int32_t ny = p.lightY - p.insideY;
-        add(p.lightX, p.lightY, p.lightZ, 1.0F);
-        add(p.lightX - ny, p.lightY + nx, p.lightZ, kSpillSideShare);
-        add(p.lightX + ny, p.lightY - nx, p.lightZ, kSpillSideShare);
-        add(p.lightX + nx, p.lightY + ny, p.lightZ, kSpillSideShare);
+        // The pane's own wall cell, the two along the wall (the tangent is
+        // the normal turned), and the street cell out from the window.
+        const std::int32_t nx = p.paneX - p.insideX;
+        const std::int32_t ny = p.paneY - p.insideY;
+        add(p.paneX, p.paneY, p.insideZ, 1.0F);
+        add(p.paneX - ny, p.paneY + nx, p.insideZ, kSpillSideShare);
+        add(p.paneX + ny, p.paneY - nx, p.insideZ, kSpillSideShare);
+        add(p.paneX + nx, p.paneY + ny, p.insideZ, kSpillStreetShare);
     }
 }
 
@@ -688,10 +697,18 @@ void WorldScene::relightPieces(const ChunkLighting& lighting) {
             // spill) is hottest at the pane's end and shares the value at
             // the module's cut with the module beyond it -- the light runs
             // on across the seam instead of stopping at a plank.
-            const Rgba8 a = lit(surfaceBetween(p.lightX, p.lightY, p.endAX, p.endAY, p.endAT, p.lightZ),
-                                p.instance.tint);
-            const Rgba8 b = lit(surfaceBetween(p.lightX2, p.lightY2, p.endBX, p.endBY, p.endBT, p.lightZ),
-                                p.instance.tint);
+            render::Rgb extra{};
+            if (p.role == PieceRole::WallWindow && paneUp) {
+                // The kit window module: its pane's own cell at both ends
+                // (kSpillWindowModuleShare), not its cuts' quarter.
+                const render::Rgb own = spillAt(p.paneX, p.paneY, p.insideZ);
+                extra = render::Rgb{own.r * kSpillWindowModuleShare, own.g * kSpillWindowModuleShare,
+                                    own.b * kSpillWindowModuleShare};
+            }
+            const Rgba8 a = litWith(surfaceBetween(p.lightX, p.lightY, p.endAX, p.endAY, p.endAT, p.lightZ),
+                                    extra, p.instance.tint, kLightClamp);
+            const Rgba8 b = litWith(surfaceBetween(p.lightX2, p.lightY2, p.endBX, p.endBY, p.endBT, p.lightZ),
+                                    extra, p.instance.tint, kLightClamp);
             if (p.alongZ) {
                 // The blend runs along the piece's Z: its near end (z = 0)
                 // first.

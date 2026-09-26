@@ -656,10 +656,16 @@ auditor 7).** What they found and what moved:
   along the wall and the street cell before it, rebuilt on the minute the
   relight moves, read by the chunk colour stage (`ChunkLighting::spill`),
   the piece relight (through `surfaceAt`), the bodies and the ground items.
-  A kit window on plaster casts it as a hung timber window does; a board
-  half's end at the module's cut shares the value with the module beyond
-  it, so nothing stops at the seam; and a body talking under a lit window
-  is no longer a silhouette against it.
+  A kit window on plaster casts it as a hung timber window does -- its
+  module, one run piece with the glass in the middle cell, takes three
+  quarters of its pane's own cell at both ends (`kSpillWindowModuleShare`),
+  since its cuts stand a tile and a quarter off the glass; a board half's
+  end at the module's cut shares the value with the module beyond it, so
+  nothing stops at the seam; the street cell takes three quarters
+  (`kSpillStreetShare`), so a body talking under a lit window is no longer a
+  silhouette against it. The map keys off the pane's own wall cell
+  (`StaticPlacement::paneX/paneY`, set by `houseOf()`), not a run piece's
+  first cut.
 - *The pool on the ground.* A grey cobble under the law's near-white
   lantern colour came out a pale beige-grey. The pool has its own deeper
   warmths (`kLanternPoolColour`, `kFirePoolColour`), a wider core (1.4

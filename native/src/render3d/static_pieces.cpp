@@ -762,6 +762,8 @@ private:
         p.insideX = ix;
         p.insideY = iy;
         p.insideZ = z;
+        p.paneX = wx;
+        p.paneY = wy;
         std::int32_t ax = 0;
         std::int32_t ay = 0;
         if (!roomAnchor(ix, iy, z, ax, ay)) {

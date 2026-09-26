@@ -655,6 +655,10 @@ struct StaticPlacement {
     HouseKind house = HouseKind::None;
     std::uint32_t houseLot = 0;
     std::int32_t insideX = 0, insideY = 0, insideZ = 0;
+    /// The pane's OWN wall cell (houseOf): a kit window is a run piece whose
+    /// lightX/lightY name its first cut, not the cell its glass stands in.
+    /// The spill (world_scene.cpp buildSpill) keys off this.
+    std::int32_t paneX = 0, paneY = 0;
     /// THE SPILL. A timber board that flanks a hung window is placed as
     /// two halves cut at the window's centre (static_pieces.cpp), each
     /// carrying the pane's own household through houseOf(), so the relight

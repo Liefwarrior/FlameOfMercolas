@@ -3251,17 +3251,31 @@ TEST_CASE("a lit pane lays its candle on the wall cells round it, and each house
         ++litPanes;
         masonryLit += p.role == PieceRole::WallWindow ? 1 : 0;
         strengths.insert(pane.r);
-        const auto at = world.spill().find(cellKey(p.lightX, p.lightY, p.lightZ));
+        // Keyed off the pane's OWN wall cell, which for a kit window is not
+        // its run's first cut: the wall cell and the room cell behind it
+        // are neighbours, and the street cell is the wall cell's other
+        // side.
+        REQUIRE(std::abs(p.paneX - p.insideX) + std::abs(p.paneY - p.insideY) == 1);
+        const auto at = world.spill().find(cellKey(p.paneX, p.paneY, p.insideZ));
         REQUIRE(at != world.spill().end());
         CHECK(at->second.r > 0.5F);
         CHECK(at->second.r > at->second.b);
-        const std::int32_t nx = p.lightX - p.insideX;
-        const std::int32_t ny = p.lightY - p.insideY;
-        const auto side = world.spill().find(cellKey(p.lightX - ny, p.lightY + nx, p.lightZ));
+        const std::int32_t nx = p.paneX - p.insideX;
+        const std::int32_t ny = p.paneY - p.insideY;
+        const auto side = world.spill().find(cellKey(p.paneX - ny, p.paneY + nx, p.insideZ));
         REQUIRE(side != world.spill().end());
         CHECK(side->second.r >= 0.25F);
-        const auto street = world.spill().find(cellKey(p.lightX + nx, p.lightY + ny, p.lightZ));
+        const auto street = world.spill().find(cellKey(p.paneX + nx, p.paneY + ny, p.insideZ));
         REQUIRE(street != world.spill().end());
+        CHECK(street->second.r >= 0.4F);
+        // A lit kit window's own module is lit at both ends by its pane's
+        // cell, warmer than the plaster piece beyond its cut would be.
+        if (p.role == PieceRole::WallWindow) {
+            const Rgba8 endA = world.relitTint(i, 0);
+            const Rgba8 endB = world.relitTint(i, 1);
+            CHECK(endA.r > 70);
+            CHECK(endB.r > 70);
+        }
     }
     MESSAGE("Lit panes at ten: " << litPanes << " (" << masonryLit << " on masonry), " << strengths.size()
                                  << " candle strengths");
