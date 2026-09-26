@@ -125,7 +125,7 @@ void pushBox(MeshData& mesh, float x0, float y0, float z0, float x1, float y1, f
 /// law's glow shaped by pooledGlow() where it did not, and the handful of
 /// live lamps under the same shape either way.
 [[nodiscard]] Rgba8 bodyTint(const render::SkyState& sky, const render::LampGlow* pool,
-                             const std::unordered_map<std::uint64_t, render::Rgb>* spill,
+                             const std::map<std::uint64_t, render::Rgb>* spill,
                              const render::LampGlow& glow, const std::vector<render::Lamp>& live,
                              std::int32_t x, std::int32_t y, std::int32_t z) noexcept {
     if (pool != nullptr) {

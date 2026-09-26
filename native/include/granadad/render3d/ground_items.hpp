@@ -24,7 +24,7 @@
 // Floats are legal here (render-side); nothing in this file is read by the
 // simulation.
 
-#include <unordered_map>
+#include <map>
 #include <vector>
 
 #include "granadad/render/lighting.hpp"
@@ -51,6 +51,6 @@ namespace granadad::render3d {
 [[nodiscard]] std::vector<StaticInstance> groundItemInstances(
     const render::Session& session, const StaticCatalogue& catalogue, const render::Camera& view,
     float maxDistance = 40.0F, const render::LampGlow* pool = nullptr,
-    const std::unordered_map<std::uint64_t, render::Rgb>* spill = nullptr);
+    const std::map<std::uint64_t, render::Rgb>* spill = nullptr);
 
 }  // namespace granadad::render3d

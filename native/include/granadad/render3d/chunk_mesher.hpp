@@ -48,7 +48,7 @@
 // says so on every build.
 
 #include <cstdint>
-#include <unordered_map>
+#include <map>
 #include <vector>
 
 #include "granadad/render/atlas.hpp"
@@ -116,7 +116,7 @@ struct ChunkLighting {
     /// THE SPILL (world_scene.cpp, spillMap): the candle a lit pane lays on
     /// the wall cells round it, as a glow ADDED to the pool at those cells
     /// -- keyed by cellKey(x, y, z). Null or empty means no pane is up.
-    const std::unordered_map<std::uint64_t, render::Rgb>* spill = nullptr;
+    const std::map<std::uint64_t, render::Rgb>* spill = nullptr;
 };
 
 /// The key the spill map is kept under: a cell's three coordinates packed,

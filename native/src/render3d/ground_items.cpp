@@ -65,7 +65,7 @@ void describe(std::vector<StaticInstance>& out, const StaticCatalogue& catalogue
               const Placed& at, const render::Session& session, const render::SkyState& sky,
               const std::vector<render::Lamp>& live, const render::Camera& view,
               float maxDistance, const render::LampGlow* pool,
-              const std::unordered_map<std::uint64_t, render::Rgb>* spill) {
+              const std::map<std::uint64_t, render::Rgb>* spill) {
     const PieceSpec* spec = at.spec;
     if (spec == nullptr) {
         return;
@@ -134,7 +134,7 @@ void describe(std::vector<StaticInstance>& out, const StaticCatalogue& catalogue
 std::vector<StaticInstance> groundItemInstances(
     const render::Session& session, const StaticCatalogue& catalogue, const render::Camera& view,
     float maxDistance, const render::LampGlow* pool,
-    const std::unordered_map<std::uint64_t, render::Rgb>* spill) {
+    const std::map<std::uint64_t, render::Rgb>* spill) {
     std::vector<StaticInstance> out;
     if (catalogue.itemIds().empty()) {
         return out;

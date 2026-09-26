@@ -49,7 +49,7 @@
 
 #include <cstdint>
 #include <string_view>
-#include <unordered_map>
+#include <map>
 #include <vector>
 
 #include "granadad/render3d/scene.hpp"
@@ -208,7 +208,7 @@ struct ActorSceneParams {
     /// THE SPILL (WorldScene::spill): a lit pane's candle on the cells round
     /// it, so a body talking under a lit window is not a silhouette against
     /// it. Null means none.
-    const std::unordered_map<std::uint64_t, render::Rgb>* spill = nullptr;
+    const std::map<std::uint64_t, render::Rgb>* spill = nullptr;
 };
 
 /// The instances for one frame: every visible ward body and every present

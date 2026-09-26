@@ -43,7 +43,7 @@
 
 #include <algorithm>
 #include <cstdint>
-#include <unordered_map>
+#include <map>
 #include <vector>
 
 #include "granadad/render/lamps.hpp"
@@ -221,10 +221,10 @@ private:
     static constexpr std::size_t kLitSlots = 5;
     std::vector<Rgba8> litTints_;
     std::uint32_t litVersion_ = 0;
-    std::unordered_map<std::uint64_t, render::Rgb> spill_;
+    std::map<std::uint64_t, render::Rgb> spill_;
 
 public:
-    [[nodiscard]] const std::unordered_map<std::uint64_t, render::Rgb>& spill() const noexcept {
+    [[nodiscard]] const std::map<std::uint64_t, render::Rgb>& spill() const noexcept {
         return spill_;
     }
 };
