@@ -2556,7 +2556,9 @@ TEST_CASE("the mesher leaves the jamb cells' ground storey out and meshes the wa
             CHECK(highest <= floorY + render::kBandHeight + 0.001F);
             if (face.dir == FaceDir::Bottom) {
                 jambSoffit = true;
-                CHECK(lowest == doctest::Approx(headY));
+                // The cut is over the soffit now (kDoorHeadCut), not at the head: the
+    // stone course starts where the closed head box hides it.
+    CHECK(lowest == doctest::Approx(render::bandSurface(19) + kDoorHeadCut));
             }
         }
         // The wall cell next along the run still reaches the ground, and
