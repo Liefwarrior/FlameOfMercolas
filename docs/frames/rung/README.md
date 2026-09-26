@@ -240,8 +240,10 @@ governs. Their lists, taken whole:
   the alert row steps down to the plate's own register (the minor scale) as
   well as to half weight, and its backing plate takes half again so the
   keyline never outshines the words; the voice row rides the same weight;
-  the announce slot (`NEW LEAD`, a named place crossed) holds its clock and
-  waits behind the plate, then rises on its own ease. The compass ribbon,
+  the announce slot (`NEW LEAD`, a named place crossed) is drawn at zero the
+  instant the plate is wanted (its own ease-out would cross the rise), holds
+  its clock behind the plate, and rises again with what it had once the plate
+  lifts. The compass ribbon,
   the aim prompt and the corner stacks are the HUD's furniture and stay.
   The plate keeps the terminal register on purpose -- the reference's one
   idiom for emphasis is the knocked-out head, never a second glyph size --

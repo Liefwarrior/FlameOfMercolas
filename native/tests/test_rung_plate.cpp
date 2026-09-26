@@ -537,6 +537,44 @@ TEST_CASE("a rung and a skill level in one step: the level is the plate's own ti
     CHECK(session.rungPlateText().tick == "SHIELDWALL RISES TO 1");
 }
 
+TEST_CASE("the announce slot waits behind the plate: NEW LEAD is drawn at zero the instant the plate is wanted, keeps its clock, and comes back with what it had") {
+    Session session(configAt("mission-backroom"));
+    wake(session);
+    REQUIRE_FALSE(session.casePlateWanted());
+
+    // The lead read arms the notice and tips no rung; the box on the same
+    // step tips THE WIRE. The plate is wanted from the next step, and the
+    // notice is drawn at zero from that same step -- not eased out across
+    // the plate's rise.
+    session.examine();
+    REQUIRE(session.casePlateWanted());
+    crackABox(session);
+    session.stepMany(sim::MoveInput{}, 1);
+    REQUIRE(session.rungPlateWanted());
+    CHECK(session.casePlateWanted());
+    CHECK(session.casePlateFadeNow() == 0.0F);
+    CHECK(session.placePlateFadeNow() == 0.0F);
+    for (int i = 0; i < kPageEaseSteps; ++i) {
+        session.stepMany(sim::MoveInput{}, 1);
+        CHECK(session.casePlateFadeNow() == 0.0F);
+    }
+    REQUIRE(session.rungPlateFade() == 1.0F);
+
+    // THE CLOCK HELD: the notice's own hold is shorter than the plate's, and
+    // it is still wanted when the plate's hold is spent.
+    session.stepMany(sim::MoveInput{}, kRungPlateHoldSteps - kPageEaseSteps);
+    CHECK_FALSE(session.rungPlateWanted());
+    CHECK(session.casePlateWanted());
+
+    // Back on its own ease once the plate is no longer wanted, and then its
+    // own hold runs out.
+    session.stepMany(sim::MoveInput{}, kPageEaseSteps + 2);
+    CHECK(session.casePlateWanted());
+    CHECK(session.casePlateFadeNow() > 0.0F);
+    session.stepMany(sim::MoveInput{}, 200 + kPageEaseSteps);
+    CHECK_FALSE(session.casePlateWanted());
+}
+
 TEST_CASE("a skill that levels later in the hold queues as a toast and starts only once the plate has lifted all the way") {
     Session session(configAt("mission-backroom"));
     wake(session);

@@ -3985,6 +3985,22 @@ void Session::composeRungPlate(Framebuffer& target) const {
     drawRungPlate(target, rungPlateState());
 }
 
+float Session::casePlateFadeNow() const noexcept {
+    // THE ANNOUNCE SLOT WAITS BEHIND THE PLATE, AND IT IS NOT SEEN GOING.
+    // syncPanelAnim drops the slot's target while the plate is wanted and
+    // step() holds its clock, but an ease-out is eight frames and the
+    // plate's rise is eight frames, and the flame drive's first fully-up
+    // frame carried `1 NEW LEAD` at full strength above the plate (the
+    // director's finding, third pass). The plate's own rule for itself
+    // under a page -- drawn at zero the instant something outranks it --
+    // applied to the slot the plate outranks.
+    return rungPlateWanted() ? 0.0F : casePlateAnim_.value();
+}
+
+float Session::placePlateFadeNow() const noexcept {
+    return rungPlateWanted() ? 0.0F : placePlateAnim_.value();
+}
+
 float Session::alertFadeNow() const noexcept {
     // THE ALERT ROW STANDS AT HALF WEIGHT UNDER THE PLATE. The critic's
     // finding on the record plate: the amber line at the foot of the frame
@@ -11675,10 +11691,13 @@ FrameStats Session::drawFrame(Framebuffer& target, FramePasses passes) const {
     // THE CASEBOOK PASS. The lead-opened notice, on the identical three fields
     // and the identical conversing gate -- see HudState::casePlate.
     hud.casePlate = std::string_view{casePlateText_};
-    hud.casePlateFade = conversing ? 0.0F : casePlateAnim_.value();
+    // AND ZERO THE INSTANT THE RUNG PLATE IS WANTED (casePlateFadeNow): the
+    // slot waits behind the plate, and its own ease-out must not cross the
+    // plate's rise.
+    hud.casePlateFade = conversing ? 0.0F : casePlateFadeNow();
     hud.casePlateDrift = casePlateAnim_.target() ? -(1.0F - casePlateAnim_.value())
                                                  : (1.0F - casePlateAnim_.value());
-    hud.placePlateFade = conversing ? 0.0F : placePlateAnim_.value();
+    hud.placePlateFade = conversing ? 0.0F : placePlateFadeNow();
     composePullHud(hud);  // THE PULL PACK: the one draw hook (render/pull.hpp).
     // THE SIGN COMES OFF THE TOGGLE'S OWN TARGET, so the plate rises THROUGH
     // its settled row rather than sliding back down the way it came -- see

@@ -1034,6 +1034,14 @@ public:
     /// one line the player must not miss is never the one dimmed). Public so
     /// a case reads it instead of a screenshot.
     [[nodiscard]] float alertFadeNow() const noexcept;
+    /// The announce slot's drawn fades exactly as drawFrame composes them:
+    /// ZERO the instant the rung plate is wanted (the slot waits behind the
+    /// plate with its clock held -- the plate's own `outranked ? 0` rule,
+    /// because the slot's ease-out would otherwise cross the plate's rise
+    /// and the plate's first frame would carry NEW LEAD at full strength
+    /// above it), else their own ease. Public so a case reads them.
+    [[nodiscard]] float casePlateFadeNow() const noexcept;
+    [[nodiscard]] float placePlateFadeNow() const noexcept;
 
     // --- THE MOMENT LEADS OPEN ------------------------------------------------
     //
