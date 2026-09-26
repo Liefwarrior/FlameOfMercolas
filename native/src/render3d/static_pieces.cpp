@@ -169,9 +169,13 @@ constexpr float kTimberPaneOut = -0.02F;
 /// THE CRITIC'S SECOND: the sill-side share of the pane's own height that
 /// draws as the hot core (world_scene.cpp's kPaneEdgeLit is the rest).
 constexpr float kPaneCoreFraction = 0.45F;
-/// The door leaf's clearance off the reveal it hangs open against, and off
-/// the facade plane.
+/// The door leaf's clearance off the reveal it hangs open against; how far
+/// its hinge sits inside the street post's back corner (the corner a leaf
+/// hangs from, so the swung-open leaf's edge meets the post and no sliver
+/// of reveal shows between the two); and where the hinge falls, behind the
+/// facade plane, when the catalogue has no post to hang it from.
 constexpr float kLeafOffReveal = 0.14F;
+constexpr float kLeafOffPost = 0.01F;
 constexpr float kLeafOffFacade = 0.06F;
 /// A jamb's reveal quad stands this far into the opening off the jamb
 /// cell's own boundary plane -- a hair inboard of the post's inner face,
@@ -1278,6 +1282,7 @@ private:
     /// was meant to be the edge of. A pilaster pair, not a jamb.
     void doors() {
         const PieceSpec* leaf = catalogue_.piece(PieceRole::DoorLeaf);
+        const PieceSpec* beam = catalogue_.piece(PieceRole::DoorPost);
         const PieceSpec* gatePost = catalogue_.piece(PieceRole::GatePost);
         const PieceSpec* lintel = catalogue_.piece(PieceRole::Joist);
         for (const DoorGap& gap : doors_) {
@@ -1320,17 +1325,26 @@ private:
                 }
                 continue;
             }
-            // The leaves: one on each jamb, hinged just inside the post's
-            // inner face, swung inward to lie along the reveal.
+            // The leaves: one on each jamb, hinged just inside the street
+            // post's inner face at its back corner, swung inward to lie
+            // along the reveal.
             if (leaf != nullptr) {
                 const float leafLength = std::max(0.1F, leaf->maxX - leaf->minX);
+                // Where the hinge falls along the facade's normal: the
+                // street post's back (the finish's face less half the
+                // post's section) less a hair, or, with no post in the
+                // catalogue, a little behind the facade plane as before.
+                const float hingeOut =
+                    beam != nullptr ? finishOf(jambX, jambY, gap.z, gap.side).proud -
+                                          0.5F * std::max(0.01F, beam->width * beam->scale) - kLeafOffPost
+                                    : -kLeafOffFacade;
                 for (int end = 0; end < 2; ++end) {
                     // The hinge: just inside the opening's edge, a little
-                    // off the reveal, a little behind the facade plane.
+                    // off the reveal.
                     const float a = end == 0 ? lo + kLeafOffReveal : hi - kLeafOffReveal;
-                    Vec3 hinge{r.baseX + kTangentX[r.side] * a - kNormalX[r.side] * kLeafOffFacade,
+                    Vec3 hinge{r.baseX + kTangentX[r.side] * a + kNormalX[r.side] * hingeOut,
                                yBase + leaf->lift,
-                               r.baseZ + kTangentZ[r.side] * a - kNormalZ[r.side] * kLeafOffFacade};
+                               r.baseZ + kTangentZ[r.side] * a + kNormalZ[r.side] * hingeOut};
                     // The leaf's local +X runs from the hinge along the
                     // leaf: a quarter turn from the facade's tangent, into
                     // the building. The far jamb's leaf is TURNED a half
