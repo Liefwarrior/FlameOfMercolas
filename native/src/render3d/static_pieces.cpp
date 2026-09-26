@@ -169,29 +169,34 @@ constexpr float kTimberPaneOut = -0.02F;
 /// THE CRITIC'S SECOND: the sill-side share of the pane's own height that
 /// draws as the hot core (world_scene.cpp's kPaneEdgeLit is the rest).
 constexpr float kPaneCoreFraction = 0.45F;
-/// The door leaf hung open against the reveal: how far its inner face
-/// stands off the post's inner face -- nothing: ON the post's own plane,
-/// with the reveal quad (half a millimetre into the opening) inside the
-/// leaf's thickness, so there is no slot between timber and timber to look
-/// down (at sixteen millimetres a body in the taproom saw the street
-/// through it, and from the street the hollow behind the one-sided quad);
-/// how far its hinge sits inside the street post's back corner (the corner
-/// a leaf hangs from, so the swung-open leaf's edge meets the post); and
-/// where the hinge falls, behind the facade plane, when the catalogue has
-/// no post to hang it from.
-constexpr float kLeafOffReveal = 0.0F;
+/// The door leaf hung open against the reveal: its inner face four
+/// centimetres BEHIND the post's inner-face plane (negative), which is
+/// three behind the plaster reveal it lies on (kRevealFlush below), so the
+/// leaf's own inner face -- the kit draws its doors from both sides -- is
+/// never within the hair of the reveal that the depth buffer cannot tell
+/// apart (on the reveal's plane it fought it down the whole hinge edge; at
+/// sixteen millimetres off, a body in the taproom saw the street down the
+/// slot). The rest of the leaf stands in the opening as it did; the three
+/// centimetres are buried in plaster and nobody misses them. Then how far
+/// its hinge sits inside the street post's back corner (the corner a leaf
+/// hangs from, so the swung-open leaf's edge meets the post); and where
+/// the hinge falls, behind the facade plane, when the catalogue has no
+/// post to hang it from.
+constexpr float kLeafOffReveal = -0.04F;
 constexpr float kLeafOffPost = 0.01F;
 constexpr float kLeafOffFacade = 0.06F;
 /// A jamb's reveal quad stands this far into the opening off the jamb
-/// cell's own boundary plane: nothing -- ON the plane the post's inner
-/// face stands on. The two never overlap (the quad starts where the
-/// post's back ends), so they cannot fight, and there is no slot between
-/// them to look down: at six millimetres the slot showed the hollow behind
-/// the one-sided quad from any angle off the axis, at half of one it was
-/// still a dark hairline at 1440p. The quad is drawn from both sides too,
-/// so whatever hair a mesh's own bounds leave reads as plaster, never as
-/// the hollow.
-constexpr float kRevealFlush = 0.0F;
+/// cell's own boundary plane: a centimetre BEHIND it (negative), the plane
+/// the post's inner face stands on, and it runs on into the post's own
+/// depth, so the post stands a centimetre proud of the plaster reveal --
+/// a rebate -- and the quad is never coplanar with the post's face nor
+/// short of it. Six millimetres into the opening showed the hollow behind
+/// the one-sided quad from any angle off the axis; half of one was a dark
+/// hairline at 1440p; on the plane itself the tenth of a millimetre the
+/// mesh's bounds leave fought the post's face down its whole height. The
+/// quad is drawn from both sides too, so nothing between it and a leaf can
+/// ever read as the hollow.
+constexpr float kRevealFlush = -0.01F;
 /// The lintel sits this far BEHIND its posts' faces (negative: recessed)
 /// and this far down into their heads, so no face of it lies in a plane
 /// of theirs or within a hair of one: its underside on the post's top
@@ -212,6 +217,10 @@ constexpr float kHeaderInset = 0.02F;
 /// them. Between the two beams the soffit reads as a soffit the beams
 /// stand proud of, which is what a soffit between two beams is.
 constexpr float kSoffitLift = 0.03F;
+/// The soffit runs this far past each reveal into the jamb cell's stone
+/// course over the head, where its edge is buried: an edge that lay on the
+/// reveal's own plane tied with it and drew as a black hairline.
+constexpr float kSoffitBury = 0.02F;
 /// A gate's lintel beam height.
 constexpr float kGateLintelLift = 2.85F;
 /// The joist's half-height under a ceiling (the kit beam's section is 0.36).
@@ -1572,10 +1581,15 @@ private:
             if (soffit != nullptr) {
                 const float outN = proudOf[0] + kLintelProud - 0.5F * section;
                 const float inN = -(1.0F + proudOf[1] + kLintelProud - 0.5F * section);
-                const float xA = street.baseX + kTangentX[street.side] * streetLo + kNormalX[street.side] * outN;
-                const float zA = street.baseZ + kTangentZ[street.side] * streetLo + kNormalZ[street.side] * outN;
-                const float xB = street.baseX + kTangentX[street.side] * streetHi + kNormalX[street.side] * inN;
-                const float zB = street.baseZ + kTangentZ[street.side] * streetHi + kNormalZ[street.side] * inN;
+                // Across the opening and on past each reveal into the jamb
+                // cell's own stone course over the head, so its edge is
+                // buried and the reveal quad crosses it as a clean line.
+                const float aA = streetLo + kRevealFlush - kSoffitBury;
+                const float aB = streetHi - kRevealFlush + kSoffitBury;
+                const float xA = street.baseX + kTangentX[street.side] * aA + kNormalX[street.side] * outN;
+                const float zA = street.baseZ + kTangentZ[street.side] * aA + kNormalZ[street.side] * outN;
+                const float xB = street.baseX + kTangentX[street.side] * aB + kNormalX[street.side] * inN;
+                const float zB = street.baseZ + kTangentZ[street.side] * aB + kNormalZ[street.side] * inN;
                 soffitQuad(*soffit, std::min(xA, xB), std::min(zA, zB), std::max(xA, xB), std::max(zA, zB),
                            yBase + kDoorHeadHeight + kSoffitLift, soffitTint, gap.x, gap.y, farX, farY,
                            gap.z);
@@ -1831,9 +1845,12 @@ private:
             if (jambReveal) {
                 const DoorGap* g = gapAt(r.firstX + kSideDx[r.side], r.firstY + kSideDy[r.side], r.z);
                 const float section = std::max(0.01F, coreOf(*beam) * beam->scale);
-                const float outBack = finishOf(r.firstX, r.firstY, r.z, g->side).proud - 0.5F * section;
-                const float inBack =
-                    finishOf(r.firstX, r.firstY, r.z, opposite(g->side)).proud - 0.5F * section;
+                // To the shaft's back, and on into the shaft by the rebate,
+                // so the corner is closed inside the timber.
+                const float outBack =
+                    finishOf(r.firstX, r.firstY, r.z, g->side).proud - 0.5F * section - kRevealFlush;
+                const float inBack = finishOf(r.firstX, r.firstY, r.z, opposite(g->side)).proud -
+                                     0.5F * section - kRevealFlush;
                 lo = r.a0 - (r.revealA0 ? outBack : inBack);
                 hi = r.a1 + (r.revealA1 ? outBack : inBack);
             } else {

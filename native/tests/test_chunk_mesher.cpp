@@ -831,9 +831,10 @@ TEST_CASE("a door tile places the door frame") {
         // under either, and three centimetres over the head.
         const float back = proud - 0.03F - 0.5F * section;
         CHECK(p.instance.position.y == doctest::Approx(head + 0.03F));
-        CHECK(p.instance.scale.x * 2.5F == doctest::Approx(2.0F));
+        // Three centimetres past each reveal, into the stone over the head.
+        CHECK(p.instance.scale.x * 2.5F == doctest::Approx(2.0F + 0.06F));
         CHECK(p.instance.scale.z * 2.5F == doctest::Approx(1.0F + 2.0F * back));
-        CHECK(p.instance.position.x == doctest::Approx(11.0F));
+        CHECK(p.instance.position.x == doctest::Approx(11.0F - 0.03F));
         CHECK(p.instance.position.z == doctest::Approx(15.0F - back));
         CHECK(p.facing == doctest::Approx(render::kUndersideLift));
         CHECK(p.lightZ == 19);
@@ -2461,8 +2462,9 @@ TEST_CASE("the reveal is the post's own edge, and the room's plaster stops at it
     REQUIRE(plaster != nullptr);
     const StaticPlacements placed = placeStaticPieces(house.tiles, catalogue, {});
     // How far a post's back stands off the boundary plane: the finish's
-    // standoff less half the post's shaft.
-    const float back = plaster->standoff - 0.5F * beam->core * beam->scale;
+    // standoff less half the post's shaft -- and the quad runs a centimetre
+    // on into the shaft, the depth of the rebate it sits in.
+    const float back = plaster->standoff - 0.5F * beam->core * beam->scale + 0.01F;
     // The west jamb (10, 15): its east face is the reveal, on the plane
     // x = 11, the quad 6 mm into the opening, on the ground, from the
     // street post's back (z = 16 + back) to the room post's back (z = 15
@@ -2479,10 +2481,10 @@ TEST_CASE("the reveal is the post's own edge, and the room's plaster stops at it
             continue;
         }
         ++reveals;
-        // On the plane the post's inner face stands on, never overlapping
-        // the post (it starts where the post's back ends), and drawn from
-        // both sides so no hair between the two can show the hollow.
-        CHECK(p.instance.position.x == doctest::Approx(east ? 11.0F : 13.0F));
+        // A centimetre behind the plane the post's inner face stands on --
+        // the rebate -- running on into the post's depth, and drawn from
+        // both sides so nothing between it and a leaf can show the hollow.
+        CHECK(p.instance.position.x == doctest::Approx(east ? 11.0F - 0.01F : 13.0F + 0.01F));
         CHECK(p.instance.scale.z < 0.0F);
         CHECK(std::fabs(p.instance.scale.x) * plaster->width == doctest::Approx(1.0F + 2.0F * back));
         CHECK(p.instance.position.y == doctest::Approx(render::bandSurface(19)));
