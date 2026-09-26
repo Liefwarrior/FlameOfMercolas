@@ -782,11 +782,12 @@ TEST_CASE("a door tile places the door frame") {
             continue;
         }
         ++lintels;
-        // Two millimetres prouder than its posts and one lower than their
-        // heads: no face of it coplanar with a face of theirs.
-        CHECK((p.instance.position.z == doctest::Approx(streetZ + 0.002F) ||
-               p.instance.position.z == doctest::Approx(roomZ - 0.002F)));
-        CHECK(p.instance.position.y == doctest::Approx(head + 0.5F * lintel->core * lintel->scale - 0.001F));
+        // Three centimetres behind its posts' faces and three down into
+        // their heads: no face of it in a plane of theirs, nor within the
+        // hair the depth buffer cannot tell apart.
+        CHECK((p.instance.position.z == doctest::Approx(streetZ - 0.03F) ||
+               p.instance.position.z == doctest::Approx(roomZ + 0.03F)));
+        CHECK(p.instance.position.y == doctest::Approx(head + 0.5F * lintel->core * lintel->scale - 0.03F));
         CHECK(p.instance.pitch == doctest::Approx(3.14159265F * 0.5F));
         CHECK(p.instance.scale.y * lintel->height == doctest::Approx(2.0F + 2.0F * section));
         CHECK(p.mode == kDrawFaced);
@@ -827,9 +828,9 @@ TEST_CASE("a door tile places the door frame") {
         }
         ++soffits;
         // From the room lintel's back face to the street lintel's: never
-        // under either.
-        const float back = proud + 0.002F - 0.5F * section;
-        CHECK(p.instance.position.y == doctest::Approx(head + 0.004F));
+        // under either, and three centimetres over the head.
+        const float back = proud - 0.03F - 0.5F * section;
+        CHECK(p.instance.position.y == doctest::Approx(head + 0.03F));
         CHECK(p.instance.scale.x * 2.5F == doctest::Approx(2.0F));
         CHECK(p.instance.scale.z * 2.5F == doctest::Approx(1.0F + 2.0F * back));
         CHECK(p.instance.position.x == doctest::Approx(11.0F));
@@ -2432,11 +2433,11 @@ TEST_CASE("a door wears two jambs, on the cells that flank it, slim and cut to t
     std::size_t heads = 0;
     for (const StaticPlacement& p : placed.placements) {
         if (p.role == PieceRole::Lintel && p.lightZ == 19 &&
-            (p.instance.position.z == doctest::Approx(16.0F + proud + 0.002F) ||
-             p.instance.position.z == doctest::Approx(15.0F - proud - 0.002F))) {
+            (p.instance.position.z == doctest::Approx(16.0F + proud - 0.03F) ||
+             p.instance.position.z == doctest::Approx(15.0F - proud + 0.03F))) {
             ++heads;
             CHECK(p.instance.position.y ==
-                  doctest::Approx(render::bandSurface(19) + kDoorHeadHeight + half - 0.001F + lintel->lift));
+                  doctest::Approx(render::bandSurface(19) + kDoorHeadHeight + half - 0.03F + lintel->lift));
         }
     }
     CHECK(heads == 2);

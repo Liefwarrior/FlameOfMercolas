@@ -192,20 +192,26 @@ constexpr float kLeafOffFacade = 0.06F;
 /// so whatever hair a mesh's own bounds leave reads as plaster, never as
 /// the hollow.
 constexpr float kRevealFlush = 0.0F;
-/// The lintel stands this much prouder than its posts and this much lower
-/// than their heads, so no face of it is coplanar with a face of theirs:
-/// the same beam at the same standoff, its underside on the post's top,
-/// fought that top along the whole junction.
-constexpr float kLintelProud = 0.002F;
-constexpr float kLintelSink = 0.001F;
+/// The lintel sits this far BEHIND its posts' faces (negative: recessed)
+/// and this far down into their heads, so no face of it lies in a plane
+/// of theirs or within a hair of one: its underside on the post's top
+/// dotted along the junction, two millimetres proud and one sunk still
+/// did, because the depth buffer at four metres cannot tell two millimetres
+/// apart. Three centimetres it can. The posts' top three centimetres are
+/// inside the beam; the beam's face sits a finger behind theirs.
+constexpr float kLintelProud = -0.03F;
+constexpr float kLintelSink = 0.03F;
 /// The wall over a door's head starts this far above the head, inside the
 /// lintel's body: on the head exactly, its bottom edge lay in the lintel's
 /// underside plane and drew as a hairline of plaster under the beam.
 constexpr float kHeaderInset = 0.02F;
 /// The soffit over a doorway lies this far above the head, inside the two
-/// lintels' bodies, so it closes the box between them without touching
-/// either underside.
-constexpr float kSoffitLift = 0.004F;
+/// lintels' bodies: three centimetres, because the depth buffer at play
+/// distance cannot tell two surfaces four millimetres apart, and the
+/// lintels' collars hang under the head where the soffit's edge crosses
+/// them. Between the two beams the soffit reads as a soffit the beams
+/// stand proud of, which is what a soffit between two beams is.
+constexpr float kSoffitLift = 0.03F;
 /// A gate's lintel beam height.
 constexpr float kGateLintelLift = 2.85F;
 /// The joist's half-height under a ceiling (the kit beam's section is 0.36).
