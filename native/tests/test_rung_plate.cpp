@@ -853,8 +853,8 @@ TEST_CASE("the drawn wiring: under a plate the alert row's amber is well under t
             ++differing;
             const Rgb pa = unpackRgb(a.pixels()[i]);
             const Rgb pb = unpackRgb(b.pixels()[i]);
-            whole += std::max(0.0F, pa.r - pa.b);
-            under += std::max(0.0F, pb.r - pb.b);
+            whole += static_cast<double>(std::max(0.0F, pa.r - pa.b));
+            under += static_cast<double>(std::max(0.0F, pb.r - pb.b));
         }
     }
     INFO("differing ", differing, " whole ", whole, " under ", under);
