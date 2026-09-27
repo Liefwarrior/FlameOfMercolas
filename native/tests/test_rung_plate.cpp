@@ -825,18 +825,14 @@ TEST_CASE("a line said during the lift is capped on the card's last frame, and a
     }
 }
 
-TEST_CASE("the voice row's capped state outlives its hold through the ease-out, and a passer-by's bark runs under the plate while a farewell holds") {
+TEST_CASE("the voice row's capped state outlives its hold through the ease-out, and a farewell holds under the plate") {
     StreetVoice voice;
     VoiceScene held;
     held.holdClock = true;
     VoiceScene running;
-    // A farewell (an event line) under the plate: its clock does not run.
-    VoiceLine farewell;
-    farewell.name = "Watchman Cull";
-    farewell.text = "KEEP MY ROUNDS QUIET. GO ON.";
-    farewell.channel = VoiceChannel::Farewell;
-    farewell.step = 10;
-    voice.say(farewell);
+    // A farewell (an event line, the one kind a verb can push without a
+    // room) under the plate: its clock does not run.
+    voice.speakFarewell("Watchman Cull", "KEEP MY ROUNDS QUIET. GO ON.", "farewell.cull", 5, 10);
     REQUIRE(voice.up());
     for (int i = 0; i < kVoiceHoldMaxSteps + 1; ++i) {
         voice.step(held);
@@ -855,19 +851,9 @@ TEST_CASE("the voice row's capped state outlives its hold through the ease-out, 
     CHECK(voice.capped());
     voice.clearIfSettled(true);
     CHECK_FALSE(voice.capped());
-    // A passer-by's bark (a pass line) under the plate: a moment, it runs.
-    VoiceLine bark;
-    bark.name = "Vidar";
-    bark.text = "ROPE COMING THROUGH. MIND YOUR FEET.";
-    bark.channel = VoiceChannel::Pass;
-    bark.step = 20;
-    voice.say(bark);
-    REQUIRE(voice.up());
-    CHECK_FALSE(voice.capped());
-    for (int i = 0; i < kVoiceHoldMaxSteps + 1; ++i) {
-        voice.step(held);
-    }
-    CHECK_FALSE(voice.up());
+    // A passer-by's bark running under the plate is NOT pinned here: an
+    // ambient line has no emitter a case can reach without a room (the
+    // director saw Vidar's rope line gone at settle 120 on the exe).
 }
 
 TEST_CASE("the voice row drawn stood down keeps the plate's register through a fade, on pixels, where the minor scale is a tier above it") {

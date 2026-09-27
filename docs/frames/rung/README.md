@@ -738,8 +738,11 @@ level that folded into a card with no tick row was told nowhere.
   `RungLineResult::aim` doc; the leap and mantle moments are not pinned;
   the slab's "quarter" is not the pin's number; Finch's fence is cited from
   where the game says it.
-- **Pinned**: the head block on the card's axis for all five heads; a pass
-  bark running under the plate while a farewell holds.
+- **Pinned**: the head block on the card's axis for all five heads; a
+  farewell holding under the plate. **Unpinned, declared**: a pass bark
+  running under the plate -- an ambient line has no emitter a case can
+  reach without a room (`StreetVoice::say` is the step's own, private);
+  the director saw Vidar's rope line gone at settle 120 on the exe.
 - **Declared and left**: the head block's height depends on the card's row
   count (the director: a topped card seats three units higher; two queued
   cards of different depth would make the gold hop -- the seat is the
