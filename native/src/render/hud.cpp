@@ -471,12 +471,16 @@ void drawTextPlate(Framebuffer& target, int x0, int y0, int x1, int y1, int bord
     border = std::clamp(border, 1, std::min(x1 - x0, y1 - y0) / 2);
     // THE FIELD, THEN THE FOUR BORDER RAILS -- the identical order the
     // retired renderer's own box() drew in, so the border is never eaten by
-    // the fill it is drawn over.
+    // the fill it is drawn over. THE SIDE RAILS RUN BETWEEN THE TOP AND THE
+    // BOTTOM, not over them: a rail drawn twice at the corner is invisible
+    // at full alpha and a brighter dot at any other (a plate at a quarter
+    // under the rung plate wore four corner dots at nearly half).
     target.fillRect(x0, y0, x1 - x0, y1 - y0, kPlateBlack, alpha);
     target.fillRect(x0, y0, x1 - x0, border, kPlateBone, alpha);                 // top
     target.fillRect(x0, y1 - border, x1 - x0, border, kPlateBone, alpha);        // bottom
-    target.fillRect(x0, y0, border, y1 - y0, kPlateBone, alpha);                 // left
-    target.fillRect(x1 - border, y0, border, y1 - y0, kPlateBone, alpha);        // right
+    const int sideH = std::max(0, (y1 - border) - (y0 + border));
+    target.fillRect(x0, y0 + border, border, sideH, kPlateBone, alpha);          // left
+    target.fillRect(x1 - border, y0 + border, border, sideH, kPlateBone, alpha); // right
 }
 
 namespace {
