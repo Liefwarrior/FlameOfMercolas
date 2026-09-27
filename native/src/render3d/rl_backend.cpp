@@ -219,9 +219,11 @@ struct StaticModel {
 /// S LANE. The four blend corners of a piece and their spans: the light
 /// at local (x, z) = (from, fromZ), (to, fromZ), (from, toZ), (to, toZ).
 /// The late glass pass runs only where the fog takes a real share off a
-/// pane (its alpha under this): an overcast's trace of a veil is not a fog
-/// to see a lamp through.
-constexpr unsigned char kLateGlassBelow = 250;
+/// pane (its alpha under this, a share under 0.94): a night fog past about
+/// a metre and a half qualifies; an overcast's trace of a veil (a share of
+/// 0.97 at four metres, 0.9 at twenty) does not until twelve metres out,
+/// where it is harmless either way with the halos drawn last.
+constexpr unsigned char kLateGlassBelow = 240;
 
 struct PieceTints {
     Color a{};

@@ -3225,8 +3225,8 @@ TEST_CASE("the morning: more household panes are lit at five than at two, and mo
 TEST_CASE("a lit pane lays its candle on the wall cells round it, and each house burns at its own strength") {
     // THE DIRECTOR'S SECOND, THIRD AND FIFTH (fix round one). The spill is
     // a map of cells (WorldScene::spill), not a per-board constant: a lit
-    // pane's own wall cell in full, the two along the wall and the street
-    // cell before it at half -- so a plaster window casts it as a timber
+    // pane's own wall cell in full, the cells along the wall and out into
+    // the street easing off -- so a plaster window casts it as a timber
     // one does, the chunk colour stage reads the same map, and two pieces
     // meeting at a cut share one value across the seam. And a lit pane's
     // tint is the law's candle at the house's own strength.
@@ -3376,10 +3376,13 @@ TEST_CASE("two run pieces meeting at a cut read one light there: no seam on a li
             if (a < 0.0F || b < 0.0F) {
                 continue;
             }
-            // One rounding step of the darker tint, and a little.
+            // Both sides are the same light through their own tint's
+            // rounding: half a level each side, and nothing else. (The
+            // third round's module extra stepped 0.02 to 0.03 here and
+            // would fail this on every pair.)
             const std::uint8_t tp = channel == 0 ? p.instance.tint.r : channel == 1 ? p.instance.tint.g : p.instance.tint.b;
             const std::uint8_t tq = channel == 0 ? q.instance.tint.r : channel == 1 ? q.instance.tint.g : q.instance.tint.b;
-            const float tolerance = 0.02F + 1.5F / static_cast<float>(std::min(tp, tq));
+            const float tolerance = 0.55F / static_cast<float>(tp) + 0.55F / static_cast<float>(tq);
             seam = seam || std::fabs(a - b) > tolerance;
         }
         if (seam) {
@@ -3429,28 +3432,46 @@ TEST_CASE("a house lit all night banks its candles in the small hours") {
         }
     };
     std::vector<std::uint8_t> gullAtTen;
+    std::vector<std::uint8_t> gullAtTwo;
     std::vector<std::uint8_t> gullAtThree;
+    std::vector<std::uint8_t> gullAtFive;
+    std::vector<std::uint8_t> gullAtSix;
     litPanes(22, HouseKind::Lit, gullAtTen);
+    litPanes(2, HouseKind::Lit, gullAtTwo);
     litPanes(3, HouseKind::Lit, gullAtThree);
+    litPanes(5, HouseKind::Lit, gullAtFive);
+    litPanes(6, HouseKind::Lit, gullAtSix);
     REQUIRE(gullAtTen.size() >= 20);
-    // Still lit -- the same count -- and every pane dimmer.
+    // Still lit -- the same count -- at every hour of the night.
+    CHECK(gullAtTwo.size() == gullAtTen.size());
     CHECK(gullAtThree.size() == gullAtTen.size());
+    CHECK(gullAtFive.size() == gullAtTen.size());
+    CHECK(gullAtSix.size() == gullAtTen.size());
+    // THE SIM'S OWN HOURS (sim/tavern.hpp): the doors shut at two with the
+    // fire still up -- two is the evening's row; at three the fire is
+    // banked and the panes with it; and they stay banked at five and at
+    // six, until daylight takes every pane, because the fire is banked to
+    // ten and the doors shut to eleven.
+    const auto over = [&warm](const std::vector<std::uint8_t>& reds) {
+        std::size_t n = 0;
+        for (const std::uint8_t r : reds) {
+            n += r > static_cast<std::uint8_t>(warm.r * 0.56F) ? 1 : 0;
+        }
+        return n;
+    };
+    CHECK(over(gullAtTen) * 2 > gullAtTen.size());
+    CHECK(over(gullAtTwo) == over(gullAtTen));
+    CHECK(over(gullAtThree) == 0);
+    CHECK(over(gullAtFive) == 0);
+    CHECK(over(gullAtSix) == 0);
     std::size_t dimmer = 0;
     for (std::size_t k = 0; k < std::min(gullAtTen.size(), gullAtThree.size()); ++k) {
         dimmer += gullAtThree[k] < gullAtTen[k] ? 1 : 0;
     }
     CHECK(dimmer == gullAtThree.size());
-    // At three, none over 0.55 of the tint; at ten, most over it.
-    std::size_t overAtThree = 0;
-    std::size_t overAtTen = 0;
-    for (const std::uint8_t r : gullAtThree) {
-        overAtThree += r > static_cast<std::uint8_t>(warm.r * 0.56F) ? 1 : 0;
+    for (std::size_t k = 0; k < std::min(gullAtTen.size(), gullAtTwo.size()); ++k) {
+        CHECK(gullAtTwo[k] == gullAtTen[k]);
     }
-    for (const std::uint8_t r : gullAtTen) {
-        overAtTen += r > static_cast<std::uint8_t>(warm.r * 0.56F) ? 1 : 0;
-    }
-    CHECK(overAtThree == 0);
-    CHECK(overAtTen * 2 > gullAtTen.size());
     // A household's candle, up at three (an owl), is not banked.
     std::vector<std::uint8_t> ownersAtThree;
     litPanes(3, HouseKind::Household, ownersAtThree);
@@ -3524,6 +3545,62 @@ TEST_CASE("in a fog a lit pane carries the fog's share in its alpha, by the eye'
     CHECK(lights == lightsClear);
     CHECK(nearer >= 1);
     CHECK(farthestAlpha < 160);
+
+    // THE NEAR FADE (kHaloNearGone/Full): a halo's alpha rises with the
+    // eye's distance -- from a metre off the Gull's door lantern it is a
+    // fraction of what it is from five and a half.
+    params.weather = render::Weather{};
+    const auto haloAlphaFrom = [&](float x, float y) {
+        render::Camera close = spawnCamera();
+        close.x = x;
+        close.y = y;
+        close.yaw = 180.0F * 3.14159265358979323846F / 180.0F;
+        world.refresh(scene, close, 320.0F / 180.0F, params);
+        std::size_t best = 0;
+        float bestDistance = 1.0e9F;
+        for (const StaticInstance& at : scene.statics) {
+            if (at.mode != kDrawHalo) {
+                continue;
+            }
+            const float dx = at.position.x - close.x;
+            const float dz = at.position.z - close.y;
+            const float d = std::sqrt(dx * dx + dz * dz);
+            if (d < bestDistance) {
+                bestDistance = d;
+                best = at.tint.a;
+            }
+        }
+        return best;
+    };
+    const std::size_t nearAlpha = haloAlphaFrom(152.5F, 64.2F);
+    const std::size_t farAlpha = haloAlphaFrom(152.5F, 59.0F);
+    MESSAGE("The nearest halo's alpha: " << nearAlpha << " from a metre, " << farAlpha << " from six");
+    CHECK(nearAlpha * 3 < farAlpha);
+    CHECK(farAlpha >= 150);
+}
+
+TEST_CASE("the spill goes out with the panes: fewer cells carry a candle at three than at ten") {
+    // "Goes out with the pane", pinned AT NIGHT (round one's fourth stayed
+    // pinned only at noon): the map is rebuilt from the panes that are up,
+    // and as the households go to bed between ten and three the cells that
+    // carry a candle fall with them.
+    const sim::TileQuery tiles(docksWorld());
+    const StaticCatalogue& catalogue = shippedCatalogue();
+    const std::vector<render::Lamp> lamps =
+        render::loadLamps(content::contentDir(), sim::docks::kWorldName);
+    WorldScene world(tiles, proceduralAtlas(), nullptr, &catalogue, &lamps);
+    SceneDescription scene;
+    WorldSceneParams params;
+    params.timeOfDaySeconds = 22 * 3600;
+    world.refresh(scene, spawnCamera(), 320.0F / 180.0F, params);
+    const std::size_t cellsAtTen = world.spill().size();
+    params.timeOfDaySeconds = 3 * 3600;
+    world.refresh(scene, spawnCamera(), 320.0F / 180.0F, params);
+    const std::size_t cellsAtThree = world.spill().size();
+    MESSAGE("Cells carrying a candle: " << cellsAtTen << " at ten, " << cellsAtThree << " at three");
+    CHECK(cellsAtThree < cellsAtTen);
+    CHECK(cellsAtThree * 3 < cellsAtTen * 2);
+    CHECK(cellsAtThree > 0);
 }
 
 TEST_CASE("the surface clamp keeps its hue") {
@@ -3549,30 +3626,50 @@ TEST_CASE("the surface clamp keeps its hue") {
     WorldSceneParams params;
     params.timeOfDaySeconds = 22 * 3600;
     world.refresh(scene, spawnCamera(), 320.0F / 180.0F, params);
+    // THE CONSUMER, PINNED TO THE FORMULA (the round-four auditor: a ratio
+    // bound held under the per-channel clamp too). For every point piece on
+    // one cell -- a barrel, a crate, a post -- the relight must give
+    // exactly clampLight(ambient + pool + candle, 1.15) x tint, itself
+    // scaled as one where it would clip at 255, to the rounding step; the
+    // pool and the candle are read back off the scene's own fields. A
+    // per-channel clamp on either step gives another number wherever a
+    // lamp's own cell stands over the cap, which on the Docks at ten is
+    // dozens of pieces.
+    const render::SkyState sky = render::skyAt(22 * 3600);
+    REQUIRE(world.pool() != nullptr);
     std::size_t checked = 0;
+    std::size_t overCap = 0;
     for (std::size_t i = 0; i < world.placements().size(); ++i) {
         const StaticPlacement& p = world.placements()[i];
-        if (p.selfLit || p.role == PieceRole::PaneTimber || p.instance.tint.r == 0) {
+        if (p.selfLit || p.gradient || p.bilinear || p.mode != kDrawShaded || p.lightX != p.lightX2 ||
+            p.lightY != p.lightY2 || p.instance.tint.r == 0 || std::fabs(p.facing - 1.0F) > 1.0e-6F) {
             continue;
         }
-        const Rgba8 lit = world.relitTint(i, 0);
-        if (lit.r < 200) {
-            continue;  // not at the clamp
+        render::Rgb light = world.pool()->at(p.lightX, p.lightY, p.lightZ);
+        const auto candle = world.spill().find(cellKey(p.lightX, p.lightY, p.lightZ));
+        if (candle != world.spill().end()) {
+            light.r += candle->second.r;
+            light.g += candle->second.g;
+            light.b += candle->second.b;
         }
+        light = render::Rgb{light.r + sky.ambient.r, light.g + sky.ambient.g, light.b + sky.ambient.b};
+        const bool atCap = std::max(light.r, std::max(light.g, light.b)) > 1.15F;
+        const render::Rgb clamped = render::clampLight(light, 1.15F);
+        const render::Rgb colour = render::clampLight(
+            render::Rgb{clamped.r * static_cast<float>(p.instance.tint.r),
+                        clamped.g * static_cast<float>(p.instance.tint.g),
+                        clamped.b * static_cast<float>(p.instance.tint.b)},
+            255.0F);
+        const Rgba8 lit = world.relitTint(i, 0);
         ++checked;
-        // Neither green nor blue over red exceeds the tint's own ratio by
-        // more than rounding: the light that got here was scaled as one.
-        // Under a per-channel clamp on a warm light red clips first and
-        // green climbs, which is exactly what this catches.
-        const float tintGr = static_cast<float>(p.instance.tint.g) / static_cast<float>(p.instance.tint.r);
-        const float litGr = static_cast<float>(lit.g) / static_cast<float>(lit.r);
-        CHECK(litGr <= tintGr + 0.02F);
-        const float tintRatio = static_cast<float>(p.instance.tint.b) / static_cast<float>(p.instance.tint.r);
-        const float litRatio = static_cast<float>(lit.b) / static_cast<float>(lit.r);
-        CHECK(litRatio <= tintRatio + 0.02F);
+        overCap += atCap ? 1 : 0;
+        CHECK(std::abs(static_cast<int>(lit.r) - static_cast<int>(colour.r + 0.5F)) <= 1);
+        CHECK(std::abs(static_cast<int>(lit.g) - static_cast<int>(colour.g + 0.5F)) <= 1);
+        CHECK(std::abs(static_cast<int>(lit.b) - static_cast<int>(colour.b + 0.5F)) <= 1);
     }
-    MESSAGE("Pieces at the clamp at ten: " << checked);
-    CHECK(checked >= 20);
+    MESSAGE("Point pieces pinned to the formula at ten: " << checked << ", " << overCap << " over the cap");
+    CHECK(checked >= 100);
+    CHECK(overCap >= 10);
     // The chunks too: on the same Docks at ten, no coloured vertex of any
     // chunk is greener than it is red (the lamps are warm, the ambient a
     // cold near-black, the candle amber: nothing lights green).

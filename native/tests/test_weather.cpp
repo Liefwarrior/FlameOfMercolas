@@ -607,10 +607,12 @@ TEST_CASE("the chunk version moves with the weather, and a clear version is what
 }
 
 TEST_CASE("the veil is nested shells round the eye, far to near, and none at all in clear air") {
-    // Twenty-six shells since the night-light lane's third pass: the inner
-    // ones 0.4 m apart so a shell's cut across a near wall is a small step.
-    REQUIRE(veilShellCount() == 26U);
-    CHECK(veilShellRadius(0) == doctest::Approx(0.6F));
+    // Twenty-four shells since the night-light lane's third pass: three
+    // thin ones inside two metres so a shell's cut across a near wall is a
+    // small step, every spacing unlike the last so the eight-bit blends do
+    // not all round one way, none over a tenth of a veil inside ten metres.
+    REQUIRE(veilShellCount() == 24U);
+    CHECK(veilShellRadius(0) == doctest::Approx(0.7F));
     CHECK(veilShellRadius(veilShellCount() - 1) == doctest::Approx(56.0F));
     for (std::size_t shell = 1; shell < veilShellCount(); ++shell) {
         CHECK(veilShellRadius(shell) > veilShellRadius(shell - 1));
@@ -646,7 +648,7 @@ TEST_CASE("the veil is nested shells round the eye, far to near, and none at all
     // innermost last, so the blend composes outside in.
     REQUIRE(!veil.indices.empty());
     CHECK(radiusOf(veil, veil.indices.front()) == doctest::Approx(56.0F).epsilon(0.01));
-    CHECK(radiusOf(veil, veil.indices.back()) == doctest::Approx(0.6F).epsilon(0.01));
+    CHECK(radiusOf(veil, veil.indices.back()) == doctest::Approx(0.7F).epsilon(0.01));
     CHECK(radiusOf(veil, veil.indices.front()) > radiusOf(veil, veil.indices.back()));
     // Below the horizon a ring is the fog's colour; at the zenith the sky's
     // own, so the sky seen through every shell is still the sky.

@@ -101,12 +101,10 @@ constexpr float kPaneLitAbove = 0.12F;
 /// wall beside a window came out brighter than the pane that lit it and
 /// stepped hard at every cell (the round-two player's first and second):
 /// a candle behind glass is a small light. The pane's own wall cell takes
-/// this; the cells along the wall take kSpillSideShare of it at one tile
-/// and a tail at two; the street takes more, because the light leaves
-/// through the glass -- the cell before the window kSpillStreetShare, its
-/// two neighbours and the cell beyond it less again (buildSpill). The
-/// chunk colour stage blends the map across each vertex's four cells and
-/// a run piece's cuts fall between cells, so nothing steps at a seam.
+/// this; the cells along the wall and out into the street take the shares
+/// below (buildSpill). The chunk colour stage blends the map across each
+/// vertex's four cells and a run piece's cuts fall between cells, so
+/// nothing steps at a seam.
 ///
 /// ROUND THREE: wider and gentler. The chunk stage blends the map at each
 /// vertex, and a quad whose four corners differ by much shows its diagonal
@@ -171,21 +169,36 @@ constexpr float kHaloFogShare = 0.5F;
 /// draws per pane, so a tavern's row of windows is not one flat strip.
 constexpr float kCandleSpread = 0.32F;
 /// THE SMALL HOURS. A house lit all night (the Gull, the Mission, the
-/// Watch-Post) keeps a light whatever the hour, but between one and half
-/// past five it is the taproom banked and a watchman's candle, not the
-/// evening's full row: its panes burn at this share of their strength.
-/// The sim's own tavern has its hearth banked and its candles out by then
-/// (gull=0 in the capture summary at five), and the street should say so
-/// -- it is also what makes five o'clock a different street from two on a
-/// frontage that never goes dark (the director's fourth, three rounds).
+/// Watch-Post) keeps a light whatever the hour, but from three in the
+/// morning until daylight takes every pane it is the taproom banked and a
+/// watchman's candle, not the evening's full row: its panes burn at this
+/// share of their strength. The hours are the sim's own tavern's
+/// (sim/tavern.hpp): its doors shut at two, its fire burns to three and is
+/// banked to ten, its doors stay shut to eleven -- so the panes bank at
+/// three and never come back up before first light (the round-four
+/// auditor: a first cut banked from one and jumped back to full at half
+/// past five, against the sim at both ends). It is also what makes five
+/// o'clock a different street from two on a frontage that never goes dark
+/// (the director's fourth, three rounds).
 constexpr float kLitHouseSmallHours = 0.55F;
-constexpr float kSmallHoursFrom = 25.0F;
-constexpr float kSmallHoursTo = 29.5F;
+constexpr float kSmallHoursFrom = 27.0F;
+constexpr float kSmallHoursTo = 36.0F;
+/// The banking eases in over the three quarters of an hour before three
+/// (the last drinkers out, the fire let down), not in one step on the
+/// minute: the relight runs on the minute, and half the light gone in one
+/// frame is a pop (the fourth round's director).
+constexpr float kSmallHoursEase = 0.75F;
 
-/// The small hours, on the noon-to-noon clock the light law keeps.
-[[nodiscard]] bool inSmallHours(float hour) noexcept {
+/// How far into the small hours, on the noon-to-noon clock the light law
+/// keeps: 0 through the evening, easing to 1 over kSmallHoursEase before
+/// kSmallHoursFrom, 1 from there until kSmallHoursTo, 0 after.
+[[nodiscard]] float smallHoursAt(float hour) noexcept {
     const float h = hour < 12.0F ? hour + 24.0F : hour;
-    return h >= kSmallHoursFrom && h < kSmallHoursTo;
+    if (h >= kSmallHoursTo) {
+        return 0.0F;
+    }
+    const float t = std::clamp((h - (kSmallHoursFrom - kSmallHoursEase)) / kSmallHoursEase, 0.0F, 1.0F);
+    return t * t * (3.0F - 2.0F * t);
 }
 
 /// THE LANTERN'S METAL AFTER DARK: the cap, the cage and the base are lit
@@ -349,15 +362,22 @@ namespace {
 /// out with distance, where what contrast is left is small and a step is
 /// not. Fifty-six tiles is short of the chunk reach (64) and past anything
 /// a frame resolves through a fog worth drawing.
-/// NIGHT LIGHT, THIRD PASS: the inner shells are 0.4 m apart to 3 m, then
-/// half a metre to 5.5. A shell cuts every wall and pane nearer than its
-/// radius in a hard step of its own alpha -- one shell at 1.5 m was a
-/// sixteen-percent edge across the plaster above the Gull's door and a
-/// line sliding across every near pane as you walked (three rounds of the
-/// player critic, read as the halo's rim). Thinner shells, smaller steps.
-constexpr float kVeilRadii[] = {0.6F,  1.0F,  1.4F,  1.8F,  2.2F,  2.6F,  3.0F,  3.5F,  4.0F,
-                                4.5F,  5.0F,  5.5F,  6.75F, 8.0F,  9.5F,  11.0F, 13.0F, 15.0F,
-                                17.5F, 20.0F, 23.0F, 27.0F, 32.0F, 38.0F, 46.0F, 56.0F};
+/// NIGHT LIGHT, THIRD PASS: three thin shells inside two metres, then the
+/// ladder. A shell cuts every wall and pane nearer than its radius in a
+/// hard step of its own alpha -- one shell at 1.5 m was a sixteen-percent
+/// edge across the plaster above the Gull's door and a line sliding across
+/// every near pane as you walked (three rounds of the player critic, read
+/// as the halo's rim). Thinner shells there, smaller steps -- and every
+/// spacing DIFFERENT from the last, growing by about a tenth a shell: a
+/// first cut of the third pass at twenty-six shells 0.4 m apart blended
+/// the same alpha the same way twenty-six times in eight bits and drifted
+/// the fogged alley olive (the fourth round's player); shells of unequal
+/// alpha round each way and the drift averages out. Twenty-four, against
+/// the weather lane's nineteen, with no step over a tenth inside ten
+/// metres (the fourth round's director: a twelve-percent band at eight).
+constexpr float kVeilRadii[] = {0.7F,  1.2F,  1.8F,  2.5F,  3.3F,  4.2F,  5.1F,  6.0F,
+                                6.9F,  7.8F,  8.8F,  9.9F,  11.2F, 12.6F, 14.3F, 16.3F,
+                                18.6F, 21.3F, 24.5F, 28.3F, 33.0F, 39.0F, 46.0F, 56.0F};
 constexpr std::size_t kVeilShells = sizeof(kVeilRadii) / sizeof(kVeilRadii[0]);
 /// Each shell's rings, as elevations in degrees, pole to pole. Denser round
 /// the horizon, where the fog's colour turns into the sky's. The poles are
@@ -568,7 +588,10 @@ namespace {
                                  static_cast<std::uint32_t>(p.insideZ) * 83492791U ^ 0x9E3779B9U)
             : p.houseLot;
     const float own = 1.0F - kCandleSpread * static_cast<float>((draw >> 4) & 0xFFU) / 255.0F;
-    return p.house == HouseKind::Lit && inSmallHours(hour) ? own * kLitHouseSmallHours : own;
+    if (p.house != HouseKind::Lit) {
+        return own;
+    }
+    return own * (1.0F - (1.0F - kLitHouseSmallHours) * smallHoursAt(hour));
 }
 
 }  // namespace
@@ -618,9 +641,8 @@ void WorldScene::buildSpill(const ChunkLighting& lighting) {
         }
         strength = candleStrengthOf(p, hour);
         // The pane's own wall cell; along the wall (the tangent is the
-        // normal turned) one tile and a tail at two; out into the street
-        // (the normal) the cell before the window, its two neighbours and
-        // the row beyond.
+        // normal turned) three tiles easing off; out into the street (the
+        // normal) three rows, each easing off along it.
         const std::int32_t nx = p.paneX - p.insideX;
         const std::int32_t ny = p.paneY - p.insideY;
         const std::int32_t tx = -ny;

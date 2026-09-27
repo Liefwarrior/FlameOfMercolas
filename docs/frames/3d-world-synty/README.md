@@ -670,7 +670,8 @@ auditor 7).** What they found and what moved:
   lantern colour came out a pale beige-grey. The pool has its own deeper
   warmths (`kLanternPoolColour`, `kFirePoolColour`), a wider core (1.4
   tiles at 0.7 share) and a peak a little over the law's (`kPoolPeakScale`,
-  under the 1.15 surface clamp), and it gutters with the wind as the halos
+  under the pieces' 1.15 surface clamp; the chunks, bodies and items clamp
+  at one), and it gutters with the wind as the halos
   do (`SkyState::haloScale`) -- a candle behind glass does not. Its field
   normalises the lamps' hue to a PEAK of one, not the law's mean of one: the
   law's field lifts a lantern's red to 1.25 of the intensity and clips it per
@@ -775,10 +776,15 @@ seven and what moved:
   never the fan: it is where the weather lane's innermost fog shell (1.5 m
   round the eye) cut the plaster above the Gull's door, a sixteen-percent
   step of that shell's own alpha, and the line that slid across every near
-  pane as you walked was the same shell crossing the glass. The inner
-  shells are 0.4 m apart to three metres now and half a metre to five and a
-  half (`kVeilRadii`, twenty-six shells), forty-eight round, so each cut is
-  a small step on a curve; the weather's own test pins the count.
+  pane as you walked was the same shell crossing the glass. Three thin
+  shells stand inside two metres now (0.7, 1.2, 1.8) and the ladder runs on
+  from 2.5 growing by about a tenth a shell (`kVeilRadii`, twenty-four
+  shells, no step over a tenth of a veil inside ten metres), forty-eight
+  round, so each cut is a small step on a curve; the weather's own test
+  pins the count. Every spacing unlike the last on purpose: a first cut of
+  this round at twenty-six shells 0.4 m apart blended the same alpha the
+  same way twenty-six times in eight bits and drifted the fogged alley
+  olive (the fourth round's player); unequal alphas round each way.
 - *No seam at a cut.* The kit window module's ends carried a share of the
   pane's cell that its neighbours' ends did not, so every lit window on the
   quay front stood on a panel a step brighter or darker than the next. The
@@ -796,11 +802,29 @@ seven and what moved:
   but the sim's own tavern has its hearth banked and its candles out by
   five (the capture summary's gull=0), while its panes burned the evening's
   full row -- and on a frontage that never goes dark, two o'clock was five
-  o'clock. Between one and half past five a house lit all night burns at
-  `kLitHouseSmallHours` (0.55) of its strength: the taproom banked and a
-  watchman's candle. Households are untouched. Pinned: every one of the
-  Gull's panes is dimmer at three than at ten and none over the share; an
-  owl's candle is not.
+  o'clock. From three in the morning until daylight takes every pane, a
+  house lit all night burns at `kLitHouseSmallHours` (0.55) of its
+  strength: the taproom banked and a watchman's candle. The hours are the
+  sim's tavern's own (`sim/tavern.hpp`: doors shut at two, the fire to
+  three and banked to ten, the doors shut to eleven), so two o'clock is
+  still the evening's row and the panes never come back up before first
+  light; the banking eases in over the three quarters of an hour before
+  three (`kSmallHoursEase`), not in one step on the minute. Households are
+  untouched. Pinned at ten, two, three, five and six.
+- *Also this round, by its auditor:* the late glass draws BEFORE the halos
+  (drawn after them it cut a pane-shaped hole in every glow) and only
+  where the fog's share is under 0.94 (`kLateGlassBelow` 240: a night fog
+  past a metre and a half, not an overcast's trace); a light is red well
+  over blue (`r >= 80 && r > b + 40`), which admits every candle at any
+  strength and no dark pane, where a sum over 450 had left two thirds of
+  the candles out of the fog pass; and the colour a piece is drawn with is
+  scaled as one where it would clip at 255, while the chunks, the bodies
+  and the ground items clamp their light at one as one colour, since a
+  vertex colour or a model tint is clipped per channel by the draw. The
+  seam pin's tolerance is one rounding step of each side's tint; the hue
+  pin computes the colour the relight must give from the scene's own
+  fields; "goes out with the pane" is pinned at night; the near fade is
+  pinned.
 
 Declared, still: the wind's dim on the pool is steady; a kit window is a
 card; two men standing in the Whistling's own doorway at night are lit by
@@ -1007,7 +1031,7 @@ and population digests, and two sessions under one fog draw one frame.
 
 How the fog is drawn: the 3D pass has never had a fog shader (rlsw has no
 shader at all), so the weather's fog is geometry. Nested translucent shells
-round the eye, nineteen of them out to fifty-six tiles and closer together
+round the eye, nineteen of them then (twenty since the night-light lane's third pass, three of them inside two metres; see that pass) out to fifty-six tiles and closer together
 near the eye, each coloured the fog's colour below the horizon and the sky's
 own above it, each with the alpha of the fog between it and the one inside,
 drawn last in the pass far to near with the depth test on. Whatever stands
