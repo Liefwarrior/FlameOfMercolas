@@ -292,11 +292,10 @@ struct RungPlateBox {
 /// Whether a tick row on this card would DRAW at this frame size, by the
 /// same rule drawRungPlate drops it (a row of clearance over the prompt): at
 /// 320x180 and 3840x2160 never, at 640x360 and 1920x1080 not on a topped
-/// card. The plate's
-/// step asks this before it folds a skill's level into the card, so a level
-/// is told as a toast after the lift where the card has no row for it (the
-/// player, eighth pass: at 320x180 a level was told nowhere). `state.tick`
-/// may be empty; the probe supplies a row.
+/// card. The plate's step asks this before it folds a skill's level into
+/// the card, so a level is told as a toast after the lift where the card
+/// has no row for it (the player, eighth pass: at 320x180 a level was told
+/// nowhere). `state.tick` may be empty; the probe supplies a row.
 [[nodiscard]] bool rungPlateTickFits(int width, int height, const RungPlateState& state);
 
 /// The plate over a finished frame: a PanelFrame in the terminal register

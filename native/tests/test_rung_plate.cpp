@@ -3,8 +3,11 @@
 // The claims below, each its own case (the sixth is one case per track), and
 // after them the passes' own pins: the alert row's register and rails on
 // pixels against a twin, the demand, the lift window both ways, the text
-// plate's corner, the lift curve on a sky, the head's centring, the voice
-// row's stand-down through its fade, and the 320x180 fold.
+// plate's corner, the lift curve on a sky (the tick's shadow against the
+// prose's), the head's centring, the voice row's stand-down through its
+// fade (at the emitter, on pixels at 720x720, and through a real pass bark
+// in the Gull that runs out inside the lift), the voice row's pad above it
+// on pixels, and the 320x180 fold.
 //
 //   1. THE WATCH seeds silently and reports a rise per track, never a fall.
 //      A session that loads with rungs on the sheet has not just earned
@@ -871,35 +874,86 @@ TEST_CASE("the voice row's capped state outlives its hold through the ease-out, 
     CHECK_FALSE(voice.capped());
 }
 
-TEST_CASE("through a real bark's life the voice row is stood down from the plate's rise until the row clears (the session's own seam)") {
+TEST_CASE("a real pass bark runs under the plate and, running out inside the lift's last frames, stays stood down through its fade (the session's own seam)") {
     // Eight in the evening at the Gull's counter, a drift along the bar
-    // until a stool speaks (test_street_voice's own walk), then a rung.
+    // until a stool speaks (test_street_voice's own walk): a PASS or
+    // OVERHEARD line, whose clock runs under the plate. Its hold is its
+    // row's own (kVoiceHoldMinSteps plus kVoiceHoldPerGlyphSteps a glyph,
+    // to the max), so the case idles it down to exactly what lands its
+    // run-out inside the lift's last eight steps -- the window the
+    // auditor found: a line fading when the plate's last-frame cap fires.
     Session session(configInTheGull(20, sim::gull::kBartenderX, sim::gull::kBartenderY + 1));
     wake(session);
+    constexpr std::int32_t kRunOutAt = kRungPlateHoldSteps + kRungPlateLiftSteps - 4;
     sim::MoveInput drift;
     int walked = 0;
-    while (!session.voice().up() && walked < 60 * 60) {
+    std::int32_t hold = 0;
+    while (walked < 4 * 60 * 60) {
         drift.forward = (walked / 120) % 2 == 0 ? 1 : 0;
         drift.turn = (walked / 60) % 3 == 0 ? 1 : 0;
         session.step(drift);
         ++walked;
+        if (!session.voice().up()) {
+            continue;
+        }
+        const VoiceLine& line = session.voice().current();
+        hold = std::clamp(kVoiceHoldMinSteps + static_cast<std::int32_t>(line.text.size()) *
+                                                   kVoiceHoldPerGlyphSteps,
+                          kVoiceHoldMinSteps, kVoiceHoldMaxSteps);
+        if (line.channel < VoiceChannel::Farewell && hold >= kRunOutAt) {
+            break;
+        }
     }
     REQUIRE(session.voice().up());
+    REQUIRE(session.voice().current().channel < VoiceChannel::Farewell);
     const std::string bark = session.voice().current().text;
     REQUIRE_FALSE(session.voiceStepsDownNow());
+    // Idle it down: the bark was said this step and its clock runs one a
+    // step, so after this many it has kRunOutAt left.
+    session.stepMany(sim::MoveInput{}, hold - kRunOutAt);
+    REQUIRE(session.voice().up());
+    REQUIRE(session.voice().current().text == bark);
     crackABox(session);
-    // From the step the plate is wanted until the bark's row clears -- or
-    // the plate and its cap are long gone -- the seam says stood down.
+    // From the step the plate is wanted until the bark's row clears: the
+    // seam says stood down every step, the bark leaves on ITS OWN hold's
+    // step (inside the lift: its clock ran under the plate, where a held
+    // event line would have been capped to kRungPlateRowAfterSteps at the
+    // hold's end), and it is still on the row, fading, on the plate's last
+    // frame.
     int lived = 0;
-    for (; lived < kRungPlateHoldSteps + kRungPlateLiftSteps + 4 * kVoiceHoldMaxSteps; ++lived) {
+    int ranOut = -1;
+    int lastFrame = -1;
+    bool plateSeen = false;
+    for (; lived < kRungPlateHoldSteps + kRungPlateLiftSteps + 2 * kPageEaseSteps + 8; ++lived) {
         session.stepMany(sim::MoveInput{}, 1);
+        const float fade = session.rungPlateState().fade;
+        if (fade > 0.0F) {
+            plateSeen = true;
+        } else if (plateSeen && lastFrame < 0) {
+            lastFrame = lived;
+        }
         if (session.voice().current().text != bark) {
             break;
+        }
+        if (ranOut < 0 && !session.voice().up()) {
+            ranOut = lived;
         }
         INFO("step ", lived, " of the bark under and after the plate");
         CHECK(session.voiceStepsDownNow());
     }
-    CHECK(lived > 0);
+    const int cleared = lived;
+    INFO("ran out ", ranOut, " last frame ", lastFrame, " cleared ", cleared);
+    REQUIRE(plateSeen);
+    REQUIRE(ranOut >= 0);
+    REQUIRE(lastFrame >= 0);
+    // Its own clock, not the cap: within two steps of where the arithmetic
+    // put it, after the hold's end and before the last frame.
+    CHECK(std::abs(ranOut - kRunOutAt) <= 2);
+    CHECK(ranOut > kRungPlateHoldSteps);
+    CHECK(ranOut < lastFrame);
+    // Still present on the last frame (its fade running), cleared after.
+    CHECK(cleared > lastFrame);
+    CHECK(session.voice().current().text != bark);
 }
 
 TEST_CASE("the voice row stood down keeps its top rail clear of the row above it, on pixels") {
@@ -939,21 +993,37 @@ TEST_CASE("the voice row stood down keeps its top rail clear of the row above it
         }
     }
     REQUIRE(right > left);
-    // The plate's top rail: a unit and the rail above the glyph box.
+    // The plate's top rail: a unit and the rail above the glyph box. Read
+    // ACROSS THE WHOLE RAIL -- from its first bone pixel to its last, the
+    // plate being wider than the name -- because the hands row above is
+    // centred on the frame and its shadow falls in the middle of the
+    // plate, not under the name (the auditor, tenth pass: a scan of the
+    // name's columns alone passed with or without the pad).
     const int vs = std::min(hudMinorScale(540), rungPlateMetric(960, 540).scale);
     const int railY = top - (vs + std::max(1, vs / 2));
-    int railPixels = 0;
-    double darkest = 1.0;
-    for (int x = left; x <= right; ++x) {
-        const Rgb p = unpackRgb(fb.pixels()[fb.index(x, railY)]);
-        const double l = luma(p);
-        darkest = std::min(darkest, l);
-        if (std::abs(p.r - p.g) < 0.06F && p.r > 0.15F) {
-            ++railPixels;
+    const auto railInk = [](const Rgb& p) { return std::abs(p.r - p.g) < 0.06F && p.r > 0.15F; };
+    int railLeft = 960;
+    int railRight = -1;
+    for (int x = 0; x < 960; ++x) {
+        if (railInk(unpackRgb(fb.pixels()[fb.index(x, railY)]))) {
+            railLeft = std::min(railLeft, x);
+            railRight = std::max(railRight, x);
         }
     }
-    INFO("rail row ", railY, " darkest ", darkest, " rail pixels ", railPixels);
-    CHECK(railPixels > 0);
+    REQUIRE(railRight > railLeft);
+    REQUIRE(railLeft < left);
+    REQUIRE(railRight > right);
+    int dark = 0;
+    double darkest = 1.0;
+    for (int x = railLeft; x <= railRight; ++x) {
+        const double l = luma(unpackRgb(fb.pixels()[fb.index(x, railY)]));
+        darkest = std::min(darkest, l);
+        if (l < 0.15) {
+            ++dark;
+        }
+    }
+    INFO("rail row ", railY, " x ", railLeft, "..", railRight, " darkest ", darkest, " dark ", dark);
+    CHECK(dark == 0);
     CHECK(darkest > 0.15);
 }
 

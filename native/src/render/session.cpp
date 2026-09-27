@@ -16542,9 +16542,9 @@ constexpr std::int32_t kRungBeats = 2;
 ///          KNOWN TO THE WATCH. The honest short road: the bounty alone
 ///          leaves a man three short of it.
 ///
-/// AND NOTHING WALKS AFTER A RUNG on the wire, the roofs and the flame --
-/// the trade and the law stand back after theirs, about twenty-five steps of
-/// the hold, and the README says so. The two that broke it are why it is
+/// AND NOTHING WALKS AFTER A RUNG on the wire, the roofs and the flame (the
+/// trade and the law stand back after theirs, about twenty-five steps of
+/// the hold, and the README says so). The two that broke it are why it is
 /// written down: the plate
 /// holds five seconds (kRungPlateHoldSteps) and a scripted walk spends them
 /// faster than anything else in this file -- fifty tiles out of the Mission

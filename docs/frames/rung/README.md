@@ -616,11 +616,12 @@ capped bark swelled when the plate left. Everything below is on the gate.
   old caps "skipped the demand"; they did not -- the demand was news and was
   capped and stepped down. Corrected in place.
 - **The demand case proves its name.** It requires the plate live before
-  the landing step and its hold still running ON the landing step -- the
-  plate is cut the step after the demand is said, so a bouncer's warning
-  earlier in that step would already have cut it (the ninth pass added the
-  second require) -- requires Cull on the row, and pins the hold exactly:
-  read off the row the step it lands, past the cap, counted down one a step.
+  the landing step and its hold still running ON the landing step (the
+  plate is cut the step after the demand is said, so the hold did not
+  expire under the loop; the ninth pass added that require, and the tenth
+  rules out a bouncer's warning by name, since both come out of the same
+  tick) -- requires Cull on the row, and pins the hold exactly: read off
+  the row the step it lands, past the cap, counted down one a step.
 - **The shadows leave with the slab.** The plate's text drew its drop
   shadows at the ink's alpha while the slab thinned as the fade squared, so
   from the lift's midpoint the letters were black outlines round grey words
@@ -724,11 +725,17 @@ level that folded into a card with no tick row was told nowhere.
   scale stood down and six of the minor scale otherwise. (The tenth pass
   closed the seam the auditor found between the two: a cap now marks
   whatever line is present, so a bark whose hold ran out inside the lift
-  stays small through its fade -- pinned at the emitter and, through a real
-  bark's life in the Gull, on `Session::voiceStepsDownNow`.)
+  stays small through its fade -- pinned at the emitter and, on
+  `Session::voiceStepsDownNow`, through a real pass bark in the Gull idled
+  so its own hold runs out inside the lift's last eight steps: stood down
+  from the rise, still on the row on the plate's last frame, small until
+  the row clears -- the eleventh pass; the tenth's case had the bark
+  outliving the plate by ninety steps and proved only the ninth's seam.)
 - **The voice row buys its pad above.** The rail plus a minor unit of air,
   in pixels, the alert row's way. Pinned on pixels with a hands row above
-  it (the tenth pass; the ninth said this needed a fixture it did not).
+  it, read across the plate's whole rail (the eleventh pass; the tenth's
+  scan read the name's columns alone, where the hands' shadow never falls,
+  and passed without the pad).
 - **The dim rows' shadows go one power faster.** The tick and the top row
   are dim ink; their shadows are the cube of the fade where the prose's is
   the square, so on the greying slab the tick reads as dim letters and not
@@ -752,19 +759,21 @@ level that folded into a card with no tick row was told nowhere.
   the slab's "quarter" is not the pin's number; Finch's fence is cited from
   where the game says it.
 - **Pinned**: the head block on the card's axis for all five heads; a
-  farewell holding under the plate. **Unpinned, declared**: a pass bark
-  running under the plate. The Gull fixture yields a real pass bark (the
-  tenth pass walks one up), but a bark's hold is its own row's, 240 to 540
-  steps by length, and a case cannot read it, so it cannot say on which
-  step the bark should be gone; the gate is one line
-  (`isEvent(current_.channel)`, `StreetVoice::step`), and the director saw
-  Vidar's rope line gone at settle 120 on the exe.
+  farewell holding under the plate; and (the eleventh pass) a pass bark
+  RUNNING under the plate -- the Gull case computes the bark's hold from
+  the public constants (`kVoiceHoldMinSteps` plus `kVoiceHoldPerGlyphSteps`
+  a glyph, to `kVoiceHoldMaxSteps`) and the bark leaves on that step,
+  inside the lift, where a held line would have read the cap. (The ninth
+  and tenth passes called this unpinnable; it was not.)
 - **Declared and left**: the head block's height depends on the card's row
   count (the director: a topped card seats three units higher; two queued
   cards of different depth would make the gold hop -- the seat is the
-  card's, and anchoring the head instead is a seat rule for the next pass);
-  the full stop's weight pulling every row a pixel or two left of centre by
-  eye; the stood-down pad unpinned; the chips above unchanged.
+  card's, and anchoring the head instead is a seat rule for the next pass;
+  the director measured the hop at three pixels at 960 and 29 at 1920,
+  where the card grows upward); the full stop's weight pulling every prose
+  row a unit left of the slab's axis (two pixels at 960, about five at
+  1920), the slab itself half a unit left of the compass above it; the
+  chips above unchanged.
 
 ## Tenth pass, 2026-09-27
 
@@ -779,14 +788,19 @@ were false. Everything below is on the gate; no frame changed.
   for any line on the row, exhausted or not; the alert row's three caps set
   `messageCapped_` for a line with steps left or a fade still running.
   Pinned at the emitter (a run-out farewell, capped, stays capped until the
-  row clears) and through a real bark's life on the session
-  (`voiceStepsDownNow`, public now and what drawFrame hands the HUD).
+  row clears) and, since the eleventh pass, through a real pass bark on the
+  session (`voiceStepsDownNow`, public and what drawFrame hands the HUD)
+  that runs out inside the lift's last frames. The alert row's fade clause
+  is UNPINNED: only a moment (a leap's or a mantle's line, whose clock runs
+  under the plate) can run out inside the lift, and this suite has no roof
+  fixture (test_roofrun's climb fixture could supply one).
 - **The demand case rules out a warning by name** and its comment says what
   the require proves.
 - **The tick row's shadow pinned against the prose's** at the midpoint; the
   claim rewritten to what the frames show.
-- **The voice pad pinned on pixels** with a hands row above it; the
-  pass-bark reason rewritten to the true one.
+- **The voice pad pinned on pixels** with a hands row above it (read
+  across the whole rail since the eleventh pass); the pass bark pinned
+  running (eleventh pass) after two rounds of calling it unpinnable.
 - Also: the tick-fits doc names 3840x2160; the drive doc's wrapped line;
   the hud.cpp slot comment; the Character tile's "1 RUNGS" (the player's
   side note, one line, this tile being the rung system's own).
@@ -795,6 +809,39 @@ were false. Everything below is on the gate; no frame changed.
   small and the Character tile's notes affordance is the place -- a chip),
   the head's seat with the row count, the prose's optical centre, the
   rows' shape.
+
+## Eleventh pass, 2026-09-27
+
+The tenth pass scored 8 (director), 8 (player) and 7 (auditor). Tests and
+docs only; no drawing changed, no frame changed. The auditor: the Gull case
+cited for the lift window had its bark outliving the plate by ninety steps;
+the pad pin scanned the name's columns where the hands row's shadow never
+falls; the pass bark was declared unpinnable a third time while its hold is
+arithmetic on public constants; the alert row's fade clause sat under
+"Pinned"; the eighth-pass demand bullet still carried the false warning
+clause; the record contradicted itself on the pad; two comments were
+ragged. The director: two of his round-seven items were not declared and
+two numbers were understated.
+
+- **The Gull case idles the bark to the window.** It walks up a pass or
+  overheard line, computes its hold, idles until exactly the lift's last
+  four steps remain, then cracks the box: the bark leaves on its own hold's
+  step (within two of the arithmetic, after the hold's end, before the last
+  frame), is still on the row on the plate's last frame, and the seam says
+  stood down every step until the row clears. That pins the pass bark
+  running under the plate too.
+- **The pad pin reads the whole rail**, first bone pixel to last, and
+  requires the rail wider than the name.
+- **The alert row's fade clause declared unpinned** with its reason.
+- **The record**: the eighth-pass demand bullet, the pad's two sentences,
+  the pass-bark sentence, `messageCapped_`'s doc, the two wrapped comments.
+- **Declared, from the director's round seven**: the dim ink darker than
+  the paling slab in the lift's last four steps (a polarity flip at 4x
+  nobody reads at speed; fading the dim ink on the slab's curve is one
+  pass); the 320x180 toast's chrome (its capitals under its top rail, the
+  last row's shadow on the bottom rail: `drawSkillToast`'s one-unit pad,
+  the HUD toast's own, now where this feature's level lands at 320); the
+  seat's hop and the prose's centre with their measured numbers.
 
 ## Not in this folder yet
 

@@ -2695,10 +2695,13 @@ private:
     /// stepped down. say() clears it; the four Watch sites (the street's
     /// three, the Gull's own lastDemand) set it.
     bool messageDemand_ = false;
-    /// The line on the alert row had its clock capped by the plate -- when
-    /// the hold ended, when the card was dismissed, or on the card's last
-    /// frame: it finishes in the small register and never swells back to
-    /// the glance size. say() clears it.
+    /// The alert row was capped by the plate -- when the hold ended, when
+    /// the card was dismissed, or on the card's last frame -- while a line
+    /// had steps left OR its fade was still running: whatever is on the row
+    /// finishes in the small register and never swells back to the glance
+    /// size. say() clears it. (At a warning's dismissal the ease can be the
+    /// warning's own with no line on the row; the flag then means nothing
+    /// until the next say() clears it, and nothing is drawn small.)
     bool messageCapped_ = false;
     /// The plate was on screen (rungPlateOnScreen) at the end of the last
     /// step: the edge stepRungPlate caps the row on.
