@@ -927,8 +927,13 @@ TEST_CASE("the head block sits on the card's axis for every track's head, to the
         }
         REQUIRE(right > left);
         // Twice the centres, so a half pixel is a whole number: within one.
+        // THE CARD'S AXIS IS THE SLAB'S: the slab runs a unit past the box
+        // on the left, and the keyline's last dash ends a unit short of the
+        // box's right edge, so the axis the eye reads sits half a unit left
+        // of the box's own (the director measured the gold's margins against
+        // the slab, 137/137 at 960).
         const int blockTwice = left + right;
-        const int axisTwice = 2 * box.x + box.w - 1;
+        const int axisTwice = 2 * box.x + box.w - metric.scale - 1;
         INFO("block ", left, "..", right, " axis*2 ", axisTwice);
         CHECK(std::abs(blockTwice - axisTwice) <= 1);
     }
