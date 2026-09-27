@@ -1047,7 +1047,7 @@ either: it only detects a period-2 A-B-A-B pattern, not the longer cycle.
 ```
 at branch merge/crowd-flow-into-wip, round 4,
 granadad-twin-gate --population --population-hour 16 --ticks 7200, 96 walkers
-COMBINED WORLD HASH: 0x66B5A1B2F32270B9 -> 0x499B2D62A49840B5      <- DECLARED, NOT YET RE-BLESSED
+COMBINED WORLD HASH: 0x66B5A1B2F32270B9 -> 0x499B2D62A49840B5      <- DECLARED and RE-BLESSED
 ```
 
 Recorded directly from `dist\granadad-twin-gate.exe --population --population-hour 16
@@ -1059,8 +1059,12 @@ Recorded directly from `dist\granadad-twin-gate.exe --population --population-ho
 2,682,185 assertions under mingw, 0 failed, content-fingerprint and world-hash reports
 byte-identical linux/gcc vs mingw/windows).
 
-**Marked NOT YET RE-BLESSED on purpose: this number is real and reproducible, but the lane has not
-cleared the three-hat gate, and Eli has not been asked how he wants to proceed** -- close the
-route-replan gap properly (a bigger pathfinding change), or land the substantial, verified
-improvement over the original bug with the remaining edge case written up honestly. See
-DECISIONS.md for the full account.
+**Eli's call (2026-09-26): land it.** The original bug -- rigid single-file columns at doorways
+-- is fixed and independently confirmed by two critic hats on the real build. Two things are
+landing as KNOWN, WRITTEN-UP GAPS rather than blockers: the oscillation survives in a narrower
+form through ordinary A* route-replanning (cameFrom/cameFrom2 only gate sidestep()'s own candidate
+loop; closing this for real needs the pathfinder itself, or a per-actor avoid-list feeding it, to
+carry short-term memory -- a materially bigger change than this lane's four rounds), and the
+director hat's broader asks (personal space near the player, street-width crowd distribution,
+idle-standing animation) are a different scope of work than the bug this lane was opened to fix.
+See DECISIONS.md for the full four-round account and the follow-up list.
