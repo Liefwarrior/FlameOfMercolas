@@ -3966,7 +3966,7 @@ void Session::stepRungPlate() {
             // plate, and it keeps its whole hold at the glance size.
             if (!messageDemand_) {
                 messageSteps_ = std::min(messageSteps_, kRungPlateRowAfterSteps);
-                messageCapped_ = messageSteps_ > 0;
+                messageCapped_ = messageSteps_ > 0 || alertAnim_.value() > 0.0F;
             }
             voice_.capHold(kRungPlateRowAfterSteps);
         }
@@ -3989,7 +3989,7 @@ void Session::stepRungPlate() {
         // could surface six seconds after the leap (the auditor's finding).
         if (!messageDemand_) {
             messageSteps_ = std::min(messageSteps_, kRungPlateRowAfterSteps);
-            messageCapped_ = messageSteps_ > 0;
+            messageCapped_ = messageSteps_ > 0 || alertAnim_.value() > 0.0F;
         }
         voice_.capHold(kRungPlateRowAfterSteps);
         // AND THE LIFT IS CUT WITH THE HOLD: dismissed is gone. Left easing,
@@ -4023,7 +4023,7 @@ void Session::stepRungPlate() {
     if (rungPlateWasOnScreen_ && !onScreen) {
         if (!messageDemand_) {
             messageSteps_ = std::min(messageSteps_, kRungPlateRowAfterSteps);
-            messageCapped_ = messageSteps_ > 0;
+            messageCapped_ = messageSteps_ > 0 || alertAnim_.value() > 0.0F;
         }
         voice_.capHold(kRungPlateRowAfterSteps);
     }
@@ -4081,6 +4081,10 @@ bool Session::alertStepsDownNow() const noexcept {
     // place, and its own first frame is the one that matters), and neither
     // is a watchman's DEMAND, which is never capped in the first place.
     return rungPlateOnScreen() || (messageCapped_ && !bouncerWarned() && !messageDemand_);
+}
+
+bool Session::voiceStepsDownNow() const noexcept {
+    return rungPlateOnScreen() || voice_.capped();
 }
 
 float Session::casePlateFadeNow() const noexcept {
@@ -10086,7 +10090,8 @@ std::string Session::legendLine() const {
     if (book.totalRungs() <= 0) {
         return {};
     }
-    return clip(std::string(book.title()) + "  " + std::to_string(book.totalRungs()) + " RUNGS",
+    return clip(std::string(book.title()) + "  " + std::to_string(book.totalRungs()) +
+                    (book.totalRungs() == 1 ? " RUNG" : " RUNGS"),
                 34);
 }
 
@@ -11857,7 +11862,7 @@ FrameStats Session::drawFrame(Framebuffer& target, FramePasses passes) const {
     // while the plate is on screen and for a line capped under it, so a
     // capped bark finishes small and never swells (the auditor, on the
     // square windows).
-    hud.voiceStepsDown = rungPlateOnScreen() || voice_.capped();
+    hud.voiceStepsDown = voiceStepsDownNow();
     // INNOVATION SPRINT ITEM #3. See HudState::alertPulse's own header.
     hud.alertPulse = alertPulse_.value();
     hud.caseLabel = std::string_view{caseCache_};
@@ -16539,8 +16544,8 @@ constexpr std::int32_t kRungBeats = 2;
 ///
 /// AND NOTHING WALKS AFTER A RUNG on the wire, the roofs and the flame --
 /// the trade and the law stand back after theirs, about twenty-five steps of
-/// the hold, and
-/// the README says so. The two that broke it are why it is written down: the plate
+/// the hold, and the README says so. The two that broke it are why it is
+/// written down: the plate
 /// holds five seconds (kRungPlateHoldSteps) and a scripted walk spends them
 /// faster than anything else in this file -- fifty tiles out of the Mission
 /// and round it, or a crouched fight for the last tile of the Gull's

@@ -1050,6 +1050,11 @@ public:
     /// on screen, and for the rest of a line that was on the row under it
     /// (its capped two seconds) -- it never swells back.
     [[nodiscard]] bool alertStepsDownNow() const noexcept;
+    /// The voice row's own: the plate is on screen, or its line was capped
+    /// under the plate and finishes small (StreetVoice::capped) -- what
+    /// drawFrame hands the HUD as voiceStepsDown, readable so a case can pin
+    /// the seam through a real bark's life.
+    [[nodiscard]] bool voiceStepsDownNow() const noexcept;
     /// What is left of the alert row's own hold, in steps: the clock the
     /// plate stops for a news line and caps at two seconds when it goes --
     /// and never touches for a watchman's demand (the case that pins that

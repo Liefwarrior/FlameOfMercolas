@@ -721,34 +721,80 @@ level that folded into a card with no tick row was told nowhere.
   clears it -- and `standDown` clears it too. Pinned twice: the emitter's
   own state through a cap, two steps and the clear; and the HUD on pixels
   at 720x720 through a half fade, the name's glyphs six rows of the plate's
-  scale stood down and six of the minor scale otherwise.
+  scale stood down and six of the minor scale otherwise. (The tenth pass
+  closed the seam the auditor found between the two: a cap now marks
+  whatever line is present, so a bark whose hold ran out inside the lift
+  stays small through its fade -- pinned at the emitter and, through a real
+  bark's life in the Gull, on `Session::voiceStepsDownNow`.)
 - **The voice row buys its pad above.** The rail plus a minor unit of air,
-  in pixels, the alert row's way. Unpinned (a band row above the voice
-  needs a fixture this suite has not got); declared.
+  in pixels, the alert row's way. Pinned on pixels with a hands row above
+  it (the tenth pass; the ninth said this needed a fixture it did not).
 - **The dim rows' shadows go one power faster.** The tick and the top row
-  are dim ink; their shadows are the cube of the fade, so they never
-  out-contrast their own letters on the greying slab.
+  are dim ink; their shadows are the cube of the fade where the prose's is
+  the square, so on the greying slab the tick reads as dim letters and not
+  as a raised edge (the director: by hue and by eye at every step; by
+  luminance alone the shadow still edges the ink by a few levels near
+  settle 308). Pinned: the tick row's darkest pixel lighter than the
+  prose's at the midpoint.
 - **The tick folds in only where the card has a row for it.**
   `rungPlateTickFits` asks the layout at the session's frame size before
   the fold; at 320x180 (and a topped card at 640x360 or 1920x1080) the level
   queues as a toast behind the plate. Pinned at 320x180.
-- **The demand case rules out a same-step warning** (`rungPlateWanted()` on
-  the landing step) and the README says exactly what it proves.
+- **The demand case says what it proves.** `rungPlateWanted()` on the
+  landing step: the plate's own hold had not expired under the loop (the
+  hold is cut the step after the demand is said, since the plate's step
+  runs before the sim's tick). A bouncer's warning in the same second comes
+  out of that same tick, so it is ruled out by name instead: no warning is
+  up on the landing step (the tenth pass; the ninth's wording had the
+  warning cutting the hold "at once", which it does not).
 - **The record corrected**: the drive doc's "a second of the hold"; the
   `RungLineResult::aim` doc; the leap and mantle moments are not pinned;
   the slab's "quarter" is not the pin's number; Finch's fence is cited from
   where the game says it.
 - **Pinned**: the head block on the card's axis for all five heads; a
   farewell holding under the plate. **Unpinned, declared**: a pass bark
-  running under the plate -- an ambient line has no emitter a case can
-  reach without a room (`StreetVoice::say` is the step's own, private);
-  the director saw Vidar's rope line gone at settle 120 on the exe.
+  running under the plate. The Gull fixture yields a real pass bark (the
+  tenth pass walks one up), but a bark's hold is its own row's, 240 to 540
+  steps by length, and a case cannot read it, so it cannot say on which
+  step the bark should be gone; the gate is one line
+  (`isEvent(current_.channel)`, `StreetVoice::step`), and the director saw
+  Vidar's rope line gone at settle 120 on the exe.
 - **Declared and left**: the head block's height depends on the card's row
   count (the director: a topped card seats three units higher; two queued
   cards of different depth would make the gold hop -- the seat is the
   card's, and anchoring the head instead is a seat rule for the next pass);
   the full stop's weight pulling every row a pixel or two left of centre by
   eye; the stood-down pad unpinned; the chips above unchanged.
+
+## Tenth pass, 2026-09-27
+
+The ninth pass scored 8 (director), 8 (player) and 7 (auditor). The
+auditor's four: a cap keyed on the hold un-capped a line that had run out
+inside the lift, so its fade swelled (the voice row and, in the same shape,
+the alert row's moments); the demand case's stated reason was false; the
+"never out-contrast" claim was false by luminance; two "unpinned" reasons
+were false. Everything below is on the gate; no frame changed.
+
+- **A cap marks whatever is present.** `StreetVoice::capHold` sets capped
+  for any line on the row, exhausted or not; the alert row's three caps set
+  `messageCapped_` for a line with steps left or a fade still running.
+  Pinned at the emitter (a run-out farewell, capped, stays capped until the
+  row clears) and through a real bark's life on the session
+  (`voiceStepsDownNow`, public now and what drawFrame hands the HUD).
+- **The demand case rules out a warning by name** and its comment says what
+  the require proves.
+- **The tick row's shadow pinned against the prose's** at the midpoint; the
+  claim rewritten to what the frames show.
+- **The voice pad pinned on pixels** with a hands row above it; the
+  pass-bark reason rewritten to the true one.
+- Also: the tick-fits doc names 3840x2160; the drive doc's wrapped line;
+  the hud.cpp slot comment; the Character tile's "1 RUNGS" (the player's
+  side note, one line, this tile being the rung system's own).
+- Declared and left as before: the square windows, the frames over their
+  cause, the once-a-game row lost to an early page (the player: the fix is
+  small and the Character tile's notes affordance is the place -- a chip),
+  the head's seat with the row count, the prose's optical centre, the
+  rows' shape.
 
 ## Not in this folder yet
 

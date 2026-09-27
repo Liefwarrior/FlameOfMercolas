@@ -1709,11 +1709,12 @@ void drawBottomBand(Framebuffer& target, const HudState& state, BottomBand& band
                 drawText(target, textX, bottom, second, dim, 0.92F * fade * ink, vs);
             }
             // STOOD DOWN, THE PLATE OVERHANGS ITS SLOT BY THE RAIL: the slot
-            // grid leaves a minor unit above the glyph box, which the row
-            // above's drop shadow takes, so a plate a unit and a rail tall
-            // put its top rail under that shadow (the auditor, eighth
-            // pass). The rail plus a minor unit of air, bought in pixels
-            // the alert row's way (BottomBand::pad).
+            // grid leaves a minor unit of air above the glyph box, and the
+            // row above's drop shadow ends on the row just above that air,
+            // so a plate a unit and a rail tall put its top rail on the
+            // shadow's last row (the auditor, eighth pass). The rail plus a
+            // minor unit of air, bought in pixels the alert row's way
+            // (BottomBand::pad).
             if (down) {
                 band.pad(std::max(1, vs / 2) + minor);
             }

@@ -757,11 +757,14 @@ TEST_CASE("a watchman's demand under a live plate is never capped nor stepped do
     }
     REQUIRE_FALSE(session.tavern().lastDemand().empty());
     REQUIRE(liveBefore);
-    // AND THE HOLD IS STILL RUNNING ON THE LANDING STEP: the plate is cut
-    // the step AFTER the demand is said (stepRungPlate runs before the
-    // Gull's say()), so a bouncer's warning earlier in that same step --
-    // which cuts the hold at once -- cannot have been what dismissed it.
+    // AND THE HOLD IS STILL RUNNING ON THE LANDING STEP -- it is cut the
+    // step AFTER the demand is said, since stepRungPlate runs before the
+    // sim's tick -- so the plate's own hold did not expire under the loop.
+    // A bouncer's warning in the same second would not cut it before the
+    // demand either (both come out of the same tick), so that is ruled out
+    // by name: no warning is up.
     REQUIRE(session.rungPlateWanted());
+    REQUIRE(session.tavern().lastWarning().empty());
     REQUIRE(session.alertSpeakerNow().rfind("Watchman Cull", 0) == 0);
     // The demand is on the row: the plate is gone the same step, the row is
     // at the glance size, and the line keeps its WHOLE hold, counted down
@@ -851,9 +854,107 @@ TEST_CASE("the voice row's capped state outlives its hold through the ease-out, 
     CHECK(voice.capped());
     voice.clearIfSettled(true);
     CHECK_FALSE(voice.capped());
-    // A passer-by's bark running under the plate is NOT pinned here: an
-    // ambient line has no emitter a case can reach without a room (the
-    // director saw Vidar's rope line gone at settle 120 on the exe).
+    // A LINE WHOSE HOLD HAS RUN OUT, still fading, capped on the plate's
+    // last frame: capped all the same, until the row clears (the auditor,
+    // ninth pass: keyed on the hold, this un-capped the bark mid-fade).
+    voice.speakFarewell("Watchman Cull", "KEEP THE LANE CLEAR BEHIND YOU.", "farewell.cull", 5,
+                        900);
+    for (int i = 0; i < kVoiceHoldMaxSteps + 1; ++i) {
+        voice.step(running);
+    }
+    REQUIRE_FALSE(voice.up());
+    REQUIRE_FALSE(voice.current().empty());
+    CHECK_FALSE(voice.capped());
+    voice.capHold(kRungPlateRowAfterSteps);
+    CHECK(voice.capped());
+    voice.clearIfSettled(true);
+    CHECK_FALSE(voice.capped());
+}
+
+TEST_CASE("through a real bark's life the voice row is stood down from the plate's rise until the row clears (the session's own seam)") {
+    // Eight in the evening at the Gull's counter, a drift along the bar
+    // until a stool speaks (test_street_voice's own walk), then a rung.
+    Session session(configInTheGull(20, sim::gull::kBartenderX, sim::gull::kBartenderY + 1));
+    wake(session);
+    sim::MoveInput drift;
+    int walked = 0;
+    while (!session.voice().up() && walked < 60 * 60) {
+        drift.forward = (walked / 120) % 2 == 0 ? 1 : 0;
+        drift.turn = (walked / 60) % 3 == 0 ? 1 : 0;
+        session.step(drift);
+        ++walked;
+    }
+    REQUIRE(session.voice().up());
+    const std::string bark = session.voice().current().text;
+    REQUIRE_FALSE(session.voiceStepsDownNow());
+    crackABox(session);
+    // From the step the plate is wanted until the bark's row clears -- or
+    // the plate and its cap are long gone -- the seam says stood down.
+    int lived = 0;
+    for (; lived < kRungPlateHoldSteps + kRungPlateLiftSteps + 4 * kVoiceHoldMaxSteps; ++lived) {
+        session.stepMany(sim::MoveInput{}, 1);
+        if (session.voice().current().text != bark) {
+            break;
+        }
+        INFO("step ", lived, " of the bark under and after the plate");
+        CHECK(session.voiceStepsDownNow());
+    }
+    CHECK(lived > 0);
+}
+
+TEST_CASE("the voice row stood down keeps its top rail clear of the row above it, on pixels") {
+    // A bark stood down with a hands row above it at 960x540: the pad the
+    // row buys above itself keeps the hands row's drop shadow off the top
+    // rail (the auditor, ninth pass: without it the shadow's last row was
+    // the rail's).
+    HudState state;
+    state.voiceName = "Watchman Cull";
+    state.voiceLine = "KEEP MY ROUNDS QUIET. GO ON.";
+    state.voiceFade = 1.0F;
+    state.voiceInkWeight = 0.5F;
+    state.voiceStepsDown = true;
+    state.alertStepScale = rungPlateMetric(960, 540).scale;
+    state.handsLabel = "FISTS UP";
+    state.handsFade = 1.0F;
+    Framebuffer fb(960, 540);
+    fb.clear(Rgb{0.08F, 0.09F, 0.10F});
+    drawHud(fb, state);
+    const auto accent = [](const Rgb& p) {
+        return p.r > 0.20F && p.g > 0.72F * p.r && p.g < 0.88F * p.r && p.b > 0.55F * p.r &&
+               p.b < 0.75F * p.r;
+    };
+    const auto luma = [](const Rgb& p) {
+        return static_cast<double>(0.30F * p.r + 0.59F * p.g + 0.11F * p.b);
+    };
+    int top = 540;
+    int left = 960;
+    int right = -1;
+    for (int y = hudAimRect(960, 540).y1; y < 540; ++y) {
+        for (int x = 0; x < 960; ++x) {
+            if (accent(unpackRgb(fb.pixels()[fb.index(x, y)]))) {
+                top = std::min(top, y);
+                left = std::min(left, x);
+                right = std::max(right, x);
+            }
+        }
+    }
+    REQUIRE(right > left);
+    // The plate's top rail: a unit and the rail above the glyph box.
+    const int vs = std::min(hudMinorScale(540), rungPlateMetric(960, 540).scale);
+    const int railY = top - (vs + std::max(1, vs / 2));
+    int railPixels = 0;
+    double darkest = 1.0;
+    for (int x = left; x <= right; ++x) {
+        const Rgb p = unpackRgb(fb.pixels()[fb.index(x, railY)]);
+        const double l = luma(p);
+        darkest = std::min(darkest, l);
+        if (std::abs(p.r - p.g) < 0.06F && p.r > 0.15F) {
+            ++railPixels;
+        }
+    }
+    INFO("rail row ", railY, " darkest ", darkest, " rail pixels ", railPixels);
+    CHECK(railPixels > 0);
+    CHECK(darkest > 0.15);
 }
 
 TEST_CASE("the voice row drawn stood down keeps the plate's register through a fade, on pixels, where the minor scale is a tier above it") {
@@ -1005,9 +1106,12 @@ TEST_CASE("through the lift the ink holds whole to the midpoint while the slab t
     const RungPlateBox box = rungPlateBox(960, 540, state);
     REQUIRE(box.draws);
     const PanelMetric metric = rungPlateMetric(960, 540);
-    // The prose row's box, and the air row's middle for the slab.
+    // The prose row's box, the tick row's (one unit low), and the air row's
+    // middle for the slab.
     const int proseY0 = box.y + metric.heightOf(3);
     const int proseY1 = proseY0 + metric.cellH();
+    const int tickY0 = box.y + metric.heightOf(4) + metric.scale;
+    const int tickY1 = tickY0 + metric.cellH();
     const int airY = box.y + metric.heightOf(2) + metric.cellH() / 2;
     double proseAtFull = 0.0;
     double shadowAtFull = 1.0;
@@ -1020,6 +1124,7 @@ TEST_CASE("through the lift the ink holds whole to the midpoint while the slab t
         drawRungPlate(fb, state);
         const double prose = brightest(fb, box.x, proseY0, box.x + box.w, proseY1);
         const double shadow = darkest(fb, box.x, proseY0, box.x + box.w, proseY1 + metric.scale);
+        const double tickShadow = darkest(fb, box.x, tickY0, box.x + box.w, tickY1 + metric.scale);
         const Rgb slab = unpackRgb(fb.pixels()[fb.index(box.x + box.w / 2, airY)]);
         const double slabLuma = static_cast<double>(0.30F * slab.r + 0.59F * slab.g + 0.11F * slab.b);
         if (fade == 1.0F) {
@@ -1036,6 +1141,10 @@ TEST_CASE("through the lift the ink holds whole to the midpoint while the slab t
             // And the shadow has gone with the slab: the darkest pixel in
             // the prose rows is nowhere near the up card's shadow.
             CHECK(shadow > shadowAtFull + 0.2);
+            // THE DIM TICK ROW'S ONE POWER FASTER: its darkest pixel lighter
+            // than the prose row's (the cube of the fade against the
+            // square; equal at full).
+            CHECK(tickShadow > shadow + 0.03);
         } else {
             // A quarter in: the ink at half, still over a slab nearly gone.
             CHECK(prose < proseAtFull);

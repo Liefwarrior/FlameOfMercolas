@@ -311,7 +311,11 @@ public:
     /// own rule.
     void capHold(std::int32_t steps) noexcept {
         holdSteps_ = holdSteps_ < steps ? holdSteps_ : steps;
-        capped_ = holdSteps_ > 0;
+        // WHATEVER LINE IS PRESENT finishes small -- a line whose hold has
+        // already run out and is fading included (the auditor, ninth pass:
+        // keyed on the hold, the plate's last-frame cap un-capped a bark
+        // that had run out inside the lift, and its fade swelled).
+        capped_ = !current_.empty();
     }
     /// The current line had its hold capped by the plate and finishes small
     /// (HudState::voiceStepsDown) -- through its ease-out too, which runs
