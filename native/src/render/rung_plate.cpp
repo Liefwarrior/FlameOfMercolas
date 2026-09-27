@@ -124,7 +124,7 @@ struct PlateLayout {
 
 [[nodiscard]] PlateLayout layoutFor(int width, int height, const RungPlateState& state) {
     PlateLayout out;
-    out.metric = rungPlateMetric(height);
+    out.metric = rungPlateMetric(width, height);
     if (state.head.empty()) {
         return out;
     }
@@ -176,13 +176,17 @@ struct PlateLayout {
 
 }  // namespace
 
-PanelMetric rungPlateMetric(int height) noexcept {
+PanelMetric rungPlateMetric(int width, int height) noexcept {
     const PanelMetric minor = panelMetric(height);
     const int glance = hudScale(height);
-    if (minor.scale == 1 && glance >= 2) {
-        return PanelMetric{glance};
+    int scale = minor.scale;
+    if (scale == 1 && glance >= 2) {
+        scale = glance;
     }
-    return minor;
+    while (scale > 1 && PanelMetric{scale}.cellsIn(width) < 64) {
+        --scale;
+    }
+    return PanelMetric{scale};
 }
 
 float alertWeightUnderRungPlate(float plateFade) noexcept {
@@ -296,8 +300,12 @@ void drawRungPlate(Framebuffer& target, const RungPlateState& state) {
     // and columns nought to three.)
     style.groundAlpha = 0.0F;
     const int s = metric.scale;
+    // THE SLAB LEAVES AHEAD OF THE WORDS: at the fade's own alpha it crossed
+    // a bright sky as a fogged pane of glass with grey words on it for a
+    // dozen steps (the player, fifth pass). Squared, it is a quarter gone
+    // when the words are half gone, and the words are the last thing left.
     target.fillRect(bounds.x - s, bounds.y, bounds.w, bounds.h - 2 * s, style.ground,
-                    kPageGroundAlpha * fade);
+                    kPageGroundAlpha * fade * fade);
     PanelFrame pane(target, bounds, metric, style);
     pane.draw();
     const PanelRect body = pane.interior();
@@ -341,13 +349,15 @@ void drawRungPlate(Framebuffer& target, const RungPlateState& state) {
         // THE TICK, folded in: the skill that levelled on the rung's own
         // step, in the dateline's ink and slot -- the game's word under the
         // ward's, told once. layoutFor has already dropped it where the
-        // frame has no row for it. SET TWO UNITS LOW IN ITS ROW: set solid
+        // frame has no row for it. SET ONE UNIT LOW IN ITS ROW: set solid
         // under the prose it read as the docker's second line in the
-        // system's voice (both critics); the row's own spare unit and two
-        // more make three of air above it, and the bottom rule's ink is
-        // still two units under its feet.
+        // system's voice (both critics); the row's own spare unit and one
+        // more make two of air above it, and two between its feet -- the
+        // font's own drop shadow included, invisible on the slab but drawn
+        // -- and the bottom rule's ink. Two units low, the shadow sat on
+        // the rule (the director, fifth pass).
         PanelRect tickBody = body;
-        tickBody.y += 2 * s;
+        tickBody.y += s;
         (void)drawCellText(target, tickBody, metric,
                            std::max(0, (interior - layout.tickCells) / 2), row, state.tick,
                            ink.dim, fade);

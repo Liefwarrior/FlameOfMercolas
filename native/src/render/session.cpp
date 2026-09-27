@@ -633,6 +633,8 @@ sim::RoofResult Session::tryClimb() {
         roofMove_ =
             "OVER " + std::to_string(move.tiles) + (move.tiles == 1 ? " TILE." : " TILES.");
         say(roofMove_);
+        // A MOMENT, NOT NEWS: this line's clock runs under the rung plate.
+        messageHeld_ = false;
         pendingLanding_ = move;
         awaitingLanding_ = true;
         syncTavernToBody();
@@ -646,6 +648,7 @@ sim::RoofResult Session::tryClimb() {
     // ledge is a fall too, and the line has to be said after it is charged.
     settleLanding(move);
     say(roofMove_);
+    messageHeld_ = false;
     syncTavernToBody();
     return move;
 }
@@ -682,6 +685,7 @@ sim::RoofResult Session::tryDropDown() {
     // can act on. What they see now is "DOWN 2 LEVELS. - 5M - 50 HURT".
     settleLanding(move);
     say(roofMove_);
+    messageHeld_ = false;
     syncTavernToBody();
     return move;
 }
@@ -3945,8 +3949,11 @@ void Session::stepRungPlate() {
         // (step()'s countdown), gets what it has left -- capped at two
         // seconds, so a leap's length is not five seconds late for long.
         if (rungPlateShowSteps_ == 0) {
-            messageSteps_ = std::min(messageSteps_, kRungPlateRowAfterSteps);
-            messageCapped_ = messageSteps_ > 0;
+            if (messageHeld_) {
+                messageSteps_ = std::min(messageSteps_, kRungPlateRowAfterSteps);
+                messageCapped_ = messageSteps_ > 0;
+            }
+            voice_.capHold(kRungPlateRowAfterSteps);
         }
     }
     // 3. DISMISSED UNDER ANYTHING THAT OWNS THE SCREEN. A page key, a talk,
@@ -3962,8 +3969,11 @@ void Session::stepRungPlate() {
         // AND THE ROW'S CLOCK IS CAPPED HERE TOO: a live hold cut by a page
         // or a warning left the frozen clock whole, so a leap's length
         // could surface six seconds after the leap (the auditor's finding).
-        messageSteps_ = std::min(messageSteps_, kRungPlateRowAfterSteps);
-        messageCapped_ = messageSteps_ > 0;
+        if (messageHeld_) {
+            messageSteps_ = std::min(messageSteps_, kRungPlateRowAfterSteps);
+            messageCapped_ = messageSteps_ > 0;
+        }
+        voice_.capHold(kRungPlateRowAfterSteps);
     }
     // 4. THE NEXT ONE UP, off the queue, on a free screen, and only once the
     //    last has eased all the way down -- `!target()` is what puts a beat
@@ -5070,7 +5080,7 @@ void Session::step(const sim::MoveInput& input) {
     // THE RUNG PLATE STOPS THIS CLOCK (rung_plate.hpp's rule): a line said
     // with the rung stands at half weight under the plate and gets what it
     // has left, capped, once the plate lifts -- stepRungPlate caps it.
-    if (messageSteps_ > 0 && !rungPlateOnScreen()) {
+    if (messageSteps_ > 0 && (!rungPlateOnScreen() || !messageHeld_)) {
         --messageSteps_;
     }
 
@@ -5752,6 +5762,9 @@ void Session::step(const sim::MoveInput& input) {
         // Who the alert row is quoting right now, so a watchman's readback
         // waits for his halt to leave the row instead of stacking under it.
         scene.alertSpeaker = alertSpeakerNow();
+        // THE RUNG PLATE holds this row's clock as it holds the alert row's
+        // (VoiceScene::holdClock); stepRungPlate caps it when the plate goes.
+        scene.holdClock = rungPlateOnScreen();
         voice_.step(scene);
         // ONE MAN, ONE LINE. A readback that REPLACED the halt (the emitter
         // speaks over a standing halt only at reach, after its second) takes
@@ -5831,8 +5844,10 @@ void Session::say(std::string line) {
     // An ordinary line. The three Watch sites in step() set this back after
     // their own say() -- see rungPlateOutranked.
     messageDemand_ = false;
-    // A new line, at whatever register the frame gives it.
+    // A new line, at whatever register the frame gives it, and news
+    // unless the site says otherwise (messageHeld_).
     messageCapped_ = false;
+    messageHeld_ = true;
     // UI-EA (LANE HUD): FOUR SECONDS, the spec's own message-row narration
     // hold (sec. 2, EVENT tier). Six was the pre-diet number; a line the
     // player is reading is re-armed by the next line anyway, and the bottom
@@ -16685,6 +16700,12 @@ constexpr std::int32_t kRungBeats = 2;
             // here, and see faceFromHere for what the other spots gave.
             standBackFrom(session, "Watchman Cull");
             (void)faceFromHere(session, "Watchman Cull");
+            // AND THE EYE BACK UP OFF HIS TABLE: from the stand-back the dip
+            // put the hood on it under the reticle, a red TAKE prompt under
+            // the Watch's own card (the player, fifth pass). Level, the
+            // reticle clears the table and the man is in the lower half of
+            // the frame; the summary's `aim=` says what it found instead.
+            session.body().setPitch(sim::angle_from_degrees(4));
             break;
         }
     }
@@ -16703,6 +16724,10 @@ constexpr std::int32_t kRungBeats = 2;
     out.head = session.rungPlateText().head;
     out.row = session.rungPlateText().prose;
     out.aim = std::string(session.aimSubjectNow());
+    if (!out.rose &&
+        (out.track == sim::LegendTrack::Trade || out.track == sim::LegendTrack::Law)) {
+        out.reason = "Cull is not at his table at this hour";
+    }
     return out;
 }
 
@@ -19167,7 +19192,11 @@ SmokeRunResult runSmoke(const SmokeRunConfig& config) {
                 << " head=\"" << rung.head << '"'
                 << " plate=" << (rung.plateUp ? "up" : "down")
                 << " found=" << (rung.found ? "yes" : "no")
-                << " called=" << session.legend().title() << " aim=\"" << rung.aim << '"';
+                << " called=" << session.legend().title() << " aim=\"" << rung.aim << '"'
+                << " rose=" << (rung.rose ? "yes" : "no");
+        if (!rung.reason.empty()) {
+            summary << " reason=\"" << rung.reason << '"';
+        }
     }
     // A SCRIPTED RUN THAT FELL SHORT SAYS SO, AND FAILS.
     //

@@ -394,7 +394,7 @@ void StreetVoice::speakFarewell(std::string name, std::string line, std::string 
 // ---------------------------------------------------------------------------
 
 void StreetVoice::step(const VoiceScene& scene) {
-    if (holdSteps_ > 0) {
+    if (holdSteps_ > 0 && !scene.holdClock) {
         --holdSteps_;
     }
     if (scene.room == nullptr) {

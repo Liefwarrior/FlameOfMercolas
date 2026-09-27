@@ -1539,13 +1539,20 @@ void drawBottomBand(Framebuffer& target, const HudState& state, BottomBand& band
             const float pulse = std::clamp(state.alertPulse, 0.0F, 1.0F);
             const int pulsePad = static_cast<int>(std::round(static_cast<float>(alertScale) * pulse));
             const int padX = alertScale * 2 + pulsePad;
-            const int padY = std::max(1, alertScale / 2) + pulsePad;
-            // UNDER THE RUNG PLATE THE FIELD STAYS AND THE RAILS HALVE: the
-            // field at the row's own ease (fine print over the Gull's lit
-            // plaster is still print -- a half-weight field let the wall
-            // through and the amber read as mud), the bone rails at half so
-            // they never outshine the dimmed words, and the words at the
-            // plate's weight on their ink (HudState::alertInkWeight).
+            // A whole minor unit of padY when stepped down: at the minor
+            // scale the settled pad is one pixel, the glyphs' drop shadows
+            // hung under the lower rail as dark nicks on the wall, and the
+            // row read as label tape (the director, fifth pass).
+            const int padY = (state.alertStepsDown ? alertScale : std::max(1, alertScale / 2)) +
+                             pulsePad;
+            // UNDER THE RUNG PLATE THE FIELD STAYS AND THE RAILS DROP TO A
+            // QUARTER: the field at the row's own ease (fine print over the
+            // Gull's lit plaster is still print -- a half-weight field let
+            // the wall through and the amber read as mud), the words at the
+            // plate's weight on their ink (HudState::alertInkWeight), and
+            // the bone rails at a quarter, because bone at half is still
+            // brighter than amber at half and the frame outshone the words
+            // it framed (the director, fifth pass, measured 1.5x to 1.9x).
             if (state.alertStepsDown) {
                 target.fillRect(textX - padX, y - padY, drawn + 2 * padX,
                                 kGlyphH * alertScale + 2 * padY, kPlateBlack, rowAlpha);
@@ -1553,7 +1560,7 @@ void drawBottomBand(Framebuffer& target, const HudState& state, BottomBand& band
             drawTextPlate(target, textX - padX, y - padY, textX + drawn + padX,
                           y + kGlyphH * alertScale + padY,
                           std::max(1, alertScale / 2 + pulsePad),
-                          state.alertStepsDown ? 0.5F * rowAlpha : rowAlpha);
+                          state.alertStepsDown ? 0.25F * rowAlpha : rowAlpha);
             // TASK #83. Eased in Session, not here -- see HudState::alertFade.
             // A caller that never set it gets 1, which is 0.95F unchanged.
             drawText(target, textX, y, alert, Rgb{0.90F, 0.62F, 0.30F},
@@ -1646,7 +1653,11 @@ void drawBottomBand(Framebuffer& target, const HudState& state, BottomBand& band
             const int drawn = std::max(firstW, secondW);
             const int textX = std::max(margin, (width - drawn) / 2);
             const int padX = minor * 2;
-            const int padY = std::max(1, minor / 2);
+            // A whole minor unit of padY while the words are dimmed, the
+            // alert row's own reason (the shadows under the lower rail).
+            const int padY = std::clamp(state.voiceInkWeight, 0.0F, 1.0F) < 1.0F
+                                 ? minor
+                                 : std::max(1, minor / 2);
             // The second slot is ABOVE the first in the band's own order,
             // so the row reads down: the name and the opening on the upper
             // line, the turn on the lower.
@@ -1663,7 +1674,7 @@ void drawBottomBand(Framebuffer& target, const HudState& state, BottomBand& band
             }
             drawTextPlate(target, textX - padX, top - padY, textX + drawn + padX,
                           bottom + kGlyphH * minor + padY, std::max(1, minor / 2),
-                          ink < 1.0F ? 0.5F * fade : fade);
+                          ink < 1.0F ? 0.25F * fade : fade);
             const Rgb dim{0.74F, 0.72F, 0.64F};
             if (!name.empty()) {
                 drawText(target, textX, top, name, aimAccent(static_cast<int>(AimKind::Person)),

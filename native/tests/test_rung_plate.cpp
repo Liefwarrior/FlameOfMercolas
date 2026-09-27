@@ -1222,6 +1222,7 @@ void checkRung(const char* word, sim::LegendTrack track, const char* under = nul
     // WHAT WAS UNDER THE RETICLE is on the record: the summary prints it,
     // and where a drive promises the cause itself, it starts with them.
     CHECK(played.summary.find("aim=\"") != std::string::npos);
+    CHECK(played.summary.find("rose=yes") != std::string::npos);
     if (under != nullptr) {
         CHECK(rung.aim.rfind(under, 0) == 0);
         CHECK(played.summary.find(std::string("aim=\"") + under) != std::string::npos);
@@ -1262,6 +1263,42 @@ TEST_CASE("--rung=bloodletter names no track: neither beat lands, and the summar
     CHECK(played.scriptFellShort());
     CHECK(played.summary.find("found=no") != std::string::npos);
     CHECK(played.summary.find("plate=down") != std::string::npos);
+    CHECK(played.summary.find("rose=no") != std::string::npos);
+}
+
+TEST_CASE("a squarer window steps the plate's register down until the frame holds sixty-four cells, and the longest row draws whole") {
+    const sim::BarkTables& sheet = barks();
+    REQUIRE(sheet.loaded());
+    std::string longestRow;
+    for (const std::string& key : everyLegendKey()) {
+        const std::string row(sheet.line(key, 0));
+        if (row.size() > longestRow.size()) {
+            longestRow = row;
+        }
+    }
+    for (const auto& size : {std::pair{1440, 1080}, std::pair{720, 720}}) {
+        const int width = size.first;
+        const int height = size.second;
+        INFO(width, "x", height);
+        const PanelMetric metric = rungPlateMetric(width, height);
+        // Stepped down from the height's own register, and no further than
+        // the first scale that holds the sheet's frame.
+        CHECK(metric.scale < panelMetric(height).scale);
+        CHECK(metric.cellsIn(width) >= 64);
+        CHECK(PanelMetric{metric.scale + 1}.cellsIn(width) < 64);
+        RungPlateState state;
+        state.head = "THE FLAME  --  THE ONE WHO WENT DOWN THERE";
+        state.prose = longestRow;
+        state.fade = 1.0F;
+        const RungPlateBox box = rungPlateBox(width, height, state);
+        REQUIRE(box.draws);
+        // The card at its full width: nothing clipped, a cell of margin.
+        const int widest = std::max(static_cast<int>(state.head.size()) + 2,
+                                    static_cast<int>(longestRow.size()));
+        CHECK(box.w == metric.widthOf(widest + 2 + 2 * kRungPlateGutterCells));
+        CHECK(box.x >= metric.cellW());
+        CHECK(box.x + box.w <= width - metric.cellW());
+    }
 }
 
 // ===========================================================================
@@ -1309,7 +1346,7 @@ TEST_CASE("the plate seats under the ribbon and the announce row, above the reti
             // THE REGISTER: the terminal register everywhere but 640x360,
             // where the minor scale has bottomed out at one under a HUD at
             // two and the plate takes the glance scale.
-            const PanelMetric metric = rungPlateMetric(height);
+            const PanelMetric metric = rungPlateMetric(width, height);
             CHECK(metric.scale == (height == 360 ? hudScale(height) : panelMetric(height).scale));
             CHECK(metric.scale >= panelMetric(height).scale);
             // Inside the frame less a cell of margin a side, and centred.
@@ -1469,7 +1506,7 @@ TEST_CASE("the plate seats under the ribbon and the announce row, above the reti
             state.fade = 1.0F;
             const RungPlateBox box = rungPlateBox(320, 180, state);
             REQUIRE(box.draws);
-            const PanelMetric metric = rungPlateMetric(180);
+            const PanelMetric metric = rungPlateMetric(320, 180);
             const int widest = std::max(
                 static_cast<int>(text.head.size()) + 2,
                 std::max(static_cast<int>(text.prose.size()), static_cast<int>(text.top.size())));

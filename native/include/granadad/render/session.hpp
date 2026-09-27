@@ -2685,6 +2685,13 @@ private:
     /// capped when the hold ended: it finishes in the small register and
     /// never swells back to the glance size. say() clears it.
     bool messageCapped_ = false;
+    /// The line on the row is NEWS (the take off a box, a watchman's word:
+    /// held under the plate and shown whole after) rather than a MOMENT (a
+    /// leap's length, a ledge mantled: its clock runs under the plate and
+    /// it is gone before the lift, because a leap's length six seconds
+    /// after the leap is nobody's news). say() says news; the roof moves
+    /// say otherwise after it.
+    bool messageHeld_ = true;
     /// True when something that outranks the plate owns the screen right
     /// now: a page or a talk (conversingNow), the court's plates and custody,
     /// the death and rope ceremonies, a bouncer's WARNING -- the alert row's
@@ -4049,6 +4056,9 @@ struct RungLineResult {
     /// What the aim prompt named under the reticle at the shutter ("WATCHMAN
     /// CULL  WATCHMAN"): the cause of the rung in the picture, or not.
     std::string aim;
+    /// Why no rung rose, when none did and the drive knows: the trade and
+    /// the law need Cull at his table, and a daytime --time= finds him out.
+    std::string reason;
 };
 
 /// DISTRICT PHASE D. What a `--threshold` run actually did, so a case can

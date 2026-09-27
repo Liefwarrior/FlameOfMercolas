@@ -16,7 +16,7 @@
     },
     {
       "key": "legend.wire.4",
-      "rows": ["Your hands are never seen. That is all the name means."]
+      "rows": ["Nobody saw your hands. The ward found a word for that."]
     },
     {
       "key": "legend.roofs.1",
@@ -36,11 +36,11 @@
     },
     {
       "key": "legend.flame.1",
-      "rows": ["You are in the Mission's book. Nobody asked you first."]
+      "rows": ["In the Mission's book already. Not your face, your work."]
     },
     {
       "key": "legend.flame.2",
-      "rows": ["The priests nod to you first now. The dockers saw it."]
+      "rows": ["The priests nod your way now. The dockers saw it."]
     },
     {
       "key": "legend.flame.3",
@@ -72,7 +72,7 @@
     },
     {
       "key": "legend.law.2",
-      "rows": ["Cull calls you by name across the room. On purpose."]
+      "rows": ["Cull calls out to you across the room. On purpose."]
     },
     {
       "key": "legend.law.3",

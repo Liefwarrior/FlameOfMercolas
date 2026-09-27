@@ -267,6 +267,12 @@ struct VoiceScene {
     /// The player's stance and hands, for watch.notice and the steel key.
     bool crouched = false;
     bool handsUp = false;
+    /// THE RUNG PLATE IS ON SCREEN (rung_plate.hpp): the current line's hold
+    /// does not run this step -- the same held clock the alert row keeps, so
+    /// a farewell said with the rung is shown whole after the plate lifts
+    /// rather than living its whole life dimmed under it. New lines still
+    /// come and go; only the hold waits.
+    bool holdClock = false;
     /// Who the alert row is quoting right now ("Watchman Cull" while his
     /// halt stands), or empty. The readback waits for the halt to leave the
     /// row rather than stacking a second line under the same name.
@@ -297,6 +303,10 @@ public:
     /// -- the arrest line landing under a watchman's readback -- so one man
     /// never says two things at once. True when a line was dropped.
     bool dropIfSpeaker(std::string_view name) noexcept;
+    /// The current line keeps at most this much of its hold: the rung
+    /// plate's cap once it lifts (kRungPlateRowAfterSteps), the alert row's
+    /// own rule.
+    void capHold(std::int32_t steps) noexcept { holdSteps_ = holdSteps_ < steps ? holdSteps_ : steps; }
     /// Takes the row down for good, no fade: the body was PLACED somewhere
     /// else (a travel, a waking, a scripted stand) and what somebody said
     /// within reach of the old feet is not on the row over the new ones.

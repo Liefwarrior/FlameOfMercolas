@@ -198,8 +198,12 @@ inline constexpr std::int32_t kRungPlateRowAfterSteps = 120;
 /// (both critics, fourth pass). There, and only there, it takes the glance
 /// scale: a 64-cell frame at scale 2 is exactly 640 pixels, so the widest
 /// card still fits with its margin, and the band between the floor and the
-/// aim prompt holds it with a row to spare.
-[[nodiscard]] PanelMetric rungPlateMetric(int height) noexcept;
+/// aim prompt holds it with a row to spare. AND NEVER FEWER THAN 64 CELLS
+/// ACROSS: a squarer window (1440x1080, 720x720) at the height's register
+/// clipped the row's last beat with the cell drawer's mark, so the register
+/// steps down a scale until the frame holds the 64 cells the sheet was
+/// authored to -- the same move 640x360 makes in the other direction.
+[[nodiscard]] PanelMetric rungPlateMetric(int width, int height) noexcept;
 
 /// The plate's FLOOR, in rows of the glance scale: the lowest pixel of the
 /// announce plate's slot under the compass ribbon at scale 1 (31). The

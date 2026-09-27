@@ -106,13 +106,13 @@ legend.cpp prints, the row is what the ward says.
 | `legend.wire.1` | THE WIRE  --  LIGHT FINGERS | Ropewynd locks its boxes twice these days. That is you. |
 | `legend.wire.2` | THE WIRE  --  CUTPURSE | Coats get held shut when you walk by. They have heard. |
 | `legend.wire.3` | THE WIRE  --  ROBBER | Finch pours before you ask. That is a robber's welcome. |
-| `legend.wire.4` | THE WIRE  --  THE QUIET TENANT | Your hands are never seen. That is all the name means. |
+| `legend.wire.4` | THE WIRE  --  THE QUIET TENANT | Nobody saw your hands. The ward found a word for that. |
 | `legend.roofs.1` | THE ROOFS  --  TENANT | Up and over, and the roofs had no objection. |
 | `legend.roofs.2` | THE ROOFS  --  ROOF-WALKER | Slates do not creak under you. Someone was counting. |
 | `legend.roofs.3` | THE ROOFS  --  SKYRUNNER | The alley is a step to you. The snug drinks to it. |
 | `legend.roofs.4` | THE ROOFS  --  THE WARD'S OWN SHADOW | Nobody looks up. You are what they'd see if they did. |
-| `legend.flame.1` | THE FLAME  --  DISCIPLE | You are in the Mission's book. Nobody asked you first. |
-| `legend.flame.2` | THE FLAME  --  THE FLAME'S MAN | The priests nod to you first now. The dockers saw it. |
+| `legend.flame.1` | THE FLAME  --  DISCIPLE | In the Mission's book already. Not your face, your work. |
+| `legend.flame.2` | THE FLAME  --  THE FLAME'S MAN | The priests nod your way now. The dockers saw it. |
 | `legend.flame.3` | THE FLAME  --  WIELDER OF THE FLAME | Doors open before you knock. Some folk cross the street. |
 | `legend.flame.4` | THE FLAME  --  THE ONE WHO WENT DOWN THERE | Down there and back. The quay stopped asking why. |
 | `legend.trade.1` | THE TRADE  --  STALLKEEP | A job done and coin taken for it. The counter remembers. |
@@ -120,7 +120,7 @@ legend.cpp prints, the row is what the ward says.
 | `legend.trade.3` | THE TRADE  --  CRAFTLORD | The Weighhouse stamps your paper without reading it. |
 | `legend.trade.4` | THE TRADE  --  THE WARD'S CREDITOR | Half this quay owes you. The other half is asking to. |
 | `legend.law.1` | THE LAW  --  KNOWN TO THE WATCH | The Watch has your name now. Not sour about it. Yet. |
-| `legend.law.2` | THE LAW  --  SWORN IN | Cull calls you by name across the room. On purpose. |
+| `legend.law.2` | THE LAW  --  SWORN IN | Cull calls out to you across the room. On purpose. |
 | `legend.law.3` | THE LAW  --  THE SERGEANT'S MAN | Voices drop when you pass. Even sober ones. |
 | `legend.law.4` | THE LAW  --  THE MAN VESS SENDS FOR | When it goes bad, Vess says your name first. |
 | `legend.top` | (under any rung 4 head) | There is nothing above that. Mind how you wear it. |
@@ -161,7 +161,7 @@ branch carries the frames and not the log). Or run them by hand.
 
 | frame | drive | what it proves |
 |---|---|---|
-| `rung-wire-960.png` | `granadad.exe --smoke=0 --hold --width=960 --height=540 --scale=1 --rung=wire --settle-steps=0 --screenshot=docs\frames\rung\rung-wire-960.png` | One cracked box at two in the morning. `THE WIRE  --  LIGHT FINGERS` on the plate, the wire.1 row under it, the landing away in front and the done room behind. Summary reads `rung=wire 0->1 row="Ropewynd locks its boxes twice these days. That is you." plate=up found=yes`. |
+| `rung-wire-960.png` | `granadad.exe --smoke=0 --hold --width=960 --height=540 --scale=1 --rung=wire --settle-steps=0 --screenshot=docs\frames\rung\rung-wire-960.png` | One cracked box at two in the morning. `THE WIRE  --  LIGHT FINGERS` on the plate, the wire.1 row under it, the landing away in front and the done room behind; the prompt names the box (`aim="THE STRONGBOX"`) and the lid itself is in the dark, not the picture. Summary reads `rung=wire 0->1 row="Ropewynd locks its boxes twice these days. That is you." plate=up found=yes`. |
 | `rung-roofs-960.png` | the same with `--rung=roofs` | The alley leapt until the roofs will have it. `THE ROOFS  --  TENANT` over the lead, the alley under the eye. Skyrunning levels on the same leap, and `SKYRUNNING RISES TO n` is the plate's own dim last row -- the same climb, told once, on the card. |
 | `rung-flame-960.png` | the same with `--rung=flame` | Two leads read at the Mission at nine. `THE FLAME  --  DISCIPLE`, the back room stood back from. The pull line under the ribbon still reads the next lead. |
 | `rung-trade-960.png` | the same with `--rung=trade` | The bounty paid across Cull's table. `THE TRADE  --  STALLKEEP` once the talk's close tail is down, from the bounty line's own stand-back with the eye on Cull. What is under the reticle is the summary's `aim="..."`, and on this corner it is a patron; see the fifth pass. |
@@ -324,11 +324,10 @@ governs. Their lists, taken whole:
   step by step against a twin session with no rung; and the room index in
   the wire drive's prose is `kRooms[2]`, ROOM 3 on its door.
 
-What is declared and left: the two-cell gutter holds at every window that
-deals the panel register 64 cells across (every 16:9 size from 320x180 up);
-a squarer window (1440x1080, 720x720) spends the gutter first and then clips
-a 56-glyph row with the cell drawer's mark. The top rung at 320x180 (fifteen
-boxes, no drive) sits on its floor with no clearance to spend.
+What is declared and left: the top rung at 320x180 (fifteen boxes, no
+drive) sits on its floor with no clearance to spend. (The squarer windows
+that clipped a 56-glyph row -- 1440x1080, 720x720 -- step their register
+down since the sixth pass; see below.)
 
 ## Fifth pass, 2026-09-26
 
@@ -352,10 +351,15 @@ was left was the choreography round it and the frames under it.
 - **Fine print is still print.** At half weight the rows' backing let the
   Gull's lit plaster through and the amber read as mud on the trade and law
   frames. The weight is on the ink now: the backing keeps the row's own
-  ease, the rails halve, the words dim. Same for the voice row.
+  ease, the words dim, and the rails drop to a quarter -- bone at half is
+  still brighter than amber at half, and the frame outshone the words it
+  framed. A whole minor unit of pad while stepped down, so the glyphs'
+  shadows stay in the field. Same for the voice row.
 - **The tick row breathes.** Set solid under the prose it read as a second
-  line of the docker's in the system's voice. It sits two units low in its
-  row: three of air above it, two between its feet and the rule.
+  line of the docker's in the system's voice. It sits one unit low in its
+  row: two of air above it and two between its feet and the rule, the
+  font's own drop shadow counted (the fifth pass set it two low and the
+  shadow, invisible on the slab but drawn, sat on the rule).
 - **The smallest window keeps its stack clear.** With seven pixels to share
   the fourth pass split them; the keyline sat two under the stat stack
   while the prompt had four. The card sits on the prompt's fence now and
@@ -434,6 +438,62 @@ the wire's or the roofs'; the summary line on a daytime `--time=` for those
 two says `found=yes plate=down` (the word was found, the plate was not);
 the voice row's ink weight and the place plate's held clock ride the same
 code as the alert row's and the case plate's and are pinned through them.
+
+## Sixth pass, 2026-09-26
+
+The fifth pass's director scored 8 and the player 7; the plate's choreography
+was closed on both lists, and what was left was polish and the world around
+the card. Their lists, taken whole:
+
+- **The rails under the words.** Bone at half is still brighter than amber
+  at half: the stood-down rows' frames outshone the words they framed by
+  half as much again. The rails drop to a quarter now, and a stood-down row
+  takes a whole minor unit of pad so the glyphs' shadows stay in the field
+  instead of hanging under the lower rail as nicks on the wall.
+- **The tick's feet.** Two units low, the tick's drop shadow -- invisible on
+  the slab, but drawn -- sat on the bottom rule. One unit low now: two of
+  air above, two between its feet and the rule.
+- **The voice row keeps the alert row's clock.** Cull's farewell and a
+  passer-by's bark lived their whole life dimmed under the plate and were
+  gone before the lift. The voice row's hold waits under the plate now and
+  is capped at two seconds after it, exactly as the alert row's.
+- **A moment is not news.** `OVER 3 TILES.` came back whole six seconds
+  after the leap. The take off a box or a watchman's word is news and is
+  held; a leap's length or a ledge mantled is a moment, and its clock runs
+  under the plate (`messageHeld_`), so it is gone before the lift.
+- **The register follows the width too.** 1440x1080 and 720x720 clipped the
+  row's last beat at the height's own register. `rungPlateMetric` steps a
+  scale down until the frame holds the sheet's 64 cells -- the same move
+  640x360 makes upward -- and a case pins both windows whole.
+- **The slab leaves ahead of the words.** Over the evening sky the lift was
+  a fogged pane of glass with grey words on it for a dozen steps; the slab's
+  alpha is the fade squared now, so the words are the last thing left.
+- **The law drive's reticle comes up off the table.** From the stand-back
+  the dip put the hood on Cull's table under the reticle: a red TAKE prompt
+  under the Watch's own card. The eye is level-and-a-touch now, the table
+  clears, and `aim=` says what it found instead.
+- **The summary says whether the rung rose.** `rose=yes|no` on every run,
+  and `reason="Cull is not at his table at this hour"` on a daytime trade
+  or law, so `found=yes plate=down` no longer reads as a success.
+- **Four rows, for the redline.** `flame.1` owns the anonymity now -- *In
+  the Mission's book already. Not your face, your work.* -- so Father
+  Maell's "whoever you are" three seconds later is the row's own joke and
+  not the world answering it back; `wire.4`, `law.2` and `flame.2` lose the
+  "That is" / "name" / "first" tics the director counted:
+
+  | key | was | is |
+  |---|---|---|
+  | `legend.flame.1` | You are in the Mission's book. Nobody asked you first. | In the Mission's book already. Not your face, your work. |
+  | `legend.wire.4` | Your hands are never seen. That is all the name means. | Nobody saw your hands. The ward found a word for that. |
+  | `legend.law.2` | Cull calls you by name across the room. On purpose. | Cull calls out to you across the room. On purpose. |
+  | `legend.flame.2` | The priests nod to you first now. The dockers saw it. | The priests nod your way now. The dockers saw it. |
+
+Declared and left: the bell is the harbour's own heavy strike on the World
+bus and no frame can hear it -- whether a rung sounds like the harbour and
+not like you wants a listen on the quay (the player's note); `wire.1`'s
+"these days" after the first box of the night is licence; the trade frame's
+patron and the flame's wall are the fifth pass's declared corners still; a
+pre-rise shutter would put the plate's rise on the record and is tooling.
 
 ## Not in this folder yet
 
