@@ -295,9 +295,10 @@ void drawRungPlate(Framebuffer& target, const RungPlateState& state) {
     // dashes above and below and outside the side bars' column left and
     // right, the same on each pair of edges; the corner diamonds, a column
     // wider than the bars and a row taller than the dashes, sit one unit
-    // inside that on every side -- the slab runs one unit past the last
-    // cell for the right-hand pair, whose diamonds fill their cell's four
-    // columns -- and a tilde's second row sits one closer below. (The dash
+    // inside that on every side -- the slab runs to the last cell's own last
+    // column, a unit past the right-hand diamonds, whose glyph fills the
+    // cell's first four columns -- and a tilde's second row sits one closer
+    // below. (The dash
     // is the font's own, row two of six; the bar is panel.cpp's kBar,
     // column one of four; the diamond rows one to three and columns nought
     // to three.)

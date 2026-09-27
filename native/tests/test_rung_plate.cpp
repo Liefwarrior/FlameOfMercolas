@@ -1175,7 +1175,9 @@ TEST_CASE("the drawn wiring: under a plate the alert row's own glyphs are half a
     // register. THE HEIGHT: how many pixel rows the glyphs stand, which
     // stepping the register down shortens whatever the alpha. THE COUNT.
     // THE RAILS: bone, r ~ g ~ b, and under the plate never as bright as the
-    // words they frame.
+    // words they frame -- read inside the row's own box (the glyphs plus
+    // the pad the rails sit in), because the rest of the band re-packs
+    // around a row one register down and its own bone text moves too.
     const auto rail = [](const Rgb& p) {
         return p.r > 0.08F && std::abs(p.r - p.g) < 0.06F && std::abs(p.g - p.b) < 0.10F &&
                p.r >= p.b;
@@ -1191,6 +1193,8 @@ TEST_CASE("the drawn wiring: under a plate the alert row's own glyphs are half a
     int aBottom = -1;
     int bTop = height;
     int bBottom = -1;
+    int bLeft = width;
+    int bRight = -1;
     std::size_t differing = 0;
     std::size_t aInk = 0;
     std::size_t bInk = 0;
@@ -1203,11 +1207,10 @@ TEST_CASE("the drawn wiring: under a plate the alert row's own glyphs are half a
             ++differing;
             const Rgb pa = unpackRgb(a.pixels()[i]);
             const Rgb pb = unpackRgb(b.pixels()[i]);
-            if (rail(pb)) {
-                bRail = std::max(bRail, luma(pb));
-            }
             if (alertInk(pb)) {
                 bWord = std::max(bWord, luma(pb));
+                bLeft = std::min(bLeft, x);
+                bRight = std::max(bRight, x);
             }
             if (alertInk(pa)) {
                 ++aInk;
@@ -1239,9 +1242,22 @@ TEST_CASE("the drawn wiring: under a plate the alert row's own glyphs are half a
     CHECK(bBottom - bTop + 1 == 6 * rungPlateMetric(width, height).scale);
     CHECK(bInk < aInk);
     // And the rails under the words: bone at a quarter is dimmer than amber
-    // at half.
+    // at half. The rails sit a unit of the row's scale outside the glyphs
+    // (padY) and half a unit thick, and the side rails two units out.
+    {
+        const int s = rungPlateMetric(width, height).scale;
+        for (int y = std::max(0, bTop - 3 * s); y <= std::min(height - 1, bBottom + 3 * s); ++y) {
+            for (int x = std::max(0, bLeft - 4 * s); x <= std::min(width - 1, bRight + 4 * s); ++x) {
+                const Rgb pb = unpackRgb(b.pixels()[b.index(x, y)]);
+                if (rail(pb)) {
+                    bRail = std::max(bRail, luma(pb));
+                }
+            }
+        }
+    }
     INFO("bRail ", bRail, " bWord ", bWord);
     CHECK(bWord > 0.0);
+    CHECK(bRail > 0.0);
     CHECK(bRail < bWord);
     }
 }
@@ -1548,9 +1564,10 @@ TEST_CASE("the plate seats under the ribbon and the announce row, above the reti
                     CHECK(box.y == (topped ? 31 : 36));
                 }
             }
-            // THE SLAB'S OWN EDGES, on pixels: a unit left of the box and a
-            // unit past its right edge, so the corner diamonds -- which fill
-            // their cell's four columns -- keep a unit of slab either side.
+            // THE SLAB'S OWN EDGES, on pixels: a unit left of the box and
+            // flush with its right edge (the last cell's own last column),
+            // so the corner diamonds -- which fill the first four of their
+            // cell's five columns -- keep a unit of slab either side.
             {
                 Framebuffer bare(width, height);
                 bare.clear(Rgb{0.10F, 0.12F, 0.14F});
@@ -1568,7 +1585,7 @@ TEST_CASE("the plate seats under the ribbon and the announce row, above the reti
                     }
                 }
                 CHECK(leftEdge == box.x - metric.scale);
-                CHECK(rightEdge == box.x + box.w + metric.scale - 1);
+                CHECK(rightEdge == box.x + box.w - 1);
             }
             // Seated high: the top quarter of the spare, not the middle.
             CHECK(box.y < (height - box.h) / 2);
