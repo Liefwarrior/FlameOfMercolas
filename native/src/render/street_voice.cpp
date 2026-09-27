@@ -366,6 +366,7 @@ bool StreetVoice::dropIfSpeaker(std::string_view name) noexcept {
 
 void StreetVoice::standDown() noexcept {
     holdSteps_ = 0;
+    capped_ = false;
     current_ = VoiceLine{};
 }
 

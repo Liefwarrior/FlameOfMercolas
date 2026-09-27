@@ -4068,8 +4068,10 @@ struct RungLineResult {
     /// What the plate reads: the head and the authored row.
     std::string head;
     std::string row;
-    /// What the aim prompt named under the reticle at the shutter ("WATCHMAN
-    /// CULL  WATCHMAN"): the cause of the rung in the picture, or not.
+    /// What the INTERACT prompt named at the shutter ("WATCHMAN CULL
+    /// WATCHMAN"): Session::aimSubjectNow, the target in reach from where
+    /// the body stands, never the reticle's ray -- the cause of the rung in
+    /// the picture, or not.
     std::string aim;
     /// Why no rung rose, when none did and the drive knows: the trade and
     /// the law need Cull at his table, and a daytime --time= finds him out.

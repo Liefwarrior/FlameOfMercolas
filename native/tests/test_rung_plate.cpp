@@ -1,6 +1,10 @@
 // THE RUNG PLATE, PINNED -- the ward says so, and the simulation cannot tell.
 //
-// Twelve claims, each its own case (the sixth is one case per track):
+// The claims below, each its own case (the sixth is one case per track), and
+// after them the passes' own pins: the alert row's register and rails on
+// pixels against a twin, the demand, the lift window both ways, the text
+// plate's corner, the lift curve on a sky, the head's centring, the voice
+// row's stand-down through its fade, and the 320x180 fold.
 //
 //   1. THE WATCH seeds silently and reports a rise per track, never a fall.
 //      A session that loads with rungs on the sheet has not just earned
@@ -753,6 +757,11 @@ TEST_CASE("a watchman's demand under a live plate is never capped nor stepped do
     }
     REQUIRE_FALSE(session.tavern().lastDemand().empty());
     REQUIRE(liveBefore);
+    // AND THE HOLD IS STILL RUNNING ON THE LANDING STEP: the plate is cut
+    // the step AFTER the demand is said (stepRungPlate runs before the
+    // Gull's say()), so a bouncer's warning earlier in that same step --
+    // which cuts the hold at once -- cannot have been what dismissed it.
+    REQUIRE(session.rungPlateWanted());
     REQUIRE(session.alertSpeakerNow().rfind("Watchman Cull", 0) == 0);
     // The demand is on the row: the plate is gone the same step, the row is
     // at the glance size, and the line keeps its WHOLE hold, counted down
@@ -814,6 +823,150 @@ TEST_CASE("a line said during the lift is capped on the card's last frame, and a
             CHECK(session.rungPlateState().fade == 0.0F);
         }
     }
+}
+
+TEST_CASE("the voice row's capped state outlives its hold through the ease-out, and a passer-by's bark runs under the plate while a farewell holds") {
+    StreetVoice voice;
+    VoiceScene held;
+    held.holdClock = true;
+    VoiceScene running;
+    // A farewell (an event line) under the plate: its clock does not run.
+    VoiceLine farewell;
+    farewell.name = "Watchman Cull";
+    farewell.text = "KEEP MY ROUNDS QUIET. GO ON.";
+    farewell.channel = VoiceChannel::Farewell;
+    farewell.step = 10;
+    voice.say(farewell);
+    REQUIRE(voice.up());
+    for (int i = 0; i < kVoiceHoldMaxSteps + 1; ++i) {
+        voice.step(held);
+    }
+    CHECK(voice.up());
+    CHECK_FALSE(voice.capped());
+    // Capped when the plate goes: still up for the cap, then down -- and
+    // CAPPED through the fade that follows, until the row clears.
+    voice.capHold(2);
+    CHECK(voice.capped());
+    voice.step(running);
+    voice.step(running);
+    CHECK_FALSE(voice.up());
+    CHECK(voice.capped());
+    voice.clearIfSettled(false);
+    CHECK(voice.capped());
+    voice.clearIfSettled(true);
+    CHECK_FALSE(voice.capped());
+    // A passer-by's bark (a pass line) under the plate: a moment, it runs.
+    VoiceLine bark;
+    bark.name = "Vidar";
+    bark.text = "ROPE COMING THROUGH. MIND YOUR FEET.";
+    bark.channel = VoiceChannel::Pass;
+    bark.step = 20;
+    voice.say(bark);
+    REQUIRE(voice.up());
+    CHECK_FALSE(voice.capped());
+    for (int i = 0; i < kVoiceHoldMaxSteps + 1; ++i) {
+        voice.step(held);
+    }
+    CHECK_FALSE(voice.up());
+}
+
+TEST_CASE("the voice row drawn stood down keeps the plate's register through a fade, on pixels, where the minor scale is a tier above it") {
+    // 720x720: the HUD's minor scale is 3, the plate's register 2. The
+    // name is drawn in the person accent (0.90, 0.72, 0.58): blue at about
+    // two thirds of red, green at four fifths -- neither bone nor amber.
+    const auto accent = [](const Rgb& p) {
+        return p.r > 0.20F && p.g > 0.72F * p.r && p.g < 0.88F * p.r && p.b > 0.55F * p.r &&
+               p.b < 0.75F * p.r;
+    };
+    int heights[2] = {0, 0};
+    for (int pass = 0; pass < 2; ++pass) {
+        HudState state;
+        state.voiceName = "Watchman Cull";
+        state.voiceLine = "KEEP MY ROUNDS QUIET. GO ON.";
+        state.voiceFade = 0.5F;
+        state.voiceInkWeight = 1.0F;
+        state.alertStepScale = rungPlateMetric(720, 720).scale;
+        state.voiceStepsDown = pass == 1;
+        Framebuffer fb(720, 720);
+        fb.clear(Rgb{0.08F, 0.09F, 0.10F});
+        drawHud(fb, state);
+        int top = 720;
+        int bottom = -1;
+        for (int y = hudAimRect(720, 720).y1; y < 720; ++y) {
+            for (int x = 0; x < 720; ++x) {
+                if (accent(unpackRgb(fb.pixels()[fb.index(x, y)]))) {
+                    top = std::min(top, y);
+                    bottom = std::max(bottom, y);
+                }
+            }
+        }
+        REQUIRE(bottom >= top);
+        heights[pass] = bottom - top + 1;
+    }
+    CHECK(heights[0] == 6 * hudMinorScale(720));
+    CHECK(heights[1] == 6 * rungPlateMetric(720, 720).scale);
+    CHECK(heights[1] < heights[0]);
+}
+
+TEST_CASE("the head block sits on the card's axis for every track's head, to the half cell, on pixels") {
+    // The panel accent (the gold block): red high, green about seven
+    // eighths of it, blue under half.
+    const auto gold = [](const Rgb& p) {
+        return p.r > 0.80F && p.g > 0.80F * p.r && p.g < 0.95F * p.r && p.b < 0.55F * p.r;
+    };
+    for (const sim::LegendTrack track : {sim::LegendTrack::Wire, sim::LegendTrack::Roofs,
+                                         sim::LegendTrack::Flame, sim::LegendTrack::Trade,
+                                         sim::LegendTrack::Law}) {
+        const std::string head = headFor(track, 1);
+        INFO(head);
+        RungPlateState state;
+        state.head = head;
+        state.prose = "Up and over, and the roofs had no objection.";
+        state.fade = 1.0F;
+        state.drift = 0.0F;
+        const RungPlateBox box = rungPlateBox(960, 540, state);
+        REQUIRE(box.draws);
+        const PanelMetric metric = rungPlateMetric(960, 540);
+        Framebuffer fb(960, 540);
+        fb.clear(Rgb{0.10F, 0.12F, 0.14F});
+        drawRungPlate(fb, state);
+        const int headY = box.y + metric.heightOf(1) + metric.cellH() / 2;
+        int left = 960;
+        int right = -1;
+        for (int x = 0; x < 960; ++x) {
+            if (gold(unpackRgb(fb.pixels()[fb.index(x, headY)]))) {
+                left = std::min(left, x);
+                right = std::max(right, x);
+            }
+        }
+        REQUIRE(right > left);
+        // Twice the centres, so a half pixel is a whole number: within one.
+        const int blockTwice = left + right;
+        const int axisTwice = 2 * box.x + box.w - 1;
+        INFO("block ", left, "..", right, " axis*2 ", axisTwice);
+        CHECK(std::abs(blockTwice - axisTwice) <= 1);
+    }
+}
+
+TEST_CASE("at 320x180 a skill that levels on the rung's step is a toast after the lift, never a tick the card has no row for") {
+    SessionConfig config = configAt("mission-backroom");
+    config.width = 320;
+    config.height = 180;
+    Session session(config);
+    wake(session);
+    sim::SkillTrack& skills = session.tavern().dialogue().skills();
+    REQUIRE(skills.find(sim::kBlockSkill) != nullptr);
+    while (!skills.use(sim::kBlockSkill)) {
+    }
+    crackABox(session);
+    session.stepMany(sim::MoveInput{}, 1);
+    REQUIRE(session.rungPlateWanted());
+    CHECK(session.rungPlateText().tick.empty());
+    CHECK_FALSE(session.skillToastWanted());
+    session.stepMany(sim::MoveInput{}, kRungPlateHoldSteps + kRungPlateLiftSteps + 4);
+    CHECK_FALSE(session.rungPlateWanted());
+    CHECK(session.skillToastWanted());
+    CHECK(session.skillToastLabel() == "SHIELDWALL RISES TO 1");
 }
 
 TEST_CASE("a text plate's corner is drawn once: at a quarter alpha the corner pixel is the rail's pixel, and at full alpha nothing changed") {

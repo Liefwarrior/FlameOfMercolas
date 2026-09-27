@@ -251,6 +251,14 @@ RungPlateBox rungPlateBox(int width, int height, const RungPlateState& state) {
     return box;
 }
 
+bool rungPlateTickFits(int width, int height, const RungPlateState& state) {
+    RungPlateState probe = state;
+    if (probe.tick.empty()) {
+        probe.tick = "SKYRUNNING RISES TO 2";
+    }
+    return layoutFor(width, height, probe).tickCells > 0;
+}
+
 void drawRungPlate(Framebuffer& target, const RungPlateState& state) {
     const float fade = std::clamp(state.fade, 0.0F, 1.0F);
     if (fade <= 0.0F) {
@@ -318,6 +326,11 @@ void drawRungPlate(Framebuffer& target, const RungPlateState& state) {
     // seventh pass). On the up card they are invisible against the slab.
     const float shadowFade = 0.75F * fade * fade;
     style.shadowAlpha = shadowFade;
+    // AND THE DIM ROWS' SHADOWS ONE POWER FASTER: the tick and the top row
+    // are drawn in the dim ink, so on the lift's greying slab their shadow
+    // out-contrasted their own letters for six steps and the row read as
+    // embossed (the director, eighth pass). The cube of the fade.
+    const float dimShadowFade = shadowFade * fade;
     target.fillRect(bounds.x - s, bounds.y, bounds.w + s, bounds.h - 2 * s, style.ground,
                     kPageGroundAlpha * fade * fade);
     PanelFrame pane(target, bounds, metric, style);
@@ -369,7 +382,7 @@ void drawRungPlate(Framebuffer& target, const RungPlateState& state) {
         // The top of the ladder: a dateline's role, dim, read last.
         (void)drawCellText(target, centred(layout.topCells), metric,
                            std::max(0, (interior - layout.topCells) / 2), row, state.top,
-                           ink.dim, inkFade, shadowFade);
+                           ink.dim, inkFade, dimShadowFade);
         ++row;
     }
     if (layout.tickCells > 0) {
@@ -387,7 +400,7 @@ void drawRungPlate(Framebuffer& target, const RungPlateState& state) {
         tickBody.y += s;
         (void)drawCellText(target, tickBody, metric,
                            std::max(0, (interior - layout.tickCells) / 2), row, state.tick,
-                           ink.dim, inkFade, shadowFade);
+                           ink.dim, inkFade, dimShadowFade);
         ++row;
     }
 }

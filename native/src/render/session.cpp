@@ -3749,13 +3749,24 @@ void Session::stepPull() {
         // started, else the last one queued -- and when two tracks rise on
         // one step, the tick rides the second, queued plate, whichever
         // track that is. A second skill on the same step, or one later in
-        // the hold, queues as a toast.
+        // the hold, queues as a toast. AND ONLY WHERE THE CARD HAS A ROW FOR
+        // IT (rungPlateTickFits, at the session's own frame size): at
+        // 320x180 the card drops its tick row, and a level folded in there
+        // was told nowhere (the player, eighth pass) -- it queues as a
+        // toast behind the plate instead.
         if (rungRoseThisStep_) {
             RungPlateText& plate =
                 rungPlateQueue_.empty() ? rungPlateText_ : rungPlateQueue_.back();
             if (plate.tick.empty()) {
-                plate.tick = label;
-                continue;
+                RungPlateState probe;
+                probe.head = plate.head;
+                probe.prose = plate.prose;
+                probe.top = plate.top;
+                probe.tick = label;
+                if (rungPlateTickFits(config_.width, config_.height, probe)) {
+                    plate.tick = label;
+                    continue;
+                }
             }
         }
         skillToastQueue_.push_back(label);
@@ -16527,7 +16538,8 @@ constexpr std::int32_t kRungBeats = 2;
 ///          leaves a man three short of it.
 ///
 /// AND NOTHING WALKS AFTER A RUNG on the wire, the roofs and the flame --
-/// the trade and the law stand back after theirs, a second of the hold, and
+/// the trade and the law stand back after theirs, about twenty-five steps of
+/// the hold, and
 /// the README says so. The two that broke it are why it is written down: the plate
 /// holds five seconds (kRungPlateHoldSteps) and a scripted walk spends them
 /// faster than anything else in this file -- fifty tiles out of the Mission

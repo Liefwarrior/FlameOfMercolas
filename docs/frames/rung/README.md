@@ -615,10 +615,12 @@ capped bark swelled when the plate left. Everything below is on the gate.
 - **The history of the demand is told straight.** The seventh pass said the
   old caps "skipped the demand"; they did not -- the demand was news and was
   capped and stepped down. Corrected in place.
-- **The demand case proves its name.** It requires the plate live on the
-  step the demand lands (a bouncer's warning dismissing it first would have
-  passed before), requires Cull on the row, and pins the hold exactly: read
-  off the row the step it lands, past the cap, and counted down one a step.
+- **The demand case proves its name.** It requires the plate live before
+  the landing step and its hold still running ON the landing step -- the
+  plate is cut the step after the demand is said, so a bouncer's warning
+  earlier in that step would already have cut it (the ninth pass added the
+  second require) -- requires Cull on the row, and pins the hold exactly:
+  read off the row the step it lands, past the cap, counted down one a step.
 - **The shadows leave with the slab.** The plate's text drew its drop
   shadows at the ink's alpha while the slab thinned as the fade squared, so
   from the lift's midpoint the letters were black outlines round grey words
@@ -629,12 +631,14 @@ capped bark swelled when the plate left. Everything below is on the gate.
   (the pin caught them, gate 29), so `FrameStyle::shadowAlpha` carries the
   slab's alpha through `drawRuleRun` and `drawMotif`, every other frame
   keeping the font's three quarters. Pinned at fade 1, 0.5 and 0.25 on a sky
-  (ink whole at the midpoint, slab a quarter, the darkest pixel in the prose
+  (the brightest prose pixel at the midpoint equal to the up card's; the slab
+  lighter by more than a tenth of luminance there -- a quarter of its alpha
+  by the curve, not pinned as that number; the darkest pixel in the prose
   rows nowhere near the up card's shadow).
 - **Centred to the half cell.** A head block or tick row whose spare cells
   were odd sat half a cell left of the card's axis (5 px at 960, 12.5 at
   1920, on three of five tracks). Rows with an odd spare shift right half a
-  cell.
+  cell; pinned on pixels for all five heads at 960 (the ninth pass).
 - **The stood-down rows keep their rail clean.** A whole unit of pad put the
   glyphs' shadow row ON the rail (the director measured the dent under every
   letter, at every size); the pad is the shadow's unit plus the rail's
@@ -684,19 +688,64 @@ Declared and left, with reasons:
   on the health bar, the line is a move's length, and it runs.
 - **Unpinned by design**: the bell's one sample (content), the cue firing on
   show (audio), the 3840x2160 tick row (no such frame is shot), the drop
-  line as news (no roof-drop fixture in this suite; the leap and mantle
-  moments are).
+  line as news and the leap and mantle as moments (no roof fixture in this
+  suite: none of the three is pinned), the stood-down rows' pad (a whole
+  unit would pass the rails pin; the director measured the rails clean).
 - The side bars a column off centre on the diamonds, the tick's foot a unit
   tighter than the head: the panel vocabulary's, not this card's.
 - The rows' shared shape, and the world made to honour more of what the
   rows promise (the player's M2): the sheet's next redline is a chip. One
   row could not wait: `wire.3` had Finch pouring, and Finch is the ward's
-  fence, not a barman (`notables.json`; the director). It pays off his
+  fence, not a barman (`skyrunner_tenant.json`'s "the somebody is Finch"
+  and the Fence topic in `dialogue.cpp`; the director). It pays off his
   work now:
 
   | key | was | is |
   |---|---|---|
   | `legend.wire.3` | Finch pours before you ask. Robbers get poured for. | Finch pays before the sack is open. Robber's rates. |
+
+## Ninth pass, 2026-09-27
+
+The eighth pass scored 8 (director), 8 (player) and 7 (auditor). The
+auditor: the voice row's stand-down was keyed on the line being up, so a
+capped bark swelled back to the minor scale for the eight frames of its
+fade (seen on the exe at 720x720); the voice row's new pad put the next band
+row's shadow on its top rail; the demand case could not rule out a warning
+in the same step; four lines of the record were stale or over-claimed; the
+centring and the moment clock were unpinned and undeclared. The director: the
+dim tick row embossed for six steps of the lift. The player: at 320x180 a
+level that folded into a card with no tick row was told nowhere.
+
+- **The voice row stays stood down through its fade.** `StreetVoice::capped`
+  reads the line being present, not up -- the row clears it, a new line
+  clears it -- and `standDown` clears it too. Pinned twice: the emitter's
+  own state through a cap, two steps and the clear; and the HUD on pixels
+  at 720x720 through a half fade, the name's glyphs six rows of the plate's
+  scale stood down and six of the minor scale otherwise.
+- **The voice row buys its pad above.** The rail plus a minor unit of air,
+  in pixels, the alert row's way. Unpinned (a band row above the voice
+  needs a fixture this suite has not got); declared.
+- **The dim rows' shadows go one power faster.** The tick and the top row
+  are dim ink; their shadows are the cube of the fade, so they never
+  out-contrast their own letters on the greying slab.
+- **The tick folds in only where the card has a row for it.**
+  `rungPlateTickFits` asks the layout at the session's frame size before
+  the fold; at 320x180 (and a topped card at 640x360 or 1920x1080) the level
+  queues as a toast behind the plate. Pinned at 320x180.
+- **The demand case rules out a same-step warning** (`rungPlateWanted()` on
+  the landing step) and the README says exactly what it proves.
+- **The record corrected**: the drive doc's "a second of the hold"; the
+  `RungLineResult::aim` doc; the leap and mantle moments are not pinned;
+  the slab's "quarter" is not the pin's number; Finch's fence is cited from
+  where the game says it.
+- **Pinned**: the head block on the card's axis for all five heads; a pass
+  bark running under the plate while a farewell holds.
+- **Declared and left**: the head block's height depends on the card's row
+  count (the director: a topped card seats three units higher; two queued
+  cards of different depth would make the gold hop -- the seat is the
+  card's, and anchoring the head instead is a seat rule for the next pass);
+  the full stop's weight pulling every row a pixel or two left of centre by
+  eye; the stood-down pad unpinned; the chips above unchanged.
 
 ## Not in this folder yet
 

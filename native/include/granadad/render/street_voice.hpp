@@ -314,8 +314,12 @@ public:
         capped_ = holdSteps_ > 0;
     }
     /// The current line had its hold capped by the plate and finishes small
-    /// (HudState::voiceStepsDown); a new line clears it.
-    [[nodiscard]] bool capped() const noexcept { return capped_ && up(); }
+    /// (HudState::voiceStepsDown) -- through its ease-out too, which runs
+    /// after the hold has hit zero (the auditor: keyed on up(), the row
+    /// swelled to the minor scale for the eight frames of its fade). A new
+    /// line clears it, and so does the row clearing (clearIfSettled,
+    /// standDown).
+    [[nodiscard]] bool capped() const noexcept { return capped_ && !current_.empty(); }
     /// Takes the row down for good, no fade: the body was PLACED somewhere
     /// else (a travel, a waking, a scripted stand) and what somebody said
     /// within reach of the old feet is not on the row over the new ones.
