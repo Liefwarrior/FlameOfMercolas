@@ -16413,21 +16413,19 @@ constexpr std::int32_t kEvictRefuseBeats = 8;
     return talk.journal().stagesDone(questId);
 }
 
-/// FACES THEM FROM WHERE THE BODY STANDS AND SAYS WHETHER THEY ARE UNDER THE
-/// RETICLE. The aim prompt's own subject (Session::aimSubjectNow, refreshed
-/// every step, in the roster's own case) is the one honest test of "in the
-/// picture": the sim's line of sight sees over a table and through a
-/// standing man, and standBackFrom's clear-line rule sees the Gull's roster
-/// but not the ward's bodies that drink there. From the stand-back's three
-/// tiles the hood on Cull's table and a patron had the reticle on three
-/// passes, and a ring of spots walked round him spent the plate's whole
-/// hold finding none (gate 14). From where the talk left the body -- a tile
-/// off him -- the prompt names him (gate 15); what it showed was the wall
-/// behind him, because a man on a stool a tile away sits under an eye that
-/// looks straight ahead. So no walk: face them by bearing, and bring the
-/// eye DOWN to them by their distance -- thirty degrees at a tile, half that
-/// at two, a third at three -- and read the prompt after a step.
-[[nodiscard]] bool faceUnderReticle(Session& session, std::string_view name) {
+/// FACES THEM FROM WHERE THE BODY STANDS, the eye dipped toward a man on a
+/// stool by his distance (thirty degrees at a tile, a third of that at
+/// three), and says whether the aim prompt names them after a step. The
+/// prompt's own subject (Session::aimSubjectNow, in the roster's own case)
+/// is the one honest test of "under the reticle". What the fifth pass
+/// learnt at Cull's stool, gate by gate: from standBackFrom's three tiles a
+/// patron or the hood on his table has the reticle (the stand-back's
+/// clear-line rule sees the Gull's roster, not the ward's bodies that drink
+/// there); a ring of spots walked round him spent the plate's whole hold
+/// finding none; from a tile off him the prompt names him and the picture
+/// is the wall behind his head, eye dipped or not. So the drives stand
+/// back as they always did, dip the eye, and print what the prompt says.
+[[nodiscard]] bool faceFromHere(Session& session, std::string_view name) {
     const sim::Actor* who = actorNamed(session, name);
     if (who == nullptr) {
         return false;
@@ -16662,13 +16660,14 @@ constexpr std::int32_t kRungBeats = 2;
             break;
         }
         case sim::LegendTrack::Trade: {
-            // The bounty, whole, closed at the table so the plate that
-            // queued behind Cull's table can come up, and the man who paid
-            // faced from there with the eye brought down to him
-            // (faceUnderReticle) -- no walk after the rung. The summary's
-            // `aim=` says he is the thing under the reticle.
-            (void)runContractLine(session, "table");
-            (void)faceUnderReticle(session, "Watchman Cull");
+            // The bounty, whole, and closed at the end so the plate that
+            // queued behind Cull's table can come up; the line's own
+            // stand-back (three tiles, a walk the plate's hold pays for),
+            // then the eye on him from there. What is under the reticle is
+            // the summary's `aim=` -- see faceFromHere for why it is a
+            // patron or the hood on his table and not him.
+            (void)runContractLine(session, "away");
+            (void)faceFromHere(session, "Watchman Cull");
             break;
         }
         case sim::LegendTrack::Law: {
@@ -16680,12 +16679,12 @@ constexpr std::int32_t kRungBeats = 2;
                 }
                 session.closeConversation();
             }
-            // The man the four drinks bought, faced from where the talk left
-            // the body with the eye brought down to him (faceUnderReticle)
-            // -- no walk after the rung; the stand-back's three tiles put a
-            // hood on his table under the reticle on three passes. The
-            // summary's `aim=` says it is him.
-            (void)faceUnderReticle(session, "Watchman Cull");
+            // The stand-back, then the eye on the man the four drinks bought
+            // (faceFromHere). What is under the reticle is the summary's
+            // `aim=`; the hood on his table has had it on every pass from
+            // here, and see faceFromHere for what the other spots gave.
+            standBackFrom(session, "Watchman Cull");
+            (void)faceFromHere(session, "Watchman Cull");
             break;
         }
     }
