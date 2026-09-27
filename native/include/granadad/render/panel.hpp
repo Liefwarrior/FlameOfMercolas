@@ -411,13 +411,16 @@ inline constexpr std::string_view kGlyphUpDown = "\x02\x03";
 /// one-pixel drop shadow so it sits in register beside real text.
 void drawMotif(Framebuffer& target, int x, int y, Motif motif, const Rgb& colour, float alpha,
                int scale);
+/// The same, with the drop shadow's own alpha (FrameStyle::shadowAlpha).
+void drawMotif(Framebuffer& target, int x, int y, Motif motif, const Rgb& colour, float alpha,
+               int scale, float shadowAlpha);
 
 /// A run of the `+~-~-` rule motif, `cells` cells wide, starting at (x, y).
 /// Alternates `~` and `-` and puts `junction` at BOTH ends. Cells listed in
 /// `interiorJunctions` (indices into the run) get a junction too -- that is
 /// where a column divider meets the rule.
 void drawRuleRun(Framebuffer& target, int x, int y, int cells, const PanelMetric& metric,
-                 Motif junction, const Rgb& colour, float alpha,
+                 Motif junction, const Rgb& colour, float alpha, float shadowAlpha,
                  const std::vector<int>& interiorJunctions = {});
 
 /// The faint `.`/`'` field the reference fills a large otherwise-empty panel
@@ -490,6 +493,12 @@ struct FrameStyle {
     /// The caller's own fade -- an overlay's EasedToggle, per the project's UI
     /// conventions. 0 draws nothing at all.
     float alpha = 1.0F;
+    /// The rules' and bars' drop-shadow alpha. Below zero (every frame before
+    /// the rung plate) means the font's own: three quarters of `alpha`. A
+    /// card whose slab thins faster than its ink (the rung plate's lift)
+    /// sets the slab's own alpha here, so its frame never leaves as black
+    /// nicks under grey dashes on a pane.
+    float shadowAlpha = -1.0F;
     /// How opaque the ground is over whatever is behind it. The first-person
     /// view is behind these panels and is allowed to show through a little.
     float groundAlpha = 0.94F;

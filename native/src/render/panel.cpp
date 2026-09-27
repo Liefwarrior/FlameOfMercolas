@@ -70,7 +70,7 @@ constexpr MotifGlyph kReturn{{0x0, 0x1, 0x5, 0xF, 0x4, 0x0}};
 constexpr MotifGlyph kCross{{0x0, 0x6, 0xF, 0xF, 0x6, 0x0}};
 
 void blitMotif(Framebuffer& target, int x, int y, const MotifGlyph& glyph, const Rgb& colour,
-               float alpha, int scale) {
+               float alpha, int scale, float shadowAlpha) {
     for (int row = 0; row < kGlyphRows; ++row) {
         for (int col = 0; col < 4; ++col) {
             const bool on = (glyph.rows[static_cast<std::size_t>(row)] >> (3 - col)) & 1U;
@@ -82,7 +82,7 @@ void blitMotif(Framebuffer& target, int x, int y, const MotifGlyph& glyph, const
             // glyph and a font glyph side by side are indistinguishable in
             // treatment.
             target.fillRect(x + col * scale + scale, y + row * scale + scale, scale, scale, kShadow,
-                            alpha * 0.75F);
+                            shadowAlpha);
             target.fillRect(x + col * scale, y + row * scale, scale, scale, colour, alpha);
         }
     }
@@ -271,7 +271,15 @@ Rgb inkFor(InkRole role) noexcept {
 // ---------------------------------------------------------------------------
 
 void drawMotif(Framebuffer& target, int x, int y, Motif motif, const Rgb& colour, float alpha,
+               int scale, float shadowAlpha);
+
+void drawMotif(Framebuffer& target, int x, int y, Motif motif, const Rgb& colour, float alpha,
                int scale) {
+    drawMotif(target, x, y, motif, colour, alpha, scale, alpha * 0.75F);
+}
+
+void drawMotif(Framebuffer& target, int x, int y, Motif motif, const Rgb& colour, float alpha,
+               int scale, float shadowAlpha) {
     if (alpha <= 0.0F || scale <= 0) {
         return;
     }
@@ -279,43 +287,43 @@ void drawMotif(Framebuffer& target, int x, int y, Motif motif, const Rgb& colour
         // THE TWO THE FONT ALREADY HAS go through the font, so there is exactly
         // one `!` and one `+` in this build and they cannot drift apart.
         case Motif::Bang:
-            drawText(target, x, y, "!", colour, alpha, scale);
+            drawText(target, x, y, "!", colour, alpha, scale, shadowAlpha);
             return;
         case Motif::Plus:
-            drawText(target, x, y, "+", colour, alpha, scale);
+            drawText(target, x, y, "+", colour, alpha, scale, shadowAlpha);
             return;
         case Motif::Tilde:
-            blitMotif(target, x, y, kTilde, colour, alpha, scale);
+            blitMotif(target, x, y, kTilde, colour, alpha, scale, shadowAlpha);
             return;
         case Motif::Bar:
-            blitMotif(target, x, y, kBar, colour, alpha, scale);
+            blitMotif(target, x, y, kBar, colour, alpha, scale, shadowAlpha);
             return;
         case Motif::Diamond:
-            blitMotif(target, x, y, kDiamond, colour, alpha, scale);
+            blitMotif(target, x, y, kDiamond, colour, alpha, scale, shadowAlpha);
             return;
         case Motif::Dot:
-            blitMotif(target, x, y, kDot, colour, alpha, scale);
+            blitMotif(target, x, y, kDot, colour, alpha, scale, shadowAlpha);
             return;
         case Motif::Ring:
-            blitMotif(target, x, y, kRing, colour, alpha, scale);
+            blitMotif(target, x, y, kRing, colour, alpha, scale, shadowAlpha);
             return;
         case Motif::ArrowUp:
-            blitMotif(target, x, y, kArrowUp, colour, alpha, scale);
+            blitMotif(target, x, y, kArrowUp, colour, alpha, scale, shadowAlpha);
             return;
         case Motif::ArrowDown:
-            blitMotif(target, x, y, kArrowDown, colour, alpha, scale);
+            blitMotif(target, x, y, kArrowDown, colour, alpha, scale, shadowAlpha);
             return;
         case Motif::ArrowLeft:
-            blitMotif(target, x, y, kArrowLeft, colour, alpha, scale);
+            blitMotif(target, x, y, kArrowLeft, colour, alpha, scale, shadowAlpha);
             return;
         case Motif::ArrowRight:
-            blitMotif(target, x, y, kArrowRight, colour, alpha, scale);
+            blitMotif(target, x, y, kArrowRight, colour, alpha, scale, shadowAlpha);
             return;
         case Motif::Return:
-            blitMotif(target, x, y, kReturn, colour, alpha, scale);
+            blitMotif(target, x, y, kReturn, colour, alpha, scale, shadowAlpha);
             return;
         case Motif::Cross:
-            blitMotif(target, x, y, kCross, colour, alpha, scale);
+            blitMotif(target, x, y, kCross, colour, alpha, scale, shadowAlpha);
             return;
     }
 }
@@ -346,7 +354,7 @@ bool motifForSentinel(char c, Motif& out) noexcept {
 }
 
 void drawRuleRun(Framebuffer& target, int x, int y, int cells, const PanelMetric& metric,
-                 Motif junction, const Rgb& colour, float alpha,
+                 Motif junction, const Rgb& colour, float alpha, float shadowAlpha,
                  const std::vector<int>& interiorJunctions) {
     if (alpha <= 0.0F || cells <= 0) {
         return;
@@ -358,11 +366,11 @@ void drawRuleRun(Framebuffer& target, int x, int y, int cells, const PanelMetric
             isEnd || std::find(interiorJunctions.begin(), interiorJunctions.end(), i) !=
                          interiorJunctions.end();
         if (isJoin) {
-            drawMotif(target, cx, y, junction, colour, alpha, metric.scale);
+            drawMotif(target, cx, y, junction, colour, alpha, metric.scale, shadowAlpha);
         } else if ((i % 2) == 1) {
-            drawMotif(target, cx, y, Motif::Tilde, colour, alpha, metric.scale);
+            drawMotif(target, cx, y, Motif::Tilde, colour, alpha, metric.scale, shadowAlpha);
         } else {
-            drawText(target, cx, y, "-", colour, alpha, metric.scale);
+            drawText(target, cx, y, "-", colour, alpha, metric.scale, shadowAlpha);
         }
     }
 }
@@ -485,6 +493,9 @@ void PanelFrame::draw() {
     }
     Framebuffer& target = *target_;
     const int cw = metric_.cellW();
+    // The motifs' shadow: the style's own if it set one, the font's three
+    // quarters of the ink otherwise (FrameStyle::shadowAlpha).
+    const float shadow = style_.shadowAlpha >= 0.0F ? style_.shadowAlpha : 0.75F * style_.alpha;
 
     target.fillRect(bounds_.x, bounds_.y, metric_.widthOf(cellsWide_),
                     metric_.heightOf(rows_ + 2), style_.ground,
@@ -509,13 +520,13 @@ void PanelFrame::draw() {
     // starts at content row 0 meets the top rule and one that ends at the last
     // content row meets the bottom rule.
     drawRuleRun(target, bounds_.x, bounds_.y, cellsWide_, metric_, style_.junction, style_.rule,
-                style_.alpha, junctionsFor(-1));
+                style_.alpha, shadow, junctionsFor(-1));
     drawRuleRun(target, bounds_.x, rowY(rows_), cellsWide_, metric_, style_.junction, style_.rule,
-                style_.alpha, junctionsFor(rows_));
+                style_.alpha, shadow, junctionsFor(rows_));
 
     for (const int r : rules_) {
         drawRuleRun(target, bounds_.x, rowY(r), cellsWide_, metric_, style_.junction, style_.rule,
-                    style_.alpha, junctionsFor(r));
+                    style_.alpha, shadow, junctionsFor(r));
     }
 
     const auto isRuleRow = [this](int r) {
@@ -528,8 +539,8 @@ void PanelFrame::draw() {
         }
         const Motif edge = edgeAt(r);
         const int y = rowY(r);
-        drawMotif(target, bounds_.x, y, edge, style_.rule, style_.alpha, metric_.scale);
-        drawMotif(target, rightX, y, edge, style_.rule, style_.alpha, metric_.scale);
+        drawMotif(target, bounds_.x, y, edge, style_.rule, style_.alpha, metric_.scale, shadow);
+        drawMotif(target, rightX, y, edge, style_.rule, style_.alpha, metric_.scale, shadow);
     }
 
     for (const Divider& d : dividers_) {
@@ -538,7 +549,8 @@ void PanelFrame::draw() {
             if (isRuleRow(r)) {
                 continue;
             }
-            drawMotif(target, x, rowY(r), edgeAt(r), style_.rule, style_.alpha, metric_.scale);
+            drawMotif(target, x, rowY(r), edgeAt(r), style_.rule, style_.alpha, metric_.scale,
+                      shadow);
         }
     }
 }

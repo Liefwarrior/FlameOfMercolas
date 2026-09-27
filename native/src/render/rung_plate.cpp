@@ -317,6 +317,7 @@ void drawRungPlate(Framebuffer& target, const RungPlateState& state) {
     // on (black outlines round grey words on a pane -- the director,
     // seventh pass). On the up card they are invisible against the slab.
     const float shadowFade = 0.75F * fade * fade;
+    style.shadowAlpha = shadowFade;
     target.fillRect(bounds.x - s, bounds.y, bounds.w + s, bounds.h - 2 * s, style.ground,
                     kPageGroundAlpha * fade * fade);
     PanelFrame pane(target, bounds, metric, style);
