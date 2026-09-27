@@ -1028,7 +1028,9 @@ public:
     /// three lines, the fade (zero under anything that owns the screen), the
     /// signed drift. Public so a case reads it instead of a screenshot.
     [[nodiscard]] RungPlateState rungPlateState() const noexcept;
-    /// The alert row's fade exactly as drawFrame composes it: its own ease,
+    /// The alert row's INK as drawn: its own ease times the plate's weight
+    /// (drawFrame hands the two to the HUD apart -- alertFade and
+    /// alertInkWeight -- and the field is drawn at the ease alone), and
     /// at half weight under the plate (alertWeightUnderRungPlate on the
     /// plate's own fade -- which is zero under a bouncer's WARNING, so the
     /// one line the player must not miss is never the one dimmed). Public so
@@ -1048,6 +1050,11 @@ public:
     /// on screen, and for the rest of a line that was on the row under it
     /// (its capped two seconds) -- it never swells back.
     [[nodiscard]] bool alertStepsDownNow() const noexcept;
+    /// What is left of the alert row's own hold, in steps: the clock the
+    /// plate stops for a news line and caps at two seconds when it goes --
+    /// and never touches for a watchman's demand (the case that pins that
+    /// reads it here).
+    [[nodiscard]] std::int32_t alertStepsLeftNow() const noexcept { return messageSteps_; }
     /// What the aim prompt names under the reticle right now ("WATCHMAN
     /// CULL  WATCHMAN", "THE STRONGBOX  ROOM 3  EMPTIED"), refreshed every
     /// step by syncPanelAnim. Public so a drive can put the cause of a rung
@@ -2678,19 +2685,21 @@ private:
     /// The line on the alert row is a street watchman's HALT, SHEATHE or
     /// OFFENCE -- said through say() like any other, but an ignored halt
     /// ends in an arrest at reach, so it outranks the plate for as long as
-    /// the row holds it (rungPlateOutranked). say() clears it; the three
-    /// Watch sites set it.
+    /// the row holds it (rungPlateOutranked), and it is never capped nor
+    /// stepped down. say() clears it; the four Watch sites (the street's
+    /// three, the Gull's own lastDemand) set it.
     bool messageDemand_ = false;
     /// The line on the alert row was up under the plate and had its clock
     /// capped when the hold ended: it finishes in the small register and
     /// never swells back to the glance size. say() clears it.
     bool messageCapped_ = false;
-    /// The line on the row is NEWS (the take off a box, a watchman's word:
-    /// held under the plate and shown whole after) rather than a MOMENT (a
-    /// leap's length, a ledge mantled: its clock runs under the plate and
-    /// it is gone before the lift, because a leap's length six seconds
-    /// after the leap is nobody's news). say() says news; the roof moves
-    /// say otherwise after it.
+    /// The line on the row is NEWS (the take off a box, a fall's hurt, a
+    /// watchman's word: held under the plate and shown whole after) rather
+    /// than a MOMENT (a leap's length, a ledge mantled: its clock runs under
+    /// the plate, because a leap's length six seconds after the leap is
+    /// nobody's news). say() says news; the leap and the mantle say
+    /// otherwise after it. Whatever is still on the row when the plate
+    /// goes is capped and finishes small, a demand excepted.
     bool messageHeld_ = true;
     /// True when something that outranks the plate owns the screen right
     /// now: a page or a talk (conversingNow), the court's plates and custody,

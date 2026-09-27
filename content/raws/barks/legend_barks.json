@@ -12,11 +12,11 @@
     },
     {
       "key": "legend.wire.3",
-      "rows": ["Finch pours before you ask. That is a robber's welcome."]
+      "rows": ["Finch pours before you ask. Robbers get poured for."]
     },
     {
       "key": "legend.wire.4",
-      "rows": ["Nobody saw your hands. The ward found a word for that."]
+      "rows": ["The ward never saw your hands. It found a word anyway."]
     },
     {
       "key": "legend.roofs.1",
@@ -76,7 +76,7 @@
     },
     {
       "key": "legend.law.3",
-      "rows": ["Voices drop when you pass. Even sober ones."]
+      "rows": ["Voices drop when you pass. The sober ones drop lowest."]
     },
     {
       "key": "legend.law.4",

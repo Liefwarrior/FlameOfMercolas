@@ -57,7 +57,8 @@ Cull's table with real coin. Nothing reaches into the sim sideways.
   matching skill are sometimes the same event said twice, and the plate has
   already told it.
 - The bell. `SoundId::LegendRung`, the Kenney heavy bell the harbour already
-  rings, one strike on the World bus. Heavier than the toast's chime. No new
+  rings -- the longest of its five strikes, and always that one -- one
+  strike on the World bus. Heavier than the toast's chime. No new
   art, no LOT row on purpose (the LOT tree's only candidates would make a
   rung sound like a case closing on one checkout and a bell on the gate).
 - `--rung=TRACK`. Plays the shortest real path to a rung on that track and
@@ -73,25 +74,30 @@ Cull's table with real coin. Nothing reaches into the sim sideways.
 Every path is beats the smoke already walks, reused whole. The hour is the
 borrowed line's own hour unless you pass `--time=`.
 
-One rule runs through all five: **nothing walks after a rung.** The plate holds
-five seconds and a scripted walk spends them faster than anything else in the
-build, so the frame is made first and the rung is the last thing that happens.
-`--trail=opened` has said the same about the lead-opened notice since the
-casebook pass. Two of these tracks were written the other way round and neither
-of them landed a plate.
+One rule runs through the wire, the roofs and the flame: **nothing walks after
+a rung.** The plate holds five seconds and a scripted walk spends them faster
+than anything else in the build, so the frame is made first and the rung is the
+last thing that happens. `--trail=opened` has said the same about the
+lead-opened notice since the casebook pass. Two of these tracks were written
+the other way round and neither of them landed a plate. The trade and the law
+are the declared exceptions: both rise across Cull's table, and the bounty
+line's own stand-back (three tiles, about a second of the hold) walks after
+the rung so the frame is the room and not his table's edge.
 
 | track | what the drive does | why that's the shortest | hour |
 |---|---|---|---|
 | `wire` | The burglary's own beats. Crouch, in at the door, up the stair, the wire in a guest's box (`kRooms[2]`, ROOM 3 on its door), the pins worked, a shoulder if the wire ruined it. Then the eye goes up the landing the burglar came up, and then the lid. | A cracked box is 8 points of THE WIRE, the first threshold exactly. Four caught lifts would do it too, but every caught lift is a bouncer's warning, which outranks the plate. The lid is the rung, so it goes last: `--burgle` walks back to the landing to shoot the room and that walk, crouched, costs more than the plate has. | 2 |
 | `roofs` | In at the door, up the stair, out over the north wall onto the lead, then the alley leapt west and east until the roofs will have it. Stops on the roof it rose on, pitched down over the Gull's lead, the harbour off to the left. | A roof-run is 3, skyrunning is 2 a level, a leap is two uses. The skyrun line's own alley beat, bounded the same way (24 leaps). | 18 |
 | `flame` | The trail's loop for its first two leads. Nearest open lead on this band, backed off four tiles the way the body came in, and read from there with Q, twice. Onto the anchor itself only if it will not read from off it. | A lead read is 6. Two is 12. The trail stands back after it reads; this stands back first. Four tiles is inside kLookRangeTiles so the clue reads the same, and the flagstones are indoors, so the trail's seven-tile step back is out of the door, round the almshouse and down to the quay. Fifty tiles. The plate has five seconds. | 9 |
-| `trade` | The bounty line, whole, played to `away`. Take the job off Cull, do it, turn it in across his table, and turn to face him. | A paid job is 6 and the coin over four is the rest. The smallest bounty on the board (`bounty_kennel`, two units at four) pays 8, so 6 + 2 lands on the threshold exactly. The plate comes up once the talk's close tail is down. | 21 (the line runs the clock to 23) |
-| `law` | Talk to Watchman Cull, stand him four drinks, close the talk, stand back, face him. | A bought drink is a deed worth 2 of standing with the drinker's own guild. The Watch at 8 on a clean sheet is KNOWN TO THE WATCH. The bounty alone leaves you three short. | 23 |
+| `trade` | The bounty line, whole, played to `away`. Take the job off Cull, do it, turn it in across his table, stand back the line's own three tiles, and dip the eye to him. | A paid job is 6 and the coin over four is the rest. The smallest bounty on the board (`bounty_kennel`, two units at four) pays 8, so 6 + 2 lands on the threshold exactly. The plate comes up once the talk's close tail is down. | 21 (the line runs the clock to 23) |
+| `law` | Talk to Watchman Cull, stand him four drinks, close the talk, stand back, the eye level and a touch up. | A bought drink is a deed worth 2 of standing with the drinker's own guild. The Watch at 8 on a clean sheet is KNOWN TO THE WATCH. The bounty alone leaves you three short. | 23 |
 
 A word that's none of the five (`--rung=bloodletter`) lands neither beat and
 the summary says `found=no`. `--time=` moves the clock, but the trade and the
 law need Cull at his table, so a daytime hour on either lands no plate and the
-summary says so (`0->0 plate=down`). The roofs run at six in the evening on
+summary says so (`0->0 plate=down rose=no reason="Watchman Cull is not in the
+Gull when the line starts"` -- the reason is read off the roster when the line
+starts, not assumed from the hour). The roofs run at six in the evening on
 purpose: the skyrun line's own hour is one in the morning, and a plate over a
 black frame is a card over nothing.
 
@@ -105,8 +111,8 @@ legend.cpp prints, the row is what the ward says.
 |---|---|---|
 | `legend.wire.1` | THE WIRE  --  LIGHT FINGERS | Ropewynd locks its boxes twice these days. That is you. |
 | `legend.wire.2` | THE WIRE  --  CUTPURSE | Coats get held shut when you walk by. They have heard. |
-| `legend.wire.3` | THE WIRE  --  ROBBER | Finch pours before you ask. That is a robber's welcome. |
-| `legend.wire.4` | THE WIRE  --  THE QUIET TENANT | Nobody saw your hands. The ward found a word for that. |
+| `legend.wire.3` | THE WIRE  --  ROBBER | Finch pours before you ask. Robbers get poured for. |
+| `legend.wire.4` | THE WIRE  --  THE QUIET TENANT | The ward never saw your hands. It found a word anyway. |
 | `legend.roofs.1` | THE ROOFS  --  TENANT | Up and over, and the roofs had no objection. |
 | `legend.roofs.2` | THE ROOFS  --  ROOF-WALKER | Slates do not creak under you. Someone was counting. |
 | `legend.roofs.3` | THE ROOFS  --  SKYRUNNER | The alley is a step to you. The snug drinks to it. |
@@ -121,7 +127,7 @@ legend.cpp prints, the row is what the ward says.
 | `legend.trade.4` | THE TRADE  --  THE WARD'S CREDITOR | Half this quay owes you. The other half is asking to. |
 | `legend.law.1` | THE LAW  --  KNOWN TO THE WATCH | The Watch has your name now. Not sour about it. Yet. |
 | `legend.law.2` | THE LAW  --  SWORN IN | Cull calls out to you across the room. On purpose. |
-| `legend.law.3` | THE LAW  --  THE SERGEANT'S MAN | Voices drop when you pass. Even sober ones. |
+| `legend.law.3` | THE LAW  --  THE SERGEANT'S MAN | Voices drop when you pass. The sober ones drop lowest. |
 | `legend.law.4` | THE LAW  --  THE MAN VESS SENDS FOR | When it goes bad, Vess says your name first. |
 | `legend.top` | (under any rung 4 head) | There is nothing above that. Mind how you wear it. |
 
@@ -152,8 +158,9 @@ evidence is the hash case above, which draws it.
 ## The frames
 
 960x540 is `--width=960 --height=540 --scale=1`. `--settle-steps=0` is the
-plate at its first fully-up frame. Leave it off and you get the plate a
-second into its hold, which is the same picture.
+plate at its first fully-up frame. Leave it off and you get the default
+settle, sixteen zero-input steps (a quarter of a second) into the hold, which
+is the same picture.
 
 `scripts\shoot-rung.ps1` shoots all six and keeps every summary line in
 `shoot-rung.log` beside the PNGs (kept locally: `*.log` is gitignored, so the
@@ -164,9 +171,9 @@ branch carries the frames and not the log). Or run them by hand.
 | `rung-wire-960.png` | `granadad.exe --smoke=0 --hold --width=960 --height=540 --scale=1 --rung=wire --settle-steps=0 --screenshot=docs\frames\rung\rung-wire-960.png` | One cracked box at two in the morning. `THE WIRE  --  LIGHT FINGERS` on the plate, the wire.1 row under it, the landing away in front and the done room behind; the prompt names the box (`aim="THE STRONGBOX"`) and the lid itself is in the dark, not the picture. Summary reads `rung=wire 0->1 row="Ropewynd locks its boxes twice these days. That is you." plate=up found=yes`. |
 | `rung-roofs-960.png` | the same with `--rung=roofs` | The alley leapt until the roofs will have it. `THE ROOFS  --  TENANT` over the lead, the alley under the eye. Skyrunning levels on the same leap, and `SKYRUNNING RISES TO n` is the plate's own dim last row -- the same climb, told once, on the card. |
 | `rung-flame-960.png` | the same with `--rung=flame` | Two leads read at the Mission at nine. `THE FLAME  --  DISCIPLE`, the back room stood back from. The pull line under the ribbon still reads the next lead. |
-| `rung-trade-960.png` | the same with `--rung=trade` | The bounty paid across Cull's table. `THE TRADE  --  STALLKEEP` once the talk's close tail is down, from the bounty line's own stand-back with the eye on Cull. What is under the reticle is the summary's `aim="..."`, and on this corner it is a patron; see the fifth pass. |
-| `rung-law-960.png` | the same with `--rung=law` | Four drinks stood to Cull at eleven. `THE LAW  --  KNOWN TO THE WATCH`, from the stand-back with the eye on Cull; `aim="..."` in the summary, and on this corner it is the hood on his table. |
-| `rung-wire-320.png` | the first drive at `--width=320 --height=180` | The strip pin. `wire.1` is 52 glyphs, so this plate is 58 cells wide; the 56-glyph row (`flame.3`) makes the widest plate the sheet can build, 62 cells in a 64-cell frame -- a cell of margin off each edge, two cells of gutter inside each keyline -- and the test pins them at that width rather than a drive. Seated in the middle of what the smallest window has between the stat stack and the aim prompt. |
+| `rung-trade-960.png` | the same with `--rung=trade` | The bounty paid across Cull's table. `THE TRADE  --  STALLKEEP` once the talk's close tail is down, from the bounty line's own stand-back with the eye dipped to Cull. The summary's `aim="..."` is the INTERACT target in reach from the stand-back tile, not what the reticle crosses, and on this corner it is a patron; see the fifth and seventh passes. |
+| `rung-law-960.png` | the same with `--rung=law` | Four drinks stood to Cull at eleven. `THE LAW  --  KNOWN TO THE WATCH`, from the stand-back, the eye level and a touch up; `aim="HOOD"` in the summary: the hood on the stand a tile south of the stand-back tile, the interact target in reach, which no pitch changes. |
+| `rung-wire-320.png` | the first drive at `--width=320 --height=180` | The strip pin. `wire.1` is 55 glyphs, so this plate is 61 cells wide; the 56-glyph rows (`flame.1`, `flame.3`, `trade.1`) make the widest plate the sheet can build, 62 cells in a 64-cell frame -- a cell of margin off each edge, two cells of gutter inside each keyline -- and the test pins them at that width rather than a drive. Seated with five of the smallest window's seven spare pixels above its keyline and two below. |
 
 ## Second pass, 2026-09-25
 
@@ -496,6 +503,84 @@ not like you wants a listen on the quay (the player's note); `wire.1`'s
 "these days" after the first box of the night is licence; the trade frame's
 patron and the flame's wall are the fifth pass's declared corners still; a
 pre-rise shutter would put the plate's rise on the record and is tooling.
+
+## Seventh pass, 2026-09-26
+
+The sixth pass scored 8 (director), 8 (player) and 5 (auditor): the claims
+had drifted off the code in a dozen places, and two rules had holes a
+player would never see and a reader would. Everything below is on the gate.
+
+- **A watchman's demand is never capped.** The dismissal cap and the
+  hold-end cap both skipped the demand before, but only because the demand
+  cleared `messageHeld_`; a moment that outlived the lift was uncapped and
+  swelled back to the glance size. Now EVERY line still on the row when the
+  plate goes is capped at two seconds and finishes small, and the demand is
+  the one named exception (`!messageDemand_` at both sites, and
+  `alertStepsDownNow` says so). Pinned through the session: a blade drawn on
+  a patron in Cull's sight at eleven, his halt on the row the step the plate
+  goes, the row at the glance size, its clock past the cap
+  (`alertStepsLeftNow`, added for the pin).
+- **The fall is news again.** "DOWN 2 LEVELS. - 5M - 50 HURT" is the part
+  of a fall a player acts on; the sixth pass had made it a moment with the
+  leap and the mantle. Held under the plate like the take off a box.
+- **Dismissed is gone.** A card dismissed by a three-step page eased back to
+  three quarters and lifted out after it, re-arming every stand-down. The
+  dismissal snaps the lift to nothing; the one-plate case pins a page opened
+  three steps and closed, and the card never comes back.
+- **The rows step down to the plate's register, not the HUD's.** On a
+  square window (1440x1080, 720x720) the plate is a step under the minor
+  scale and the alert and voice rows were a tier above it while "stepped
+  down". `HudState::alertStepScale` carries the plate's own scale; the
+  drawn-amber twin runs at 1440x1080 too and pins six rows of the plate's
+  scale, and pins the rails' luminance under the words'.
+- **The slab reaches its right corner.** The right-hand diamonds fill their
+  cell's four columns and the slab stopped a unit short of them. One unit
+  wider; the geometry loop reads the slab's edges off pixels at every size.
+- **The ink holds through the first half of the lift.** The slab is the
+  fade squared (sixth pass); the words, rules and head block now take twice
+  the fade, clamped, so the card leaves as words on a thinning slab and not
+  as grey words on a pane of glass over the sky.
+- **One bell, always the same.** The five heavy strikes run from 1.74 s to
+  0.30 s and the rung drew one at random; a five-second card opening on a
+  tink one time in five had no voice. `impactBell_heavy_001` every time.
+- **The reason is read, not assumed.** `reason=` said "Cull is not at his
+  table at this hour" whenever a trade or law run rose nothing, whatever the
+  cause. It is set only when Watchman Cull is not in the Gull's roster when
+  the line starts, and the drive case runs both tracks at one in the
+  afternoon and reads it back.
+- **`aim=` is the interact target.** `Session::aimSubjectNow` is what the E
+  key would act on from where the body stands, resolved by position and
+  reach, never by the reticle's ray. The sixth pass's story -- the hood
+  "hung at head height on the line to him" -- was wrong: the hood is a stand
+  item one tile south of the stand-back tile, in reach, and no pitch changes
+  what the prompt names. `faceFromHere` (which stepped the sim to read the
+  prompt back) is `dipToward` now, a pure turn used by the trade; the law
+  stands back and sets its pitch. The dead `table` ending of the bounty line
+  and the unused `under` parameter of the drive case are gone.
+- **Three rows.** `wire.3` and `wire.4` shared the "That is" tic with
+  `wire.1`, and `law.3`'s "Even sober ones" read as a leftover:
+
+  | key | was | is |
+  |---|---|---|
+  | `legend.wire.3` | Finch pours before you ask. That is a robber's welcome. | Finch pours before you ask. Robbers get poured for. |
+  | `legend.wire.4` | Nobody saw your hands. The ward found a word for that. | The ward never saw your hands. It found a word anyway. |
+  | `legend.law.3` | Voices drop when you pass. Even sober ones. | Voices drop when you pass. The sober ones drop lowest. |
+
+- **The claims match the code.** `bouncerWarned()` is the one copy of the
+  warning test (two inline copies replaced); "three Watch sites" is four;
+  `alertFadeNow` is documented as the ink's alpha as drawn; "half" is a
+  quarter wherever the rails are described; the tick table in the code
+  comment says which windows drop it (960x540 holds both, 640x360 and
+  1920x1080 drop it topped, 320x180 always, 3840x2160 has no row); the
+  320x180 seat is five above and two below, pinned as 36 and 31; `wire.1`
+  is 55 glyphs and 61 cells, and the 56-glyph rows are `flame.1`, `flame.3`
+  and `trade.1`; the default settle is sixteen steps, not a second; the
+  trade and the law stand back after their rung and the drive rule says so.
+
+Declared and left: `standBackFrom`'s strict clear-line pass (fifth pass)
+serves five other drives that were not re-shot for it; the flame's frame is
+the back room's wall a tile off the anchor; the trade's patron and the law's
+hood are the Gull's own corner; no frame can hear the bell.
 
 ## Not in this folder yet
 

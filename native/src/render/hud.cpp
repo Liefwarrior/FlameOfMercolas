@@ -1500,7 +1500,10 @@ void drawBottomBand(Framebuffer& target, const HudState& state, BottomBand& band
         // THE RUNG PLATE'S RULE FOR THIS ROW (HudState::alertStepsDown): under
         // the plate the row starts from the minor register -- the plate's own
         // type size, never a tier above it -- and shrinks from there as ever.
-        int alertScale = state.alertStepsDown ? minor : scale;
+        int alertScale = state.alertStepsDown
+                             ? (state.alertStepScale > 0 ? std::min(minor, state.alertStepScale)
+                                                         : minor)
+                             : scale;
         while (alertScale > 1 && textWidth(state.alert, alertScale) > width - 2 * margin) {
             --alertScale;
         }
@@ -1611,19 +1614,26 @@ void drawBottomBand(Framebuffer& target, const HudState& state, BottomBand& band
     // frame exists to show.
     if (!state.voiceLine.empty() && state.voiceFade > 0.0F) {
         const float fade = std::clamp(state.voiceFade, 0.0F, 1.0F);
+        // UNDER THE RUNG PLATE this row takes the plate's register too
+        // (HudState::alertStepScale): on a square window the minor scale is
+        // a tier above the card, and a bark wrapped onto two lines under it.
+        const float ink = std::clamp(state.voiceInkWeight, 0.0F, 1.0F);
+        const int vs = (ink < 1.0F && state.alertStepScale > 0)
+                           ? std::min(minor, state.alertStepScale)
+                           : minor;
         const std::string name =
             state.voiceName.empty() ? std::string() : std::string(state.voiceName) + ":";
-        const int gutter = name.empty() ? 0 : kGlyphAdvance * minor;
-        const int nameW = textWidth(name, minor);
+        const int gutter = name.empty() ? 0 : kGlyphAdvance * vs;
+        const int nameW = textWidth(name, vs);
         const int firstBudget = std::max(0, rowBudget - nameW - gutter);
         std::string first(state.voiceLine);
         std::string second;
-        if (textWidth(first, minor) > firstBudget) {
+        if (textWidth(first, vs) > firstBudget) {
             // Break at the last space that fits the first line; the rest
             // is the second, clipped to the full row if it must be.
             std::size_t cut = std::string::npos;
             for (std::size_t i = 0; i < first.size(); ++i) {
-                if (first[i] == ' ' && textWidth(std::string_view(first).substr(0, i), minor) <=
+                if (first[i] == ' ' && textWidth(std::string_view(first).substr(0, i), vs) <=
                                            firstBudget) {
                     cut = i;
                 }
@@ -1633,31 +1643,29 @@ void drawBottomBand(Framebuffer& target, const HudState& state, BottomBand& band
                 first.resize(cut);
             }
         }
-        const int y = band.take(minor);
+        const int y = band.take(vs);
         if (y >= 0) {
             int y2 = -1;
             if (!second.empty()) {
-                y2 = band.take(minor);
+                y2 = band.take(vs);
                 if (y2 < 0) {
                     // No second slot: one line, clipped and marked.
-                    first = clipToWidth(state.voiceLine, firstBudget, minor);
+                    first = clipToWidth(state.voiceLine, firstBudget, vs);
                     second.clear();
                 } else {
-                    second = clipToWidth(second, rowBudget, minor);
+                    second = clipToWidth(second, rowBudget, vs);
                 }
             } else {
-                first = clipToWidth(first, firstBudget, minor);
+                first = clipToWidth(first, firstBudget, vs);
             }
-            const int firstW = nameW + gutter + textWidth(first, minor);
-            const int secondW = textWidth(second, minor);
+            const int firstW = nameW + gutter + textWidth(first, vs);
+            const int secondW = textWidth(second, vs);
             const int drawn = std::max(firstW, secondW);
             const int textX = std::max(margin, (width - drawn) / 2);
-            const int padX = minor * 2;
-            // A whole minor unit of padY while the words are dimmed, the
+            const int padX = vs * 2;
+            // A whole unit of padY while the words are dimmed, the
             // alert row's own reason (the shadows under the lower rail).
-            const int padY = std::clamp(state.voiceInkWeight, 0.0F, 1.0F) < 1.0F
-                                 ? minor
-                                 : std::max(1, minor / 2);
+            const int padY = ink < 1.0F ? vs : std::max(1, vs / 2);
             // The second slot is ABOVE the first in the band's own order,
             // so the row reads down: the name and the opening on the upper
             // line, the turn on the lower.
@@ -1665,24 +1673,24 @@ void drawBottomBand(Framebuffer& target, const HudState& state, BottomBand& band
             const int bottom = y2 >= 0 ? y : y;
             // THE RUNG PLATE'S WEIGHT ON THE INK (HudState::voiceInkWeight),
             // the alert row's own rule: the field keeps the row's ease, the
-            // rails halve while the words are dimmed, the words take the
-            // weight.
-            const float ink = std::clamp(state.voiceInkWeight, 0.0F, 1.0F);
+            // rails take a quarter while the words are dimmed, the words
+            // take the weight -- and the row is drawn at the plate's own
+            // register (`vs`, above) while it is dimmed.
             if (ink < 1.0F) {
                 target.fillRect(textX - padX, top - padY, drawn + 2 * padX,
-                                (bottom - top) + kGlyphH * minor + 2 * padY, kPlateBlack, fade);
+                                (bottom - top) + kGlyphH * vs + 2 * padY, kPlateBlack, fade);
             }
             drawTextPlate(target, textX - padX, top - padY, textX + drawn + padX,
-                          bottom + kGlyphH * minor + padY, std::max(1, minor / 2),
+                          bottom + kGlyphH * vs + padY, std::max(1, vs / 2),
                           ink < 1.0F ? 0.25F * fade : fade);
             const Rgb dim{0.74F, 0.72F, 0.64F};
             if (!name.empty()) {
                 drawText(target, textX, top, name, aimAccent(static_cast<int>(AimKind::Person)),
-                         0.95F * fade * ink, minor);
+                         0.95F * fade * ink, vs);
             }
-            drawText(target, textX + nameW + gutter, top, first, dim, 0.92F * fade * ink, minor);
+            drawText(target, textX + nameW + gutter, top, first, dim, 0.92F * fade * ink, vs);
             if (y2 >= 0) {
-                drawText(target, textX, bottom, second, dim, 0.92F * fade * ink, minor);
+                drawText(target, textX, bottom, second, dim, 0.92F * fade * ink, vs);
             }
         }
     }

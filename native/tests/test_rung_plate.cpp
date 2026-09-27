@@ -35,7 +35,7 @@
 //      to spend (the smallest window sits on the fence and keeps every
 //      spare pixel between its keyline and the stat stack), in the terminal
 //      register everywhere but 640x360, where it takes the glance scale
-//      (rungPlateMetric), the tick row two units low in its row, inside the frame
+//      (rungPlateMetric), the tick row one unit low in its row, inside the frame
 //      less a cell a side, centred, exactly two cells of gutter inside each
 //      keyline (pinned as the number two, and on the prose's first ink
 //      column), a tick row where the frame has the row and dropped where it
@@ -62,6 +62,7 @@
 #include <doctest/doctest.h>
 
 #include <algorithm>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
@@ -660,7 +661,106 @@ TEST_CASE("two rungs on one step with a skill: the tick rides the second, queued
     CHECK_FALSE(session.skillToastWanted());
 }
 
-TEST_CASE("a toast never starts ahead of a plate waiting behind a page, and a plate dismissed by a page caps the row's clock too") {
+TEST_CASE("a plate dismissed by a page caps the row's clock, and dismissed is gone: a short page never hands the card back") {
+    Session session(configAt("mission-backroom"));
+    wake(session);
+    // A line on the row, a plate up, then a page over both at two seconds.
+    session.examine();
+    crackABox(session);
+    session.stepMany(sim::MoveInput{}, 1);
+    REQUIRE(session.rungPlateWanted());
+    session.stepMany(sim::MoveInput{}, 120);
+    session.toggleCasebook();
+    REQUIRE(session.casebookOpen());
+    session.stepMany(sim::MoveInput{}, 3);
+    CHECK_FALSE(session.rungPlateWanted());
+    CHECK(session.rungPlateFade() == 0.0F);
+    // The page down after three steps: the card does not come back -- its
+    // lift was cut with its hold -- and the line, capped at the dismissal,
+    // is gone inside its cap and the page's own tail.
+    session.toggleCasebook();
+    REQUIRE_FALSE(session.casebookOpen());
+    for (int i = 0; i < 2 * kRungPlateLiftSteps; ++i) {
+        session.stepMany(sim::MoveInput{}, 1);
+        CHECK(session.rungPlateState().fade == 0.0F);
+        CHECK(session.rungPlateFade() == 0.0F);
+    }
+    CHECK_FALSE(session.rungPlateWanted());
+    session.stepMany(sim::MoveInput{}, kRungPlateRowAfterSteps + kPageEaseSteps + 4);
+    CHECK(session.alertFadeNow() == 0.0F);
+}
+
+TEST_CASE("a watchman's demand under a live plate is never capped nor stepped down: it dismisses the plate and keeps its whole hold at the glance size") {
+    // Eleven at night at the Gull's counter, Cull on his stool: the watch
+    // rhythm suite's own spot. A blade drawn on a patron in his sight is
+    // the violence he closes on with his halt.
+    Session session(configInTheGull(23, sim::gull::kBartenderX, sim::gull::kBartenderY + 1));
+    wake(session);
+    REQUIRE(session.tavern().playerInside());
+    const sim::Actor* cull = nullptr;
+    for (const sim::Actor& actor : session.tavern().actors()) {
+        if (actor.name() == "Watchman Cull" && actor.present()) {
+            cull = &actor;
+        }
+    }
+    REQUIRE(cull != nullptr);
+    crackABox(session);
+    session.stepMany(sim::MoveInput{}, 1 + kPageEaseSteps);
+    REQUIRE(session.rungPlateFade() == 1.0F);
+    // A patron Cull can see the player strike, from a standable tile a
+    // step off him, facing him -- test_watch_rhythm's standFacingPatronFor,
+    // through the session's own body.
+    const sim::Actor* mark = nullptr;
+    for (const sim::Actor& actor : session.tavern().actors()) {
+        if (!actor.present() || sim::isFloored(actor.activity()) ||
+            actor.role() != sim::ActorRole::Patron || session.tavern().isProfessional(actor)) {
+            continue;
+        }
+        const std::int32_t sides[4][2] = {{0, -1}, {0, 1}, {-1, 0}, {1, 0}};
+        for (const auto& side : sides) {
+            const std::int32_t px = actor.tileX() + side[0];
+            const std::int32_t py = actor.tileY() + side[1];
+            if (!session.tiles().standable(px, py, actor.band())) {
+                continue;
+            }
+            session.body().placeAt(px, py, actor.band());
+            session.body().setYaw(sim::bearingTo(px, py, actor.tileX(), actor.tileY()));
+            session.stepMany(sim::MoveInput{}, 1);
+            if (session.tavern().noticeBy(*cull).seen) {
+                mark = &actor;
+                break;
+            }
+        }
+        if (mark != nullptr) {
+            break;
+        }
+    }
+    REQUIRE(mark != nullptr);
+    REQUIRE(session.rungPlateWanted());
+    session.tavern().setPlayerCombat(sim::Weapon::Edged, sim::Intent::Kill);
+    int steps = 0;
+    while (session.tavern().lastDemand().empty() && steps < 120) {
+        if (steps % 20 == 0) {
+            session.punch();
+        }
+        session.stepMany(sim::MoveInput{}, 1);
+        ++steps;
+    }
+    REQUIRE_FALSE(session.tavern().lastDemand().empty());
+    // The demand is on the row: the plate is gone the same step, the row is
+    // at the glance size, and the line keeps its whole hold -- past the
+    // two seconds a capped line would have. And it stays so.
+    for (int i = 0; i < 8; ++i) {
+        INFO("step ", i, " after the demand");
+        CHECK(session.rungPlateState().fade == 0.0F);
+        CHECK_FALSE(session.alertStepsDownNow());
+        CHECK(session.alertStepsLeftNow() > kRungPlateRowAfterSteps);
+        session.stepMany(sim::MoveInput{}, 1);
+    }
+    CHECK_FALSE(session.rungPlateWanted());
+}
+
+TEST_CASE("a toast never starts ahead of a plate waiting behind a page, and the line said before it is capped at its dismissal") {
     Session session(configAt("mission-backroom"));
     wake(session);
     sim::SkillTrack& skills = session.tavern().dialogue().skills();
@@ -702,9 +802,9 @@ TEST_CASE("a toast never starts ahead of a plate waiting behind a page, and a pl
     REQUIRE(session.rungPlateWanted());
     CHECK(session.rungPlateText().head == headFor(sim::LegendTrack::Roofs, 1));
     CHECK(session.rungPlateText().tick.empty());
-    // The line said before the first plate: capped at its dismissal, so it
-    // is gone well inside the second plate's hold rather than surfacing
-    // whole after it.
+    // The line said before the first plate was capped at its dismissal and
+    // frozen under the second plate; it is gone within its cap after the
+    // second lift (the one-plate case above pins the cap on its own).
     session.stepMany(sim::MoveInput{}, kRungPlateHoldSteps + kRungPlateLiftSteps + 2);
     CHECK_FALSE(session.rungPlateWanted());
     session.stepMany(sim::MoveInput{}, kRungPlateRowAfterSteps + kPageEaseSteps + 4);
@@ -1038,8 +1138,18 @@ TEST_CASE("the drawn wiring: under a plate the alert row's own glyphs are half a
     // -- where the voice row's name (0.90, 0.72, 0.58) carries blue at two
     // thirds, its dim text is grey, every field is black, and the boards
     // are the same in both frames and never counted.
-    Session plain(configAt("mission-backroom"));
-    Session plated(configAt("mission-backroom"));
+    // At 960x540, where the plate's register is the minor scale, and at
+    // 1440x1080, where it is a step under it (rungPlateMetric) and the row
+    // must follow the plate, not the HUD.
+    for (const auto& size : {std::pair{960, 540}, std::pair{1440, 1080}}) {
+    const int width = size.first;
+    const int height = size.second;
+    INFO(width, "x", height);
+    SessionConfig config = configAt("mission-backroom");
+    config.width = width;
+    config.height = height;
+    Session plain(config);
+    Session plated(config);
     wake(plain);
     wake(plated);
     plain.punch();
@@ -1051,11 +1161,11 @@ TEST_CASE("the drawn wiring: under a plate the alert row's own glyphs are half a
     REQUIRE(plated.rungPlateWanted());
     REQUIRE(plated.rungPlateFade() == 1.0F);
     REQUIRE(plain.alertFadeNow() == 1.0F);
-    Framebuffer a(960, 540);
-    Framebuffer b(960, 540);
+    Framebuffer a(width, height);
+    Framebuffer b(width, height);
     (void)plain.drawFrame(a);
     (void)plated.drawFrame(b);
-    const CentreRect fence = hudAimRect(960, 540);
+    const CentreRect fence = hudAimRect(width, height);
     const auto amber = [](const Rgb& p) { return static_cast<double>(std::max(0.0F, p.r - p.b)); };
     const auto alertInk = [](const Rgb& p) {
         return p.r > 0.25F && p.g > 0.60F * p.r && p.g < 0.78F * p.r && p.b < 0.45F * p.r;
@@ -1064,17 +1174,28 @@ TEST_CASE("the drawn wiring: under a plate the alert row's own glyphs are half a
     // row's brightest amber, which halving the alpha halves whatever the
     // register. THE HEIGHT: how many pixel rows the glyphs stand, which
     // stepping the register down shortens whatever the alpha. THE COUNT.
+    // THE RAILS: bone, r ~ g ~ b, and under the plate never as bright as the
+    // words they frame.
+    const auto rail = [](const Rgb& p) {
+        return p.r > 0.08F && std::abs(p.r - p.g) < 0.06F && std::abs(p.g - p.b) < 0.10F &&
+               p.r >= p.b;
+    };
+    const auto luma = [](const Rgb& p) {
+        return static_cast<double>(0.30F * p.r + 0.59F * p.g + 0.11F * p.b);
+    };
     double aPeak = 0.0;
     double bPeak = 0.0;
-    int aTop = 540;
+    double bRail = 0.0;
+    double bWord = 0.0;
+    int aTop = height;
     int aBottom = -1;
-    int bTop = 540;
+    int bTop = height;
     int bBottom = -1;
     std::size_t differing = 0;
     std::size_t aInk = 0;
     std::size_t bInk = 0;
-    for (int y = fence.y1; y < 540; ++y) {
-        for (int x = 0; x < 960; ++x) {
+    for (int y = fence.y1; y < height; ++y) {
+        for (int x = 0; x < width; ++x) {
             const std::size_t i = a.index(x, y);
             if (a.pixels()[i] == b.pixels()[i]) {
                 continue;
@@ -1082,6 +1203,12 @@ TEST_CASE("the drawn wiring: under a plate the alert row's own glyphs are half a
             ++differing;
             const Rgb pa = unpackRgb(a.pixels()[i]);
             const Rgb pb = unpackRgb(b.pixels()[i]);
+            if (rail(pb)) {
+                bRail = std::max(bRail, luma(pb));
+            }
+            if (alertInk(pb)) {
+                bWord = std::max(bWord, luma(pb));
+            }
             if (alertInk(pa)) {
                 ++aInk;
                 aTop = std::min(aTop, y);
@@ -1105,11 +1232,18 @@ TEST_CASE("the drawn wiring: under a plate the alert row's own glyphs are half a
     // plain frame's.
     CHECK(bPeak < 0.7 * aPeak);
     // One register down: the glyphs stand exactly six rows of the glance
-    // scale without the plate and six of the minor scale under it (the 4x6
-    // font's six rows), and there are fewer of their pixels.
-    CHECK(aBottom - aTop + 1 == 6 * hudScale(540));
-    CHECK(bBottom - bTop + 1 == 6 * hudMinorScale(540));
+    // scale without the plate and six of the PLATE'S scale under it (the 4x6
+    // font's six rows) -- the minor scale at 960x540, a step under it at
+    // 1440x1080 -- and there are fewer of their pixels.
+    CHECK(aBottom - aTop + 1 == 6 * hudScale(height));
+    CHECK(bBottom - bTop + 1 == 6 * rungPlateMetric(width, height).scale);
     CHECK(bInk < aInk);
+    // And the rails under the words: bone at a quarter is dimmer than amber
+    // at half.
+    INFO("bRail ", bRail, " bWord ", bWord);
+    CHECK(bWord > 0.0);
+    CHECK(bRail < bWord);
+    }
 }
 
 // ===========================================================================
@@ -1198,7 +1332,7 @@ namespace {
 
 /// Both beats on one track: the rung rose off the real verbs, and the plate
 /// is up, fully risen, reading that rung's own head and row.
-void checkRung(const char* word, sim::LegendTrack track, const char* under = nullptr) {
+void checkRung(const char* word, sim::LegendTrack track) {
     SmokeRunConfig run;
     run.rung = word;
     const SmokeRunResult played = play(run);
@@ -1219,14 +1353,28 @@ void checkRung(const char* word, sim::LegendTrack track, const char* under = nul
     CHECK(played.summary.find("row=\"" + rung.row + "\"") != std::string::npos);
     CHECK(played.summary.find("plate=up") != std::string::npos);
     CHECK(played.summary.find("found=yes") != std::string::npos);
-    // WHAT WAS UNDER THE RETICLE is on the record: the summary prints it,
-    // and where a drive promises the cause itself, it starts with them.
-    CHECK(played.summary.find("aim=\"") != std::string::npos);
+    // WHAT THE PROMPT NAMED is on the record: the interact target from
+    // where the body stands, never empty on a drive that landed.
+    CHECK_FALSE(rung.aim.empty());
+    CHECK(played.summary.find("aim=\"" + rung.aim + "\"") != std::string::npos);
     CHECK(played.summary.find("rose=yes") != std::string::npos);
-    if (under != nullptr) {
-        CHECK(rung.aim.rfind(under, 0) == 0);
-        CHECK(played.summary.find(std::string("aim=\"") + under) != std::string::npos);
-    }
+}
+
+/// The trade or the law at one in the afternoon: no Cull in the Gull, no
+/// rung, and the summary says which.
+void checkRungNeedsCull(const char* word, sim::LegendTrack track) {
+    SmokeRunConfig run;
+    run.rung = word;
+    run.session.timeOfDay = 13 * 3600;
+    run.session.timeOfDayGiven = true;
+    const SmokeRunResult played = play(run);
+    INFO(played.summary);
+    CHECK(played.rungResult.found);
+    CHECK(played.rungResult.track == track);
+    CHECK_FALSE(played.rungResult.rose);
+    CHECK_FALSE(played.rungResult.reason.empty());
+    CHECK(played.summary.find("rose=no") != std::string::npos);
+    CHECK(played.summary.find("reason=\"") != std::string::npos);
 }
 
 }  // namespace
@@ -1249,6 +1397,11 @@ TEST_CASE("--rung=trade: the ward's bounty paid across Cull's table, and the pla
 
 TEST_CASE("--rung=law: four drinks stood to Watchman Cull, and the plate reads KNOWN TO THE WATCH") {
     checkRung("law", sim::LegendTrack::Law);
+}
+
+TEST_CASE("--rung=trade and --rung=law at one in the afternoon: no Cull, no rung, and the summary gives the reason") {
+    checkRungNeedsCull("trade", sim::LegendTrack::Trade);
+    checkRungNeedsCull("law", sim::LegendTrack::Law);
 }
 
 TEST_CASE("--rung=bloodletter names no track: neither beat lands, and the summary says so") {
@@ -1377,9 +1530,8 @@ TEST_CASE("the plate seats under the ribbon and the announce row, above the reti
             // ABOVE THE RETICLE'S FENCE: the plate never sits on the thing
             // the player is looking at, nor on the words that name it. WITH
             // A CELL ROW OF CLEARANCE wherever the frame has one to spend
-            // between the floor and the fence; the smallest window splits
-            // what it has (seven pixels) evenly between the stat stack above
-            // and the prompt below.
+            // between the floor and the fence; the smallest window shares
+            // what it has (seven pixels) five above the keyline, two below.
             const CentreRect fence = hudAimRect(width, height);
             CHECK(box.y + box.h <= fence.y0);
             const int floorY = 31 * hudScale(height);
@@ -1387,9 +1539,36 @@ TEST_CASE("the plate seats under the ribbon and the announce row, above the reti
                 CHECK(box.y + box.h + metric.cellH() <= fence.y0);
             } else {
                 // No row to spend: at least five glance units between the
-                // keyline and the stat stack above, the rest split.
+                // keyline and the stat stack above, the rest split. At
+                // 320x180 that is seven pixels shared five above and two
+                // below (36), or none at all for the topped card (31).
                 const int room = std::max(0, fence.y0 - box.h - floorY);
                 CHECK(box.y == floorY + std::max(room / 2, std::min(room, 5 * hudScale(height))));
+                if (width == 320) {
+                    CHECK(box.y == (topped ? 31 : 36));
+                }
+            }
+            // THE SLAB'S OWN EDGES, on pixels: a unit left of the box and a
+            // unit past its right edge, so the corner diamonds -- which fill
+            // their cell's four columns -- keep a unit of slab either side.
+            {
+                Framebuffer bare(width, height);
+                bare.clear(Rgb{0.10F, 0.12F, 0.14F});
+                Framebuffer slab(width, height);
+                slab.clear(Rgb{0.10F, 0.12F, 0.14F});
+                drawRungPlate(slab, state);
+                const int airY = box.y + metric.heightOf(2) + metric.cellH() / 2;
+                int leftEdge = width;
+                int rightEdge = -1;
+                for (int x = 0; x < width; ++x) {
+                    const std::size_t i = slab.index(x, airY);
+                    if (slab.pixels()[i] != bare.pixels()[i]) {
+                        leftEdge = std::min(leftEdge, x);
+                        rightEdge = std::max(rightEdge, x);
+                    }
+                }
+                CHECK(leftEdge == box.x - metric.scale);
+                CHECK(rightEdge == box.x + box.w + metric.scale - 1);
             }
             // Seated high: the top quarter of the spare, not the middle.
             CHECK(box.y < (height - box.h) / 2);

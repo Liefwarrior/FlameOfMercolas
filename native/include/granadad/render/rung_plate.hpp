@@ -69,7 +69,9 @@
 //     scale, never a tier above the plate) and to half weight on the plate's
 //     own fade, so the two cross rather than snap; and its clock STOPS under
 //     the plate and resumes when the plate lifts, capped at two seconds, so
-//     the take is shown whole and not five seconds late for long. The voice
+//     the take is shown whole and not five seconds late for long (a leap's
+//     length is a MOMENT whose clock runs under the plate; a watchman's
+//     demand is never capped at all). The voice
 //     row (a passer-by's bark, a farewell) rides the same weight. The
 //     announce slot (NEW LEAD, a named place crossed) holds its clock and
 //     waits behind the plate. The plate is the one NOTICE on the frame at
@@ -185,9 +187,10 @@ inline constexpr std::int32_t kRungPlateLiftSteps = 3 * kPageEaseSteps;
 inline constexpr int kRungPlateLiftUnits = 6;
 
 /// The most of its own hold the alert row keeps once the plate lifts: two
-/// seconds. Its clock stops under the plate (Session::step), so a line said
-/// with the rung is shown whole after the lift -- but a leap's length is not
-/// five seconds late for long.
+/// seconds. A news line's clock stops under the plate (Session::step), so a
+/// line said with the rung is shown whole after the lift; a moment's clock
+/// runs under it, and whatever is still on the row when the plate goes --
+/// news or moment, a demand excepted -- keeps this much and finishes small.
 inline constexpr std::int32_t kRungPlateRowAfterSteps = 120;
 
 /// THE PLATE'S REGISTER: the terminal register (panelMetric, the minor

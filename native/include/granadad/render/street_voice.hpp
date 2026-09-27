@@ -270,8 +270,8 @@ struct VoiceScene {
     /// THE RUNG PLATE IS ON SCREEN (rung_plate.hpp): the current line's hold
     /// does not run this step -- the same held clock the alert row keeps, so
     /// a farewell said with the rung is shown whole after the plate lifts
-    /// rather than living its whole life dimmed under it. New lines still
-    /// come and go; only the hold waits.
+    /// rather than living its whole life dimmed under it. The line stays
+    /// up and keeps its channel for as long as it is held.
     bool holdClock = false;
     /// Who the alert row is quoting right now ("Watchman Cull" while his
     /// halt stands), or empty. The readback waits for the halt to leave the

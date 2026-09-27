@@ -143,10 +143,10 @@ struct PlateLayout {
     // plate's floor (kRungPlateFloorRows) and the aim prompt's fence the
     // smallest window has room for the card and nothing else; a tick there
     // would put the keyline on the stat stack or the prompt on the card. So
-    // it is dropped, whole, at 320x180, and at 1920x1080 for a topped-out
-    // track whose card is already a row taller (640x360 and 960x540 hold
-    // both), and the Character tile has the level. A row of clearance is
-    // what it asks for; the seat then splits what is left.
+    // it is dropped, whole, at 320x180, and for a topped-out track's taller
+    // card at 640x360 and 1920x1080 (960x540 holds both; 3840x2160 has no
+    // row for a tick at all), and the Character tile has the level. A row
+    // of clearance is what it asks for; the seat then splits what is left.
     if (out.tickCells > 0) {
         const int floorY = kRungPlateFloorRows * hudScale(height);
         const CentreRect fence = hudAimRect(width, height);
@@ -219,14 +219,15 @@ RungPlateBox rungPlateBox(int width, int height, const RungPlateState& state) {
     // looking at.
     const int rawSeatY = ((height - box.h) * kRungPlateSeat) / 100 + layout.metric.cellH();
     const CentreRect fence = hudAimRect(width, height);
-    // A CELL ROW OF CLEARANCE above the prompt wherever the frame has one to
-    // spend (the director's finding: at 1920x1080 the slab stopped 23 px
-    // over the prompt, under one text row; at 320x180 two pixels). Between
-    // the floor and the fence less the card: room for two rows or more, and
-    // the quarter seat rides inside that band with a row kept clear under
-    // it; less than that, and what there is splits evenly -- the smallest
-    // window has seven pixels to share between the stat stack above and the
-    // prompt below, and the card sits in the middle of them.
+    // A CELL ROW OF CLEARANCE above the prompt wherever the band between
+    // the floor and the fence has two rows of slack past the card (the
+    // director's finding: at 1920x1080 the slab stopped 23 px over the
+    // prompt, under one text row); the quarter seat rides inside that band
+    // with a row kept clear under it. With less -- a ticked card at 640x360
+    // or 1920x1080, any card at 320x180 -- the slack is shared: five glance
+    // units above the keyline first, the rest split, so the smallest window
+    // keeps five of its seven pixels between its keyline and the stat stack
+    // (below).
     const int floorY = kRungPlateFloorRows * hudScale(height);
     const int ceilY = fence.y0 - box.h;
     const int cellH = layout.metric.cellH();
@@ -294,17 +295,23 @@ void drawRungPlate(Framebuffer& target, const RungPlateState& state) {
     // dashes above and below and outside the side bars' column left and
     // right, the same on each pair of edges; the corner diamonds, a column
     // wider than the bars and a row taller than the dashes, sit one unit
-    // inside that on every side, and a tilde's second row sits one closer
-    // below. (The dash is the font's own, row two of six; the bar is
-    // panel.cpp's kBar, column one of four; the diamond rows one to three
-    // and columns nought to three.)
+    // inside that on every side -- the slab runs one unit past the last
+    // cell for the right-hand pair, whose diamonds fill their cell's four
+    // columns -- and a tilde's second row sits one closer below. (The dash
+    // is the font's own, row two of six; the bar is panel.cpp's kBar,
+    // column one of four; the diamond rows one to three and columns nought
+    // to three.)
     style.groundAlpha = 0.0F;
     const int s = metric.scale;
     // THE SLAB LEAVES AHEAD OF THE WORDS: at the fade's own alpha it crossed
     // a bright sky as a fogged pane of glass with grey words on it for a
-    // dozen steps (the player, fifth pass). Squared, it is a quarter gone
-    // when the words are half gone, and the words are the last thing left.
-    target.fillRect(bounds.x - s, bounds.y, bounds.w, bounds.h - 2 * s, style.ground,
+    // dozen steps (the player, fifth pass). The slab is the fade squared;
+    // THE INK HOLDS WHOLE THROUGH THE FIRST HALF OF THE LIFT and goes over
+    // the second (twice the fade, clamped), so the card leaves as words on
+    // a thinning slab and never as grey words on a pane of glass.
+    const float inkFade = std::min(1.0F, 2.0F * fade);
+    style.alpha = inkFade;
+    target.fillRect(bounds.x - s, bounds.y, bounds.w + s, bounds.h - 2 * s, style.ground,
                     kPageGroundAlpha * fade * fade);
     PanelFrame pane(target, bounds, metric, style);
     pane.draw();
@@ -324,9 +331,9 @@ void drawRungPlate(Framebuffer& target, const RungPlateState& state) {
     const int fillCells = std::min(interior, layout.headCells + 2);
     const int fillCell = std::max(0, (interior - fillCells) / 2);
     target.fillRect(body.x + metric.widthOf(fillCell), body.y - s, metric.widthOf(fillCells) - s,
-                    metric.cellH() + s, ink.accent, fade);
+                    metric.cellH() + s, ink.accent, inkFade);
     (void)drawCellTextKnockout(target, body, metric, fillCell + 1, 0, state.head, ink.knockout,
-                               fade);
+                               inkFade);
     int row = 1;
     if (!state.prose.empty()) {
         // ONE CELL ROW OF LEADING, no ink, between the head and the prose --
@@ -336,13 +343,13 @@ void drawRungPlate(Framebuffer& target, const RungPlateState& state) {
         // What the ward says, in the prose ink, centred under the name.
         (void)drawCellText(target, body, metric,
                            std::max(0, (interior - layout.proseCells) / 2), row, state.prose,
-                           ink.prose, fade);
+                           ink.prose, inkFade);
         ++row;
     }
     if (!state.top.empty()) {
         // The top of the ladder: a dateline's role, dim, read last.
         (void)drawCellText(target, body, metric, std::max(0, (interior - layout.topCells) / 2),
-                           row, state.top, ink.dim, fade);
+                           row, state.top, ink.dim, inkFade);
         ++row;
     }
     if (layout.tickCells > 0) {
@@ -360,7 +367,7 @@ void drawRungPlate(Framebuffer& target, const RungPlateState& state) {
         tickBody.y += s;
         (void)drawCellText(target, tickBody, metric,
                            std::max(0, (interior - layout.tickCells) / 2), row, state.tick,
-                           ink.dim, fade);
+                           ink.dim, inkFade);
         ++row;
     }
 }

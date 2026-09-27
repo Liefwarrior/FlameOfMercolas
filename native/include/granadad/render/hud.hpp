@@ -446,12 +446,16 @@ struct HudState {
     /// the row is drawn exactly as before at whatever weight it is handed.
     float alertFade = 1.0F;
     /// THE RUNG PLATE'S OTHER RULE FOR THIS ROW (rung_plate.hpp): while the
-    /// plate holds, the row steps DOWN to the minor register -- the plate's
-    /// own type size, never a tier above it -- and its backing plate takes
-    /// half the row's alpha again, so the keyline never outshines the words
-    /// it is there to back. False (every caller before the plate) draws
-    /// exactly as before.
+    /// plate holds, the row steps DOWN to the plate's own register -- never
+    /// a tier above it -- and its bone rails take a quarter of the row's
+    /// alpha, so the keyline never outshines the words it is there to back.
+    /// False (every caller before the plate) draws exactly as before.
     bool alertStepsDown = false;
+    /// The register the stepped-down rows take: the rung plate's own scale
+    /// (rungPlateMetric), which on a square window is a step UNDER the
+    /// HUD's minor scale. 0 (every caller before the plate) means the minor
+    /// scale; the rows never take more than the minor scale either way.
+    int alertStepScale = 0;
     /// THE RUNG PLATE'S WEIGHT, ON THE INK ONLY (rung_plate.hpp): the words'
     /// alpha is multiplied by this; the backing field keeps alertFade, the
     /// row's own ease, so fine print over a lit wall is still print (the
@@ -625,7 +629,8 @@ struct HudState {
     float voiceFade = 0.0F;
     /// The rung plate's weight on this row's ink, the alert row's own rule
     /// (alertInkWeight): the words dim under the plate, the backing keeps
-    /// the row's ease, and its rails take half while the words are dimmed.
+    /// the row's ease, its rails take a quarter while the words are dimmed,
+    /// and the row takes the plate's register (alertStepScale).
     float voiceInkWeight = 1.0F;
 
     // --- THE PULL PACK (render/pull.hpp) --------------------------------------

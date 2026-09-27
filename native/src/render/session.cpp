@@ -683,9 +683,10 @@ sim::RoofResult Session::tryDropDown() {
     // settleLanding appends the height and the injury to roofMove_, so saying
     // the line before charging the fall throws away the only part of it a player
     // can act on. What they see now is "DOWN 2 LEVELS. - 5M - 50 HURT".
+    // NEWS, not a moment: the hurt is the part a player acts on, so this
+    // line is held under a rung plate like the take off a box.
     settleLanding(move);
     say(roofMove_);
-    messageHeld_ = false;
     syncTavernToBody();
     return move;
 }
@@ -3898,11 +3899,9 @@ void Session::composePullHud(HudState& hud) const {
 // ---------------------------------------------------------------------------
 
 bool Session::rungPlateOutranked() const noexcept {
-    // THE ALERT ROW'S OWN PRIORITY RULE, applied whole. `warned` is the
-    // identical three-line test drawFrame() and syncPanelAnim() each make for
-    // the bouncer's warning (their own note explains the duplication: one
-    // runs const, one mutates); a fourth copy is the price of a const path
-    // neither of them exposes, and the formula has not moved since S6. Then
+    // THE ALERT ROW'S OWN PRIORITY RULE, applied whole. `warned` is
+    // bouncerWarned(), the one copy of the three-line test drawFrame() and
+    // syncPanelAnim() used to each carry (since S6). Then
     // everything else that owns the screen: a page or a talk (the one
     // formula, conversingNow), the court's beats, plate and page and the
     // rope's ceremony (inCustody), and the death ceremony's veil.
@@ -3949,7 +3948,12 @@ void Session::stepRungPlate() {
         // (step()'s countdown), gets what it has left -- capped at two
         // seconds, so a leap's length is not five seconds late for long.
         if (rungPlateShowSteps_ == 0) {
-            if (messageHeld_) {
+            // EVERY LINE STILL ON THE ROW -- news held under the plate, or a
+            // moment that outlived the lift -- keeps two seconds at most and
+            // finishes small (the auditor: an uncapped moment swelled). A
+            // WATCH DEMAND is the one line never touched: it dismissed the
+            // plate, and it keeps its whole hold at the glance size.
+            if (!messageDemand_) {
                 messageSteps_ = std::min(messageSteps_, kRungPlateRowAfterSteps);
                 messageCapped_ = messageSteps_ > 0;
             }
@@ -3969,11 +3973,15 @@ void Session::stepRungPlate() {
         // AND THE ROW'S CLOCK IS CAPPED HERE TOO: a live hold cut by a page
         // or a warning left the frozen clock whole, so a leap's length
         // could surface six seconds after the leap (the auditor's finding).
-        if (messageHeld_) {
+        if (!messageDemand_) {
             messageSteps_ = std::min(messageSteps_, kRungPlateRowAfterSteps);
             messageCapped_ = messageSteps_ > 0;
         }
         voice_.capHold(kRungPlateRowAfterSteps);
+        // AND THE LIFT IS CUT WITH THE HOLD: dismissed is gone. Left easing,
+        // a card dismissed by a three-step page came back at three quarters
+        // and lifted out after it, re-arming every stand-down (the auditor).
+        rungPlateAnim_.snapTo(false);
     }
     // 4. THE NEXT ONE UP, off the queue, on a free screen, and only once the
     //    last has eased all the way down -- `!target()` is what puts a beat
@@ -4030,7 +4038,7 @@ bool Session::rungPlateOnScreen() const noexcept {
     // which advanceSecond says after stepRungPlate has run -- this is
     // already false, and the row that carries the one line the player must
     // not miss is drawn at its full size from its first frame (the auditor's
-    // finding). While the plate is wanted its fade is never zero.
+    // finding). Otherwise, while the plate is wanted its fade is above zero.
     return rungPlateState().fade > 0.0F;
 }
 
@@ -4041,8 +4049,9 @@ float Session::alertInkWeightNow() const noexcept {
 bool Session::alertStepsDownNow() const noexcept {
     // A line capped under the plate stays small; a WARNING on the row is
     // never small (drawFrame puts the warning on the row in the line's
-    // place, and its own first frame is the one that matters).
-    return rungPlateOnScreen() || (messageCapped_ && !bouncerWarned());
+    // place, and its own first frame is the one that matters), and neither
+    // is a watchman's DEMAND, which is never capped in the first place.
+    return rungPlateOnScreen() || (messageCapped_ && !bouncerWarned() && !messageDemand_);
 }
 
 float Session::casePlateFadeNow() const noexcept {
@@ -5260,8 +5269,8 @@ void Session::step(const sim::MoveInput& input) {
     // make the plate's two seconds depend on how many keys were pressed
     // during them.
     // THE ANNOUNCE SLOT WAITS BEHIND THE RUNG PLATE (rung_plate.hpp's rule):
-    // neither plate's clock runs while the rung plate is wanted, and their
-    // targets drop with it (syncOverlays below), so a notice already up
+    // neither plate's clock runs while the rung plate is on screen, and their
+    // targets drop with it (syncPanelAnim), so a notice already up
     // eases out, waits, and rises again on its own ease with what it had.
     if (placePlateShowSteps_ > 0 && !rungPlateOnScreen()) {
         --placePlateShowSteps_;
@@ -5841,8 +5850,9 @@ void Session::say(std::string line) {
         line += "..";
     }
     message_ = std::move(line);
-    // An ordinary line. The three Watch sites in step() set this back after
-    // their own say() -- see rungPlateOutranked.
+    // An ordinary line. The four Watch sites (the street's three in step(),
+    // the Gull's own lastDemand) set this back after their say() -- see
+    // rungPlateOutranked.
     messageDemand_ = false;
     // A new line, at whatever register the frame gives it, and news
     // unless the site says otherwise (messageHeld_).
@@ -10775,8 +10785,7 @@ void Session::syncPanelAnim() noexcept {
     // rather than shared through a common accessor because one runs on a
     // `const` path (drawFrame) and this one has to mutate alertAnim_; the
     // formula itself is three lines and has not moved since S6.
-    const bool warned = !tavern_->lastWarning().empty() &&
-                        tavern_->playerStanding() != sim::Standing::Welcome;
+    const bool warned = bouncerWarned();
     // messageSteps_, NOT message_.empty(). The string is deliberately kept
     // alive a few steps past the countdown reaching zero so the fade-out has
     // something to fade -- see step()'s own note -- so the STRING being
@@ -11778,8 +11787,7 @@ FrameStats Session::drawFrame(Framebuffer& target, FramePasses passes) const {
                                                    : (1.0F - placePlateAnim_.value());
     // A bouncer's warning outranks anything the player did to themselves: it is
     // the one line in this game they must not miss.
-    const bool warned = !tavern_->lastWarning().empty() &&
-                        tavern_->playerStanding() != sim::Standing::Welcome;
+    const bool warned = bouncerWarned();
     if (warned) {
         hud.alert = std::string_view{tavern_->lastWarning()};
     } else if (!conversing) {
@@ -11788,13 +11796,17 @@ FrameStats Session::drawFrame(Framebuffer& target, FramePasses passes) const {
     // TASK #83. Eased in step()/syncPanelAnim(), not here -- see
     // HudState::alertFade's own note. 1 when nothing has changed since
     // construction, which is the whole of what every caller before this field
-    // existed drew. AT HALF WEIGHT UNDER THE RUNG PLATE (alertFadeNow's own
-    // note): one arithmetic, read by the case that pins it and drawn here.
-    // And stepped DOWN to the plate's own register while the plate is wanted
-    // (HudState::alertStepsDown): never a tier above the plate.
+    // existed drew. UNDER THE RUNG PLATE the field keeps this ease and the
+    // words take the plate's weight on their ink (alertInkWeightNow -- the
+    // product is what alertFadeNow reads back); and the row steps DOWN to
+    // the plate's own register while the plate is on screen and for a line
+    // capped under it (alertStepsDownNow), never a tier above the plate --
+    // the plate's register, not the HUD's minor scale, which on a square
+    // window is a tier above the card (alertStepScale).
     hud.alertFade = alertAnim_.value();
     hud.alertInkWeight = alertInkWeightNow();
     hud.alertStepsDown = alertStepsDownNow();
+    hud.alertStepScale = rungPlateMetric(target.width(), target.height()).scale;
     // VOICE LANE. The street's own line, on its own toggle, down while a
     // panel owns the screen (the partner's lines are the panel's).
     hud.voiceName = std::string_view{voice_.current().name};
@@ -13187,15 +13199,10 @@ void comeDownstairs(Session& session) {
         ++landed;
     }
 
-    if (ending == "away" || ending == "table") {
+    if (ending == "away") {
         session.closeConversation();
     }
-    // `table`: closed, and left where the talk left it -- the rung drive
-    // frames Cull its own way (faceUnderReticle) and a walk after a rung
-    // spends the plate's hold.
-    if (ending != "table") {
-        standBackFrom(session, "Watchman Cull");
-    }
+    standBackFrom(session, "Watchman Cull");
     return landed;
 }
 
@@ -16428,22 +16435,20 @@ constexpr std::int32_t kEvictRefuseBeats = 8;
     return talk.journal().stagesDone(questId);
 }
 
-/// FACES THEM FROM WHERE THE BODY STANDS, the eye dipped toward a man on a
-/// stool by his distance (thirty degrees at a tile, a third of that at
-/// three), and says whether the aim prompt names them after a step. The
-/// prompt's own subject (Session::aimSubjectNow, in the roster's own case)
-/// is the one honest test of "under the reticle". What the fifth pass
-/// learnt at Cull's stool, gate by gate: from standBackFrom's three tiles a
-/// patron or the hood on his table has the reticle (the stand-back's
-/// clear-line rule sees the Gull's roster, not the ward's bodies that drink
-/// there); a ring of spots walked round him spent the plate's whole hold
-/// finding none; from a tile off him the prompt names him and the picture
-/// is the wall behind his head, eye dipped or not. So the drives stand
-/// back as they always did, dip the eye, and print what the prompt says.
-[[nodiscard]] bool faceFromHere(Session& session, std::string_view name) {
+/// THE EYE DIPPED TOWARD A MAN ON A STOOL from where the body stands: faced
+/// by his bearing (which, from standBackFrom's cardinal spots, is the yaw it
+/// already has) and pitched down by his distance -- thirty degrees at a
+/// tile, a third of that at three -- so a seated man three tiles off is in
+/// the picture and not under the eye's own horizon. What the passes learnt
+/// at Cull's stool, gate by gate, is in the rung README ("Cull's corner");
+/// the summary's `aim=` is the INTERACT target (Session::aimSubjectNow:
+/// what the E key would act on from where the body stands, resolved by
+/// position and reach, never by the reticle's ray), printed so the record
+/// says what the frame's prompt names.
+void dipToward(Session& session, std::string_view name) {
     const sim::Actor* who = actorNamed(session, name);
     if (who == nullptr) {
-        return false;
+        return;
     }
     const std::int32_t dx = who->tileX() - session.body().tileX();
     const std::int32_t dy = who->tileY() - session.body().tileY();
@@ -16451,8 +16456,6 @@ constexpr std::int32_t kEvictRefuseBeats = 8;
     session.body().setYaw(sim::bearingTo(session.body().tileX(), session.body().tileY(),
                                          who->tileX(), who->tileY()));
     session.body().setPitch(sim::angle_from_degrees(-30 / tiles));
-    session.stepMany(sim::MoveInput{}, 1);
-    return session.aimSubjectNow().substr(0, name.size()) == name;
 }
 
 // ---------------------------------------------------------------------------
@@ -16484,21 +16487,24 @@ constexpr std::int32_t kRungBeats = 2;
 ///          Mission's back room and its flagstones, walked to by the
 ///          district's router and read with the same Q, at the trail's own
 ///          hour (nine, the Mission's door open) -- each of them read from
-///          the trail's own stand-back rather than off it, so the frame is
-///          the room and not a wall AND no step falls after the rung.
+///          the trail's own stand-back rather than off it, so no step
+///          falls after the rung (the frame is the back room's wall a tile
+///          off the anchor; the README declares it).
 ///   trade  THE WARD'S BOUNTY, PAID: runContractLine whole. Six for the job
 ///          and the coin over four clears the threshold at the smallest
 ///          bounty the board deals (bounty_kennel, two units at four: eight
 ///          coin, two points). The rung rises at the turn-in, across Cull's
-///          table, and the plate comes up the step the talk closes.
+///          table, and the plate comes up once the talk's close tail is
+///          down; the line's own stand-back walks after it.
 ///   law    FOUR DRINKS STOOD TO WATCHMAN CULL. A bought drink is a deed
 ///          worth two of standing with the drinker's own guild
 ///          (factionDeedWeight), and the Watch at eight on a clean sheet is
 ///          KNOWN TO THE WATCH. The honest short road: the bounty alone
 ///          leaves a man three short of it.
 ///
-/// AND NOTHING WALKS AFTER A RUNG. That is the one rule every track here
-/// keeps, and the two that broke it are why it is written down: the plate
+/// AND NOTHING WALKS AFTER A RUNG on the wire, the roofs and the flame --
+/// the trade and the law stand back after theirs, a second of the hold, and
+/// the README says so. The two that broke it are why it is written down: the plate
 /// holds five seconds (kRungPlateHoldSteps) and a scripted walk spends them
 /// faster than anything else in this file -- fifty tiles out of the Mission
 /// and round it, or a crouched fight for the last tile of the Gull's
@@ -16516,6 +16522,10 @@ constexpr std::int32_t kRungBeats = 2;
     }
     out.found = true;
     out.from = session.legend().row(out.track).rung;
+    // The trade and the law need the man himself: whether he is in the
+    // Gull's roster when the line starts is the reason a run can give for
+    // no rung.
+    const bool cullPresent = actorNamed(session, "Watchman Cull") != nullptr;
     const auto rung = [&session, &out]() { return session.legend().row(out.track).rung; };
     const auto risen = [&rung, &out]() { return rung() > out.from; };
 
@@ -16678,11 +16688,11 @@ constexpr std::int32_t kRungBeats = 2;
             // The bounty, whole, and closed at the end so the plate that
             // queued behind Cull's table can come up; the line's own
             // stand-back (three tiles, a walk the plate's hold pays for),
-            // then the eye on him from there. What is under the reticle is
-            // the summary's `aim=` -- see faceFromHere for why it is a
-            // patron or the hood on his table and not him.
+            // then the eye dipped to him from there. The prompt names the
+            // patron whose stool is in reach of the stand-back tile -- the
+            // summary's `aim=` says so.
             (void)runContractLine(session, "away");
-            (void)faceFromHere(session, "Watchman Cull");
+            dipToward(session, "Watchman Cull");
             break;
         }
         case sim::LegendTrack::Law: {
@@ -16694,17 +16704,13 @@ constexpr std::int32_t kRungBeats = 2;
                 }
                 session.closeConversation();
             }
-            // The stand-back, then the eye on the man the four drinks bought
-            // (faceFromHere). What is under the reticle is the summary's
-            // `aim=`; the hood on his table has had it on every pass from
-            // here, and see faceFromHere for what the other spots gave.
+            // The stand-back, and the eye level and a touch up: the man on
+            // his stool three tiles off is in the lower half of the frame.
+            // The prompt names the HOOD on the stand a tile south of the
+            // stand-back tile, in reach; no pitch can change that (the
+            // prompt is the interact target, not the reticle's ray), and
+            // the summary's `aim=` says so.
             standBackFrom(session, "Watchman Cull");
-            (void)faceFromHere(session, "Watchman Cull");
-            // AND THE EYE BACK UP OFF HIS TABLE: from the stand-back the dip
-            // put the hood on it under the reticle, a red TAKE prompt under
-            // the Watch's own card (the player, fifth pass). Level, the
-            // reticle clears the table and the man is in the lower half of
-            // the frame; the summary's `aim=` says what it found instead.
             session.body().setPitch(sim::angle_from_degrees(4));
             break;
         }
@@ -16724,9 +16730,9 @@ constexpr std::int32_t kRungBeats = 2;
     out.head = session.rungPlateText().head;
     out.row = session.rungPlateText().prose;
     out.aim = std::string(session.aimSubjectNow());
-    if (!out.rose &&
+    if (!out.rose && !cullPresent &&
         (out.track == sim::LegendTrack::Trade || out.track == sim::LegendTrack::Law)) {
-        out.reason = "Cull is not at his table at this hour";
+        out.reason = "Watchman Cull is not in the Gull when the line starts";
     }
     return out;
 }
