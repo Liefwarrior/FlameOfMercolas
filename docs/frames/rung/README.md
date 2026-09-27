@@ -773,14 +773,14 @@ level that folded into a card with no tick row was told nowhere.
   (`isEvent(current_.channel)`, `StreetVoice::step`); the director saw
   Vidar's rope line gone at settle 120 on the exe.
 - **Declared and left**: the head block's height depends on the card's row
-  count (the director: a topped card seats three units higher; two queued
-  cards of different depth would make the gold hop -- the seat is the
-  card's, and anchoring the head instead is a seat rule for the next pass;
-  the director measured the hop at three pixels at 960 and 29 at 1920,
-  where the card grows upward); the full stop's weight pulling every prose
-  row a unit left of the slab's axis (two pixels at 960, about five at
-  1920), the slab itself half a unit left of the compass above it; the
-  chips above unchanged.
+  count (the director: a card with a tick row seats its gold three pixels
+  higher at 960 and 29 at 1920, where the card grows upward rather than
+  down; two queued cards of different depth would make the gold hop -- the
+  seat is the card's, and anchoring the head instead is a seat rule for
+  the next pass); the full stop's weight pulling the prose rows a unit
+  left of the slab's axis (two pixels at 960 on wire, law and trade, one
+  on flame; about five at 1920), the slab itself half a unit left of the
+  compass above it; the chips above unchanged.
 
 ## Tenth pass, 2026-09-27
 
@@ -812,7 +812,10 @@ were false. Everything below is on the gate; no frame changed.
   running (eleventh pass) after two rounds of calling it unpinnable.
 - Also: the tick-fits doc names 3840x2160; the drive doc's wrapped line;
   the hud.cpp slot comment; the Character tile's "1 RUNGS" (the player's
-  side note, one line, this tile being the rung system's own).
+  side note, one line, this tile being the rung system's own) -- at
+  320x180 the tile's own clip still cuts the noun ("LIGHT FINGERS  1.",
+  `--rung=wire --character --width=320 --height=180 --settle-steps=40`);
+  clipping the title before the count is the tile's, a chip.
 - Declared and left as before: the square windows, the frames over their
   cause, the once-a-game row lost to an early page (the player: the fix is
   small and the Character tile's notes affordance is the place -- a chip),
@@ -847,6 +850,17 @@ two numbers were understated.
 - **The alert row's fade clause declared unpinned** with its reason.
 - **The record**: the eighth-pass demand bullet, the pad's two sentences,
   the pass-bark sentence, `messageCapped_`'s doc, the two wrapped comments.
+- **Declared, from the player's round nine**: a HUD top-row collision on
+  square and 4:3 windows, not this lane's and not yet tracked anywhere --
+  the stealth row is drawn across the compass box (`--rung=roofs
+  --width=720 --height=720 --settle-steps=0`: "HIDDEN DARK 6 QUIET" over
+  the compass, the place line cut to "S"; `--rung=trade --width=720
+  --height=720 --settle-steps=620`: "SEEN" over the compass's "SE"; the
+  same at 1440x1080). It is in every square-window rung moment. A chip
+  for the HUD lane, which lane/hud-cells (be82b92b, unmerged) may already
+  move: it makes the minor scale min(h/240, w/425) and rewrites this
+  card's `layoutFor` on `panelMetric(width, height)`, so the collision and
+  the square-window register both want re-judging on the merged exe.
 - **Declared, from the director's round seven**: the dim ink darker than
   the paling slab in the lift's last four steps (a polarity flip at 4x
   nobody reads at speed; fading the dim ink on the slab's curve is one
