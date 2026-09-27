@@ -16413,15 +16413,17 @@ constexpr std::int32_t kEvictRefuseBeats = 8;
     return talk.journal().stagesDone(questId);
 }
 
-/// FACES THEM WITH THEM UNDER THE RETICLE, or says it could not. The aim
-/// prompt's own subject (Session::aimSubjectNow, refreshed every step) is the
-/// one honest test of "in the picture": the sim's line of sight sees over a
-/// table and through a patron's back, and standBackFrom's clear-line rule
-/// found no spot at Cull's stool that passed it. So: the ring of spots a
-/// tile, two and three off them in the four cardinals, nearest first; each
-/// standable one walked to, faced by bearing, and the prompt read after a
-/// step; the first spot whose prompt names them is the frame. None does:
-/// the old stand-back, and false, so the summary says so.
+/// FACES THEM FROM WHERE THE BODY STANDS AND SAYS WHETHER THEY ARE UNDER THE
+/// RETICLE. The aim prompt's own subject (Session::aimSubjectNow, refreshed
+/// every step) is the one honest test of "in the picture": the sim's line of
+/// sight sees over a table and through a standing man, and standBackFrom's
+/// clear-line rule sees the Gull's roster but not the ward's bodies that
+/// drink there. A ring of spots walked round them was tried and spent the
+/// plate's whole hold finding none (the fifth pass, gate 14): at Cull's stool
+/// the hood on his table is nearer than he is from every cardinal, and a
+/// patron stands on the west approach. So no walk: face them by bearing
+/// from where the talk left the body, one step for the prompt to catch up,
+/// and the truth in the return -- the summary prints what the prompt named.
 [[nodiscard]] bool faceUnderReticle(Session& session, std::string_view name) {
     const sim::Actor* who = actorNamed(session, name);
     if (who == nullptr) {
@@ -16431,28 +16433,10 @@ constexpr std::int32_t kEvictRefuseBeats = 8;
     for (char& c : want) {
         c = (c >= 'a' && c <= 'z') ? static_cast<char>(c - 'a' + 'A') : c;
     }
-    const std::int32_t band = who->band();
-    const std::int32_t dirs[4][2] = {{-1, 0}, {1, 0}, {0, -1}, {0, 1}};
-    for (std::int32_t ring = 1; ring <= 3; ++ring) {
-        for (const auto& dir : dirs) {
-            const std::int32_t x = who->tileX() + dir[0] * ring;
-            const std::int32_t y = who->tileY() + dir[1] * ring;
-            if (!session.tiles().standable(x, y, band)) {
-                continue;
-            }
-            walkToTile(session, x, y);
-            if (session.body().tileX() != x || session.body().tileY() != y) {
-                continue;
-            }
-            session.body().setYaw(sim::bearingTo(x, y, who->tileX(), who->tileY()));
-            session.stepMany(sim::MoveInput{}, 1);
-            if (session.aimSubjectNow().substr(0, want.size()) == want) {
-                return true;
-            }
-        }
-    }
-    standBackFrom(session, name);
-    return false;
+    session.body().setYaw(sim::bearingTo(session.body().tileX(), session.body().tileY(),
+                                         who->tileX(), who->tileY()));
+    session.stepMany(sim::MoveInput{}, 1);
+    return session.aimSubjectNow().substr(0, want.size()) == want;
 }
 
 // ---------------------------------------------------------------------------
@@ -16676,11 +16660,10 @@ constexpr std::int32_t kRungBeats = 2;
         }
         case sim::LegendTrack::Trade: {
             // The bounty, whole, closed at the table so the plate that
-            // queued behind Cull's table can come up -- and THE MAN WHO PAID
-            // UNDER THE RETICLE, read off the prompt (faceUnderReticle): a
-            // patron's back and a hood on his table took the frame on three
-            // passes, and facing his bearing from the stand-back's spot was
-            // facing them.
+            // queued behind Cull's table can come up, and the man who paid
+            // faced from there (faceUnderReticle) -- no walk after the rung.
+            // Whether he is the thing under the reticle is the summary's
+            // `aim=`: his table's hood and a patron have had it on every pass.
             (void)runContractLine(session, "table");
             (void)faceUnderReticle(session, "Watchman Cull");
             break;
@@ -16694,9 +16677,11 @@ constexpr std::int32_t kRungBeats = 2;
                 }
                 session.closeConversation();
             }
-            // The man the four drinks bought UNDER THE RETICLE, read off the
-            // prompt (faceUnderReticle) -- the stand-back's spot put a hood
-            // on his table there on three passes.
+            // The man the four drinks bought, faced from where the talk left
+            // the body (faceUnderReticle) -- no walk after the rung; the
+            // stand-back's three tiles put a hood on his table under the
+            // reticle on three passes. What is under it now is the summary's
+            // `aim=`.
             (void)faceUnderReticle(session, "Watchman Cull");
             break;
         }

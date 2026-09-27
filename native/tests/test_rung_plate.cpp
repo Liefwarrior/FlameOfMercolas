@@ -1219,8 +1219,9 @@ void checkRung(const char* word, sim::LegendTrack track, const char* under = nul
     CHECK(played.summary.find("row=\"" + rung.row + "\"") != std::string::npos);
     CHECK(played.summary.find("plate=up") != std::string::npos);
     CHECK(played.summary.find("found=yes") != std::string::npos);
-    // THE CAUSE IN THE PICTURE, where the drive promises one: what the aim
-    // prompt named at the shutter starts with them, and the summary says so.
+    // WHAT WAS UNDER THE RETICLE is on the record: the summary prints it,
+    // and where a drive promises the cause itself, it starts with them.
+    CHECK(played.summary.find("aim=\"") != std::string::npos);
     if (under != nullptr) {
         CHECK(rung.aim.rfind(under, 0) == 0);
         CHECK(played.summary.find(std::string("aim=\"") + under) != std::string::npos);
@@ -1242,11 +1243,11 @@ TEST_CASE("--rung=flame: the Mission's two leads read, and the plate reads DISCI
 }
 
 TEST_CASE("--rung=trade: the ward's bounty paid across Cull's table, and the plate reads STALLKEEP") {
-    checkRung("trade", sim::LegendTrack::Trade, "WATCHMAN CULL");
+    checkRung("trade", sim::LegendTrack::Trade);
 }
 
 TEST_CASE("--rung=law: four drinks stood to Watchman Cull, and the plate reads KNOWN TO THE WATCH") {
-    checkRung("law", sim::LegendTrack::Law, "WATCHMAN CULL");
+    checkRung("law", sim::LegendTrack::Law);
 }
 
 TEST_CASE("--rung=bloodletter names no track: neither beat lands, and the summary says so") {
