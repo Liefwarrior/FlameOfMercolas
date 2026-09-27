@@ -1242,20 +1242,26 @@ TEST_CASE("the drawn wiring: under a plate the alert row's own glyphs are half a
     CHECK(bBottom - bTop + 1 == 6 * rungPlateMetric(width, height).scale);
     CHECK(bInk < aInk);
     // And the rails under the words: bone at a quarter is dimmer than amber
-    // at half. The rails sit a unit of the row's scale outside the glyphs
-    // (padY) and half a unit thick, and the side rails two units out.
+    // at half. The row's plate is exactly a unit of the row's scale (padY)
+    // outside the glyphs above and below and two units (padX) at the sides,
+    // with the rails drawn inside it -- read exactly that box and no more,
+    // because the band's next row starts a pad past it.
+    int railX = -1;
+    int railY = -1;
     {
         const int s = rungPlateMetric(width, height).scale;
-        for (int y = std::max(0, bTop - 3 * s); y <= std::min(height - 1, bBottom + 3 * s); ++y) {
-            for (int x = std::max(0, bLeft - 4 * s); x <= std::min(width - 1, bRight + 4 * s); ++x) {
+        for (int y = std::max(0, bTop - s); y <= std::min(height - 1, bBottom + s); ++y) {
+            for (int x = std::max(0, bLeft - 2 * s); x <= std::min(width - 1, bRight + 2 * s); ++x) {
                 const Rgb pb = unpackRgb(b.pixels()[b.index(x, y)]);
-                if (rail(pb)) {
-                    bRail = std::max(bRail, luma(pb));
+                if (rail(pb) && luma(pb) > bRail) {
+                    bRail = luma(pb);
+                    railX = x;
+                    railY = y;
                 }
             }
         }
     }
-    INFO("bRail ", bRail, " bWord ", bWord);
+    INFO("bRail ", bRail, " at ", railX, ",", railY, " bWord ", bWord);
     CHECK(bWord > 0.0);
     CHECK(bRail > 0.0);
     CHECK(bRail < bWord);
