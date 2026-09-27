@@ -3639,6 +3639,7 @@ TEST_CASE("the surface clamp keeps its hue") {
     REQUIRE(world.pool() != nullptr);
     std::size_t checked = 0;
     std::size_t overCap = 0;
+    std::size_t colourScaled = 0;
     for (std::size_t i = 0; i < world.placements().size(); ++i) {
         const StaticPlacement& p = world.placements()[i];
         if (p.selfLit || p.gradient || p.bilinear || p.mode != kDrawShaded || p.lightX != p.lightX2 ||
@@ -3655,21 +3656,29 @@ TEST_CASE("the surface clamp keeps its hue") {
         light = render::Rgb{light.r + sky.ambient.r, light.g + sky.ambient.g, light.b + sky.ambient.b};
         const bool atCap = std::max(light.r, std::max(light.g, light.b)) > 1.15F;
         const render::Rgb clamped = render::clampLight(light, 1.15F);
-        const render::Rgb colour = render::clampLight(
-            render::Rgb{clamped.r * static_cast<float>(p.instance.tint.r),
-                        clamped.g * static_cast<float>(p.instance.tint.g),
-                        clamped.b * static_cast<float>(p.instance.tint.b)},
-            255.0F);
+        const render::Rgb raw{clamped.r * static_cast<float>(p.instance.tint.r),
+                              clamped.g * static_cast<float>(p.instance.tint.g),
+                              clamped.b * static_cast<float>(p.instance.tint.b)};
+        const bool scaled = std::max(raw.r, std::max(raw.g, raw.b)) > 255.0F;
+        const render::Rgb colour = render::clampLight(raw, 255.0F);
         const Rgba8 lit = world.relitTint(i, 0);
         ++checked;
         overCap += atCap ? 1 : 0;
+        colourScaled += scaled ? 1 : 0;
         CHECK(std::abs(static_cast<int>(lit.r) - static_cast<int>(colour.r + 0.5F)) <= 1);
         CHECK(std::abs(static_cast<int>(lit.g) - static_cast<int>(colour.g + 0.5F)) <= 1);
         CHECK(std::abs(static_cast<int>(lit.b) - static_cast<int>(colour.b + 0.5F)) <= 1);
     }
-    MESSAGE("Point pieces pinned to the formula at ten: " << checked << ", " << overCap << " over the cap");
+    // The pool's peak stands at 0.99 and the ambient at 0.05, so the light
+    // cap binds only where a candle's spill lands on a lamp's own cell (a
+    // handful on the Docks); the colour's own scaling at 255 binds on many.
+    // Either step done per channel gives a different number on those.
+    MESSAGE("Point pieces pinned to the formula at ten: " << checked << ", " << overCap
+                                                          << " over the light cap, " << colourScaled
+                                                          << " scaled at 255");
     CHECK(checked >= 100);
-    CHECK(overCap >= 10);
+    CHECK(overCap >= 1);
+    CHECK(colourScaled >= 10);
     // The chunks too: on the same Docks at ten, no coloured vertex of any
     // chunk is greener than it is red (the lamps are warm, the ambient a
     // cold near-black, the candle amber: nothing lights green).
