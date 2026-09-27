@@ -609,8 +609,8 @@ TEST_CASE("the chunk version moves with the weather, and a clear version is what
 TEST_CASE("the veil is nested shells round the eye, far to near, and none at all in clear air") {
     // Twenty-four shells since the night-light lane's third pass: three
     // thin ones inside two metres so a shell's cut across a near wall is a
-    // small step, every spacing unlike the last so the eight-bit blends do
-    // not all round one way, none over a tenth of a veil inside ten metres.
+    // small step, a run of 0.9 m to eight metres, a ladder beyond; none
+    // over a tenth of a night fog's veil inside ten metres.
     REQUIRE(veilShellCount() == 24U);
     CHECK(veilShellRadius(0) == doctest::Approx(0.7F));
     CHECK(veilShellRadius(veilShellCount() - 1) == doctest::Approx(56.0F));

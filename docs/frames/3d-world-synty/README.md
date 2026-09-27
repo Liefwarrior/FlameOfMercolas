@@ -777,14 +777,18 @@ seven and what moved:
   round the eye) cut the plaster above the Gull's door, a sixteen-percent
   step of that shell's own alpha, and the line that slid across every near
   pane as you walked was the same shell crossing the glass. Three thin
-  shells stand inside two metres now (0.7, 1.2, 1.8) and the ladder runs on
-  from 2.5 growing by about a tenth a shell (`kVeilRadii`, twenty-four
-  shells, no step over a tenth of a veil inside ten metres), forty-eight
-  round, so each cut is a small step on a curve; the weather's own test
-  pins the count. Every spacing unlike the last on purpose: a first cut of
-  this round at twenty-six shells 0.4 m apart blended the same alpha the
-  same way twenty-six times in eight bits and drifted the fogged alley
-  olive (the fourth round's player); unequal alphas round each way.
+  shells stand inside two metres now (0.7, 1.2, 1.8), then a run of 0.9 m
+  to about eight metres and a ladder growing by a tenth a shell beyond
+  (`kVeilRadii`, twenty-four shells, no step over a tenth of a night fog's
+  veil inside ten metres and only just at 9.9), forty-eight round, so each
+  cut is a small step on a curve; the weather's own test pins the count. A
+  first cut of this round at twenty-six shells 0.4 m apart blended the same
+  small alpha twenty-six times in eight bits and drifted the fogged alley
+  olive (the fourth round's player); at twenty-four with wider inner
+  spacings the drift is mostly gone -- the player's olive count fell from
+  7,770 pixels to none and red leads green on the alley wall again -- with
+  a lean of a level or two left on the near cobbles that shows at three
+  times saturation. Declared.
 - *No seam at a cut.* The kit window module's ends carried a share of the
   pane's cell that its neighbours' ends did not, so every lit window on the
   quay front stood on a panel a step brighter or darker than the next. The
@@ -809,12 +813,14 @@ seven and what moved:
   three and banked to ten, the doors shut to eleven), so two o'clock is
   still the evening's row and the panes never come back up before first
   light; the banking eases in over the three quarters of an hour before
-  three (`kSmallHoursEase`), not in one step on the minute. Households are
-  untouched. Pinned at ten, two, three, five and six.
+  three (`kSmallHoursEase`), not in one step on the minute, and nothing ends
+  it but first light. Households are untouched. Pinned at ten, two, three,
+  five and six.
 - *Also this round, by its auditor:* the late glass draws BEFORE the halos
   (drawn after them it cut a pane-shaped hole in every glow) and only
   where the fog's share is under 0.94 (`kLateGlassBelow` 240: a night fog
-  past a metre and a half, not an overcast's trace); a light is red well
+  past a metre and a third; an overcast's trace only from eight and a half
+  metres out, where the halos over it make it moot); a light is red well
   over blue (`r >= 80 && r > b + 40`), which admits every candle at any
   strength and no dark pane, where a sum over 450 had left two thirds of
   the candles out of the fog pass; and the colour a piece is drawn with is
@@ -829,6 +835,25 @@ seven and what moved:
 Declared, still: the wind's dim on the pool is steady; a kit window is a
 card; two men standing in the Whistling's own doorway at night are lit by
 nothing but its window's third tile of spill, and read dark.
+
+**THE RECORD ON 720f47f8 (2026-09-27): director 8, player 8, auditor 8**, the
+first round every hat put at the bar, after four fix rounds (6/7/7, 6/5/5,
+7/7/6, 8/7/7). Left on the record, declared and not built: the pool round a
+window is the map's footprint and the run piece holding the pane cannot
+peak at it (a vertical peak wants per-vertex light on kit pieces); a kit
+window is a card with no muntins and no room behind it; the wind's dim on
+the pool is steady; two men in the Whistling's doorway read dark; a lean
+of a level or two on the near cobbles in fog at three times saturation.
+Out of this lane, on the record from the same reports: the Gull's door and
+its interior stay lit and open all night while the sim shuts the tavern at
+two (the panes bank, the doorway does not); interaction prompts through
+geometry (a rope on the door lantern, a mouse on the plaster, the bartender
+through the roof); the scripted night section opening in daylight and
+--demo-capture writing HUD-only frames; urchins in the watchman's rig; the
+02:00 crowd; townswomen piled in a doorway; checker noise on the strapped
+posts. The wording of this pass was corrected once more after the fifth
+round's auditor (the shells' spacing, a dead branch in the small hours,
+the late-glass comment's numbers).
 
 **Reshoot.** `dist\granadad.exe --smoke=0 --hold --scale=1 --weather=clear --time=HH --spawn=X,Y,Z --yaw=DEG [--pitch=DEG] [--fov=DEG] --screenshot=path.png`
 
@@ -1031,7 +1056,7 @@ and population digests, and two sessions under one fog draw one frame.
 
 How the fog is drawn: the 3D pass has never had a fog shader (rlsw has no
 shader at all), so the weather's fog is geometry. Nested translucent shells
-round the eye, nineteen of them then (twenty since the night-light lane's third pass, three of them inside two metres; see that pass) out to fifty-six tiles and closer together
+round the eye, nineteen of them then (twenty-four since the night-light lane's third pass, three of them inside two metres; see that pass) out to fifty-six tiles and closer together
 near the eye, each coloured the fog's colour below the horizon and the sky's
 own above it, each with the alpha of the fog between it and the one inside,
 drawn last in the pass far to near with the depth test on. Whatever stands

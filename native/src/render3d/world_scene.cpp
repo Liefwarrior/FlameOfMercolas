@@ -175,14 +175,13 @@ constexpr float kCandleSpread = 0.32F;
 /// share of their strength. The hours are the sim's own tavern's
 /// (sim/tavern.hpp): its doors shut at two, its fire burns to three and is
 /// banked to ten, its doors stay shut to eleven -- so the panes bank at
-/// three and never come back up before first light (the round-four
+/// three and never come back up: first light takes them (the round-four
 /// auditor: a first cut banked from one and jumped back to full at half
 /// past five, against the sim at both ends). It is also what makes five
 /// o'clock a different street from two on a frontage that never goes dark
 /// (the director's fourth, three rounds).
 constexpr float kLitHouseSmallHours = 0.55F;
 constexpr float kSmallHoursFrom = 27.0F;
-constexpr float kSmallHoursTo = 36.0F;
 /// The banking eases in over the three quarters of an hour before three
 /// (the last drinkers out, the fire let down), not in one step on the
 /// minute: the relight runs on the minute, and half the light gone in one
@@ -190,13 +189,12 @@ constexpr float kSmallHoursTo = 36.0F;
 constexpr float kSmallHoursEase = 0.75F;
 
 /// How far into the small hours, on the noon-to-noon clock the light law
-/// keeps: 0 through the evening, easing to 1 over kSmallHoursEase before
-/// kSmallHoursFrom, 1 from there until kSmallHoursTo, 0 after.
+/// keeps (12..36): 0 through the evening, easing to 1 over kSmallHoursEase
+/// before kSmallHoursFrom, 1 from there on. Nothing ends it but daylight,
+/// which takes every pane at first light (paneDuskBelow), hours before
+/// the clock comes round to noon.
 [[nodiscard]] float smallHoursAt(float hour) noexcept {
     const float h = hour < 12.0F ? hour + 24.0F : hour;
-    if (h >= kSmallHoursTo) {
-        return 0.0F;
-    }
     const float t = std::clamp((h - (kSmallHoursFrom - kSmallHoursEase)) / kSmallHoursEase, 0.0F, 1.0F);
     return t * t * (3.0F - 2.0F * t);
 }
@@ -367,14 +365,18 @@ namespace {
 /// hard step of its own alpha -- one shell at 1.5 m was a sixteen-percent
 /// edge across the plaster above the Gull's door and a line sliding across
 /// every near pane as you walked (three rounds of the player critic, read
-/// as the halo's rim). Thinner shells there, smaller steps -- and every
-/// spacing DIFFERENT from the last, growing by about a tenth a shell: a
-/// first cut of the third pass at twenty-six shells 0.4 m apart blended
-/// the same alpha the same way twenty-six times in eight bits and drifted
-/// the fogged alley olive (the fourth round's player); shells of unequal
-/// alpha round each way and the drift averages out. Twenty-four, against
-/// the weather lane's nineteen, with no step over a tenth inside ten
-/// metres (the fourth round's director: a twelve-percent band at eight).
+/// as the halo's rim). Thinner shells there, smaller steps -- then a run
+/// of 0.9 m to about eight metres and a ladder growing by a tenth a shell
+/// beyond. A first cut of the third pass at twenty-six shells 0.4 m apart
+/// blended the same small alpha twenty-six times in eight bits and drifted
+/// the fogged alley olive (the fourth round's player); at twenty-four
+/// shells with wider inner spacings the drift is MOSTLY gone -- the
+/// player's own olive count fell from 7,770 pixels to none, red leads
+/// green again on the alley wall -- with a lean of a level or two left on
+/// the near cobbles that shows at three times saturation (declared; the
+/// fifth round's auditor). No step over a tenth of a veil inside ten
+/// metres, and only just at 9.9 (the fourth round's director: a
+/// twelve-percent band at eight).
 constexpr float kVeilRadii[] = {0.7F,  1.2F,  1.8F,  2.5F,  3.3F,  4.2F,  5.1F,  6.0F,
                                 6.9F,  7.8F,  8.8F,  9.9F,  11.2F, 12.6F, 14.3F, 16.3F,
                                 18.6F, 21.3F, 24.5F, 28.3F, 33.0F, 39.0F, 46.0F, 56.0F};
