@@ -646,7 +646,7 @@ TEST_CASE("the veil is nested shells round the eye, far to near, and none at all
     // innermost last, so the blend composes outside in.
     REQUIRE(!veil.indices.empty());
     CHECK(radiusOf(veil, veil.indices.front()) == doctest::Approx(56.0F).epsilon(0.01));
-    CHECK(radiusOf(veil, veil.indices.back()) == doctest::Approx(1.5F).epsilon(0.01));
+    CHECK(radiusOf(veil, veil.indices.back()) == doctest::Approx(0.6F).epsilon(0.01));
     CHECK(radiusOf(veil, veil.indices.front()) > radiusOf(veil, veil.indices.back()));
     // Below the horizon a ring is the fog's colour; at the zenith the sky's
     // own, so the sky seen through every shell is still the sky.
@@ -657,7 +657,7 @@ TEST_CASE("the veil is nested shells round the eye, far to near, and none at all
                std::abs(static_cast<int>(veil.colours[at + 2U]) - static_cast<int>(colour.b * 255.0F + 0.5F)) <= 1;
     };
     CHECK(closeTo(0U, fogged.fog));             // the first shell's bottom pole
-    CHECK(closeTo(10U * 24U, fogged.skyTop));   // its top pole
+    CHECK(closeTo(10U * 48U, fogged.skyTop));   // its top pole (48 segments a ring)
 }
 
 TEST_CASE("a fog is in the description, a clear description has no veil in it, and twice is once") {

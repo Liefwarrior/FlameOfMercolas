@@ -3478,8 +3478,13 @@ TEST_CASE("in a fog a lit pane carries the fog's share in its alpha, by the eye'
     const Rgba8 warm = catalogue.knobs().litPane;
     std::size_t lightsClear = 0;
     for (const StaticInstance& at : scene.statics) {
-        CHECK(at.pane.a == 255);
-        lightsClear += (at.pane.r >= 80 && at.pane.r > at.pane.b + 40) ? 1 : 0;
+        // (A flame's or the water's pane carries its own tint alpha; only a
+        // light's pane is the fog's to move.)
+        const bool light = at.pane.r >= 80 && at.pane.r > at.pane.b + 40;
+        if (light) {
+            CHECK(at.pane.a == 255);
+        }
+        lightsClear += light ? 1 : 0;
     }
     REQUIRE(lightsClear >= 10);
 
@@ -3495,7 +3500,6 @@ TEST_CASE("in a fog a lit pane carries the fog's share in its alpha, by the eye'
     for (const StaticInstance& at : scene.statics) {
         const bool light = at.pane.r >= 80 && at.pane.r > at.pane.b + 40;
         if (!light) {
-            CHECK(at.pane.a == 255);
             continue;
         }
         ++lights;
