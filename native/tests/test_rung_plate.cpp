@@ -6,8 +6,8 @@
 // plate's corner, the lift curve on a sky (the tick's shadow against the
 // prose's), the head's centring, the voice row's stand-down through its
 // fade (at the emitter, on pixels at 720x720, and through a real pass bark
-// in the Gull that runs out inside the lift), the voice row's pad above it
-// on pixels, and the 320x180 fold.
+// in the Gull whose clock runs under the plate), the voice row's pad above
+// it on pixels, and the 320x180 fold.
 //
 //   1. THE WATCH seeds silently and reports a rise per track, never a fall.
 //      A session that loads with rungs on the sheet has not just earned
@@ -874,17 +874,25 @@ TEST_CASE("the voice row's capped state outlives its hold through the ease-out, 
     CHECK_FALSE(voice.capped());
 }
 
-TEST_CASE("a real pass bark runs under the plate and, running out inside the lift's last frames, stays stood down through its fade (the session's own seam)") {
+TEST_CASE("a real pass bark's clock runs under the plate, and the voice row is stood down from the plate's rise until the row clears (the session's own seam)") {
     // Eight in the evening at the Gull's counter, a drift along the bar
     // until a stool speaks (test_street_voice's own walk): a PASS or
     // OVERHEARD line, whose clock runs under the plate. Its hold is its
     // row's own (kVoiceHoldMinSteps plus kVoiceHoldPerGlyphSteps a glyph,
-    // to the max), so the case idles it down to exactly what lands its
-    // run-out inside the lift's last eight steps -- the window the
-    // auditor found: a line fading when the plate's last-frame cap fires.
+    // to the max), so the case knows the step it should leave on: that
+    // step, not the plate's cap (kRungPlateHoldSteps plus
+    // kRungPlateRowAfterSteps, where a HELD line would read), is the pin
+    // that its clock ran. The plate goes up the step after the bark.
+    //
+    // NOT PINNED HERE: a bark running out inside the lift's last frames
+    // (the tenth-pass window). Tried: idled to that step, the room
+    // replaced the bark six steps short of it -- the row yields to its
+    // own rank or above whenever the room has a new line -- so the step a
+    // bark leaves on is the room's to choose, not the case's. The
+    // emitter case above pins what the cap does to an exhausted line.
     Session session(configInTheGull(20, sim::gull::kBartenderX, sim::gull::kBartenderY + 1));
     wake(session);
-    constexpr std::int32_t kRunOutAt = kRungPlateHoldSteps + kRungPlateLiftSteps - 4;
+    constexpr std::int32_t kCappedAt = kRungPlateHoldSteps + kRungPlateRowAfterSteps;
     sim::MoveInput drift;
     int walked = 0;
     std::int32_t hold = 0;
@@ -900,7 +908,10 @@ TEST_CASE("a real pass bark runs under the plate and, running out inside the lif
         hold = std::clamp(kVoiceHoldMinSteps + static_cast<std::int32_t>(line.text.size()) *
                                                    kVoiceHoldPerGlyphSteps,
                           kVoiceHoldMinSteps, kVoiceHoldMaxSteps);
-        if (line.channel < VoiceChannel::Farewell && hold >= kRunOutAt) {
+        // A bark long enough to outlive the plate's hold, and whose own
+        // step tells apart from the cap's.
+        if (line.channel < VoiceChannel::Farewell && hold > kRungPlateHoldSteps + 30 &&
+            std::abs(hold - kCappedAt) > 6) {
             break;
         }
     }
@@ -908,23 +919,12 @@ TEST_CASE("a real pass bark runs under the plate and, running out inside the lif
     REQUIRE(session.voice().current().channel < VoiceChannel::Farewell);
     const std::string bark = session.voice().current().text;
     REQUIRE_FALSE(session.voiceStepsDownNow());
-    // Idle it down: the bark was said this step and its clock runs one a
-    // step, so after this many it has kRunOutAt left.
-    session.stepMany(sim::MoveInput{}, hold - kRunOutAt);
-    REQUIRE(session.voice().up());
-    REQUIRE(session.voice().current().text == bark);
     crackABox(session);
-    // From the step the plate is wanted until the bark's row clears: the
-    // seam says stood down every step, the bark leaves on ITS OWN hold's
-    // step (inside the lift: its clock ran under the plate, where a held
-    // event line would have been capped to kRungPlateRowAfterSteps at the
-    // hold's end), and it is still on the row, fading, on the plate's last
-    // frame.
     int lived = 0;
     int ranOut = -1;
     int lastFrame = -1;
     bool plateSeen = false;
-    for (; lived < kRungPlateHoldSteps + kRungPlateLiftSteps + 2 * kPageEaseSteps + 8; ++lived) {
+    for (; lived < kVoiceHoldMaxSteps + 2 * kPageEaseSteps + 8; ++lived) {
         session.stepMany(sim::MoveInput{}, 1);
         const float fade = session.rungPlateState().fade;
         if (fade > 0.0F) {
@@ -942,18 +942,18 @@ TEST_CASE("a real pass bark runs under the plate and, running out inside the lif
         CHECK(session.voiceStepsDownNow());
     }
     const int cleared = lived;
-    INFO("ran out ", ranOut, " last frame ", lastFrame, " cleared ", cleared);
+    INFO("hold ", hold, " ran out ", ranOut, " last frame ", lastFrame, " cleared ", cleared);
     REQUIRE(plateSeen);
-    REQUIRE(ranOut >= 0);
     REQUIRE(lastFrame >= 0);
-    // Its own clock, not the cap: within two steps of where the arithmetic
-    // put it, after the hold's end and before the last frame.
-    CHECK(std::abs(ranOut - kRunOutAt) <= 2);
-    CHECK(ranOut > kRungPlateHoldSteps);
-    CHECK(ranOut < lastFrame);
-    // Still present on the last frame (its fade running), cleared after.
-    CHECK(cleared > lastFrame);
-    CHECK(session.voice().current().text != bark);
+    REQUIRE(ranOut >= 0);
+    // Its own clock, run under the plate: it left within two steps of its
+    // hold, after the plate, and nowhere near where the cap would have
+    // put a held line.
+    CHECK(std::abs(ranOut - (hold - 1)) <= 2);
+    CHECK(ranOut > lastFrame);
+    CHECK(std::abs(ranOut - kCappedAt) > 3);
+    // And the row cleared after its fade, still small to the end.
+    CHECK(cleared > ranOut);
 }
 
 TEST_CASE("the voice row stood down keeps its top rail clear of the row above it, on pixels") {

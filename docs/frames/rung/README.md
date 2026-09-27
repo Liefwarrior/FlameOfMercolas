@@ -725,12 +725,14 @@ level that folded into a card with no tick row was told nowhere.
   scale stood down and six of the minor scale otherwise. (The tenth pass
   closed the seam the auditor found between the two: a cap now marks
   whatever line is present, so a bark whose hold ran out inside the lift
-  stays small through its fade -- pinned at the emitter and, on
-  `Session::voiceStepsDownNow`, through a real pass bark in the Gull idled
-  so its own hold runs out inside the lift's last eight steps: stood down
-  from the rise, still on the row on the plate's last frame, small until
-  the row clears -- the eleventh pass; the tenth's case had the bark
-  outliving the plate by ninety steps and proved only the ninth's seam.)
+  stays small through its fade -- pinned at the emitter; and on
+  `Session::voiceStepsDownNow` through a real pass bark in the Gull, stood
+  down from the rise until its row clears. The run-out INSIDE the lift is
+  not reached on the session: the eleventh pass idled a bark to that step
+  and the room replaced it six steps short -- the row yields to its own
+  rank or above whenever the room has a new line -- so the step a bark
+  leaves on is the room's, not a case's; the seam is one line and the
+  cap's semantics are the emitter case's.)
 - **The voice row buys its pad above.** The rail plus a minor unit of air,
   in pixels, the alert row's way. Pinned on pixels with a hands row above
   it, read across the plate's whole rail (the eleventh pass; the tenth's
@@ -762,9 +764,9 @@ level that folded into a card with no tick row was told nowhere.
   farewell holding under the plate; and (the eleventh pass) a pass bark
   RUNNING under the plate -- the Gull case computes the bark's hold from
   the public constants (`kVoiceHoldMinSteps` plus `kVoiceHoldPerGlyphSteps`
-  a glyph, to `kVoiceHoldMaxSteps`) and the bark leaves on that step,
-  inside the lift, where a held line would have read the cap. (The ninth
-  and tenth passes called this unpinnable; it was not.)
+  a glyph, to `kVoiceHoldMaxSteps`) and the bark leaves within two steps
+  of it, after the plate, nowhere near where the cap would have put a held
+  line. (The ninth and tenth passes called this unpinnable; it was not.)
 - **Declared and left**: the head block's height depends on the card's row
   count (the director: a topped card seats three units higher; two queued
   cards of different depth would make the gold hop -- the seat is the
@@ -788,9 +790,11 @@ were false. Everything below is on the gate; no frame changed.
   for any line on the row, exhausted or not; the alert row's three caps set
   `messageCapped_` for a line with steps left or a fade still running.
   Pinned at the emitter (a run-out farewell, capped, stays capped until the
-  row clears) and, since the eleventh pass, through a real pass bark on the
-  session (`voiceStepsDownNow`, public and what drawFrame hands the HUD)
-  that runs out inside the lift's last frames. The alert row's fade clause
+  row clears) and through a real pass bark on the session
+  (`voiceStepsDownNow`, public and what drawFrame hands the HUD) from the
+  plate's rise until the row clears -- not through a run-out inside the
+  lift, which the room will not hold still for (the eleventh pass's
+  note). The alert row's fade clause
   is UNPINNED: only a moment (a leap's or a mantle's line, whose clock runs
   under the plate) can run out inside the lift, and this suite has no roof
   fixture (test_roofrun's climb fixture could supply one).
@@ -823,13 +827,16 @@ clause; the record contradicted itself on the pad; two comments were
 ragged. The director: two of his round-seven items were not declared and
 two numbers were understated.
 
-- **The Gull case idles the bark to the window.** It walks up a pass or
-  overheard line, computes its hold, idles until exactly the lift's last
-  four steps remain, then cracks the box: the bark leaves on its own hold's
-  step (within two of the arithmetic, after the hold's end, before the last
-  frame), is still on the row on the plate's last frame, and the seam says
-  stood down every step until the row clears. That pins the pass bark
-  running under the plate too.
+- **The Gull case pins the bark's own clock.** It walks up a pass or
+  overheard line, computes its hold from the public constants, cracks the
+  box the step after, and the bark leaves within two steps of that hold --
+  after the plate, nowhere near where the cap would have put a held line
+  -- with the seam stood down every step until the row clears. That pins
+  the pass bark running under the plate. The run-out INSIDE the lift was
+  tried and is declared instead: idled to the lift's last four steps, the
+  room replaced the bark six steps short of its run-out (the row yields to
+  its own rank or above), so a case cannot choose the step; the emitter
+  case pins what the cap does to an exhausted line.
 - **The pad pin reads the whole rail**, first bone pixel to last, and
   requires the rail wider than the name.
 - **The alert row's fade clause declared unpinned** with its reason.
