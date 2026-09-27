@@ -1405,8 +1405,9 @@ TEST_CASE("the plate seats under the ribbon and the announce row, above the reti
             CHECK(tickBox.y + tickBox.h <= fence.y0);
             CHECK(tickBox.y >= floorY);
             if (tickFits) {
-                // THE TICK'S LEADING: its caps start two units into its own
-                // row -- three of air under the prose (or the top row) --
+                // THE TICK'S LEADING: its caps start one unit into its own
+                // row -- two of air under the prose (or the top row), two
+                // between its shadow and the rule --
                 // pinned on the pixels against the same card with the tick
                 // blanked, which lays out the same cells and draws no tick.
                 RungPlateState blankTick = ticked;
@@ -1429,7 +1430,7 @@ TEST_CASE("the plate seats under the ribbon and the announce row, above the reti
                         }
                     }
                 }
-                CHECK(firstTickInk == rowY0 + 2 * metric.scale);
+                CHECK(firstTickInk == rowY0 + metric.scale);
             }
 
             // And drawn: ink inside its own pane (a cell of slack for the
@@ -1468,7 +1469,10 @@ TEST_CASE("the plate seats under the ribbon and the announce row, above the reti
                 }
             }
             REQUIRE(lastInk >= 0);
-            CHECK(firstInk == box.x + metric.widthOf(1 + kRungPlateGutterCells));
+            // Inside the first cell after the gutter, never in the gutter:
+            // the font's own glyphs start on their first or second column.
+            CHECK(firstInk >= box.x + metric.widthOf(1 + kRungPlateGutterCells));
+            CHECK(firstInk < box.x + metric.widthOf(2 + kRungPlateGutterCells));
             CHECK(lastInk <= box.x + box.w - metric.widthOf(1 + kRungPlateGutterCells) - 1);
         }
     }
