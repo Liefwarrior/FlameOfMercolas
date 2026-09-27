@@ -727,12 +727,14 @@ level that folded into a card with no tick row was told nowhere.
   whatever line is present, so a bark whose hold ran out inside the lift
   stays small through its fade -- pinned at the emitter; and on
   `Session::voiceStepsDownNow` through a real pass bark in the Gull, stood
-  down from the rise until its row clears. The run-out INSIDE the lift is
-  not reached on the session: the eleventh pass idled a bark to that step
-  and the room replaced it six steps short -- the row yields to its own
-  rank or above whenever the room has a new line -- so the step a bark
-  leaves on is the room's, not a case's; the seam is one line and the
-  cap's semantics are the emitter case's.)
+  down from the rise, on the row through the plate's last frame (so the
+  last-frame cap lands on a present line), until the room takes the row
+  back. The bark's OWN run-out is not reached on the session: the eleventh
+  pass idled a bark to the lift's last steps and the room replaced it six
+  steps short, then, uncoerced, replaced the next at 419 steps in -- the
+  row yields to its own rank or above whenever the room has a new line --
+  so the step a bark leaves on is the room's, not a case's; the seam is
+  one line and the cap's semantics are the emitter case's.)
 - **The voice row buys its pad above.** The rail plus a minor unit of air,
   in pixels, the alert row's way. Pinned on pixels with a hands row above
   it, read across the plate's whole rail (the eleventh pass; the tenth's
@@ -761,12 +763,15 @@ level that folded into a card with no tick row was told nowhere.
   the slab's "quarter" is not the pin's number; Finch's fence is cited from
   where the game says it.
 - **Pinned**: the head block on the card's axis for all five heads; a
-  farewell holding under the plate; and (the eleventh pass) a pass bark
-  RUNNING under the plate -- the Gull case computes the bark's hold from
-  the public constants (`kVoiceHoldMinSteps` plus `kVoiceHoldPerGlyphSteps`
-  a glyph, to `kVoiceHoldMaxSteps`) and the bark leaves within two steps
-  of it, after the plate, nowhere near where the cap would have put a held
-  line. (The ninth and tenth passes called this unpinnable; it was not.)
+  farewell holding under the plate. **Unpinned, declared**: a pass bark
+  RUNNING under the plate. A pass line has no public emitter
+  (`StreetVoice::say` is the step's own), and on the session the room
+  takes an ambient line's row back before its hold is out, at a step no
+  case can choose (the eleventh pass tried twice: the bark computed to
+  leave at 432 was replaced at 419; one idled to leave inside the lift
+  was replaced at 314). The gate is one line
+  (`isEvent(current_.channel)`, `StreetVoice::step`); the director saw
+  Vidar's rope line gone at settle 120 on the exe.
 - **Declared and left**: the head block's height depends on the card's row
   count (the director: a topped card seats three units higher; two queued
   cards of different depth would make the gold hop -- the seat is the
@@ -827,16 +832,16 @@ clause; the record contradicted itself on the pad; two comments were
 ragged. The director: two of his round-seven items were not declared and
 two numbers were understated.
 
-- **The Gull case pins the bark's own clock.** It walks up a pass or
-  overheard line, computes its hold from the public constants, cracks the
-  box the step after, and the bark leaves within two steps of that hold --
-  after the plate, nowhere near where the cap would have put a held line
-  -- with the seam stood down every step until the row clears. That pins
-  the pass bark running under the plate. The run-out INSIDE the lift was
-  tried and is declared instead: idled to the lift's last four steps, the
-  room replaced the bark six steps short of its run-out (the row yields to
-  its own rank or above), so a case cannot choose the step; the emitter
-  case pins what the cap does to an exhausted line.
+- **The Gull case pins what the room lets it.** It walks up a pass or
+  overheard line, cracks the box the step after, and the seam says stood
+  down every step from the rise until the room takes the row back, with
+  the bark still on the row on the plate's last frame -- the last-frame
+  cap landing on a present line. Two things it tried to pin and cannot,
+  declared with the runs that showed it: the bark's run-out INSIDE the
+  lift (idled to the lift's last four steps, the room replaced it six
+  steps short) and the bark's own run-out at all (computed to leave at
+  432, the room replaced it at 419) -- the row yields to its own rank or
+  above whenever the room has a new line, so the step is the room's.
 - **The pad pin reads the whole rail**, first bone pixel to last, and
   requires the rail wider than the name.
 - **The alert row's fade clause declared unpinned** with its reason.
