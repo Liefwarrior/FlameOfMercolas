@@ -32,8 +32,8 @@
 //   7. THE GEOMETRY, at 320x180, 640x360, 960x540 and 1920x1080: the plate
 //      seats under the ribbon block and the announce plate's row, above the
 //      reticle's fence with a cell row of clearance wherever there is one
-//      to spend (the smallest window sits on the fence and keeps every
-//      spare pixel between its keyline and the stat stack), in the terminal
+//      to spend (the smallest window keeps five glance units between its
+//      keyline and the stat stack and splits the rest), in the terminal
 //      register everywhere but 640x360, where it takes the glance scale
 //      (rungPlateMetric), the tick row one unit low in its row, inside the frame
 //      less a cell a side, centred, exactly two cells of gutter inside each
@@ -738,29 +738,169 @@ TEST_CASE("a watchman's demand under a live plate is never capped nor stepped do
     REQUIRE(mark != nullptr);
     REQUIRE(session.rungPlateWanted());
     session.tavern().setPlayerCombat(sim::Weapon::Edged, sim::Intent::Kill);
+    // THE PLATE MUST STILL BE LIVE ON THE STEP THE DEMAND LANDS -- else a
+    // bouncer's warning could have dismissed it first and the case would
+    // prove nothing about the demand (the auditor).
     int steps = 0;
+    bool liveBefore = false;
     while (session.tavern().lastDemand().empty() && steps < 120) {
         if (steps % 20 == 0) {
             session.punch();
         }
+        liveBefore = session.rungPlateWanted() && session.rungPlateFade() > 0.0F;
         session.stepMany(sim::MoveInput{}, 1);
         ++steps;
     }
     REQUIRE_FALSE(session.tavern().lastDemand().empty());
+    REQUIRE(liveBefore);
+    REQUIRE(session.alertSpeakerNow().rfind("Watchman Cull", 0) == 0);
     // The demand is on the row: the plate is gone the same step, the row is
-    // at the glance size, and the line keeps its whole hold -- past the
-    // two seconds a capped line would have. And it stays so.
+    // at the glance size, and the line keeps its WHOLE hold, counted down
+    // one a step from past the cap -- never cut to the two seconds a capped
+    // line would have.
+    const std::int32_t hold = session.alertStepsLeftNow();
+    CHECK(hold > kRungPlateRowAfterSteps);
     for (int i = 0; i < 8; ++i) {
         INFO("step ", i, " after the demand");
         CHECK(session.rungPlateState().fade == 0.0F);
         CHECK_FALSE(session.alertStepsDownNow());
-        CHECK(session.alertStepsLeftNow() > kRungPlateRowAfterSteps);
+        CHECK(session.alertStepsLeftNow() == hold - i);
         session.stepMany(sim::MoveInput{}, 1);
     }
     CHECK_FALSE(session.rungPlateWanted());
 }
 
-TEST_CASE("a toast never starts ahead of a plate waiting behind a page, and the line said before it is capped at its dismissal") {
+TEST_CASE("a line said during the lift is capped on the card's last frame, and a page over a lifting card dismisses it for good") {
+    // THE CAP: the hold ends, the card lifts, and a line lands on the row
+    // mid-lift (its cap cleared by say()). It is capped the frame the card
+    // leaves and finishes small.
+    {
+        Session session(configAt("mission-backroom"));
+        wake(session);
+        crackABox(session);
+        session.stepMany(sim::MoveInput{}, 1 + kRungPlateHoldSteps + 6);
+        REQUIRE_FALSE(session.rungPlateWanted());
+        REQUIRE(session.rungPlateState().fade > 0.0F);
+        session.punch();
+        session.stepMany(sim::MoveInput{}, 1);
+        REQUIRE(session.alertStepsLeftNow() > kRungPlateRowAfterSteps);
+        int lifting = 0;
+        while (session.rungPlateState().fade > 0.0F && lifting < kRungPlateLiftSteps + 4) {
+            session.stepMany(sim::MoveInput{}, 1);
+            ++lifting;
+        }
+        REQUIRE(session.rungPlateState().fade == 0.0F);
+        session.stepMany(sim::MoveInput{}, 1);
+        CHECK(session.alertStepsLeftNow() <= kRungPlateRowAfterSteps);
+        CHECK(session.alertStepsDownNow());
+        session.stepMany(sim::MoveInput{}, kRungPlateRowAfterSteps + kPageEaseSteps + 4);
+        CHECK(session.alertFadeNow() == 0.0F);
+    }
+    // THE PAGE: a card six steps into its lift, a page over it for three
+    // steps. The card never comes back.
+    {
+        Session session(configAt("mission-backroom"));
+        wake(session);
+        crackABox(session);
+        session.stepMany(sim::MoveInput{}, 1 + kRungPlateHoldSteps + 6);
+        REQUIRE(session.rungPlateState().fade > 0.0F);
+        session.toggleCasebook();
+        REQUIRE(session.casebookOpen());
+        session.stepMany(sim::MoveInput{}, 3);
+        session.toggleCasebook();
+        REQUIRE_FALSE(session.casebookOpen());
+        for (int i = 0; i < 2 * kRungPlateLiftSteps; ++i) {
+            session.stepMany(sim::MoveInput{}, 1);
+            CHECK(session.rungPlateState().fade == 0.0F);
+        }
+    }
+}
+
+TEST_CASE("a text plate's corner is drawn once: at a quarter alpha the corner pixel is the rail's pixel, and at full alpha nothing changed") {
+    for (const float alpha : {0.25F, 1.0F}) {
+        INFO("alpha ", alpha);
+        Framebuffer fb(64, 32);
+        fb.clear(Rgb{0.0F, 0.0F, 0.0F});
+        drawTextPlate(fb, 8, 8, 40, 24, 1, alpha);
+        const std::uint32_t corner = fb.pixels()[fb.index(8, 8)];
+        const std::uint32_t top = fb.pixels()[fb.index(20, 8)];
+        const std::uint32_t left = fb.pixels()[fb.index(8, 16)];
+        CHECK(corner == top);
+        CHECK(corner == left);
+        CHECK(corner != fb.pixels()[fb.index(20, 16)]);
+    }
+}
+
+TEST_CASE("through the lift the ink holds whole to the midpoint while the slab thins, and the shadows go with the slab") {
+    RungPlateState state;
+    state.head = "THE ROOFS  --  TENANT";
+    state.prose = "Up and over, and the roofs had no objection.";
+    state.tick = "SKYRUNNING RISES TO 2";
+    state.drift = 0.0F;
+    const auto brightest = [](const Framebuffer& fb, int x0, int y0, int x1, int y1) {
+        double best = 0.0;
+        for (int y = y0; y < y1; ++y) {
+            for (int x = x0; x < x1; ++x) {
+                const Rgb p = unpackRgb(fb.pixels()[fb.index(x, y)]);
+                best = std::max(best, static_cast<double>(0.30F * p.r + 0.59F * p.g + 0.11F * p.b));
+            }
+        }
+        return best;
+    };
+    const auto darkest = [](const Framebuffer& fb, int x0, int y0, int x1, int y1) {
+        double worst = 1.0;
+        for (int y = y0; y < y1; ++y) {
+            for (int x = x0; x < x1; ++x) {
+                const Rgb p = unpackRgb(fb.pixels()[fb.index(x, y)]);
+                worst = std::min(worst, static_cast<double>(0.30F * p.r + 0.59F * p.g + 0.11F * p.b));
+            }
+        }
+        return worst;
+    };
+    const Rgb sky{0.62F, 0.66F, 0.72F};
+    const RungPlateBox box = rungPlateBox(960, 540, state);
+    REQUIRE(box.draws);
+    const PanelMetric metric = rungPlateMetric(960, 540);
+    // The prose row's box, and the air row's middle for the slab.
+    const int proseY0 = box.y + metric.heightOf(3);
+    const int proseY1 = proseY0 + metric.cellH();
+    const int airY = box.y + metric.heightOf(2) + metric.cellH() / 2;
+    double proseAtFull = 0.0;
+    double shadowAtFull = 1.0;
+    double slabAtFull = 0.0;
+    for (const float fade : {1.0F, 0.5F, 0.25F}) {
+        INFO("fade ", fade);
+        state.fade = fade;
+        Framebuffer fb(960, 540);
+        fb.clear(sky);
+        drawRungPlate(fb, state);
+        const double prose = brightest(fb, box.x, proseY0, box.x + box.w, proseY1);
+        const double shadow = darkest(fb, box.x, proseY0, box.x + box.w, proseY1 + metric.scale);
+        const Rgb slab = unpackRgb(fb.pixels()[fb.index(box.x + box.w / 2, airY)]);
+        const double slabLuma = static_cast<double>(0.30F * slab.r + 0.59F * slab.g + 0.11F * slab.b);
+        if (fade == 1.0F) {
+            proseAtFull = prose;
+            shadowAtFull = shadow;
+            slabAtFull = slabLuma;
+            continue;
+        }
+        if (fade == 0.5F) {
+            // The ink whole (the brightest prose pixel is the up card's),
+            // the slab a quarter of its alpha (lighter, sky through it).
+            CHECK(prose == doctest::Approx(proseAtFull).epsilon(0.02));
+            CHECK(slabLuma > slabAtFull + 0.1);
+            // And the shadow has gone with the slab: the darkest pixel in
+            // the prose rows is nowhere near the up card's shadow.
+            CHECK(shadow > shadowAtFull + 0.2);
+        } else {
+            // A quarter in: the ink at half, still over a slab nearly gone.
+            CHECK(prose < proseAtFull);
+            CHECK(slabLuma > slabAtFull + 0.2);
+        }
+    }
+}
+
+TEST_CASE("a toast never starts ahead of a plate waiting behind a page, and the line said before it is capped") {
     Session session(configAt("mission-backroom"));
     wake(session);
     sim::SkillTrack& skills = session.tavern().dialogue().skills();
@@ -1242,15 +1382,15 @@ TEST_CASE("the drawn wiring: under a plate the alert row's own glyphs are half a
     CHECK(bBottom - bTop + 1 == 6 * rungPlateMetric(width, height).scale);
     CHECK(bInk < aInk);
     // And the rails under the words: bone at a quarter is dimmer than amber
-    // at half. The row's plate is exactly a unit of the row's scale (padY)
-    // outside the glyphs above and below and two units (padX) at the sides,
-    // with the rails drawn inside it -- read exactly that box and no more,
-    // because the band's next row starts a pad past it.
+    // at half. The row's plate is a unit of the row's scale plus the rail
+    // (padY) outside the glyphs above and below and two units (padX) at the
+    // sides, with the rails drawn inside it -- read that box and a unit of
+    // air, no more, because the band's next row starts a pad past it.
     int railX = -1;
     int railY = -1;
     {
         const int s = rungPlateMetric(width, height).scale;
-        for (int y = std::max(0, bTop - s); y <= std::min(height - 1, bBottom + s); ++y) {
+        for (int y = std::max(0, bTop - 2 * s); y <= std::min(height - 1, bBottom + 2 * s); ++y) {
             for (int x = std::max(0, bLeft - 2 * s); x <= std::min(width - 1, bRight + 2 * s); ++x) {
                 const Rgb pb = unpackRgb(b.pixels()[b.index(x, y)]);
                 if (rail(pb) && luma(pb) > bRail) {
@@ -1480,7 +1620,7 @@ TEST_CASE("a squarer window steps the plate's register down until the frame hold
 // 7. THE GEOMETRY
 // ===========================================================================
 
-TEST_CASE("the plate seats under the ribbon and the announce row, above the reticle's fence, inside the frame, at three sizes, and draws whole") {
+TEST_CASE("the plate seats under the ribbon and the announce row, above the reticle's fence, inside the frame, at four sizes, and draws whole") {
     const sim::BarkTables& sheet = barks();
     REQUIRE(sheet.loaded());
     // The longest of everything authored, and the widest head legend.cpp has.

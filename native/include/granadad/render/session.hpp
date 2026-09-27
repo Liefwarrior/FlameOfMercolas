@@ -1055,10 +1055,11 @@ public:
     /// and never touches for a watchman's demand (the case that pins that
     /// reads it here).
     [[nodiscard]] std::int32_t alertStepsLeftNow() const noexcept { return messageSteps_; }
-    /// What the aim prompt names under the reticle right now ("WATCHMAN
-    /// CULL  WATCHMAN", "THE STRONGBOX  ROOM 3  EMPTIED"), refreshed every
-    /// step by syncPanelAnim. Public so a drive can put the cause of a rung
-    /// in the picture by reading it, and a case can pin that it did.
+    /// What the INTERACT prompt names right now ("WATCHMAN CULL  WATCHMAN",
+    /// "THE STRONGBOX  ROOM 3  EMPTIED"): the target in reach from where
+    /// the body stands, resolved by position and reach and never by the
+    /// reticle's ray, refreshed every step by syncPanelAnim. Public so a
+    /// drive's summary can say what the frame's prompt names (`aim=`).
     [[nodiscard]] std::string_view aimSubjectNow() const noexcept {
         return std::string_view{interactSubjectCache_};
     }
@@ -2689,10 +2690,14 @@ private:
     /// stepped down. say() clears it; the four Watch sites (the street's
     /// three, the Gull's own lastDemand) set it.
     bool messageDemand_ = false;
-    /// The line on the alert row was up under the plate and had its clock
-    /// capped when the hold ended: it finishes in the small register and
-    /// never swells back to the glance size. say() clears it.
+    /// The line on the alert row had its clock capped by the plate -- when
+    /// the hold ended, when the card was dismissed, or on the card's last
+    /// frame: it finishes in the small register and never swells back to
+    /// the glance size. say() clears it.
     bool messageCapped_ = false;
+    /// The plate was on screen (rungPlateOnScreen) at the end of the last
+    /// step: the edge stepRungPlate caps the row on.
+    bool rungPlateWasOnScreen_ = false;
     /// The line on the row is NEWS (the take off a box, a fall's hurt, a
     /// watchman's word: held under the plate and shown whole after) rather
     /// than a MOMENT (a leap's length, a ledge mantled: its clock runs under
@@ -2702,8 +2707,9 @@ private:
     /// goes is capped and finishes small, a demand excepted.
     bool messageHeld_ = true;
     /// True when something that outranks the plate owns the screen right
-    /// now: a page or a talk (conversingNow), the court's plates and custody,
-    /// the death and rope ceremonies, a bouncer's WARNING -- the alert row's
+    /// now: a page or a talk (conversingNow) and a page's closing tail, the
+    /// court's plates and custody, the death and rope ceremonies, a
+    /// bouncer's WARNING, a watchman's DEMAND on the row -- the alert row's
     /// own priority rule, applied whole.
     [[nodiscard]] bool rungPlateOutranked() const noexcept;
     /// The bouncer's WARNING is on the alert row: drawFrame's and

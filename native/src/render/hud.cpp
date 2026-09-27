@@ -431,6 +431,11 @@ bool isDrawableGlyph(char c) noexcept { return glyphFor(c) != nullptr; }
 
 int drawText(Framebuffer& target, int x, int y, std::string_view text, const Rgb& colour,
              float alpha, int scale) {
+    return drawText(target, x, y, text, colour, alpha, scale, alpha * 0.75F);
+}
+
+int drawText(Framebuffer& target, int x, int y, std::string_view text, const Rgb& colour,
+             float alpha, int scale, float shadowAlpha) {
     const int step = kGlyphAdvance * scale;
     int cursor = x;
     for (const char c : text) {
@@ -446,7 +451,7 @@ int drawText(Framebuffer& target, int x, int y, std::string_view text, const Rgb
                     // A one-pixel drop shadow, so the text survives being drawn
                     // over a pale sky as well as over black water.
                     target.fillRect(cursor + col * scale + scale, y + row * scale + scale, scale,
-                                    scale, kShadow, alpha * 0.75F);
+                                    scale, kShadow, shadowAlpha);
                     target.fillRect(cursor + col * scale, y + row * scale, scale, scale, colour,
                                     alpha);
                 }
@@ -1502,8 +1507,10 @@ void drawBottomBand(Framebuffer& target, const HudState& state, BottomBand& band
         // smaller; a line nobody can finish is worth nothing. So take the
         // largest scale it fits at, down to 1, and only then clip.
         // THE RUNG PLATE'S RULE FOR THIS ROW (HudState::alertStepsDown): under
-        // the plate the row starts from the minor register -- the plate's own
-        // type size, never a tier above it -- and shrinks from there as ever.
+        // the plate the row starts from the plate's own register
+        // (alertStepScale: the minor scale on a 16:9 window, a step under
+        // it on a square one; never a tier above the plate) and shrinks
+        // from there as ever.
         int alertScale = state.alertStepsDown
                              ? (state.alertStepScale > 0 ? std::min(minor, state.alertStepScale)
                                                          : minor)
@@ -1546,12 +1553,17 @@ void drawBottomBand(Framebuffer& target, const HudState& state, BottomBand& band
             const float pulse = std::clamp(state.alertPulse, 0.0F, 1.0F);
             const int pulsePad = static_cast<int>(std::round(static_cast<float>(alertScale) * pulse));
             const int padX = alertScale * 2 + pulsePad;
-            // A whole minor unit of padY when stepped down: at the minor
+            // A UNIT AND THE RAIL of padY when stepped down: at the minor
             // scale the settled pad is one pixel, the glyphs' drop shadows
             // hung under the lower rail as dark nicks on the wall, and the
-            // row read as label tape (the director, fifth pass).
-            const int padY = (state.alertStepsDown ? alertScale : std::max(1, alertScale / 2)) +
-                             pulsePad;
+            // row read as label tape (the director, fifth pass). A whole
+            // unit put the shadow's last row ON the rail (the director,
+            // seventh pass: the rail dented under every letter), so the pad
+            // is the shadow's unit plus the rail's own thickness.
+            const int railSettled = std::max(1, alertScale / 2);
+            const int padYSettled =
+                state.alertStepsDown ? alertScale + railSettled : railSettled;
+            const int padY = padYSettled + pulsePad;
             // UNDER THE RUNG PLATE THE FIELD STAYS AND THE RAILS DROP TO A
             // QUARTER: the field at the row's own ease (fine print over the
             // Gull's lit plaster is still print -- a half-weight field let
@@ -1594,7 +1606,7 @@ void drawBottomBand(Framebuffer& target, const HudState& state, BottomBand& band
             // (its settled padY, never the pulse's -- the rows above must
             // not jitter on the alert's rising edge) plus one minor unit of
             // air is what the next row actually needs; see BottomBand::pad.
-            band.pad(std::max(1, alertScale / 2) + minor);
+            band.pad(padYSettled + minor);
         }
     }
     // VOICE LANE. THE STREET'S OWN LINE, right after the alert in priority
@@ -1622,9 +1634,9 @@ void drawBottomBand(Framebuffer& target, const HudState& state, BottomBand& band
         // (HudState::alertStepScale): on a square window the minor scale is
         // a tier above the card, and a bark wrapped onto two lines under it.
         const float ink = std::clamp(state.voiceInkWeight, 0.0F, 1.0F);
-        const int vs = (ink < 1.0F && state.alertStepScale > 0)
-                           ? std::min(minor, state.alertStepScale)
-                           : minor;
+        const bool down = state.voiceStepsDown;
+        const int vs = (down && state.alertStepScale > 0) ? std::min(minor, state.alertStepScale)
+                                                          : minor;
         const std::string name =
             state.voiceName.empty() ? std::string() : std::string(state.voiceName) + ":";
         const int gutter = name.empty() ? 0 : kGlyphAdvance * vs;
@@ -1667,9 +1679,9 @@ void drawBottomBand(Framebuffer& target, const HudState& state, BottomBand& band
             const int drawn = std::max(firstW, secondW);
             const int textX = std::max(margin, (width - drawn) / 2);
             const int padX = vs * 2;
-            // A whole unit of padY while the words are dimmed, the
+            // A unit and the rail of padY while the row stands down, the
             // alert row's own reason (the shadows under the lower rail).
-            const int padY = ink < 1.0F ? vs : std::max(1, vs / 2);
+            const int padY = down ? vs + std::max(1, vs / 2) : std::max(1, vs / 2);
             // The second slot is ABOVE the first in the band's own order,
             // so the row reads down: the name and the opening on the upper
             // line, the turn on the lower.
@@ -1677,16 +1689,16 @@ void drawBottomBand(Framebuffer& target, const HudState& state, BottomBand& band
             const int bottom = y2 >= 0 ? y : y;
             // THE RUNG PLATE'S WEIGHT ON THE INK (HudState::voiceInkWeight),
             // the alert row's own rule: the field keeps the row's ease, the
-            // rails take a quarter while the words are dimmed, the words
-            // take the weight -- and the row is drawn at the plate's own
-            // register (`vs`, above) while it is dimmed.
-            if (ink < 1.0F) {
+            // rails take a quarter while the row stands down
+            // (HudState::voiceStepsDown), the words take the weight -- and
+            // the row is drawn at the plate's own register (`vs`, above).
+            if (down) {
                 target.fillRect(textX - padX, top - padY, drawn + 2 * padX,
                                 (bottom - top) + kGlyphH * vs + 2 * padY, kPlateBlack, fade);
             }
             drawTextPlate(target, textX - padX, top - padY, textX + drawn + padX,
                           bottom + kGlyphH * vs + padY, std::max(1, vs / 2),
-                          ink < 1.0F ? 0.25F * fade : fade);
+                          down ? 0.25F * fade : fade);
             const Rgb dim{0.74F, 0.72F, 0.64F};
             if (!name.empty()) {
                 drawText(target, textX, top, name, aimAccent(static_cast<int>(AimKind::Person)),

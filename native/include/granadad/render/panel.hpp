@@ -1167,6 +1167,11 @@ void drawCommitPulse(Framebuffer& target, const PanelRect& pane, const PanelMetr
 /// Returns the cells drawn.
 int drawCellText(Framebuffer& target, const PanelRect& rect, const PanelMetric& metric, int cell,
                  int row, std::string_view text, const Rgb& colour, float alpha);
+/// The same, with the drop shadow's own alpha (hud.hpp's drawText overload):
+/// for text on a slab whose alpha is not the ink's.
+int drawCellText(Framebuffer& target, const PanelRect& rect, const PanelMetric& metric, int cell,
+                 int row, std::string_view text, const Rgb& colour, float alpha,
+                 float shadowAlpha);
 
 /// The same, right-aligned so the LAST glyph lands on `cell` counted from the
 /// rect's right edge.

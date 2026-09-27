@@ -3967,8 +3967,11 @@ void Session::stepRungPlate() {
     //    Never held for later: a warning can last as long as the house minds
     //    you, and a plate surfacing minutes after its rung would be a
     //    notice out of its moment.
+    //    THE LIFT IS NO EXCEPTION: a card still easing out when a page opens
+    //    is dismissed too (the auditor: left to ease under a three-step
+    //    page, it came back at full ink after the page's tail).
     const bool outranked = rungPlateOutranked();
-    if (rungPlateShowSteps_ > 0 && outranked) {
+    if (outranked && (rungPlateShowSteps_ > 0 || rungPlateAnim_.value() > 0.0F)) {
         rungPlateShowSteps_ = 0;
         // AND THE ROW'S CLOCK IS CAPPED HERE TOO: a live hold cut by a page
         // or a warning left the frozen clock whole, so a leap's length
@@ -3999,6 +4002,21 @@ void Session::stepRungPlate() {
     }
     rungPlateAnim_.setTarget(rungPlateShowSteps_ > 0);
     rungPlateAnim_.advance();
+    // 5. THE PLATE'S LAST FRAME. The two caps above fire when the hold ends
+    //    and when the card is dismissed; a line said DURING the lift had
+    //    its cap cleared by say() and swelled to the glance size the frame
+    //    the card left (the auditor). So the cap fires once more on the
+    //    frame the drawn fade reaches zero, whatever put a line on the row
+    //    in between -- the demand excepted, as everywhere.
+    const bool onScreen = rungPlateOnScreen();
+    if (rungPlateWasOnScreen_ && !onScreen) {
+        if (!messageDemand_) {
+            messageSteps_ = std::min(messageSteps_, kRungPlateRowAfterSteps);
+            messageCapped_ = messageSteps_ > 0;
+        }
+        voice_.capHold(kRungPlateRowAfterSteps);
+    }
+    rungPlateWasOnScreen_ = onScreen;
 }
 
 RungPlateState Session::rungPlateState() const noexcept {
@@ -5772,7 +5790,9 @@ void Session::step(const sim::MoveInput& input) {
         // waits for his halt to leave the row instead of stacking under it.
         scene.alertSpeaker = alertSpeakerNow();
         // THE RUNG PLATE holds this row's clock as it holds the alert row's
-        // (VoiceScene::holdClock); stepRungPlate caps it when the plate goes.
+        // (VoiceScene::holdClock) -- for an EVENT line only; a passer-by's
+        // bark is a moment and runs (StreetVoice::step). stepRungPlate caps
+        // whatever is left when the plate goes.
         scene.holdClock = rungPlateOnScreen();
         voice_.step(scene);
         // ONE MAN, ONE LINE. A readback that REPLACED the halt (the emitter
@@ -10780,11 +10800,10 @@ void Session::syncPanelAnim() noexcept {
         }
     }
     panelAnim_.setTarget(panelWanted);
-    // The identical two-line test drawFrame() makes for what the HUD's own
-    // alert row is about to show -- see its own comment there. Duplicated
-    // rather than shared through a common accessor because one runs on a
-    // `const` path (drawFrame) and this one has to mutate alertAnim_; the
-    // formula itself is three lines and has not moved since S6.
+    // The same test drawFrame() makes for what the HUD's own alert row is
+    // about to show -- bouncerWarned(), the one copy (it used to be written
+    // out here and there both, because this path mutates alertAnim_ and
+    // that one is const; the accessor is const and both call it).
     const bool warned = bouncerWarned();
     // messageSteps_, NOT message_.empty(). The string is deliberately kept
     // alive a few steps past the countdown reaching zero so the fade-out has
@@ -11823,6 +11842,11 @@ FrameStats Session::drawFrame(Framebuffer& target, FramePasses passes) const {
     hud.voiceFade = conversing ? std::min(voiceAnim_.value(), 1.0F - panelAnim_.value())
                                : voiceAnim_.value();
     hud.voiceInkWeight = alertInkWeightNow();
+    // AND ITS OWN STAND-DOWN: the plate's register and the quarter rails
+    // while the plate is on screen and for a line capped under it, so a
+    // capped bark finishes small and never swells (the auditor, on the
+    // square windows).
+    hud.voiceStepsDown = rungPlateOnScreen() || voice_.capped();
     // INNOVATION SPRINT ITEM #3. See HudState::alertPulse's own header.
     hud.alertPulse = alertPulse_.value();
     hud.caseLabel = std::string_view{caseCache_};
@@ -16514,7 +16538,10 @@ constexpr std::int32_t kRungBeats = 2;
 ///
 /// The line ends by stepping the plate all the way up (its own eight-step
 /// rise), bounded, so `--settle-steps=0` photographs it at full strength and
-/// the default rest still leaves a second of its five-second hold.
+/// the default rest (kCaptureRestSteps, four seconds) still photographs the
+/// card: the wire's lift starts about fifty steps later, the trade's and the
+/// law's -- whose stand-back spent about twenty-five steps of the hold first
+/// -- about thirty.
 [[nodiscard]] RungLineResult runRungLine(Session& session, const std::string& word) {
     RungLineResult out;
     if (!legendTrackFromKey(word, out.track)) {

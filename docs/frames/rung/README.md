@@ -63,8 +63,10 @@ Cull's table with real coin. Nothing reaches into the sim sideways.
   rung sound like a case closing on one checkout and a bell on the gate).
 - `--rung=TRACK`. Plays the shortest real path to a rung on that track and
   stops on the plate, fully up. Prints
-  `rung=<track> <a>-><b> row="..." head="..." plate=up found=yes` so a frame
-  of a plate is a frame of words and the words are the claim.
+  `rung=<track> <a>-><b> row="..." head="..." plate=up|down found=yes|no
+  called=<the rung's name> aim="<what the prompt names>" rose=yes|no
+  [reason="..."]` so a frame of a plate is a frame of words and the words
+  are the claim.
 - Twenty-one rows in `legend_barks.json`. Every one fits one line of the 4x6
   font at 320x180 (56 glyphs and under), no dash in any of them, and the
   priests' word for their quarry isn't in there.
@@ -81,8 +83,8 @@ last thing that happens. `--trail=opened` has said the same about the
 lead-opened notice since the casebook pass. Two of these tracks were written
 the other way round and neither of them landed a plate. The trade and the law
 are the declared exceptions: both rise across Cull's table, and the bounty
-line's own stand-back (three tiles, about a second of the hold) walks after
-the rung so the frame is the room and not his table's edge.
+line's own stand-back (three tiles, about twenty-five steps of the hold)
+walks after the rung so the frame is the room and not his table's edge.
 
 | track | what the drive does | why that's the shortest | hour |
 |---|---|---|---|
@@ -111,7 +113,7 @@ legend.cpp prints, the row is what the ward says.
 |---|---|---|
 | `legend.wire.1` | THE WIRE  --  LIGHT FINGERS | Ropewynd locks its boxes twice these days. That is you. |
 | `legend.wire.2` | THE WIRE  --  CUTPURSE | Coats get held shut when you walk by. They have heard. |
-| `legend.wire.3` | THE WIRE  --  ROBBER | Finch pours before you ask. Robbers get poured for. |
+| `legend.wire.3` | THE WIRE  --  ROBBER | Finch pays before the sack is open. Robber's rates. |
 | `legend.wire.4` | THE WIRE  --  THE QUIET TENANT | The ward never saw your hands. It found a word anyway. |
 | `legend.roofs.1` | THE ROOFS  --  TENANT | Up and over, and the roofs had no objection. |
 | `legend.roofs.2` | THE ROOFS  --  ROOF-WALKER | Slates do not creak under you. Someone was counting. |
@@ -159,8 +161,10 @@ evidence is the hash case above, which draws it.
 
 960x540 is `--width=960 --height=540 --scale=1`. `--settle-steps=0` is the
 plate at its first fully-up frame. Leave it off and you get the default
-settle, sixteen zero-input steps (a quarter of a second) into the hold, which
-is the same picture.
+settle (`kCaptureRestSteps`, 240 zero-input steps: four seconds into the
+five-second hold), which is the same picture -- the wire's lift starts about
+fifty steps after it, the trade's and the law's about thirty, their stand-back
+having spent the first twenty-five.
 
 `scripts\shoot-rung.ps1` shoots all six and keeps every summary line in
 `shoot-rung.log` beside the PNGs (kept locally: `*.log` is gitignored, so the
@@ -168,7 +172,7 @@ branch carries the frames and not the log). Or run them by hand.
 
 | frame | drive | what it proves |
 |---|---|---|
-| `rung-wire-960.png` | `granadad.exe --smoke=0 --hold --width=960 --height=540 --scale=1 --rung=wire --settle-steps=0 --screenshot=docs\frames\rung\rung-wire-960.png` | One cracked box at two in the morning. `THE WIRE  --  LIGHT FINGERS` on the plate, the wire.1 row under it, the landing away in front and the done room behind; the prompt names the box (`aim="THE STRONGBOX"`) and the lid itself is in the dark, not the picture. Summary reads `rung=wire 0->1 row="Ropewynd locks its boxes twice these days. That is you." plate=up found=yes`. |
+| `rung-wire-960.png` | `granadad.exe --smoke=0 --hold --width=960 --height=540 --scale=1 --rung=wire --settle-steps=0 --screenshot=docs\frames\rung\rung-wire-960.png` | One cracked box at two in the morning. `THE WIRE  --  LIGHT FINGERS` on the plate, the wire.1 row under it, the landing away in front and the done room behind; the prompt names the box (`aim="THE STRONGBOX"`) and the lid itself is in the dark, not the picture. Summary reads `rung=wire 0->1 row="Ropewynd locks its boxes twice these days. That is you." head="THE WIRE  --  LIGHT FINGERS" plate=up found=yes called=LIGHT FINGERS aim="THE STRONGBOX" rose=yes`. |
 | `rung-roofs-960.png` | the same with `--rung=roofs` | The alley leapt until the roofs will have it. `THE ROOFS  --  TENANT` over the lead, the alley under the eye. Skyrunning levels on the same leap, and `SKYRUNNING RISES TO n` is the plate's own dim last row -- the same climb, told once, on the card. |
 | `rung-flame-960.png` | the same with `--rung=flame` | Two leads read at the Mission at nine. `THE FLAME  --  DISCIPLE`, the back room stood back from. The pull line under the ribbon still reads the next lead. |
 | `rung-trade-960.png` | the same with `--rung=trade` | The bounty paid across Cull's table. `THE TRADE  --  STALLKEEP` once the talk's close tail is down, from the bounty line's own stand-back with the eye dipped to Cull. The summary's `aim="..."` is the INTERACT target in reach from the stand-back tile, not what the reticle crosses, and on this corner it is a patron; see the fifth and seventh passes. |
@@ -510,10 +514,10 @@ The sixth pass scored 8 (director), 8 (player) and 5 (auditor): the claims
 had drifted off the code in a dozen places, and two rules had holes a
 player would never see and a reader would. Everything below is on the gate.
 
-- **A watchman's demand is never capped.** The dismissal cap and the
-  hold-end cap both skipped the demand before, but only because the demand
-  cleared `messageHeld_`; a moment that outlived the lift was uncapped and
-  swelled back to the glance size. Now EVERY line still on the row when the
+- **A watchman's demand is never capped.** Before, both caps applied to
+  the demand (it is news, so `messageHeld_` was true and it was capped and
+  stepped down like the take off a box), while a moment that outlived the
+  lift was uncapped and swelled back to the glance size. Now EVERY line still on the row when the
   plate goes is capped at two seconds and finishes small, and the demand is
   the one named exception (`!messageDemand_` at both sites, and
   `alertStepsDownNow` says so). Pinned through the session: a blade drawn on
@@ -574,13 +578,120 @@ player would never see and a reader would. Everything below is on the gate.
   1920x1080 drop it topped, 320x180 always, 3840x2160 has no row); the
   320x180 seat is five above and two below, pinned as 36 and 31; `wire.1`
   is 55 glyphs and 61 cells, and the 56-glyph rows are `flame.1`, `flame.3`
-  and `trade.1`; the default settle is sixteen steps, not a second; the
-  trade and the law stand back after their rung and the drive rule says so.
+  and `trade.1`; the trade and the law stand back after their rung and the
+  drive rule says so. (This bullet first said the default settle was
+  sixteen steps; it is 240, `kCaptureRestSteps` -- the eighth pass.)
 
 Declared and left: `standBackFrom`'s strict clear-line pass (fifth pass)
 serves five other drives that were not re-shot for it; the flame's frame is
 the back room's wall a tile off the anchor; the trade's patron and the law's
 hood are the Gull's own corner; no frame can hear the bell.
+
+## Eighth pass, 2026-09-27
+
+The seventh pass scored 8 (director), 8 (player) and 6 (auditor). The
+auditor: the record had a new false number in the very bullet that said the
+claims matched the code, the lift window had two holes of the same classes
+the seventh pass closed, and about eight comments contradicted the code.
+The director and the player: the shadows carried the lift, three heads sat
+half a cell off the card's axis, the stood-down rows' shadows dented their
+rail, a passer-by's bark was held under the plate, and on square windows a
+capped bark swelled when the plate left. Everything below is on the gate.
+
+- **The lift window is closed, both ways.** A line said DURING the 24-step
+  lift had its cap cleared by `say()` and swelled to the glance size the
+  frame the card left; the cap fires once more on the card's last frame
+  (`rungPlateWasOnScreen_`, the edge on the drawn fade), the demand excepted
+  as everywhere. And a page or a warning over a LIFTING card dismisses it
+  (the outranking test reads `rungPlateAnim_.value() > 0` too), where before
+  the ease ran on unseen and a short page handed the card back at full ink.
+  Both pinned (a punch mid-lift; a three-step page six steps into the lift).
+- **The default settle is 240 steps, not sixteen.** `kCaptureRestSteps`,
+  four seconds into the five-second hold: the auditor proved it on the exe
+  (a default-settle shot is byte-identical to `--settle-steps=240`). The
+  seventh pass's bullet, the frames section and the drive doc say so now,
+  and "about a second of the hold" for the trade's and the law's stand-back
+  is about twenty-five steps.
+- **The history of the demand is told straight.** The seventh pass said the
+  old caps "skipped the demand"; they did not -- the demand was news and was
+  capped and stepped down. Corrected in place.
+- **The demand case proves its name.** It requires the plate live on the
+  step the demand lands (a bouncer's warning dismissing it first would have
+  passed before), requires Cull on the row, and pins the hold exactly: read
+  off the row the step it lands, past the cap, and counted down one a step.
+- **The shadows leave with the slab.** The plate's text drew its drop
+  shadows at the ink's alpha while the slab thinned as the fade squared, so
+  from the lift's midpoint the letters were black outlines round grey words
+  on a pane (the director: at settle 308 the prose 2.02:1 and its shadow
+  2.96:1). `drawText` and `drawCellText` take the shadow's own alpha now and
+  the plate draws its shadows at the slab's curve; pinned at fade 1, 0.5 and
+  0.25 on a sky (ink whole at the midpoint, slab a quarter, shadow gone).
+- **Centred to the half cell.** A head block or tick row whose spare cells
+  were odd sat half a cell left of the card's axis (5 px at 960, 12.5 at
+  1920, on three of five tracks). Rows with an odd spare shift right half a
+  cell.
+- **The stood-down rows keep their rail clean.** A whole unit of pad put the
+  glyphs' shadow row ON the rail (the director measured the dent under every
+  letter, at every size); the pad is the shadow's unit plus the rail's
+  thickness now, and the band's pad above the row grows with it.
+- **A passer-by's bark is a moment.** `holdClock` held every voice line under
+  the plate, so Vidar's "ROPE COMING THROUGH" finished seven seconds after
+  the rope had gone; an event line (a farewell, a react, the Watch) is held,
+  a pass or overheard bark runs.
+- **The voice row has its own stand-down.** It took the plate's register
+  only while its ink was dimmed, so on a square window a capped bark swelled
+  back to the minor scale when the plate left; `HudState::voiceStepsDown`
+  (the plate on screen, or this row's line capped under it:
+  `StreetVoice::capped`) drives its register, field, rails and pad, the
+  alert row's own rule.
+- **`drawTextPlate` is declared and pinned.** Its side rails run between the
+  top and bottom rails (seventh pass, in a commit message only); the change
+  is HUD-wide -- every plate-backed row, the quick-slot strip at 0.80 of its
+  fade, the world's signs by distance -- and pixel-identical at full alpha.
+  A case draws a plate at a quarter and at one and reads the corner against
+  the rails.
+- **Comments that contradicted the code**, each rewritten: the warning
+  test "duplicated rather than shared" above `bouncerWarned()`; `alertFade`
+  "halved" by Session; the alert row "starts from the minor register"; the
+  rules block's "(the minor scale"; `aimSubjectNow` "under the reticle";
+  `messageCapped_` (also set on dismissal and on the last frame);
+  `rungPlateOutranked` (the demand and the page tail); the test header's
+  320x180 seat; the dead `style.alpha` store; "at three sizes" over a
+  four-size loop; the toast case's title.
+
+Declared and left, with reasons:
+- **Square windows: the register step, not a wrap.** Both critics: at
+  720x720 and 1440x1080 the card is the smallest type on screen. Wrapping the
+  prose to two rows at the HUD's size drops the tick and breaks the sheet's
+  one-line rule at those windows; stepping the prompt and stat stack down
+  for the hold touches every HUD row. Either is a design call for the HUD
+  lane, taken with the 640x360 glance rule. A chip.
+- **The frames over their cause.** The flame card over the Mission's wall,
+  the law's red HOOD / TAKE, the trade's reticle on Wick Hempson: the fifth
+  pass walked a ring round Cull's stool and found no tile where the prompt
+  names him without the wall; the hood is a stand item in reach. Framing
+  the talk first so `aimSubjectNow()` is Cull (the street line's pattern)
+  is the player's ask and a drive rewrite; a chip.
+- **A once-a-game line can be lost.** A page or a talk in the card's first
+  frames dismisses it and the row is shown nowhere else. Re-queueing on an
+  early dismissal, or the row on the Character tile, is a feature; a chip.
+- **A mantle onto a lower ledge that hurts is still a moment**: the hurt is
+  on the health bar, the line is a move's length, and it runs.
+- **Unpinned by design**: the bell's one sample (content), the cue firing on
+  show (audio), the 3840x2160 tick row (no such frame is shot), the drop
+  line as news (no roof-drop fixture in this suite; the leap and mantle
+  moments are).
+- The side bars a column off centre on the diamonds, the tick's foot a unit
+  tighter than the head: the panel vocabulary's, not this card's.
+- The rows' shared shape, and the world made to honour more of what the
+  rows promise (the player's M2): the sheet's next redline is a chip. One
+  row could not wait: `wire.3` had Finch pouring, and Finch is the ward's
+  fence, not a barman (`notables.json`; the director). It pays off his
+  work now:
+
+  | key | was | is |
+  |---|---|---|
+  | `legend.wire.3` | Finch pours before you ask. Robbers get poured for. | Finch pays before the sack is open. Robber's rates. |
 
 ## Not in this folder yet
 

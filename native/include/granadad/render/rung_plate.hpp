@@ -65,14 +65,18 @@
 //     cut the way the toast is -- its four-second hold would be lost whole
 //     under a five-second plate -- and not deferred either, since a leap's
 //     length said five seconds after the leap is a notice out of its
-//     moment. It steps DOWN instead: to the plate's own register (the minor
-//     scale, never a tier above the plate) and to half weight on the plate's
-//     own fade, so the two cross rather than snap; and its clock STOPS under
-//     the plate and resumes when the plate lifts, capped at two seconds, so
-//     the take is shown whole and not five seconds late for long (a leap's
-//     length is a MOMENT whose clock runs under the plate; a watchman's
-//     demand is never capped at all). The voice
-//     row (a passer-by's bark, a farewell) rides the same weight. The
+//     moment. It steps DOWN instead: to the plate's own register
+//     (rungPlateMetric's scale, never a tier above the plate) and to half
+//     weight on the plate's own fade, so the two cross rather than snap; and
+//     its clock STOPS under the plate and resumes when the plate lifts,
+//     capped at two seconds -- when the hold ends, when the card is
+//     dismissed, and again on the card's last frame, so a line said during
+//     the lift is capped too -- so the take is shown whole and not five
+//     seconds late for long (a leap's length is a MOMENT whose clock runs
+//     under the plate; a watchman's demand is never capped at all). The
+//     voice row rides the same weight and the same caps, and holds its
+//     clock for an event line (a farewell, a react, the Watch) while a
+//     passer-by's bark, a moment, runs. The
 //     announce slot (NEW LEAD, a named place crossed) holds its clock and
 //     waits behind the plate. The plate is the one NOTICE on the frame at
 //     full strength while it holds; the compass, the aim prompt and the

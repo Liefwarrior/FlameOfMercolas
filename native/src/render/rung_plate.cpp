@@ -223,8 +223,9 @@ RungPlateBox rungPlateBox(int width, int height, const RungPlateState& state) {
     // the floor and the fence has two rows of slack past the card (the
     // director's finding: at 1920x1080 the slab stopped 23 px over the
     // prompt, under one text row); the quarter seat rides inside that band
-    // with a row kept clear under it. With less -- a ticked card at 640x360
-    // or 1920x1080, any card at 320x180 -- the slack is shared: five glance
+    // with a row kept clear under it. With less -- whatever leaves the band
+    // under two rows of slack: a ticked or topped card at 640x360 and
+    // 1920x1080, any card at 320x180 -- the slack is shared: five glance
     // units above the keyline first, the rest split, so the smallest window
     // keeps five of its seven pixels between its keyline and the stat stack
     // (below).
@@ -281,7 +282,6 @@ void drawRungPlate(Framebuffer& target, const RungPlateState& state) {
     FrameStyle style;
     // The heavier junction, the demo card's own: a corner, not a crossing.
     style.junction = Motif::Diamond;
-    style.alpha = fade;
     // NEARLY OPAQUE, like every composed page: a card the ward shows through
     // is a card nobody reads. No stipple -- three rows have no dead space.
     // THE SLAB IS DRAWN HERE, SYMMETRIC ABOUT THE KEYLINE, and the frame's
@@ -312,6 +312,11 @@ void drawRungPlate(Framebuffer& target, const RungPlateState& state) {
     // a thinning slab and never as grey words on a pane of glass.
     const float inkFade = std::min(1.0F, 2.0F * fade);
     style.alpha = inkFade;
+    // AND THE SHADOWS LEAVE WITH THE SLAB, not with the ink: drawn at the
+    // ink's alpha they out-contrasted the letters from the lift's midpoint
+    // on (black outlines round grey words on a pane -- the director,
+    // seventh pass). On the up card they are invisible against the slab.
+    const float shadowFade = 0.75F * fade * fade;
     target.fillRect(bounds.x - s, bounds.y, bounds.w + s, bounds.h - 2 * s, style.ground,
                     kPageGroundAlpha * fade * fade);
     PanelFrame pane(target, bounds, metric, style);
@@ -329,12 +334,24 @@ void drawRungPlate(Framebuffer& target, const RungPlateState& state) {
     // feet), and the font's trailing advance column TRIMMED off the block's
     // right end, so the pad after the last letter is the pad before the
     // first. The director's finding, at every size.
+    // CENTRED TO THE HALF CELL: a row whose spare cells are odd sits half a
+    // cell right of the whole-cell centring, so its axis is the card's (the
+    // director, seventh pass: 5 px left at 960 on three of five heads, and
+    // every tick row).
+    const auto centred = [&](int cells) {
+        PanelRect at = body;
+        if (((interior - cells) & 1) != 0) {
+            at.x += metric.cellW() / 2;
+        }
+        return at;
+    };
     const int fillCells = std::min(interior, layout.headCells + 2);
     const int fillCell = std::max(0, (interior - fillCells) / 2);
-    target.fillRect(body.x + metric.widthOf(fillCell), body.y - s, metric.widthOf(fillCells) - s,
-                    metric.cellH() + s, ink.accent, inkFade);
-    (void)drawCellTextKnockout(target, body, metric, fillCell + 1, 0, state.head, ink.knockout,
-                               inkFade);
+    const PanelRect headBody = centred(fillCells);
+    target.fillRect(headBody.x + metric.widthOf(fillCell), headBody.y - s,
+                    metric.widthOf(fillCells) - s, metric.cellH() + s, ink.accent, inkFade);
+    (void)drawCellTextKnockout(target, headBody, metric, fillCell + 1, 0, state.head,
+                               ink.knockout, inkFade);
     int row = 1;
     if (!state.prose.empty()) {
         // ONE CELL ROW OF LEADING, no ink, between the head and the prose --
@@ -342,15 +359,16 @@ void drawRungPlate(Framebuffer& target, const RungPlateState& state) {
         // second copy of the head's row.
         ++row;
         // What the ward says, in the prose ink, centred under the name.
-        (void)drawCellText(target, body, metric,
+        (void)drawCellText(target, centred(layout.proseCells), metric,
                            std::max(0, (interior - layout.proseCells) / 2), row, state.prose,
-                           ink.prose, inkFade);
+                           ink.prose, inkFade, shadowFade);
         ++row;
     }
     if (!state.top.empty()) {
         // The top of the ladder: a dateline's role, dim, read last.
-        (void)drawCellText(target, body, metric, std::max(0, (interior - layout.topCells) / 2),
-                           row, state.top, ink.dim, inkFade);
+        (void)drawCellText(target, centred(layout.topCells), metric,
+                           std::max(0, (interior - layout.topCells) / 2), row, state.top,
+                           ink.dim, inkFade, shadowFade);
         ++row;
     }
     if (layout.tickCells > 0) {
@@ -364,11 +382,11 @@ void drawRungPlate(Framebuffer& target, const RungPlateState& state) {
         // font's own drop shadow included, invisible on the slab but drawn
         // -- and the bottom rule's ink. Two units low, the shadow sat on
         // the rule (the director, fifth pass).
-        PanelRect tickBody = body;
+        PanelRect tickBody = centred(layout.tickCells);
         tickBody.y += s;
         (void)drawCellText(target, tickBody, metric,
                            std::max(0, (interior - layout.tickCells) / 2), row, state.tick,
-                           ink.dim, inkFade);
+                           ink.dim, inkFade, shadowFade);
         ++row;
     }
 }

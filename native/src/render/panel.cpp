@@ -549,6 +549,12 @@ void PanelFrame::draw() {
 
 int drawCellText(Framebuffer& target, const PanelRect& rect, const PanelMetric& metric, int cell,
                  int row, std::string_view text, const Rgb& colour, float alpha) {
+    return drawCellText(target, rect, metric, cell, row, text, colour, alpha, alpha * 0.75F);
+}
+
+int drawCellText(Framebuffer& target, const PanelRect& rect, const PanelMetric& metric, int cell,
+                 int row, std::string_view text, const Rgb& colour, float alpha,
+                 float shadowAlpha) {
     if (alpha <= 0.0F || text.empty() || rect.empty()) {
         return 0;
     }
@@ -564,7 +570,7 @@ int drawCellText(Framebuffer& target, const PanelRect& rect, const PanelMetric& 
     const int x = rect.x + cell * metric.cellW();
     const int y = rect.y + row * metric.cellH();
     // The keycap motifs are glyphs of the font -- drawText draws them.
-    drawText(target, x, y, cut, colour, alpha, metric.scale);
+    drawText(target, x, y, cut, colour, alpha, metric.scale, shadowAlpha);
     return cellsOf(cut);
 }
 
