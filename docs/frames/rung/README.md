@@ -468,10 +468,12 @@ the card. Their lists, taken whole:
 - **The slab leaves ahead of the words.** Over the evening sky the lift was
   a fogged pane of glass with grey words on it for a dozen steps; the slab's
   alpha is the fade squared now, so the words are the last thing left.
-- **The law drive's reticle comes up off the table.** From the stand-back
-  the dip put the hood on Cull's table under the reticle: a red TAKE prompt
-  under the Watch's own card. The eye is level-and-a-touch now, the table
-  clears, and `aim=` says what it found instead.
+- **The law drive's eye comes up, and the hood is still there.** From the
+  stand-back the dip put the hood under the reticle: a red TAKE prompt under
+  the Watch's own card. The eye is level-and-a-touch now, and the summary
+  still says `aim="HOOD"`: the hood is not on his table but hung at head
+  height on the line to him, so no pitch clears it from that spot. Declared;
+  it is the same corner as the trade's patron, and the Gull's own lane.
 - **The summary says whether the rung rose.** `rose=yes|no` on every run,
   and `reason="Cull is not at his table at this hour"` on a daytime trade
   or law, so `found=yes plate=down` no longer reads as a success.
