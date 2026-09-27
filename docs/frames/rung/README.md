@@ -624,8 +624,13 @@ capped bark swelled when the plate left. Everything below is on the gate.
   from the lift's midpoint the letters were black outlines round grey words
   on a pane (the director: at settle 308 the prose 2.02:1 and its shadow
   2.96:1). `drawText` and `drawCellText` take the shadow's own alpha now and
-  the plate draws its shadows at the slab's curve; pinned at fade 1, 0.5 and
-  0.25 on a sky (ink whole at the midpoint, slab a quarter, shadow gone).
+  the plate draws its shadows at the slab's curve -- its frame's too: the
+  keyline's dashes, bars and diamonds shadowed at the ink's alpha as well
+  (the pin caught them, gate 29), so `FrameStyle::shadowAlpha` carries the
+  slab's alpha through `drawRuleRun` and `drawMotif`, every other frame
+  keeping the font's three quarters. Pinned at fade 1, 0.5 and 0.25 on a sky
+  (ink whole at the midpoint, slab a quarter, the darkest pixel in the prose
+  rows nowhere near the up card's shadow).
 - **Centred to the half cell.** A head block or tick row whose spare cells
   were odd sat half a cell left of the card's axis (5 px at 960, 12.5 at
   1920, on three of five tracks). Rows with an odd spare shift right half a
