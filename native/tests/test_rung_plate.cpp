@@ -1122,9 +1122,14 @@ TEST_CASE("through the lift the ink holds whole to the midpoint while the slab t
         Framebuffer fb(960, 540);
         fb.clear(sky);
         drawRungPlate(fb, state);
+        // The shadows are read INSIDE the gutters: the keyline's bars in the
+        // border cells cast the frame's own shadow (the square) on every
+        // row, which is not the row's.
+        const int inX0 = box.x + metric.widthOf(3);
+        const int inX1 = box.x + box.w - metric.widthOf(3);
         const double prose = brightest(fb, box.x, proseY0, box.x + box.w, proseY1);
-        const double shadow = darkest(fb, box.x, proseY0, box.x + box.w, proseY1 + metric.scale);
-        const double tickShadow = darkest(fb, box.x, tickY0, box.x + box.w, tickY1 + metric.scale);
+        const double shadow = darkest(fb, inX0, proseY0, inX1, proseY1 + metric.scale);
+        const double tickShadow = darkest(fb, inX0, tickY0, inX1, tickY1 + metric.scale);
         const Rgb slab = unpackRgb(fb.pixels()[fb.index(box.x + box.w / 2, airY)]);
         const double slabLuma = static_cast<double>(0.30F * slab.r + 0.59F * slab.g + 0.11F * slab.b);
         if (fade == 1.0F) {
