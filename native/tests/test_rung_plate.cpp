@@ -1243,11 +1243,11 @@ TEST_CASE("--rung=flame: the Mission's two leads read, and the plate reads DISCI
 }
 
 TEST_CASE("--rung=trade: the ward's bounty paid across Cull's table, and the plate reads STALLKEEP") {
-    checkRung("trade", sim::LegendTrack::Trade);
+    checkRung("trade", sim::LegendTrack::Trade, "Watchman Cull");
 }
 
 TEST_CASE("--rung=law: four drinks stood to Watchman Cull, and the plate reads KNOWN TO THE WATCH") {
-    checkRung("law", sim::LegendTrack::Law);
+    checkRung("law", sim::LegendTrack::Law, "Watchman Cull");
 }
 
 TEST_CASE("--rung=bloodletter names no track: neither beat lands, and the summary says so") {

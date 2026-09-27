@@ -164,8 +164,8 @@ branch carries the frames and not the log). Or run them by hand.
 | `rung-wire-960.png` | `granadad.exe --smoke=0 --hold --width=960 --height=540 --scale=1 --rung=wire --settle-steps=0 --screenshot=docs\frames\rung\rung-wire-960.png` | One cracked box at two in the morning. `THE WIRE  --  LIGHT FINGERS` on the plate, the wire.1 row under it, the landing away in front and the done room behind. Summary reads `rung=wire 0->1 row="Ropewynd locks its boxes twice these days. That is you." plate=up found=yes`. |
 | `rung-roofs-960.png` | the same with `--rung=roofs` | The alley leapt until the roofs will have it. `THE ROOFS  --  TENANT` over the lead, the alley under the eye. Skyrunning levels on the same leap, and `SKYRUNNING RISES TO n` is the plate's own dim last row -- the same climb, told once, on the card. |
 | `rung-flame-960.png` | the same with `--rung=flame` | Two leads read at the Mission at nine. `THE FLAME  --  DISCIPLE`, the back room stood back from. The pull line under the ribbon still reads the next lead. |
-| `rung-trade-960.png` | the same with `--rung=trade` | The bounty paid across Cull's table. `THE TRADE  --  STALLKEEP` once the talk's close tail is down, faced at Cull from the table with no walk after the rung. What is under the reticle is the summary's `aim="..."`; see the fifth pass for why it is not him. |
-| `rung-law-960.png` | the same with `--rung=law` | Four drinks stood to Cull at eleven. `THE LAW  --  KNOWN TO THE WATCH`, faced at Cull the same way, `aim="..."` in the summary. |
+| `rung-trade-960.png` | the same with `--rung=trade` | The bounty paid across Cull's table. `THE TRADE  --  STALLKEEP` once the talk's close tail is down, Cull under the reticle from the table with the eye brought down to him and no walk after the rung. The summary's `aim="Watchman Cull"` says so and the drive test pins it. |
+| `rung-law-960.png` | the same with `--rung=law` | Four drinks stood to Cull at eleven. `THE LAW  --  KNOWN TO THE WATCH`, Cull under the reticle the same way, `aim="Watchman Cull"` in the summary, pinned. |
 | `rung-wire-320.png` | the first drive at `--width=320 --height=180` | The strip pin. `wire.1` is 52 glyphs, so this plate is 58 cells wide; the 56-glyph row (`flame.3`) makes the widest plate the sheet can build, 62 cells in a 64-cell frame -- a cell of margin off each edge, two cells of gutter inside each keyline -- and the test pins them at that width rather than a drive. Seated in the middle of what the smallest window has between the stat stack and the aim prompt. |
 
 ## Second pass, 2026-09-25
@@ -366,27 +366,28 @@ was left was the choreography round it and the frames under it.
   there and only there (`rungPlateMetric`): a 64-cell frame at scale 2 is
   exactly 640 pixels, and the band between the floor and the prompt holds
   the card with a row to spare.
-- **The cause in the picture, and where it cannot be.** `standBackFrom`
-  wants a clear line now -- every tile between the spot and the man floor,
-  nobody of the Gull's roster on it -- before it settles for the sim's own
-  line of sight, which sees over a table and through a standing man. It
-  does not see the ward's bodies that drink in the Gull, and at Cull's
-  stool the frame is theirs: a patron stands on the west approach, and the
-  hood on Cull's own table is nearer than he is from every cardinal, so
-  the aim prompt names the hood or the patron from any spot a tile, two or
-  three off him. A ring of those spots, walked and read, was tried (gate
-  14) and spent the plate's whole hold finding none. So the trade and law
-  drives stop walking after the rung: the bounty closes at the table
-  (`runContractLine`'s `table` ending), the drinks end where the talk was,
-  and both face him by bearing from there. **The summary now prints what
-  the prompt named at the shutter (`aim="..."`), on every track, and the
-  drive tests pin that it does; on trade and law it is the honest answer,
-  not Cull.** Putting him under the reticle wants a different corner of the
-  Gull or a different hour, which is a Gull lane's call. The flame drive
-  pitches the eye down onto the flagstones once the last read has tipped
-  the track (after the loop: the walk to the second lead reset it the first
-  time). The wire drive stays as it is: the box is under the reticle at two
-  in the morning with the lanterns out, and a burglary is dark.
+- **The cause in the picture.** `standBackFrom` wants a clear line now --
+  every tile between the spot and the man floor, nobody of the Gull's
+  roster on it -- before it settles for the sim's own line of sight, which
+  sees over a table and through a standing man. It does not see the ward's
+  bodies that drink in the Gull, and from the stand-back's three tiles
+  Cull's corner was theirs on three passes: a patron on the west approach,
+  the hood on his own table nearer than he is. A ring of spots round him,
+  walked and read off the prompt, spent the plate's whole hold finding none
+  (gate 14). What works is not walking at all: the bounty closes at the
+  table (`runContractLine`'s `table` ending), the drinks end where the talk
+  was, and from that one tile off him the prompt names him -- and the eye
+  is brought DOWN to him by his distance (thirty degrees at a tile), because
+  a man on a stool a tile away sits under an eye that looks straight ahead,
+  and the first frame from there was the wall behind his head. **The
+  summary prints what the prompt named at the shutter (`aim="..."`) on
+  every track, and the trade and law drive tests pin `Watchman Cull`.** The
+  flame drive pitches the eye down onto the flagstones once the last read
+  has tipped the track (after the loop: the walk to the second lead reset
+  it the first time); its back room is a tile deep and the frame is still
+  mostly its wall -- declared, a Mission lane's geometry. The wire drive
+  stays as it is: the box is under the reticle at two in the morning with
+  the lanterns out, and a burglary is dark.
 - **The Gull's own watchman.** Cull's halt and a contraband demand ride the
   alert row through the same `say()` as the street's, and the fourth pass
   flagged only the street's three sites; his outrank the plate now too.
