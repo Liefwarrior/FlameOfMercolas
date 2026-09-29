@@ -911,9 +911,11 @@ struct BarkRun {
 /// left, stopping ON the last frame when the bark leaves first. No AMBIENT
 /// line takes a pass line's row while it is up -- another pass line waits
 /// kPassCooldownSteps, longer than any hold, and an overheard one ranks
-/// below it; a farewell, a react, the Watch or a talk could, and none comes
-/// in this idle fixture (the leaving-step checks would fail if one did) --
-/// so the step it leaves on is its own clock or a cap.
+/// below it; a farewell, a react, the Watch, a talk, the same speaker's
+/// line landing on the alert row (dropIfSpeaker) or a placement (standDown)
+/// could, and none comes in this idle fixture (the leaving-step checks
+/// would fail if one did) -- so the step it leaves on is its own clock or a
+/// cap.
 [[nodiscard]] BarkRun barkUnderPlate(Session& session, std::int32_t ownAfterCrack) {
     wake(session);
     sim::MoveInput drift;

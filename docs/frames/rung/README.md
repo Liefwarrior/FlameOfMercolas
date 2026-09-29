@@ -731,10 +731,13 @@ level that folded into a card with no tick row was told nowhere.
   stays small through its fade -- pinned at the emitter only. On the
   session the twelfth pass pins its neighbours (the capped state lasting
   past a line's hold, the last-frame cap on a line said in the lift), not
-  this seam: that needs a line run out on its own clock inside a lift with
-  nothing ready to take its row, and in the Gull the waiting overheard line
-  takes the first pass bark's row on the step it runs out. A later line
-  was not tried.)
+  this seam: that needs a line run out on its own clock in the lift's last
+  seven or so steps -- the row clears eight steps after a line's hold runs
+  out, so an earlier run-out is gone before the last frame -- with nothing
+  ready to take its row. In the Gull the waiting overheard line takes the
+  first pass bark's row on the step it runs out; a later pass bark, after
+  the pass cooldown and while the overheard channel is still cooling,
+  might serve (the auditor's reckoning) and was not tried.)
 - **The voice row buys its pad above.** The rail plus a minor unit of air,
   in pixels, the alert row's way. Pinned on pixels with a hands row above
   it, read across the plate's whole rail (the eleventh pass; the tenth's
@@ -773,7 +776,8 @@ level that folded into a card with no tick row was told nowhere.
   seat is the card's, and anchoring the head instead is a seat rule for
   the next pass); the full stop's weight pulling the prose rows a unit
   left of the slab's axis (two pixels at 960 on wire, roofs, law and
-  trade, one on flame; about five at 1920), the slab itself half a unit
+  trade, one on flame; about five at 1920, two and a half on flame), the
+  slab itself half a unit
   left of the compass above it; the chips above unchanged.
 
 ## Tenth pass, 2026-09-27
@@ -835,7 +839,8 @@ two numbers were understated.
   room replaced the bark before its hold was out, and no ambient line can:
   another pass line waits `kPassCooldownSteps`, longer than any hold, and
   an overheard line ranks below a pass line (a farewell, a react, the
-  Watch or a talk could, and none comes in that idle fixture). The run
+  Watch, a talk, the same speaker's line landing on the alert row, or a
+  placement could, and none comes in that idle fixture). The run
   that left at 419 was the plate's hold-end cap (the 300-step hold plus
   the 120-step cap, less one); the run that left at 314 was the bark's own
   clock running out inside the lift, the case having taken the step it
@@ -852,10 +857,10 @@ two numbers were understated.
   roofs': the stealth row over the compass ("HIDDEN DARK 6 QUIET"), the
   place line cut to "S" (`--rung=roofs --width=720 --height=720
   --settle-steps=0`). The trade's changes shape with its coin readout:
-  while "52 C" is up (settle 0 to 120) the stealth row sits on the place
-  line's row across the box's lower right, the line cut to "SW 48"; once
-  it has gone (by settle 200, the card still up, and at 620) the stealth
-  row moves up over the compass's "SE". The wire's place line is missing;
+  while "52 C" is up (settle 0 to 120) the stealth row straddles the
+  box's bottom rail, the line cut to "SW 48"; once it has gone (by settle
+  200, the card still up, and at 620) the stealth row moves up over the
+  compass's "SE" and the line stays cut. The wire's place line is missing;
   the law's stealth row sits on the place line's row, the line cut. The
   flame's is whole: no stealth row is up. At 1440x1080 the roofs' HIDDEN
   sits on the compass box's right rail and its place line drops the name
@@ -886,8 +891,9 @@ one of its pins passed with what it named reverted.
   step count (`VoiceScene::step`); a row's hold is `kVoiceHoldMinSteps`
   plus `kVoiceHoldPerGlyphSteps` a glyph, to `kVoiceHoldMaxSteps`; and no
   ambient line takes a pass line's row while it is up (a farewell, a
-  react, the Watch or a talk could; none comes in this idle fixture, and
-  the checks would fail if one did). So the Gull case runs the same bark
+  react, the Watch, a talk, the same speaker's line landing on the alert
+  row, or a placement could; none comes in this idle fixture, and the
+  checks would fail if one did). So the Gull case runs the same bark
   three times and pins the step it leaves, exactly since the thirteenth
   pass (within two before it):
   - idled to run out mid-hold, it leaves on its own clock, before the
@@ -922,7 +928,8 @@ The twelfth pass scored 8 (director), 8 (player) and 7 (auditor). Tests,
 names and docs only; no drawing changed, no frame changed. The auditor:
 the record claimed the tenth pass's seam pinned on the session and it is
 not -- no cap in the Gull runs lands on a line already out of hold, so
-reverting that fix passes every case; "nothing takes a pass line's row"
+reverting that fix passes every session case (the emitter's fails);
+"nothing takes a pass line's row"
 over-claimed (a farewell, a react, the Watch or a talk can); the HUD
 chip's frames were wrong for the flame and the trade (the director and
 the player too); the Gull case's name had a pass bark leaving on the
@@ -934,10 +941,11 @@ moved a step late passed everything.
   marking an exhausted line) at the emitter only; on the session, the
   capped state lasting past a hold and the last-frame cap on a line said
   in the lift. Declared, not pinned on the session: a cap landing on an
-  exhausted line -- it needs a line run out on its own clock inside a lift
-  with nothing ready to take its row; in the Gull the waiting overheard
-  line takes the first pass bark's row on the step it runs out, and a
-  later line was not tried.
+  exhausted line -- it needs a line run out on its own clock in the lift's
+  last seven or so steps (the row clears eight steps after a line's hold
+  runs out) with nothing ready to take its row; in the Gull the waiting
+  overheard line takes the first pass bark's row on the step it runs out,
+  and a later pass bark was not tried.
 - **"No ambient line"** takes a pass line's row, wherever it said
   "nothing".
 - **The last frame itself is looked at.** The Gull case checks the voice
@@ -951,6 +959,21 @@ moved a step late passed everything.
 - **The HUD chip** describes each frame as shot, the trade's shape changing
   with its coin readout and the flame's whole; the prose-centring clause
   names the roofs.
+
+## Fourteenth pass, 2026-09-29
+
+The thirteenth pass scored 8 (director), 8 (player) and 8 (auditor): the
+bar. Docs and comments only, from the critics' own lists: the thirteenth
+section said reverting the tenth pass's fix passes every case, when the
+emitter case fails (every session case passes); the reason the session
+cannot reach that seam left out the timing (the line has to run out in
+the lift's last seven or so steps, since the row clears eight after);
+`voiceStepsDownNow`'s doc still promised the seam; the list of what can
+end a pass line early left out the same speaker's line landing on the
+alert row and a placement; the prose-centring clause's 1920 figure is two
+and a half on the flame; and the trade's early shape straddles the
+compass box's bottom rail, its place line staying cut after the coin
+readout goes.
 
 ## Not in this folder yet
 
