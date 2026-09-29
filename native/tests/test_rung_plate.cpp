@@ -4,12 +4,12 @@
 // after them the passes' own pins: the alert row's register and rails on
 // pixels against a twin, the demand, the lift window both ways, the text
 // plate's corner, the lift curve on a sky (the tick's shadow against the
-// prose's), the head's centring, the voice row's stand-down through its
-// fade (at the emitter, on pixels at 720x720, and through a real pass bark
-// in the Gull, by the step: its own clock under the plate, the hold-end
-// cap, and the last-frame cap on a line said in the lift), the pass clock
-// at the emitter, the voice row's pad above it on pixels, and the 320x180
-// fold.
+// prose's), the head's centring, the voice row's stand-down through a
+// fade (at the emitter, on pixels at 720x720, and on the session through
+// the line said in the Gull's lift), a pass bark's leaving step under the
+// plate (its own clock, the hold-end cap), the last-frame cap on the line
+// said in the lift, the pass clock at the emitter, the voice row's pad
+// above it on pixels, and the 320x180 fold.
 //
 //   1. THE WATCH seeds silently and reports a rise per track, never a fall.
 //      A session that loads with rungs on the sheet has not just earned
@@ -807,6 +807,11 @@ TEST_CASE("a line said during the lift is capped on the card's last frame, and a
             ++lifting;
         }
         REQUIRE(session.rungPlateState().fade == 0.0F);
+        // ON THE LAST FRAME ITSELF, the step the drawn fade reaches nought:
+        // the cap fired this step (a cap a step late would leave the line
+        // uncapped and at the glance size here), and the step after.
+        CHECK(session.alertStepsLeftNow() <= kRungPlateRowAfterSteps);
+        CHECK(session.alertStepsDownNow());
         session.stepMany(sim::MoveInput{}, 1);
         CHECK(session.alertStepsLeftNow() <= kRungPlateRowAfterSteps);
         CHECK(session.alertStepsDownNow());
@@ -898,13 +903,17 @@ struct BarkRun {
     bool downThrough = true;     // voiceStepsDownNow every step, rise to `left`
 };
 
-/// Eight in the evening at the Gull's counter, a drift along the bar until a
-/// stool says a PASS line (test_street_voice's own walk); an idle until
-/// `ownAfterCrack` steps are left on its hold (none when negative); a rung;
-/// then steps until the plate is gone and the bark has left. Nothing takes
-/// a pass line's row while it is up -- another pass line waits
+/// Eight in the evening at the Gull's counter: a stool says a PASS line on
+/// wake()'s first step (the drift along the bar, test_street_voice's own
+/// walk, is the guard should it not -- in this fixture it never runs); an
+/// idle until `ownAfterCrack` steps are left on its hold (none when
+/// negative); a rung; then steps until the plate is gone and the bark has
+/// left, stopping ON the last frame when the bark leaves first. No AMBIENT
+/// line takes a pass line's row while it is up -- another pass line waits
 /// kPassCooldownSteps, longer than any hold, and an overheard one ranks
-/// below it -- so the step it leaves on is its own clock or a cap.
+/// below it; a farewell, a react, the Watch or a talk could, and none comes
+/// in this idle fixture (the leaving-step checks would fail if one did) --
+/// so the step it leaves on is its own clock or a cap.
 [[nodiscard]] BarkRun barkUnderPlate(Session& session, std::int32_t ownAfterCrack) {
     wake(session);
     sim::MoveInput drift;
@@ -961,13 +970,13 @@ struct BarkRun {
 
 }  // namespace
 
-TEST_CASE("a pass bark under the plate leaves on its own clock, the hold-end cap or the last-frame cap, by the step, and the row stays stood down until it clears (the session's own seam)") {
-    // The same bark three times, its leaving step pinned within two.
+TEST_CASE("the Gull's voice row under a plate, by the step: a pass bark leaves on its own clock or on the hold-end cap, the line said in the lift leaves on the last-frame cap, and the row is stood down on the last frame and through that line's fade") {
+    // The same bark three times, its leaving step pinned exactly.
     //
     // IDLED TO RUN OUT MID-HOLD: it leaves on its own clock, before the
     // hold's end -- the pass clock runs under the plate. (An isEvent revert
-    // freezes it from the rise, and it leaves on the hold-end cap instead,
-    // a hundred and more steps later.)
+    // freezes it from the rise through the lift, and it leaves 119 steps
+    // after the last frame instead.)
     {
         Session session(configInTheGull(20, sim::gull::kBartenderX, sim::gull::kBartenderY + 1));
         const BarkRun run = barkUnderPlate(session, kRungPlateHoldSteps / 2);
@@ -975,7 +984,7 @@ TEST_CASE("a pass bark under the plate leaves on its own clock, the hold-end cap
              run.left);
         REQUIRE(run.holdEnd >= 0);
         REQUIRE(run.left >= 0);
-        CHECK(std::abs(run.left - run.own) <= 2);
+        CHECK(run.left == run.own);
         CHECK(run.left < run.holdEnd);
         CHECK(run.downThrough);
     }
@@ -983,8 +992,9 @@ TEST_CASE("a pass bark under the plate leaves on its own clock, the hold-end cap
     // the hold's end and the last frame. The room's next line goes up in
     // the lift; the plate's LAST-FRAME cap lands on it, and it leaves on
     // that cap, kRungPlateRowAfterSteps less one after the last frame,
-    // before its own clock would have -- and the row stays stood down
-    // through its fade until it clears.
+    // before its own clock would have -- and the row is stood down on the
+    // last frame itself (a cap a step late would leave it at the minor
+    // scale there) and through the line's fade until it clears.
     {
         Session session(configInTheGull(20, sim::gull::kBartenderX, sim::gull::kBartenderY + 1));
         const BarkRun run =
@@ -994,10 +1004,15 @@ TEST_CASE("a pass bark under the plate leaves on its own clock, the hold-end cap
         REQUIRE(run.holdEnd >= 0);
         REQUIRE(run.lastFrame >= 0);
         REQUIRE(run.left >= 0);
-        CHECK(std::abs(run.left - run.own) <= 2);
+        CHECK(run.left == run.own);
         CHECK(run.left > run.holdEnd);
         CHECK(run.left < run.lastFrame);
         CHECK(run.downThrough);
+        // ON THE LAST FRAME ITSELF: the helper stops on it, the cap fired
+        // this step, and the plate is off the screen.
+        REQUIRE(session.body().stepCount() == run.lastFrame);
+        REQUIRE(session.rungPlateState().fade == 0.0F);
+        CHECK(session.voiceStepsDownNow());
         REQUIRE(session.voice().up());
         const VoiceLine next = session.voice().current();
         REQUIRE(next.text != run.text);
@@ -1025,8 +1040,8 @@ TEST_CASE("a pass bark under the plate leaves on its own clock, the hold-end cap
              " cleared ", cleared);
         REQUIRE(nextLeft >= 0);
         REQUIRE(cleared >= 0);
-        CHECK(std::abs(nextLeft - (run.lastFrame + kRungPlateRowAfterSteps - 1)) <= 2);
-        CHECK(nextLeft < nextOwn - 2);
+        CHECK(nextLeft == run.lastFrame + kRungPlateRowAfterSteps - 1);
+        CHECK(nextLeft < nextOwn);
         CHECK(cleared > nextLeft);
         CHECK(session.voice().current().text.empty());
         CHECK(downAfter);
@@ -1043,10 +1058,10 @@ TEST_CASE("a pass bark under the plate leaves on its own clock, the hold-end cap
         REQUIRE(run.lastFrame >= 0);
         REQUIRE(run.left >= 0);
         // The fixture discriminates: its own clock runs out past the cap's
-        // step by more than the tolerance.
-        REQUIRE(run.own - (run.holdEnd + kRungPlateRowAfterSteps - 1) > 4);
-        CHECK(std::abs(run.left - (run.holdEnd + kRungPlateRowAfterSteps - 1)) <= 2);
-        CHECK(run.left < run.own - 2);
+        // step.
+        REQUIRE(run.own > run.holdEnd + kRungPlateRowAfterSteps - 1);
+        CHECK(run.left == run.holdEnd + kRungPlateRowAfterSteps - 1);
+        CHECK(run.left < run.own);
         CHECK(run.left > run.lastFrame);
         CHECK(run.downThrough);
     }
