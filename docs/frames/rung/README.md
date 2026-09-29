@@ -965,8 +965,8 @@ moved a step late passed everything.
 The thirteenth pass scored 8 (director), 8 (player) and 8 (auditor): the
 bar. Docs and comments only, from the critics' own lists: the thirteenth
 section said reverting the tenth pass's fix passes every case, when the
-emitter case fails (every session case passes); the reason the session
-cannot reach that seam left out the timing (the line has to run out in
+emitter case fails (every session case passes); the reason the Gull
+runs do not reach that seam left out the timing (the line has to run out in
 the lift's last seven or so steps, since the row clears eight after);
 `voiceStepsDownNow`'s doc still promised the seam; the list of what can
 end a pass line early left out the same speaker's line landing on the
