@@ -16545,13 +16545,12 @@ constexpr std::int32_t kRungBeats = 2;
 /// AND NOTHING WALKS AFTER A RUNG on the wire, the roofs and the flame (the
 /// trade and the law stand back after theirs, about twenty-five steps of
 /// the hold, and the README says so). The two that broke it are why it is
-/// written down: the plate
-/// holds five seconds (kRungPlateHoldSteps) and a scripted walk spends them
-/// faster than anything else in this file -- fifty tiles out of the Mission
-/// and round it, or a crouched fight for the last tile of the Gull's
-/// landing -- so the rung comes up on a body that is already framed and the
-/// drive stops there. Same rule `--trail=opened` states for the lead-opened
-/// notice, and for the same three-second reason.
+/// written down: the plate holds five seconds (kRungPlateHoldSteps) and a
+/// scripted walk spends them faster than anything else in this file --
+/// fifty tiles out of the Mission and round it, or a crouched fight for the
+/// last tile of the Gull's landing -- so the rung comes up on a body that
+/// is already framed and the drive stops there. Same rule `--trail=opened`
+/// states for the lead-opened notice, and for the same three-second reason.
 ///
 /// The line ends by stepping the plate all the way up (its own eight-step
 /// rise), bounded, so `--settle-steps=0` photographs it at full strength and

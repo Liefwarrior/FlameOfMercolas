@@ -6,8 +6,10 @@
 // plate's corner, the lift curve on a sky (the tick's shadow against the
 // prose's), the head's centring, the voice row's stand-down through its
 // fade (at the emitter, on pixels at 720x720, and through a real pass bark
-// in the Gull for as long as the room leaves it the row), the voice row's
-// pad above it on pixels, and the 320x180 fold.
+// in the Gull, by the step: its own clock under the plate, the hold-end
+// cap, and the last-frame cap on a line said in the lift), the pass clock
+// at the emitter, the voice row's pad above it on pixels, and the 320x180
+// fold.
 //
 //   1. THE WATCH seeds silently and reports a rise per track, never a fall.
 //      A session that loads with rungs on the sheet has not just earned
@@ -874,76 +876,225 @@ TEST_CASE("the voice row's capped state outlives its hold through the ease-out, 
     CHECK_FALSE(voice.capped());
 }
 
-TEST_CASE("through a real pass bark's life the voice row is stood down from the plate's rise until the room takes the row back, and the plate's last-frame cap lands on a present line (the session's own seam)") {
-    // Eight in the evening at the Gull's counter, a drift along the bar
-    // until a stool speaks (test_street_voice's own walk): a PASS or
-    // OVERHEARD line. The plate goes up the step after; from that step
-    // until the room takes the row back (a new line of its own rank or
-    // above -- the room's choice of step, twice observed at 314 and 419
-    // steps in: the row yields to its rank whenever the room has a line)
-    // or the row clears, the seam says stood down, and the bark is still
-    // on the row on the plate's last frame, so the last-frame cap lands on
-    // a present line.
-    //
-    // NOT PINNED HERE, and not pinnable on the session: the bark's OWN
-    // run-out (its clock running under the plate, its cap through its
-    // fade) -- the room replaces an ambient line before its hold is out,
-    // at a step the case cannot choose; and a pass line has no public
-    // emitter (StreetVoice::say is the step's own). The emitter case above
-    // pins what the cap does to an exhausted line through a farewell.
-    Session session(configInTheGull(20, sim::gull::kBartenderX, sim::gull::kBartenderY + 1));
+namespace {
+
+/// A row's hold, the emitter's own arithmetic (street_voice.cpp's holdFor)
+/// from its public constants.
+[[nodiscard]] std::int32_t voiceHoldOf(const std::string& text) {
+    return std::clamp(kVoiceHoldMinSteps +
+                          static_cast<std::int32_t>(text.size()) * kVoiceHoldPerGlyphSteps,
+                      kVoiceHoldMinSteps, kVoiceHoldMaxSteps);
+}
+
+/// One run of the Gull's pass bark under a plate, in the body's step count
+/// -- the emitter's own clock (VoiceScene::step).
+struct BarkRun {
+    std::string text;
+    std::int64_t said = 0;       // the step the bark went up
+    std::int64_t own = 0;        // said + its hold: its own clock runs out
+    std::int64_t holdEnd = -1;   // the first step the plate is no longer wanted
+    std::int64_t lastFrame = -1; // the first step its drawn fade is zero
+    std::int64_t left = -1;      // the first step it is out of hold or off the row
+    bool downThrough = true;     // voiceStepsDownNow every step, rise to `left`
+};
+
+/// Eight in the evening at the Gull's counter, a drift along the bar until a
+/// stool says a PASS line (test_street_voice's own walk); an idle until
+/// `ownAfterCrack` steps are left on its hold (none when negative); a rung;
+/// then steps until the plate is gone and the bark has left. Nothing takes
+/// a pass line's row while it is up -- another pass line waits
+/// kPassCooldownSteps, longer than any hold, and an overheard one ranks
+/// below it -- so the step it leaves on is its own clock or a cap.
+[[nodiscard]] BarkRun barkUnderPlate(Session& session, std::int32_t ownAfterCrack) {
     wake(session);
     sim::MoveInput drift;
     int walked = 0;
-    while (walked < 4 * 60 * 60) {
+    while (walked < 4 * 60 * 60 &&
+           !(session.voice().up() && session.voice().current().channel == VoiceChannel::Pass)) {
         drift.forward = (walked / 120) % 2 == 0 ? 1 : 0;
         drift.turn = (walked / 60) % 3 == 0 ? 1 : 0;
         session.step(drift);
         ++walked;
-        if (session.voice().up() && session.voice().current().channel < VoiceChannel::Farewell) {
-            break;
-        }
     }
     REQUIRE(session.voice().up());
-    REQUIRE(session.voice().current().channel < VoiceChannel::Farewell);
-    const std::string bark = session.voice().current().text;
-    REQUIRE_FALSE(session.voiceStepsDownNow());
+    REQUIRE(session.voice().current().channel == VoiceChannel::Pass);
+    BarkRun run;
+    run.text = session.voice().current().text;
+    run.said = session.voice().current().step;
+    run.own = run.said + voiceHoldOf(run.text);
+    if (ownAfterCrack >= 0) {
+        const std::int64_t crackAt = run.own - ownAfterCrack;
+        REQUIRE(crackAt >= session.body().stepCount());
+        while (session.body().stepCount() < crackAt) {
+            session.stepMany(sim::MoveInput{}, 1);
+        }
+        REQUIRE(session.voice().current().text == run.text);
+    }
     crackABox(session);
-    int lived = 0;
-    int ranOut = -1;
-    int lastFrame = -1;
-    bool plateSeen = false;
-    for (; lived < kVoiceHoldMaxSteps + 2 * kPageEaseSteps + 8; ++lived) {
+    bool wanted = false;
+    bool drawn = false;
+    for (int i = 0; i < kVoiceHoldMaxSteps + kRungPlateHoldSteps + 64 &&
+                    (run.left < 0 || run.lastFrame < 0);
+         ++i) {
         session.stepMany(sim::MoveInput{}, 1);
-        const float fade = session.rungPlateState().fade;
-        if (fade > 0.0F) {
-            plateSeen = true;
-        } else if (plateSeen && lastFrame < 0) {
-            lastFrame = lived;
+        const std::int64_t now = session.body().stepCount();
+        if (session.rungPlateWanted()) {
+            wanted = true;
+        } else if (wanted && run.holdEnd < 0) {
+            run.holdEnd = now;
         }
-        if (session.voice().current().text != bark) {
-            break;
+        if (session.rungPlateState().fade > 0.0F) {
+            drawn = true;
+        } else if (drawn && run.lastFrame < 0) {
+            run.lastFrame = now;
         }
-        if (ranOut < 0 && !session.voice().up()) {
-            ranOut = lived;
+        const bool gone = !session.voice().up() || session.voice().current().text != run.text;
+        if (run.left < 0 && gone) {
+            run.left = now;
         }
-        INFO("step ", lived, " of the bark under and after the plate");
-        CHECK(session.voiceStepsDownNow());
+        if (run.left < 0 && drawn && !session.voiceStepsDownNow()) {
+            run.downThrough = false;
+        }
     }
-    const int taken = lived;
-    INFO("ran out ", ranOut, " last frame ", lastFrame, " row taken back at ", taken);
-    REQUIRE(plateSeen);
-    REQUIRE(lastFrame >= 0);
-    // On the row through the plate's last frame: the last-frame cap landed
-    // on a present line, and the seam said stood down every step after.
-    CHECK(taken > lastFrame);
-    // If the bark did run out before the room took the row (the room
-    // permitting), it ran out capped -- within the cap of the last frame
-    // -- and stayed on the row, small, into its fade.
-    if (ranOut >= 0) {
-        CHECK(ranOut <= lastFrame + kRungPlateRowAfterSteps + 2);
-        CHECK(taken > ranOut);
+    return run;
+}
+
+}  // namespace
+
+TEST_CASE("a pass bark under the plate leaves on its own clock, the hold-end cap or the last-frame cap, by the step, and the row stays stood down until it clears (the session's own seam)") {
+    // The same bark three times, its leaving step pinned within two.
+    //
+    // IDLED TO RUN OUT MID-HOLD: it leaves on its own clock, before the
+    // hold's end -- the pass clock runs under the plate. (An isEvent revert
+    // freezes it from the rise, and it leaves on the hold-end cap instead,
+    // a hundred and more steps later.)
+    {
+        Session session(configInTheGull(20, sim::gull::kBartenderX, sim::gull::kBartenderY + 1));
+        const BarkRun run = barkUnderPlate(session, kRungPlateHoldSteps / 2);
+        INFO("mid-hold: said ", run.said, " own ", run.own, " hold end ", run.holdEnd, " left ",
+             run.left);
+        REQUIRE(run.holdEnd >= 0);
+        REQUIRE(run.left >= 0);
+        CHECK(std::abs(run.left - run.own) <= 2);
+        CHECK(run.left < run.holdEnd);
+        CHECK(run.downThrough);
     }
+    // IDLED TO RUN OUT INSIDE THE LIFT: it leaves on its own clock between
+    // the hold's end and the last frame. The room's next line goes up in
+    // the lift; the plate's LAST-FRAME cap lands on it, and it leaves on
+    // that cap, kRungPlateRowAfterSteps less one after the last frame,
+    // before its own clock would have -- and the row stays stood down
+    // through its fade until it clears.
+    {
+        Session session(configInTheGull(20, sim::gull::kBartenderX, sim::gull::kBartenderY + 1));
+        const BarkRun run =
+            barkUnderPlate(session, kRungPlateHoldSteps + kRungPlateLiftSteps / 2);
+        INFO("in the lift: said ", run.said, " own ", run.own, " hold end ", run.holdEnd,
+             " last frame ", run.lastFrame, " left ", run.left);
+        REQUIRE(run.holdEnd >= 0);
+        REQUIRE(run.lastFrame >= 0);
+        REQUIRE(run.left >= 0);
+        CHECK(std::abs(run.left - run.own) <= 2);
+        CHECK(run.left > run.holdEnd);
+        CHECK(run.left < run.lastFrame);
+        CHECK(run.downThrough);
+        REQUIRE(session.voice().up());
+        const VoiceLine next = session.voice().current();
+        REQUIRE(next.text != run.text);
+        REQUIRE(next.step >= run.holdEnd);
+        REQUIRE(next.step < run.lastFrame);
+        const std::int64_t nextOwn = next.step + voiceHoldOf(next.text);
+        std::int64_t nextLeft = -1;
+        std::int64_t cleared = -1;
+        bool downAfter = true;
+        for (int i = 0; i < kRungPlateRowAfterSteps + kPageEaseSteps + 16 && cleared < 0; ++i) {
+            session.stepMany(sim::MoveInput{}, 1);
+            const std::int64_t now = session.body().stepCount();
+            if (session.voice().current().text != next.text) {
+                cleared = now;
+                break;
+            }
+            if (nextLeft < 0 && !session.voice().up()) {
+                nextLeft = now;
+            }
+            if (!session.voiceStepsDownNow()) {
+                downAfter = false;
+            }
+        }
+        INFO("the next line: said ", next.step, " own ", nextOwn, " left ", nextLeft,
+             " cleared ", cleared);
+        REQUIRE(nextLeft >= 0);
+        REQUIRE(cleared >= 0);
+        CHECK(std::abs(nextLeft - (run.lastFrame + kRungPlateRowAfterSteps - 1)) <= 2);
+        CHECK(nextLeft < nextOwn - 2);
+        CHECK(cleared > nextLeft);
+        CHECK(session.voice().current().text.empty());
+        CHECK(downAfter);
+    }
+    // NOT IDLED: it outlives the plate and leaves on the HOLD-END cap,
+    // kRungPlateRowAfterSteps less one after the hold's end, before its own
+    // clock would have -- stood down all the while, the plate gone.
+    {
+        Session session(configInTheGull(20, sim::gull::kBartenderX, sim::gull::kBartenderY + 1));
+        const BarkRun run = barkUnderPlate(session, -1);
+        INFO("outlived: said ", run.said, " own ", run.own, " hold end ", run.holdEnd,
+             " last frame ", run.lastFrame, " left ", run.left);
+        REQUIRE(run.holdEnd >= 0);
+        REQUIRE(run.lastFrame >= 0);
+        REQUIRE(run.left >= 0);
+        // The fixture discriminates: its own clock runs out past the cap's
+        // step by more than the tolerance.
+        REQUIRE(run.own - (run.holdEnd + kRungPlateRowAfterSteps - 1) > 4);
+        CHECK(std::abs(run.left - (run.holdEnd + kRungPlateRowAfterSteps - 1)) <= 2);
+        CHECK(run.left < run.own - 2);
+        CHECK(run.left > run.lastFrame);
+        CHECK(run.downThrough);
+    }
+}
+
+TEST_CASE("the emitter runs a pass line's clock under the plate: out on exactly its hold, the plate's clock set throughout") {
+    // A standalone emitter over the Gull's live room (the session drifts
+    // along the bar and the emitter reads it each step), VoiceScene's
+    // holdClock set from the first step to the last. The farewell's side --
+    // held -- is the emitter case above.
+    Session session(configInTheGull(20, sim::gull::kBartenderX, sim::gull::kBartenderY + 1));
+    StreetVoice voice;
+    VoiceScene scene;
+    scene.room = &session.tavern();
+    scene.people = &session.people();
+    scene.tiles = &session.tiles();
+    scene.holdClock = true;
+    const auto readScene = [&]() {
+        scene.playerTileX = session.body().tileX();
+        scene.playerTileY = session.body().tileY();
+        scene.playerBand = session.body().band();
+        scene.playerXQ8 = session.body().x();
+        scene.playerYQ8 = session.body().y();
+        scene.step = static_cast<std::int32_t>(session.body().stepCount());
+    };
+    sim::MoveInput drift;
+    int walked = 0;
+    while (walked < 4 * 60 * 60 && !(voice.up() && voice.current().channel == VoiceChannel::Pass)) {
+        drift.forward = (walked / 120) % 2 == 0 ? 1 : 0;
+        drift.turn = (walked / 60) % 3 == 0 ? 1 : 0;
+        session.step(drift);
+        readScene();
+        voice.step(scene);
+        ++walked;
+    }
+    REQUIRE(voice.up());
+    REQUIRE(voice.current().channel == VoiceChannel::Pass);
+    const std::string bark = voice.current().text;
+    const std::int32_t hold = voiceHoldOf(bark);
+    int ran = 0;
+    while (voice.up() && voice.current().text == bark && ran < kVoiceHoldMaxSteps + 8) {
+        session.stepMany(sim::MoveInput{}, 1);
+        readScene();
+        voice.step(scene);
+        ++ran;
+    }
+    INFO("hold ", hold, " ran ", ran);
+    CHECK(ran == hold);
 }
 
 TEST_CASE("the voice row stood down keeps its top rail clear of the row above it, on pixels") {
