@@ -544,6 +544,327 @@ named house's own lights still do not change at all, on any of these
 frames, at any hour -- that is `HouseKind::Dark` and `litAllNight` working,
 not a bug to chase in a third pass.
 
+### Third pass (2026-09-25, the record critic's four)
+
+The record critic on e3e7a600 gave the halo 7 and the night windows 6 with
+four notes: the lantern's glass was the dullest part of the lamp and the
+pool died by eight metres; the timber pane's two stops were inverted with
+a seam between them, tan not amber; the boards round a lit pane stayed
+black; and the roof at two and at five were the same picture, so the rising
+window never relit. Here is what each turned out to be and what changed.
+Code is `render/lighting.{hpp,cpp}`, `render3d/world_scene.cpp`,
+`render3d/static_pieces.cpp`, `render3d/rl_backend.cpp`, `render3d/scene.cpp`,
+`render3d/actor_instances.cpp`; knobs and the glass cut in
+`content/raws/world3d/docks-pieces.json`.
+
+**The lamp's glass.** The camp lantern the Docks hang
+(`SM_Prop_Camp_Lantern_01`) is ONE opaque textured mesh. Its glass is a
+swatch of the Dungeon Realms atlas, not a material, so no sub-mesh was ever
+classed as glass and `kLampGlassNight` never reached it: the "hot glass after
+dark" of the second pass tinted nothing, and the glass drew as the same tan
+swatch the dome over it wears, dimmer than the copper bars. The catalogue
+names the glass now -- `glassBand` [-1.0, -0.8] in the model's own Y and
+`glassUv` the atlas patch its vertices sample (measured off the glTF: the
+lower body's swatch sits at v 0.7470..0.7475, the cap's at 0.7476..0.7480) --
+and the adapter cuts those triangles into a glass mesh of their own at load
+(`applyGlass`, `rl_backend.cpp`), de-indexed, with a ramp in its vertex
+colours that is white round the wick and eases to a deep amber at the head.
+Glass draws on the backend's white texture in the pane tint VERBATIM, never
+through the material's base colour, so both rasterizers give the same
+near-white amber (255/240/205). The metal is sky-lit and its own pool now,
+capped at half after dark (`kLampMetalNightCap`), so the cap never
+out-values the glass at any range; by day it keeps the tint it always had.
+The kit window's real glass material gets the same ramp at load, hot at the
+sill.
+
+**The pool.** The baked field is the light law's number and the 2D pass's:
+`P * (1 - d^2/R^2)^2` over four to five and a half tiles, and `pooledGlow()`
+then pulled the far field down again so a street did not come out at one
+value -- together a pool gone by four metres. The 3D pass has a field of its
+own now, `render::LampGlow::buildPool`, over the same lamps by the same
+accumulation (saturating union, weighted colour) under its own shape: an
+inverse-square core over the first metre plus a linear skirt that reaches
+nothing at ~8.5 tiles (`poolValueAt`, pinned in a test). Ambient at night is
+0.05; the skirt is still twice that at six tiles. Read by the chunk colour
+stage (`ChunkLighting::pool`), the piece relight and the bodies' tint
+(`ActorSceneParams::pool`) and by nothing else: the law reads the baked
+field, the 2D pass paints with it, the sim never knew either existed. The
+bodies took the law's RAW glow before -- nine tenths of white a tile from a
+lantern -- which is why the Creel urchin stood beside a lamp at night in his
+daylight coat. The halo disc grew with the pool, 1.5 m on a lantern and 1.2
+on a fire, its flat core held at the 0.24 m it was (`kHaloCoreFraction`
+0.16).
+
+**The pane.** One placement per hung window, drawn as `paneRampMesh()`
+(`scene.hpp`) in the pane tint -- `kDrawPaneRamp`, the halo's own mechanism:
+a unit quad in three rows, white at the sill, still nearly white at the knee
+(38% up), a deep amber multiplier at the head, fitted to the placement's
+span -- so the glass is hottest at the sill where the candle stands and eases
+to the head, in vertex colour, the same picture on GL and on rlsw. The two
+stacked bands and `paneCore` are gone. `litPane` is candle amber now,
+255/178/74, on every pane.
+
+**The spill.** The board module a hung window sits in is cut in two at the
+window's centre (the seam falls behind the frame), each half carrying the
+pane's household through `houseOf()` (`StaticPlacement::spill`, `spillAtB`),
+so the relight can add a candle-coloured emissive pool at the half's end AT
+the pane (`kSpillGlow`) and a quarter of it at the far end, under the same
+clamp everything else wears. One board lit at two ends could only wash flat;
+two halves blend outward from the window. It goes out with the pane.
+
+**The morning.** The rising branch was never broken. Probed on the shipped
+e3e7a600 exe with the catalogue alone: moving the rising window to half
+past midnight lit the roof vantage's candle pixels at two (RGB 181/141/84,
+the same value a late bedtime or an all-owl ward gives them), so the knobs
+reach `paneGlows()` and the relight honours the rise. What the roof vantage
+sees is THREE households, all of which drew rising hours past five under the
+4..6.5 window -- a sample of three, and the same three at two and at five.
+The window closes at 5.5 now (`houseRisingTo`), so two houses in three are
+up by five, and a test pins the rise the way the critic tried to read it:
+the ward's lit household panes through a real `Session` at eight, `skipToHour`
+to two, to five -- fewer at two than at five, fewer at five than at eight. On
+the shipped Docks that is 137 at eight, 36 at two, 133 at five under the
+3.5..5.25 window the third round settled on (97 under 4..5.5; of 148
+household panes; the named houses and the stores' watchman's lamps on top).
+
+**Tests** (`test_chunk_mesher.cpp`): the ramp mesh's rows and one ramp pane
+per opening (176 on the Docks, every one with both halves); the two halves
+flanking every lit timber pane warmer at the pane than at the module's end;
+the morning counts through a real session; the pool's curve, its reach past the law's field on the real
+Docks, and a body's tint within a tile and a half of a lantern against one
+ten tiles from any (86 Docks cells seven tiles from a lantern take the pool
+where the law's field is black); a lantern's glass out-valuing its metal after dark and
+the metal at its catalogue tint by day; the catalogue's glass cut on the
+hung lantern and on the ref the adapter reads.
+
+**Fix round one (the three critics on 0e072010: director 6, player 7,
+auditor 7).** What they found and what moved:
+
+- *The halo up close and in fog.* Inside two metres the metre-and-a-half
+  disc, floating toward the eye, laid one cream veil over cap, cage, glass
+  and whoever stood under the lamp; in fog its five-ring skirt showed its
+  facets once the veil lifted the background to grey, and lanterns went to
+  fog grey before the sacks beside them. The world scene fades the halo's
+  alpha with the eye's distance now (`kHaloNearGone`/`kHaloNearFull`,
+  `kHaloNearFloor`), takes half the fog's e-folding off it by distance
+  (`kHaloFogShare`), the fan has nine rings, and the adapter draws the halos
+  PAST the weather's veils so a glow is seen through a fog rather than
+  veiled with the wall behind it. Clear frames only see the fade.
+- *The spill is a light on the wall, not a board's tint.* Plaster windows
+  cast nothing and the timber spill stopped dead at a plank seam. It is a
+  map of cells now (`WorldScene::spill`, `buildSpill`): every pane that is
+  up lays `kSpillGlow` on its own wall cell and half of it on the two cells
+  along the wall and the street cell before it, rebuilt on the minute the
+  relight moves, read by the chunk colour stage (`ChunkLighting::spill`),
+  the piece relight (through `surfaceAt`), the bodies and the ground items.
+  A kit window on plaster casts it as a hung timber window does -- its
+  module, one run piece with the glass in the middle cell, takes three
+  quarters of its pane's own cell at both ends (`kSpillWindowModuleShare`),
+  since its cuts stand a tile and a quarter off the glass; a board half's
+  end at the module's cut shares the value with the module beyond it, so
+  nothing stops at the seam; the street cell took three quarters
+  then (`kSpillStreetShare`; the second round below re-spreads it). The map keys off the pane's own wall cell
+  (`StaticPlacement::paneX/paneY`, set by `houseOf()`), not a run piece's
+  first cut.
+- *The pool on the ground.* A grey cobble under the law's near-white
+  lantern colour came out a pale beige-grey. The pool has its own deeper
+  warmths (`kLanternPoolColour`, `kFirePoolColour`), a wider core (1.4
+  tiles at 0.7 share) and a peak a little over the law's (`kPoolPeakScale`,
+  under the pieces' 1.15 surface clamp; the chunks, bodies and items clamp
+  at one), and it gutters with the wind as the halos
+  do (`SkyState::haloScale`) -- a candle behind glass does not. Its field
+  normalises the lamps' hue to a PEAK of one, not the law's mean of one: the
+  law's field lifts a lantern's red to 1.25 of the intensity and clips it per
+  channel (as it always has; the 2D pass and the light law read those bytes
+  and they are unchanged), which on the pool would have flattened the lamp's
+  own cell against the tile beside it and turned it yellow-white.
+- *One amber at one value.* Every lit pane wore `litPane` exactly. A
+  household's candle draws its own strength off its lot now
+  (`kCandleSpread`, down to two thirds), per pane on a house lit all
+  night, so a frontage is a row of candles and not a strip.
+- *The rim ring's sawtooth.* The cut classed a triangle by its centroid, so
+  the octagonal ring where the glass meets the cap (y -0.818..-0.790, across
+  the band's edge) went half hot, half metal. A triangle is glass only when
+  EVERY vertex is in the band and on the patch; the ring is metal whole.
+- *Posts capped with no glass.* `hasLampGlass()` capped the lamp post's
+  whole body at half after dark with nothing hot on it. The post's glass is
+  named now (its pale swatch on the lamp head, y 2.25..2.65), and the cap
+  applies only to a lamp whose catalogue row cuts a glass.
+- *The software path and the cut metal.* The rebuilt metal mesh carried a
+  white colour array, which on the GL 1.1 path REPLACES the material colour
+  (`tinted()`): rlsw would have dropped the metal's tint and its cap. The
+  metal carries no colour array now; only glass does. An all-glass mesh
+  keeps its slot instead of leaving an empty one; the scene hash covers the
+  cut's fields; the dead `kPoolRadiusFloor` is gone.
+- *Ground items read the law's raw glow* (the rope beside the Gull's lamp
+  outshone the setts it lay on). They read the pool and the spill now, and a
+  self-lit item's cut glass is hot after dark and dark glass by day; the kit's
+  own carried lantern names the same cut as the hung one (the two rows share
+  a file, and the adapter's cache is by file).
+- *Also in this round, found by its auditor:* the spill scales by the
+  candle's own strength, so a two-thirds candle lays a two-thirds spill; and
+  the kit window module's ends took the pool at their cuts plus a share of
+  the pane's cell (0.45, in place of the cuts' own spill, never on top) --
+  a rule the third round retired again, see below.
+- *Tests.* A lit pane is read by `candlePane()` (the law's tint at the
+  house's strength, never dark glass); the spill map is pinned on the Docks
+  with masonry panes among the lit and a spread of strengths, and empty at
+  noon; the bodies are pinned against the same roster described without the
+  pool (the pool moves the tint of dozens and brightens those in a skirt);
+  every hung window has exactly two halves.
+
+Out of this lane, on the record from the same reports: the crosshair prompt
+fires through the Gull's roof; the scripted night section opens in daylight
+and `--demo-capture`/`--framedump` write HUD-only PNGs; urchins wear the
+watchman rig; the 02:00 crowd is the 22:00 crowd; cloned townswomen crowd a
+doorway.
+
+**Fix round two (the three critics on 702f0a48: director 6, player 5,
+auditor 5).** The first round's spill was a regression in clear weather and
+the halo's move past the veils put the lamps out in fog. What moved:
+
+- *The clamp keeps its hue.* Ambient + pool + candle was clamped per channel
+  before it multiplied a surface's tint, so a wall under a lantern
+  saturated its red first and went on taking green and blue: every lit
+  plaster in the ward came out olive, at noon luminance, with a hue seam
+  beside the Gull's lamp. `render::clampLight` scales the three channels
+  together by the brightest (the pieces, the chunks, the bodies and the
+  ground items all go through it), so a candle's light on a wall is a
+  candle's colour at any strength. Pinned: a piece at the clamp is never
+  bluer over red than its own tint.
+- *The spill is a third of what it was, and blended.* `kSpillGlow` 0.62 ->
+  0.34 on the pane's own cell, so the wall beside a window stays under the
+  pane that lights it (pinned); along the wall 0.45 of it at one tile and a
+  tail at two; out into the street more, since the light leaves through the
+  glass -- 0.9 on the cell before the window, half on its neighbours and the
+  row beyond, so a body talking under a lit window stands in it. The chunk
+  colour stage reads the map AT THE VERTEX as the mean of the four cells
+  that meet at its corner, so a plaster wall no longer breaks into slabs at
+  cell seams; a run piece's cuts already fall between cells.
+- *The veils write no depth.* The halos, drawn past the veils since round
+  one, were depth-tested against the fog shells round the eye and every
+  halo past the first shell was culled: in a fog the lamps went out before
+  the walls they lit. `rlDisableDepthMask` round the veils; the halos and
+  the bright glass are tested against the world alone.
+- *Bright glass through a fog.* A lit pane's or a lamp's glass is a light,
+  and a light is seen further into a fog than the wall round it. The world
+  scene puts the fog's share by the eye's distance into the pane's alpha
+  (`kHaloFogShare`, the halo's own rule) and the adapter draws such glass
+  once more past the veils at that alpha over its own veiled pixels
+  (`lateGlass`, `drawLateGlass`): hot at five metres, the fog's grey with a
+  warmth in it at twenty. 255 in clear air, where nothing changes.
+- *The fan is rounder.* Forty-eight segments, twelve rings, the flat core a
+  tenth of the span: the iso-alpha contours of a twenty-four-gon read as
+  straight edges on a veiled wall, and the core's own edge stood on the
+  plaster past the glass. The near fade reaches four metres now
+  (`kHaloNearFull`) with a floor of 0.08, so the cap is copper at two and
+  three metres and not cream.
+- *The rise comes forward.* `houseRisingFrom`/`To` 3.5 / 5.25: the fishers
+  are up by five, and the street at five is not the street at two.
+
+Declared, not built: the wind's dim on the pool is steady (a gutter in
+motion would want a per-frame relight; the relight runs on the minute); a
+kit window has no muntins and no room behind its glass (the Synty piece is
+a card; the ramp is what the card can carry).
+
+**Fix round three (the three critics on be4b5973: director 7, player 7,
+auditor 6).** Nothing broke the spell outright this round; what held it at
+seven and what moved:
+
+- *The fog's own edges.* The "halo rim" the player had reported three
+  rounds running, in the same place each time whatever the fan did, was
+  never the fan: it is where the weather lane's innermost fog shell (1.5 m
+  round the eye) cut the plaster above the Gull's door, a sixteen-percent
+  step of that shell's own alpha, and the line that slid across every near
+  pane as you walked was the same shell crossing the glass. Three thin
+  shells stand inside two metres now (0.7, 1.2, 1.8), then a run of 0.9 m
+  to about eight metres and a ladder growing by a tenth a shell beyond
+  (`kVeilRadii`, twenty-four shells, no step over a tenth of a night fog's
+  veil inside ten metres and only just at 9.9), forty-eight round, so each
+  cut is a small step on a curve; the weather's own test pins the count. A
+  first cut of this round at twenty-six shells 0.4 m apart blended the same
+  small alpha twenty-six times in eight bits and drifted the fogged alley
+  olive (the fourth round's player); at twenty-four with wider inner
+  spacings the drift is mostly gone -- the player's olive count fell from
+  7,770 pixels to none and red leads green on the alley wall again -- with
+  a lean of a level or two left on the near cobbles that shows at three
+  times saturation. Declared.
+- *No seam at a cut.* The kit window module's ends carried a share of the
+  pane's cell that its neighbours' ends did not, so every lit window on the
+  quay front stood on a panel a step brighter or darker than the next. The
+  module reads its cuts exactly as every run piece does now and the pool
+  round a window is the map's own footprint, wider and gentler (three tiles
+  along the wall, three out into the street, `kSpillSide*`/`kSpillOut*`,
+  `kSpillGlow` 0.30). Pinned: on the shipped Docks at ten, every pair of run
+  pieces meeting at a cut reads one light there, channel by channel, over
+  their own tints -- hundreds of pairs, no seam.
+- *The cap at three metres.* The near fade is cubic to five and a half
+  metres: a fifth of the disc at three, two fifths at four, full past five
+  and a half. The glass carries the lamp at those ranges; the disc the air
+  round it.
+- *The small hours.* A house lit all night keeps a light whatever the hour,
+  but the sim's own tavern has its hearth banked and its candles out by
+  five (the capture summary's gull=0), while its panes burned the evening's
+  full row -- and on a frontage that never goes dark, two o'clock was five
+  o'clock. From three in the morning until daylight takes every pane, a
+  house lit all night burns at `kLitHouseSmallHours` (0.55) of its
+  strength: the taproom banked and a watchman's candle. The hours are the
+  sim's tavern's own (`sim/tavern.hpp`: doors shut at two, the fire to
+  three and banked to ten, the doors shut to eleven), so two o'clock is
+  still the evening's row and the panes never come back up before first
+  light; the banking eases in over the three quarters of an hour before
+  three (`kSmallHoursEase`), not in one step on the minute, and nothing ends
+  it but first light. Households are untouched. Pinned at ten, two, three,
+  five and six.
+- *Also this round, by its auditor:* the late glass draws BEFORE the halos
+  (drawn after them it cut a pane-shaped hole in every glow) and only
+  where the fog's share is under 0.94 (`kLateGlassBelow` 240: a night fog
+  past a metre and a third; an overcast's trace only from eight and a half
+  metres out, where the halos over it make it moot); a light is red well
+  over blue (`r >= 80 && r > b + 40`), which admits every candle at any
+  strength and no dark pane, where a sum over 450 had left two thirds of
+  the candles out of the fog pass; and the colour a piece is drawn with is
+  scaled as one where it would clip at 255, while the chunks, the bodies
+  and the ground items clamp their light at one as one colour, since a
+  vertex colour or a model tint is clipped per channel by the draw. The
+  seam pin's tolerance is one rounding step of each side's tint; the hue
+  pin computes the colour the relight must give from the scene's own
+  fields; "goes out with the pane" is pinned at night; the near fade is
+  pinned.
+
+Declared, still: the wind's dim on the pool is steady; a kit window is a
+card; two men standing in the Whistling's own doorway at night are lit by
+nothing but its window's third tile of spill, and read dark.
+
+**THE RECORD ON 720f47f8 (2026-09-27): director 8, player 8, auditor 8**, the
+first round every hat put at the bar, after four fix rounds (6/7/7, 6/5/5,
+7/7/6, 8/7/7). Left on the record, declared and not built: the pool round a
+window is the map's footprint and the run piece holding the pane cannot
+peak at it (a vertical peak wants per-vertex light on kit pieces); a kit
+window is a card with no muntins and no room behind it; the wind's dim on
+the pool is steady; two men in the Whistling's doorway read dark; a lean
+of a level or two on the near cobbles in fog at three times saturation.
+Out of this lane, on the record from the same reports: the Gull's door and
+its interior stay lit and open all night while the sim shuts the tavern at
+two (the panes bank, the doorway does not); interaction prompts through
+geometry (a rope on the door lantern, a mouse on the plaster, the bartender
+through the roof); the scripted night section opening in daylight and
+--demo-capture writing HUD-only frames; urchins in the watchman's rig; the
+02:00 crowd; townswomen piled in a doorway; checker noise on the strapped
+posts. The wording of this pass was corrected once more after the fifth
+round's auditor (the shells' spacing, a dead branch in the small hours,
+the late-glass comment's numbers).
+
+**Reshoot.** `dist\granadad.exe --smoke=0 --hold --scale=1 --weather=clear --time=HH --spawn=X,Y,Z --yaw=DEG [--pitch=DEG] [--fov=DEG] --screenshot=path.png`
+
+| vantage | flags | what to see |
+|---|---|---|
+| the lamp, arm's length | `--time=22 --spawn=152,64,19 --yaw=180 --pitch=15 --fov=45` | the glass the brightest thing on the lamp, white-amber, hottest a third of the way up; the dome and bars over it dark copper; the plaster behind pooled, not washed |
+| the lamp from eight tiles | `--time=22 --spawn=152,56,19 --yaw=180 --pitch=6 --fov=60` | the lamp still a bright point over its cap; the pool on the wall and cobbles readable out to the eye's own feet |
+| the cobbles under it | `--time=22 --spawn=152,63,19 --yaw=180 --pitch=-40 --fov=70` | a warm pool on the setts that fades, not a disc with an edge; a body crossing it lit by it |
+| the Gull's frontage | `--time=22 --spawn=145,58,19 --yaw=160 --pitch=0 --fov=40` | every timber pane one ramp, hot sill to deep-amber head, no seam; the boards either side warm at the frame and dark at the module's end |
+| the overview from the roof | `--time=20/23/2/5 --spawn=153,72,21 --yaw=225 --pitch=-18` | lamps as pools with skirts that carry; the roofscape's panes thinning to two and picking up by five |
+
 ## The jambs, 2026-09-16
 
 The critic's line: the Gull's door posts are metre-square 3 m pillars. They
@@ -969,7 +1290,7 @@ and population digests, and two sessions under one fog draw one frame.
 
 How the fog is drawn: the 3D pass has never had a fog shader (rlsw has no
 shader at all), so the weather's fog is geometry. Nested translucent shells
-round the eye, nineteen of them out to fifty-six tiles and closer together
+round the eye, nineteen of them then (twenty-four since the night-light lane's third pass, three of them inside two metres; see that pass) out to fifty-six tiles and closer together
 near the eye, each coloured the fog's colour below the horizon and the sky's
 own above it, each with the alpha of the fog between it and the one inside,
 drawn last in the pass far to near with the depth test on. Whatever stands

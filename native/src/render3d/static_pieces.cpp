@@ -109,10 +109,16 @@ constexpr int kWaterMaxDepth = 7;
 /// the critic could find no light behind, standing next to lanterns on 1.1.
 /// The fan's hot core is a fraction of the span (kHaloCoreFraction), so the
 /// fire still burns in its cage at whatever size the cage is.
-constexpr float kLanternFlameWidth = 1.1F;
-constexpr float kLanternFlameHeight = 1.1F;
-constexpr float kFireFlameWidth = 0.9F;
-constexpr float kFireFlameHeight = 0.9F;
+///
+/// THIRD PASS (the night-light critic): the surface pool carries to eight
+/// tiles now (render::LampGlow::buildPool), so the disc grew with it --
+/// 1.5 m on a lantern, 1.2 on a fire -- and kHaloCoreFraction (scene.hpp)
+/// came down so the flat core stayed the 0.24 m it was: a longer skirt over
+/// a longer pool, the same flame inside it.
+constexpr float kLanternFlameWidth = 1.5F;
+constexpr float kLanternFlameHeight = 1.5F;
+constexpr float kFireFlameWidth = 1.2F;
+constexpr float kFireFlameHeight = 1.2F;
 /// Where the flame sits in a lantern hung from `lift` (the lantern's origin
 /// is the top of its hanging rod, 0.4 above the ring; the cap is 0.7 to 0.8
 /// down and the glass 0.8 to 1.0, so the flame sits at 0.9 -- at 0.66 the
@@ -166,9 +172,6 @@ constexpr float kTimberPaneHalfWidth = 0.34F;
 constexpr float kTimberPaneSill = 0.19F;
 constexpr float kTimberPaneHeight = 0.79F;
 constexpr float kTimberPaneOut = -0.02F;
-/// THE CRITIC'S SECOND: the sill-side share of the pane's own height that
-/// draws as the hot core (world_scene.cpp's kPaneEdgeLit is the rest).
-constexpr float kPaneCoreFraction = 0.45F;
 /// The door leaf hung open against the reveal: its inner face four
 /// centimetres BEHIND the post's inner-face plane (negative), which is
 /// three behind the plaster reveal it lies on (kRevealFlush below), so the
@@ -894,6 +897,8 @@ private:
         p.insideX = ix;
         p.insideY = iy;
         p.insideZ = z;
+        p.paneX = wx;
+        p.paneY = wy;
         std::int32_t ax = 0;
         std::int32_t ay = 0;
         if (!roomAnchor(ix, iy, z, ax, ay)) {
@@ -2095,15 +2100,44 @@ private:
                     jambEndRetract_[cellKey(r.z, r.side, r.lastX, r.lastY)] =
                         (thinPlaster && spec == &piece) ? kCutOverlap : kBoxRetract;
                 }
-                facePiece(r, role, *spec, qa0, qa1, o);
+                // A hung window on a timber storey, on the same rhythm.
+                const bool hung = timberWindowOk && rhythm && roomBehind;
+                if (hung && role == PieceRole::WallTimber) {
+                    // THE SPILL (the night-light critic's third): the
+                    // boards either side of a lit pane catch its candle.
+                    // The module is cut in two at the window's centre --
+                    // the seam falls behind the frame -- so each half has
+                    // an end AT the pane, which the relight can warm with
+                    // a small pool that dies toward the module's ends
+                    // (StaticPlacement::spill, world_scene.cpp). One board
+                    // lit at two ends could only wash flat.
+                    const float mid = 0.5F * (pa0 + pa1);
+                    FaceOpts before = o;
+                    before.light = runLight(r.firstX, r.firstY, dx, dy, cells, pa0 - r.a0, mid - r.a0,
+                                            r.gapA0, false);
+                    facePiece(r, role, *spec, qa0, mid, before);
+                    out_.placements.back().spill = true;
+                    out_.placements.back().spillAtB = true;
+                    houseOf(out_.placements.back(), lx, ly, lx - kSideDx[r.side], ly - kSideDy[r.side],
+                            r.z);
+                    FaceOpts after = o;
+                    after.light = runLight(r.firstX, r.firstY, dx, dy, cells, mid - r.a0, pa1 - r.a0,
+                                           false, r.gapA1);
+                    facePiece(r, role, *spec, mid, qa1, after);
+                    out_.placements.back().spill = true;
+                    out_.placements.back().spillAtB = false;
+                    houseOf(out_.placements.back(), lx, ly, lx - kSideDx[r.side], ly - kSideDy[r.side],
+                            r.z);
+                } else {
+                    facePiece(r, role, *spec, qa0, qa1, o);
+                }
                 if (role == PieceRole::WallWindow) {
                     // The pane knows its household: the light law reads it
                     // off the hour at relight.
                     houseOf(out_.placements.back(), lx, ly, lx - kSideDx[r.side], ly - kSideDy[r.side],
                             r.z);
                 }
-                // A hung window on a timber storey, on the same rhythm.
-                if (timberWindowOk && rhythm && roomBehind) {
+                if (hung) {
                     const float mid = 0.5F * (pa0 + pa1);
                     const float out = o.standoff + timber->thickness + timberWindow->standoff;
                     const Vec3 at{r.baseX + kTangentX[r.side] * mid + kNormalX[r.side] * out,
@@ -2125,37 +2159,30 @@ private:
                     // set in its opening, a hair in front of its panels,
                     // and it is the pane that carries the household.
                     //
-                    // THE CRITIC'S SECOND: never one quad but two, stacked
-                    // on one seam and never overlapping -- the sill-side
-                    // kPaneCoreFraction of the opening (paneCore) and the
-                    // head-side rest, so a relight (world_scene.cpp) can
-                    // tint them apart, a hotter core low and a cooler
-                    // glass high, without a shader or a second asset. Both
-                    // bands carry the same household off the same cell.
+                    // ONE QUAD WITH A RAMP (the night-light critic: the two
+                    // stacked bands read inverted, with a seam). The
+                    // adapter draws paneRampMesh() (scene.hpp) over this
+                    // placement's local span instead of the thin wall's own
+                    // mesh -- kDrawPaneRamp, the halo's own mechanism -- so
+                    // the glass is hottest at its sill and eases to its
+                    // head in vertex colour, the same on both rasterizers.
                     if (timberPane != nullptr) {
-                        const float coreHeight = kTimberPaneHeight * kPaneCoreFraction;
-                        FaceOpts core;
-                        core.frontOut = true;
-                        core.standoff = out + kTimberPaneOut;
-                        core.yBase = o.yBase + kTimberWindowLift + kTimberPaneSill;
-                        core.height = coreHeight;
-                        core.light = cellLight(lx, ly);
+                        FaceOpts pane;
+                        pane.frontOut = true;
+                        pane.standoff = out + kTimberPaneOut;
+                        pane.yBase = o.yBase + kTimberWindowLift + kTimberPaneSill;
+                        pane.height = kTimberPaneHeight;
+                        pane.light = cellLight(lx, ly);
                         facePiece(r, PieceRole::PaneTimber, *timberPane, mid - kTimberPaneHalfWidth,
-                                  mid + kTimberPaneHalfWidth, core);
-                        out_.placements.back().paneCore = true;
-                        houseOf(out_.placements.back(), lx, ly, lx - kSideDx[r.side],
-                                ly - kSideDy[r.side], r.z);
-
-                        FaceOpts edge;
-                        edge.frontOut = true;
-                        edge.standoff = out + kTimberPaneOut;
-                        edge.yBase = core.yBase + coreHeight;
-                        edge.height = kTimberPaneHeight - coreHeight;
-                        edge.light = cellLight(lx, ly);
-                        facePiece(r, PieceRole::PaneTimber, *timberPane, mid - kTimberPaneHalfWidth,
-                                  mid + kTimberPaneHalfWidth, edge);
-                        houseOf(out_.placements.back(), lx, ly, lx - kSideDx[r.side],
-                                ly - kSideDy[r.side], r.z);
+                                  mid + kTimberPaneHalfWidth, pane);
+                        StaticPlacement& glass = out_.placements.back();
+                        glass.mode = kDrawPaneRamp;
+                        glass.instance.mode = kDrawPaneRamp;
+                        glass.instance.gradientFrom = 0.0F;
+                        glass.instance.gradientTo = timberPane->width;
+                        glass.instance.gradientFromZ = 0.0F;
+                        glass.instance.gradientToZ = timberPane->height;
+                        houseOf(glass, lx, ly, lx - kSideDx[r.side], ly - kSideDy[r.side], r.z);
                     }
                 }
             }
@@ -4256,6 +4283,23 @@ StaticCatalogue StaticCatalogue::fromJson(std::string_view json) {
                 spec.scale = floatOf(row, "scale", 1.0F);
                 spec.tint = tintFromJson(row.contains("tint") ? row["tint"] : nlohmann::json(), Rgba8{});
                 spec.maxDistance = floatOf(row, "maxDistance", 64.0F);
+                // The glass cut: [lo, hi] in local Y and [u0, u1, v0, v1]
+                // in the atlas, both or neither.
+                if (row.contains("glassBand") && row["glassBand"].is_array() &&
+                    row["glassBand"].size() == 2 && row.contains("glassUv") &&
+                    row["glassUv"].is_array() && row["glassUv"].size() == 4) {
+                    const nlohmann::json& band = row["glassBand"];
+                    const nlohmann::json& uv = row["glassUv"];
+                    if (band[0].is_number() && band[1].is_number() && uv[0].is_number() &&
+                        uv[1].is_number() && uv[2].is_number() && uv[3].is_number()) {
+                        spec.glassBandLo = band[0].get<float>();
+                        spec.glassBandHi = band[1].get<float>();
+                        spec.glassU0 = uv[0].get<float>();
+                        spec.glassU1 = uv[1].get<float>();
+                        spec.glassV0 = uv[2].get<float>();
+                        spec.glassV1 = uv[3].get<float>();
+                    }
+                }
                 spec.core = floatOf(row, "core", 0.0F);
                 spec.square = row.value("square", false);
                 out.pieces_.push_back(std::move(spec));
@@ -4292,6 +4336,23 @@ StaticCatalogue StaticCatalogue::fromJson(std::string_view json) {
             spec.pitch = floatOf(row, "pitchDegrees", 0.0F) * (kPi / 180.0F);
             spec.scale = floatOf(row, "scale", 1.0F);
             spec.maxDistance = floatOf(row, "maxDistance", 32.0F);
+            // The glass cut, the same as a placed piece's: a self-lit item
+            // sharing a lamp's file names its glass too.
+            if (row.contains("glassBand") && row["glassBand"].is_array() &&
+                row["glassBand"].size() == 2 && row.contains("glassUv") &&
+                row["glassUv"].is_array() && row["glassUv"].size() == 4) {
+                const nlohmann::json& band = row["glassBand"];
+                const nlohmann::json& uv = row["glassUv"];
+                if (band[0].is_number() && band[1].is_number() && uv[0].is_number() &&
+                    uv[1].is_number() && uv[2].is_number() && uv[3].is_number()) {
+                    spec.glassBandLo = band[0].get<float>();
+                    spec.glassBandHi = band[1].get<float>();
+                    spec.glassU0 = uv[0].get<float>();
+                    spec.glassU1 = uv[1].get<float>();
+                    spec.glassV0 = uv[2].get<float>();
+                    spec.glassV1 = uv[3].get<float>();
+                }
+            }
             spec.selfLit = row.value("selfLit", false);
             spec.tint = tintFromJson(row.contains("tint") ? row["tint"] : nlohmann::json(), Rgba8{});
             out.pieces_.push_back(std::move(spec));
@@ -4418,9 +4479,18 @@ std::vector<StaticPieceRef> StaticCatalogue::pieceRefs() const {
     std::vector<StaticPieceRef> refs;
     refs.reserve(pieces_.size());
     for (const PieceSpec& spec : pieces_) {
+        StaticPieceRef ref;
+        ref.file = spec.file;
+        ref.glassBandLo = spec.glassBandLo;
+        ref.glassBandHi = spec.glassBandHi;
+        ref.glassU0 = spec.glassU0;
+        ref.glassU1 = spec.glassU1;
+        ref.glassV0 = spec.glassV0;
+        ref.glassV1 = spec.glassV1;
         // A squared shaft's half section, in the mesh's own metres.
         const float core = spec.core > 0.0F ? spec.core : spec.width;
-        refs.push_back(StaticPieceRef{spec.file, spec.square ? 0.5F * core : 0.0F});
+        ref.squareHalf = spec.square ? 0.5F * core : 0.0F;
+        refs.push_back(std::move(ref));
     }
     return refs;
 }
@@ -4449,6 +4519,12 @@ std::uint64_t StaticCatalogue::digest() const noexcept {
         h.mixU8(static_cast<std::uint8_t>(spec.across ? 1 : 0));
         h.mixU8(static_cast<std::uint8_t>(spec.selfLit ? 1 : 0));
         h.mixU8(static_cast<std::uint8_t>(spec.twoSided ? 1 : 0));
+        h.mixF32(spec.glassBandLo);
+        h.mixF32(spec.glassBandHi);
+        h.mixF32(spec.glassU0);
+        h.mixF32(spec.glassU1);
+        h.mixF32(spec.glassV0);
+        h.mixF32(spec.glassV1);
         h.mixF32(spec.lift);
         h.mixF32(spec.yawOffset);
         h.mixF32(spec.scale);

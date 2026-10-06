@@ -49,15 +49,18 @@
 
 #include <cstdint>
 #include <string_view>
+#include <map>
 #include <vector>
 
 #include "granadad/render3d/scene.hpp"
 #include "granadad/sim/actor.hpp"
+#include "granadad/render/lighting.hpp"
 #include "granadad/sim/ward_actors.hpp"
 
 namespace granadad::render {
 class Session;
 struct Camera;
+class LampGlow;
 }  // namespace granadad::render
 
 namespace granadad::render3d {
@@ -265,6 +268,16 @@ struct ActorSceneParams {
     /// Bodies inside this radius are skinned (animated); outside they draw
     /// in a rest pose. The software fog's e-folding distance, roughly.
     float skinDistance = 24.0F;
+    /// THE SURFACE POOL (render::LampGlow::buildPool; WorldScene::pool()):
+    /// what the lamps put on a body standing in their light, the same
+    /// number the walls and the cobbles round it wear. Null (a scene with
+    /// no pool) falls back to the law's own glow shaped by pooledGlow(),
+    /// the way the pieces do.
+    const render::LampGlow* pool = nullptr;
+    /// THE SPILL (WorldScene::spill): a lit pane's candle on the cells round
+    /// it, so a body talking under a lit window is not a silhouette against
+    /// it. Null means none.
+    const std::map<std::uint64_t, render::Rgb>* spill = nullptr;
 };
 
 /// The instances for one frame: every visible ward body and every present
