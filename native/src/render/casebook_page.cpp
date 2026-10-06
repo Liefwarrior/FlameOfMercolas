@@ -136,15 +136,20 @@ inline constexpr int kIndicatorRows = 1;
 /// twenty-nine-row list into as many columns as the window affords; this list is
 /// twelve rows at its longest and fits one column at every size, so there is
 /// nothing for a wider master to buy. What the share HAS to do is hold the row
-/// whole at the resolution with the FEWEST cells across, which is the biggest
-/// window: hudMinorScale steps up with height, so 1920x1080 has 74 interior
-/// cells where 960x540 has 94. Half of 74 is 37 cells, and the widest row this
-/// list can build -- a one-cell key, a twelve-cell short name and a twenty-cell
-/// place -- wants 36. One cell of headroom, and a case pins it at all five
-/// capture sizes so a longer authored `short` goes red here instead of arriving
-/// clipped on somebody's screen. It is also the number the DETAIL pane needs:
-/// half leaves it 34 cells at 1920x1080, which is what a nine-cell label column
-/// and a twenty-three-cell value (THE NIGHT-SOUP DISCIPLE) want.
+/// whole at the resolution with the FEWEST cells across. That used to be the
+/// biggest window -- hudMinorScale stepped up faster than the height, so
+/// 1920x1080 had 74 interior cells where 960x540 has 94 -- and the share was
+/// judged against 74: half of it is 37 cells, and the widest row this list can
+/// build -- a one-cell key, a twelve-cell short name and a twenty-cell place --
+/// wants 36. One cell of headroom, and a case pins it at all five capture sizes
+/// so a longer authored `short` goes red here instead of arriving clipped on
+/// somebody's screen. hudMinorScale is the smaller of height/240 and width/425
+/// now and no window at least 425 px wide deals fewer than 83 interior cells
+/// (1280x720 deals 83, 1920x1080 and 1920x1200 94), so the judgement holds
+/// with room to spare. The number the DETAIL pane needs is
+/// unchanged too: half of 74 leaves it 34 cells, which is what a nine-cell
+/// label column and a twenty-three-cell value (THE NIGHT-SOUP DISCIPLE) want,
+/// and every real window now deals it more.
 inline constexpr int kMasterShare = 50;
 inline constexpr int kMinMasterCells = 22;
 /// Thirty cells is a wrapped paragraph that still reads. Below it the split
@@ -169,12 +174,12 @@ inline constexpr int kLeadPageRows = 8;
 ///
 /// It is not a nicety. The nav list's widest key is `LEFT RIGHT` (ten cells)
 /// and drawOptionList sizes every column off the widest entry, so four columns
-/// want eighty-six cells -- which 960x540 has (94) and 1920x1080 does not (74,
-/// because hudMinorScale steps up with height and the biggest window is the
-/// narrowest in cells). A one-row band at 1920 dropped the fourth entry
-/// silently, and the fourth entry is the key that CLOSES THE BOOK. A footer
-/// that quietly stops naming the way out is worse than a footer that spends a
-/// second row.
+/// want eighty-six cells -- which 960x540 has (94) and 1280x720 does not (83;
+/// 1920x1080 had 74 under the old height/180 - 1 register, and deals 94 now
+/// that hudMinorScale is height/240). A one-row band at 1920 dropped the
+/// fourth entry silently, and the fourth entry is the key that CLOSES THE
+/// BOOK. A footer that quietly stops naming the way out is worse than a footer
+/// that spends a second row.
 [[nodiscard]] std::vector<PanelOption> navOptionsFor(const CasebookPageState& state) {
     // THE RAISED (TUTOR) FORM -- the band is PLANNED against this so its
     // geometry holds still while the verb words fade (UI-EA-SPEC sec. 2); at
@@ -279,7 +284,7 @@ inline constexpr int kMinBodyRows = 8;
 [[nodiscard]] Composition compose(int frameWidth, int frameHeight, int navRows,
                                   int gridRowsOverride = -1, int gridCellsOverride = -1) {
     Composition out;
-    out.metric = panelMetric(frameHeight);
+    out.metric = panelMetric(frameWidth, frameHeight);
     const int cells = gridCellsOverride > 0 ? gridCellsOverride : out.metric.cellsIn(frameWidth);
     const int full = out.metric.rowsIn(frameHeight);
     const int rows = gridRowsOverride > 0 ? gridRowsOverride : full;
@@ -713,8 +718,9 @@ void drawLeadDetail(Framebuffer& target, const PanelRect& detail, const PanelMet
 
     // THE PROSE, IN TWO BLOCKS, AND THE CONSEQUENCE IS THE ONE THAT IS PINNED.
     //
-    // A CAPTURE FOUND THIS. At 1920x1080 the detail pane holds fewer ROWS than
-    // at 960x540 (hudMinorScale steps up with height), the clue and its
+    // A CAPTURE FOUND THIS. At 1920x1080 the detail pane held fewer ROWS than
+    // at 960x540 (30 against 38, under the old height/180 - 1 register; it is
+    // 960x540's own grid now), the clue and its
     // paragraph wrapped to eight lines, and drawProse simply stopped at the
     // bottom of the rect -- so `• OPENED THE LEDGER` was not drawn at all. That
     // is this whole pass's own defect reintroduced one pane deeper: a lead that

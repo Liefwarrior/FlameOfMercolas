@@ -1680,6 +1680,10 @@ public:
     /// draws with, and the one a case checking "snapped, not mid-ease" has
     /// to read -- see showQuickBar()'s own header.
     [[nodiscard]] float quickBarFadeValue() const noexcept { return quickBarAnim_.value(); }
+    /// THE CELLS PASS: the quick slot whose crafting OR item is the one in the
+    /// hand, -1 for none -- the strip's inverted cell, read off the one place
+    /// so a case can pin it without a screenshot.
+    [[nodiscard]] int equippedQuickSlot() const noexcept;
 
     // --- the Law of Earned Text (UI-EA-SPEC sec. 2, LANE HUD) ----------------
     //

@@ -650,7 +650,7 @@ void drawRouteCaption(Framebuffer& target, const std::string& caption, float alp
     if (alpha <= 0.01F || caption.empty()) {
         return;
     }
-    const PanelMetric metric = panelMetric(target.height());
+    const PanelMetric metric = panelMetric(target.width(), target.height());
     const PanelInk& ink = panelInk();
     const int cells = std::min(static_cast<int>(caption.size()),
                                std::max(8, metric.cellsIn(target.width()) - 4));
@@ -683,7 +683,7 @@ void drawRouteCard(Framebuffer& target, const std::string& line, const std::stri
     if (alpha <= 0.01F || line.empty()) {
         return;
     }
-    const PanelMetric metric = panelMetric(target.height());
+    const PanelMetric metric = panelMetric(target.width(), target.height());
     const PanelInk& ink = panelInk();
     const PanelMetric big{metric.scale * 2};
     const int titleCells = static_cast<int>(line.size());

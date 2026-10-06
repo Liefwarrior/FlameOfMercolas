@@ -346,7 +346,7 @@ std::vector<TopicRow> topicRowsFor(const std::vector<std::string>& topics, int p
 // sight. See the header on the declaration for why it is public.
 TopicLayout dialogueTopicLayout(const DialogueViewState& state, int width, int height) {
     TopicLayout layout;
-    const PanelMetric metric = panelMetric(height);
+    const PanelMetric metric = panelMetric(width, height);
     const BandGeometry geometry = bandGeometryFor(metric, width, height);
     if (!geometry.usable) {
         return layout;
@@ -447,7 +447,7 @@ TopicListGeometry dialogueTopicListGeometry(const DialogueViewState& state, int 
         // than the topic list in the band. A pointer there gets "modal".
         return out;
     }
-    const PanelMetric metric = panelMetric(height);
+    const PanelMetric metric = panelMetric(width, height);
     out.metric = metric;
     const BandGeometry geometry = bandGeometryFor(metric, width, height);
     if (!geometry.usable) {
@@ -569,7 +569,7 @@ void drawDialogue(Framebuffer& target, const DialogueViewState& state) {
     if (fade <= 0.0F) {
         return;
     }
-    const PanelMetric metric = panelMetric(target.height());
+    const PanelMetric metric = panelMetric(target.width(), target.height());
     const CentreRect centre = hudCentreRect(target.width(), target.height());
     const Rgb accent = state.attitude.empty() ? kTopicPicked : attitudeInk(state.attitude);
 
@@ -581,7 +581,7 @@ void drawDialogue(Framebuffer& target, const DialogueViewState& state) {
     // purse's and stays theirs: a spoken line running under a two-digit hour
     // is unreadable and looks like a bug. ASKED, NOT GUESSED -- the HUD knows
     // how wide its own stack is.
-    const int reservedRight = hudTopRightReserve(target.height());
+    const int reservedRight = hudTopRightReserve(target.width(), target.height());
     const int topCells = std::max(4, metric.cellsIn(target.width() - reservedRight));
     const int topTextCells = std::max(1, topCells - 2);
     const int topRowsAvail = metric.rowsIn(centre.y0);

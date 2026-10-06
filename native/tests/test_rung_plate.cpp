@@ -829,7 +829,7 @@ TEST_CASE("the plate seats under the ribbon and the announce row, above the reti
             state.drift = 0.0F;
             const RungPlateBox box = rungPlateBox(width, height, state);
             REQUIRE(box.draws);
-            const PanelMetric metric = panelMetric(height);
+            const PanelMetric metric = panelMetric(width, height);
             // Inside the frame less a cell of margin a side, and centred.
             CHECK(box.x >= metric.cellW());
             CHECK(box.x + box.w <= width - metric.cellW());
@@ -901,7 +901,7 @@ TEST_CASE("the plate seats under the ribbon and the announce row, above the reti
             state.fade = 1.0F;
             const RungPlateBox box = rungPlateBox(320, 180, state);
             REQUIRE(box.draws);
-            const PanelMetric metric = panelMetric(180);
+            const PanelMetric metric = panelMetric(320, 180);
             CHECK(box.w >= metric.widthOf(static_cast<int>(text.prose.size()) + 4));
             CHECK(box.w >= metric.widthOf(static_cast<int>(text.head.size()) + 6));
             CHECK(box.x >= metric.cellW());

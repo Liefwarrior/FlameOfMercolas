@@ -129,8 +129,32 @@ int PanelMetric::rowsIn(int pixels) const noexcept {
     return pixels <= 0 ? 0 : pixels / cellH();
 }
 
-PanelMetric panelMetric(int frameHeight) noexcept {
-    return PanelMetric{std::max(1, hudMinorScale(std::max(1, frameHeight)))};
+PanelMetric panelMetric(int frameWidth, int frameHeight) noexcept {
+    return PanelMetric{
+        std::max(1, hudMinorScale(std::max(1, frameWidth), std::max(1, frameHeight)))};
+}
+
+std::string clipColumns(std::string_view label, int cells, int scale) {
+    const int fit = std::max(0, cells);
+    if (static_cast<int>(label.size()) <= fit) {
+        return std::string(label);
+    }
+    std::size_t cut = std::string_view::npos;
+    for (std::size_t at = label.find("  "); at != std::string_view::npos;
+         at = label.find("  ", at + 1)) {
+        if (static_cast<int>(at) > fit) {
+            break;
+        }
+        cut = at;
+    }
+    if (cut != std::string_view::npos && static_cast<int>(cut) * 4 >= fit * 3) {
+        std::string out(label.substr(0, cut));
+        while (!out.empty() && out.back() == ' ') {
+            out.pop_back();
+        }
+        return out;
+    }
+    return clipToWidth(label, PanelMetric{std::max(1, scale)}.widthOf(fit), std::max(1, scale));
 }
 
 int panelSeatY(int frameHeight, int panelHeight) noexcept {
@@ -1079,8 +1103,7 @@ void drawOptionListPlanned(Framebuffer& target, const PanelRect& rect, const Pan
             }
             at += plan.keyCells;
         }
-        const std::string label = clipToWidth(shout(option.label), metric.widthOf(plan.labelCells),
-                                              metric.scale);
+        const std::string label = clipColumns(shout(option.label), plan.labelCells, metric.scale);
         if (picked) {
             drawCellTextKnockout(target, rect, metric, at, row, label, kInk.knockout, alpha);
         } else {

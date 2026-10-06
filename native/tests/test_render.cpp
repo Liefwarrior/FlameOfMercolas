@@ -831,7 +831,11 @@ TEST_CASE("a bottom-band or top-right label does not run off the frame at an off
     // not 16:9 is a supported configuration this suite never exercised.
     //
     // At 220x640 the budget these rows should have -- width - 2*margin -- is
-    // well under what a 34-glyph label needs at this height's minor scale.
+    // well under what a 48-glyph label needs at this window's minor scale.
+    // (THE CELLS PASS: the register keys on the width as well as the height
+    // now, so a 220-wide window draws its reading rows at scale 1 where the
+    // height alone said 2; the label was 34 glyphs and no longer overflowed,
+    // which is the width rule doing its job, so the premise grew instead.)
     // Unclipped, a LEFT-anchored row (guildLabel) runs off the RIGHT edge
     // with no mark that anything was cut; a RIGHT-anchored one (rivalLabel,
     // and every row of the top-right stack) starts its draw at a negative x
@@ -840,10 +844,10 @@ TEST_CASE("a bottom-band or top-right label does not run off the frame at an off
     // "CONDEMNED  WANTED" reads before "HEAT 84").
     const int width = 220;
     const int height = 640;
-    const std::string longLabel(34, 'A');
+    const std::string longLabel(48, 'A');
 
     const int scale = hudScale(height);
-    const int minor = hudMinorScale(height);
+    const int minor = hudMinorScale(width, height);
     const int margin = 6 * scale;
     // The premise: this label genuinely does not fit the row's real budget,
     // or every check below is vacuous.
@@ -1577,7 +1581,7 @@ TEST_CASE("the aim prompt is the only thing in the play space, and it stays in i
         const int cy = height / 2;
         std::size_t textLeftOfCentre = 0;
         for (const auto& [x, y] : lit) {
-            if (y < cy - hudMinorScale(height) * 4 && x < cx) {
+            if (y < cy - hudMinorScale(width, height) * 4 && x < cx) {
                 ++textLeftOfCentre;
             }
         }

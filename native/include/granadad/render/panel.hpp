@@ -119,7 +119,7 @@ struct PanelMetric {
     [[nodiscard]] int heightOf(int rows) const noexcept { return rows * cellH(); }
 };
 
-/// The metric a composed screen at this frame height draws its BODY at:
+/// The metric a composed screen at this frame size draws its BODY at:
 /// hudMinorScale, the register hud.hpp already reserves for "reference material
 /// the player reads deliberately", which is what a panel full of rows is.
 ///
@@ -129,7 +129,7 @@ struct PanelMetric {
 /// rather than from a second, larger glyph size, because two glyph sizes on one
 /// surface means two cell grids, and two cell grids is how a column stops
 /// lining up with the rule above it.
-[[nodiscard]] PanelMetric panelMetric(int frameHeight) noexcept;
+[[nodiscard]] PanelMetric panelMetric(int frameWidth, int frameHeight) noexcept;
 
 /// WHERE A PAGE THAT ENDED AFTER ITS CONTENT SITS IN THE WINDOW.
 ///
@@ -688,6 +688,21 @@ struct OptionListStyle {
     bool showKeys = true;
 };
 
+/// A ROW OF COLUMNS LOSES ITS LAST COLUMNS WHOLE BEFORE IT LOSES A LETTER.
+///
+/// The Character tile's carried rows are composed as columns two spaces
+/// apart -- `KNIFE    8DR   4C  HELD  SLOT 3` -- and at the register's floor
+/// of 85 cells the tile's label column holds about 24 of those 32 glyphs.
+/// clipToWidth() cut that row inside its last word and marked it, and every
+/// critic of the cells pass read `HEL..` on every common monitor. This clip
+/// looks for the last double-space boundary that fits, and takes the row up
+/// to it, unmarked, when that keeps at least three quarters of the room:
+/// `KNIFE    8DR   4C  HELD` at 24, the tag gone whole and the strip left to
+/// say which slot. A row with no such boundary, or one that would throw a
+/// quarter of the room away, falls back to clipToWidth's marked cut. In
+/// cells of the given scale.
+[[nodiscard]] std::string clipColumns(std::string_view label, int cells, int scale);
+
 /// What drawOptionList worked out, without drawing anything.
 struct OptionListPlan {
     int columns = 1;
@@ -1099,12 +1114,18 @@ struct MasterDetail {
 [[nodiscard]] int masterDetailCellsFor(int masterShare, int minMasterCells, int masterCells,
                                        int detailCells) noexcept;
 
-/// THE NARROWEST INTERIOR A FULL-WIDTH PAGE EVER HAD, in cells. hudMinorScale
-/// steps up with the frame height, so THE BIGGEST WINDOW IS THE NARROWEST IN
-/// CELLS: 1920x1080 has 76 across and 74 inside the border, against 960x540's
-/// 94. Every held-height floor in this build -- CreationPage::bodyHoldRows,
-/// the casebook's kDetailHoldRows -- was judged against detail panes the
-/// full-width compositions dealt, and the narrowest of those was dealt HERE.
+/// THE NARROWEST INTERIOR A FULL-WIDTH PAGE EVER HAD, in cells. Under the
+/// register's old height/180 - 1 rule THE BIGGEST WINDOW WAS THE NARROWEST IN
+/// CELLS -- 1920x1080 dealt 76 across and 74 inside the border, against
+/// 960x540's 94 -- and every held-height floor in this build
+/// (CreationPage::bodyHoldRows, the casebook's kDetailHoldRows) was judged
+/// against detail panes dealt at THAT width. hudMinorScale is the smaller of
+/// height/240 and width/425 now, and no window at least 425 px wide deals
+/// fewer than 85 across (83 inside; 1920x1080 and 1920x1200 both deal 94), so
+/// from 1280x720 up the 74 is a floor with headroom at any aspect. 320x180
+/// deals 62, which panelMeasureCells' own floor handles. It stays at 74
+/// because the holds were judged against it, and a wider judgement would
+/// loosen every one of them for nothing.
 inline constexpr int kPanelNarrowestFullInteriorCells = 74;
 
 /// THE WIDTH A MEASURED PAGE HOLDS ITS DETAIL PANE AT, at least: what

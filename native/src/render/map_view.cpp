@@ -582,11 +582,12 @@ constexpr int kMapShares[] = {58, 62, 66};
 /// Thirty cells is a plan you can still read a quarter of the ward off.
 constexpr int kMinMapCells = 30;
 /// Twenty-two cells holds "STANDS ON" and a street name at a common value
-/// column. Deliberately no larger, because THE BIGGEST WINDOW IS THE NARROWEST
-/// IN CELLS -- hudMinorScale steps up with height, so 1920x1080 has 76 cells
-/// across where 960x540 has 96 -- and a floor that ignored that inversion
-/// loses the detail pane at the resolution with the most pixels in it, which is
-/// exactly what twenty-four did.
+/// column. Deliberately no larger: twenty-four lost the detail pane at
+/// 1920x1080 when the old height/180 - 1 register dealt that window just 76
+/// cells across (960x540 has 96), and though hudMinorScale is the smaller of
+/// height/240 and width/425 now and no window at least 425 px wide deals
+/// under 85, a floor that only survives at the sizes we happen to capture is
+/// not a floor.
 constexpr int kMinDetailCells = 22;
 
 /// The four verbs along the foot of the page, in their RAISED (tutor) form --
@@ -677,7 +678,7 @@ constexpr int kMinDetailCells = 22;
 
 MapPageLayout mapPageLayout(int frameWidth, int frameHeight, const DistrictMapState& state) {
     MapPageLayout out;
-    out.metric = panelMetric(frameHeight);
+    out.metric = panelMetric(frameWidth, frameHeight);
     const int cells = out.metric.cellsIn(frameWidth);
     const int rows = out.metric.rowsIn(frameHeight);
     if (cells < 12 || rows < 12) {
