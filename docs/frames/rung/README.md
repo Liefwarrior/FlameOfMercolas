@@ -337,8 +337,10 @@ governs. Their lists, taken whole:
 
 What is declared and left: the top rung at 320x180 (fifteen boxes, no
 drive) sits on its floor with no clearance to spend. (The squarer windows
-that clipped a 56-glyph row -- 1440x1080, 720x720 -- step their register
-down since the sixth pass; see below.)
+that clipped a 56-glyph row -- 1440x1080, 720x720 -- stepped their register
+down from the sixth pass; since the cells pass only 720x720 still does,
+1440x1080 takes the terminal register's own 3 and needs no step. See
+below.)
 
 ## Fifth pass, 2026-09-26
 
@@ -378,9 +380,11 @@ was left was the choreography round it and the frames under it.
 - **640x360 takes the glance register.** The one window where the terminal
   register has bottomed out at one pixel-scale under a HUD at two: the card
   was the smallest type on its own screen. It draws at the glance scale
-  there and only there (`rungPlateMetric`): a 64-cell frame at scale 2 is
-  exactly 640 pixels, and the band between the floor and the prompt holds
-  the card with a row to spare.
+  there (`rungPlateMetric`): a 64-cell frame at scale 2 is exactly 640
+  pixels, and the band between the floor and the prompt holds the card with
+  a row to spare. (This said "and only there". Since the cells pass the
+  minor scale also bottoms out at one by the WIDTH, so 720x720 takes the
+  glance scale too, 4, and steps down to 2; see the sixth pass.)
 - **The cause in the picture, and Cull's corner.** `standBackFrom` wants a
   clear line now -- every tile between the spot and the man floor, nobody
   of the Gull's roster on it -- before it settles for the sim's own line of
@@ -423,9 +427,11 @@ was left was the choreography round it and the frames under it.
   320x180 the stat stack's fourth row reaches two rows under it, so with
   seven pixels to share the card keeps five above its keyline and two
   below. A top-rung card at 320x180 (fifteen boxes; no drive) sits on the
-  floor over the stack's last row. At 1920x1080 a top-rung card drops its
-  tick row (the seat has no row for a seventh); 640x360 and 960x540 hold
-  both.
+  floor over the stack's last row. A top-rung card drops its tick row at
+  640x360 (the seat has no row for a seventh) and holds both at 960x540. At
+  1920x1080 it dropped it too, until the cells pass: the plate is scale 4
+  there now and holds both (see the last section). (This said 640x360 held
+  both; the test never agreed.)
 - **Six rows again, for the redline.** The director counted "name" in five
   rows and "Folk" in three, `wire.1` echoing `law.1`, two rows sharing a
   sentence shape; the player read `roofs.1` ("came down whole") standing
@@ -475,7 +481,11 @@ the card. Their lists, taken whole:
 - **The register follows the width too.** 1440x1080 and 720x720 clipped the
   row's last beat at the height's own register. `rungPlateMetric` steps a
   scale down until the frame holds the sheet's 64 cells -- the same move
-  640x360 makes upward -- and a case pins both windows whole.
+  640x360 makes upward -- and a case pins both windows whole. (That is the
+  height-only register. Since the cells pass the terminal register keys on
+  the width too, and 1440x1080 holds the 64 cells at its own 3, 96 cells,
+  with no step; 720x720 still steps, from the glance 4 through 3 (48 cells)
+  to 2 (72). The case pins each.)
 - **The slab leaves ahead of the words.** Over the evening sky the lift was
   a fogged pane of glass with grey words on it for a dozen steps; the slab's
   alpha is the fade squared now, so the words are the last thing left.
@@ -532,11 +542,17 @@ player would never see and a reader would. Everything below is on the gate.
   dismissal snaps the lift to nothing; the one-plate case pins a page opened
   three steps and closed, and the card never comes back.
 - **The rows step down to the plate's register, not the HUD's.** On a
-  square window (1440x1080, 720x720) the plate is a step under the minor
+  square window (1440x1080, 720x720) the plate was a step under the minor
   scale and the alert and voice rows were a tier above it while "stepped
   down". `HudState::alertStepScale` carries the plate's own scale; the
   drawn-amber twin runs at 1440x1080 too and pins six rows of the plate's
-  scale, and pins the rails' luminance under the words'.
+  scale, and pins the rails' luminance under the words'. (Since the cells
+  pass no window puts the minor scale over the plate's, so in play the row
+  stands down to the minor scale and the carried scale only bites when it
+  is handed in by hand: the row takes the smaller of the two. The twin
+  still runs both windows: six rows of the plate's scale, 6 * 2 = 12 at
+  960x540 and 6 * 3 = 18 at 1440x1080, where the plate's scale was 4 and it
+  read 24.)
 - **The slab reaches its right corner.** The right-hand diamonds fill their
   cell's four columns and the slab stopped a unit short of them. One unit
   wider; the geometry loop reads the slab's edges off pixels at every size.
@@ -574,8 +590,10 @@ player would never see and a reader would. Everything below is on the gate.
   warning test (two inline copies replaced); "three Watch sites" is four;
   `alertFadeNow` is documented as the ink's alpha as drawn; "half" is a
   quarter wherever the rails are described; the tick table in the code
-  comment says which windows drop it (960x540 holds both, 640x360 and
-  1920x1080 drop it topped, 320x180 always, 3840x2160 has no row); the
+  comment says which windows drop it (then: 960x540 holds both, 640x360 and
+  1920x1080 drop it topped, 320x180 always, 3840x2160 has no row; since the
+  cells pass: 960x540, 1280x720, 1920x1080, 2560x1440 and 3840x2160 hold
+  both, 640x360 drops it topped, 320x180 always); the
   320x180 seat is five above and two below, pinned as 36 and 31; `wire.1`
   is 55 glyphs and 61 cells, and the 56-glyph rows are `flame.1`, `flame.3`
   and `trade.1`; the trade and the law stand back after their rung and the
@@ -638,7 +656,8 @@ capped bark swelled when the plate left. Everything below is on the gate.
   rows nowhere near the up card's shadow).
 - **Centred to the half cell.** A head block or tick row whose spare cells
   were odd sat half a cell left of the card's axis (5 px at 960, 12.5 at
-  1920, on three of five tracks). Rows with an odd spare shift right half a
+  1920, on three of five tracks; 1920 is scale 4 now, a 20 px cell, so half
+  of one is 10). Rows with an odd spare shift right half a
   cell; pinned on pixels for all five heads at 960 (the ninth pass).
 - **The stood-down rows keep their rail clean.** A whole unit of pad put the
   glyphs' shadow row ON the rail (the director measured the dent under every
@@ -675,7 +694,9 @@ Declared and left, with reasons:
   prose to two rows at the HUD's size drops the tick and breaks the sheet's
   one-line rule at those windows; stepping the prompt and stat stack down
   for the hold touches every HUD row. Either is a design call for the HUD
-  lane, taken with the 640x360 glance rule. A chip.
+  lane, taken with the 640x360 glance rule. A chip. (The cells pass took
+  1440x1080 out of it: that window takes the terminal register's 3 now,
+  96 cells. 720x720 is still the stepped-down 2.)
 - **The frames over their cause.** The flame card over the Mission's wall,
   the law's red HOOD / TAKE, the trade's reticle on Wick Hempson: the fifth
   pass walked a ring round Cull's stool and found no tile where the prompt
@@ -725,7 +746,10 @@ level that folded into a card with no tick row was told nowhere.
   clears it -- and `standDown` clears it too. Pinned twice: the emitter's
   own state through a cap, two steps and the clear; and the HUD on pixels
   at 720x720 through a half fade, the name's glyphs six rows of the plate's
-  scale stood down and six of the minor scale otherwise. (The tenth pass
+  scale stood down and six of the minor scale otherwise. (Since the cells
+  pass 720x720's minor scale is 1, under the plate's 2, so both read six
+  rows there; the step-down itself is pinned at 960x540 with a register of
+  1 handed in by hand: twelve rows without it, six with.) (The tenth pass
   closed the seam the auditor found between the two: a cap now marks
   whatever line is present, so a bark whose hold ran out inside the lift
   stays small through its fade -- pinned at the emitter only. On the
@@ -752,8 +776,9 @@ level that folded into a card with no tick row was told nowhere.
   prose's at the midpoint.
 - **The tick folds in only where the card has a row for it.**
   `rungPlateTickFits` asks the layout at the session's frame size before
-  the fold; at 320x180 (and a topped card at 640x360 or 1920x1080) the level
-  queues as a toast behind the plate. Pinned at 320x180.
+  the fold; at 320x180 (and a topped card at 640x360; 1920x1080 did too
+  until the cells pass fitted its tick row) the level queues as a toast
+  behind the plate. Pinned at 320x180.
 - **The demand case says what it proves.** `rungPlateWanted()` on the
   landing step: the plate's own hold had not expired under the loop (the
   hold is cut the step after the demand is said, since the plate's step
@@ -771,12 +796,14 @@ level that folded into a card with no tick row was told nowhere.
   at the emitter and on the session, by the step.
 - **Declared and left**: the head block's height depends on the card's row
   count (the director: a card with a tick row seats its gold three pixels
-  higher at 960 and 29 at 1920, where the card grows upward rather than
+  higher at 960 and 29 at 1920 (scale 5 then; 1920 is 4 now, not
+  re-measured), where the card grows upward rather than
   down; two queued cards of different depth would make the gold hop -- the
   seat is the card's, and anchoring the head instead is a seat rule for
   the next pass); the full stop's weight pulling the prose rows a unit
   left of the slab's axis (two pixels at 960 on wire, roofs, law and
-  trade, one on flame; about five at 1920, two and a half on flame), the
+  trade, one on flame; about five at 1920, two and a half on flame: scale 5
+  then, not re-measured at 4), the
   slab itself half a unit
   left of the compass above it; the chips above unchanged.
 
@@ -867,10 +894,13 @@ two numbers were understated.
   ("S 45  BELOW"); wire shows the missing place line; law and trade the
   cut one ("SW 48  MISSIO.."), the trade's stealth row clear of the box by
   about thirty pixels throughout; the flame's is whole again. A chip
-  for the HUD lane, which lane/hud-cells (be82b92b, unmerged) may already
-  move: it makes the minor scale min(h/240, w/425) and rewrites this
-  card's `layoutFor` on `panelMetric(width, height)`, so the collision and
-  the square-window register both want re-judging on the merged exe.
+  for the HUD lane, which lane/hud-cells (be82b92b) may already move: it
+  makes the minor scale min(h/240, w/425) and rewrites this card's
+  `layoutFor` on `panelMetric(width, height)`. It is merged into this lane
+  now (26691c1b), and the square-window register is settled (1440x1080 is 3
+  with no step, 720x720 still 2); the collision itself still wants
+  re-judging on the merged exe, since no frame in this folder is shot at
+  either size.
 - **Declared, from the director's round seven**: the dim ink darker than
   the paling slab in the lift's last four steps (a polarity flip at 4x
   nobody reads at speed; fading the dim ink on the slab's curve is one
@@ -974,6 +1004,32 @@ alert row and a placement; the prose-centring clause's 1920 figure is two
 and a half on the flame; and the trade's early shape straddles the
 compass box's bottom rail, its place line staying cut after the coin
 readout goes.
+
+## 2026-10-06 -- the register's new law
+
+lane/hud-cells changed what the terminal register is, and the plate rides
+it. Pages size their cell grid off BOTH axes now (`panelMetric(width,
+height)`, `hudMinorScale` takes two arguments), so a bigger window never
+shows less, and `rungPlateMetric` calls the two-axis one. 320x180 and
+960x540 are the card they were (scale 1 and 2; the widest head on the
+longest row is 310x35 at 5,36 and 620x70 at 170,131, topped 310x42 at 5,31
+and 620x84 at 170,128), so the frames in this folder stand. 1920x1080 is the
+one that moved: scale 5 drops to 4, the card from 1550x175 at 185,245 to
+1240x140 at 340,263, topped from 1550x210 at 185,216 (no room left for the
+tick row) to 1240x168 at 340,256. That is why 1920 fits its tick row now: on
+the topped card the floor at 186, the card with its tick row at 196 and a
+cell of clearance at 28 come to 410 against a fence at 472, where scale 5
+made it 466 against 455 and the seat dropped the row. `rungPlateTickFits`
+says yes on every card at 960x540, 1280x720, 1920x1080, 2560x1440 and
+3840x2160, no on a topped card at 640x360, never at 320x180. The squarer
+windows: 1440x1080 holds its 64 cells at the terminal register's own 3 (96
+cells) and needs no step, and 720x720 still steps, 4 to 3 to 2. On a square
+window the plate's own register no longer does anything in play: the new law
+already keeps the minor scale at or under the plate's, so the rows that
+stand down to it stand down at the minor scale. The seat case pins 320x180,
+640x360, 960x540 and 1920x1080 at 1, 2, 2 and 4; the squarer case pins
+1440x1080 at 3 and 720x720 at 2. Pixel figures in the older passes that were
+taken at 1920x1080 were taken at scale 5, and none of them is re-measured.
 
 ## Not in this folder yet
 
