@@ -1593,3 +1593,95 @@ TEST_CASE("the ward's memory is in the hash the twin-run gate compares") {
     skilled.tavern().hash_into(d);
     CHECK(d.finished() != a.finished());
 }
+
+// ---------------------------------------------------------------------------
+// THE ALERT ROW: whose line it is
+// ---------------------------------------------------------------------------
+
+#include "granadad/render/session.hpp"
+
+namespace {
+
+namespace render = granadad::render;
+
+/// The director's own case for a report: upper, ASCII, nothing else.
+std::string shouted(std::string_view text) {
+    std::string out;
+    out.reserve(text.size());
+    for (const char c : text) {
+        out.push_back(c >= 'a' && c <= 'z' ? static_cast<char>(c - 'a' + 'A') : c);
+    }
+    return out;
+}
+
+}  // namespace
+
+TEST_CASE("a deed the director reports in the speaker's own name is said once on the alert row") {
+    // THE 2026-09-25 CRITIC'S D_law FRAME: "WATCHMAN CULL: WATCHMAN CULL TAKES
+    // THE DRINK." The director answers BUY HIM A DRINK not with the man's
+    // voice but with a report of the deed written in his name (dialogue.cpp,
+    // BuyDrinkFor -- and CATCHES YOUR WRIST, LOOKS AT YOU AND WAITS are the
+    // same shape), and the session's alert row put "<name>: " in front of
+    // every reply as if each were speech, so the name went on the row twice.
+    // Session composes the row through one helper now (spokenBy): a line in
+    // their voice rides under their name, a report in their name is said
+    // bare -- exactly as a rise's report already was.
+    render::SessionConfig config;
+    config.contentDir = content::contentDir();
+    config.timeOfDay = 20 * 3600;
+    render::Session session(config);
+    session.placeBodyAt(gull::kBartenderX, gull::kBartenderY + 1, gull::kGroundBand);
+    session.stepMany(MoveInput{}, kStepsPerSecond);
+    session.interact();
+    REQUIRE(session.talking());
+    const std::string who = session.tavern().dialogue().speaker().name;
+    REQUIRE_FALSE(who.empty());
+    // Their greeting is their voice: under their name, and under it once.
+    const std::string greeted = session.lastMessage();
+    REQUIRE(greeted.rfind(who + ": ", 0) == 0);
+    CHECK(greeted.find(who + ": ", who.size()) == std::string::npos);
+
+    // Stand them a drink. The reply is the director's report of it, in
+    // their name -- and the row says that name exactly once.
+    const std::vector<Topic>& topics = session.tavern().dialogue().topics();
+    std::size_t buy = topics.size();
+    for (std::size_t i = 0; i < topics.size(); ++i) {
+        if (topics[i].kind == TopicKind::BuyDrinkFor) {
+            buy = i;
+            break;
+        }
+    }
+    REQUIRE(buy < topics.size());
+    session.chooseTopic(buy);
+    const std::string said = session.lastMessage();
+    INFO("row: ", said);
+    CHECK(said == shouted(who) + " TAKES THE DRINK.");
+    CHECK(said.find(who + ": ") == std::string::npos);
+    CHECK(said.find(shouted(who) + ": ") == std::string::npos);
+    // The deed itself landed: the row is not the only proof of a purchase.
+    const Memory* memory =
+        session.tavern().dialogue().ledger().memoryOf(session.tavern().dialogue().speaker().actorId);
+    REQUIRE(memory != nullptr);
+    CHECK(memory->lastDeed == Deed::BoughtDrink);
+
+    // And their next answer in their own voice is under their name again:
+    // the helper tells a report from speech by the name, not by the topic.
+    // The clerk everybody has heard of is on every root list (#82 kept it
+    // there) and is answered out of the raws.
+    REQUIRE(session.talking());
+    const std::vector<Topic>& after = session.tavern().dialogue().topics();
+    std::size_t talk = after.size();
+    for (std::size_t i = 0; i < after.size(); ++i) {
+        if (after[i].kind == TopicKind::Quest) {
+            talk = i;
+            break;
+        }
+    }
+    REQUIRE(talk < after.size());
+    session.chooseTopic(talk);
+    const std::string spoken = session.lastMessage();
+    INFO("row: ", spoken);
+    CHECK(spoken.rfind(who + ": ", 0) == 0);
+    CHECK(spoken.find(who + ": ", who.size()) == std::string::npos);
+    CHECK(spoken != said);
+}

@@ -113,7 +113,7 @@
     "hood":         { "pack": "PolygonGeneric", "file": "SM_Gen_Prop_Sack_01.gltf", "scale": 0.42, "tint": [70, 64, 58], "maxDistance": 24 },
     "boots":        { "pack": "PolygonGeneric", "file": "SM_Gen_Prop_Sack_01.gltf", "scale": 0.5, "tint": [72, 56, 42], "maxDistance": 24 },
     "purse":        { "pack": "PolygonGeneric", "file": "SM_Gen_Prop_Sack_01.gltf", "scale": 0.3, "tint": [126, 96, 72], "maxDistance": 20 },
-    "lantern":      { "pack": "PolygonDungeonRealms", "file": "SM_Prop_Camp_Lantern_01.gltf", "lift": 1.17, "scale": 0.8, "selfLit": true, "tint": [255, 226, 172], "maxDistance": 40 },
+    "lantern":      { "pack": "PolygonDungeonRealms", "file": "SM_Prop_Camp_Lantern_01.gltf", "lift": 1.53, "scale": 0.45, "selfLit": true, "tint": [255, 226, 172], "maxDistance": 40 },
     "rope":         { "pack": "PolygonGeneric", "file": "SM_Gen_Prop_Rope_Knot_01.gltf", "scale": 3.4, "lift": 0.16, "tint": [200, 184, 150], "maxDistance": 32 },
     "picks":        { "pack": "PolygonGeneric", "file": "SM_Gen_Prop_Hook_01.gltf", "scale": 0.9, "lift": 0.06, "tint": [150, 150, 156], "maxDistance": 16 },
     "letter":       { "pack": "PolygonDungeonRealms", "file": "SM_Prop_Camp_Plank_01.gltf", "scale": 0.28, "lift": 0.02, "tint": [226, 216, 196], "maxDistance": 16 },

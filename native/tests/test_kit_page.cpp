@@ -388,3 +388,139 @@ TEST_CASE("a thing on a tile is an Item piece off the catalogue, and the placeho
     CHECK(render3d::groundItemInstances(session, bare, session.camera()).empty());
     CHECK(session.tavern().groundItems().size() >= 1);
 }
+
+// ---------------------------------------------------------------------------
+// KIT BUILD: a thing on a tile is the size of a thing on a tile
+// ---------------------------------------------------------------------------
+
+#include <algorithm>
+#include <filesystem>
+#include <fstream>
+#include <limits>
+
+#include <nlohmann/json.hpp>
+
+namespace {
+
+/// How tall a piece file stands at an items row's own scale and pitch: the
+/// glTF's POSITION accessor bounds (Y up, metres -- the export pipeline's
+/// convention, the one static_pieces.cpp's extents are quoted in) over every
+/// primitive, the box's eight corners turned by the row's pitch about X the
+/// way the adapter turns them (MatrixRotateX, before the yaw), and the
+/// vertical span of that at the row's scale. Negative when the file is not
+/// here to be measured.
+[[nodiscard]] float standingHeight(const std::filesystem::path& file, float pitch, float scale) {
+    std::ifstream in(file, std::ios::binary);
+    if (!in) {
+        return -1.0F;
+    }
+    const nlohmann::json gltf = nlohmann::json::parse(in, nullptr, false);
+    if (gltf.is_discarded() || !gltf.contains("meshes") || !gltf.contains("accessors")) {
+        return -1.0F;
+    }
+    constexpr float kInf = std::numeric_limits<float>::infinity();
+    float lo[3] = {kInf, kInf, kInf};
+    float hi[3] = {-kInf, -kInf, -kInf};
+    bool any = false;
+    for (const nlohmann::json& mesh : gltf["meshes"]) {
+        if (!mesh.contains("primitives")) {
+            continue;
+        }
+        for (const nlohmann::json& prim : mesh["primitives"]) {
+            if (!prim.contains("attributes") || !prim["attributes"].contains("POSITION")) {
+                continue;
+            }
+            const nlohmann::json& acc = gltf["accessors"][prim["attributes"]["POSITION"].get<std::size_t>()];
+            if (!acc.contains("min") || !acc.contains("max")) {
+                continue;
+            }
+            for (int i = 0; i < 3; ++i) {
+                lo[i] = std::min(lo[i], acc["min"][static_cast<std::size_t>(i)].get<float>());
+                hi[i] = std::max(hi[i], acc["max"][static_cast<std::size_t>(i)].get<float>());
+            }
+            any = true;
+        }
+    }
+    if (!any) {
+        return -1.0F;
+    }
+    const float c = std::cos(pitch);
+    const float s = std::sin(pitch);
+    float top = -kInf;
+    float bottom = kInf;
+    for (int corner = 0; corner < 8; ++corner) {
+        const float y = (corner & 2) != 0 ? hi[1] : lo[1];
+        const float z = (corner & 4) != 0 ? hi[2] : lo[2];
+        const float turned = y * c - z * s;
+        top = std::max(top, turned);
+        bottom = std::min(bottom, turned);
+    }
+    return (top - bottom) * scale;
+}
+
+}  // namespace
+
+TEST_CASE("every thing the items table puts on a tile lies low: a hand's thing under 0.6 m, a fixture under 0.75 m") {
+    // THE 2026-09-25 CRITIC read a door-sized plank standing on the Tarwalk
+    // as the ROPE stand's coil. It was not -- the coil is 0.32 m at its 3.4x
+    // (the knot is exported nine centimetres across) and the plank is one of
+    // the map's own 2x2 timber stall blocks, the one at (140,62) -- but
+    // nothing pinned the table against exactly that mistake: a row's scale
+    // is a bare number in the catalogue, and one written for a hand-sized
+    // export against a metre-tall one would stand a wardrobe on the quay
+    // with nobody the wiser. So the table is measured here, file by file,
+    // at its own scale and pitch. The one row that failed it was the Gull's
+    // table lantern: 0.96 m of camp lantern at 0.8x with its body sunk in
+    // Hobbin's barrel and only its rope showing above the head -- 0.45x now,
+    // its foot on the barrel's head (lift 1.53 = the head at 1.00 plus the
+    // 0.53 the origin sits above the foot).
+    //
+    // Two bounds, because two kinds of thing: what a hand carries lies or
+    // stands at the feet, under 0.6 m; the two fixtures (the strongbox at a
+    // bed's foot, the snug's bale) are furniture, knee to thigh, under 0.75.
+    //
+    // The licensed export tree is not in the docker build context (see
+    // .dockerignore): a file that is not here is reported and skipped, and
+    // the case proves itself on the host half of the gate --
+    // scripts/verify-windows.ps1 runs this exe against the repo's own
+    // content/, where the tree is.
+    namespace render3d = granadad::render3d;
+    const render3d::StaticCatalogue catalogue =
+        render3d::StaticCatalogue::load(render3d::staticCataloguePath(content::contentDir()));
+    REQUIRE_FALSE(catalogue.empty());
+    REQUIRE_FALSE(catalogue.itemIds().empty());
+    const std::filesystem::path statics = content::contentDir() / "art" / "lot-3d" / "static";
+
+    constexpr float kInHand = 0.6F;
+    constexpr float kFixture = 0.75F;
+    int measured = 0;
+    int absent = 0;
+    for (const std::string& id : catalogue.itemIds()) {
+        const render3d::PieceSpec* spec = catalogue.itemPiece(id);
+        REQUIRE(spec != nullptr);
+        const float tall = standingHeight(statics / spec->file, spec->pitch, spec->scale);
+        INFO(id, " -> ", spec->file, " at ", spec->scale, "x, pitch ", spec->pitch, ": ", tall, " m tall");
+        if (tall < 0.0F) {
+            ++absent;
+            continue;
+        }
+        const bool fixture = id == "bale" || id == "strongbox";
+        CHECK(tall <= (fixture ? kFixture : kInHand));
+        // And a thing, not a decal: a row scaled down to nothing would pass
+        // the bound and draw a speck.
+        CHECK(tall >= 0.03F);
+        ++measured;
+    }
+    // The rope in particular, since it is the one the frame was read against.
+    if (const render3d::PieceSpec* rope = catalogue.itemPiece("rope"); rope != nullptr) {
+        const float coil = standingHeight(statics / rope->file, rope->pitch, rope->scale);
+        if (coil >= 0.0F) {
+            CHECK(coil < 0.4F);
+        }
+    }
+    if (measured == 0) {
+        MESSAGE("skipped: the licensed static tree is not here (" << absent << " rows unmeasured)");
+    } else {
+        MESSAGE(measured << " item rows measured, " << absent << " absent");
+    }
+}

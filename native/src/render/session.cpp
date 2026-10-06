@@ -5667,6 +5667,37 @@ int Session::flyOutLeap() {
     return steps;
 }
 
+namespace {
+
+/// THE SPEAKER'S LINE ON THE ALERT ROW. Their voice rides under their
+/// name -- "<name>: <line>" -- so a row with three people talking on it
+/// still says who said what. A REPORT is not their voice: the director
+/// answers a deed with a short account of it written in the speaker's own
+/// name ("WATCHMAN CULL TAKES THE DRINK.", "FINCH CATCHES YOUR WRIST."),
+/// and prefixing that put the name on the row twice -- "WATCHMAN CULL:
+/// WATCHMAN CULL TAKES THE DRINK.", the 2026-09-25 critic's D_law frame.
+/// A line that opens with the speaker's own name is a report, and is said
+/// bare, the way a rise's report (say(rise.line)) already is. The name is
+/// matched whole -- case-blind, since the director upper-cases what it
+/// writes -- and must end where the line's next word begins, so a Hob is
+/// not mistaken for the report of a Hobbin.
+[[nodiscard]] std::string spokenBy(const std::string& who, const std::string& line) {
+    const auto fold = [](char c) {
+        return c >= 'a' && c <= 'z' ? static_cast<char>(c - 'a' + 'A') : c;
+    };
+    bool report = !who.empty() && line.size() > who.size();
+    for (std::size_t i = 0; report && i < who.size(); ++i) {
+        report = fold(who[i]) == fold(line[i]);
+    }
+    if (report) {
+        const char next = line[who.size()];
+        report = next == ' ' || next == '.' || next == ',' || next == '\'';
+    }
+    return report ? line : who + ": " + line;
+}
+
+}  // namespace
+
 void Session::say(std::string line) {
     // Clipped to what the bottom edge can hold at the narrowest resolution this
     // game runs at. S4 started routing a questline's journal prose through here
@@ -6690,7 +6721,7 @@ void Session::chooseTopic(std::size_t index) {
                 messageSteps_ = 0;
             }
         } else {
-            say(tavern_->dialogue().speaker().name + ": " + reply.line);
+            say(spokenBy(tavern_->dialogue().speaker().name, reply.line));
         }
     }
     // VOICE LANE, THE ADDRESS: A WORDED REACTION when the reply moved them.
@@ -6920,7 +6951,7 @@ void Session::commitForge() {
     const std::string who = tavern_->dialogue().speaker().name;
     const sim::Reply reply = tavern_->commitForge();
     if (!reply.line.empty()) {
-        say(who + ": " + reply.line);
+        say(spokenBy(who, reply.line));
     }
     if (!reply.journalLine.empty()) {
         say(reply.journalLine);
@@ -6954,7 +6985,7 @@ void Session::makeOffer() {
     const std::string who = tavern_->dialogue().speaker().name;
     const sim::Reply reply = tavern_->offerPrice(haggleOffer_);
     if (!reply.line.empty()) {
-        say(who + ": " + reply.line);
+        say(spokenBy(who, reply.line));
     }
     haggleOffer_ = haggling() ? std::min(haggleOffer_, tavern_->dialogue().haggle().asking()) : 0;
 }
@@ -6966,7 +6997,7 @@ void Session::takeAskingPrice() {
     const std::string who = tavern_->dialogue().speaker().name;
     const sim::Reply reply = tavern_->takeAskingPrice();
     if (!reply.line.empty()) {
-        say(who + ": " + reply.line);
+        say(spokenBy(who, reply.line));
     }
     haggleOffer_ = 0;
 }
