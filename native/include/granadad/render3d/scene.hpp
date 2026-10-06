@@ -302,6 +302,29 @@ struct ViewmodelSocket {
 /// description is a function of the tiles AND the catalogue.
 struct StaticPieceRef {
     std::string file;
+    /// THE LANTERN'S GLASS (the night-light critic's first). The camp
+    /// lantern the Docks hang is ONE opaque textured mesh -- its glass is
+    /// a swatch of the atlas, not a material -- so no sub-mesh was ever
+    /// classed as glass and the hot night tint never reached it: the glass
+    /// drew as the dullest tan on the lamp. The catalogue names the glass
+    /// by where it is (`glassBand`, the model's own local Y) and what it
+    /// wears (`glassUv`, the atlas patch its vertices sample), and the
+    /// adapter cuts those triangles into a glass mesh of their own at load
+    /// (rl_backend.cpp, applyGlass). Zero everywhere means no cut.
+    float glassBandLo = 0.0F;
+    float glassBandHi = 0.0F;
+    float glassU0 = 0.0F;
+    float glassU1 = 0.0F;
+    float glassV0 = 0.0F;
+    float glassV1 = 0.0F;
+
+    [[nodiscard]] bool cutsGlass() const noexcept { return glassBandHi > glassBandLo; }
+
+    /// Over zero: the adapter squares the mesh's shaft at load
+    /// (shaft_square.hpp), this being half its section in the mesh's own
+    /// metres. A squared shaft is its own loaded model; the same file may
+    /// dress another row as it comes.
+    float squareHalf = 0.0F;
 };
 
 /// S LANE. ONE SYNTY BUILDING PIECE, PLACED: a wall segment on a wall tile's
@@ -356,13 +379,25 @@ struct StaticInstance {
     /// gradientFrom..To across and gradientFromZ..ToZ up, a flame's glow);
     /// kDrawShaded (the tint darkened on faces that look down and lifted on
     /// faces that look up, from the mesh's own normals: the volume a prop
-    /// needs when nothing lights it).
+    /// needs when nothing lights it); kDrawFaced (kDrawShaded, and the
+    /// upright faces take the chunk's own facing factors by their normal,
+    /// render::kFacingX east and west, render::kFacingY north and south --
+    /// a timber that stands IN a wall reads its two faces apart the way
+    /// the wall's own faces do, instead of as one flat cut-out);
+    /// kDrawPaneRamp (the mesh not drawn either -- paneRampMesh() fitted to
+    /// the same local span, opaque, in `pane`: a window's glass with its
+    /// own vertical ramp, hot at the sill).
     std::uint8_t mode = 0;
 };
 
 inline constexpr std::uint8_t kDrawPlain = 0;
 inline constexpr std::uint8_t kDrawHalo = 1;
 inline constexpr std::uint8_t kDrawShaded = 2;
+inline constexpr std::uint8_t kDrawFaced = 3;
+/// Four, not three: kDrawFaced's three is printed into the blend shader
+/// (`pieceMode == 3`), and a ramped pane never reaches that shader --
+/// the adapter draws paneRampMesh() itself.
+inline constexpr std::uint8_t kDrawPaneRamp = 4;
 
 /// THE HALO IS GEOMETRY, NOT A SHADER. It used to be the flame's quad with a
 /// radial alpha in the GL 3.3 blend shader -- which rlsw has not got, so the
@@ -382,11 +417,45 @@ inline constexpr std::uint8_t kDrawShaded = 2;
 /// is a cut nobody can see.
 ///
 /// The adapter uploads it ONCE and fits it to each halo's own local span.
-inline constexpr int kHaloFanSegments = 24;
-inline constexpr int kHaloFanRings = 5;
-inline constexpr float kHaloCoreFraction = 0.22F;
+/// Forty-eight segments: the rings' iso-alpha contours are polygons, and at
+/// twenty-four their straight edges read on a veiled wall (the round-two
+/// player's fifth).
+inline constexpr int kHaloFanSegments = 48;
+/// Nine rings, not five: the skirt is piecewise linear between rings, and
+/// with five the kinks read as facets once a fog lifts the background to
+/// grey under a white core (the player's first).
+inline constexpr int kHaloFanRings = 12;
+/// The flat hot core is a fraction of the SPAN, and the span grew with the
+/// pool (static_pieces.cpp, kLanternFlameWidth 1.5 m now): 0.16 of 1.5 is
+/// the same 0.24 m core the 0.22 of 1.1 was, so the flame still reads as a
+/// flame and only the skirt got longer.
+///
+/// ROUND TWO: a tenth. The flat core's own edge is a polygon at full alpha,
+/// and at 0.16 of a 1.5 m disc it stood past the glass on the plaster.
+inline constexpr float kHaloCoreFraction = 0.10F;
 
 [[nodiscard]] MeshData haloFanMesh();
+
+/// THE PANE IS A RAMP, NOT A DECAL. A lit window used to be two stacked
+/// flat quads, a "hot" sill band under a "cool" head band, which the critic
+/// read as inverted (the head band was the saturated one, the sill the pale
+/// one) with a hard seam between -- and the blend shader could not have
+/// done better, because glass is drawn flat on purpose and the software
+/// rasterizer has no shader at all.
+///
+/// So the ramp is vertex colour, the halo's own trick: ONE unit quad (local
+/// XY, z = 0, 0..1 both ways, facing +Z) in three rows -- the sill row at
+/// full white, a knee row at kPaneRampKnee of the height still nearly full,
+/// the head row at kPaneRampHead, a deep amber multiplier -- so the adapter
+/// draws it in the pane tint through the default material and both
+/// rasterizers give the same candle behind glass: brightest at the sill,
+/// where the candle stands, easing off to the head. Uploaded once, fitted
+/// to each pane's own local span like the halo's fan.
+inline constexpr float kPaneRampKnee = 0.38F;
+inline constexpr Rgba8 kPaneRampKneeTint{255, 250, 242, 255};
+inline constexpr Rgba8 kPaneRampHead{158, 122, 97, 255};
+
+[[nodiscard]] MeshData paneRampMesh();
 
 struct SceneDescription {
     SceneCamera camera;

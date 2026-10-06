@@ -4,6 +4,7 @@
 #include <cmath>
 
 #include "granadad/render/lighting.hpp"
+#include "granadad/render3d/chunk_mesher.hpp"
 #include "granadad/render/session.hpp"
 #include "granadad/render/vertical.hpp"
 #include "granadad/render/world_renderer.hpp"
@@ -103,17 +104,54 @@ void pushBox(MeshData& mesh, float x0, float y0, float z0, float x1, float y1, f
     pushQuad(mesh, p000, p001, p011, p010, shade(base, 0.62F));  // -X west
 }
 
-/// The light where a body stands, the way the sprite paths compute it:
-/// ambient + max(baked, dynamic), clamped near 1 so a figure in a lamp pool
-/// is lit rather than blown out. Folded into a tint (255 = 1.0).
+/// The light where a body stands, the way the pieces compute it: ambient +
+/// the lamps' POOL (lighting.hpp, THE SURFACE POOL -- the same hot core and
+/// long skirt the plaster and the cobbles round the body wear), clamped
+/// near 1 so a figure in a lamp pool is lit rather than blown out. Folded
+/// into a tint (255 = 1.0). It was the law's own raw glow, which at a tile
+/// from a lantern is nine tenths of white: a body beside a lamp at night
+/// drew in its full daylight coat, the critic's note on the bodies.
 [[nodiscard]] Rgba8 tintFor(const render::SkyState& sky, const render::Rgb& baked,
                             const render::Rgb& dynamic) noexcept {
-    const auto ch = [](float ambient, float b, float d) {
-        const float light = std::min(1.15F, ambient + std::max(b, d));
-        return static_cast<std::uint8_t>(std::clamp(light * 255.0F, 0.0F, 255.0F));
+    // Clamped by the brightest channel (render::clampLight): the light
+    // keeps its hue at saturation.
+    // A model's tint is clipped at one per channel by the draw: the clamp
+    // is at one, as one colour, so the hue holds in the brightest band.
+    const render::Rgb light = render::clampLight(
+        render::Rgb{sky.ambient.r + std::max(baked.r, dynamic.r), sky.ambient.g + std::max(baked.g, dynamic.g),
+                    sky.ambient.b + std::max(baked.b, dynamic.b)},
+        1.0F);
+    const auto ch = [](float l) {
+        return static_cast<std::uint8_t>(std::clamp(l * 255.0F, 0.0F, 255.0F));
     };
-    return Rgba8{ch(sky.ambient.r, baked.r, dynamic.r), ch(sky.ambient.g, baked.g, dynamic.g),
-                 ch(sky.ambient.b, baked.b, dynamic.b), 255};
+    return Rgba8{ch(light.r), ch(light.g), ch(light.b), 255};
+}
+
+/// The pool where a body stands: the field where the scene built one, the
+/// law's glow shaped by pooledGlow() where it did not, and the handful of
+/// live lamps under the same shape either way.
+[[nodiscard]] Rgba8 bodyTint(const render::SkyState& sky, const render::LampGlow* pool,
+                             const std::map<std::uint64_t, render::Rgb>* spill,
+                             const render::LampGlow& glow, const std::vector<render::Lamp>& live,
+                             std::int32_t x, std::int32_t y, std::int32_t z) noexcept {
+    if (pool != nullptr) {
+        render::Rgb baked = pool->at(x, y, z);
+        // The lamps gutter with the wind; a candle behind glass does not.
+        baked = render::Rgb{baked.r * sky.haloScale, baked.g * sky.haloScale, baked.b * sky.haloScale};
+        render::Rgb dyn = live.empty() ? render::Rgb{} : render::dynamicPoolAt(live, x, y, z);
+        dyn = render::Rgb{dyn.r * sky.haloScale, dyn.g * sky.haloScale, dyn.b * sky.haloScale};
+        if (spill != nullptr && !spill->empty()) {
+            const auto found = spill->find(cellKey(x, y, z));
+            if (found != spill->end()) {
+                baked.r += found->second.r;
+                baked.g += found->second.g;
+                baked.b += found->second.b;
+            }
+        }
+        return tintFor(sky, baked, dyn);
+    }
+    return tintFor(sky, render::pooledGlow(glow.at(x, y, z)),
+                   live.empty() ? render::Rgb{} : render::pooledGlow(render::dynamicGlowAt(live, x, y, z)));
 }
 
 [[nodiscard]] float yawOf(sim::Angle facing) noexcept {
@@ -386,6 +424,7 @@ std::vector<ActorInstance> actorInstances(const render::Session& session,
     // the quay is.
     const render::SkyState sky = session.sky();
     const render::LampGlow& glow = session.renderer().glow();
+    static const std::vector<render::Lamp> kNoLive;
     const std::int64_t stepCount = session.body().stepCount();
 
     // --- the ward ----------------------------------------------------------
@@ -408,16 +447,22 @@ std::vector<ActorInstance> actorInstances(const render::Session& session,
         }
         // A floored body lies where it fell: no slide off the tile it was
         // walking from when the blow landed.
-        const float px = down ? static_cast<float>(actor.x) + 0.5F
-                              : static_cast<float>(actor.prevX) +
-                                    static_cast<float>(actor.x - actor.prevX) * slide + 0.5F;
-        const float py = down ? static_cast<float>(actor.y) + 0.5F
-                              : static_cast<float>(actor.prevY) +
-                                    static_cast<float>(actor.y - actor.prevY) * slide + 0.5F;
+        float px = down ? static_cast<float>(actor.x) + 0.5F
+                        : static_cast<float>(actor.prevX) +
+                              static_cast<float>(actor.x - actor.prevX) * slide + 0.5F;
+        float py = down ? static_cast<float>(actor.y) + 0.5F
+                        : static_cast<float>(actor.prevY) +
+                              static_cast<float>(actor.y - actor.prevY) * slide + 0.5F;
+        // Culled BEFORE the nudge now: the nudge looks at every other body
+        // within a tile, so it is worth skipping for anyone about to be
+        // culled anyway. The un-nudged position is close enough for this
+        // check either way -- the nudge moves nothing by more than
+        // kPersonalSpaceTiles, negligible against params.maxDistance.
         const float distance = planarDistance(view, px, py);
         if (distance > params.maxDistance) {
             continue;
         }
+        personalSpaceNudge(actor.id, actor.x, actor.y, actor.band, people.actors(), px, py);
         ActorInstance body;
         // The look by kind, name and id; the placeholder by kind alone.
         body.rig = actorRigFor(actor.type, actor.id, people.identity(actor.id).name);
@@ -426,7 +471,8 @@ std::vector<ActorInstance> actorInstances(const render::Session& session,
         body.instance.position = toScene(px, py, render::bandSurface(actor.band));
         body.instance.yaw = yawOf(actor.facing);
         body.instance.scale = actorInstanceScale(actor.type);
-        body.instance.tint = tintFor(sky, glow.at(actor.x, actor.y, actor.band), render::Rgb{});
+        body.instance.tint =
+            bodyTint(sky, params.pool, params.spill, glow, kNoLive, actor.x, actor.y, actor.band);
         body.clip = actor.slain ? ActorClip::Death
                     : down     ? ActorClip::Recover
                     : actor.dead ? ActorClip::Death
@@ -460,9 +506,8 @@ std::vector<ActorInstance> actorInstances(const render::Session& session,
         body.instance.position = toScene(px, py, render::bandSurface(actor.band()));
         body.instance.yaw = yawOf(actor.facing());
         body.instance.scale = actorInstanceScale(type);
-        body.instance.tint =
-            tintFor(sky, glow.at(actor.tileX(), actor.tileY(), actor.band()),
-                    render::dynamicGlowAt(live, actor.tileX(), actor.tileY(), actor.band()));
+        body.instance.tint = bodyTint(sky, params.pool, params.spill, glow, live, actor.tileX(),
+                                      actor.tileY(), actor.band());
         // VOICE LANE, THE ADDRESS. The one held for the talk is drawn
         // STANDING, whatever his schedule says he was doing: the hold keeps
         // his tile and his face to you (tavern.cpp, stepMovement), and a

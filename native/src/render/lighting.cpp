@@ -12,6 +12,12 @@ namespace {
 /// The two authored warmths, as colours.
 constexpr Rgb kFireColour{1.00F, 0.58F, 0.24F};
 constexpr Rgb kLanternColour{1.00F, 0.82F, 0.58F};
+/// THE SURFACE POOL's own warmths: deeper than the law's, because a grey
+/// cobble under the law's near-white lantern colour came out a pale
+/// beige-grey (the director's fourth), not the candle amber a lantern lays
+/// on a street. Surfaces only; the law's field keeps the colours above.
+constexpr Rgb kFirePoolColour{1.00F, 0.52F, 0.20F};
+constexpr Rgb kLanternPoolColour{1.00F, 0.74F, 0.42F};
 
 /// A lamp lights the level it sits on and its immediate neighbours; vertical
 /// distance counts for more than horizontal so a lamp does not shine through
@@ -57,10 +63,120 @@ struct LampFalloff {
     return warmth == LampWarmth::Fire ? kFireColour : kLanternColour;
 }
 
+[[nodiscard]] Rgb poolTintOf(LampWarmth warmth) noexcept {
+    return warmth == LampWarmth::Fire ? kFirePoolColour : kLanternPoolColour;
+}
+
+/// THE SURFACE POOL's shape (lighting.hpp): the hot core, an inverse square
+/// over kPoolCoreRadius, plus the long linear skirt to the radius. The two
+/// shares sum to one so the lamp's own cell is exactly its peak, and the
+/// skirt reaches exactly nothing at the radius so the field has an edge.
+[[nodiscard]] float poolShape(float distance, float radius) noexcept {
+    if (distance >= radius || radius <= 0.0F) {
+        return 0.0F;
+    }
+    const float u = distance / kPoolCoreRadius;
+    const float core = kPoolCoreShare / (1.0F + u * u);
+    const float skirt = (1.0F - kPoolCoreShare) * (1.0F - distance / radius);
+    return core + skirt;
+}
+
 }  // namespace
 
-Rgb dynamicGlowAt(const std::vector<Lamp>& lamps, std::int32_t x, std::int32_t y,
-                  std::int32_t z) noexcept {
+/// ONE ACCUMULATION for both fields: every lamp poured into a cell field
+/// under `shape(luminance, distance)` -- the baked falloff for the law's
+/// field, the pool's for the surfaces' -- with `verticalWeight` tiles per
+/// band and `reachOf(luminance)` tiles across. Saturating union on
+/// intensity with a weighted-average colour, the Java's rule: two lamps
+/// overlapping pool rather than adding up to white.
+void LampGlow::accumulateWith(const std::vector<Lamp>& lamps, float verticalWeight,
+                              float (*reachOf)(std::int32_t), float (*shape)(std::int32_t, float),
+                              Rgb (*colourOf)(LampWarmth), bool poolColour) {
+    LampGlow& glow = *this;
+    const std::size_t cells = glow.field_.size();
+    std::vector<float> intensity(cells, 0.0F);
+    std::vector<float> red(cells, 0.0F);
+    std::vector<float> green(cells, 0.0F);
+    std::vector<float> blue(cells, 0.0F);
+
+    for (const Lamp& lamp : lamps) {
+        const float radius = reachOf(lamp.luminance);
+        const Rgb tint = colourOf(lamp.warmth);
+        const std::int32_t reach = static_cast<std::int32_t>(std::ceil(radius));
+
+        for (std::int32_t dz = -kVerticalReach; dz <= kVerticalReach; ++dz) {
+            const std::int32_t z = lamp.z + dz;
+            if (z < 0 || z >= glow.sizeZ_) {
+                continue;
+            }
+            for (std::int32_t dy = -reach; dy <= reach; ++dy) {
+                const std::int32_t y = lamp.y + dy;
+                if (y < 0 || y >= glow.sizeY_) {
+                    continue;
+                }
+                for (std::int32_t dx = -reach; dx <= reach; ++dx) {
+                    const std::int32_t x = lamp.x + dx;
+                    if (x < 0 || x >= glow.sizeX_) {
+                        continue;
+                    }
+                    const float fx = static_cast<float>(dx);
+                    const float fy = static_cast<float>(dy);
+                    const float fz = static_cast<float>(dz) * verticalWeight;
+                    const float distance = std::sqrt(fx * fx + fy * fy + fz * fz);
+                    if (distance >= radius) {
+                        continue;
+                    }
+                    const float value = shape(lamp.luminance, distance);
+                    if (value <= 0.002F) {
+                        continue;
+                    }
+                    const std::size_t at =
+                        (static_cast<std::size_t>(z) * static_cast<std::size_t>(glow.sizeY_) +
+                         static_cast<std::size_t>(y)) *
+                            static_cast<std::size_t>(glow.sizeX_) +
+                        static_cast<std::size_t>(x);
+                    red[at] += tint.r * value;
+                    green[at] += tint.g * value;
+                    blue[at] += tint.b * value;
+                    intensity[at] = std::max(intensity[at], value);
+                }
+            }
+        }
+    }
+
+    for (std::size_t at = 0; at < cells; ++at) {
+        if (intensity[at] <= 0.0F) {
+            continue;
+        }
+        const float weight = red[at] + green[at] + blue[at];
+        if (weight <= 0.0F) {
+            continue;
+        }
+        // Normalise the summed colour back to a hue, then scale by the
+        // saturating intensity. THE LAW'S FIELD normalises the hue to a
+        // mean of one -- a lantern's red stands at 1.25 of the intensity and
+        // packRgb clips it per channel, as it always has (the 2D pass and
+        // the light law read these bytes). THE POOL normalises to a peak of
+        // one instead: a lantern's pool is its own colour times the
+        // intensity, never clipped and never flattened where the law's red
+        // would have hit the ceiling (the auditor's yellow-white lamp cell).
+        const float norm = poolColour ? 1.0F / std::max(red[at], std::max(green[at], blue[at]))
+                                      : 3.0F / weight;
+        const Rgb colour{red[at] * norm * intensity[at], green[at] * norm * intensity[at],
+                         blue[at] * norm * intensity[at]};
+        glow.field_[at] = packRgb(poolColour ? clampLight(colour, 1.0F) : colour);
+        ++glow.litCells_;
+    }
+}
+
+namespace {
+
+/// The per-cell sum of a handful of lamps under one shape: dynamicGlowAt()
+/// and dynamicPoolAt() are this with the law's shape and the pool's.
+template <typename ReachOf, typename Shape, typename ColourOf>
+[[nodiscard]] Rgb dynamicUnder(const std::vector<Lamp>& lamps, std::int32_t x, std::int32_t y,
+                               std::int32_t z, float verticalWeight, ReachOf reachOf, Shape shape,
+                               ColourOf colourOf, bool poolColour) noexcept {
     if (lamps.empty()) {
         return Rgb{};
     }
@@ -73,20 +189,19 @@ Rgb dynamicGlowAt(const std::vector<Lamp>& lamps, std::int32_t x, std::int32_t y
         if (dz < -kVerticalReach || dz > kVerticalReach) {
             continue;
         }
-        const LampFalloff shape = falloffOf(lamp.luminance);
+        const float radius = reachOf(lamp.luminance);
         const float fx = static_cast<float>(x - lamp.x);
         const float fy = static_cast<float>(y - lamp.y);
-        const float fz = static_cast<float>(dz) * kVerticalWeight;
+        const float fz = static_cast<float>(dz) * verticalWeight;
         const float distance = std::sqrt(fx * fx + fy * fy + fz * fz);
-        if (distance >= shape.radius) {
+        if (distance >= radius) {
             continue;
         }
-        const float fall = 1.0F - (distance * distance) / (shape.radius * shape.radius);
-        const float value = shape.peak * fall * fall;
+        const float value = shape(lamp.luminance, distance);
         if (value <= 0.002F) {
             continue;
         }
-        const Rgb tint = tintOf(lamp.warmth);
+        const Rgb tint = colourOf(lamp.warmth);
         red += tint.r * value;
         green += tint.g * value;
         blue += tint.b * value;
@@ -98,8 +213,43 @@ Rgb dynamicGlowAt(const std::vector<Lamp>& lamps, std::int32_t x, std::int32_t y
     if (intensity <= 0.0F || weight <= 0.0F) {
         return Rgb{};
     }
-    const float norm = 3.0F / weight;
-    return Rgb{red * norm * intensity, green * norm * intensity, blue * norm * intensity};
+    const float norm = poolColour ? 1.0F / std::max(red, std::max(green, blue)) : 3.0F / weight;
+    const Rgb colour{red * norm * intensity, green * norm * intensity, blue * norm * intensity};
+    return poolColour ? clampLight(colour, 1.0F) : colour;
+}
+
+[[nodiscard]] float bakedReach(std::int32_t luminance) noexcept {
+    return falloffOf(luminance).radius;
+}
+
+[[nodiscard]] float bakedShape(std::int32_t luminance, float distance) noexcept {
+    const LampFalloff shape = falloffOf(luminance);
+    const float fall = 1.0F - (distance * distance) / (shape.radius * shape.radius);
+    return shape.peak * fall * fall;
+}
+
+[[nodiscard]] float poolShapeOf(std::int32_t luminance, float distance) noexcept {
+    return falloffOf(luminance).peak * kPoolPeakScale * poolShape(distance, poolRadiusOf(luminance));
+}
+
+}  // namespace
+
+float poolRadiusOf(std::int32_t luminance) noexcept {
+    return std::min(falloffOf(luminance).radius * kPoolReach, kPoolRadiusCap);
+}
+
+float poolValueAt(std::int32_t luminance, float distance) noexcept {
+    return poolShapeOf(luminance, std::max(0.0F, distance));
+}
+
+Rgb dynamicGlowAt(const std::vector<Lamp>& lamps, std::int32_t x, std::int32_t y,
+                  std::int32_t z) noexcept {
+    return dynamicUnder(lamps, x, y, z, kVerticalWeight, bakedReach, bakedShape, tintOf, false);
+}
+
+Rgb dynamicPoolAt(const std::vector<Lamp>& lamps, std::int32_t x, std::int32_t y,
+                  std::int32_t z) noexcept {
+    return dynamicUnder(lamps, x, y, z, kPoolVerticalWeight, poolRadiusOf, poolShapeOf, poolTintOf, true);
 }
 
 // ---------------------------------------------------------------------------
@@ -444,7 +594,7 @@ SkyState skyAt(int timeOfDaySeconds, const Weather& weather) {
     return sky;
 }
 
-LampGlow LampGlow::build(const sim::TileQuery& tiles, const std::vector<Lamp>& lamps) {
+LampGlow LampGlow::sized(const sim::TileQuery& tiles) {
     LampGlow glow;
     glow.sizeX_ = tiles.sizeX();
     glow.sizeY_ = tiles.sizeY();
@@ -453,82 +603,27 @@ LampGlow LampGlow::build(const sim::TileQuery& tiles, const std::vector<Lamp>& l
                               static_cast<std::size_t>(glow.sizeY_) *
                               static_cast<std::size_t>(glow.sizeZ_);
     glow.field_.assign(cells, 0U);
+    return glow;
+}
+
+LampGlow LampGlow::build(const sim::TileQuery& tiles, const std::vector<Lamp>& lamps) {
+    LampGlow glow = sized(tiles);
     if (lamps.empty()) {
         return glow;
     }
-
     // Accumulate in float, then pack. Saturating union on intensity with a
     // weighted-average colour, which is the Java's rule: two lamps overlapping
     // do not add up to white, they pool.
-    std::vector<float> intensity(cells, 0.0F);
-    std::vector<float> red(cells, 0.0F);
-    std::vector<float> green(cells, 0.0F);
-    std::vector<float> blue(cells, 0.0F);
+    glow.accumulateWith(lamps, kVerticalWeight, bakedReach, bakedShape, tintOf, false);
+    return glow;
+}
 
-    for (const Lamp& lamp : lamps) {
-        const LampFalloff shape = falloffOf(lamp.luminance);
-        const float radius = shape.radius;
-        const float peak = shape.peak;
-        const Rgb tint = tintOf(lamp.warmth);
-        const std::int32_t reach = static_cast<std::int32_t>(std::ceil(radius));
-
-        for (std::int32_t dz = -kVerticalReach; dz <= kVerticalReach; ++dz) {
-            const std::int32_t z = lamp.z + dz;
-            if (z < 0 || z >= glow.sizeZ_) {
-                continue;
-            }
-            for (std::int32_t dy = -reach; dy <= reach; ++dy) {
-                const std::int32_t y = lamp.y + dy;
-                if (y < 0 || y >= glow.sizeY_) {
-                    continue;
-                }
-                for (std::int32_t dx = -reach; dx <= reach; ++dx) {
-                    const std::int32_t x = lamp.x + dx;
-                    if (x < 0 || x >= glow.sizeX_) {
-                        continue;
-                    }
-                    const float fx = static_cast<float>(dx);
-                    const float fy = static_cast<float>(dy);
-                    const float fz = static_cast<float>(dz) * kVerticalWeight;
-                    const float distance = std::sqrt(fx * fx + fy * fy + fz * fz);
-                    if (distance >= radius) {
-                        continue;
-                    }
-                    const float fall = 1.0F - (distance * distance) / (radius * radius);
-                    const float value = peak * fall * fall;
-                    if (value <= 0.002F) {
-                        continue;
-                    }
-                    const std::size_t at =
-                        (static_cast<std::size_t>(z) * static_cast<std::size_t>(glow.sizeY_) +
-                         static_cast<std::size_t>(y)) *
-                            static_cast<std::size_t>(glow.sizeX_) +
-                        static_cast<std::size_t>(x);
-                    red[at] += tint.r * value;
-                    green[at] += tint.g * value;
-                    blue[at] += tint.b * value;
-                    intensity[at] = std::max(intensity[at], value);
-                }
-            }
-        }
+LampGlow LampGlow::buildPool(const sim::TileQuery& tiles, const std::vector<Lamp>& lamps) {
+    LampGlow glow = sized(tiles);
+    if (lamps.empty()) {
+        return glow;
     }
-
-    for (std::size_t at = 0; at < cells; ++at) {
-        if (intensity[at] <= 0.0F) {
-            continue;
-        }
-        const float weight = red[at] + green[at] + blue[at];
-        if (weight <= 0.0F) {
-            continue;
-        }
-        // Normalise the summed colour back to a hue, then scale by the
-        // saturating intensity.
-        const float norm = 3.0F / weight;
-        const Rgb colour{red[at] * norm * intensity[at], green[at] * norm * intensity[at],
-                         blue[at] * norm * intensity[at]};
-        glow.field_[at] = packRgb(colour);
-        ++glow.litCells_;
-    }
+    glow.accumulateWith(lamps, kPoolVerticalWeight, poolRadiusOf, poolShapeOf, poolTintOf, true);
     return glow;
 }
 

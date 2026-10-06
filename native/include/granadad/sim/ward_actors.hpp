@@ -500,6 +500,43 @@ struct WardActor {
     std::int32_t prevX = 0;
     std::int32_t prevY = 0;
     std::int32_t prevBand = 0;
+    /// The last TWO cells it stood on before this one -- NOT prevX/Y.
+    /// tickActor resets prevX/Y to the current position at the very top of
+    /// every tick, for the renderer's slide, before any policy runs -- so by
+    /// the time sidestep() could read it, prevX/Y already equals x/y and a
+    /// "never step straight back" check against it can never fire. Found the
+    /// hard way: a body wedged against a blocked hop sidestepped off it, and
+    /// the very next tick's replan routed it straight back onto the blocked
+    /// hop's own cell, which sidestepped it off again -- forever, one body
+    /// looping between two tiles and never actually going anywhere, an
+    /// oscillation a still frame cannot show and a play session immediately
+    /// can (a driven capture caught one running past eighty ticks in a row).
+    ///
+    /// ONE STEP OF HISTORY IS NOT ENOUGH, and an auditor pass proved it with
+    /// a concrete counterexample before this ever shipped: a body at U with a
+    /// blocked hop through door L and two LEVEL flanks V and W (neither
+    /// closer than U, so pass 0 of sidestep's own preference never engages)
+    /// cycles U-V-U-W-U-V-U-W forever -- V and W are never each other's own
+    /// cameFrom, so the single-step guard never once refuses either. A second
+    /// step of memory closes it: by the time W would be offered a third time,
+    /// it is barred as cameFrom2 exactly as U is barred as cameFrom.
+    ///
+    /// -1 for either band means "no history yet" (a real band is never
+    /// negative). Written everywhere a body's tile genuinely changes outside
+    /// its own route-following walk too -- tryPush's displacement and its
+    /// squeeze-past swap, standUp, revivePrey, settleToSchedule -- not
+    /// tryEnter alone; each one is the same one write, shifting cameFrom into
+    /// cameFrom2 first. A teleport (settleToSchedule, revivePrey's den
+    /// appearance) snaps BOTH to the new cell instead, the same as prevX/Y
+    /// already does there, so nothing is ever forbidden that was never
+    /// actually walked. HASHED: sidestep() reads both to decide where a body
+    /// may not go.
+    std::int32_t cameFromX = 0;
+    std::int32_t cameFromY = 0;
+    std::int32_t cameFromBand = -1;
+    std::int32_t cameFrom2X = 0;
+    std::int32_t cameFrom2Y = 0;
+    std::int32_t cameFrom2Band = -1;
     Angle facing = 0;
 
     std::int16_t needs[kNeedCount] = {0, 0, 0, 0, 0};
@@ -1333,6 +1370,12 @@ public:
     /// how "no guard pile-ups" stops being an opinion.
     [[nodiscard]] std::int64_t shoves() const noexcept { return shoves_; }
     [[nodiscard]] std::int32_t worstJam() const noexcept { return worstJam_; }
+    /// Times a body facing a taken tile stepped SIDEWAYS onto an open one
+    /// instead of standing there waiting for a shove -- see sidestep()'s own
+    /// comment. How "a crowd fans out at a doorway instead of gluing into a
+    /// single column" stops being an opinion, the same way shoves() already
+    /// made the etiquette gate one.
+    [[nodiscard]] std::int64_t sidesteps() const noexcept { return sidesteps_; }
     /// Times a watchman has laid hands on another watchman. ZERO, always: the
     /// etiquette gate refuses it before any draw is made, which is what makes
     /// the beat's own corner yield the resolution mechanism instead of two
@@ -1440,9 +1483,21 @@ private:
     /// One tile toward `target`, along a cached route. Answers whether the body
     /// moved.
     bool stepToward(WardActor& actor, std::int32_t tx, std::int32_t ty, std::int32_t tband);
+    /// One tile SIDEWAYS when the route's next hop is somebody else's tile
+    /// right now. See the comment at its call site in stepToward for why a
+    /// body needs this and not just the wait-or-shove it had before.
+    bool sidestep(WardActor& actor, std::int32_t tx, std::int32_t ty, std::int32_t tband);
     bool tryEnter(WardActor& actor, std::int32_t nx, std::int32_t ny, std::int32_t nband);
     bool tryPush(WardActor& pusher, std::int32_t cx, std::int32_t cy, std::int32_t cband,
                  const TickContext& context);
+    /// The one write cameFromX/Y/Band and cameFrom2X/Y/Band ever get: shift
+    /// the current cameFrom into cameFrom2, then record where `actor` stands
+    /// RIGHT NOW as the new cameFrom -- called immediately before every real
+    /// position change, from every place one happens (tryEnter, both of
+    /// tryPush's branches, standUp). Kept as one function so a sixth call
+    /// site can never quietly forget the shift the way the first version of
+    /// cameFrom alone forgot five of its own six.
+    static void shiftCameFrom(WardActor& actor) noexcept;
     void rebuildOccupancy();
     void runDailyProvision();
     void chargeStall(WardActor& actor, bool moved, bool closer);
@@ -1579,6 +1634,7 @@ private:
     mutable PathFinder finder_;
     WardLedger ledger_;
     std::int64_t shoves_ = 0;
+    std::int64_t sidesteps_ = 0;
     std::int64_t watchShoves_ = 0;
     std::int64_t catches_ = 0;
     std::int64_t futileChases_ = 0;

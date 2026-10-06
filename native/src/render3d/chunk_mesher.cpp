@@ -34,9 +34,10 @@ constexpr render::Rgb kWaterTintFull{0.10F, 0.18F, 0.22F};
 
 /// THE DOORWAY IS CUT OUT OF THE BOX. A wall cell that flanks a door
 /// opening (door_jambs.hpp -- the one test the placer stands its jamb beam
-/// by) keeps only its lintel course: the metre-square storey under the head
-/// goes. That is what lets a beam a quarter-metre thick READ as the jamb
-/// instead of hiding inside a block, and it is done HERE, in the cache, so
+/// by) keeps only its course over the soffit (kDoorHeadCut): the
+/// metre-square storey under it goes. That is what lets a beam a
+/// quarter-metre thick READ as the jamb instead of hiding inside a block,
+/// and it is done HERE, in the cache, so
 /// every question asked afterwards is asked of the cut cell: the cell's own
 /// faces, the neighbouring wall's cover test (it shows its reveal down the
 /// whole opening now), the cell below (it shows its top, the threshold the
@@ -49,11 +50,11 @@ void openJamb(const sim::TileQuery& tiles, std::int32_t x, std::int32_t y, std::
     if (!v.hasSides || v.water) {
         return;
     }
-    const float head = v.bottom + kDoorHeadHeight;
-    if (head >= v.top || !doorPostAt(tiles, x, y, z)) {
+    const float cut = v.bottom + kDoorHeadCut;
+    if (cut >= v.top || !doorPostAt(tiles, x, y, z)) {
         return;
     }
-    v.bottom = head;
+    v.bottom = cut;
 }
 
 /// A chunk's cells plus a one-cell apron, classified once. 18 x 18 x (levels
@@ -520,27 +521,66 @@ MeshData colourChunk(const ChunkGeometry& geometry, const ChunkLighting& lightin
         const std::int32_t y = geometry.cells[i * 3 + 1];
         const std::int32_t z = geometry.cells[i * 3 + 2];
         if (x != lastX || y != lastY || z != lastZ) {
-            const render::Rgb baked =
-                lighting.glow != nullptr ? lighting.glow->at(x, y, z) : render::Rgb{};
-            const render::Rgb live = hasDynamic
-                                         ? render::dynamicGlowAt(*lighting.dynamicLamps, x, y, z)
-                                         : render::Rgb{};
-            // The lamp's share, SHAPED (render::pooledGlow): a lantern pools
-            // on the cobbles under it and the plaster behind it instead of
-            // washing a whole street at one value. Surfaces only -- the glow
-            // field itself is untouched, and so is the light law that reads
-            // it.
-            const render::Rgb pool = render::pooledGlow(render::Rgb{std::max(baked.r, live.r),
-                                                                    std::max(baked.g, live.g),
-                                                                    std::max(baked.b, live.b)});
+            // The lamp's share on a SURFACE: the pool field (lighting.hpp,
+            // THE SURFACE POOL) where the scene built one -- a hot core and
+            // a skirt that carries to eight tiles -- and, without one, the
+            // law's own glow shaped by pooledGlow() as it always was. The
+            // glow field itself is untouched either way, and so is the
+            // light law that reads it.
+            render::Rgb pool{};
+            if (lighting.pool != nullptr) {
+                const render::Rgb baked = lighting.pool->at(x, y, z);
+                const render::Rgb live = hasDynamic
+                                             ? render::dynamicPoolAt(*lighting.dynamicLamps, x, y, z)
+                                             : render::Rgb{};
+                pool = render::Rgb{std::max(baked.r, live.r), std::max(baked.g, live.g),
+                                   std::max(baked.b, live.b)};
+            } else {
+                const render::Rgb baked =
+                    lighting.glow != nullptr ? lighting.glow->at(x, y, z) : render::Rgb{};
+                const render::Rgb live = hasDynamic
+                                             ? render::dynamicGlowAt(*lighting.dynamicLamps, x, y, z)
+                                             : render::Rgb{};
+                pool = render::pooledGlow(render::Rgb{std::max(baked.r, live.r),
+                                                      std::max(baked.g, live.g),
+                                                      std::max(baked.b, live.b)});
+            }
+            // The pool gutters with the wind as the halos do; a candle
+            // behind glass (the spill, below) does not.
+            pool = render::Rgb{pool.r * sky.haloScale, pool.g * sky.haloScale, pool.b * sky.haloScale};
             surface = render::Rgb{sky.ambient.r + pool.r, sky.ambient.g + pool.g,
                                   sky.ambient.b + pool.b};
             lastX = x;
             lastY = y;
             lastZ = z;
         }
+        // THE SPILL: a lit pane's candle on the cells round it, read AT THE
+        // VERTEX as the mean of the four cells that meet at its corner, so
+        // the map does not step at a cell seam (the round-two player's
+        // first). A face's corners differ; the pool above is the cell's.
+        render::Rgb candle{};
+        if (lighting.spill != nullptr && !lighting.spill->empty()) {
+            const std::int32_t px = static_cast<std::int32_t>(std::floor(mesh.positions[i * 3] + 0.001F));
+            const std::int32_t pz =
+                static_cast<std::int32_t>(std::floor(mesh.positions[i * 3 + 2] + 0.001F));
+            for (std::int32_t dy = -1; dy <= 0; ++dy) {
+                for (std::int32_t dx = -1; dx <= 0; ++dx) {
+                    const auto found = lighting.spill->find(cellKey(px + dx, pz + dy, z));
+                    if (found != lighting.spill->end()) {
+                        candle.r += found->second.r * 0.25F;
+                        candle.g += found->second.g * 0.25F;
+                        candle.b += found->second.b * 0.25F;
+                    }
+                }
+            }
+        }
         const float facing = geometry.facing[i];
-        render::Rgb lit{surface.r * facing, surface.g * facing, surface.b * facing};
+        // A vertex colour is clipped at one per channel by the GPU: the
+        // clamp is at one here, as one colour, so the hue holds in the
+        // brightest band (the round-three auditor's third).
+        const render::Rgb clamped = render::clampLight(
+            render::Rgb{surface.r + candle.r, surface.g + candle.g, surface.b + candle.b}, 1.0F);
+        render::Rgb lit{clamped.r * facing, clamped.g * facing, clamped.b * facing};
         const float wet = geometry.wetAlpha[i];
         if (wet > 0.0F) {
             lit = render::Rgb{lit.r * (1.0F + (kWaterTintFull.r - 1.0F) * wet),

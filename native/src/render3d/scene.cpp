@@ -75,6 +75,48 @@ MeshData haloFanMesh() {
 }
 
 // ---------------------------------------------------------------------------
+// the pane's ramp
+// ---------------------------------------------------------------------------
+
+MeshData paneRampMesh() {
+    // See scene.hpp: a unit quad in three rows, the ramp in the vertex
+    // colours so both rasterizers draw the same glass with no shader
+    // between them. Two triangles per row pair, wound to face +Z.
+    MeshData quad;
+    const auto push = [&quad](float x, float y, const Rgba8& c) {
+        quad.positions.push_back(x);
+        quad.positions.push_back(y);
+        quad.positions.push_back(0.0F);
+        quad.texcoords.push_back(0.0F);
+        quad.texcoords.push_back(0.0F);
+        quad.colours.push_back(c.r);
+        quad.colours.push_back(c.g);
+        quad.colours.push_back(c.b);
+        quad.colours.push_back(c.a);
+    };
+    constexpr Rgba8 kSill{255, 255, 255, 255};
+    const float rows[3] = {0.0F, kPaneRampKnee, 1.0F};
+    const Rgba8 tints[3] = {kSill, kPaneRampKneeTint, kPaneRampHead};
+    for (int row = 0; row < 3; ++row) {
+        push(0.0F, rows[row], tints[row]);
+        push(1.0F, rows[row], tints[row]);
+    }
+    for (std::uint16_t row = 0; row + 1 < 3; ++row) {
+        const std::uint16_t a = static_cast<std::uint16_t>(row * 2);
+        const std::uint16_t b = static_cast<std::uint16_t>(row * 2 + 1);
+        const std::uint16_t c = static_cast<std::uint16_t>(row * 2 + 3);
+        const std::uint16_t d = static_cast<std::uint16_t>(row * 2 + 2);
+        quad.indices.push_back(a);
+        quad.indices.push_back(b);
+        quad.indices.push_back(c);
+        quad.indices.push_back(a);
+        quad.indices.push_back(c);
+        quad.indices.push_back(d);
+    }
+    return quad;
+}
+
+// ---------------------------------------------------------------------------
 // SceneDescription
 // ---------------------------------------------------------------------------
 
@@ -284,7 +326,15 @@ std::uint64_t sceneHash(const SceneDescription& scene) noexcept {
         h.mixU64(static_cast<std::uint64_t>(piece.file.size()));
         if (!piece.file.empty()) {
             h.mix(piece.file.data(), piece.file.size());
+            // The glass cut is part of the picture a piece draws.
+            h.mixF32(piece.glassBandLo);
+            h.mixF32(piece.glassBandHi);
+            h.mixF32(piece.glassU0);
+            h.mixF32(piece.glassU1);
+            h.mixF32(piece.glassV0);
+            h.mixF32(piece.glassV1);
         }
+        h.mixF32(piece.squareHalf);
     }
     h.mixU64(static_cast<std::uint64_t>(scene.statics.size()));
     for (const StaticInstance& piece : scene.statics) {

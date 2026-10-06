@@ -544,6 +544,327 @@ named house's own lights still do not change at all, on any of these
 frames, at any hour -- that is `HouseKind::Dark` and `litAllNight` working,
 not a bug to chase in a third pass.
 
+### Third pass (2026-09-25, the record critic's four)
+
+The record critic on e3e7a600 gave the halo 7 and the night windows 6 with
+four notes: the lantern's glass was the dullest part of the lamp and the
+pool died by eight metres; the timber pane's two stops were inverted with
+a seam between them, tan not amber; the boards round a lit pane stayed
+black; and the roof at two and at five were the same picture, so the rising
+window never relit. Here is what each turned out to be and what changed.
+Code is `render/lighting.{hpp,cpp}`, `render3d/world_scene.cpp`,
+`render3d/static_pieces.cpp`, `render3d/rl_backend.cpp`, `render3d/scene.cpp`,
+`render3d/actor_instances.cpp`; knobs and the glass cut in
+`content/raws/world3d/docks-pieces.json`.
+
+**The lamp's glass.** The camp lantern the Docks hang
+(`SM_Prop_Camp_Lantern_01`) is ONE opaque textured mesh. Its glass is a
+swatch of the Dungeon Realms atlas, not a material, so no sub-mesh was ever
+classed as glass and `kLampGlassNight` never reached it: the "hot glass after
+dark" of the second pass tinted nothing, and the glass drew as the same tan
+swatch the dome over it wears, dimmer than the copper bars. The catalogue
+names the glass now -- `glassBand` [-1.0, -0.8] in the model's own Y and
+`glassUv` the atlas patch its vertices sample (measured off the glTF: the
+lower body's swatch sits at v 0.7470..0.7475, the cap's at 0.7476..0.7480) --
+and the adapter cuts those triangles into a glass mesh of their own at load
+(`applyGlass`, `rl_backend.cpp`), de-indexed, with a ramp in its vertex
+colours that is white round the wick and eases to a deep amber at the head.
+Glass draws on the backend's white texture in the pane tint VERBATIM, never
+through the material's base colour, so both rasterizers give the same
+near-white amber (255/240/205). The metal is sky-lit and its own pool now,
+capped at half after dark (`kLampMetalNightCap`), so the cap never
+out-values the glass at any range; by day it keeps the tint it always had.
+The kit window's real glass material gets the same ramp at load, hot at the
+sill.
+
+**The pool.** The baked field is the light law's number and the 2D pass's:
+`P * (1 - d^2/R^2)^2` over four to five and a half tiles, and `pooledGlow()`
+then pulled the far field down again so a street did not come out at one
+value -- together a pool gone by four metres. The 3D pass has a field of its
+own now, `render::LampGlow::buildPool`, over the same lamps by the same
+accumulation (saturating union, weighted colour) under its own shape: an
+inverse-square core over the first metre plus a linear skirt that reaches
+nothing at ~8.5 tiles (`poolValueAt`, pinned in a test). Ambient at night is
+0.05; the skirt is still twice that at six tiles. Read by the chunk colour
+stage (`ChunkLighting::pool`), the piece relight and the bodies' tint
+(`ActorSceneParams::pool`) and by nothing else: the law reads the baked
+field, the 2D pass paints with it, the sim never knew either existed. The
+bodies took the law's RAW glow before -- nine tenths of white a tile from a
+lantern -- which is why the Creel urchin stood beside a lamp at night in his
+daylight coat. The halo disc grew with the pool, 1.5 m on a lantern and 1.2
+on a fire, its flat core held at the 0.24 m it was (`kHaloCoreFraction`
+0.16).
+
+**The pane.** One placement per hung window, drawn as `paneRampMesh()`
+(`scene.hpp`) in the pane tint -- `kDrawPaneRamp`, the halo's own mechanism:
+a unit quad in three rows, white at the sill, still nearly white at the knee
+(38% up), a deep amber multiplier at the head, fitted to the placement's
+span -- so the glass is hottest at the sill where the candle stands and eases
+to the head, in vertex colour, the same picture on GL and on rlsw. The two
+stacked bands and `paneCore` are gone. `litPane` is candle amber now,
+255/178/74, on every pane.
+
+**The spill.** The board module a hung window sits in is cut in two at the
+window's centre (the seam falls behind the frame), each half carrying the
+pane's household through `houseOf()` (`StaticPlacement::spill`, `spillAtB`),
+so the relight can add a candle-coloured emissive pool at the half's end AT
+the pane (`kSpillGlow`) and a quarter of it at the far end, under the same
+clamp everything else wears. One board lit at two ends could only wash flat;
+two halves blend outward from the window. It goes out with the pane.
+
+**The morning.** The rising branch was never broken. Probed on the shipped
+e3e7a600 exe with the catalogue alone: moving the rising window to half
+past midnight lit the roof vantage's candle pixels at two (RGB 181/141/84,
+the same value a late bedtime or an all-owl ward gives them), so the knobs
+reach `paneGlows()` and the relight honours the rise. What the roof vantage
+sees is THREE households, all of which drew rising hours past five under the
+4..6.5 window -- a sample of three, and the same three at two and at five.
+The window closes at 5.5 now (`houseRisingTo`), so two houses in three are
+up by five, and a test pins the rise the way the critic tried to read it:
+the ward's lit household panes through a real `Session` at eight, `skipToHour`
+to two, to five -- fewer at two than at five, fewer at five than at eight. On
+the shipped Docks that is 137 at eight, 36 at two, 133 at five under the
+3.5..5.25 window the third round settled on (97 under 4..5.5; of 148
+household panes; the named houses and the stores' watchman's lamps on top).
+
+**Tests** (`test_chunk_mesher.cpp`): the ramp mesh's rows and one ramp pane
+per opening (176 on the Docks, every one with both halves); the two halves
+flanking every lit timber pane warmer at the pane than at the module's end;
+the morning counts through a real session; the pool's curve, its reach past the law's field on the real
+Docks, and a body's tint within a tile and a half of a lantern against one
+ten tiles from any (86 Docks cells seven tiles from a lantern take the pool
+where the law's field is black); a lantern's glass out-valuing its metal after dark and
+the metal at its catalogue tint by day; the catalogue's glass cut on the
+hung lantern and on the ref the adapter reads.
+
+**Fix round one (the three critics on 0e072010: director 6, player 7,
+auditor 7).** What they found and what moved:
+
+- *The halo up close and in fog.* Inside two metres the metre-and-a-half
+  disc, floating toward the eye, laid one cream veil over cap, cage, glass
+  and whoever stood under the lamp; in fog its five-ring skirt showed its
+  facets once the veil lifted the background to grey, and lanterns went to
+  fog grey before the sacks beside them. The world scene fades the halo's
+  alpha with the eye's distance now (`kHaloNearGone`/`kHaloNearFull`,
+  `kHaloNearFloor`), takes half the fog's e-folding off it by distance
+  (`kHaloFogShare`), the fan has nine rings, and the adapter draws the halos
+  PAST the weather's veils so a glow is seen through a fog rather than
+  veiled with the wall behind it. Clear frames only see the fade.
+- *The spill is a light on the wall, not a board's tint.* Plaster windows
+  cast nothing and the timber spill stopped dead at a plank seam. It is a
+  map of cells now (`WorldScene::spill`, `buildSpill`): every pane that is
+  up lays `kSpillGlow` on its own wall cell and half of it on the two cells
+  along the wall and the street cell before it, rebuilt on the minute the
+  relight moves, read by the chunk colour stage (`ChunkLighting::spill`),
+  the piece relight (through `surfaceAt`), the bodies and the ground items.
+  A kit window on plaster casts it as a hung timber window does -- its
+  module, one run piece with the glass in the middle cell, takes three
+  quarters of its pane's own cell at both ends (`kSpillWindowModuleShare`),
+  since its cuts stand a tile and a quarter off the glass; a board half's
+  end at the module's cut shares the value with the module beyond it, so
+  nothing stops at the seam; the street cell took three quarters
+  then (`kSpillStreetShare`; the second round below re-spreads it). The map keys off the pane's own wall cell
+  (`StaticPlacement::paneX/paneY`, set by `houseOf()`), not a run piece's
+  first cut.
+- *The pool on the ground.* A grey cobble under the law's near-white
+  lantern colour came out a pale beige-grey. The pool has its own deeper
+  warmths (`kLanternPoolColour`, `kFirePoolColour`), a wider core (1.4
+  tiles at 0.7 share) and a peak a little over the law's (`kPoolPeakScale`,
+  under the pieces' 1.15 surface clamp; the chunks, bodies and items clamp
+  at one), and it gutters with the wind as the halos
+  do (`SkyState::haloScale`) -- a candle behind glass does not. Its field
+  normalises the lamps' hue to a PEAK of one, not the law's mean of one: the
+  law's field lifts a lantern's red to 1.25 of the intensity and clips it per
+  channel (as it always has; the 2D pass and the light law read those bytes
+  and they are unchanged), which on the pool would have flattened the lamp's
+  own cell against the tile beside it and turned it yellow-white.
+- *One amber at one value.* Every lit pane wore `litPane` exactly. A
+  household's candle draws its own strength off its lot now
+  (`kCandleSpread`, down to two thirds), per pane on a house lit all
+  night, so a frontage is a row of candles and not a strip.
+- *The rim ring's sawtooth.* The cut classed a triangle by its centroid, so
+  the octagonal ring where the glass meets the cap (y -0.818..-0.790, across
+  the band's edge) went half hot, half metal. A triangle is glass only when
+  EVERY vertex is in the band and on the patch; the ring is metal whole.
+- *Posts capped with no glass.* `hasLampGlass()` capped the lamp post's
+  whole body at half after dark with nothing hot on it. The post's glass is
+  named now (its pale swatch on the lamp head, y 2.25..2.65), and the cap
+  applies only to a lamp whose catalogue row cuts a glass.
+- *The software path and the cut metal.* The rebuilt metal mesh carried a
+  white colour array, which on the GL 1.1 path REPLACES the material colour
+  (`tinted()`): rlsw would have dropped the metal's tint and its cap. The
+  metal carries no colour array now; only glass does. An all-glass mesh
+  keeps its slot instead of leaving an empty one; the scene hash covers the
+  cut's fields; the dead `kPoolRadiusFloor` is gone.
+- *Ground items read the law's raw glow* (the rope beside the Gull's lamp
+  outshone the setts it lay on). They read the pool and the spill now, and a
+  self-lit item's cut glass is hot after dark and dark glass by day; the kit's
+  own carried lantern names the same cut as the hung one (the two rows share
+  a file, and the adapter's cache is by file).
+- *Also in this round, found by its auditor:* the spill scales by the
+  candle's own strength, so a two-thirds candle lays a two-thirds spill; and
+  the kit window module's ends took the pool at their cuts plus a share of
+  the pane's cell (0.45, in place of the cuts' own spill, never on top) --
+  a rule the third round retired again, see below.
+- *Tests.* A lit pane is read by `candlePane()` (the law's tint at the
+  house's strength, never dark glass); the spill map is pinned on the Docks
+  with masonry panes among the lit and a spread of strengths, and empty at
+  noon; the bodies are pinned against the same roster described without the
+  pool (the pool moves the tint of dozens and brightens those in a skirt);
+  every hung window has exactly two halves.
+
+Out of this lane, on the record from the same reports: the crosshair prompt
+fires through the Gull's roof; the scripted night section opens in daylight
+and `--demo-capture`/`--framedump` write HUD-only PNGs; urchins wear the
+watchman rig; the 02:00 crowd is the 22:00 crowd; cloned townswomen crowd a
+doorway.
+
+**Fix round two (the three critics on 702f0a48: director 6, player 5,
+auditor 5).** The first round's spill was a regression in clear weather and
+the halo's move past the veils put the lamps out in fog. What moved:
+
+- *The clamp keeps its hue.* Ambient + pool + candle was clamped per channel
+  before it multiplied a surface's tint, so a wall under a lantern
+  saturated its red first and went on taking green and blue: every lit
+  plaster in the ward came out olive, at noon luminance, with a hue seam
+  beside the Gull's lamp. `render::clampLight` scales the three channels
+  together by the brightest (the pieces, the chunks, the bodies and the
+  ground items all go through it), so a candle's light on a wall is a
+  candle's colour at any strength. Pinned: a piece at the clamp is never
+  bluer over red than its own tint.
+- *The spill is a third of what it was, and blended.* `kSpillGlow` 0.62 ->
+  0.34 on the pane's own cell, so the wall beside a window stays under the
+  pane that lights it (pinned); along the wall 0.45 of it at one tile and a
+  tail at two; out into the street more, since the light leaves through the
+  glass -- 0.9 on the cell before the window, half on its neighbours and the
+  row beyond, so a body talking under a lit window stands in it. The chunk
+  colour stage reads the map AT THE VERTEX as the mean of the four cells
+  that meet at its corner, so a plaster wall no longer breaks into slabs at
+  cell seams; a run piece's cuts already fall between cells.
+- *The veils write no depth.* The halos, drawn past the veils since round
+  one, were depth-tested against the fog shells round the eye and every
+  halo past the first shell was culled: in a fog the lamps went out before
+  the walls they lit. `rlDisableDepthMask` round the veils; the halos and
+  the bright glass are tested against the world alone.
+- *Bright glass through a fog.* A lit pane's or a lamp's glass is a light,
+  and a light is seen further into a fog than the wall round it. The world
+  scene puts the fog's share by the eye's distance into the pane's alpha
+  (`kHaloFogShare`, the halo's own rule) and the adapter draws such glass
+  once more past the veils at that alpha over its own veiled pixels
+  (`lateGlass`, `drawLateGlass`): hot at five metres, the fog's grey with a
+  warmth in it at twenty. 255 in clear air, where nothing changes.
+- *The fan is rounder.* Forty-eight segments, twelve rings, the flat core a
+  tenth of the span: the iso-alpha contours of a twenty-four-gon read as
+  straight edges on a veiled wall, and the core's own edge stood on the
+  plaster past the glass. The near fade reaches four metres now
+  (`kHaloNearFull`) with a floor of 0.08, so the cap is copper at two and
+  three metres and not cream.
+- *The rise comes forward.* `houseRisingFrom`/`To` 3.5 / 5.25: the fishers
+  are up by five, and the street at five is not the street at two.
+
+Declared, not built: the wind's dim on the pool is steady (a gutter in
+motion would want a per-frame relight; the relight runs on the minute); a
+kit window has no muntins and no room behind its glass (the Synty piece is
+a card; the ramp is what the card can carry).
+
+**Fix round three (the three critics on be4b5973: director 7, player 7,
+auditor 6).** Nothing broke the spell outright this round; what held it at
+seven and what moved:
+
+- *The fog's own edges.* The "halo rim" the player had reported three
+  rounds running, in the same place each time whatever the fan did, was
+  never the fan: it is where the weather lane's innermost fog shell (1.5 m
+  round the eye) cut the plaster above the Gull's door, a sixteen-percent
+  step of that shell's own alpha, and the line that slid across every near
+  pane as you walked was the same shell crossing the glass. Three thin
+  shells stand inside two metres now (0.7, 1.2, 1.8), then a run of 0.9 m
+  to about eight metres and a ladder growing by a tenth a shell beyond
+  (`kVeilRadii`, twenty-four shells, no step over a tenth of a night fog's
+  veil inside ten metres and only just at 9.9), forty-eight round, so each
+  cut is a small step on a curve; the weather's own test pins the count. A
+  first cut of this round at twenty-six shells 0.4 m apart blended the same
+  small alpha twenty-six times in eight bits and drifted the fogged alley
+  olive (the fourth round's player); at twenty-four with wider inner
+  spacings the drift is mostly gone -- the player's olive count fell from
+  7,770 pixels to none and red leads green on the alley wall again -- with
+  a lean of a level or two left on the near cobbles that shows at three
+  times saturation. Declared.
+- *No seam at a cut.* The kit window module's ends carried a share of the
+  pane's cell that its neighbours' ends did not, so every lit window on the
+  quay front stood on a panel a step brighter or darker than the next. The
+  module reads its cuts exactly as every run piece does now and the pool
+  round a window is the map's own footprint, wider and gentler (three tiles
+  along the wall, three out into the street, `kSpillSide*`/`kSpillOut*`,
+  `kSpillGlow` 0.30). Pinned: on the shipped Docks at ten, every pair of run
+  pieces meeting at a cut reads one light there, channel by channel, over
+  their own tints -- hundreds of pairs, no seam.
+- *The cap at three metres.* The near fade is cubic to five and a half
+  metres: a fifth of the disc at three, two fifths at four, full past five
+  and a half. The glass carries the lamp at those ranges; the disc the air
+  round it.
+- *The small hours.* A house lit all night keeps a light whatever the hour,
+  but the sim's own tavern has its hearth banked and its candles out by
+  five (the capture summary's gull=0), while its panes burned the evening's
+  full row -- and on a frontage that never goes dark, two o'clock was five
+  o'clock. From three in the morning until daylight takes every pane, a
+  house lit all night burns at `kLitHouseSmallHours` (0.55) of its
+  strength: the taproom banked and a watchman's candle. The hours are the
+  sim's tavern's own (`sim/tavern.hpp`: doors shut at two, the fire to
+  three and banked to ten, the doors shut to eleven), so two o'clock is
+  still the evening's row and the panes never come back up before first
+  light; the banking eases in over the three quarters of an hour before
+  three (`kSmallHoursEase`), not in one step on the minute, and nothing ends
+  it but first light. Households are untouched. Pinned at ten, two, three,
+  five and six.
+- *Also this round, by its auditor:* the late glass draws BEFORE the halos
+  (drawn after them it cut a pane-shaped hole in every glow) and only
+  where the fog's share is under 0.94 (`kLateGlassBelow` 240: a night fog
+  past a metre and a third; an overcast's trace only from eight and a half
+  metres out, where the halos over it make it moot); a light is red well
+  over blue (`r >= 80 && r > b + 40`), which admits every candle at any
+  strength and no dark pane, where a sum over 450 had left two thirds of
+  the candles out of the fog pass; and the colour a piece is drawn with is
+  scaled as one where it would clip at 255, while the chunks, the bodies
+  and the ground items clamp their light at one as one colour, since a
+  vertex colour or a model tint is clipped per channel by the draw. The
+  seam pin's tolerance is one rounding step of each side's tint; the hue
+  pin computes the colour the relight must give from the scene's own
+  fields; "goes out with the pane" is pinned at night; the near fade is
+  pinned.
+
+Declared, still: the wind's dim on the pool is steady; a kit window is a
+card; two men standing in the Whistling's own doorway at night are lit by
+nothing but its window's third tile of spill, and read dark.
+
+**THE RECORD ON 720f47f8 (2026-09-27): director 8, player 8, auditor 8**, the
+first round every hat put at the bar, after four fix rounds (6/7/7, 6/5/5,
+7/7/6, 8/7/7). Left on the record, declared and not built: the pool round a
+window is the map's footprint and the run piece holding the pane cannot
+peak at it (a vertical peak wants per-vertex light on kit pieces); a kit
+window is a card with no muntins and no room behind it; the wind's dim on
+the pool is steady; two men in the Whistling's doorway read dark; a lean
+of a level or two on the near cobbles in fog at three times saturation.
+Out of this lane, on the record from the same reports: the Gull's door and
+its interior stay lit and open all night while the sim shuts the tavern at
+two (the panes bank, the doorway does not); interaction prompts through
+geometry (a rope on the door lantern, a mouse on the plaster, the bartender
+through the roof); the scripted night section opening in daylight and
+--demo-capture writing HUD-only frames; urchins in the watchman's rig; the
+02:00 crowd; townswomen piled in a doorway; checker noise on the strapped
+posts. The wording of this pass was corrected once more after the fifth
+round's auditor (the shells' spacing, a dead branch in the small hours,
+the late-glass comment's numbers).
+
+**Reshoot.** `dist\granadad.exe --smoke=0 --hold --scale=1 --weather=clear --time=HH --spawn=X,Y,Z --yaw=DEG [--pitch=DEG] [--fov=DEG] --screenshot=path.png`
+
+| vantage | flags | what to see |
+|---|---|---|
+| the lamp, arm's length | `--time=22 --spawn=152,64,19 --yaw=180 --pitch=15 --fov=45` | the glass the brightest thing on the lamp, white-amber, hottest a third of the way up; the dome and bars over it dark copper; the plaster behind pooled, not washed |
+| the lamp from eight tiles | `--time=22 --spawn=152,56,19 --yaw=180 --pitch=6 --fov=60` | the lamp still a bright point over its cap; the pool on the wall and cobbles readable out to the eye's own feet |
+| the cobbles under it | `--time=22 --spawn=152,63,19 --yaw=180 --pitch=-40 --fov=70` | a warm pool on the setts that fades, not a disc with an edge; a body crossing it lit by it |
+| the Gull's frontage | `--time=22 --spawn=145,58,19 --yaw=160 --pitch=0 --fov=40` | every timber pane one ramp, hot sill to deep-amber head, no seam; the boards either side warm at the frame and dark at the module's end |
+| the overview from the roof | `--time=20/23/2/5 --spawn=153,72,21 --yaw=225 --pitch=-18` | lamps as pools with skirts that carry; the roofscape's panes thinning to two and picking up by five |
+
 ## The jambs, 2026-09-16
 
 The critic's line: the Gull's door posts are metre-square 3 m pillars. They
@@ -686,6 +1007,240 @@ Reshoot. Every line is `dist\granadad.exe --smoke=0 --hold --width=1280
 | jamb-28 | UNCHANGED: the Tarwalk's sign frames, still timber, still fitted to their cells | `--time=14 --spawn=153,50,19 --yaw=180 --pitch=-2 --fov=60 --screenshot=jamb-28.png` |
 | jamb-29 | A GATE, UNCHANGED: the Netters', its own posts and beam | `--time=10 --spawn=171,96,19 --yaw=180 --screenshot=jamb-29.png` |
 
+## The post is the reveal, 2026-09-25 (jambs, second cut)
+
+The first cut scored 7/10. The critic's four, and where each one landed.
+Code is `native/src/render3d/static_pieces.cpp` unless said otherwise.
+
+| # | the defect | what changed |
+|---|---|---|
+| 1 | the timber post stands a third of a metre outboard of the opening, a plaster strip between it and a grey stone surround: a pilaster pair, not a jamb | the grey surround WAS the kit's door wall (`SM_Bld_Base_Wall_Door_Double_01`), stretched over the gap with its own trim round a hole narrower than the gap and its own plaster margin either side; the post stood at the gap's edge, outside all of that. The kit door wall is gone (`doors()` keeps the gates and the leaves, nothing else). The post's inner face is ON the opening's edge, and the jamb's reveal quad (`walls()`) stands 6 mm inboard of that face, cut from the street post's back to the room post's back: the post is the edge of the reveal. Over the head the wall's own finish closes the frontage to the storey top -- plaster over a rendered door, brick over a brick one, boards over a boarded one (`finishOf()`) -- and a plaster soffit lies across the head between the two lintels (its own role, `soffit`, the ceiling piece face down: a door-head soffit is not a room ceiling) |
+| 2 | from the taproom the door is a bare cut in plaster | the frame is mirrored onto the room face: two more posts and a lintel in the plane of the room's plaster, the header over the head in the room's tint, and the room-side panel that ends at the jamb no longer reaches a quarter of a metre past it into the opening (the slot it closed is closed by the post and the reveal now) |
+| 3 | the Bilge's door gets the lintel and no posts | the frame the critic shot (`A81_bilge_face`) is the Gilded Gull's, from the Tarwalk facing south -- the lantern to the right of the door and the hitching post to its left are the Gull's, the Bilge's hitch stands the other side -- and both posts are in it, the left one behind a body and the LOOK label. The Bilge's own door (world 137..138 on row 66) has its four. The rule was never false on either: `doorPostAt()` is unchanged, and `StaticPlacementStats::bareJambs` now counts every flank of a door the rule refuses, which the district test pins at zero along with four posts, two lintels and one soffit for every door that is not a gate |
+| 4 | at 22:00 the posts take no light from the wall lantern a metre away | two things. The post wore the wall material's tint -- granite's blue-grey [156,160,168] over dark oak, which is a post at a quarter of the plaster's brightness under any light -- and was lit from its own wall cell alone. The frame's timber wears its own oak now, and each post is lit at the cut between its jamb cell and the gap cell beside it (the two averaged), which is the value the wall's own piece ends on at that jamb, with the wall's facing factor. Same light law, same numbers, the timber just shows them |
+
+What did not change: the jamb rule (`door_jambs.hpp`), the mesher's cut
+under the head, the gates (their own two posts and beam, as before), the
+leaves (hinged just inside the post's face now, still swung open along
+the reveal), foot seating, proportion.
+
+Render only. `TileQuery::solid()` is untouched and the cell is still a
+wall. Tavern and population baselines unchanged by construction; the
+scene hash moves (every door in the ward is four posts, two lintels, two
+headers and a soffit now, and two catalogue rows are gone).
+
+### The critics' round
+
+Three critics scored the cut above at 7/10 each -- a director, a player,
+a technical-art auditor -- and named the same things. Where each landed.
+
+| # | the defect | what changed |
+|---|---|---|
+| 1 | a black slot beside every leaf, striped, both faces; from the taproom you could see the street down it | the leaf's inner face hung 16 mm off the post's inner face and the reveal quad 6 mm off it, one-sided, so any angle off the axis looked past the quad's back into the wall's hollow, and straight down the 10 mm between leaf and quad to the street. The leaf's inner face is ON the post's plane now (`kLeafOffReveal` 0) with the reveal quad half a millimetre into the opening, inside the leaf's thickness (`kRevealFlush` 0.0005): no slot, no overlap, nothing to fight |
+| 2 | a plaster line down every post's inner face, "a zero-thickness fin at mid-depth that slices through the strap"; the west jamb's inner face read as plaster from the east | the fin was the wall quad's own 5 mm cut overlap (`kCutOverlap`) carried past the opening's edge into the post's depth; a run that ends at a jamb post now stops 5 mm INSIDE the post instead, and the header over the head overlaps that retracted end by twice the hair, since above the head there is no post to hide a seam (the first cut of this fix met it edge to edge and drew a dotted line of the stone course behind). The plaster read was the other half: a post's front and inner faces drew the one flat colour (`kDrawShaded` leaves upright faces alone), so 26 cm of oak depth vanished and the reveal beyond the leaf's edge read as the post's side. The frame's timber is `kDrawFaced` now (scene.hpp, the blend shader): its upright faces take the chunk's own `kFacingX` / `kFacingY` by their normals, the two numbers printed into the shader at load, so a post's two faces split exactly as the wall's faces round it do |
+| 3 | a hairline of plaster under every lintel, dashed | the kit joist's section is 0.36 m, not the 0.369 I took from its width, so the beam sat 3 mm off the head and the header's bottom showed under it. The lintel is a different beam now (below) and the header starts 2 cm above the head, inside the beam's body (`kHeaderInset`) |
+| 4 | a dark triangle dead-centre on every lintel, the same on every door: a repeated stamp | the kit joist (`SM_Gen_Bld_Beam_01`) carries three notches along its five metres, and squashed to a door's width one landed on every lintel's face. The lintel is the posts' own strapped beam (`SM_Prop_Beam_01`) laid on its side across the two heads, its own section, so the frame is one timber -- straps and all |
+| 5 | "the posts take the lantern only as a screen-space halo; the post under the lamp is pixel-identical to the far one" | that one is the light law, not the frame: a piece is lit per cell, with no vertical term, and both posts by the Gull's door sit at the clamp (`kLightClamp`). The posts DO take the lamp -- the tint is the value the wall's piece ends on at that jamb -- but a post will not brighten toward its head until a piece can be lit along its height. On the record, not fixed |
+
+Also on the record, the critics' list for a nine, none of it done here: a sill
+or step stone under the posts and threshold; hinge pintles on the street
+post and pegs at the lintel instead of the kit's iron collars; per-door
+variation (flip, wear, salt); contact darkening at the feet and under the
+lintel; a hint of grain on the flat oak.
+
+The round-two critics (director 6, player 7) then found the same slot, the
+same fin and a lintel floating a finger over its posts, in the same pixels,
+and that was the real find of the lane: the kit's strapped post is 0.209 m
+of oak inside 0.261 m of iron collars, and I had placed the whole frame by
+the collars (the mesh's bounds, `width`). The shaft's inner face stood 2.6 cm
+short of the opening's edge -- that was the slot, the plaster fin and the
+"no oak on the inner face"; the lintel's shaft sat 2.6 cm over the head with
+its collars hanging under it -- that was the floating lintel and the
+"collars through the soffit". `core` is a catalogue field now (the shaft's
+section; `coreOf()`), and the frame is placed by it: shaft on the edge, shaft
+on the head, the reveal quad from the shaft's back, the leaf's hinge behind
+it. The collars stand proud of all of it, as collars do.
+
+Two more off my own frames after that, both the depth buffer and not the
+geometry: the soffit ran on ten centimetres under each lintel's underside,
+four millimetres apart, and at four metres the two striped; and the lintel's
+underside lay in the post's top plane along the whole junction and dotted.
+Nothing is coplanar now and nothing overlaps within a hair: the soffit ends
+at the lintels' back faces and lies three centimetres over the head; the
+lintel sits three centimetres down into the posts' heads and three behind
+their faces (two millimetres and one still dotted -- the depth buffer at
+four metres cannot tell millimetres apart, and its collars hang under the
+head where the soffit's edge crosses them); the reveal quad is on the post's
+own plane (`kRevealFlush` 0), starts where the post's back ends, and is
+drawn from both sides. The rule for anyone dressing a frame after this: two
+surfaces that overlap in area want three centimetres between them, or one
+of them wants to end where the other begins.
+
+Round three (director 7, player 7, auditor 7, every item of every list
+fixed but one): with the reveal quad on the post's own plane, the tenth of
+a millimetre the mesh's bounds leave between the two -- and the leaf's back
+face, which the kit draws, lying on that same plane -- tied down the whole
+hinge edge as a zipper. So the reveal is a rebate now: a centimetre behind
+the post's inner face, running on into the post's depth, the post standing
+that centimetre proud of its plaster, and the leaf tucked into the rebate
+with its inner face three centimetres behind the plaster. The soffit runs
+three centimetres past each reveal into the jamb cell's stone course, so
+its edge is buried, and the lintel sits three centimetres into the posts'
+heads and three behind their faces. Nothing at a door is within the depth
+buffer's reach of anything it does not meet at an edge.
+
+Round four (7, 7, 7 again): the zipper and the dotted joint gone, and one
+thing the rebate had let out -- a black band over every open leaf. Not a
+hole: the jamb cell's own stone course, which the mesher kept from the head
+up, showing through the centimetre of rebate between the leaf's top (the
+kit door is 1.97 m) and a soffit three centimetres over the head. So the
+soffit now lies at the lintels' top level (`kDoorSoffitHeight`, 2.20 -- the
+beams stand proud of it, their tops hidden in the closed head box, and the
+hewn V on the room lintel's top with them), and the mesher cuts the jamb
+cell to three centimetres over THAT (`kDoorHeadCut`), so the reveal is
+plaster from the threshold to the soffit and the stone starts where
+nothing can see it. The leaf's hinge end runs a centimetre into the post
+instead of stopping a centimetre short (`kLeafOffPost` -0.01): the short
+stop showed a sliver of reveal between post and leaf from any stand beside
+the door, on both jambs, which the auditor's mirrored cameras called an
+asymmetry.
+
+Round five (director 8, player 7, auditor 7): the band gone, two things
+left. A comb of dark teeth on the reveal under the lintel, unchanged since
+round three: the lintel's iron collars hang 2.6 cm under the head, and the
+kit door's top (1.967 m) sat three millimetres under them -- the depth
+buffer again. The leaf is scaled to stop at 1.95 (`kLeafTop`), five
+centimetres under the collars. And the auditor's mirrored cameras were
+right after all: the one jamb of the Gull's door with the WINDOW beside it
+showed plaster over the back half of the post's inner face, because a kit
+box's end cap stood on the opening's edge a centimetre in front of the
+rebated reveal, where a thin quad had retreated into the post. A box (or
+a board quad) ending at a jamb post now retreats 4 cm into it
+(`kBoxRetract`), the header over the door runs to exactly where each
+neighbour ends and abuts it (`jambEndRetract_`, no overlap to fight, no gap
+to see through), and the soffit is back at the head with the lintel
+resting on the posts' tops -- at the beams' top level the whole inner face
+of each lintel hung in the head and its hewn facet read as a tent.
+
+Round six (7, 7, 7): the comb, the tent and the asymmetry gone, and the
+header's exact abutment opened the round-one crack again, thinner -- a
+see-through hairline over every post on both faces, the hollow and the
+sky behind it. Two pieces that meet edge to edge leak: a sliver at grazing
+angles where their planes differ by the cuts' stagger, dropped pixels
+where the two edges share a line but not their vertices (a kit box beside
+a header box). And the soffit level with the lintels' undersides met each
+one the same way -- a broken black hairline along the join, a wedge of
+dark head box mid-span. Round seven answers both with one rule, on the
+record now: NEVER AN EDGE-TO-EDGE JOIN WITH THE HOLLOW BEHIND IT. The
+header keeps its exact abutment and gets a backing (`kHeaderBack`): the
+wall's finish once more, three centimetres behind the plane, six wider at
+each end, from over the soffit to the storey top, so whatever a seam drops
+shows plaster; at three centimetres it fights nothing, and it shows
+nowhere else. The soffit goes three centimetres up into the lintels'
+bodies (`kDoorSoffitHeight` = head + 0.03) and runs to each beam's centre
+plane, so it CROSSES the back face instead of meeting it, and the beams
+stand three centimetres proud of it, which is what beams over a soffit
+do.
+
+Round seven (7, 7, 7, each one fix from 8): the cracks gone square-on
+and at three-quarters, the lintel/soffit join clean, the mirrored pairs
+holding -- and two things left. The backing leaked at a graze: a ray
+through the seam at a grazing angle meets the backing's depth well to the
+side of the seam, seven centimetres at the angle a body walking the
+street sees the far jamb at, and six centimetres of reach left a
+continuous line up the far header's end (17 at x 372, the director's
+taproom graze). And the three centimetres of lintel that now stand proud
+of the soffit brought back the dark tent mid-span on the inner face, the
+same shape marked down in rounds one, four and five. Round eight: the
+backing runs on over the whole jamb cell at each end (`kHeaderBackReach`
+a metre, leaking under two degrees). And the tent is the beam itself: the
+kit's strapped timber is hewn at two corners on opposite edges, a
+diagonal cut a hand long on each (off its vertices: the -x/+z arris from
+0.75 to 1.04 m along, the +x/-z arris from 1.07 to 1.85), and laid as it
+was, one sat on the lintel's inner-bottom arris, in the head, its facet
+looking down and in and darkened as an underside. It was never the
+normals or the atlas (one swatch over every shaft triangle; and lighting
+the faced timber per fragment off the geometric normal, tried first,
+left the tent where it was and put derivative noise over every post).
+For round eight the lintel was the beam turned a half turn about its own
+Z, that corner a chamfer on the front-bottom arris and the other on the
+hidden back-top edge -- the lintel needs 2.42 of the beam's 2.49 m, so no
+orientation hides both.
+
+Round eight (director 7, player 7, auditor 8): the auditor finds no
+crack, gap, see-through, z-fight or asymmetry left anywhere, from any
+angle, and clears the frame. The other two hold at 7 on the turned
+beam's corner: "a bite, not timber", a dark two-facet peak on the show
+face of every lintel, and both say the same thing -- don't hide it,
+delete it. Round nine does: a catalogue row can ask for its shaft SQUARED
+(`"square": true`, `shaft_square.hpp`), and at load every vertex inside
+the shaft's section that lies on one face but short of the other is
+pushed out to the arris with its normal set to the face it was on, so
+the cut's own triangles collapse to nothing; the collars are outside the
+section and untouched. The posts and the lintel ask for it; the street's
+hitching posts use the same file as it comes (a squared shaft is its own
+loaded model). The half turn comes out again -- nothing left to turn
+away from.
+
+Round nine (director 8, player 8, auditor 8): the frame clears the bar.
+The auditor's diff of the last two shoots touches nothing but the squared
+timber; the scan finds no hairline where the cuts' triangles collapsed,
+no crack, gap, see-through, z-fight or asymmetry anywhere, from any
+angle, day or night. The one note from all three, taste not fault: the
+posts lost their hewn knees with the same rule, and the frame reads as
+sawn square stock now. If the hand-worked look comes back it comes back
+on purpose -- an even adze face or a stopped chamfer the length of the
+arris -- never the kit's two corner cuts.
+
+### What 9 needs, on the record
+
+The four critics' lists, merged, in the order they weight them:
+
+- Collars at the post heads (corner irons, or oak pegs through the joint),
+  symmetric, far fewer than twelve a door, none hanging under the head
+  into the opening.
+- A sill or worn stone step the posts and leaves stand on; the floorboards
+  stop in a ruler line on the pavement strip.
+- A stop bead or head lining the leaf visibly closes against; a hinge
+  pintle and strap on the street post.
+- Lamp light with a vertical term on the frame near a lantern; the night
+  floor darker so the oak can go dark; the taproom's own lamps on the
+  room-face frame.
+- Contact darkening at the post feet and under the lintels; variation door
+  to door (beam flip, wear, salt-greying on the Docks).
+- Deliberate hewn character, if any: an even adze face or a stopped chamfer
+  the length of the arris.
+- The eave line: the header's top edge flush with its neighbour's (a 1-2 px
+  step at fov 35).
+
+### Reshoot
+
+Every line is `dist\granadad.exe --smoke=0 --hold --width=1280 --height=720 --scale=1` plus:
+
+| frame | vantage | command |
+|---|---|---|
+| jambs2-01 | the Gull's door from the street, the 3/4 view from the west: posts on the opening's edge, no plaster strip, no grey surround, the header in the frontage's plaster (the Tarwalk's sign frames block the wider stands; a body stands by the right post whatever the hour) | `--time=14 --spawn=151,61,19 --yaw=160 --pitch=-4 --fov=55 --screenshot=jambs2-01.png` |
+| jambs2-02 | square on, zoomed: the reveal is the post | `--time=10 --spawn=153,58,19 --yaw=180 --pitch=-6 --fov=45 --screenshot=jambs2-02.png` |
+| jambs2-03 | the head from inside the Gull: the room-side posts, lintel and header | `--time=20 --spawn=153,68,19 --yaw=0 --pitch=18 --screenshot=jambs2-03.png` |
+| jambs2-04 | inside, standing back: the frame from the taproom | `--time=14 --spawn=154,70,19 --yaw=350 --pitch=0 --fov=70 --screenshot=jambs2-04.png` |
+| jambs2-05 | the Bilge's own door, from the street | `--time=14 --spawn=137,61,19 --yaw=180 --pitch=-4 --fov=60 --screenshot=jambs2-05.png` |
+| jambs2-06 | 22:00, the Gull's door under its lantern: the timber takes the lamp | `--time=22 --spawn=153,59,19 --yaw=180 --pitch=-2 --fov=60 --screenshot=jambs2-06.png` |
+| jambs2-07 | a gate, unchanged: the Netters' | `--time=10 --spawn=171,96,19 --yaw=180 --screenshot=jambs2-07.png` |
+| jambs2-14 | the west jamb from the east, 1920x1080, no HUD: the post's front and inner faces apart, the reveal behind the leaf | `--width=1920 --height=1080 --nohud --time=14 --spawn=157,62,19 --yaw=225 --pitch=-6 --fov=35 --screenshot=jambs2-14.png` (in place of the 1280x720) |
+| jambs2-15 | the Bilge's room face at 22:00, 1920x1080, no HUD | `--width=1920 --height=1080 --nohud --time=22 --spawn=137,69,19 --yaw=0 --pitch=4 --fov=60 --screenshot=jambs2-15.png` |
+| jambs2-16 | the Gull's room-face head, looking up, 1920x1080, no HUD: the lintel, its collar, the header over it | `--width=1920 --height=1080 --nohud --time=14 --spawn=153,69,19 --yaw=0 --pitch=22 --fov=50 --screenshot=jambs2-16.png` |
+| jambs2-17 | the street face at a graze from the west, no HUD: the header's seam over the east post | `--nohud --time=10 --spawn=151,64,19 --yaw=121 --fov=50 --screenshot=jambs2-17.png` |
+| jambs2-18 | the east head close, no HUD: the lintel's end, its collar, the header over it | `--nohud --time=10 --spawn=153,62,19 --yaw=157 --pitch=13 --fov=25 --screenshot=jambs2-18.png` |
+| jambs2-19 | standing in the Gull's doorway looking east, 1920x1080, no HUD: the soffit, both lintels proud of it, the leaf against the reveal | `--width=1920 --height=1080 --nohud --time=14 --spawn=153,66,19 --yaw=90 --pitch=10 --fov=70 --screenshot=jambs2-19.png` |
+| jambs2-20 | the west post's foot, no HUD (the auditor's mirrored pair, with 21) | `--nohud --time=12 --spawn=153,63,19 --yaw=180 --pitch=-30 --fov=30 --screenshot=jambs2-20.png` |
+| jambs2-21 | the east post's foot, mirrored | `--nohud --time=12 --spawn=154,63,19 --yaw=180 --pitch=-30 --fov=30 --screenshot=jambs2-21.png` |
+| jambs2-22 | the player's comb vantage, 1920x1080, no HUD: the west reveal's head under the collar | `--width=1920 --height=1080 --nohud --time=10 --spawn=157,62,19 --yaw=228 --pitch=3 --fov=50 --screenshot=jambs2-22.png` |
+| jambs2-23 | the street 3/4 from the west at 15:00, 1920x1080, no HUD: the header's seam over the east post, the crack of round six | `--width=1920 --height=1080 --nohud --time=15 --spawn=151,63,19 --yaw=128 --pitch=6 --fov=38 --screenshot=jambs2-23.png` |
+| jambs2-24 | the taproom face at 22:00, no HUD: the seams over both room posts | `--nohud --time=22 --spawn=153,69,19 --yaw=0 --pitch=8 --fov=70 --screenshot=jambs2-24.png` |
+| jambs2-25 | the director's taproom graze, no HUD: the seam over the far room post at fov 60 | `--nohud --time=14 --spawn=151,68,19 --yaw=60 --pitch=5 --fov=60 --screenshot=jambs2-25.png` |
+| jambs2-26 | the auditor's taproom 3/4 from the east, no HUD: the far room post's seam | `--nohud --time=14 --spawn=156,68,19 --yaw=320 --pitch=5 --fov=60 --screenshot=jambs2-26.png` |
+| jambs2-27 | the mirror of 25 from the east | `--nohud --time=14 --spawn=155,68,19 --yaw=300 --pitch=5 --fov=60 --screenshot=jambs2-27.png` |
+
 ## Weather, 2026-09-25
 
 Four skies, render-only. Roadmap D15 ruled it yes on the one condition that
@@ -735,7 +1290,7 @@ and population digests, and two sessions under one fog draw one frame.
 
 How the fog is drawn: the 3D pass has never had a fog shader (rlsw has no
 shader at all), so the weather's fog is geometry. Nested translucent shells
-round the eye, nineteen of them out to fifty-six tiles and closer together
+round the eye, nineteen of them then (twenty-four since the night-light lane's third pass, three of them inside two metres; see that pass) out to fifty-six tiles and closer together
 near the eye, each coloured the fog's colour below the horizon and the sky's
 own above it, each with the alpha of the fog between it and the one inside,
 drawn last in the pass far to near with the depth test on. Whatever stands

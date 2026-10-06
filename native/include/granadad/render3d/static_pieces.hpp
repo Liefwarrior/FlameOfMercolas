@@ -179,7 +179,6 @@ enum class PieceRole : std::uint8_t {
     Wall,
     WallCorner,
     WallWindow,
-    WallDoor,
     RoofEdge,
     FloorPlank,
     FloorCobble,
@@ -213,10 +212,6 @@ enum class PieceRole : std::uint8_t {
     LipPlank,
     /// The same on a stone floor: the plaster quad, tinted.
     LipStone,
-    /// The plaster quad behind a door frame's header and jambs on a
-    /// rendered (plaster-out) building, so the room never sees the frame's
-    /// brick side.
-    DoorInside,
     /// A door leaf standing open against the reveal, hinged on the jamb.
     DoorLeaf,
     /// A post at each jamb of a gate wider than a door.
@@ -311,6 +306,12 @@ enum class PieceRole : std::uint8_t {
     /// ceiling joists use, but its own role, because it lies at door-head
     /// height on the facade's line and not under a slab on the odd grid.
     Lintel,
+    /// THE DOORWAY'S SOFFIT. The plaster ceiling piece laid face down
+    /// across a door's head between the street lintel and the room lintel
+    /// (jambs()): its own role, because it lies at door-head height inside
+    /// the wall's thickness, not at the slab plane over a room where every
+    /// Ceiling hangs.
+    Soffit,
     /// KIT BUILD. A THING ON A TILE: an item of the player's registry
     /// (sim/items.hpp) lying where the room says it lies -- a dropped
     /// knife, the cudgel under the bar, the four strongboxes, the snug's
@@ -322,7 +323,7 @@ enum class PieceRole : std::uint8_t {
     /// TAKE does, in the sim, and the next frame simply has fewer.
     Item,
 };
-inline constexpr std::size_t kPieceRoleCount = 60;
+inline constexpr std::size_t kPieceRoleCount = 59;
 
 /// The JSON key of a role ("wall", "wall_corner", ...), and back. None for
 /// an unknown key.
@@ -401,11 +402,26 @@ struct PieceSpec {
     /// The cheap cull: pieces farther than this from the eye are not
     /// described. Props draw closer than walls.
     float maxDistance = 64.0F;
-    /// A door frame's opening in its own module: the jamb width on each
-    /// side (`cutX`, from either end) and the opening's height (`cutY`).
-    /// What the inside plaster is cut around.
-    float cutX = 0.0F;
-    float cutY = 0.0F;
+    /// The glass cut (scene.hpp StaticPieceRef): `glassBand` [lo, hi] in
+    /// the model's local Y and `glassUv` [u0, u1, v0, v1], both from the
+    /// row. Zero means the piece has no glass to cut.
+    float glassBandLo = 0.0F;
+    float glassBandHi = 0.0F;
+    float glassU0 = 0.0F;
+    float glassU1 = 0.0F;
+    float glassV0 = 0.0F;
+    float glassV1 = 0.0F;
+    /// A strapped timber's own section inside its iron: the shaft, not the
+    /// collars that ring it (`width` is the collars, the bounds). The door
+    /// frame is placed by this -- the shaft's inner face on the opening's
+    /// edge, the lintel's shaft on the head -- and placed by the collars
+    /// it stood 2.6 cm short of everything it should have met. 0 = the
+    /// width.
+    float core = 0.0F;
+    /// The shaft is squared at load (shaft_square.hpp): the kit's beam is
+    /// hewn at two corners, and as a lintel one cut always lands on a
+    /// bottom arris in plain view. Needs `core`.
+    bool square = false;
     /// A flat quad drawn on both sides (its scale is mirrored, which the
     /// adapter draws without back-face culling).
     bool twoSided = false;
@@ -646,14 +662,20 @@ struct StaticPlacement {
     HouseKind house = HouseKind::None;
     std::uint32_t houseLot = 0;
     std::int32_t insideX = 0, insideY = 0, insideZ = 0;
-    /// THE CRITIC'S SECOND: a hung timber pane is two stacked placements of
-    /// PieceRole::PaneTimber sharing one seam (static_pieces.cpp), never
-    /// one -- the sill-side band `paneCore`, the head-side band not. Both
-    /// carry the same house and lot; only the tint a relight gives slots[4]
-    /// (world_scene.cpp) tells them apart, so a lit window reads as a
-    /// hotter core toward its sill and a cooler glass toward its head
-    /// instead of one flat decal. Unused by every other role.
-    bool paneCore = false;
+    /// The pane's OWN wall cell (houseOf): a kit window is a run piece whose
+    /// lightX/lightY name its first cut, not the cell its glass stands in.
+    /// The spill (world_scene.cpp buildSpill) keys off this.
+    std::int32_t paneX = 0, paneY = 0;
+    /// THE SPILL. A timber board that flanks a hung window is placed as
+    /// two halves cut at the window's centre (static_pieces.cpp), each
+    /// carrying the pane's own household through houseOf(), so the relight
+    /// (world_scene.cpp) can warm the end at the pane -- `spillAtB` names
+    /// which end: the `to` cut (b) on the half before the window, the
+    /// `from` cut (a) on the half after it -- with a small emissive pool
+    /// that goes out with the pane, the board's far end taking a quarter of
+    /// it. Unset on every other piece.
+    bool spill = false;
+    bool spillAtB = false;
     /// The piece keeps its catalogue tint through the relight.
     bool selfLit = false;
     /// How far the piece reaches from its origin, in tiles: the frustum
@@ -677,6 +699,10 @@ struct StaticPlacementStats {
     std::size_t byRole[kPieceRoleCount] = {};
     std::size_t wallRuns = 0;
     std::size_t doorGaps = 0;
+    /// Flank cells of a door (not a gate) the jamb rule (door_jambs.hpp)
+    /// refused, so no post stood there and the mesher left the box: zero
+    /// on a well-formed map, and the district test says it must be.
+    std::size_t bareJambs = 0;
     [[nodiscard]] std::size_t total() const noexcept {
         std::size_t n = 0;
         for (const std::size_t count : byRole) {

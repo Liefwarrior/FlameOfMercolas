@@ -607,8 +607,12 @@ TEST_CASE("the chunk version moves with the weather, and a clear version is what
 }
 
 TEST_CASE("the veil is nested shells round the eye, far to near, and none at all in clear air") {
-    REQUIRE(veilShellCount() == 19U);
-    CHECK(veilShellRadius(0) == doctest::Approx(1.5F));
+    // Twenty-four shells since the night-light lane's third pass: three
+    // thin ones inside two metres so a shell's cut across a near wall is a
+    // small step, a run of 0.9 m to eight metres, a ladder beyond; none
+    // over a tenth of a night fog's veil inside ten metres.
+    REQUIRE(veilShellCount() == 24U);
+    CHECK(veilShellRadius(0) == doctest::Approx(0.7F));
     CHECK(veilShellRadius(veilShellCount() - 1) == doctest::Approx(56.0F));
     for (std::size_t shell = 1; shell < veilShellCount(); ++shell) {
         CHECK(veilShellRadius(shell) > veilShellRadius(shell - 1));
@@ -627,7 +631,7 @@ TEST_CASE("the veil is nested shells round the eye, far to near, and none at all
     REQUIRE(fogged.veil > 0.0F);
     const MeshData veil = buildVeil(fogged, 7U);
     REQUIRE(veil.triangleCount() > 0U);
-    constexpr std::size_t kRingVertices = 11U * 24U;
+    constexpr std::size_t kRingVertices = 11U * 48U;
     REQUIRE(veil.vertexCount() % kRingVertices == 0U);
     CHECK(veil.vertexCount() / kRingVertices == veilShellCount());
     REQUIRE(veil.colours.size() == veil.vertexCount() * 4U);
@@ -644,7 +648,7 @@ TEST_CASE("the veil is nested shells round the eye, far to near, and none at all
     // innermost last, so the blend composes outside in.
     REQUIRE(!veil.indices.empty());
     CHECK(radiusOf(veil, veil.indices.front()) == doctest::Approx(56.0F).epsilon(0.01));
-    CHECK(radiusOf(veil, veil.indices.back()) == doctest::Approx(1.5F).epsilon(0.01));
+    CHECK(radiusOf(veil, veil.indices.back()) == doctest::Approx(0.7F).epsilon(0.01));
     CHECK(radiusOf(veil, veil.indices.front()) > radiusOf(veil, veil.indices.back()));
     // Below the horizon a ring is the fog's colour; at the zenith the sky's
     // own, so the sky seen through every shell is still the sky.
@@ -655,7 +659,7 @@ TEST_CASE("the veil is nested shells round the eye, far to near, and none at all
                std::abs(static_cast<int>(veil.colours[at + 2U]) - static_cast<int>(colour.b * 255.0F + 0.5F)) <= 1;
     };
     CHECK(closeTo(0U, fogged.fog));             // the first shell's bottom pole
-    CHECK(closeTo(10U * 24U, fogged.skyTop));   // its top pole
+    CHECK(closeTo(10U * 48U, fogged.skyTop));   // its top pole (48 segments a ring)
 }
 
 TEST_CASE("a fog is in the description, a clear description has no veil in it, and twice is once") {

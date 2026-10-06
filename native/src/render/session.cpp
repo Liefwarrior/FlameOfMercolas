@@ -2194,6 +2194,35 @@ void Session::setCrouched(bool crouched) {
     say(crouched ? "CROUCHED" : "UPRIGHT");
 }
 
+int Session::equippedQuickSlot() const noexcept {
+    // The equipped cell derived fresh from the ONE equipped id sim::Tavern
+    // holds -- the same id spellLine() reads for the CAST row, so the two
+    // can never disagree about what the hand is holding.
+    if (const sim::Spell* held = tavern_->equippedSpell(); held != nullptr) {
+        for (std::int32_t slot = 0; slot < sim::Tavern::kQuickSlotCount; ++slot) {
+            const sim::Spell* bound = tavern_->slotSpell(slot);
+            if (bound != nullptr && bound->id == held->id) {
+                return slot;
+            }
+        }
+    }
+    // THE CELLS PASS: ONE MARK FOR "IN YOUR HAND", CAST OR THING. The knife
+    // walked onto slot 3 and pressed is as much in the hand as a crafting
+    // is, and both critics read the strip's inverted cell as that mark and
+    // found it lit for casts only -- so an item slot whose item is the one
+    // held inverts the same way, off the same heldItem() the sheet's IN
+    // HAND row reads, and gold stays the wheel's cursor alone.
+    if (const sim::ItemDef* heldThing = tavern_->heldItem(); heldThing != nullptr) {
+        for (std::int32_t slot = 0; slot < sim::Tavern::kQuickSlotCount; ++slot) {
+            const sim::ItemDef* bound = tavern_->slotItem(slot);
+            if (bound != nullptr && bound->id == heldThing->id) {
+                return slot;
+            }
+        }
+    }
+    return -1;
+}
+
 void Session::selectQuickSlot(int slot) {
     if (slot < 0 || slot > 9) {
         return;
@@ -2212,15 +2241,15 @@ void Session::selectQuickSlot(int slot) {
         if (audio_ != nullptr) {
             audio_->playOneShot(audio::SoundId::UiConfirm);
         }
-        // `SLOT 3 - CLEAR THE HEAD` (UI-EA-SPEC sec. 5): the toast is the
-        // slot and the name; READY was the toast announcing itself.
-        // KIT BUILD: an item slot names the thing now worn the same way.
-        const sim::Spell* crafting = tavern_->slotSpell(slot);
-        const sim::ItemDef* thing = tavern_->slotItem(slot);
-        say("SLOT " + std::to_string(slot + 1) + " - " +
-            (crafting != nullptr ? upperAscii(crafting->displayName)
-                                 : thing != nullptr ? thing->name : std::string("EMPTY")) +
-            ".");
+        // `SLOT 3 - CLEAR THE HEAD` (UI-EA-SPEC sec. 5) used to be shouted
+        // here on the alert row, at the glance register, directly under a
+        // strip that already names the slot in the reading register -- all
+        // three critics read the shout as outranking the thing the hand is
+        // on. THE CELLS PASS: a loaded slot's press is the strip's to answer
+        // (the digit inverts, the name sits beside the digits, the CAST or
+        // hands row reads the same id) and the alert row stays quiet for it.
+        // An empty slot and a thing no longer carried still say so below: a
+        // key that silently does nothing is a key the player reads as broken.
         return;
     }
     if (tavern_->slotItem(slot) != nullptr) {
@@ -5363,6 +5392,37 @@ void Session::step(const sim::MoveInput& input) {
     voice_.clearIfSettled(voiceAnim_.settled() && !voiceAnim_.target());
     clearIfClosed(turnAnim_, turnCache_);
 
+    // STREET SENSES (9a completion), AND CROWD FLOW: WHERE THE PLAYER IS,
+    // pushed to the district every step the way syncTavernToBody pushes it to
+    // the room -- so a frightened body flees AWAY from him (actFlee) and
+    // cowers FACING him (actCower) instead of in a drawn direction, and so a
+    // blocked body's tryEnter/sidestep refuse to route onto his own tile.
+    // Whole tiles; the ward interpolates nothing off it. This is the client
+    // side of the ONE declared population field; the sim hashes it, the
+    // client only feeds it.
+    //
+    // PUSHED BEFORE engine_->tick(), NOT AFTER -- an auditor pass caught the
+    // staleness the old order left in: pushed after the tick, the ward's own
+    // movement this second always ran against WHERE THE PLAYER STOOD AS OF
+    // THE START OF THE SECOND, up to a full second behind a player who is
+    // sprinting. A body could route onto -- or refuse to leave -- a tile the
+    // player had already left a second ago, or fail to refuse one he had
+    // already reached. Pushed here, the tick that is about to run reads
+    // wherever he is on THIS step, same as every other client-fed field.
+    if (people_ != nullptr) {
+        people_->setPlayer(body_->tileX(), body_->tileY(), body_->band());
+        // STREET SENSES leg (c): and whether he PRESENTS AS A WIELDER -- the
+        // tavern's own deference gate, pushed so the street Watch reads the
+        // same answer the Gull's does (D6: absolute, Gull and street).
+        people_->setPlayerPresentsAsWielder(tavern_->playerPresentsAsWielder());
+        // AND WHETHER HE IS INDOORS -- a house's own brawl is not street
+        // business (test_scripted_lines.cpp's nemesis line found this: the
+        // alarm below already crosses the Gull's open door on purpose, for
+        // the ordinary crowd, but the Watch has no jurisdiction over what
+        // Watchman Cull's own separate watch already polices).
+        people_->setPlayerIndoors(tavern_->playerInside());
+    }
+
     // One engine tick a simulated second. clockScale > 1 makes the world's
     // clock run faster than the body's, which is how a capture reaches a named
     // hour without simulating the whole afternoon.
@@ -5397,23 +5457,6 @@ void Session::step(const sim::MoveInput& input) {
     // only through the door. people_ is null in a session without a district
     // (the tavern fixture), and then the street is nobody.
     if (people_ != nullptr) {
-        // STREET SENSES (9a completion). WHERE THE PLAYER IS, pushed to the
-        // district every step the way syncTavernToBody pushes it to the room --
-        // so a frightened body flees AWAY from him (actFlee) and cowers FACING
-        // him (actCower), instead of in a drawn direction. Whole tiles; the
-        // ward interpolates nothing off it. This is the client side of the ONE
-        // declared population field; the sim hashes it, the client only feeds it.
-        people_->setPlayer(body_->tileX(), body_->tileY(), body_->band());
-        // STREET SENSES leg (c): and whether he PRESENTS AS A WIELDER -- the
-        // tavern's own deference gate, pushed so the street Watch reads the
-        // same answer the Gull's does (D6: absolute, Gull and street).
-        people_->setPlayerPresentsAsWielder(tavern_->playerPresentsAsWielder());
-        // AND WHETHER HE IS INDOORS -- a house's own brawl is not street
-        // business (test_scripted_lines.cpp's nemesis line found this: the
-        // alarm below already crosses the Gull's open door on purpose, for
-        // the ordinary crowd, but the Watch has no jurisdiction over what
-        // Watchman Cull's own separate watch already polices).
-        people_->setPlayerIndoors(tavern_->playerInside());
         std::int32_t roomHp = 0;
         std::int32_t corpses = 0;
         bool flooredInReach = false;
@@ -9199,7 +9242,7 @@ void Session::composeRopeCeremony(Framebuffer& target) const {
     // option-list idiom, inverted-fill selection, never an arrow. The rows
     // are drawn in the page grid's own cells so the fill is the same shape
     // the pause card's cursor wears.
-    const PanelMetric metric = panelMetric(target.height());
+    const PanelMetric metric = panelMetric(target.width(), target.height());
     const std::vector<std::string> rows = ropeRows();
     // THE ZONE HOLDS THE ARMED WIDTH WHETHER OR NOT A ROW IS ARMED, so
     // arming one moves no row: the tail every row could grow is measured
@@ -10188,7 +10231,13 @@ std::vector<std::string> Session::characterRows() const {
             line += "  " + rightAlignedDigits(entry.royals, royalsWidth) + "C";
         }
         if (row.inKit && tavern_->kit().isWorn(row.item)) {
-            line += thing.slot == sim::ItemSlot::Hand ? "  IN HAND" : "  WORN";
+            // HELD, not IN HAND (the cells pass): at the register's floor of
+            // 85 cells the Character tile is 27 wide, and `IN HAND` was the
+            // word the row lost -- `KNIFE   8DR   4C  IN..` on every common
+            // monitor. HELD and WORN are a pair. The SLOT tag below is the
+            // column that falls off there, whole (panel.hpp, clipColumns),
+            // and the strip says which slot.
+            line += thing.slot == sim::ItemSlot::Hand ? "  HELD" : "  WORN";
         }
         for (std::int32_t slot = 0; slot < sim::Tavern::kQuickSlotCount; ++slot) {
             if (tavern_->slotItemIndex(slot) == row.item) {
@@ -11530,15 +11579,7 @@ FrameStats Session::drawFrame(Framebuffer& target, FramePasses passes) const {
         hud.quickSlots[slot] = std::string_view{quickBarNames_[slot]};
     }
     hud.quickSelected = quickSlot_;
-    if (const sim::Spell* held = tavern_->equippedSpell(); held != nullptr) {
-        for (std::int32_t slot = 0; slot < sim::Tavern::kQuickSlotCount; ++slot) {
-            const sim::Spell* bound = tavern_->slotSpell(slot);
-            if (bound != nullptr && bound->id == held->id) {
-                hud.quickEquipped = slot;
-                break;
-            }
-        }
-    }
+    hud.quickEquipped = equippedQuickSlot();
     hud.quickBarFade = quickBarAnim_.value();
     // UI-EA (LANE HUD): the Q-hold tutor toast, riding the strip.
     hud.wheelHint = std::string_view{wheelHintText_};
@@ -17922,6 +17963,14 @@ SmokeRunResult runSmoke(const SmokeRunConfig& config) {
         if (session.grimoireOpen()) {
             session.adjustGrimoireSlot(3);
             session.closeConversation();
+            // THE CELLS PASS: the Grimoire's own binding line (CLEAR THE HEAD
+            // -- SLOT 3.) holds say()'s four seconds on the alert row, and
+            // with the press a step behind it every strip frame carried that
+            // shout under the strip, so no frame ever showed the quiet the
+            // press has now. In play the binding and the press are seconds
+            // apart; the drive waits the line out (say()'s own clock, not
+            // the plates'), then presses.
+            session.stepMany(sim::MoveInput{}, 4 * sim::kStepsPerSecond + 10);
             session.selectQuickSlot(2);
             const sim::Spell* bound = session.tavern().slotSpell(2);
             const sim::Spell* held = session.tavern().equippedSpell();

@@ -897,3 +897,174 @@ files; `verify-windows.ps1` PASS -- content 71 cases / 902,135 assertions and si
 linux/gcc vs mingw/windows, the stamp naming this tree), and photographed through the real
 `--street-assault=watch-halt|watch-sheathe|watch-offence` verbs and the leg (b) `blow` ending
 re-shot under this tree (`docs/frames/street/`).
+
+---
+
+## Crowd flow -- a blocked body sidesteps instead of gluing into a column (2026-09-16)
+
+A critic pass reviewing lane/3d2's Docks screenshots (door-leaf and deck-classification fixes,
+unrelated) flagged something incidental at every location it looked: NPCs converging on a
+doorway or a chokepoint jammed into a rigid single-file line and just stood there, instead of
+spreading into the open ground beside it. The cause was `WardPopulation::stepToward` -- a
+blocked body's ONLY move was the one cell dead ahead of its cached route; facing a taken tile it
+just waited and rolled for a shove (`kPushCooldownTicks` 36, and only against the exact occupant
+of that one cell). A dozen bodies converging on the same door therefore queued in an exact
+column, glued directly behind one another, because nothing ever looked sideways. **This moves
+the population number for real, DECLARED and RE-BLESSED.**
+
+`WardPopulation::sidestep()` (`ward_actors.hpp/.cpp`) is the look sideways: when the planned hop
+is taken, a blocked body tries the other seven neighbours, in a per-actor rotated order (the same
+`routeJitterHash` the route search itself is jittered with -- two bodies wedged at one corner give
+way to different sides), and takes the first that is standable, empty, not a cut corner
+(PathFinder's own rule), not the tile it just left, and no farther from its real target than it
+already stands. A genuine one-wide bottleneck -- every flank a wall or another body -- still
+finds nothing here and queues exactly as it always did; this only ever spends slack a crowd
+actually has. A new hashed counter, `sidesteps()`, is appended after `shoves_` in `hash_into` and
+the report line, the same precedent `shoves_`/`catches_`/`futileChases_` set: a plain log, not a
+policy input.
+
+**A real, pre-existing test timing assumption was exposed, not caused, and is fixed on the
+record.** `test_street_bodies.cpp`'s "a street kill is murder with the witnesses counted" scans
+the whole population for anybody geometrically in the corpse's Kill-radius/line-of-sight after
+the kill and asserts each was frightened. `alarm()` fires synchronously inside `attackUp()`, off
+who could see the tile at that instant -- but the scan itself used to run after the killing tap's
+own trailing `stepMany(kHardSwingRecoverySteps + 1)`, real ward-time nobody needed once the loop
+was about to exit. Under the old wait-or-shove-only movement a nearby body spent that window
+either standing still or queued behind one that was; with sidestep landed, the same window was
+enough for somebody who never saw the blow to walk into the corpse's own witness geometry on
+perfectly ordinary business, which the scan then wrongly counted as a witness. Fixed by skipping
+that trailing `stepMany` once the kill has already landed -- nothing downstream needs it, and the
+census now reads the instant `alarm()` itself fired rather than one recovery animation later.
+
+**The critic's first pass (7/10, below the 8 gate) found two real things sidestep still owed.**
+NPCs walked through the player -- he is not a `WardActor` and was never in the occupancy index, so
+nothing refused a route that targeted his exact cell, "the loudest remaining not-a-real-crowd
+tell." And two bodies the sim placed on adjacent tiles -- far more common now that a crowd spreads
+sideways instead of queuing -- could visually interpenetrate, since the placeholder figure's
+shoulders are wider than the ~0.9 m tile grid. Two fixes landed: `tryEnter` refuses the player's
+own tile outright (`playerX_`/`Y_`/`band_` are already hashed, pushed every step by
+`Session::step`), with `sidestep()`'s and `tryPush()`'s candidate loops pre-checking the same rule
+so neither loop's own "cannot fail" `tryEnter` call stops being true -- nobody needed to stand
+where he stands, since arrests and street swings both reach him at adjacency already. And
+`actor_instances.hpp` gained a small, stable render-only nudge within each body's own tile
+(`personalSpaceNudge`) so two bodies on adjacent tiles get real clearance. Exposed two tests that
+independently computed a ward actor's expected render position against the un-nudged tile centre
+(`test_scene3d.cpp`, `test_render3d.cpp`); fixed by sharing the one function instead of two
+hand-copied formulas.
+
+**THE GATE POLICY WIDENED MID-LANE (Eli, 2026-09-25): one critic became three, in parallel,
+lowest governs (director / player / auditor).** The director-only 8/10 above was re-run under the
+new policy and both new hats found the director's screenshots could not: the AUDITOR (5/10) read
+`sidestep()` line by line and proved the "not the tile it just left" guard was DEAD CODE -- it
+compared against `prevX/Y`, which `tickActor` resets to the current position before any policy
+runs, so the comparison could never be true -- and separately proved by exhaustive computation that
+`personalSpaceNudge`'s id-keyed offset shrank an orthogonally-adjacent pair's own clearance in very
+close to half of all id pairs (it does not know where the neighbour is, so it is a coin flip, not a
+push apart). The PLAYER (6/10) then caught the dead guard's real consequence in driven play: a
+wastrel at King's Bond oscillating between two tiles for 80+ consecutive ticks, a body that never
+actually goes anywhere -- plus a genuine ~5x ward-tick cost regression, since every sidestep clears
+the cached route and forces a fresh A* search, and the oscillating body was doing that every tick.
+
+**Round 3 fixed the real bug, not a cosmetic one.** `WardActor::cameFromX/Y/Band` is real cross-tick
+memory -- written by `tryEnter` alone, before the position changes, so it survives the `tickActor`
+reset that clobbers `prevX/Y` -- and `sidestep()` now runs two passes, taking a strictly CLOSER
+candidate over a merely level one whenever one exists, so a body only ever mills sideways when
+there truly is nothing better. `personalSpaceNudge` was rebuilt on tile-coordinate parity instead
+of actor id: two cells that differ by one step on an axis always differ in that axis's parity, so
+pushing -X on an even x and +X on an odd x (and the same on y) sends any adjacent pair's pushes in
+OPPOSITE directions by construction, not by luck. And `Session::step` had a real staleness bug the
+auditor's TOCTOU read caught: `setPlayer` was pushed to the ward AFTER `engine_->tick()`, so the
+ward's own movement each second always ran against where the player stood up to a full second
+earlier; moved to push before the tick. Two new regression tests close the gap the old lane had
+none for: an oscillation detector over 600 real ticks of the morning rush (its own first draft had
+a false positive -- it flagged a body that simply had not moved in ten minutes as "oscillating",
+fixed by also requiring the position differ from one tick back, the other half of an A-B-A-B
+signature), and a sustained player-tile-refusal check under real foot traffic.
+
+```
+at branch merge/crowd-flow-into-wip,
+granadad-twin-gate --population --population-hour 16 --ticks 7200, 96 walkers
+COMBINED WORLD HASH: 0xDD3890042DD2B472 -> 0xC45435FE8EBBB41E -> 0x5CDF07325BAC9C75
+                     -> 0x66B5A1B2F32270B9      <- DECLARED and RE-BLESSED (final, round 3)
+```
+
+Recorded directly from `dist\granadad-twin-gate.exe --population --population-hour 16
+--ticks 7200` on Windows/mingw, **two invocations**, each `run A` == `run B` ==
+`0x66B5A1B2F32270B9`, report text byte-identical at **23,415 bytes** in both runs (down from round
+2's 23,458 -- fewer sidesteps overall once the pathological oscillation stopped re-triggering one
+every tick). The two intermediate hashes above (`0xC45435FE8EBBB41E` after sidestep alone,
+`0x5CDF07325BAC9C75` after the player-avoidance/nudge round) never shipped past this branch; only
+the final number is the one re-blessed. On Linux/GCC the same gate ran green in the Docker build
+(ctest `granadad-twin-run-gate-population` PASSED, `run A` == `run B`).
+
+The tavern/gate-workload twin on the same exe is UNMOVED across all three rounds: `--tavern
+--ticks 900`, `run A` == `run B` == `0x63F354D02A6B600F` (3,153 bytes) -- every change in this
+lane lives on `WardPopulation`, `actor_instances`, or `Session::step`'s player-push order; the
+tavern workload has no ward, no renderer and no live player, and never calls any of it.
+
+**The population baseline is therefore re-blessed at `0x66B5A1B2F32270B9`, a real crowd-movement
+change behind it. This number is NOT the lane's last word: it is superseded by round 4 below,
+which the auditor's own re-review of this number caught two further real gaps in before the
+three-hat gate actually closed.**
+
+Proved by three cases in `native/tests/test_ward_actors.cpp`: "crowds sidestep instead of gluing
+into a column at a chokepoint" (`sidesteps() > 0` under a real rush, one-body-per-cell holds), "a
+blocked body does not oscillate: sidestep never doubles back on itself" (an A-B-A-B detector over
+600 ticks, the round-3 regression test), and "nobody ever stands on the player's own tile" (a
+sustained refusal check under real foot traffic).
+
+## Round 4 -- what the round-3 three-hat re-review actually found, and what it did not close
+
+The round-3 numbers above never shipped past this worktree either. Re-reviewed under the same
+three-hat gate, the AUDITOR (4/10) and the PLAYER (5/10) each found real gaps round 3 missed:
+
+**Auditor, confirmed and fixed:** `cameFromX/Y/Band` was written by `tryEnter` alone, but four
+other places move an actor's tile directly without going through it -- both of `tryPush`'s
+branches, `standUp`, `revivePrey`, `settleToSchedule` -- so a shoved or just-stood-up body could
+carry a stale `cameFrom` into its very next sidestep. Consolidated into one
+`WardPopulation::shiftCameFrom()` so a sixth write site can't quietly repeat the gap. The auditor
+also proved a single step of memory isn't enough on its own: a body with two level, unpreferred
+flanks either side of a blocked doorway can cycle through both forever (neither flank is ever the
+OTHER flank's own `cameFrom`). Extended to two steps (`cameFrom2X/Y/Band`), both hashed, both
+excluded by `sidestep()`'s candidate loop. And the auditor proved BY EXHAUSTIVE COMPUTATION, a
+second time, that round 3's tile-parity `personalSpaceNudge` was the SAME defect as round 2's
+id-keyed one by a different route -- provably unfixable by formula, since no function of one
+cell's own coordinate can push away from every possible neighbour. Rebuilt a second time: given
+the same actor roster `actorInstances()` is about to draw, it now finds every other visible body
+within one tile and pushes away from where they actually are -- correct by construction.
+
+**Player, found but NOT yet closed:** driven play at street level (not the overhead vantage the
+round-3 capture used) reproduced the oscillation in a DIFFERENT shape -- a 3-4 tile cycle through
+ORDINARY route-replanning, not `sidestep()`'s own candidate loop. `cameFrom`/`cameFrom2` only
+gate `sidestep()`; a fresh A* search from a sidestepped-to tile has no awareness of which cells
+the body recently abandoned, and if the target is still blocked, the shortest path very often
+routes straight back through the same chokepoint as an ORDINARY planned hop (via `tryEnter`, not
+`sidestep`), which round 4's guard never touches. This needs either the search itself, or a
+short-lived per-actor avoid-list feeding it, to carry that awareness -- materially bigger than a
+`sidestep()`-local fix, and not attempted in round 4. The existing regression test cannot see it
+either: it only detects a period-2 A-B-A-B pattern, not the longer cycle.
+
+```
+at branch merge/crowd-flow-into-wip, round 4,
+granadad-twin-gate --population --population-hour 16 --ticks 7200, 96 walkers
+COMBINED WORLD HASH: 0x66B5A1B2F32270B9 -> 0x499B2D62A49840B5      <- DECLARED and RE-BLESSED
+```
+
+Recorded directly from `dist\granadad-twin-gate.exe --population --population-hour 16
+--ticks 7200` on Windows/mingw, **two invocations**, each `run A` == `run B` ==
+`0x499B2D62A49840B5`, report text byte-identical at **23,419 bytes**. Tavern unmoved at
+`0x63F354D02A6B600F` (3,153 bytes). Gated on the tree whose GATE-STAMP names it (`native/` digest
+`d2a9590ff7edfe6ee1c17950908c9c5890a6a716f3bd13300754e8b89a4f0686`, 334 files, ctest cases 1367
+(floor 537), 99/99 ctest suites green; `verify-windows.ps1` PASS -- 1,286 sim doctest cases /
+2,682,185 assertions under mingw, 0 failed, content-fingerprint and world-hash reports
+byte-identical linux/gcc vs mingw/windows).
+
+**Eli's call (2026-09-26): land it.** The original bug -- rigid single-file columns at doorways
+-- is fixed and independently confirmed by two critic hats on the real build. Two things are
+landing as KNOWN, WRITTEN-UP GAPS rather than blockers: the oscillation survives in a narrower
+form through ordinary A* route-replanning (cameFrom/cameFrom2 only gate sidestep()'s own candidate
+loop; closing this for real needs the pathfinder itself, or a per-actor avoid-list feeding it, to
+carry short-term memory -- a materially bigger change than this lane's four rounds), and the
+director hat's broader asks (personal space near the player, street-width crowd distribution,
+idle-standing animation) are a different scope of work than the bug this lane was opened to fix.
+See DECISIONS.md for the full four-round account and the follow-up list.

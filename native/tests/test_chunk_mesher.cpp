@@ -20,6 +20,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <map>
 #include <set>
 #include <span>
 #include <string>
@@ -37,8 +38,10 @@
 #include "granadad/render/session.hpp"
 #include "granadad/render/vertical.hpp"
 #include "granadad/render/world_renderer.hpp"
+#include "granadad/render3d/actor_instances.hpp"
 #include "granadad/render3d/chunk_mesher.hpp"
 #include "granadad/render3d/door_jambs.hpp"
+#include "granadad/render3d/shaft_square.hpp"
 #include "granadad/render3d/scene.hpp"
 #include "granadad/render3d/static_pieces.hpp"
 #include "granadad/render3d/world_scene.hpp"
@@ -66,6 +69,8 @@ const render::TileAtlas& proceduralAtlas() {
 
 /// The authored spawn as a render camera: the quayside, looking 265
 /// degrees (west, a shade south), eye at the body's height.
+bool candlePane(const Rgba8& pane, const Rgba8& warm);
+
 render::Camera spawnCamera() {
     render::Camera eye;
     eye.x = static_cast<float>(sim::docks::kSpawnTileX) + 0.5F;
@@ -456,9 +461,25 @@ TEST_CASE("the shipped piece catalogue loads and names a piece for every rule") 
     // The hull's lean is a knob, and the shipped one is plumb (a leaning
     // quad opens a wedge of atlas at every corner of a hull).
     CHECK(catalogue.knobs().hullFlareDegrees >= 0.0F);
-    // The door frame knows its opening, so the inside plaster is cut round it.
-    CHECK(catalogue.piece(PieceRole::WallDoor)->cutX == doctest::Approx(0.17F));
-    CHECK(catalogue.piece(PieceRole::WallDoor)->cutY == doctest::Approx(2.029F));
+    // The door frame is timber (jambs()), and the soffit across its head is
+    // the ceiling piece under its own name.
+    CHECK(catalogue.piece(PieceRole::Soffit)->file.find("Ceiling") != std::string::npos);
+    // The frame's timber is the strapped Knights beam SQUARED at load (its
+    // hewn corners pushed out to the arris): the posts and the lintel ask
+    // for it, and the piece table the adapter reads carries half the shaft.
+    CHECK(catalogue.piece(PieceRole::DoorPost)->square);
+    CHECK(catalogue.piece(PieceRole::Lintel)->square);
+    {
+        const std::vector<StaticPieceRef> refs = catalogue.pieceRefs();
+        bool squaredBeam = false;
+        for (const StaticPieceRef& ref : refs) {
+            if (ref.file.find("SM_Prop_Beam_01") != std::string::npos && ref.squareHalf > 0.0F) {
+                squaredBeam = true;
+                CHECK(ref.squareHalf == doctest::Approx(0.5F * 0.209F));
+            }
+        }
+        CHECK(squaredBeam);
+    }
     CHECK(catalogue.piece(PieceRole::Flame)->twoSided);
     CHECK(catalogue.piece(PieceRole::Flame)->selfLit);
     // The kit's own module: 2.5 m walls, 3 m storeys, the brick on -Z.
@@ -502,7 +523,7 @@ TEST_CASE("the shipped piece catalogue loads and names a piece for every rule") 
     CHECK(catalogue.digest() != 0U);
     // The role names round-trip, and an unknown one is None.
     CHECK(pieceRoleFromName("wall_corner") == PieceRole::WallCorner);
-    CHECK(pieceRoleName(PieceRole::WallDoor) == "wall_door");
+    CHECK(pieceRoleName(PieceRole::Soffit) == "soffit");
     CHECK(pieceRoleFromName("gargoyle") == PieceRole::None);
     // A malformed document is an empty catalogue with the reason kept.
     const StaticCatalogue broken = StaticCatalogue::fromJson("[1, 2");
@@ -603,7 +624,7 @@ TEST_CASE("a wall tile with two open neighbours places a corner piece") {
     // No door: the ring is closed. No cobbles: the floors are dirt (the
     // flat fill, in rectangles around the house) and oak (planks -- the
     // 4 x 4 interior is one plank rectangle; nothing is left to the chunk).
-    CHECK(countRole(placed.placements, PieceRole::WallDoor) == 0);
+    CHECK(countRole(placed.placements, PieceRole::Lintel) == 0);
     CHECK(countRole(placed.placements, PieceRole::FloorCobble) == 0);
     CHECK(countRole(placed.placements, PieceRole::FloorPlank) == 1);
     CHECK(countRole(placed.placements, PieceRole::FloorFill) >= 4);
@@ -713,31 +734,165 @@ TEST_CASE("a door tile places the door frame") {
         }
     }
     const StaticCatalogue& catalogue = shippedCatalogue();
-    REQUIRE(catalogue.piece(PieceRole::WallDoor) != nullptr);
+    const PieceSpec* beam = catalogue.piece(PieceRole::DoorPost);
+    REQUIRE(beam != nullptr);
+    const PieceSpec* plaster = catalogue.piece(PieceRole::WallPlaster);
+    REQUIRE(plaster != nullptr);
     const StaticPlacements placed = placeStaticPieces(tiles, catalogue, {});
 
-    REQUIRE(countRole(placed.placements, PieceRole::WallDoor) == 1);
+    // THE FRAME IS TIMBER, and it is the same frame on both faces of the
+    // wall. The kit's door wall (its own grey surround round a hole
+    // narrower than the gap, plaster margins either side) is gone.
     CHECK(placed.stats.doorGaps == 1);
+    CHECK(placed.stats.bareJambs == 0);
+    // The building is rendered stone: its finish is the thin plaster quad,
+    // its standoff off the cell's boundary plane on both faces. The street
+    // face is the south face of row 15 (z = 16), the room face its north
+    // (z = 15).
+    const float proud = plaster->standoff;
+    const float streetZ = 16.0F + proud;
+    const float roomZ = 15.0F - proud;
+    const float head = render::bandSurface(19) + kDoorHeadHeight;
+    // Four posts, two a face, each with its inner face ON the opening's
+    // edge (x = 11 and x = 13) and its section inside its own jamb cell,
+    // in its own oak, lit at the cut between its jamb and the gap cell
+    // beside it, faced as the wall is. The section is the SHAFT's: the
+    // kit's post is 0.209 m of timber in 0.261 m of iron collars, and the
+    // frame is placed by the timber.
+    REQUIRE(beam->core > 0.2F);
+    REQUIRE(beam->core < beam->width);
+    const float section = beam->core * beam->scale;
+    std::size_t posts = 0;
     for (const StaticPlacement& p : placed.placements) {
-        if (p.role != PieceRole::WallDoor) {
+        if (p.role != PieceRole::DoorPost) {
             continue;
         }
-        // The building is rendered stone, so the frame shows its plaster to
-        // the street: yawed to face south, then half a turn, its module
-        // running east from the gap's west edge, in the facade's own plane
-        // (the wall's half thickness proud of the south face at z = 16).
-        CHECK(p.instance.yaw == doctest::Approx(0.0F));
-        CHECK(p.instance.position.x == doctest::Approx(11.0F));
-        CHECK(p.instance.position.z == doctest::Approx(16.0F + 0.1125F));
-        CHECK(p.instance.position.y == doctest::Approx(render::bandSurface(19)));
-        // Fitted to the two-tile gap: 2 / 2.5.
-        CHECK(p.instance.scale.x == doctest::Approx(0.8F));
-        // Lit from jamb to jamb (the south face runs west): its A end is the
-        // cut between the east jamb (13) and the gap cell beside it.
-        CHECK(p.lightX == 13);
-        CHECK(p.endAX == 12);
+        ++posts;
         CHECK(p.lightY == 15);
+        CHECK((p.lightX == 10 || p.lightX == 13));
+        CHECK((p.instance.position.z == doctest::Approx(streetZ) ||
+               p.instance.position.z == doctest::Approx(roomZ)));
+        if (p.lightX == 10) {
+            CHECK(p.instance.position.x == doctest::Approx(11.0F - 0.5F * section));
+            CHECK(p.lightX2 == 11);
+        } else {
+            CHECK(p.instance.position.x == doctest::Approx(13.0F + 0.5F * section));
+            CHECK(p.lightX2 == 12);
+        }
+        CHECK(p.lightY2 == 15);
+        CHECK(p.instance.tint.r == beam->tint.r);
+        CHECK(p.instance.tint.g == beam->tint.g);
+        CHECK(p.instance.tint.b == beam->tint.b);
+        // Faced: the shader sets the factor per face, so the placement's
+        // own is one.
+        CHECK(p.mode == kDrawFaced);
+        CHECK(p.instance.mode == kDrawFaced);
+        CHECK(p.facing == doctest::Approx(1.0F));
     }
+    CHECK(posts == 4);
+    // A lintel on each face, in the plane of its posts, over the head: the
+    // posts' own beam on its side (a quarter turn about X), its underside
+    // on the head, outer face to outer face.
+    const PieceSpec* lintel = catalogue.piece(PieceRole::Lintel);
+    REQUIRE(lintel != nullptr);
+    CHECK(lintel->file == beam->file);
+    std::size_t lintels = 0;
+    for (const StaticPlacement& p : placed.placements) {
+        if (p.role != PieceRole::Lintel) {
+            continue;
+        }
+        ++lintels;
+        // Three centimetres behind its posts' faces and three down into
+        // their heads: no face of it in a plane of theirs, nor within the
+        // hair the depth buffer cannot tell apart.
+        CHECK((p.instance.position.z == doctest::Approx(streetZ - 0.03F) ||
+               p.instance.position.z == doctest::Approx(roomZ + 0.03F)));
+        CHECK(p.instance.position.y == doctest::Approx(head + 0.5F * lintel->core * lintel->scale));
+        CHECK(p.instance.pitch == doctest::Approx(3.14159265F * 0.5F));
+        CHECK(p.instance.roll == 0.0F);
+        CHECK(p.instance.scale.y * lintel->height == doctest::Approx(2.0F + 2.0F * section));
+        CHECK(p.mode == kDrawFaced);
+    }
+    CHECK(lintels == 2);
+    // The wall over the head: the plaster quad from just over the head
+    // (inside the lintel's body) to the storey top over the whole gap
+    // (plus the hair every plaster cut overlaps by), one a face, in the
+    // plane of the finish beside it. To the street it is lit from jamb to
+    // jamb (the south face runs west): its A end is the cut between the
+    // east jamb (13) and the gap cell beside it.
+    std::size_t headers = 0;
+    for (const StaticPlacement& p : placed.placements) {
+        if (p.role != PieceRole::WallPlaster || p.lightY != 15 ||
+            !(p.instance.position.y == doctest::Approx(head + 0.02F))) {
+            continue;
+        }
+        ++headers;
+        CHECK(p.instance.scale.y * plaster->height ==
+              doctest::Approx(render::kBandHeight - 0.01F - kDoorHeadHeight - 0.02F));
+        CHECK(p.gradient);
+        if (p.instance.position.z == doctest::Approx(streetZ)) {
+            CHECK(p.lightX == 13);
+            CHECK(p.endAX == 12);
+            // The street face has a WINDOW box beside each jamb (the rhythm
+            // starts on the door's bay), retreated 4 cm into the post: the
+            // header abuts both.
+            CHECK(p.instance.scale.x * plaster->width == doctest::Approx(2.0F + 2.0F * 0.04F));
+        } else {
+            CHECK(p.instance.position.z == doctest::Approx(roomZ));
+            // The room face has thin plaster beside each jamb, retreated a
+            // hair.
+            CHECK(p.instance.scale.x * plaster->width == doctest::Approx(2.0F + 2.0F * 0.005F));
+        }
+    }
+    CHECK(headers == 2);
+    // Behind each header its backing: the same quad three centimetres
+    // behind the plane, on over the whole jamb cell at each end, from over
+    // the soffit (the mesher's cut) to the storey top -- what a seam lets
+    // through at any angle shows plaster and not the hollow.
+    std::size_t backings = 0;
+    for (const StaticPlacement& p : placed.placements) {
+        if (p.role != PieceRole::WallPlaster || p.lightY != 15 ||
+            !(p.instance.position.y == doctest::Approx(render::bandSurface(19) + kDoorHeadCut))) {
+            continue;
+        }
+        ++backings;
+        CHECK(p.instance.scale.y * plaster->height ==
+              doctest::Approx(render::kBandHeight - 0.01F - kDoorHeadCut));
+        CHECK(p.gradient);
+        if (p.instance.position.z > 15.5F) {
+            CHECK(p.instance.position.z == doctest::Approx(streetZ - 0.03F));
+            CHECK(p.instance.scale.x * plaster->width == doctest::Approx(2.0F + 2.0F * 1.0F));
+        } else {
+            CHECK(p.instance.position.z == doctest::Approx(roomZ + 0.03F));
+            CHECK(p.instance.scale.x * plaster->width == doctest::Approx(2.0F + 2.0F * 1.0F));
+        }
+    }
+    CHECK(backings == 2);
+    // And the soffit across the head between the two lintels: the ceiling
+    // piece face down over the gap, from inside one lintel's body to
+    // inside the other's, three centimetres over the head, lit as an
+    // underside.
+    std::size_t soffits = 0;
+    for (const StaticPlacement& p : placed.placements) {
+        if (p.role != PieceRole::Soffit) {
+            continue;
+        }
+        ++soffits;
+        // From the room lintel's centre plane to the street lintel's,
+        // three centimetres over their undersides: it crosses each back
+        // face, never meets one edge to edge, and never lies within a hair
+        // of an underside.
+        const float back = proud - 0.03F;
+        CHECK(p.instance.position.y == doctest::Approx(render::bandSurface(19) + kDoorSoffitHeight));
+        // Three centimetres past each reveal, into the jamb cell.
+        CHECK(p.instance.scale.x * 2.5F == doctest::Approx(2.0F + 0.06F));
+        CHECK(p.instance.scale.z * 2.5F == doctest::Approx(1.0F + 2.0F * back));
+        CHECK(p.instance.position.x == doctest::Approx(11.0F - 0.03F));
+        CHECK(p.instance.position.z == doctest::Approx(15.0F - back));
+        CHECK(p.facing == doctest::Approx(render::kUndersideLift));
+        CHECK(p.lightZ == 19);
+    }
+    CHECK(soffits == 1);
     // The roof over the house puts a ceiling under it -- over the rooms,
     // under the slab, lit as the room's underside -- and nothing over the
     // street. Joists cross it on the odd grid lines.
@@ -758,41 +913,7 @@ TEST_CASE("a door tile places the door frame") {
         }
     }
     CHECK(countRole(placed.placements, PieceRole::Joist) >= 4);
-    // The frame on a rendered building was turned to show its plaster to
-    // the street, so its brick faces the room: the thin plaster stands
-    // behind the header and both jambs, cut round the opening, a hair
-    // inside the facade plane. Two leaves hang open on the jambs.
-    // Three behind the frame (the header and both jambs) and two returns
-    // over the frame's ends in the reveal planes, each over the wall's own
-    // thickness less a hair each way (the frame's centre plane stands half
-    // the wall's thickness off the facade at z = 16; its trim is thicker
-    // but stops short of the ends) so no edge of it stands proud as a
-    // hairline.
-    CHECK(countRole(placed.placements, PieceRole::DoorInside) == 5);
-    const float frameFace = 16.0F + catalogue.piece(PieceRole::Wall)->thickness;
-    std::size_t returns = 0;
-    for (const StaticPlacement& p : placed.placements) {
-        if (p.role == PieceRole::DoorInside && p.instance.yaw != doctest::Approx(3.14159265F)) {
-            ++returns;
-            // The quad runs along its local +X, which a yaw turns to
-            // (cos, sin) in the scene's XZ: its two ends in z.
-            const float len = std::fabs(p.instance.scale.x) * 2.5F;
-            const float zA = p.instance.position.z;
-            const float zB = zA + std::sin(p.instance.yaw) * len;
-            CHECK(std::max(zA, zB) < frameFace - 0.002F);
-            CHECK(std::max(zA, zB) > frameFace - 0.02F);
-        }
-    }
-    CHECK(returns == 2);
-    std::size_t behind = 0;
-    for (const StaticPlacement& p : placed.placements) {
-        if (p.role == PieceRole::DoorInside && p.instance.yaw == doctest::Approx(3.14159265F)) {
-            ++behind;
-            CHECK(p.instance.position.z < 16.0F);
-            CHECK(p.instance.position.z > 15.9F);
-        }
-    }
-    CHECK(behind == 3);
+    // Two leaves hang open on the jambs.
     CHECK(countRole(placed.placements, PieceRole::DoorLeaf) == 2);
     // Neither leaf is mirrored (a mirrored piece draws both-sided and its
     // back faces showed as a red seam); the far one is turned a half turn
@@ -906,7 +1027,9 @@ TEST_CASE("a door tile places the door frame") {
             // put a 0.54 m patch (0.9 of a 0.6 cage) next to a lantern's
             // 1.1 -- the cage keeps its fire, the street gets the glow.
             const bool overFire = p.lightX == 6 && p.lightY == 5;
-            CHECK(across == doctest::Approx(overFire ? 0.9F : 1.1F));
+            // THIRD PASS: 1.5 on a lantern and 1.2 on a fire, grown with the
+            // surface pool (static_pieces.cpp, kLanternFlameWidth).
+            CHECK(across == doctest::Approx(overFire ? 1.2F : 1.5F));
             CHECK(p.instance.gradientTo == doctest::Approx(catalogue.piece(PieceRole::Flame)->width));
             CHECK(p.instance.gradientToZ == doctest::Approx(catalogue.piece(PieceRole::Flame)->height));
             // A billboard, anchored on the flame's centre: the quad's
@@ -1007,6 +1130,10 @@ TEST_CASE("placement is a deterministic function of the tile map") {
         } else if (p.role == PieceRole::LipPlank || p.role == PieceRole::LipStone) {
             CHECK(p.instance.pitch == doctest::Approx(-3.14159265F / 2.0F));
             CHECK(p.instance.scale.z == doctest::Approx((render::kFloorSlab - 0.01F) / 2.5F));
+        } else if (p.role == PieceRole::Lintel) {
+            // The door post's beam laid on its side across the head: a
+            // quarter turn about X puts its length along the run.
+            CHECK(p.instance.pitch == doctest::Approx(3.14159265F / 2.0F));
         } else if (!upright) {
             CHECK(p.instance.pitch == 0.0F);
         }
@@ -1021,7 +1148,6 @@ TEST_CASE("placement is a deterministic function of the tile map") {
     CHECK(stats.byRole[static_cast<std::size_t>(PieceRole::Crane)] > 0);
     CHECK(stats.byRole[static_cast<std::size_t>(PieceRole::Parapet)] > 50);
     CHECK(stats.byRole[static_cast<std::size_t>(PieceRole::RoofTile)] > 20);
-    CHECK(stats.byRole[static_cast<std::size_t>(PieceRole::DoorInside)] > 0);
     CHECK(stats.byRole[static_cast<std::size_t>(PieceRole::DoorLeaf)] > 0);
     CHECK(stats.byRole[static_cast<std::size_t>(PieceRole::Joist)] > 50);
     CHECK(stats.byRole[static_cast<std::size_t>(PieceRole::Table)] > 0);
@@ -1068,7 +1194,8 @@ TEST_CASE("placement is a deterministic function of the tile map") {
     CHECK((chimneyVariants[0] ? 1 : 0) + (chimneyVariants[1] ? 1 : 0) + (chimneyVariants[2] ? 1 : 0) >= 2);
     CHECK(stats.byRole[static_cast<std::size_t>(PieceRole::WallCorner)] >= 4);
     CHECK(stats.byRole[static_cast<std::size_t>(PieceRole::WallWindow)] > 20);
-    CHECK(stats.byRole[static_cast<std::size_t>(PieceRole::WallDoor)] >= 2);
+    CHECK(stats.byRole[static_cast<std::size_t>(PieceRole::Lintel)] >= 4);
+    CHECK(stats.byRole[static_cast<std::size_t>(PieceRole::Soffit)] >= 2);
     CHECK(stats.byRole[static_cast<std::size_t>(PieceRole::RoofEdge)] > 50);
     CHECK(stats.byRole[static_cast<std::size_t>(PieceRole::FloorPlank)] > 50);
     CHECK(stats.byRole[static_cast<std::size_t>(PieceRole::FloorCobble)] > 50);
@@ -1086,22 +1213,40 @@ TEST_CASE("placement is a deterministic function of the tile map") {
               stats.byRole[static_cast<std::size_t>(PieceRole::Brazier)] ==
           lamps.size());
     // The Gilded Gull's door (tavern.hpp: x 153..154 on the y = 66
-    // frontage) is one of the frames, brick to the Tarwalk (north).
-    bool gullDoor = false;
+    // frontage) wears the frame on both faces: a post on each flank cell
+    // in the frontage's plane (the north face of row 66, its plaster
+    // proud of it) and another in the taproom's, each lit at the cut
+    // between its jamb and the gap cell beside it, and the plaster over
+    // the head lit from jamb to jamb (its A end is the cut between the
+    // west jamb 152 and the gap cell 153, the north face running east).
+    const float gullProud = catalogue.piece(PieceRole::WallPlaster)->standoff;
+    std::size_t gullPosts = 0;
+    bool gullHeader = false;
     for (const StaticPlacement& p : first.placements) {
-        // (Lit from jamb to jamb: its A end is the cut between the west
-        // jamb 152 and the gap cell 153, the north face running east.)
-        if (p.role == PieceRole::WallDoor && p.lightX == 152 && p.endAX == 153 && p.lightY == 66 &&
-            p.lightZ == 19) {
-            gullDoor = true;
-            // Granite: plaster to the street, so the north-facing frame is
-            // flipped, on the frontage plane, its half thickness proud.
+        if (p.lightY != 66 || p.lightZ != 19) {
+            continue;
+        }
+        if (p.role == PieceRole::DoorPost && (p.lightX == 152 || p.lightX == 155)) {
+            ++gullPosts;
+            CHECK((p.instance.position.z == doctest::Approx(66.0F - gullProud) ||
+                   p.instance.position.z == doctest::Approx(67.0F + gullProud)));
+            CHECK(p.lightX2 == (p.lightX == 152 ? 153 : 154));
+        }
+        if (p.role == PieceRole::WallPlaster && p.lightX == 152 && p.endAX == 153 &&
+            p.instance.position.y == doctest::Approx(render::bandSurface(19) + kDoorHeadHeight + 0.02F) &&
+            p.instance.position.z == doctest::Approx(66.0F - gullProud)) {
+            gullHeader = true;
+            // Plaster to the street: the quad's face is its +Z, turned to
+            // look north.
             CHECK(p.instance.yaw == doctest::Approx(3.14159265F));
-            CHECK(p.instance.position.z == doctest::Approx(66.0F - 0.1125F));
-            CHECK(p.instance.scale.x == doctest::Approx(0.8F));
+            // To wherever the wall's own pieces beside the jambs end: a hair
+            // or a kit box's retreat past the opening on each side.
+            CHECK(p.instance.scale.x > 2.0F / 2.5F);
+            CHECK(p.instance.scale.x < 2.1F / 2.5F);
         }
     }
-    CHECK(gullDoor);
+    CHECK(gullPosts == 4);
+    CHECK(gullHeader);
     // Nothing is placed below the catalogue's floor band (a ceiling under a
     // slab on that band is lit one level lower; the strand's tide pools lie
     // one level under the harbour's surface; a joist hangs in the room
@@ -1113,15 +1258,17 @@ TEST_CASE("placement is a deterministic function of the tile map") {
         CHECK(p.instance.position.x > 30.0F);
         CHECK(p.instance.position.x < 226.0F);
     }
-    MESSAGE("Docks pieces: " << first.placements.size() << " placed -- " << stats.byRole[1]
-                             << " walls, " << stats.byRole[2] << " corners, " << stats.byRole[3]
-                             << " windows, " << stats.byRole[4] << " doors, " << stats.byRole[5]
-                             << " cornices, " << stats.byRole[6] << " plank, " << stats.byRole[7]
-                             << " cobble, " << stats.byRole[8] << " flag, " << stats.byRole[9]
-                             << " water, " << stats.byRole[16] << " fills, " << stats.byRole[17]
-                             << " caps, " << stats.byRole[18] << " ceilings, "
-                             << stats.byRole[10] + stats.byRole[11] + stats.byRole[12]
-                             << " props, " << stats.byRole[13] + stats.byRole[14] + stats.byRole[15]
+    const auto n = [&stats](PieceRole role) { return stats.byRole[static_cast<std::size_t>(role)]; };
+    MESSAGE("Docks pieces: " << first.placements.size() << " placed -- " << n(PieceRole::Wall)
+                             << " walls, " << n(PieceRole::WallCorner) << " corners, "
+                             << n(PieceRole::WallWindow) << " windows, " << n(PieceRole::DoorPost)
+                             << " door posts, " << n(PieceRole::RoofEdge) << " cornices, "
+                             << n(PieceRole::FloorPlank) << " plank, " << n(PieceRole::FloorCobble)
+                             << " cobble, " << n(PieceRole::FloorFlag) << " flag, " << n(PieceRole::Water)
+                             << " water, " << n(PieceRole::FloorFill) << " fills, " << n(PieceRole::WallCap)
+                             << " caps, " << n(PieceRole::Ceiling) << " ceilings, "
+                             << n(PieceRole::PropBarrel) + n(PieceRole::PropCrate) + n(PieceRole::PropSack)
+                             << " props, " << n(PieceRole::LampWall) + n(PieceRole::LampPost) + n(PieceRole::Brazier)
                              << " lamps; " << stats.wallRuns << " wall runs, " << stats.doorGaps
                              << " door gaps");
 
@@ -1294,8 +1441,28 @@ TEST_CASE("a door frame and the wall beside it share one light at the jamb") {
     // the point half way between the jamb cell and the gap cell beside it,
     // and the plaster piece that ends at that jamb is lit at the same
     // point -- so no step of light at the jamb.
-    const StaticPlacement* frame = findRole(placed.placements, PieceRole::WallDoor);
+    // The frame's street face: the plaster over the head, lit from jamb
+    // to jamb, and the two posts, each lit at the cut between its jamb
+    // cell and the gap cell beside it -- the two cells averaged, which is
+    // the same value.
+    const StaticPlacement* frame = nullptr;
+    std::size_t streetPosts = 0;
+    for (const StaticPlacement& p : placed.placements) {
+        if (p.lightY != 15 || p.instance.position.z < 16.1F) {
+            continue;
+        }
+        if (p.role == PieceRole::WallPlaster &&
+            p.instance.position.y == doctest::Approx(render::bandSurface(19) + kDoorHeadHeight + 0.02F)) {
+            frame = &p;
+        }
+        if (p.role == PieceRole::DoorPost) {
+            ++streetPosts;
+            CHECK(p.lightX2 == (p.lightX == 13 ? 12 : 11));
+            CHECK(p.lightY2 == 15);
+        }
+    }
     REQUIRE(frame != nullptr);
+    CHECK(streetPosts == 2);
     CHECK(frame->gradient);
     // The south face runs west (a-order -x): the frame's A end is the cut
     // between the jamb at x = 13 and the gap cell 12, its B end the cut
@@ -1467,7 +1634,7 @@ TEST_CASE("a lit room's window is warm at night") {
                 continue;
             }
             ++windows;
-            if (piece.pane.r == warm.r && piece.pane.g == warm.g && piece.pane.b == warm.b) {
+            if (candlePane(piece.pane, warm)) {
                 ++lit;
             }
         }
@@ -2062,7 +2229,7 @@ TEST_CASE("a timber post beside a door gap hangs the shop sign") {
             CHECK_FALSE(jamb);
         }
     }
-    CHECK(doorPosts == 2);
+    CHECK(doorPosts == 4);
 }
 
 TEST_CASE("a timber post with a job on the street is the strapped door post, a lone pier the pillar") {
@@ -2140,7 +2307,7 @@ TEST_CASE("a timber post with a job on the street is the strapped door post, a l
         }
     }
     CHECK(doorPosts == 1);
-    CHECK(jambs == 2);
+    CHECK(jambs == 4);
     CHECK(farPillar);
     CHECK(streetPillar);
     CHECK(countRole(placed.placements, PieceRole::Post) == 1);
@@ -2152,7 +2319,7 @@ TEST_CASE("a timber post with a job on the street is the strapped door post, a l
     // cells of the frontage, not street furniture.
     house.put(13, 16, 20, content::TileForm::Floor, materialId("thatch"));
     const StaticPlacements roofed = placeStaticPieces(house.tiles, catalogue, {});
-    CHECK(countRole(roofed.placements, PieceRole::DoorPost) == 2);
+    CHECK(countRole(roofed.placements, PieceRole::DoorPost) == 4);
     for (const StaticPlacement& p : roofed.placements) {
         if (p.role == PieceRole::DoorPost) {
             CHECK(p.lightY == 15);
@@ -2179,7 +2346,7 @@ TEST_CASE("on the real Docks every jamb cell carries one beam and has lost its g
     const PieceSpec* spec = catalogue.piece(PieceRole::DoorPost);
     REQUIRE(spec != nullptr);
     const StaticPlacements placed = placeStaticPieces(tiles, catalogue, {});
-    std::set<std::int64_t> seen;
+    std::map<std::int64_t, int> seen;
     std::size_t jambBeams = 0;
     std::int32_t jambX = -1;
     std::int32_t jambY = -1;
@@ -2189,11 +2356,12 @@ TEST_CASE("on the real Docks every jamb cell carries one beam and has lost its g
             continue;
         }
         ++jambBeams;
-        // One beam per cell, never two stacked in the one place.
+        // Two beams per cell -- the street's and the room's -- never two
+        // stacked in the one place.
         const std::int64_t key = (static_cast<std::int64_t>(p.lightZ) << 40) |
                                  (static_cast<std::int64_t>(p.lightY) << 20) |
                                  static_cast<std::int64_t>(p.lightX);
-        CHECK(seen.insert(key).second);
+        ++seen[key];
         // Slim, and cut to the head: the two facts the critic asked for.
         CHECK(spec->width * p.instance.scale.x > 0.2F);
         CHECK(spec->width * p.instance.scale.x < 0.4F);
@@ -2204,8 +2372,24 @@ TEST_CASE("on the real Docks every jamb cell carries one beam and has lost its g
             jambZ = p.lightZ;
         }
     }
-    // The ward is full of doors and every one of them has two of these.
-    CHECK(jambBeams >= 6);
+    // The ward is full of doors and every one of them has four of these,
+    // two a face: no flank the jamb rule refused (the critic's "lintel
+    // over a hole" was a post hidden behind a body, and this is the count
+    // that says so), every door's two lintels, its soffit. A gate keeps
+    // its own two posts and beam and is not a door.
+    CHECK(jambBeams >= 12);
+    for (const auto& [key, beams] : seen) {
+        (void)key;
+        CHECK(beams == 2);
+    }
+    CHECK(placed.stats.bareJambs == 0);
+    const std::size_t gates = countRole(placed.placements, PieceRole::GatePost) / 2;
+    REQUIRE(placed.stats.doorGaps > gates);
+    const std::size_t doors = placed.stats.doorGaps - gates;
+    MESSAGE("Docks doors: " << doors << " framed, " << gates << " gates");
+    CHECK(jambBeams == 4 * doors);
+    CHECK(countRole(placed.placements, PieceRole::Lintel) == 2 * doors);
+    CHECK(countRole(placed.placements, PieceRole::Soffit) == doors);
     REQUIRE(jambZ >= 0);
     // And the mesh agrees, on the first jamb cell the rules found.
     const render::TileAtlas& atlas = proceduralAtlas();
@@ -2241,15 +2425,15 @@ TEST_CASE("a door wears two jambs, on the cells that flank it, slim and cut to t
     const StaticCatalogue& catalogue = shippedCatalogue();
     const PieceSpec* spec = catalogue.piece(PieceRole::DoorPost);
     REQUIRE(spec != nullptr);
-    const PieceSpec* wallSpec = catalogue.piece(PieceRole::Wall);
-    REQUIRE(wallSpec != nullptr);
-    const PieceSpec* lintel = catalogue.piece(PieceRole::Joist);
+    const PieceSpec* plasterSpec = catalogue.piece(PieceRole::WallPlaster);
+    REQUIRE(plasterSpec != nullptr);
+    const PieceSpec* lintel = catalogue.piece(PieceRole::Lintel);
     REQUIRE(lintel != nullptr);
-    // The frontage's finish: the wall piece's standoff plus half its
-    // thickness out from the cell's own boundary plane.
-    const float proud =
-        (wallSpec->standoffSet ? wallSpec->standoff : wallSpec->thickness * 0.5F) +
-        wallSpec->thickness * 0.5F;
+    // The finish the posts stand in: a rendered building's thin plaster
+    // quad, its standoff out from the cell's own boundary plane -- the
+    // same on the street face (z = 16 + proud) and the room face (z = 15
+    // - proud).
+    const float proud = plasterSpec->standoff;
     // The door rule itself, read on the two cells and on nothing else along
     // that wall.
     CHECK(doorPostAt(house.tiles, 10, 15, 19));
@@ -2263,8 +2447,8 @@ TEST_CASE("a door wears two jambs, on the cells that flank it, slim and cut to t
 
     const StaticPlacements placed = placeStaticPieces(house.tiles, catalogue, {});
     REQUIRE(placed.stats.doorGaps == 1);
-    // Two, one per flank cell, and no third.
-    CHECK(countRole(placed.placements, PieceRole::DoorPost) == 2);
+    // Four: one per flank cell on each face of the wall, and no fifth.
+    CHECK(countRole(placed.placements, PieceRole::DoorPost) == 4);
     std::size_t west = 0;
     std::size_t east = 0;
     for (const StaticPlacement& p : placed.placements) {
@@ -2273,7 +2457,7 @@ TEST_CASE("a door wears two jambs, on the cells that flank it, slim and cut to t
         }
         CHECK(p.lightY == 15);
         CHECK(p.lightZ == 19);
-        CHECK(p.mode == kDrawShaded);
+        CHECK(p.mode == kDrawFaced);
         // SLIM: the piece at its own section, a quarter of a metre across,
         // not the metre the cell is. This is the whole point.
         CHECK(p.instance.scale.x == doctest::Approx(spec->scale));
@@ -2284,35 +2468,148 @@ TEST_CASE("a door wears two jambs, on the cells that flank it, slim and cut to t
         // On the ground, cut off at the head: no cap block over the lintel.
         CHECK(p.instance.position.y == doctest::Approx(render::bandSurface(19) + spec->lift));
         CHECK(p.instance.scale.y * spec->height == doctest::Approx(kDoorHeadHeight));
-        // Standing on the door's own plane (the south face of row 15), its
-        // section straddling the frontage's finish.
-        CHECK(p.instance.position.z == doctest::Approx(16.0F + proud));
-        // Hard against the edge of the opening, inside its own cell.
+        // Standing on the door's own plane -- the south face of row 15 to
+        // the street, its north face to the room -- its section straddling
+        // that face's finish.
+        CHECK((p.instance.position.z == doctest::Approx(16.0F + proud) ||
+               p.instance.position.z == doctest::Approx(15.0F - proud)));
+        // Its shaft's inner face on the edge of the opening, inside its
+        // own cell: the centre half a shaft off the edge.
         if (p.lightX == 10) {
             ++west;
-            CHECK(p.instance.position.x > 10.5F);
-            CHECK(p.instance.position.x < 11.0F);
+            CHECK(p.instance.position.x == doctest::Approx(11.0F - 0.5F * spec->core * spec->scale));
         }
         if (p.lightX == 13) {
             ++east;
-            CHECK(p.instance.position.x > 13.0F);
-            CHECK(p.instance.position.x < 13.5F);
+            CHECK(p.instance.position.x == doctest::Approx(13.0F + 0.5F * spec->core * spec->scale));
         }
     }
-    CHECK(west == 1);
-    CHECK(east == 1);
-    // And the head beam across the two of them, its underside on the head.
-    const float half = 0.5F * (lintel->maxX - lintel->minX) * lintel->scale;
+    CHECK(west == 2);
+    CHECK(east == 2);
+    // And the head beam across each pair of them, its underside on the
+    // head, in the plane of its posts.
+    const float half = 0.5F * lintel->core * lintel->scale;
     std::size_t heads = 0;
     for (const StaticPlacement& p : placed.placements) {
         if (p.role == PieceRole::Lintel && p.lightZ == 19 &&
-            p.instance.position.z == doctest::Approx(16.0F + proud)) {
+            (p.instance.position.z == doctest::Approx(16.0F + proud - 0.03F) ||
+             p.instance.position.z == doctest::Approx(15.0F - proud + 0.03F))) {
             ++heads;
             CHECK(p.instance.position.y ==
                   doctest::Approx(render::bandSurface(19) + kDoorHeadHeight + half + lintel->lift));
         }
     }
-    CHECK(heads == 1);
+    CHECK(heads == 2);
+}
+
+TEST_CASE("the reveal is the post's own edge, and the room's plaster stops at it") {
+    // THE CRITIC'S FIRST AND SECOND, 2026-09-25. From the street the post
+    // stood a third of a metre outboard of the hole, the kit door wall's
+    // own plaster margin and grey surround between; from the taproom the
+    // door was a bare cut in plaster. Now the jamb's reveal quad stands a
+    // hair off the jamb cell's boundary plane -- the plane both posts'
+    // inner faces stand on -- and runs from the street post's back to the
+    // room post's back; and the room-side panel that ends at the jamb
+    // ends AT the opening's edge instead of reaching a quarter of a metre
+    // past it (the slot it closed is closed by the post now).
+    HouseWorld house;
+    const StaticCatalogue& catalogue = shippedCatalogue();
+    const PieceSpec* beam = catalogue.piece(PieceRole::DoorPost);
+    const PieceSpec* plaster = catalogue.piece(PieceRole::WallPlaster);
+    REQUIRE(beam != nullptr);
+    REQUIRE(plaster != nullptr);
+    const StaticPlacements placed = placeStaticPieces(house.tiles, catalogue, {});
+    // How far a post's back stands off the boundary plane: the finish's
+    // standoff less half the post's shaft -- and the quad runs a centimetre
+    // on into the shaft, the depth of the rebate it sits in.
+    const float back = plaster->standoff - 0.5F * beam->core * beam->scale + 0.01F;
+    // The west jamb (10, 15): its east face is the reveal, on the plane
+    // x = 11, the quad 6 mm into the opening, on the ground, from the
+    // street post's back (z = 16 + back) to the room post's back (z = 15
+    // - back). The east jamb (13, 15) the same, mirrored.
+    std::size_t reveals = 0;
+    for (const StaticPlacement& p : placed.placements) {
+        if (p.role != PieceRole::WallPlaster || p.lightZ != 19 || p.lightY != 15 ||
+            !(p.lightX == 10 || p.lightX == 13)) {
+            continue;
+        }
+        const bool east = p.lightX == 10 && p.instance.position.x > 10.95F && p.instance.position.x < 11.05F;
+        const bool west = p.lightX == 13 && p.instance.position.x < 13.05F && p.instance.position.x > 12.95F;
+        if (!east && !west) {
+            continue;
+        }
+        ++reveals;
+        // A centimetre behind the plane the post's inner face stands on --
+        // the rebate -- running on into the post's depth, and drawn from
+        // both sides so nothing between it and a leaf can show the hollow.
+        CHECK(p.instance.position.x == doctest::Approx(east ? 11.0F - 0.01F : 13.0F + 0.01F));
+        CHECK(p.instance.scale.z < 0.0F);
+        CHECK(std::fabs(p.instance.scale.x) * plaster->width == doctest::Approx(1.0F + 2.0F * back));
+        CHECK(p.instance.position.y == doctest::Approx(render::bandSurface(19)));
+    }
+    CHECK(reveals == 2);
+    // The room face of row 15 west of the door (cells 9..10, on the plane
+    // z = 15, its plaster proud of it into the room): its panel ends a
+    // hair INSIDE the post at x = 11 -- not the hair past it every other
+    // cut overlaps by, which drew as a line down the post's inner face,
+    // and not a quarter of a metre past it into the opening.
+    bool westPanel = false;
+    for (const StaticPlacement& p : placed.placements) {
+        if (p.role != PieceRole::WallPlaster || p.lightZ != 19 || p.lightY != 15 ||
+            p.instance.position.z > 14.9F ||
+            !(p.instance.position.y == doctest::Approx(render::bandSurface(19)))) {
+            continue;
+        }
+        // A north face reads with x; a flipped quad's origin is its a1 end
+        // and it runs back toward a0.
+        const float len = std::fabs(p.instance.scale.x) * plaster->width;
+        const float other = p.instance.position.x + (p.flipped ? -len : len);
+        const float x0 = std::min(p.instance.position.x, other);
+        const float x1 = std::max(p.instance.position.x, other);
+        if (x1 > 10.5F && x1 < 11.5F && x0 < 10.0F) {
+            westPanel = true;
+            CHECK(x1 == doctest::Approx(11.0F - 0.005F));
+        }
+    }
+    CHECK(westPanel);
+}
+
+TEST_CASE("squaring a shaft pushes a hewn corner's vertices out to the arris and nothing else") {
+    // The Knights beam's own numbers: a 0.209 m shaft (its faces at 0.1045
+    // and 0.1042 off the axis), collars at 0.13, and at one hewn corner a
+    // vertex on the -x face 0.0465 in from the +z face beside a vertex on
+    // the +z face 0.0511 in from the -x face.
+    float v[] = {
+        0.1045F, 0.0F,   0.1042F,   // a corner: on both faces
+        -0.1043F, 0.85F, 0.0465F,   // the cut: on -x, short of +z
+        -0.0511F, 0.821F, 0.1042F,  // the cut: on +z, short of -x
+        0.1304F, 0.4F,  0.1302F,    // a collar: outside the section
+        0.0F,    0.0F,  0.0F,       // an end cap's middle: on neither
+    };
+    float n[] = {
+        1.0F, 0.0F, 0.0F, -0.767F, -0.188F, 0.614F, -0.568F, 0.395F, 0.722F, 0.0F, 1.0F, 0.0F, 0.0F, -1.0F, 0.0F,
+    };
+    CHECK(squareShaft(v, n, 5, 0.5F * 0.209F) == 2);
+    CHECK(v[0] == doctest::Approx(0.1045F));
+    CHECK(v[2] == doctest::Approx(0.1042F));
+    // Out to the arris along the axis it was short on, to the face's own
+    // plane, its normal the face it was on.
+    CHECK(v[3] == doctest::Approx(-0.1043F));
+    CHECK(v[5] == doctest::Approx(0.1042F));
+    CHECK(n[3] == doctest::Approx(-1.0F));
+    CHECK(n[4] == doctest::Approx(0.0F));
+    CHECK(n[5] == doctest::Approx(0.0F));
+    CHECK(v[6] == doctest::Approx(-0.1045F));
+    CHECK(v[8] == doctest::Approx(0.1042F));
+    CHECK(n[6] == doctest::Approx(0.0F));
+    CHECK(n[8] == doctest::Approx(1.0F));
+    CHECK(v[9] == doctest::Approx(0.1304F));
+    CHECK(v[11] == doctest::Approx(0.1302F));
+    CHECK(v[12] == doctest::Approx(0.0F));
+    CHECK(v[14] == doctest::Approx(0.0F));
+    // Nothing to square: no shaft, or no half.
+    CHECK(squareShaft(v, n, 5, 0.0F) == 0);
+    CHECK(squareShaft(nullptr, nullptr, 0, 0.1F) == 0);
 }
 
 TEST_CASE("the mesher leaves the jamb cells' ground storey out and meshes the wall over it") {
@@ -2355,7 +2652,10 @@ TEST_CASE("the mesher leaves the jamb cells' ground storey out and meshes the wa
             CHECK(highest <= floorY + render::kBandHeight + 0.001F);
             if (face.dir == FaceDir::Bottom) {
                 jambSoffit = true;
-                CHECK(lowest == doctest::Approx(headY));
+                // The cut is over the soffit (kDoorHeadCut), not at the
+                // head: the stone course starts where the closed head box
+                // hides it.
+                CHECK(lowest == doctest::Approx(render::bandSurface(19) + kDoorHeadCut));
             }
         }
         // The wall cell next along the run still reaches the ground, and
@@ -2527,14 +2827,15 @@ TEST_CASE("a flame's halo faces the eye from wherever the eye is") {
     const Vec3 anchor = hung->anchor;
     CHECK(anchor.y > render::bandSurface(19) + 1.7F);
     CHECK(anchor.y < render::bandSurface(19) + 2.5F);
-    // In a description: the halo whose origin lies within a metre of that
-    // anchor (the hearth's is ten tiles off).
+    // In a description: the halo whose origin lies within a metre and a
+    // half of that anchor -- the origin is the quad's own corner, half of
+    // its 1.5 m span off the centre each way (the hearth's is ten tiles off).
     const auto flameOf = [&](const SceneDescription& d) -> const StaticInstance* {
         for (const StaticInstance& at : d.statics) {
             const float dx = at.position.x - anchor.x;
             const float dy = at.position.y - anchor.y;
             const float dz = at.position.z - anchor.z;
-            if (at.mode == kDrawHalo && dx * dx + dy * dy + dz * dz < 1.0F) {
+            if (at.mode == kDrawHalo && dx * dx + dy * dy + dz * dz < 2.25F) {
                 return &at;
             }
         }
@@ -2660,8 +2961,9 @@ TEST_CASE("a pair of lone posts two cells apart on a street carries a hitching r
     // (the frame's timber, read from either end); the indoor table and the
     // partition on the roof band are the pillars left. Plus the house's own
     // door, whose two flank cells wear the slim jamb dress of the same
-    // piece: four street posts and two jambs.
-    CHECK(countRole(placed.placements, PieceRole::DoorPost) == 6);
+    // piece, on both faces of the wall: four street posts and four jamb
+    // posts.
+    CHECK(countRole(placed.placements, PieceRole::DoorPost) == 8);
     CHECK(countRole(placed.placements, PieceRole::Pillar) == 2);
     for (const StaticPlacement& p : placed.placements) {
         if (p.role == PieceRole::DoorPost) {
@@ -2719,9 +3021,21 @@ bool windowPane(PieceRole role) {
     return role == PieceRole::WallWindow || role == PieceRole::PaneTimber;
 }
 
+/// A pane wearing the law's candle: litPane at the house's own strength
+/// (world_scene.cpp kCandleSpread, down to two thirds of it), never the
+/// dark glass darkPane() gives (a quarter of a lit value in red, bluer than
+/// it is red).
+bool candlePane(const Rgba8& pane, const Rgba8& warm) {
+    // Two thirds of the tint at the house's own strength, and a house lit
+    // all night banks that to 0.55 in the small hours: the floor is a third
+    // and a bit, still well over darkPane()'s quarter of a lit value.
+    return pane.r >= static_cast<std::uint8_t>(warm.r * 0.35F) && pane.r <= warm.r &&
+           pane.g >= static_cast<std::uint8_t>(warm.g * 0.35F) && pane.b <= warm.b &&
+           pane.r > pane.b + 45;
+}
+
 bool warmPane(const StaticInstance& piece, const Rgba8& warm) {
-    return windowPane(static_cast<PieceRole>(piece.role)) && piece.pane.r == warm.r &&
-           piece.pane.g == warm.g && piece.pane.b == warm.b;
+    return windowPane(static_cast<PieceRole>(piece.role)) && candlePane(piece.pane, warm);
 }
 
 }  // namespace
@@ -2835,16 +3149,27 @@ TEST_CASE("the light law on the Docks: up at ten, abed at three, and the Gull ne
     }
     const std::size_t timberPanes = countRole(first.placements, PieceRole::PaneTimber);
     CHECK(timberPanes > 10);
-    // THE CRITIC'S SECOND: two stacked bands per opening now, never one --
-    // see StaticPlacement::paneCore.
-    CHECK(timberPanes == 2 * countRole(first.placements, PieceRole::WindowTimber));
-    std::size_t timberCoreBands = 0;
+    // ONE ramp quad per opening (kDrawPaneRamp, scene.hpp), and the board
+    // module it hangs in cut into two halves that carry the spill
+    // (StaticPlacement::spill).
+    CHECK(timberPanes == countRole(first.placements, PieceRole::WindowTimber));
+    std::size_t rampPanes = 0;
+    std::size_t spillHalves = 0;
     for (const StaticPlacement& p : first.placements) {
-        if (p.role == PieceRole::PaneTimber && p.paneCore) {
-            ++timberCoreBands;
+        if (p.role == PieceRole::PaneTimber && p.mode == kDrawPaneRamp &&
+            p.instance.mode == kDrawPaneRamp && p.instance.gradientTo > p.instance.gradientFrom &&
+            p.instance.gradientToZ > p.instance.gradientFromZ) {
+            ++rampPanes;
+        }
+        if (p.role == PieceRole::WallTimber && p.spill) {
+            REQUIRE(p.hasInside);
+            ++spillHalves;
         }
     }
-    CHECK(timberCoreBands == timberPanes / 2);
+    CHECK(rampPanes == timberPanes);
+    // Every hung window on the shipped Docks hangs in a board module, and
+    // every module is two halves: exactly two per pane, not "at least one".
+    CHECK(spillHalves == 2 * timberPanes);
     CHECK(households >= 40);
     CHECK(litHouses >= 4);
     CHECK(darkHouses >= 4);
@@ -2985,7 +3310,7 @@ TEST_CASE("a session's own clock relights the ward with no session.step() betwee
                 continue;
             }
             const Rgba8 pane = world.relitPaneTint(i);
-            n += (pane.r == warm.r && pane.g == warm.g && pane.b == warm.b) ? 1 : 0;
+            n += candlePane(pane, warm) ? 1 : 0;
         }
         return n;
     };
@@ -3008,15 +3333,29 @@ TEST_CASE("a session's own clock relights the ward with no session.step() betwee
     CHECK(litAt02 < litAt22);
 }
 
-TEST_CASE("a lit timber pane reads as two stops, not one flat wash") {
-    // THE CRITIC'S SECOND. Every hung timber window is two stacked
-    // placements now (StaticPlacement::paneCore, static_pieces.cpp),
-    // emitted core then edge with nothing between them (placeStaticPieces
-    // never reorders). This checks what a relight actually gives them: lit,
-    // the sill-side band and the head-side band differ -- a hotter core and
-    // a cooler edge, not one colour worn twice, and the core keeps the
-    // law's own tint unchanged from before the lane split the pane; dark,
-    // the two bands agree, the same dark glass a single pane always was.
+TEST_CASE("a lit timber pane is one ramp quad, hot at the sill, and the boards either side catch it") {
+    // THE NIGHT-LIGHT CRITIC'S SECOND AND THIRD. The two stacked bands are
+    // gone: every hung timber window is ONE placement drawn as
+    // paneRampMesh() (scene.hpp) in the pane tint, its ramp in vertex
+    // colour so both rasterizers agree; and the board module it hangs in
+    // is two halves (StaticPlacement::spill, static_pieces.cpp), emitted
+    // before-half, after-half, frame, pane with nothing between them, each
+    // half carrying the pane's household. This checks what a relight gives
+    // them: lit, the pane wears the law's own candle and each half's end
+    // AT the pane is warmer than its far end; the ramp mesh itself is
+    // white at its sill row and kPaneRampHead at its head row.
+    const MeshData ramp = paneRampMesh();
+    REQUIRE(ramp.vertexCount() == 6);
+    REQUIRE(ramp.triangleCount() == 4);
+    CHECK(ramp.colours[0] == 255);
+    CHECK(ramp.colours[1] == 255);
+    CHECK(ramp.colours[2] == 255);
+    CHECK(ramp.colours[4 * 4] == kPaneRampHead.r);
+    CHECK(ramp.colours[4 * 4 + 1] == kPaneRampHead.g);
+    CHECK(ramp.colours[4 * 4 + 2] == kPaneRampHead.b);
+    CHECK(ramp.positions[1] == 0.0F);
+    CHECK(ramp.positions[4 * 3 + 1] == 1.0F);
+
     const sim::TileQuery tiles(docksWorld());
     const StaticCatalogue& catalogue = shippedCatalogue();
     const std::vector<render::Lamp> lamps =
@@ -3026,48 +3365,850 @@ TEST_CASE("a lit timber pane reads as two stops, not one flat wash") {
     WorldSceneParams params;
     params.timeOfDaySeconds = 22 * 3600;
     world.refresh(scene, spawnCamera(), 320.0F / 180.0F, params);
+    const Rgba8 warm = catalogue.knobs().litPane;
 
-    std::size_t pairsChecked = 0;
-    std::size_t pairsLit = 0;
-    for (std::size_t i = 0; i + 1 < world.placements().size(); ++i) {
-        const StaticPlacement& core = world.placements()[i];
-        if (core.role != PieceRole::PaneTimber || !core.paneCore) {
+    std::size_t panesChecked = 0;
+    std::size_t panesLit = 0;
+    std::size_t halvesChecked = 0;
+    std::size_t halvesLit = 0;
+    std::size_t strictlyWarmer = 0;
+    std::size_t darkerAtPane = 0;
+    for (std::size_t i = 3; i < world.placements().size(); ++i) {
+        const StaticPlacement& pane = world.placements()[i];
+        if (pane.role != PieceRole::PaneTimber) {
             continue;
         }
-        const StaticPlacement& edge = world.placements()[i + 1];
-        REQUIRE(edge.role == PieceRole::PaneTimber);
-        REQUIRE_FALSE(edge.paneCore);
-        REQUIRE(edge.house == core.house);
-        REQUIRE(edge.houseLot == core.houseLot);
-        ++pairsChecked;
-        const Rgba8 coreTint = world.relitPaneTint(i);
-        const Rgba8 edgeTint = world.relitPaneTint(i + 1);
-        if (coreTint.r < 60 && edgeTint.r < 60) {
-            continue;  // dark: nothing to check about the gradient here.
+        ++panesChecked;
+        REQUIRE(pane.mode == kDrawPaneRamp);
+        REQUIRE(world.placements()[i - 1].role == PieceRole::WindowTimber);
+        const Rgba8 tint = world.relitPaneTint(i);
+        const bool lit = candlePane(tint, warm);
+        panesLit += lit ? 1 : 0;
+        // The corner slots carry the same, for the hash and the software path.
+        CHECK(world.relitTint(i, 0).r == tint.r);
+        CHECK(world.relitTint(i, 3).b == tint.b);
+        const StaticPlacement& after = world.placements()[i - 2];
+        const StaticPlacement& before = world.placements()[i - 3];
+        if (!(after.role == PieceRole::WallTimber && after.spill)) {
+            continue;  // a hung window on a run that is not a board module
         }
-        ++pairsLit;
-        CHECK((coreTint.r != edgeTint.r || coreTint.g != edgeTint.g || coreTint.b != edgeTint.b));
-        CHECK(coreTint.r == catalogue.knobs().litPane.r);
-        CHECK(coreTint.g == catalogue.knobs().litPane.g);
-        CHECK(coreTint.b == catalogue.knobs().litPane.b);
+        REQUIRE(before.role == PieceRole::WallTimber);
+        REQUIRE(before.spill);
+        REQUIRE(before.spillAtB);
+        REQUIRE_FALSE(after.spillAtB);
+        REQUIRE(before.houseLot == pane.houseLot);
+        REQUIRE(after.houseLot == pane.houseLot);
+        REQUIRE(before.house == pane.house);
+        ++halvesChecked;
+        if (!lit) {
+            continue;
+        }
+        // Slot 0 is the a end (the `from` cut) unless the piece was turned
+        // round, slot 1 the b end. The pane end is b on the half before the
+        // window and a on the half after it.
+        const Rgba8 beforeInner = world.relitTint(i - 3, before.flipped ? 0 : 1);
+        const Rgba8 beforeOuter = world.relitTint(i - 3, before.flipped ? 1 : 0);
+        const Rgba8 afterInner = world.relitTint(i - 2, after.flipped ? 1 : 0);
+        const Rgba8 afterOuter = world.relitTint(i - 2, after.flipped ? 0 : 1);
+        // A lamp's pool runs across the same board, so an outer end nearer
+        // a lantern can out-light the pane end: the candle is the smaller
+        // light. Counted, not required per half -- the pane end is the
+        // warmer on most halves and the darker on few.
+        ++halvesLit;
+        if (beforeInner.r > beforeOuter.r && afterInner.r > afterOuter.r) {
+            ++strictlyWarmer;
+        }
+        if (beforeInner.r < beforeOuter.r || afterInner.r < afterOuter.r) {
+            ++darkerAtPane;
+        }
+        // Warm, not white: the candle's own colour on the wood.
+        CHECK(beforeInner.r > beforeInner.b);
+        CHECK(afterInner.r > afterInner.b);
     }
-    MESSAGE("Timber pane pairs: " << pairsChecked << " checked, " << pairsLit << " lit at ten");
-    CHECK(pairsChecked > 10);
-    CHECK(pairsLit >= 4);
+    MESSAGE("Timber panes: " << panesChecked << " checked, " << panesLit << " lit at ten, "
+                             << halvesChecked << " with both halves");
+    CHECK(panesChecked > 10);
+    CHECK(panesLit >= 4);
+    CHECK(halvesChecked >= 4);
+    MESSAGE("Lit halves: " << halvesLit << ", strictly warmer at the pane on " << strictlyWarmer
+                           << ", darker on " << darkerAtPane);
+    CHECK(strictlyWarmer * 5 >= halvesLit * 3);
+    CHECK(darkerAtPane * 4 <= halvesLit);
 
-    // At noon every pane -- core and edge alike -- is the same dark glass.
+    // At noon every pane is dark glass, and no half is warmer at the pane
+    // than a dark pane's own pool would make it: the spill went out with
+    // the pane.
     params.timeOfDaySeconds = 12 * 3600;
     world.refresh(scene, spawnCamera(), 320.0F / 180.0F, params);
-    for (std::size_t i = 0; i + 1 < world.placements().size(); ++i) {
-        const StaticPlacement& core = world.placements()[i];
-        if (core.role != PieceRole::PaneTimber || !core.paneCore) {
+    for (std::size_t i = 3; i < world.placements().size(); ++i) {
+        const StaticPlacement& pane = world.placements()[i];
+        if (pane.role != PieceRole::PaneTimber) {
             continue;
         }
-        const Rgba8 coreTint = world.relitPaneTint(i);
-        const Rgba8 edgeTint = world.relitPaneTint(i + 1);
-        CHECK(coreTint.r == edgeTint.r);
-        CHECK(coreTint.g == edgeTint.g);
-        CHECK(coreTint.b == edgeTint.b);
+        // darkPane(): a quarter of the lit value in red, at most 63 on a
+        // white wall -- dark glass, never the candle.
+        const Rgba8 tint = world.relitPaneTint(i);
+        CHECK(tint.r < 80);
+        CHECK_FALSE(candlePane(tint, warm));
     }
 }
 
+TEST_CASE("the morning: more household panes are lit at five than at two, and most at eight") {
+    // THE NIGHT-LIGHT CRITIC'S FOURTH: two shots of the Gull's roof at two
+    // and at five showed the same panes, and the read was that the rising
+    // window (houseRisingFrom/To) never relights. It does -- the three
+    // households that vantage sees all drew rising hours past five under
+    // the 4..6.5 window then in force, which is a sample of three, not a
+    // wiring fault
+    // (moving the window to half past midnight in the catalogue lit them
+    // at two in the shipped exe). The window is 3.5..5.25 now, so the
+    // fishers are up by five, and THIS pins the rise the
+    // way the critic tried to read it: the ward's own lit household panes
+    // through a real Session's clock and a real WorldScene::refresh(), no
+    // session.step() between reads (skipToHour is the sleep/travel jump),
+    // fewer at two than at five, fewer at five than at eight.
+    render::SessionConfig config;
+    config.timeOfDay = 20 * 3600;
+    config.timeOfDayGiven = true;
+    render::Session session(config);
+    REQUIRE(session.timeOfDay() == 20 * 3600);
+
+    const StaticCatalogue& catalogue = shippedCatalogue();
+    const RuleKnobs& knobs = catalogue.knobs();
+    REQUIRE(knobs.houseRisingFrom > 0.0F);
+    REQUIRE(knobs.houseRisingTo > knobs.houseRisingFrom);
+    const Rgba8 warm = knobs.litPane;
+    WorldScene world(session.tiles(), session.atlas(), &session.renderer().glow(), &catalogue,
+                     &session.renderer().lamps());
+    SceneDescription scene;
+    WorldSceneParams params;
+    const auto refreshNow = [&] {
+        params.timeOfDaySeconds = session.timeOfDay();
+        params.weather = session.weather();
+        params.dynamicLamps = session.tavernLights();
+        world.refresh(scene, session.camera(), 320.0F / 180.0F, params);
+    };
+    const auto litHouseholds = [&] {
+        std::size_t n = 0;
+        for (std::size_t i = 0; i < world.placements().size(); ++i) {
+            const StaticPlacement& p = world.placements()[i];
+            if (!windowPane(p.role) || p.house != HouseKind::Household) {
+                continue;
+            }
+            const Rgba8 pane = world.relitPaneTint(i);
+            n += candlePane(pane, warm) ? 1 : 0;
+        }
+        return n;
+    };
+    refreshNow();
+    const std::size_t litAt20 = litHouseholds();
+    session.skipToHour(2);
+    REQUIRE(session.timeOfDay() == 2 * 3600);
+    refreshNow();
+    const std::size_t litAt02 = litHouseholds();
+    session.skipToHour(5);
+    REQUIRE(session.timeOfDay() == 5 * 3600);
+    refreshNow();
+    const std::size_t litAt05 = litHouseholds();
+    CHECK(world.stats().piecesRelit == 3);
+    MESSAGE("Ward households lit through a real session: " << litAt20 << " at eight, " << litAt02
+                                                         << " at two, " << litAt05 << " at five");
+    CHECK(litAt02 < litAt05);
+    CHECK(litAt05 < litAt20);
+    CHECK(litAt02 * 2 < litAt05);
+}
+
+TEST_CASE("a lit pane lays its candle on the wall cells round it, and each house burns at its own strength") {
+    // THE DIRECTOR'S SECOND, THIRD AND FIFTH (fix round one). The spill is
+    // a map of cells (WorldScene::spill), not a per-board constant: a lit
+    // pane's own wall cell in full, the cells along the wall and out into
+    // the street easing off -- so a plaster window casts it as a timber
+    // one does, the chunk colour stage reads the same map, and two pieces
+    // meeting at a cut share one value across the seam. And a lit pane's
+    // tint is the law's candle at the house's own strength.
+    const sim::TileQuery tiles(docksWorld());
+    const StaticCatalogue& catalogue = shippedCatalogue();
+    const std::vector<render::Lamp> lamps =
+        render::loadLamps(content::contentDir(), sim::docks::kWorldName);
+    WorldScene world(tiles, proceduralAtlas(), nullptr, &catalogue, &lamps);
+    SceneDescription scene;
+    WorldSceneParams params;
+    params.timeOfDaySeconds = 22 * 3600;
+    world.refresh(scene, spawnCamera(), 320.0F / 180.0F, params);
+    const Rgba8 warm = catalogue.knobs().litPane;
+    REQUIRE_FALSE(world.spill().empty());
+
+    std::size_t litPanes = 0;
+    std::size_t masonryLit = 0;
+    std::set<std::uint8_t> strengths;
+    for (std::size_t i = 0; i < world.placements().size(); ++i) {
+        const StaticPlacement& p = world.placements()[i];
+        if (!windowPane(p.role)) {
+            continue;
+        }
+        const Rgba8 pane = world.relitPaneTint(i);
+        if (!candlePane(pane, warm)) {
+            // A dark pane lays nothing.
+            continue;
+        }
+        ++litPanes;
+        masonryLit += p.role == PieceRole::WallWindow ? 1 : 0;
+        strengths.insert(pane.r);
+        // Keyed off the pane's OWN wall cell, which for a kit window is not
+        // its run's first cut: the wall cell and the room cell behind it
+        // are neighbours, and the street cell is the wall cell's other
+        // side.
+        REQUIRE(std::abs(p.paneX - p.insideX) + std::abs(p.paneY - p.insideY) == 1);
+        const auto at = world.spill().find(cellKey(p.paneX, p.paneY, p.insideZ));
+        REQUIRE(at != world.spill().end());
+        // kSpillGlow at the candle's own strength: a third (a house lit all
+        // night in the small hours) to the whole of 0.30 -- at ten, two
+        // thirds to the whole.
+        CHECK(at->second.r > 0.18F);
+        CHECK(at->second.r < 0.5F);
+        CHECK(at->second.r > at->second.b);
+        const std::int32_t nx = p.paneX - p.insideX;
+        const std::int32_t ny = p.paneY - p.insideY;
+        const auto side = world.spill().find(cellKey(p.paneX - ny, p.paneY + nx, p.insideZ));
+        REQUIRE(side != world.spill().end());
+        CHECK(side->second.r >= 0.09F);
+        CHECK(side->second.r < at->second.r);
+        const auto street = world.spill().find(cellKey(p.paneX + nx, p.paneY + ny, p.insideZ));
+        REQUIRE(street != world.spill().end());
+        CHECK(street->second.r >= 0.14F);
+        // The light leaves through the glass: the street takes more than
+        // the wall beside the window, and the row beyond is still lit.
+        CHECK(street->second.r > side->second.r);
+        const auto beyond = world.spill().find(cellKey(p.paneX + 2 * nx, p.paneY + 2 * ny, p.insideZ));
+        REQUIRE(beyond != world.spill().end());
+        CHECK(beyond->second.r > 0.05F);
+        // A lit kit window's wall is darker than its pane.
+        if (p.role == PieceRole::WallWindow) {
+            const Rgba8 endA = world.relitTint(i, 0);
+            const Rgba8 endB = world.relitTint(i, 1);
+            CHECK(endA.r < pane.r);
+            CHECK(endB.r < pane.r);
+        }
+    }
+    MESSAGE("Lit panes at ten: " << litPanes << " (" << masonryLit << " on masonry), " << strengths.size()
+                                 << " candle strengths");
+    CHECK(litPanes >= 40);
+    CHECK(masonryLit >= 4);
+    // Not one amber: the strengths spread across houses, and the spill
+    // with them -- the map's own values spread too, a candle's own cell
+    // never over the full glow and the dimmest well under it.
+    CHECK(strengths.size() >= 8);
+    std::set<int> spillLevels;
+    float dimmestOwn = 1.0F;
+    float brightestOwn = 0.0F;
+    for (std::size_t i = 0; i < world.placements().size(); ++i) {
+        const StaticPlacement& p = world.placements()[i];
+        if (!windowPane(p.role) || !candlePane(world.relitPaneTint(i), warm)) {
+            continue;
+        }
+        const auto own = world.spill().find(cellKey(p.paneX, p.paneY, p.insideZ));
+        REQUIRE(own != world.spill().end());
+        spillLevels.insert(static_cast<int>(own->second.r * 1000.0F));
+        dimmestOwn = std::min(dimmestOwn, own->second.r);
+        brightestOwn = std::max(brightestOwn, own->second.r);
+    }
+    CHECK(spillLevels.size() >= 8);
+    CHECK(dimmestOwn < brightestOwn * 0.8F);
+
+    // Noon: the map is empty and nothing is candle-lit.
+    params.timeOfDaySeconds = 12 * 3600;
+    world.refresh(scene, spawnCamera(), 320.0F / 180.0F, params);
+    CHECK(world.spill().empty());
+}
+
+TEST_CASE("two run pieces meeting at a cut read one light there: no seam on a lit wall") {
+    // THE ROUND-THREE DIRECTOR'S FIRST AND THE PLAYER'S FOURTH: a lit
+    // frontage stepped at every module. A run piece is lit at each cut
+    // between two cell centres, and two pieces meeting at a cut read the
+    // same cells at the same weight -- so the LIGHT at the cut is one
+    // value on both, whatever tint each wears. This pins it on the shipped
+    // Docks at ten, with the lamps and every lit pane's spill in play:
+    // consecutive placements that meet at a cut agree in the light (the
+    // relit tint over the catalogue tint, channel by channel) within a
+    // rounding step.
+    const sim::TileQuery tiles(docksWorld());
+    const StaticCatalogue& catalogue = shippedCatalogue();
+    const std::vector<render::Lamp> lamps =
+        render::loadLamps(content::contentDir(), sim::docks::kWorldName);
+    WorldScene world(tiles, proceduralAtlas(), nullptr, &catalogue, &lamps);
+    SceneDescription scene;
+    WorldSceneParams params;
+    params.timeOfDaySeconds = 22 * 3600;
+    world.refresh(scene, spawnCamera(), 320.0F / 180.0F, params);
+    const auto lightOf = [&](std::size_t i, bool bEnd, int channel) {
+        const StaticPlacement& p = world.placements()[i];
+        // Slot 0 is the a end unless the piece was turned round (slot 1 then).
+        const std::size_t slot = (bEnd != p.flipped) ? 1 : 0;
+        const Rgba8 lit = world.relitTint(i, slot);
+        const Rgba8 tint = p.instance.tint;
+        const std::uint8_t l = channel == 0 ? lit.r : channel == 1 ? lit.g : lit.b;
+        const std::uint8_t t = channel == 0 ? tint.r : channel == 1 ? tint.g : tint.b;
+        return t == 0 ? -1.0F : static_cast<float>(l) / static_cast<float>(t);
+    };
+    std::size_t pairs = 0;
+    std::size_t seams = 0;
+    for (std::size_t i = 0; i + 1 < world.placements().size(); ++i) {
+        const StaticPlacement& p = world.placements()[i];
+        const StaticPlacement& q = world.placements()[i + 1];
+        if (!p.gradient || !q.gradient || p.alongZ || q.alongZ || p.lightZ != q.lightZ) {
+            continue;
+        }
+        const bool meet = p.lightX2 == q.lightX && p.lightY2 == q.lightY && p.endBX == q.endAX &&
+                          p.endBY == q.endAY && std::fabs(p.endBT - q.endAT) < 1.0e-4F &&
+                          std::fabs(p.facing - q.facing) < 1.0e-4F;
+        if (!meet) {
+            continue;
+        }
+        ++pairs;
+        bool seam = false;
+        for (int channel = 0; channel < 3; ++channel) {
+            const float a = lightOf(i, true, channel);
+            const float b = lightOf(i + 1, false, channel);
+            if (a < 0.0F || b < 0.0F) {
+                continue;
+            }
+            // Both sides are the same light through their own tint's
+            // rounding: half a level each side, and nothing else. (The
+            // third round's module extra stepped 0.02 to 0.03 here and
+            // would fail this on every pair.)
+            const std::uint8_t tp = channel == 0 ? p.instance.tint.r : channel == 1 ? p.instance.tint.g : p.instance.tint.b;
+            const std::uint8_t tq = channel == 0 ? q.instance.tint.r : channel == 1 ? q.instance.tint.g : q.instance.tint.b;
+            const float tolerance = 0.55F / static_cast<float>(tp) + 0.55F / static_cast<float>(tq);
+            seam = seam || std::fabs(a - b) > tolerance;
+        }
+        if (seam) {
+            ++seams;
+            if (seams <= 5) {
+                MESSAGE("seam between placements " << i << " (" << pieceRoleName(p.role) << ") and "
+                                                    << i + 1 << " (" << pieceRoleName(q.role) << ") at ("
+                                                    << p.lightX2 << "," << p.lightY2 << "," << p.lightZ
+                                                    << "): " << lightOf(i, true, 0) << " vs "
+                                                    << lightOf(i + 1, false, 0));
+            }
+        }
+    }
+    MESSAGE("Run pieces meeting at a cut: " << pairs << " pairs, " << seams << " seams");
+    CHECK(pairs >= 200);
+    CHECK(seams == 0);
+}
+
+TEST_CASE("a house lit all night banks its candles in the small hours") {
+    // THE DIRECTOR'S FOURTH, THREE ROUNDS: the street the critic looks at is
+    // the Gull's frontage, lit all night, so two o'clock was five o'clock
+    // there. The sim's tavern has its hearth banked and its candles out by
+    // then; the panes follow -- every one of the Gull's at ten burns at
+    // its own strength, at three at kLitHouseSmallHours of it, and at ten
+    // again in the evening full. Households are untouched by it.
+    const sim::TileQuery tiles(docksWorld());
+    const StaticCatalogue& catalogue = shippedCatalogue();
+    const std::vector<render::Lamp> lamps =
+        render::loadLamps(content::contentDir(), sim::docks::kWorldName);
+    WorldScene world(tiles, proceduralAtlas(), nullptr, &catalogue, &lamps);
+    SceneDescription scene;
+    WorldSceneParams params;
+    const Rgba8 warm = catalogue.knobs().litPane;
+    const auto litPanes = [&](int hour, HouseKind kind, std::vector<std::uint8_t>& reds) {
+        params.timeOfDaySeconds = hour * 3600;
+        world.refresh(scene, spawnCamera(), 320.0F / 180.0F, params);
+        reds.clear();
+        for (std::size_t i = 0; i < world.placements().size(); ++i) {
+            const StaticPlacement& p = world.placements()[i];
+            if (!windowPane(p.role) || p.house != kind) {
+                continue;
+            }
+            const Rgba8 pane = world.relitPaneTint(i);
+            if (candlePane(pane, warm)) {
+                reds.push_back(pane.r);
+            }
+        }
+    };
+    std::vector<std::uint8_t> gullAtTen;
+    std::vector<std::uint8_t> gullAtTwo;
+    std::vector<std::uint8_t> gullAtThree;
+    std::vector<std::uint8_t> gullAtFive;
+    std::vector<std::uint8_t> gullAtSix;
+    litPanes(22, HouseKind::Lit, gullAtTen);
+    litPanes(2, HouseKind::Lit, gullAtTwo);
+    litPanes(3, HouseKind::Lit, gullAtThree);
+    litPanes(5, HouseKind::Lit, gullAtFive);
+    litPanes(6, HouseKind::Lit, gullAtSix);
+    REQUIRE(gullAtTen.size() >= 20);
+    // Still lit -- the same count -- at every hour of the night.
+    CHECK(gullAtTwo.size() == gullAtTen.size());
+    CHECK(gullAtThree.size() == gullAtTen.size());
+    CHECK(gullAtFive.size() == gullAtTen.size());
+    CHECK(gullAtSix.size() == gullAtTen.size());
+    // THE SIM'S OWN HOURS (sim/tavern.hpp): the doors shut at two with the
+    // fire still up -- two is the evening's row; at three the fire is
+    // banked and the panes with it; and they stay banked at five and at
+    // six, until daylight takes every pane, because the fire is banked to
+    // ten and the doors shut to eleven.
+    const auto over = [&warm](const std::vector<std::uint8_t>& reds) {
+        std::size_t n = 0;
+        for (const std::uint8_t r : reds) {
+            n += r > static_cast<std::uint8_t>(warm.r * 0.56F) ? 1 : 0;
+        }
+        return n;
+    };
+    CHECK(over(gullAtTen) * 2 > gullAtTen.size());
+    CHECK(over(gullAtTwo) == over(gullAtTen));
+    CHECK(over(gullAtThree) == 0);
+    CHECK(over(gullAtFive) == 0);
+    CHECK(over(gullAtSix) == 0);
+    std::size_t dimmer = 0;
+    for (std::size_t k = 0; k < std::min(gullAtTen.size(), gullAtThree.size()); ++k) {
+        dimmer += gullAtThree[k] < gullAtTen[k] ? 1 : 0;
+    }
+    CHECK(dimmer == gullAtThree.size());
+    for (std::size_t k = 0; k < std::min(gullAtTen.size(), gullAtTwo.size()); ++k) {
+        CHECK(gullAtTwo[k] == gullAtTen[k]);
+    }
+    // A household's candle, up at three (an owl), is not banked.
+    std::vector<std::uint8_t> ownersAtThree;
+    litPanes(3, HouseKind::Household, ownersAtThree);
+    std::size_t ownersOver = 0;
+    for (const std::uint8_t r : ownersAtThree) {
+        ownersOver += r > static_cast<std::uint8_t>(warm.r * 0.56F) ? 1 : 0;
+    }
+    CHECK(ownersOver * 2 > ownersAtThree.size());
+}
+
+TEST_CASE("in a fog a lit pane carries the fog's share in its alpha, by the eye's distance") {
+    // THE LATE GLASS (rl_backend.cpp drawLateGlass): the world scene puts
+    // exp(-kHaloFogShare * veil * distance) into a light's pane alpha --
+    // any candle behind glass, any lamp's glass -- and 255 in clear air,
+    // where the adapter never runs the late pass at all.
+    const sim::TileQuery tiles(docksWorld());
+    const StaticCatalogue& catalogue = shippedCatalogue();
+    const std::vector<render::Lamp> lamps =
+        render::loadLamps(content::contentDir(), sim::docks::kWorldName);
+    WorldScene world(tiles, proceduralAtlas(), nullptr, &catalogue, &lamps);
+    SceneDescription scene;
+    WorldSceneParams params;
+    params.timeOfDaySeconds = 22 * 3600;
+    world.refresh(scene, spawnCamera(), 320.0F / 180.0F, params);
+    const Rgba8 warm = catalogue.knobs().litPane;
+    std::size_t lightsClear = 0;
+    for (const StaticInstance& at : scene.statics) {
+        // (A flame's or the water's pane carries its own tint alpha; only a
+        // light's pane is the fog's to move.)
+        const bool light = at.pane.r >= 80 && at.pane.r > at.pane.b + 40;
+        if (light) {
+            CHECK(at.pane.a == 255);
+        }
+        lightsClear += light ? 1 : 0;
+    }
+    REQUIRE(lightsClear >= 10);
+
+    params.weather.kind = render::WeatherKind::Fog;
+    params.weather.intensity = 1.0F;
+    world.refresh(scene, spawnCamera(), 320.0F / 180.0F, params);
+    const render::Camera eye = spawnCamera();
+    std::size_t lights = 0;
+    std::size_t nearer = 0;
+    std::size_t dimmest = 255;
+    float farthest = 0.0F;
+    std::size_t farthestAlpha = 255;
+    for (const StaticInstance& at : scene.statics) {
+        const bool light = at.pane.r >= 80 && at.pane.r > at.pane.b + 40;
+        if (!light) {
+            continue;
+        }
+        ++lights;
+        CHECK(at.pane.a < 255);
+        CHECK(at.pane.a >= 1);
+        const float dx = at.position.x - eye.x;
+        const float dz = at.position.z - eye.y;
+        const float d = std::sqrt(dx * dx + dz * dz);
+        if (d < 6.0F) {
+            ++nearer;
+            CHECK(at.pane.a > 128);
+        }
+        if (d > farthest) {
+            farthest = d;
+            farthestAlpha = at.pane.a;
+        }
+        dimmest = std::min<std::size_t>(dimmest, at.pane.a);
+        (void)warm;
+    }
+    MESSAGE("Lights in the fog from the spawn: " << lights << ", " << nearer << " within six tiles; the farthest at "
+                                                 << farthest << " tiles carries alpha " << farthestAlpha);
+    CHECK(lights == lightsClear);
+    CHECK(nearer >= 1);
+    CHECK(farthestAlpha < 160);
+
+    // THE NEAR FADE (kHaloNearGone/Full): a halo's alpha rises with the
+    // eye's distance -- from a metre off the Gull's door lantern it is a
+    // fraction of what it is from five and a half.
+    params.weather = render::Weather{};
+    const auto haloAlphaFrom = [&](float x, float y) {
+        render::Camera close = spawnCamera();
+        close.x = x;
+        close.y = y;
+        close.yaw = 180.0F * 3.14159265358979323846F / 180.0F;
+        world.refresh(scene, close, 320.0F / 180.0F, params);
+        std::size_t best = 0;
+        float bestDistance = 1.0e9F;
+        for (const StaticInstance& at : scene.statics) {
+            if (at.mode != kDrawHalo) {
+                continue;
+            }
+            const float dx = at.position.x - close.x;
+            const float dz = at.position.z - close.y;
+            const float d = std::sqrt(dx * dx + dz * dz);
+            if (d < bestDistance) {
+                bestDistance = d;
+                best = at.tint.a;
+            }
+        }
+        return best;
+    };
+    const std::size_t nearAlpha = haloAlphaFrom(152.5F, 64.2F);
+    const std::size_t farAlpha = haloAlphaFrom(152.5F, 59.0F);
+    MESSAGE("The nearest halo's alpha: " << nearAlpha << " from a metre, " << farAlpha << " from six");
+    CHECK(nearAlpha * 3 < farAlpha);
+    CHECK(farAlpha >= 150);
+}
+
+TEST_CASE("the spill goes out with the panes: fewer cells carry a candle at three than at ten") {
+    // "Goes out with the pane", pinned AT NIGHT (round one's fourth stayed
+    // pinned only at noon): the map is rebuilt from the panes that are up,
+    // and as the households go to bed between ten and three the cells that
+    // carry a candle fall with them.
+    const sim::TileQuery tiles(docksWorld());
+    const StaticCatalogue& catalogue = shippedCatalogue();
+    const std::vector<render::Lamp> lamps =
+        render::loadLamps(content::contentDir(), sim::docks::kWorldName);
+    WorldScene world(tiles, proceduralAtlas(), nullptr, &catalogue, &lamps);
+    SceneDescription scene;
+    WorldSceneParams params;
+    params.timeOfDaySeconds = 22 * 3600;
+    world.refresh(scene, spawnCamera(), 320.0F / 180.0F, params);
+    const std::size_t cellsAtTen = world.spill().size();
+    params.timeOfDaySeconds = 3 * 3600;
+    world.refresh(scene, spawnCamera(), 320.0F / 180.0F, params);
+    const std::size_t cellsAtThree = world.spill().size();
+    MESSAGE("Cells carrying a candle: " << cellsAtTen << " at ten, " << cellsAtThree << " at three");
+    CHECK(cellsAtThree < cellsAtTen);
+    CHECK(cellsAtThree * 3 < cellsAtTen * 2);
+    CHECK(cellsAtThree > 0);
+}
+
+TEST_CASE("the surface clamp keeps its hue") {
+    // THE ROUND-TWO DIRECTOR'S SECOND: clamped per channel, a wall under a
+    // lantern saturated red first and went on taking green and blue --
+    // olive. render::clampLight scales the three together by the brightest.
+    const render::Rgb under = render::clampLight(render::Rgb{0.9F, 0.7F, 0.4F}, 1.15F);
+    CHECK(under.r == doctest::Approx(0.9F));
+    CHECK(under.b == doctest::Approx(0.4F));
+    const render::Rgb over = render::clampLight(render::Rgb{1.8F, 1.4F, 0.8F}, 1.15F);
+    CHECK(over.r == doctest::Approx(1.15F));
+    CHECK(over.g / over.r == doctest::Approx(1.4F / 1.8F));
+    CHECK(over.b / over.r == doctest::Approx(0.8F / 1.8F));
+    // On the Docks at ten: no relit piece is greener than it is red where
+    // its own tint is not (the plaster's tint leans warm), and no lit
+    // surface has red pinned while blue climbs past the tint's own ratio.
+    const sim::TileQuery tiles(docksWorld());
+    const StaticCatalogue& catalogue = shippedCatalogue();
+    const std::vector<render::Lamp> lamps =
+        render::loadLamps(content::contentDir(), sim::docks::kWorldName);
+    WorldScene world(tiles, proceduralAtlas(), nullptr, &catalogue, &lamps);
+    SceneDescription scene;
+    WorldSceneParams params;
+    params.timeOfDaySeconds = 22 * 3600;
+    world.refresh(scene, spawnCamera(), 320.0F / 180.0F, params);
+    // THE CONSUMER, PINNED TO THE FORMULA (the round-four auditor: a ratio
+    // bound held under the per-channel clamp too). For every point piece on
+    // one cell -- a barrel, a crate, a post -- the relight must give
+    // exactly clampLight(ambient + pool + candle, 1.15) x tint, itself
+    // scaled as one where it would clip at 255, to the rounding step; the
+    // pool and the candle are read back off the scene's own fields. A
+    // per-channel clamp on either step gives another number wherever a
+    // lamp's own cell stands over the cap, which on the Docks at ten is
+    // dozens of pieces.
+    const render::SkyState sky = render::skyAt(22 * 3600);
+    REQUIRE(world.pool() != nullptr);
+    std::size_t checked = 0;
+    std::size_t overCap = 0;
+    std::size_t colourScaled = 0;
+    for (std::size_t i = 0; i < world.placements().size(); ++i) {
+        const StaticPlacement& p = world.placements()[i];
+        if (p.selfLit || p.gradient || p.bilinear || p.mode != kDrawShaded || p.lightX != p.lightX2 ||
+            p.lightY != p.lightY2 || p.instance.tint.r == 0 || std::fabs(p.facing - 1.0F) > 1.0e-6F) {
+            continue;
+        }
+        render::Rgb light = world.pool()->at(p.lightX, p.lightY, p.lightZ);
+        const auto candle = world.spill().find(cellKey(p.lightX, p.lightY, p.lightZ));
+        if (candle != world.spill().end()) {
+            light.r += candle->second.r;
+            light.g += candle->second.g;
+            light.b += candle->second.b;
+        }
+        light = render::Rgb{light.r + sky.ambient.r, light.g + sky.ambient.g, light.b + sky.ambient.b};
+        const bool atCap = std::max(light.r, std::max(light.g, light.b)) > 1.15F;
+        const render::Rgb clamped = render::clampLight(light, 1.15F);
+        const render::Rgb raw{clamped.r * static_cast<float>(p.instance.tint.r),
+                              clamped.g * static_cast<float>(p.instance.tint.g),
+                              clamped.b * static_cast<float>(p.instance.tint.b)};
+        const bool scaled = std::max(raw.r, std::max(raw.g, raw.b)) > 255.0F;
+        const render::Rgb colour = render::clampLight(raw, 255.0F);
+        const Rgba8 lit = world.relitTint(i, 0);
+        ++checked;
+        overCap += atCap ? 1 : 0;
+        colourScaled += scaled ? 1 : 0;
+        CHECK(std::abs(static_cast<int>(lit.r) - static_cast<int>(colour.r + 0.5F)) <= 1);
+        CHECK(std::abs(static_cast<int>(lit.g) - static_cast<int>(colour.g + 0.5F)) <= 1);
+        CHECK(std::abs(static_cast<int>(lit.b) - static_cast<int>(colour.b + 0.5F)) <= 1);
+    }
+    // The pool's peak stands at 0.99 and the ambient at 0.05, so the light
+    // cap binds only where a candle's spill lands on a lamp's own cell (a
+    // handful on the Docks); the colour's own scaling at 255 binds on many.
+    // Either step done per channel gives a different number on those.
+    MESSAGE("Point pieces pinned to the formula at ten: " << checked << ", " << overCap
+                                                          << " over the light cap, " << colourScaled
+                                                          << " scaled at 255");
+    // The shipped Docks at ten give four and six: enough to tell the two
+    // formulas apart, and the formula itself is checked on every piece.
+    CHECK(checked >= 100);
+    CHECK(overCap >= 1);
+    CHECK(colourScaled >= 3);
+    // The chunks too: on the same Docks at ten, no coloured vertex of any
+    // chunk is greener than it is red (the lamps are warm, the ambient a
+    // cold near-black, the candle amber: nothing lights green).
+    std::size_t vertices = 0;
+    std::size_t greener = 0;
+    for (const MeshData& mesh : scene.meshes) {
+        if (mesh.id < kChunkMeshIdBase || mesh.id >= kChunkMeshIdBase + 4096U) {
+            continue;
+        }
+        for (std::size_t v = 0; v < mesh.vertexCount(); ++v) {
+            const std::uint8_t r = mesh.colours[v * 4U];
+            const std::uint8_t g = mesh.colours[v * 4U + 1U];
+            if (r < 60) {
+                continue;  // the near-black of the night: a lean of a level is nothing
+            }
+            ++vertices;
+            greener += g > r ? 1 : 0;
+        }
+    }
+    MESSAGE("Lit chunk vertices at ten: " << vertices << ", greener than red: " << greener);
+    CHECK(vertices > 1000);
+    CHECK(greener == 0);
+}
+
+TEST_CASE("the surface pool carries to eight tiles and the law's field does not") {
+    // THE NIGHT-LIGHT CRITIC'S FIRST, the pool. render::LampGlow::buildPool
+    // is the 3D pass's own light on surfaces: the same lamps, a hot core
+    // and a long skirt to ~8.5 tiles, against the law's field that is gone
+    // by 5.5 and that the 2D pass and the light law still read untouched.
+    // A typical Docks lantern is luminance 18.
+    const float peak = render::poolValueAt(18, 0.0F);
+    CHECK(peak == doctest::Approx((0.55F + 0.45F * 18.0F / 26.0F) * render::kPoolPeakScale));
+    CHECK(render::poolRadiusOf(18) == doctest::Approx(8.4583F).epsilon(0.01));
+    CHECK(render::poolValueAt(18, 1.0F) < 0.8F * peak);
+    CHECK(render::poolValueAt(18, 1.0F) > 0.55F * peak);
+    CHECK(render::poolValueAt(18, 6.0F) > 0.09F);
+    CHECK(render::poolValueAt(18, 7.0F) > 0.05F);
+    CHECK(render::poolValueAt(18, 8.5F) == 0.0F);
+    CHECK(render::poolValueAt(18, 9.0F) == 0.0F);
+    float last = peak;
+    for (float d = 0.25F; d < 9.0F; d += 0.25F) {
+        const float v = render::poolValueAt(18, d);
+        CHECK(v <= last);
+        last = v;
+    }
+    CHECK(render::poolRadiusOf(8) == doctest::Approx(4.0F * render::kPoolReach));
+    CHECK(render::poolRadiusOf(0) == doctest::Approx(3.5F * render::kPoolReach));
+    CHECK(render::poolRadiusOf(31) == doctest::Approx(render::kPoolRadiusCap));
+
+    // On the real Docks: seven tiles along a row from a lantern the law's
+    // field is black and the pool is not.
+    const sim::TileQuery tiles(docksWorld());
+    const std::vector<render::Lamp> lamps =
+        render::loadLamps(content::contentDir(), sim::docks::kWorldName);
+    REQUIRE_FALSE(lamps.empty());
+    const render::LampGlow glow = render::LampGlow::build(tiles, lamps);
+    const render::LampGlow pool = render::LampGlow::buildPool(tiles, lamps);
+    CHECK(pool.litCellCount() > glow.litCellCount());
+    std::size_t reached = 0;
+    for (const render::Lamp& lamp : lamps) {
+        const render::Rgb near = pool.at(lamp.x, lamp.y, lamp.z);
+        CHECK(near.r > 0.5F);
+        for (int side = 0; side < 4; ++side) {
+            const std::int32_t x = lamp.x + (side == 0 ? 7 : side == 1 ? -7 : 0);
+            const std::int32_t y = lamp.y + (side == 2 ? 7 : side == 3 ? -7 : 0);
+            if (x < 0 || y < 0 || x >= tiles.sizeX() || y >= tiles.sizeY()) {
+                continue;
+            }
+            const render::Rgb far = pool.at(x, y, lamp.z);
+            const render::Rgb law = glow.at(x, y, lamp.z);
+            // Another lamp may stand nearer that cell; only a cell no lamp's
+            // law field reaches proves the pool's own reach.
+            if (law.r == 0.0F && law.g == 0.0F && law.b == 0.0F && far.r > 0.04F) {
+                ++reached;
+            }
+        }
+    }
+    MESSAGE("Docks cells seven tiles from a lantern lit by the pool alone: " << reached);
+    CHECK(reached >= 4);
+}
+
+TEST_CASE("after dark a lantern's glass out-values its metal, and by day it is a lamp") {
+    // THE NIGHT-LIGHT CRITIC'S FIRST, the lamp. Its glass (the pane slot,
+    // kLampGlassNight) is near white after dark; its metal (the corner
+    // slots) is sky-lit and capped (kLampMetalNightCap), so the cap never
+    // out-values the glass. By day the metal keeps the catalogue's own
+    // tint, as it always did.
+    const sim::TileQuery tiles(docksWorld());
+    const StaticCatalogue& catalogue = shippedCatalogue();
+    const std::vector<render::Lamp> lamps =
+        render::loadLamps(content::contentDir(), sim::docks::kWorldName);
+    WorldScene world(tiles, proceduralAtlas(), nullptr, &catalogue, &lamps);
+    REQUIRE(world.pool() != nullptr);
+    SceneDescription scene;
+    WorldSceneParams params;
+    params.timeOfDaySeconds = 22 * 3600;
+    world.refresh(scene, spawnCamera(), 320.0F / 180.0F, params);
+    std::size_t lanterns = 0;
+    for (std::size_t i = 0; i < world.placements().size(); ++i) {
+        const StaticPlacement& p = world.placements()[i];
+        if (p.role != PieceRole::LampWall && p.role != PieceRole::LampPost) {
+            continue;
+        }
+        ++lanterns;
+        const Rgba8 glass = world.relitPaneTint(i);
+        const Rgba8 metal = world.relitTint(i, 0);
+        CHECK(glass.r == 255);
+        CHECK(glass.g >= 230);
+        CHECK(glass.b >= 190);
+        CHECK(metal.r < glass.r);
+        CHECK(metal.g < glass.g);
+        CHECK(metal.b < glass.b);
+        CHECK(metal.r <= static_cast<std::uint8_t>(p.instance.tint.r * 0.5F + 1.0F));
+        CHECK(world.relitTint(i, 3).r == metal.r);
+    }
+    CHECK(lanterns >= 8);
+    params.timeOfDaySeconds = 12 * 3600;
+    world.refresh(scene, spawnCamera(), 320.0F / 180.0F, params);
+    for (std::size_t i = 0; i < world.placements().size(); ++i) {
+        const StaticPlacement& p = world.placements()[i];
+        if (p.role != PieceRole::LampWall && p.role != PieceRole::LampPost) {
+            continue;
+        }
+        const Rgba8 metal = world.relitTint(i, 0);
+        CHECK(metal.r == p.instance.tint.r);
+        CHECK(metal.g == p.instance.tint.g);
+        CHECK(metal.b == p.instance.tint.b);
+        CHECK(world.relitPaneTint(i).r < 100);
+    }
+    // The catalogue names where the hung lantern's glass is, and the ref
+    // the adapter reads carries it.
+    const PieceSpec* lantern = catalogue.piece(PieceRole::LampWall);
+    REQUIRE(lantern != nullptr);
+    CHECK(lantern->glassBandHi > lantern->glassBandLo);
+    CHECK(lantern->glassU1 > lantern->glassU0);
+    CHECK(lantern->glassV1 > lantern->glassV0);
+    bool refCuts = false;
+    for (const StaticPieceRef& ref : catalogue.pieceRefs()) {
+        refCuts = refCuts || (ref.file == lantern->file && ref.cutsGlass());
+    }
+    CHECK(refCuts);
+}
+
+TEST_CASE("a body beside a lantern after dark wears the lantern's pool, and one far from any is dark") {
+    // THE NIGHT-LIGHT CRITIC'S FIRST, the bodies. They drew in their
+    // daylight coats beside a lamp at night because their tint read the
+    // law's raw glow, which at a tile from a lantern is nine tenths of
+    // white. They take the surface pool now (ActorSceneParams::pool), the
+    // same number the cobbles under them wear: warm within it, near-black
+    // past it.
+    render::SessionConfig config;
+    config.timeOfDay = 22 * 3600;
+    config.timeOfDayGiven = true;
+    render::Session session(config);
+    const StaticCatalogue& catalogue = shippedCatalogue();
+    WorldScene world(session.tiles(), session.atlas(), &session.renderer().glow(), &catalogue,
+                     &session.renderer().lamps());
+    REQUIRE(world.pool() != nullptr);
+    ActorSceneParams params;
+    params.pool = world.pool();
+    params.spill = &world.spill();
+    params.maxDistance = 400.0F;
+    const std::vector<ActorInstance> bodies = actorInstances(session, session.camera(), params);
+    REQUIRE_FALSE(bodies.empty());
+    // THE AUDITOR'S FOURTH: the bounds below would pass on the law's raw
+    // glow too, so the pin is the pool itself -- the same roster described
+    // WITHOUT the pool (the fallback: the law's glow shaped by pooledGlow),
+    // body for body. In a lantern's skirt (two to five tiles out) the pool
+    // is brighter than the shaped law, which is gone by four; and past the
+    // law's reach it is the pool alone that lights anyone.
+    ActorSceneParams bare;
+    bare.maxDistance = 400.0F;
+    const std::vector<ActorInstance> unpooled = actorInstances(session, session.camera(), bare);
+    REQUIRE(unpooled.size() == bodies.size());
+    std::size_t brighterInSkirt = 0;
+    std::size_t differ = 0;
+    for (std::size_t i = 0; i < bodies.size(); ++i) {
+        const Rgba8 a = bodies[i].instance.tint;
+        const Rgba8 b = unpooled[i].instance.tint;
+        differ += (a.r != b.r || a.g != b.g || a.b != b.b) ? 1 : 0;
+        brighterInSkirt += a.r > b.r + 8 ? 1 : 0;
+    }
+    MESSAGE("Bodies whose tint the pool moved: " << differ << " of " << bodies.size() << ", "
+                                                  << brighterInSkirt << " brighter in a skirt");
+    CHECK(differ >= 20);
+    CHECK(brighterInSkirt >= 10);
+    const std::vector<render::Lamp>& lamps = session.renderer().lamps();
+    std::size_t inPool = 0;
+    std::size_t inDark = 0;
+    for (const ActorInstance& body : bodies) {
+        // Scene X is tile x, scene Z is tile y (toScene), the band by height.
+        const float bx = body.instance.position.x;
+        const float bz = body.instance.position.z;
+        float nearest = 1.0e9F;
+        for (const render::Lamp& lamp : lamps) {
+            const float dx = bx - (static_cast<float>(lamp.x) + 0.5F);
+            const float dz = bz - (static_cast<float>(lamp.y) + 0.5F);
+            const float dy = body.instance.position.y - render::bandSurface(lamp.z);
+            if (std::fabs(dy) > 1.0F) {
+                continue;
+            }
+            nearest = std::min(nearest, std::sqrt(dx * dx + dz * dz));
+        }
+        const Rgba8 tint = body.instance.tint;
+        if (nearest <= 1.5F) {
+            ++inPool;
+            // (A body on the Gull's own hearth can reach the clamp, the
+            // same 1.15 the pieces wear: no ceiling checked.)
+            CHECK(tint.r > 90);
+            CHECK(tint.r > tint.b);
+        } else if (nearest > 10.0F) {
+            // Dark -- unless a lit pane's candle reaches the very cell the
+            // body stands in (the spill map names it), which the roster
+            // described without the pool does not carry.
+            ++inDark;
+            if (tint.r >= 40) {
+                const std::int32_t cx = static_cast<std::int32_t>(std::floor(bx));
+                const std::int32_t cy = static_cast<std::int32_t>(std::floor(bz));
+                std::int32_t band = 0;
+                for (std::int32_t z = 0; z < session.tiles().sizeZ(); ++z) {
+                    if (std::fabs(render::bandSurface(z) - body.instance.position.y) < 0.5F) {
+                        band = z;
+                    }
+                }
+                const bool candleHere = world.spill().find(cellKey(cx, cy, band)) != world.spill().end();
+                CHECK(candleHere);
+                CHECK(tint.r > unpooled[&body - bodies.data()].instance.tint.r);
+            }
+        }
+    }
+    MESSAGE("Bodies at ten: " << inPool << " within a tile and a half of a lantern, " << inDark
+                              << " past ten tiles of any");
+    CHECK(inPool >= 1);
+    CHECK(inDark >= 1);
+}

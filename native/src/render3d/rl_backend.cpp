@@ -75,6 +75,7 @@
 //      offset, with the static weapon .gltf hung on its Hand_R bone.
 
 #include "granadad/render3d/backend.hpp"
+#include "granadad/render3d/shaft_square.hpp"
 
 #include <raylib.h>
 #include <raymath.h>
@@ -85,6 +86,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <limits>
 #include <map>
 #include <memory>
 #include <string>
@@ -93,6 +95,7 @@
 #include <vector>
 
 #include "granadad/render/framebuffer.hpp"
+#include "granadad/render/voxel_classify.hpp"
 
 namespace granadad::render3d {
 
@@ -204,10 +207,26 @@ struct StaticModel {
     /// over a lit room at night) rather than as a white wash over the wall
     /// the chunk mesh puts behind it.
     std::vector<bool> glass;
+    /// Which meshes were rebuilt with the glass ramp in their vertex
+    /// colours (applyGlass): those draw through tinted(), so the software
+    /// path folds the pane tint into the ramp as the GL path multiplies it.
+    std::vector<bool> ramped;
+    /// Whether a catalogue glass cut has been applied to this model. The
+    /// cache is by file and two rows can share one (the hung lantern and
+    /// the kit's carried one): whichever loads first, the first ref that
+    /// names a cut gets it applied.
+    bool glassCut = false;
 };
 
 /// S LANE. The four blend corners of a piece and their spans: the light
 /// at local (x, z) = (from, fromZ), (to, fromZ), (from, toZ), (to, toZ).
+/// The late glass pass runs only where the fog takes a real share off a
+/// pane (its alpha under this, a share under 0.94): a night fog past about
+/// a metre and a third qualifies; an overcast's trace of a veil (a share of
+/// 0.97 at four metres, 0.86 at twenty) does not until eight and a half
+/// metres out, where it is harmless either way with the halos drawn last.
+constexpr unsigned char kLateGlassBelow = 240;
+
 struct PieceTints {
     Color a{};
     Color b{};
@@ -270,7 +289,13 @@ constexpr float kViewmodelDepthSpan = 0.2F;
 /// SHADED piece (2) darkens faces that look down (to half) and lifts faces
 /// that look up (by an eighth) from the mesh's own normals, the vertical
 /// faces untouched: the volume a prop needs when nothing lights it, and the
-/// difference between a rowboat and a dome.
+/// difference between a rowboat and a dome. A FACED piece (3) does that
+/// and gives its upright faces the chunk's own facing factors by their
+/// normal (render::kFacingX east and west, kFacingY north and south, the
+/// two numbers printed into the source below at load), so a door post's
+/// front and its inner face split the way the wall's own faces do. The
+/// source is a format string for that reason, and the two %s are the only
+/// ones in it.
 /// A HALO (1) is NOT here any more, and that is the point of it: its
 /// falloff used to be a radial alpha in this fragment shader, which rlsw
 /// has not got, so the headless twin drew a flat pale rectangle where the
@@ -297,9 +322,13 @@ constexpr const char* kBlendVertexShader =
     "    float tz = clamp((vertexPosition.z - tintSpan.z) * tintSpan.w, 0.0, 1.0);\n"
     "    fragTexCoord = vertexTexCoord;\n"
     "    vec4 tint = mix(mix(tintA, tintB, tx), mix(tintC, tintD, tx), tz);\n"
-    "    if (pieceMode == 2) {\n"
+    "    if (pieceMode >= 2) {\n"
     "        vec3 n = normalize(vec3(matNormal * vec4(vertexNormal, 0.0)));\n"
     "        float f = n.y < 0.0 ? 1.0 + 0.5 * n.y : 1.0 + 0.125 * n.y;\n"
+    "        if (pieceMode == 3) {\n"
+    "            float h = abs(n.x) + abs(n.z);\n"
+    "            if (h > 0.001) f *= (abs(n.x) * %s + abs(n.z) * %s) / h;\n"
+    "        }\n"
     "        tint.rgb *= f;\n"
     "    }\n"
     "    fragColor = vertexColor * tint;\n"
@@ -397,6 +426,17 @@ struct Backend::Impl {
     /// and not found, never asked for again.
     std::map<std::string, std::unique_ptr<StaticModel>> statics;
     std::vector<DeferredMesh> deferred;
+    /// The halos, held back further still -- past the weather's veils --
+    /// so a lamp's glow is seen THROUGH the fog rather than veiled with the
+    /// wall behind it (the player's second: lanterns went to fog grey
+    /// before the sacks beside them). The world scene has already taken the
+    /// fog's share off their alpha by distance (kHaloFogShare).
+    std::vector<DeferredMesh> halos;
+    /// Bright glass (a lit pane, a lamp's) whose pane alpha is under 255:
+    /// the world scene's fog share. Drawn once more past the veils at that
+    /// alpha over its own veiled pixels, so it reads through the fog by the
+    /// share and goes to the fog's grey with distance.
+    std::vector<DeferredMesh> lateGlass;
     /// The blend shader (GL 3.3) and its uniform slots; id 0 = not
     /// available, and the pieces draw with the average of their two tints.
     Shader blend{};
@@ -414,7 +454,16 @@ struct Backend::Impl {
         }
         blendTried = true;
 #if !defined(GRAPHICS_API_OPENGL_11)
-        blend = LoadShaderFromMemory(kBlendVertexShader, kBlendFragmentShader);
+        // The facing factors are the chunk's (voxel_classify.hpp), printed
+        // into the source so a faced piece and the wall it stands in read
+        // one rule.
+        char facingX[16];
+        char facingY[16];
+        std::snprintf(facingX, sizeof facingX, "%.4f", static_cast<double>(render::kFacingX));
+        std::snprintf(facingY, sizeof facingY, "%.4f", static_cast<double>(render::kFacingY));
+        char vertexSource[4096];
+        std::snprintf(vertexSource, sizeof vertexSource, kBlendVertexShader, facingX, facingY);
+        blend = LoadShaderFromMemory(vertexSource, kBlendFragmentShader);
         if (blend.id != 0 && blend.id != rlGetShaderIdDefault()) {
             blendTintA = GetShaderLocation(blend, "tintA");
             blendTintB = GetShaderLocation(blend, "tintB");
@@ -436,6 +485,11 @@ struct Backend::Impl {
     /// every lamp in the district.
     Mesh haloFan{};
     bool haloFanReady = false;
+    /// THE PANE'S RAMP (scene.hpp paneRampMesh): one unit quad, uploaded
+    /// the first time a timber pane is drawn and fitted to each pane's own
+    /// local span by a matrix, the same way as the fan.
+    Mesh paneRamp{};
+    bool paneRampReady = false;
     Texture2D defaultTexture{};
     Texture2D overlay{};
     int overlayWidth = 0;
@@ -457,6 +511,13 @@ struct Backend::Impl {
         if (!haloFanReady) {
             haloFan = uploadMesh(haloFanMesh());
             haloFanReady = true;
+        }
+    }
+
+    void ensurePaneRamp() {
+        if (!paneRampReady) {
+            paneRamp = uploadMesh(paneRampMesh());
+            paneRampReady = true;
         }
     }
 
@@ -529,14 +590,255 @@ struct Backend::Impl {
         return result;
     }
 
+    /// A GLASS RAMP in vertex colour, by a vertex's height `t` (0 the
+    /// bottom of the glass, 1 its head) with the flame at `wick`: full
+    /// white across a band round the wick, easing to kPaneRampHead
+    /// (scene.hpp) at the head and to a shade under white at the foot.
+    /// A window's wick is its sill (0): the candle stands on it. A
+    /// lantern's is a third of the way up its glass.
+    [[nodiscard]] static Rgba8 glassRamp(float t, float wick) noexcept {
+        // A window's hot band is its sill up to the knee; a lantern's is
+        // a hand's breadth either side of the wick.
+        const float lo = std::max(0.0F, wick - 0.15F);
+        const float hi = std::min(1.0F, wick + (wick > 0.0F ? 0.15F : kPaneRampKnee));
+        const auto lerp = [](const Rgba8& a, const Rgba8& b, float u) {
+            const auto ch = [u](std::uint8_t x, std::uint8_t y) {
+                return static_cast<std::uint8_t>(std::clamp(
+                    static_cast<float>(x) + (static_cast<float>(y) - static_cast<float>(x)) * u, 0.0F,
+                    255.0F) + 0.5F);
+            };
+            return Rgba8{ch(a.r, b.r), ch(a.g, b.g), ch(a.b, b.b), 255};
+        };
+        constexpr Rgba8 kWhite{255, 255, 255, 255};
+        constexpr Rgba8 kFoot{224, 218, 210, 255};
+        if (t < lo) {
+            return lerp(kFoot, kWhite, lo > 0.0F ? t / lo : 1.0F);
+        }
+        if (t <= hi) {
+            return kWhite;
+        }
+        return lerp(kWhite, kPaneRampHead, hi < 1.0F ? (t - hi) / (1.0F - hi) : 1.0F);
+    }
+
+    /// The triangles of `src` that `keep(i)` passes, copied out DE-INDEXED
+    /// into a mesh of their own with a vertex colour from `colourAt(y)`
+    /// (the vertex's local y), uploaded. Empty (no triangles) when none
+    /// pass. The source is left alone.
+    template <typename Keep, typename ColourAt>
+    [[nodiscard]] static Mesh rebuiltTriangles(const Mesh& src, Keep keep, ColourAt colourAt,
+                                               bool withColours = true) {
+        Mesh out{};
+        const int triangles = src.triangleCount;
+        const auto index = [&src](int tri, int corner) {
+            const int slot = tri * 3 + corner;
+            return src.indices != nullptr ? static_cast<int>(src.indices[slot]) : slot;
+        };
+        int kept = 0;
+        for (int tri = 0; tri < triangles; ++tri) {
+            kept += keep(tri) ? 1 : 0;
+        }
+        if (kept == 0) {
+            return out;
+        }
+        out.vertexCount = kept * 3;
+        out.triangleCount = kept;
+        out.vertices = rlAlloc<float>(static_cast<std::size_t>(out.vertexCount) * 3U);
+        out.texcoords = src.texcoords != nullptr ? rlAlloc<float>(static_cast<std::size_t>(out.vertexCount) * 2U)
+                                                 : nullptr;
+        out.normals = src.normals != nullptr ? rlAlloc<float>(static_cast<std::size_t>(out.vertexCount) * 3U)
+                                             : nullptr;
+        // No colour array unless asked: on the GL 1.1 path a colour array
+        // REPLACES the material colour (see tinted()), so a metal mesh that
+        // carried one would lose its tint and its night cap there.
+        out.colors =
+            withColours ? rlAlloc<unsigned char>(static_cast<std::size_t>(out.vertexCount) * 4U) : nullptr;
+        int at = 0;
+        for (int tri = 0; tri < triangles; ++tri) {
+            if (!keep(tri)) {
+                continue;
+            }
+            for (int corner = 0; corner < 3; ++corner) {
+                const int from = index(tri, corner);
+                out.vertices[at * 3] = src.vertices[from * 3];
+                out.vertices[at * 3 + 1] = src.vertices[from * 3 + 1];
+                out.vertices[at * 3 + 2] = src.vertices[from * 3 + 2];
+                if (out.texcoords != nullptr) {
+                    out.texcoords[at * 2] = src.texcoords[from * 2];
+                    out.texcoords[at * 2 + 1] = src.texcoords[from * 2 + 1];
+                }
+                if (out.normals != nullptr) {
+                    out.normals[at * 3] = src.normals[from * 3];
+                    out.normals[at * 3 + 1] = src.normals[from * 3 + 1];
+                    out.normals[at * 3 + 2] = src.normals[from * 3 + 2];
+                }
+                if (out.colors != nullptr) {
+                    const Rgba8 c = colourAt(src.vertices[from * 3 + 1]);
+                    out.colors[at * 4] = c.r;
+                    out.colors[at * 4 + 1] = c.g;
+                    out.colors[at * 4 + 2] = c.b;
+                    out.colors[at * 4 + 3] = c.a;
+                }
+                ++at;
+            }
+        }
+        UploadMesh(&out, false);
+        return out;
+    }
+
+    /// The local Y extent of the vertices the kept triangles of `src` use.
+    template <typename Keep>
+    static void yExtentOf(const Mesh& src, Keep keep, float& lo, float& hi) {
+        lo = std::numeric_limits<float>::max();
+        hi = std::numeric_limits<float>::lowest();
+        for (int tri = 0; tri < src.triangleCount; ++tri) {
+            if (!keep(tri)) {
+                continue;
+            }
+            for (int corner = 0; corner < 3; ++corner) {
+                const int slot = tri * 3 + corner;
+                const int from = src.indices != nullptr ? static_cast<int>(src.indices[slot]) : slot;
+                const float y = src.vertices[from * 3 + 1];
+                lo = std::min(lo, y);
+                hi = std::max(hi, y);
+            }
+        }
+        if (hi <= lo) {
+            lo = 0.0F;
+            hi = 1.0F;
+        }
+    }
+
+    /// THE GLASS, CUT AND RAMPED (scene.hpp StaticPieceRef). Once, at load:
+    /// where the catalogue names a glass band, the triangles of every mesh
+    /// that lie in it (by centroid Y and by the atlas patch they sample)
+    /// are cut out into a glass mesh of their own, opaque, appended after
+    /// the rest; then every glass mesh -- cut here, or a translucent
+    /// untextured material's own (a kit window's pane) -- is rebuilt with
+    /// the ramp in its vertex colours, so a candle behind glass is hottest
+    /// where the flame stands and eases off toward the head, the same on
+    /// both rasterizers. The metal keeps its atlas and draws as it did.
+    void applyGlass(StaticModel& model, const StaticPieceRef& ref) {
+        Model& m = model.model;
+        if (ref.cutsGlass() && !model.glassCut) {
+            model.glassCut = true;
+            const int count = m.meshCount;
+            for (int i = 0; i < count; ++i) {
+                const Mesh& src = m.meshes[i];
+                if (src.vertices == nullptr || src.triangleCount <= 0) {
+                    continue;
+                }
+                // Glass is a triangle whose EVERY vertex lies in the band and
+                // on the patch: a rim ring that straddles the band's edge is
+                // metal whole, not a sawtooth of half its quads (the auditor's
+                // first).
+                const auto inGlass = [&src, &ref](int tri) {
+                    for (int corner = 0; corner < 3; ++corner) {
+                        const int slot = tri * 3 + corner;
+                        const int from = src.indices != nullptr ? static_cast<int>(src.indices[slot]) : slot;
+                        const float y = src.vertices[from * 3 + 1];
+                        if (y < ref.glassBandLo || y > ref.glassBandHi) {
+                            return false;
+                        }
+                        if (src.texcoords != nullptr) {
+                            const float u = src.texcoords[from * 2];
+                            const float v = src.texcoords[from * 2 + 1];
+                            if (u < ref.glassU0 || u > ref.glassU1 || v < ref.glassV0 || v > ref.glassV1) {
+                                return false;
+                            }
+                        }
+                    }
+                    return true;
+                };
+                float lo = 0.0F;
+                float hi = 1.0F;
+                yExtentOf(src, inGlass, lo, hi);
+                Mesh glass = rebuiltTriangles(src, inGlass, [lo, hi](float y) {
+                    return glassRamp((y - lo) / (hi - lo), 0.33F);
+                });
+                if (glass.triangleCount == 0) {
+                    continue;
+                }
+                Mesh rest = rebuiltTriangles(
+                    src, [&inGlass](int tri) { return !inGlass(tri); },
+                    [](float) { return Rgba8{255, 255, 255, 255}; }, false);
+                if (rest.triangleCount == 0) {
+                    // Every triangle was glass: the glass takes the slot.
+                    UnloadMesh(m.meshes[i]);
+                    m.meshes[i] = glass;
+                    model.glass[static_cast<std::size_t>(i)] = true;
+                    model.translucent[static_cast<std::size_t>(i)] = false;
+                    model.ramped.resize(static_cast<std::size_t>(m.meshCount), false);
+                    model.ramped[static_cast<std::size_t>(i)] = true;
+                    continue;
+                }
+                // The model's arrays, one longer: the rest in the glass's old
+                // slot, the glass appended on the same material.
+                const int n = m.meshCount + 1;
+                Mesh* meshes = rlAlloc<Mesh>(static_cast<std::size_t>(n));
+                int* materials = rlAlloc<int>(static_cast<std::size_t>(n));
+                for (int k = 0; k < m.meshCount; ++k) {
+                    meshes[k] = m.meshes[k];
+                    materials[k] = m.meshMaterial[k];
+                }
+                UnloadMesh(meshes[i]);
+                meshes[i] = rest;
+                meshes[n - 1] = glass;
+                materials[n - 1] = m.meshMaterial[i];
+                std::free(m.meshes);
+                std::free(m.meshMaterial);
+                m.meshes = meshes;
+                m.meshMaterial = materials;
+                m.meshCount = n;
+                model.translucent.push_back(false);
+                model.glass.push_back(true);
+                model.ramped.resize(static_cast<std::size_t>(n), false);
+                model.ramped[static_cast<std::size_t>(n - 1)] = true;
+            }
+        }
+        model.ramped.resize(static_cast<std::size_t>(m.meshCount), false);
+        for (int i = 0; i < m.meshCount; ++i) {
+            if (!model.glass[static_cast<std::size_t>(i)] || model.ramped[static_cast<std::size_t>(i)]) {
+                continue;
+            }
+            const Mesh& src = m.meshes[i];
+            if (src.vertices == nullptr || src.triangleCount <= 0) {
+                continue;
+            }
+            const auto all = [](int) { return true; };
+            float lo = 0.0F;
+            float hi = 1.0F;
+            yExtentOf(src, all, lo, hi);
+            Mesh ramped = rebuiltTriangles(src, all, [lo, hi](float y) {
+                return glassRamp((y - lo) / (hi - lo), 0.0F);
+            });
+            if (ramped.triangleCount == 0) {
+                continue;
+            }
+            UnloadMesh(m.meshes[i]);
+            m.meshes[i] = ramped;
+            model.ramped[static_cast<std::size_t>(i)] = true;
+        }
+    }
+
     /// S LANE. The model for a piece file, loading it the first time it is
     /// asked for. Null when there is none: the caller draws nothing.
-    StaticModel* staticFor(const std::string& file) {
+    StaticModel* staticFor(const StaticPieceRef& ref) {
+        const std::string& file = ref.file;
+        const float squareHalf = ref.squareHalf;
         if (file.empty() || config.staticDir.empty()) {
             return nullptr;
         }
-        auto found = statics.find(file);
+        // A squared shaft is its own model: the same file may dress a
+        // hitching post as it comes.
+        const std::string key = squareHalf > 0.0F ? file + "#square" : file;
+        auto found = statics.find(key);
         if (found != statics.end()) {
+            // Two rows can share one file (the hung lantern and the kit's
+            // carried one): a later ref that names a glass cut still gets
+            // it. applyGlass is idempotent past the first cut.
+            if (found->second != nullptr && found->second->loaded && ref.cutsGlass()) {
+                applyGlass(*found->second, ref);
+            }
             return found->second.get();
         }
         std::unique_ptr<StaticModel> loaded;
@@ -546,6 +848,23 @@ struct Backend::Impl {
             candidate->model = LoadModel(path.c_str());
             if (candidate->model.meshCount > 0) {
                 candidate->loaded = true;
+                if (squareHalf > 0.0F) {
+                    // The catalogue asked for a square shaft
+                    // (shaft_square.hpp): the hewn corners pushed out to
+                    // the arris, then the buffers on the GPU again.
+                    for (int i = 0; i < candidate->model.meshCount; ++i) {
+                        Mesh& mesh = candidate->model.meshes[i];
+                        const int bytes = mesh.vertexCount * 3 * static_cast<int>(sizeof(float));
+                        if (squareShaft(mesh.vertices, mesh.normals,
+                                        static_cast<std::size_t>(mesh.vertexCount), squareHalf) > 0 &&
+                            mesh.vboId != nullptr) {
+                            UpdateMeshBuffer(mesh, 0, mesh.vertices, bytes, 0);
+                            if (mesh.normals != nullptr) {
+                                UpdateMeshBuffer(mesh, 2, mesh.normals, bytes, 0);
+                            }
+                        }
+                    }
+                }
                 candidate->baseColour.resize(static_cast<std::size_t>(candidate->model.materialCount));
                 for (int m = 0; m < candidate->model.materialCount; ++m) {
                     Material& material = candidate->model.materials[m];
@@ -577,6 +896,7 @@ struct Backend::Impl {
                          candidate->model.materials[m].maps[MATERIAL_MAP_DIFFUSE].texture.id ==
                              defaultTexture.id);
                 }
+                applyGlass(*candidate, ref);
                 loaded = std::move(candidate);
             } else {
                 UnloadModel(candidate->model);
@@ -585,7 +905,7 @@ struct Backend::Impl {
             }
         }
         StaticModel* result = loaded.get();
-        statics.emplace(file, std::move(loaded));
+        statics.emplace(key, std::move(loaded));
         return result;
     }
 
@@ -608,7 +928,7 @@ struct Backend::Impl {
             ++stats.staticsMissing;
             return;
         }
-        StaticModel* model = staticFor(scene.pieces[piece.piece].file);
+        StaticModel* model = staticFor(scene.pieces[piece.piece]);
         if (model == nullptr || !model->loaded) {
             ++stats.staticsMissing;
             return;
@@ -640,7 +960,19 @@ struct Backend::Impl {
         // held back with the glass so it draws over the lantern's own pane
         // and over the people: one deferred entry, never one per sub-mesh.
         if (tints.mode == kDrawHalo) {
-            deferred.push_back(DeferredMesh{model, 0, full, tints, mirrored});
+            halos.push_back(DeferredMesh{model, 0, full, tints, mirrored});
+            ++stats.staticsDrawn;
+            ++stats.instancesDrawn;
+            return;
+        }
+        // A timber pane is its ramp quad and nothing else: opaque, drawn
+        // now, depth written, so the halo's depth test and the frame's own
+        // panels meet it where a pane stands.
+        if (tints.mode == kDrawPaneRamp) {
+            drawPaneRamp(full, tints, stats);
+            if (tints.pane.a < kLateGlassBelow) {
+                lateGlass.push_back(DeferredMesh{model, -1, full, tints, mirrored});
+            }
             ++stats.staticsDrawn;
             ++stats.instancesDrawn;
             return;
@@ -696,6 +1028,71 @@ struct Backend::Impl {
         stats.trianglesDrawn += static_cast<std::size_t>(haloFan.triangleCount);
     }
 
+    /// S LANE. A TIMBER PANE: the unit ramp quad (paneRampMesh, scene.hpp)
+    /// fitted to the piece's own local span -- gradientFrom..To across and
+    /// gradientFromZ..ToZ up, the origin at the quad's bottom-left like the
+    /// thin wall it stands in for -- through the piece's own transform, in
+    /// the pane tint the world scene decided. Through the backend's own
+    /// default material and no shader: the ramp is in the vertex colours,
+    /// so the rlsw frame and the GL frame come out the same glass.
+    /// Opaque and depth-written, drawn both sides (a pane seen from the
+    /// room is the same pane).
+    void drawPaneRamp(const Matrix& transform, const PieceTints& tints, SceneStats& stats) {
+        const float w = tints.to - tints.from;
+        const float h = tints.toZ - tints.fromZ;
+        if (w <= 0.0F || h <= 0.0F) {
+            return;
+        }
+        ensureMaterial();
+        ensurePaneRamp();
+        const Matrix fit =
+            MatrixMultiply(MatrixScale(w, h, 1.0F), MatrixTranslate(tints.from, tints.fromZ, 0.0F));
+        const Rgba8 tint{tints.pane.r, tints.pane.g, tints.pane.b, 255};
+        material.maps[MATERIAL_MAP_DIFFUSE].texture = defaultTexture;
+        material.maps[MATERIAL_MAP_DIFFUSE].color = Color{tint.r, tint.g, tint.b, 255};
+        rlDisableBackfaceCulling();
+        DrawMesh(tinted(paneRamp, tint), material, MatrixMultiply(fit, transform));
+        rlEnableBackfaceCulling();
+        material.maps[MATERIAL_MAP_DIFFUSE].color = WHITE;
+        stats.trianglesDrawn += static_cast<std::size_t>(paneRamp.triangleCount);
+    }
+
+    /// BRIGHT GLASS THROUGH A FOG: the glass mesh (or the ramp quad, mesh
+    /// -1) drawn once more past the veils, blended over its own veiled
+    /// pixels at the pane's alpha -- the fog's share the world scene set --
+    /// so a lamp at five metres reads hot through the fog and one at twenty
+    /// is the fog's grey with a warmth in it. Depth-tested (equal passes),
+    /// never written.
+    void drawLateGlass(const DeferredMesh& late, SceneStats& stats) {
+        ensureMaterial();
+        const PieceTints& tints = late.tints;
+        const Rgba8 pane{tints.pane.r, tints.pane.g, tints.pane.b, tints.pane.a};
+        material.maps[MATERIAL_MAP_DIFFUSE].texture = defaultTexture;
+        material.maps[MATERIAL_MAP_DIFFUSE].color = Color{pane.r, pane.g, pane.b, pane.a};
+        // Never written: its own depth is already there from the opaque
+        // pass, and drawHaloFan puts the mask back on after itself.
+        rlDisableDepthMask();
+        rlDisableBackfaceCulling();
+        if (late.mesh < 0) {
+            const float w = tints.to - tints.from;
+            const float h = tints.toZ - tints.fromZ;
+            if (w > 0.0F && h > 0.0F) {
+                ensurePaneRamp();
+                const Matrix fit = MatrixMultiply(MatrixScale(w, h, 1.0F),
+                                                  MatrixTranslate(tints.from, tints.fromZ, 0.0F));
+                DrawMesh(tinted(paneRamp, pane), material, MatrixMultiply(fit, late.transform));
+                stats.trianglesDrawn += static_cast<std::size_t>(paneRamp.triangleCount);
+            }
+        } else if (late.model != nullptr && late.mesh < late.model->model.meshCount) {
+            const Mesh& mesh = late.model->model.meshes[late.mesh];
+            DrawMesh(tinted(mesh, pane), material, late.transform);
+            stats.trianglesDrawn += static_cast<std::size_t>(mesh.triangleCount);
+        }
+        rlEnableBackfaceCulling();
+        rlEnableDepthMask();
+        material.maps[MATERIAL_MAP_DIFFUSE].color = WHITE;
+    }
+
     void drawStaticMesh(StaticModel& model, int i, const Matrix& transform, const PieceTints& tints,
                         bool mirrored, SceneStats& stats) {
         // A halo does not draw the piece's mesh at all: the fan stands in
@@ -714,7 +1111,7 @@ struct Backend::Impl {
         // or they do not. A halo never gets here.
         const bool spanned = tints.to > tints.from || tints.toZ > tints.fromZ;
         const bool blended =
-            blend.id != 0 && ((spanned && !tints.uniform()) || tints.mode == kDrawShaded);
+            blend.id != 0 && ((spanned && !tints.uniform()) || tints.mode >= kDrawShaded);
         const Color tint = blended ? Color{255, 255, 255, tints.a.a} : averageColour(tints);
         const Color base = model.baseColour[static_cast<std::size_t>(m)];
         const auto ch = [](unsigned char a, unsigned char b) {
@@ -723,12 +1120,16 @@ struct Backend::Impl {
         };
         // Glass wears the pane tint the world scene decided -- dark by day
         // and over an unlit room, warm over a lit room at night -- flat,
-        // never blended.
+        // never blended, and VERBATIM: not through the glass material's
+        // own base colour, which on the camp lantern is a grey-green that
+        // turned the night glass olive and dimmer than the cap over it
+        // (the night-light critic's first). Opaque, too: a lit pane is its
+        // own light, and a dark one is a dark pane, not a hole onto the
+        // chunk wall behind the frame.
         const bool glass = model.glass[static_cast<std::size_t>(i)];
-        const Color paneTint = glass ? tints.pane : tint;
         model.model.materials[m].maps[MATERIAL_MAP_DIFFUSE].color =
-            Color{ch(base.r, paneTint.r), ch(base.g, paneTint.g), ch(base.b, paneTint.b),
-                  ch(base.a, paneTint.a)};
+            glass ? Color{tints.pane.r, tints.pane.g, tints.pane.b, 255}
+                  : Color{ch(base.r, tint.r), ch(base.g, tint.g), ch(base.b, tint.b), ch(base.a, tint.a)};
         if (mirrored) {
             rlDisableBackfaceCulling();
         }
@@ -737,6 +1138,32 @@ struct Backend::Impl {
         // pane behind it -- lives in drawHaloFan now, with the fan.)
         Material& material = model.model.materials[m];
         const Shader keep = material.shader;
+        if (glass) {
+            // Glass is a colour, not a texel: drawn on the backend's own
+            // white texture so the pane tint is what shows, the ramp (if
+            // the mesh carries one) folded in on the software path by
+            // tinted() and multiplied in by the GL default shader. Opaque
+            // here; a pane alpha under 255 is the fog's share, for the
+            // late pass (lateGlass) and not for this one.
+            ensureMaterial();
+            const Texture2D keepTexture = material.maps[MATERIAL_MAP_DIFFUSE].texture;
+            material.maps[MATERIAL_MAP_DIFFUSE].texture = defaultTexture;
+            if (mirrored) {
+                rlDisableBackfaceCulling();
+            }
+            const Rgba8 pane{tints.pane.r, tints.pane.g, tints.pane.b, 255};
+            material.maps[MATERIAL_MAP_DIFFUSE].color = Color{tints.pane.r, tints.pane.g, tints.pane.b, 255};
+            if (tints.pane.a < kLateGlassBelow) {
+                lateGlass.push_back(DeferredMesh{&model, i, transform, tints, mirrored});
+            }
+            DrawMesh(tinted(model.model.meshes[i], pane), material, transform);
+            if (mirrored) {
+                rlEnableBackfaceCulling();
+            }
+            material.maps[MATERIAL_MAP_DIFFUSE].texture = keepTexture;
+            stats.trianglesDrawn += static_cast<std::size_t>(model.model.meshes[i].triangleCount);
+            return;
+        }
         if (blended && !glass) {
             // The material's own colour factor stays in colDiffuse; the
             // four lit tints go through the shader's own slots. An empty
@@ -1245,10 +1672,17 @@ struct Backend::Impl {
         }
         statics.clear();
         deferred.clear();
+        halos.clear();
+        lateGlass.clear();
         if (haloFanReady) {
             UnloadMesh(haloFan);
             haloFan = Mesh{};
             haloFanReady = false;
+        }
+        if (paneRampReady) {
+            UnloadMesh(paneRamp);
+            paneRamp = Mesh{};
+            paneRampReady = false;
         }
         if (blend.id != 0) {
             UnloadShader(blend);
@@ -1419,6 +1853,8 @@ SceneStats Backend::drawScene(const SceneDescription& scene) {
     // back until the people are in.
     impl.ensureBlendShader();
     impl.deferred.clear();
+    impl.halos.clear();
+    impl.lateGlass.clear();
     for (const StaticInstance& piece : scene.statics) {
         impl.drawStatic(piece, scene, stats);
     }
@@ -1445,9 +1881,29 @@ SceneStats Backend::drawScene(const SceneDescription& scene) {
     // alpha, straight over, the depth test still on), so what stands inside
     // a shell is clear of it and what stands beyond is seen through it.
     // After the people and the glass so a body in the fog is in the fog.
+    // The veils write no depth: the halos and the bright glass below are
+    // depth-tested against the WORLD, not against a shell of fog round the
+    // eye (a shell that wrote depth culled every halo past it, and in a fog
+    // the lamps went out before the walls they lit -- the round-two
+    // player's fourth).
+    rlDisableDepthMask();
     for (const Instance& veil : scene.veils) {
         impl.drawInstance(veil, stats);
     }
+    // The bright glass once more at the fog's share of it
+    // (StaticInstance::pane.a), so a lamp's light is seen further into a
+    // fog than the wall round it -- and THEN the halos, over the glass as
+    // over everything (the round-three auditor's first: glass drawn after
+    // the halos cut a pane-shaped hole in every glow).
+    for (const DeferredMesh& late : impl.lateGlass) {
+        impl.drawLateGlass(late, stats);
+    }
+    impl.lateGlass.clear();
+    for (const DeferredMesh& glow : impl.halos) {
+        impl.drawStaticMesh(*glow.model, glow.mesh, glow.transform, glow.tints, glow.mirrored, stats);
+    }
+    impl.halos.clear();
+    rlEnableDepthMask();
     EndMode3D();
     // The hands, last, in their own pass over everything.
     impl.drawViewmodel(scene.viewmodel, stats);

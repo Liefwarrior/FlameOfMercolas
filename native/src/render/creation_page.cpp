@@ -21,9 +21,12 @@ namespace {
 inline constexpr int kHeaderRows = 2;
 
 /// Twenty-two cells is a wrapped sentence that still reads. Deliberately not
-/// larger: the biggest WINDOW is the narrowest in CELLS (hudMinorScale steps up
-/// with the frame height, so 1920x1080 has 76 cells across where 960x540 has
-/// 96), and a split that only survives at one resolution is not a split.
+/// larger: a split that only survives at one resolution is not a split. The
+/// window that binds is the SMALLEST now -- 320x180 deals 64 cells across --
+/// since hudMinorScale is the smaller of height/240 and width/425 and no window
+/// at least 425 px wide deals under 85 (it used to be the biggest: the old
+/// height/180 - 1 rule dealt
+/// 1920x1080 just 76 where 960x540 has 96).
 inline constexpr int kMinDetailCells = 26;
 inline constexpr int kMinMasterCells = 18;
 
@@ -178,7 +181,7 @@ inline constexpr int kMinBodyRows = 6;
                                              int frameHeight, int gridCells, int gridRows,
                                              int topY) {
     CreationLayout out;
-    out.metric = panelMetric(frameHeight);
+    out.metric = panelMetric(frameWidth, frameHeight);
     const int cells = gridCells;
     const int rows = gridRows;
     if (cells < 8 || rows < 10) {
@@ -363,7 +366,7 @@ inline constexpr int kMinBodyRows = 6;
 }  // namespace
 
 CreationLayout creationLayout(const CreationPage& page, int frameWidth, int frameHeight) {
-    const PanelMetric metric = panelMetric(frameHeight);
+    const PanelMetric metric = panelMetric(frameWidth, frameHeight);
     const int fullCells = metric.cellsIn(frameWidth);
     const int rows = metric.rowsIn(frameHeight);
     const int topY = panelSeatY(frameHeight, metric.heightOf(rows));

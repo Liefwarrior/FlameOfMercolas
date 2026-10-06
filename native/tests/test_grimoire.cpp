@@ -133,11 +133,13 @@ TEST_CASE("selecting a loaded quick slot equips it; an empty one says so and "
     session.selectQuickSlot(4);
     REQUIRE(session.tavern().equippedSpell() != nullptr);
     CHECK(session.tavern().equippedSpell()->id == "sting");
-    // The dieted toast (UI-EA-SPEC sec. 5): slot and name, no READY caption.
-    CHECK(session.lastMessage().find("SLOT 5 - STING") != std::string::npos);
+    // THE CELLS PASS: the press is quiet on the alert row -- the strip names
+    // the slot itself, and UI-EA-SPEC sec. 5's toast retired with that.
+    CHECK(session.lastMessage().find("SLOT 5") == std::string::npos);
     // The strip is up while the number row is in use -- its own EasedToggle's
     // target, which is what a headless case can honestly assert.
     CHECK(session.quickBarWanted());
+    CHECK(session.equippedQuickSlot() == 4);
     // ONE SOURCE OF TRUTH: the CAST row reads the same equipped id.
     CHECK(session.spellLine().find("STING") != std::string::npos);
 
