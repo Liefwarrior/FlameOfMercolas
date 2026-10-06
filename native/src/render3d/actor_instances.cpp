@@ -408,16 +408,22 @@ std::vector<ActorInstance> actorInstances(const render::Session& session,
         }
         // A floored body lies where it fell: no slide off the tile it was
         // walking from when the blow landed.
-        const float px = down ? static_cast<float>(actor.x) + 0.5F
-                              : static_cast<float>(actor.prevX) +
-                                    static_cast<float>(actor.x - actor.prevX) * slide + 0.5F;
-        const float py = down ? static_cast<float>(actor.y) + 0.5F
-                              : static_cast<float>(actor.prevY) +
-                                    static_cast<float>(actor.y - actor.prevY) * slide + 0.5F;
+        float px = down ? static_cast<float>(actor.x) + 0.5F
+                        : static_cast<float>(actor.prevX) +
+                              static_cast<float>(actor.x - actor.prevX) * slide + 0.5F;
+        float py = down ? static_cast<float>(actor.y) + 0.5F
+                        : static_cast<float>(actor.prevY) +
+                              static_cast<float>(actor.y - actor.prevY) * slide + 0.5F;
+        // Culled BEFORE the nudge now: the nudge looks at every other body
+        // within a tile, so it is worth skipping for anyone about to be
+        // culled anyway. The un-nudged position is close enough for this
+        // check either way -- the nudge moves nothing by more than
+        // kPersonalSpaceTiles, negligible against params.maxDistance.
         const float distance = planarDistance(view, px, py);
         if (distance > params.maxDistance) {
             continue;
         }
+        personalSpaceNudge(actor.id, actor.x, actor.y, actor.band, people.actors(), px, py);
         ActorInstance body;
         // The look by kind, name and id; the placeholder by kind alone.
         body.rig = actorRigFor(actor.type, actor.id, people.identity(actor.id).name);
