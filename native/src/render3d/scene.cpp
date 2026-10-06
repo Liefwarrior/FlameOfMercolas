@@ -334,6 +334,7 @@ std::uint64_t sceneHash(const SceneDescription& scene) noexcept {
             h.mixF32(piece.glassV0);
             h.mixF32(piece.glassV1);
         }
+        h.mixF32(piece.squareHalf);
     }
     h.mixU64(static_cast<std::uint64_t>(scene.statics.size()));
     for (const StaticInstance& piece : scene.statics) {

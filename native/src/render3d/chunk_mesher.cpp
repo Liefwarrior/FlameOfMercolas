@@ -34,9 +34,10 @@ constexpr render::Rgb kWaterTintFull{0.10F, 0.18F, 0.22F};
 
 /// THE DOORWAY IS CUT OUT OF THE BOX. A wall cell that flanks a door
 /// opening (door_jambs.hpp -- the one test the placer stands its jamb beam
-/// by) keeps only its lintel course: the metre-square storey under the head
-/// goes. That is what lets a beam a quarter-metre thick READ as the jamb
-/// instead of hiding inside a block, and it is done HERE, in the cache, so
+/// by) keeps only its course over the soffit (kDoorHeadCut): the
+/// metre-square storey under it goes. That is what lets a beam a
+/// quarter-metre thick READ as the jamb instead of hiding inside a block,
+/// and it is done HERE, in the cache, so
 /// every question asked afterwards is asked of the cut cell: the cell's own
 /// faces, the neighbouring wall's cover test (it shows its reveal down the
 /// whole opening now), the cell below (it shows its top, the threshold the
@@ -49,11 +50,11 @@ void openJamb(const sim::TileQuery& tiles, std::int32_t x, std::int32_t y, std::
     if (!v.hasSides || v.water) {
         return;
     }
-    const float head = v.bottom + kDoorHeadHeight;
-    if (head >= v.top || !doorPostAt(tiles, x, y, z)) {
+    const float cut = v.bottom + kDoorHeadCut;
+    if (cut >= v.top || !doorPostAt(tiles, x, y, z)) {
         return;
     }
-    v.bottom = head;
+    v.bottom = cut;
 }
 
 /// A chunk's cells plus a one-cell apron, classified once. 18 x 18 x (levels

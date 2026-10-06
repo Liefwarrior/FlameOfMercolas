@@ -319,6 +319,12 @@ struct StaticPieceRef {
     float glassV1 = 0.0F;
 
     [[nodiscard]] bool cutsGlass() const noexcept { return glassBandHi > glassBandLo; }
+
+    /// Over zero: the adapter squares the mesh's shaft at load
+    /// (shaft_square.hpp), this being half its section in the mesh's own
+    /// metres. A squared shaft is its own loaded model; the same file may
+    /// dress another row as it comes.
+    float squareHalf = 0.0F;
 };
 
 /// S LANE. ONE SYNTY BUILDING PIECE, PLACED: a wall segment on a wall tile's
@@ -373,17 +379,25 @@ struct StaticInstance {
     /// gradientFrom..To across and gradientFromZ..ToZ up, a flame's glow);
     /// kDrawShaded (the tint darkened on faces that look down and lifted on
     /// faces that look up, from the mesh's own normals: the volume a prop
-    /// needs when nothing lights it); kDrawPaneRamp (the mesh not drawn
-    /// either -- paneRampMesh() fitted to the same local span, opaque, in
-    /// `pane`: a window's glass with its own vertical ramp, hot at the
-    /// sill).
+    /// needs when nothing lights it); kDrawFaced (kDrawShaded, and the
+    /// upright faces take the chunk's own facing factors by their normal,
+    /// render::kFacingX east and west, render::kFacingY north and south --
+    /// a timber that stands IN a wall reads its two faces apart the way
+    /// the wall's own faces do, instead of as one flat cut-out);
+    /// kDrawPaneRamp (the mesh not drawn either -- paneRampMesh() fitted to
+    /// the same local span, opaque, in `pane`: a window's glass with its
+    /// own vertical ramp, hot at the sill).
     std::uint8_t mode = 0;
 };
 
 inline constexpr std::uint8_t kDrawPlain = 0;
 inline constexpr std::uint8_t kDrawHalo = 1;
 inline constexpr std::uint8_t kDrawShaded = 2;
-inline constexpr std::uint8_t kDrawPaneRamp = 3;
+inline constexpr std::uint8_t kDrawFaced = 3;
+/// Four, not three: kDrawFaced's three is printed into the blend shader
+/// (`pieceMode == 3`), and a ramped pane never reaches that shader --
+/// the adapter draws paneRampMesh() itself.
+inline constexpr std::uint8_t kDrawPaneRamp = 4;
 
 /// THE HALO IS GEOMETRY, NOT A SHADER. It used to be the flame's quad with a
 /// radial alpha in the GL 3.3 blend shader -- which rlsw has not got, so the

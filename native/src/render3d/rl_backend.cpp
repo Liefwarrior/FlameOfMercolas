@@ -75,6 +75,7 @@
 //      offset, with the static weapon .gltf hung on its Hand_R bone.
 
 #include "granadad/render3d/backend.hpp"
+#include "granadad/render3d/shaft_square.hpp"
 
 #include <raylib.h>
 #include <raymath.h>
@@ -94,6 +95,7 @@
 #include <vector>
 
 #include "granadad/render/framebuffer.hpp"
+#include "granadad/render/voxel_classify.hpp"
 
 namespace granadad::render3d {
 
@@ -287,7 +289,13 @@ constexpr float kViewmodelDepthSpan = 0.2F;
 /// SHADED piece (2) darkens faces that look down (to half) and lifts faces
 /// that look up (by an eighth) from the mesh's own normals, the vertical
 /// faces untouched: the volume a prop needs when nothing lights it, and the
-/// difference between a rowboat and a dome.
+/// difference between a rowboat and a dome. A FACED piece (3) does that
+/// and gives its upright faces the chunk's own facing factors by their
+/// normal (render::kFacingX east and west, kFacingY north and south, the
+/// two numbers printed into the source below at load), so a door post's
+/// front and its inner face split the way the wall's own faces do. The
+/// source is a format string for that reason, and the two %s are the only
+/// ones in it.
 /// A HALO (1) is NOT here any more, and that is the point of it: its
 /// falloff used to be a radial alpha in this fragment shader, which rlsw
 /// has not got, so the headless twin drew a flat pale rectangle where the
@@ -314,9 +322,13 @@ constexpr const char* kBlendVertexShader =
     "    float tz = clamp((vertexPosition.z - tintSpan.z) * tintSpan.w, 0.0, 1.0);\n"
     "    fragTexCoord = vertexTexCoord;\n"
     "    vec4 tint = mix(mix(tintA, tintB, tx), mix(tintC, tintD, tx), tz);\n"
-    "    if (pieceMode == 2) {\n"
+    "    if (pieceMode >= 2) {\n"
     "        vec3 n = normalize(vec3(matNormal * vec4(vertexNormal, 0.0)));\n"
     "        float f = n.y < 0.0 ? 1.0 + 0.5 * n.y : 1.0 + 0.125 * n.y;\n"
+    "        if (pieceMode == 3) {\n"
+    "            float h = abs(n.x) + abs(n.z);\n"
+    "            if (h > 0.001) f *= (abs(n.x) * %s + abs(n.z) * %s) / h;\n"
+    "        }\n"
     "        tint.rgb *= f;\n"
     "    }\n"
     "    fragColor = vertexColor * tint;\n"
@@ -442,7 +454,16 @@ struct Backend::Impl {
         }
         blendTried = true;
 #if !defined(GRAPHICS_API_OPENGL_11)
-        blend = LoadShaderFromMemory(kBlendVertexShader, kBlendFragmentShader);
+        // The facing factors are the chunk's (voxel_classify.hpp), printed
+        // into the source so a faced piece and the wall it stands in read
+        // one rule.
+        char facingX[16];
+        char facingY[16];
+        std::snprintf(facingX, sizeof facingX, "%.4f", static_cast<double>(render::kFacingX));
+        std::snprintf(facingY, sizeof facingY, "%.4f", static_cast<double>(render::kFacingY));
+        char vertexSource[4096];
+        std::snprintf(vertexSource, sizeof vertexSource, kBlendVertexShader, facingX, facingY);
+        blend = LoadShaderFromMemory(vertexSource, kBlendFragmentShader);
         if (blend.id != 0 && blend.id != rlGetShaderIdDefault()) {
             blendTintA = GetShaderLocation(blend, "tintA");
             blendTintB = GetShaderLocation(blend, "tintB");
@@ -803,10 +824,14 @@ struct Backend::Impl {
     /// asked for. Null when there is none: the caller draws nothing.
     StaticModel* staticFor(const StaticPieceRef& ref) {
         const std::string& file = ref.file;
+        const float squareHalf = ref.squareHalf;
         if (file.empty() || config.staticDir.empty()) {
             return nullptr;
         }
-        auto found = statics.find(file);
+        // A squared shaft is its own model: the same file may dress a
+        // hitching post as it comes.
+        const std::string key = squareHalf > 0.0F ? file + "#square" : file;
+        auto found = statics.find(key);
         if (found != statics.end()) {
             // Two rows can share one file (the hung lantern and the kit's
             // carried one): a later ref that names a glass cut still gets
@@ -823,6 +848,23 @@ struct Backend::Impl {
             candidate->model = LoadModel(path.c_str());
             if (candidate->model.meshCount > 0) {
                 candidate->loaded = true;
+                if (squareHalf > 0.0F) {
+                    // The catalogue asked for a square shaft
+                    // (shaft_square.hpp): the hewn corners pushed out to
+                    // the arris, then the buffers on the GPU again.
+                    for (int i = 0; i < candidate->model.meshCount; ++i) {
+                        Mesh& mesh = candidate->model.meshes[i];
+                        const int bytes = mesh.vertexCount * 3 * static_cast<int>(sizeof(float));
+                        if (squareShaft(mesh.vertices, mesh.normals,
+                                        static_cast<std::size_t>(mesh.vertexCount), squareHalf) > 0 &&
+                            mesh.vboId != nullptr) {
+                            UpdateMeshBuffer(mesh, 0, mesh.vertices, bytes, 0);
+                            if (mesh.normals != nullptr) {
+                                UpdateMeshBuffer(mesh, 2, mesh.normals, bytes, 0);
+                            }
+                        }
+                    }
+                }
                 candidate->baseColour.resize(static_cast<std::size_t>(candidate->model.materialCount));
                 for (int m = 0; m < candidate->model.materialCount; ++m) {
                     Material& material = candidate->model.materials[m];
@@ -863,7 +905,7 @@ struct Backend::Impl {
             }
         }
         StaticModel* result = loaded.get();
-        statics.emplace(file, std::move(loaded));
+        statics.emplace(key, std::move(loaded));
         return result;
     }
 
@@ -1069,7 +1111,7 @@ struct Backend::Impl {
         // or they do not. A halo never gets here.
         const bool spanned = tints.to > tints.from || tints.toZ > tints.fromZ;
         const bool blended =
-            blend.id != 0 && ((spanned && !tints.uniform()) || tints.mode == kDrawShaded);
+            blend.id != 0 && ((spanned && !tints.uniform()) || tints.mode >= kDrawShaded);
         const Color tint = blended ? Color{255, 255, 255, tints.a.a} : averageColour(tints);
         const Color base = model.baseColour[static_cast<std::size_t>(m)];
         const auto ch = [](unsigned char a, unsigned char b) {

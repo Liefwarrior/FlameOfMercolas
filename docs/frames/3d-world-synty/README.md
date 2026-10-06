@@ -1007,6 +1007,240 @@ Reshoot. Every line is `dist\granadad.exe --smoke=0 --hold --width=1280
 | jamb-28 | UNCHANGED: the Tarwalk's sign frames, still timber, still fitted to their cells | `--time=14 --spawn=153,50,19 --yaw=180 --pitch=-2 --fov=60 --screenshot=jamb-28.png` |
 | jamb-29 | A GATE, UNCHANGED: the Netters', its own posts and beam | `--time=10 --spawn=171,96,19 --yaw=180 --screenshot=jamb-29.png` |
 
+## The post is the reveal, 2026-09-25 (jambs, second cut)
+
+The first cut scored 7/10. The critic's four, and where each one landed.
+Code is `native/src/render3d/static_pieces.cpp` unless said otherwise.
+
+| # | the defect | what changed |
+|---|---|---|
+| 1 | the timber post stands a third of a metre outboard of the opening, a plaster strip between it and a grey stone surround: a pilaster pair, not a jamb | the grey surround WAS the kit's door wall (`SM_Bld_Base_Wall_Door_Double_01`), stretched over the gap with its own trim round a hole narrower than the gap and its own plaster margin either side; the post stood at the gap's edge, outside all of that. The kit door wall is gone (`doors()` keeps the gates and the leaves, nothing else). The post's inner face is ON the opening's edge, and the jamb's reveal quad (`walls()`) stands 6 mm inboard of that face, cut from the street post's back to the room post's back: the post is the edge of the reveal. Over the head the wall's own finish closes the frontage to the storey top -- plaster over a rendered door, brick over a brick one, boards over a boarded one (`finishOf()`) -- and a plaster soffit lies across the head between the two lintels (its own role, `soffit`, the ceiling piece face down: a door-head soffit is not a room ceiling) |
+| 2 | from the taproom the door is a bare cut in plaster | the frame is mirrored onto the room face: two more posts and a lintel in the plane of the room's plaster, the header over the head in the room's tint, and the room-side panel that ends at the jamb no longer reaches a quarter of a metre past it into the opening (the slot it closed is closed by the post and the reveal now) |
+| 3 | the Bilge's door gets the lintel and no posts | the frame the critic shot (`A81_bilge_face`) is the Gilded Gull's, from the Tarwalk facing south -- the lantern to the right of the door and the hitching post to its left are the Gull's, the Bilge's hitch stands the other side -- and both posts are in it, the left one behind a body and the LOOK label. The Bilge's own door (world 137..138 on row 66) has its four. The rule was never false on either: `doorPostAt()` is unchanged, and `StaticPlacementStats::bareJambs` now counts every flank of a door the rule refuses, which the district test pins at zero along with four posts, two lintels and one soffit for every door that is not a gate |
+| 4 | at 22:00 the posts take no light from the wall lantern a metre away | two things. The post wore the wall material's tint -- granite's blue-grey [156,160,168] over dark oak, which is a post at a quarter of the plaster's brightness under any light -- and was lit from its own wall cell alone. The frame's timber wears its own oak now, and each post is lit at the cut between its jamb cell and the gap cell beside it (the two averaged), which is the value the wall's own piece ends on at that jamb, with the wall's facing factor. Same light law, same numbers, the timber just shows them |
+
+What did not change: the jamb rule (`door_jambs.hpp`), the mesher's cut
+under the head, the gates (their own two posts and beam, as before), the
+leaves (hinged just inside the post's face now, still swung open along
+the reveal), foot seating, proportion.
+
+Render only. `TileQuery::solid()` is untouched and the cell is still a
+wall. Tavern and population baselines unchanged by construction; the
+scene hash moves (every door in the ward is four posts, two lintels, two
+headers and a soffit now, and two catalogue rows are gone).
+
+### The critics' round
+
+Three critics scored the cut above at 7/10 each -- a director, a player,
+a technical-art auditor -- and named the same things. Where each landed.
+
+| # | the defect | what changed |
+|---|---|---|
+| 1 | a black slot beside every leaf, striped, both faces; from the taproom you could see the street down it | the leaf's inner face hung 16 mm off the post's inner face and the reveal quad 6 mm off it, one-sided, so any angle off the axis looked past the quad's back into the wall's hollow, and straight down the 10 mm between leaf and quad to the street. The leaf's inner face is ON the post's plane now (`kLeafOffReveal` 0) with the reveal quad half a millimetre into the opening, inside the leaf's thickness (`kRevealFlush` 0.0005): no slot, no overlap, nothing to fight |
+| 2 | a plaster line down every post's inner face, "a zero-thickness fin at mid-depth that slices through the strap"; the west jamb's inner face read as plaster from the east | the fin was the wall quad's own 5 mm cut overlap (`kCutOverlap`) carried past the opening's edge into the post's depth; a run that ends at a jamb post now stops 5 mm INSIDE the post instead, and the header over the head overlaps that retracted end by twice the hair, since above the head there is no post to hide a seam (the first cut of this fix met it edge to edge and drew a dotted line of the stone course behind). The plaster read was the other half: a post's front and inner faces drew the one flat colour (`kDrawShaded` leaves upright faces alone), so 26 cm of oak depth vanished and the reveal beyond the leaf's edge read as the post's side. The frame's timber is `kDrawFaced` now (scene.hpp, the blend shader): its upright faces take the chunk's own `kFacingX` / `kFacingY` by their normals, the two numbers printed into the shader at load, so a post's two faces split exactly as the wall's faces round it do |
+| 3 | a hairline of plaster under every lintel, dashed | the kit joist's section is 0.36 m, not the 0.369 I took from its width, so the beam sat 3 mm off the head and the header's bottom showed under it. The lintel is a different beam now (below) and the header starts 2 cm above the head, inside the beam's body (`kHeaderInset`) |
+| 4 | a dark triangle dead-centre on every lintel, the same on every door: a repeated stamp | the kit joist (`SM_Gen_Bld_Beam_01`) carries three notches along its five metres, and squashed to a door's width one landed on every lintel's face. The lintel is the posts' own strapped beam (`SM_Prop_Beam_01`) laid on its side across the two heads, its own section, so the frame is one timber -- straps and all |
+| 5 | "the posts take the lantern only as a screen-space halo; the post under the lamp is pixel-identical to the far one" | that one is the light law, not the frame: a piece is lit per cell, with no vertical term, and both posts by the Gull's door sit at the clamp (`kLightClamp`). The posts DO take the lamp -- the tint is the value the wall's piece ends on at that jamb -- but a post will not brighten toward its head until a piece can be lit along its height. On the record, not fixed |
+
+Also on the record, the critics' list for a nine, none of it done here: a sill
+or step stone under the posts and threshold; hinge pintles on the street
+post and pegs at the lintel instead of the kit's iron collars; per-door
+variation (flip, wear, salt); contact darkening at the feet and under the
+lintel; a hint of grain on the flat oak.
+
+The round-two critics (director 6, player 7) then found the same slot, the
+same fin and a lintel floating a finger over its posts, in the same pixels,
+and that was the real find of the lane: the kit's strapped post is 0.209 m
+of oak inside 0.261 m of iron collars, and I had placed the whole frame by
+the collars (the mesh's bounds, `width`). The shaft's inner face stood 2.6 cm
+short of the opening's edge -- that was the slot, the plaster fin and the
+"no oak on the inner face"; the lintel's shaft sat 2.6 cm over the head with
+its collars hanging under it -- that was the floating lintel and the
+"collars through the soffit". `core` is a catalogue field now (the shaft's
+section; `coreOf()`), and the frame is placed by it: shaft on the edge, shaft
+on the head, the reveal quad from the shaft's back, the leaf's hinge behind
+it. The collars stand proud of all of it, as collars do.
+
+Two more off my own frames after that, both the depth buffer and not the
+geometry: the soffit ran on ten centimetres under each lintel's underside,
+four millimetres apart, and at four metres the two striped; and the lintel's
+underside lay in the post's top plane along the whole junction and dotted.
+Nothing is coplanar now and nothing overlaps within a hair: the soffit ends
+at the lintels' back faces and lies three centimetres over the head; the
+lintel sits three centimetres down into the posts' heads and three behind
+their faces (two millimetres and one still dotted -- the depth buffer at
+four metres cannot tell millimetres apart, and its collars hang under the
+head where the soffit's edge crosses them); the reveal quad is on the post's
+own plane (`kRevealFlush` 0), starts where the post's back ends, and is
+drawn from both sides. The rule for anyone dressing a frame after this: two
+surfaces that overlap in area want three centimetres between them, or one
+of them wants to end where the other begins.
+
+Round three (director 7, player 7, auditor 7, every item of every list
+fixed but one): with the reveal quad on the post's own plane, the tenth of
+a millimetre the mesh's bounds leave between the two -- and the leaf's back
+face, which the kit draws, lying on that same plane -- tied down the whole
+hinge edge as a zipper. So the reveal is a rebate now: a centimetre behind
+the post's inner face, running on into the post's depth, the post standing
+that centimetre proud of its plaster, and the leaf tucked into the rebate
+with its inner face three centimetres behind the plaster. The soffit runs
+three centimetres past each reveal into the jamb cell's stone course, so
+its edge is buried, and the lintel sits three centimetres into the posts'
+heads and three behind their faces. Nothing at a door is within the depth
+buffer's reach of anything it does not meet at an edge.
+
+Round four (7, 7, 7 again): the zipper and the dotted joint gone, and one
+thing the rebate had let out -- a black band over every open leaf. Not a
+hole: the jamb cell's own stone course, which the mesher kept from the head
+up, showing through the centimetre of rebate between the leaf's top (the
+kit door is 1.97 m) and a soffit three centimetres over the head. So the
+soffit now lies at the lintels' top level (`kDoorSoffitHeight`, 2.20 -- the
+beams stand proud of it, their tops hidden in the closed head box, and the
+hewn V on the room lintel's top with them), and the mesher cuts the jamb
+cell to three centimetres over THAT (`kDoorHeadCut`), so the reveal is
+plaster from the threshold to the soffit and the stone starts where
+nothing can see it. The leaf's hinge end runs a centimetre into the post
+instead of stopping a centimetre short (`kLeafOffPost` -0.01): the short
+stop showed a sliver of reveal between post and leaf from any stand beside
+the door, on both jambs, which the auditor's mirrored cameras called an
+asymmetry.
+
+Round five (director 8, player 7, auditor 7): the band gone, two things
+left. A comb of dark teeth on the reveal under the lintel, unchanged since
+round three: the lintel's iron collars hang 2.6 cm under the head, and the
+kit door's top (1.967 m) sat three millimetres under them -- the depth
+buffer again. The leaf is scaled to stop at 1.95 (`kLeafTop`), five
+centimetres under the collars. And the auditor's mirrored cameras were
+right after all: the one jamb of the Gull's door with the WINDOW beside it
+showed plaster over the back half of the post's inner face, because a kit
+box's end cap stood on the opening's edge a centimetre in front of the
+rebated reveal, where a thin quad had retreated into the post. A box (or
+a board quad) ending at a jamb post now retreats 4 cm into it
+(`kBoxRetract`), the header over the door runs to exactly where each
+neighbour ends and abuts it (`jambEndRetract_`, no overlap to fight, no gap
+to see through), and the soffit is back at the head with the lintel
+resting on the posts' tops -- at the beams' top level the whole inner face
+of each lintel hung in the head and its hewn facet read as a tent.
+
+Round six (7, 7, 7): the comb, the tent and the asymmetry gone, and the
+header's exact abutment opened the round-one crack again, thinner -- a
+see-through hairline over every post on both faces, the hollow and the
+sky behind it. Two pieces that meet edge to edge leak: a sliver at grazing
+angles where their planes differ by the cuts' stagger, dropped pixels
+where the two edges share a line but not their vertices (a kit box beside
+a header box). And the soffit level with the lintels' undersides met each
+one the same way -- a broken black hairline along the join, a wedge of
+dark head box mid-span. Round seven answers both with one rule, on the
+record now: NEVER AN EDGE-TO-EDGE JOIN WITH THE HOLLOW BEHIND IT. The
+header keeps its exact abutment and gets a backing (`kHeaderBack`): the
+wall's finish once more, three centimetres behind the plane, six wider at
+each end, from over the soffit to the storey top, so whatever a seam drops
+shows plaster; at three centimetres it fights nothing, and it shows
+nowhere else. The soffit goes three centimetres up into the lintels'
+bodies (`kDoorSoffitHeight` = head + 0.03) and runs to each beam's centre
+plane, so it CROSSES the back face instead of meeting it, and the beams
+stand three centimetres proud of it, which is what beams over a soffit
+do.
+
+Round seven (7, 7, 7, each one fix from 8): the cracks gone square-on
+and at three-quarters, the lintel/soffit join clean, the mirrored pairs
+holding -- and two things left. The backing leaked at a graze: a ray
+through the seam at a grazing angle meets the backing's depth well to the
+side of the seam, seven centimetres at the angle a body walking the
+street sees the far jamb at, and six centimetres of reach left a
+continuous line up the far header's end (17 at x 372, the director's
+taproom graze). And the three centimetres of lintel that now stand proud
+of the soffit brought back the dark tent mid-span on the inner face, the
+same shape marked down in rounds one, four and five. Round eight: the
+backing runs on over the whole jamb cell at each end (`kHeaderBackReach`
+a metre, leaking under two degrees). And the tent is the beam itself: the
+kit's strapped timber is hewn at two corners on opposite edges, a
+diagonal cut a hand long on each (off its vertices: the -x/+z arris from
+0.75 to 1.04 m along, the +x/-z arris from 1.07 to 1.85), and laid as it
+was, one sat on the lintel's inner-bottom arris, in the head, its facet
+looking down and in and darkened as an underside. It was never the
+normals or the atlas (one swatch over every shaft triangle; and lighting
+the faced timber per fragment off the geometric normal, tried first,
+left the tent where it was and put derivative noise over every post).
+For round eight the lintel was the beam turned a half turn about its own
+Z, that corner a chamfer on the front-bottom arris and the other on the
+hidden back-top edge -- the lintel needs 2.42 of the beam's 2.49 m, so no
+orientation hides both.
+
+Round eight (director 7, player 7, auditor 8): the auditor finds no
+crack, gap, see-through, z-fight or asymmetry left anywhere, from any
+angle, and clears the frame. The other two hold at 7 on the turned
+beam's corner: "a bite, not timber", a dark two-facet peak on the show
+face of every lintel, and both say the same thing -- don't hide it,
+delete it. Round nine does: a catalogue row can ask for its shaft SQUARED
+(`"square": true`, `shaft_square.hpp`), and at load every vertex inside
+the shaft's section that lies on one face but short of the other is
+pushed out to the arris with its normal set to the face it was on, so
+the cut's own triangles collapse to nothing; the collars are outside the
+section and untouched. The posts and the lintel ask for it; the street's
+hitching posts use the same file as it comes (a squared shaft is its own
+loaded model). The half turn comes out again -- nothing left to turn
+away from.
+
+Round nine (director 8, player 8, auditor 8): the frame clears the bar.
+The auditor's diff of the last two shoots touches nothing but the squared
+timber; the scan finds no hairline where the cuts' triangles collapsed,
+no crack, gap, see-through, z-fight or asymmetry anywhere, from any
+angle, day or night. The one note from all three, taste not fault: the
+posts lost their hewn knees with the same rule, and the frame reads as
+sawn square stock now. If the hand-worked look comes back it comes back
+on purpose -- an even adze face or a stopped chamfer the length of the
+arris -- never the kit's two corner cuts.
+
+### What 9 needs, on the record
+
+The four critics' lists, merged, in the order they weight them:
+
+- Collars at the post heads (corner irons, or oak pegs through the joint),
+  symmetric, far fewer than twelve a door, none hanging under the head
+  into the opening.
+- A sill or worn stone step the posts and leaves stand on; the floorboards
+  stop in a ruler line on the pavement strip.
+- A stop bead or head lining the leaf visibly closes against; a hinge
+  pintle and strap on the street post.
+- Lamp light with a vertical term on the frame near a lantern; the night
+  floor darker so the oak can go dark; the taproom's own lamps on the
+  room-face frame.
+- Contact darkening at the post feet and under the lintels; variation door
+  to door (beam flip, wear, salt-greying on the Docks).
+- Deliberate hewn character, if any: an even adze face or a stopped chamfer
+  the length of the arris.
+- The eave line: the header's top edge flush with its neighbour's (a 1-2 px
+  step at fov 35).
+
+### Reshoot
+
+Every line is `dist\granadad.exe --smoke=0 --hold --width=1280 --height=720 --scale=1` plus:
+
+| frame | vantage | command |
+|---|---|---|
+| jambs2-01 | the Gull's door from the street, the 3/4 view from the west: posts on the opening's edge, no plaster strip, no grey surround, the header in the frontage's plaster (the Tarwalk's sign frames block the wider stands; a body stands by the right post whatever the hour) | `--time=14 --spawn=151,61,19 --yaw=160 --pitch=-4 --fov=55 --screenshot=jambs2-01.png` |
+| jambs2-02 | square on, zoomed: the reveal is the post | `--time=10 --spawn=153,58,19 --yaw=180 --pitch=-6 --fov=45 --screenshot=jambs2-02.png` |
+| jambs2-03 | the head from inside the Gull: the room-side posts, lintel and header | `--time=20 --spawn=153,68,19 --yaw=0 --pitch=18 --screenshot=jambs2-03.png` |
+| jambs2-04 | inside, standing back: the frame from the taproom | `--time=14 --spawn=154,70,19 --yaw=350 --pitch=0 --fov=70 --screenshot=jambs2-04.png` |
+| jambs2-05 | the Bilge's own door, from the street | `--time=14 --spawn=137,61,19 --yaw=180 --pitch=-4 --fov=60 --screenshot=jambs2-05.png` |
+| jambs2-06 | 22:00, the Gull's door under its lantern: the timber takes the lamp | `--time=22 --spawn=153,59,19 --yaw=180 --pitch=-2 --fov=60 --screenshot=jambs2-06.png` |
+| jambs2-07 | a gate, unchanged: the Netters' | `--time=10 --spawn=171,96,19 --yaw=180 --screenshot=jambs2-07.png` |
+| jambs2-14 | the west jamb from the east, 1920x1080, no HUD: the post's front and inner faces apart, the reveal behind the leaf | `--width=1920 --height=1080 --nohud --time=14 --spawn=157,62,19 --yaw=225 --pitch=-6 --fov=35 --screenshot=jambs2-14.png` (in place of the 1280x720) |
+| jambs2-15 | the Bilge's room face at 22:00, 1920x1080, no HUD | `--width=1920 --height=1080 --nohud --time=22 --spawn=137,69,19 --yaw=0 --pitch=4 --fov=60 --screenshot=jambs2-15.png` |
+| jambs2-16 | the Gull's room-face head, looking up, 1920x1080, no HUD: the lintel, its collar, the header over it | `--width=1920 --height=1080 --nohud --time=14 --spawn=153,69,19 --yaw=0 --pitch=22 --fov=50 --screenshot=jambs2-16.png` |
+| jambs2-17 | the street face at a graze from the west, no HUD: the header's seam over the east post | `--nohud --time=10 --spawn=151,64,19 --yaw=121 --fov=50 --screenshot=jambs2-17.png` |
+| jambs2-18 | the east head close, no HUD: the lintel's end, its collar, the header over it | `--nohud --time=10 --spawn=153,62,19 --yaw=157 --pitch=13 --fov=25 --screenshot=jambs2-18.png` |
+| jambs2-19 | standing in the Gull's doorway looking east, 1920x1080, no HUD: the soffit, both lintels proud of it, the leaf against the reveal | `--width=1920 --height=1080 --nohud --time=14 --spawn=153,66,19 --yaw=90 --pitch=10 --fov=70 --screenshot=jambs2-19.png` |
+| jambs2-20 | the west post's foot, no HUD (the auditor's mirrored pair, with 21) | `--nohud --time=12 --spawn=153,63,19 --yaw=180 --pitch=-30 --fov=30 --screenshot=jambs2-20.png` |
+| jambs2-21 | the east post's foot, mirrored | `--nohud --time=12 --spawn=154,63,19 --yaw=180 --pitch=-30 --fov=30 --screenshot=jambs2-21.png` |
+| jambs2-22 | the player's comb vantage, 1920x1080, no HUD: the west reveal's head under the collar | `--width=1920 --height=1080 --nohud --time=10 --spawn=157,62,19 --yaw=228 --pitch=3 --fov=50 --screenshot=jambs2-22.png` |
+| jambs2-23 | the street 3/4 from the west at 15:00, 1920x1080, no HUD: the header's seam over the east post, the crack of round six | `--width=1920 --height=1080 --nohud --time=15 --spawn=151,63,19 --yaw=128 --pitch=6 --fov=38 --screenshot=jambs2-23.png` |
+| jambs2-24 | the taproom face at 22:00, no HUD: the seams over both room posts | `--nohud --time=22 --spawn=153,69,19 --yaw=0 --pitch=8 --fov=70 --screenshot=jambs2-24.png` |
+| jambs2-25 | the director's taproom graze, no HUD: the seam over the far room post at fov 60 | `--nohud --time=14 --spawn=151,68,19 --yaw=60 --pitch=5 --fov=60 --screenshot=jambs2-25.png` |
+| jambs2-26 | the auditor's taproom 3/4 from the east, no HUD: the far room post's seam | `--nohud --time=14 --spawn=156,68,19 --yaw=320 --pitch=5 --fov=60 --screenshot=jambs2-26.png` |
+| jambs2-27 | the mirror of 25 from the east | `--nohud --time=14 --spawn=155,68,19 --yaw=300 --pitch=5 --fov=60 --screenshot=jambs2-27.png` |
+
 ## Weather, 2026-09-25
 
 Four skies, render-only. Roadmap D15 ruled it yes on the one condition that

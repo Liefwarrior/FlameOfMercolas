@@ -27,9 +27,32 @@ class TileQuery;
 namespace granadad::render3d {
 
 /// The head of a door opening over its threshold -- the underside of the
-/// lintel. The jamb beam runs the ground to here, the mesher cuts the jamb
-/// cell's box off here, and the lintel lies across here.
+/// lintel. The jamb beam runs the ground to here and the lintel lies
+/// across here.
 inline constexpr float kDoorHeadHeight = 2.03F;
+
+/// The soffit over the opening, between the two lintels: three centimetres
+/// over the head, running INTO each beam's body to its centre plane, so
+/// the beams stand that much proud of it. Level with their undersides and
+/// ending at their back faces it met each underside edge to edge, and the
+/// join leaked -- a broken black hairline along it, a wedge of the dark
+/// head box mid-span (two pieces that share an edge line but not its
+/// vertices drop pixels along it). At the beams' top level the whole inner
+/// face of each lintel hung below it and read as a dark tent. Three
+/// centimetres up, the plane CROSSES the back face instead of meeting it,
+/// and three centimetres is what the depth buffer needs to tell it from
+/// the underside it overlaps inside the beam.
+inline constexpr float kDoorSoffitHeight = kDoorHeadHeight + 0.03F;
+
+/// Where the mesher cuts the jamb cell's box off: not at the head but three
+/// centimetres OVER the soffit. The reveal quad stands a centimetre inside
+/// the jamb cell (a rebate the post stands proud of), so any stone course
+/// starting under the soffit showed through that centimetre as a black
+/// band over every open leaf; and the box's underside three centimetres
+/// over the soffit's buried edge is out of the depth buffer's reach of it.
+/// What is left of the cell over the cut is inside the head box the
+/// headers, the soffit and the reveals close, and shows nowhere.
+inline constexpr float kDoorHeadCut = kDoorSoffitHeight + 0.03F;
 
 /// The widest opening still a door and not a gate, in cells (findDoors()
 /// calls anything wider a gate: DoorGap::gate()).
