@@ -451,6 +451,117 @@ TEST_CASE("the quick bar strip is snapped fully open, not mid-ease, the instant 
     CHECK(session.quickBarFadeValue() == 1.0F);
 }
 
+namespace {
+
+/// The pixels two frames of one size disagree on, and the rows they disagree
+/// on -- so a case can say "something drew" and "only inside the band".
+struct FrameDiff {
+    std::size_t pixels = 0;
+    int minY = 1 << 30;
+    int maxY = -1;
+};
+
+[[nodiscard]] FrameDiff frameDiff(const Framebuffer& a, const Framebuffer& b, int w, int h) {
+    FrameDiff out;
+    for (int y = 0; y < h; ++y) {
+        for (int x = 0; x < w; ++x) {
+            const std::size_t i = a.index(x, y);
+            if (a.pixels()[i] != b.pixels()[i]) {
+                ++out.pixels;
+                out.minY = std::min(out.minY, y);
+                out.maxY = std::max(out.maxY, y);
+            }
+        }
+    }
+    return out;
+}
+
+}  // namespace
+
+TEST_CASE("the quick bar strip is never the row the band drops, and its four cell states are "
+          "four different shapes") {
+    // THE CELLS PASS (2026-09-26). The auditor's line on the reshot frames:
+    // at 960x540, 1280x720 and 2560x1440 the --flame --quickbar shutter showed
+    // NO STRIP AT ALL. The voice lane's street line took its band slot ahead
+    // of the strip, and the row of air the kitfix bought for the strip
+    // (band.pad(rowHeight(minor)), always) then had no slot left above the
+    // play-space floor: a four-slot band -- the alert's two, the voice line's
+    // one -- refused the padded take, and the feature under test was not
+    // drawn. The strip is taken ahead of the voice line now (hand-on feedback
+    // outranks a bark it can share the band with) and the air is bought only
+    // when the band is empty and given back when the take is refused. Pinned
+    // with all three lit at every capture size, 1600x900 included.
+    HudState lit;
+    lit.alert = "KLED TARBECK: THAT IS YOUR ONE. OUT OF THIS HOUSE, OR I PUT YOU OUT.";
+    lit.voiceName = "FATHER MAELL";
+    lit.voiceLine = "GO WELL. THERE'S A BOWL KEPT BACK FOR YOU TONIGHT.";
+    lit.voiceFade = 1.0F;
+    lit.quickSlots = {"", "", "CLEAR THE HEAD", "", "STING", "", "", "", "", ""};
+    lit.quickSelected = 4;
+    lit.quickEquipped = 2;
+    lit.quickBarFade = 1.0F;
+    // And the wheel's tutor toast, which rides the strip's own plate and
+    // costs the band no slot.
+    lit.wheelHint = "WHEEL - STEP";
+    lit.wheelHintFade = 1.0F;
+
+    const auto drawn = [](int w, int h, const HudState& state) {
+        Framebuffer frame(w, h);
+        frame.clear(Rgb{0.20F, 0.18F, 0.16F});
+        drawHud(frame, state);
+        return frame;
+    };
+
+    for (const auto& [w, h] : {std::pair{320, 180}, std::pair{640, 360}, std::pair{960, 540},
+                               std::pair{1280, 720}, std::pair{1600, 900},
+                               std::pair{1920, 1080}, std::pair{2560, 1440}}) {
+        INFO("at ", w, "x", h);
+        const Framebuffer all = drawn(w, h, lit);
+
+        // The strip drew: the frame without it differs, and only in the band.
+        HudState noStrip = lit;
+        noStrip.quickBarFade = 0.0F;
+        const FrameDiff strip = frameDiff(all, drawn(w, h, noStrip), w, h);
+        CHECK(strip.pixels > 0);
+        CHECK(strip.minY >= hudCentreRect(w, h).y1);
+
+        // The hint drew, on the strip's plate.
+        HudState noHint = lit;
+        noHint.wheelHintFade = 0.0F;
+        CHECK(frameDiff(all, drawn(w, h, noHint), w, h).pixels > 0);
+
+        // And it did not evict the street's line or the alert to get there
+        // -- except at 320x180, the smoke size, where the band is three
+        // slots and the third cannot seat the line's plate whole: a row is
+        // dropped rather than drawn under its own rail (BottomBand::take's
+        // clearance; the player critic read "FAIHER HAELL" off the clamped
+        // rail this replaced).
+        HudState noVoice = lit;
+        noVoice.voiceFade = 0.0F;
+        if (h > 180) {
+            CHECK(frameDiff(all, drawn(w, h, noVoice), w, h).pixels > 0);
+        } else {
+            CHECK(frameDiff(all, drawn(w, h, noVoice), w, h).pixels == 0);
+        }
+        HudState noAlert = lit;
+        noAlert.alert = {};
+        CHECK(frameDiff(all, drawn(w, h, noAlert), w, h).pixels > 0);
+
+        // FOUR STATES, FOUR SHAPES: emptying the loaded-but-unselected slot,
+        // un-equipping, and un-selecting each change the drawn strip, so a
+        // player can tell them apart before a digit is read.
+        HudState emptied = lit;
+        emptied.quickSlots[4] = "";
+        CHECK(frameDiff(all, drawn(w, h, emptied), w, h).pixels > 0);
+        HudState unequipped = lit;
+        unequipped.quickEquipped = -1;
+        CHECK(frameDiff(all, drawn(w, h, unequipped), w, h).pixels > 0);
+        HudState unselected = lit;
+        unselected.quickSelected = -1;
+        CHECK(frameDiff(all, drawn(w, h, unselected), w, h).pixels > 0);
+    }
+}
+
 TEST_CASE("the tutor band holds, yields, and spends its countdown once a step") {
     // The cross-lane contract (c): this lane lands the countdown/toggle
     // helper, PAGES instantiates one per band, FLOW raises it on wake

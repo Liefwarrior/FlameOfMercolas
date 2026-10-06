@@ -42,7 +42,7 @@ The design is the NINE AND THE STICKS study and roadmap sections 3.1 and 3.2, de
 | D1. The grimoire is a page of NOTES | `grimoire-page-960x540.png` | `--flame --grimoire` | The list, ready to bind a slot on LEFT/RIGHT |
 | D1. The casebook page's two views on the sub-tab keys | `casebook-page-kb-960x540.png`, `casebook-page-pad-960x540.png` | `--case=gull`, `--padscript=...rt,shot...` | The foot's `LEFT RIGHT CASE` was a lie before (the press was reserved and inert). It steps the view now, and so does RT on the pad. The pad frame is one RT pull on the opening page, landing on THE CASE, with `LB RB NOTES` on the foot |
 | D1. The bar steps on the D-pad | `quick-bar-pad-960x540.png` | `--padscript=...right,right,shot...` | Two D-pad rights, `SLOT 3` picked, the strip up, the toast `D-PAD LEFT D-PAD RIGHT - STEP` |
-| D1. The bar on the keyboard, the toast teaches the wheel | `quick-bar-kb-960x540.png` | `--flame --quickbar --settle-steps=12` | `SLOT 3 - CLEAR THE HEAD.`, the strip, `WHEEL - STEP` |
+| D1. The bar on the keyboard, the toast teaches the wheel | `quick-bar-kb-960x540.png` | `--flame --quickbar --settle-steps=12` | The strip, `CLEAR THE HEAD` beside the digits, `WHEEL - STEP` on the strip's own plate, the alert row quiet (the cells pass, 2026-09-26: a loaded slot's press no longer shouts `SLOT 3 - CLEAR THE HEAD.`, and the drive waits the binding line out first) |
 | D1. SELECT is WAIT | `wait-pad-960x540.png` | `--padscript=...back,shot...` | The hour page, straight off the Select button. `B` backs out |
 
 ## The critic's four, closed

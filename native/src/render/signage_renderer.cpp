@@ -82,7 +82,7 @@ void drawSignage(Framebuffer& target, const Camera& camera, const SignageSetting
     std::sort(candidates.begin(), candidates.end(),
              [](const Candidate& a, const Candidate& b) { return a.distance < b.distance; });
 
-    const int scale = std::max(1, hudMinorScale(height));
+    const int scale = std::max(1, hudMinorScale(width, height));
     const int glyphH = 6 * scale;
 
     std::vector<ScreenRect> drawn;

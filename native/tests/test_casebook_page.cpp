@@ -346,7 +346,7 @@ TEST_CASE("the page holds its geometry while the cursor walks the book") {
     // the rule and the global nav band, and the left border column runs the
     // whole height; none of them has anything to do with which lead is picked,
     // and a list whose furniture shifts as you arrow through it feels broken.
-    const PanelMetric metric = panelMetric(height);
+    const PanelMetric metric = panelMetric(width, height);
     const int rows = metric.rowsIn(height);
     const int cells = metric.cellsIn(width);
     const int originX = (width - metric.widthOf(cells)) / 2;
@@ -418,8 +418,9 @@ TEST_CASE("no row of the book is clipped at any window the game runs at") {
         // down them.
         CHECK(geo.columns == 1);
         // The key column, one cell of gap, and the widest label and value both
-        // whole. THE BIGGEST WINDOW IS THE NARROWEST IN CELLS (hudMinorScale
-        // steps up with height), so 1920x1080 is the size this can fail at.
+        // whole. 1280x720 is the narrowest of these in cells now (85 across;
+        // 1920x1080 was, at 76, under the old height/180 - 1 register), so it
+        // is the size this can fail at.
         CHECK(geo.labelCells >= static_cast<int>(widestLabel));
         CHECK(geo.valueCells >= static_cast<int>(widestValue));
         // THE CLAIM MOVED WITH THE DIET (UI-EA-SPEC 1.5 #27): the book PAGES
@@ -680,9 +681,9 @@ TEST_CASE("the nav band always names the key that closes the book") {
     // that spends a second row, and this is a defect a screenshot found: the
     // nav list's widest key is "LEFT RIGHT" and drawOptionList sizes every
     // column off the widest entry, so four columns want eighty-six cells --
-    // which 960x540 has and 1920x1080 does not, because hudMinorScale steps up
-    // with height and THE BIGGEST WINDOW IS THE NARROWEST IN CELLS. The one-row
-    // band dropped the fourth entry silently, and the fourth entry is CLOSE.
+    // which 960x540 has and 1280x720 does not (nor did 1920x1080 under the
+    // old height/180 - 1 register; it deals 94 now). The one-row band dropped
+    // the fourth entry silently, and the fourth entry is CLOSE.
     Session session(configAt("mission-backroom"));
     session.stepMany(sim::MoveInput{}, 2);
     session.examine();
@@ -731,8 +732,9 @@ TEST_CASE("the nav band always names the key that closes the book") {
 
 TEST_CASE("a lead never silently reports fewer things than it opened") {
     // THIS PASS'S OWN DEFECT, ONE PANE DEEPER, AND A CAPTURE FOUND IT. At
-    // 1920x1080 the detail pane holds fewer ROWS than at 960x540 -- hudMinorScale
-    // steps up with height -- the clue and its paragraph wrapped to eight lines,
+    // 1920x1080 the detail pane held fewer ROWS than at 960x540 -- 30 against
+    // 38 under the old height/180 - 1 register; it is 960x540's own grid now --
+    // the clue and its paragraph wrapped to eight lines,
     // and drawProse stopped at the bottom of the rect: `OPENED THE LEDGER` was
     // simply not drawn. A lead that opened three things reporting two is exactly
     // what the owner's playthrough ran into, said quietly instead of not at all.

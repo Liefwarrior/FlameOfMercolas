@@ -46,7 +46,7 @@ struct Composition {
 
 [[nodiscard]] Composition compose(int frameWidth, int frameHeight, int gridCellsOverride) {
     Composition out;
-    out.metric = panelMetric(frameHeight);
+    out.metric = panelMetric(frameWidth, frameHeight);
     const int cells = gridCellsOverride > 0 ? gridCellsOverride : out.metric.cellsIn(frameWidth);
     // THE FRAME ENDS AFTER ITS CONTENT AND IS SEATED, on both axes -- the
     // creation page's and the casebook's own rule. The height is fixed by

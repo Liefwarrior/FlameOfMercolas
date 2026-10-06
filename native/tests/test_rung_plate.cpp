@@ -1157,7 +1157,9 @@ TEST_CASE("the voice row stood down keeps its top rail clear of the row above it
     // centred on the frame and its shadow falls in the middle of the
     // plate, not under the name (the auditor, tenth pass: a scan of the
     // name's columns alone passed with or without the pad).
-    const int vs = std::min(hudMinorScale(540), rungPlateMetric(960, 540).scale);
+    // 2 and 2: the cells pass's minor scale is max(1, min(540/240,
+    // 960/425)) = 2 at 960x540, what 540/180 - 1 was.
+    const int vs = std::min(hudMinorScale(960, 540), rungPlateMetric(960, 540).scale);
     const int railY = top - (vs + std::max(1, vs / 2));
     const auto railInk = [](const Rgb& p) { return std::abs(p.r - p.g) < 0.06F && p.r > 0.15F; };
     int railLeft = 960;
@@ -1186,29 +1188,29 @@ TEST_CASE("the voice row stood down keeps its top rail clear of the row above it
 }
 
 TEST_CASE("the voice row drawn stood down keeps the plate's register through a fade, on pixels, where the minor scale is a tier above it") {
-    // 720x720: the HUD's minor scale is 3, the plate's register 2. The
-    // name is drawn in the person accent (0.90, 0.72, 0.58): blue at about
-    // two thirds of red, green at four fifths -- neither bone nor amber.
+    // The name is drawn in the person accent (0.90, 0.72, 0.58): blue at
+    // about two thirds of red, green at four fifths -- neither bone nor
+    // amber. Its glyph height at half fade, stood down or not, with the
+    // plate's register handed in as Session hands it.
     const auto accent = [](const Rgb& p) {
         return p.r > 0.20F && p.g > 0.72F * p.r && p.g < 0.88F * p.r && p.b > 0.55F * p.r &&
                p.b < 0.75F * p.r;
     };
-    int heights[2] = {0, 0};
-    for (int pass = 0; pass < 2; ++pass) {
+    const auto nameHeight = [&accent](int width, int height, int stepScale, bool down) {
         HudState state;
         state.voiceName = "Watchman Cull";
         state.voiceLine = "KEEP MY ROUNDS QUIET. GO ON.";
         state.voiceFade = 0.5F;
         state.voiceInkWeight = 1.0F;
-        state.alertStepScale = rungPlateMetric(720, 720).scale;
-        state.voiceStepsDown = pass == 1;
-        Framebuffer fb(720, 720);
+        state.alertStepScale = stepScale;
+        state.voiceStepsDown = down;
+        Framebuffer fb(width, height);
         fb.clear(Rgb{0.08F, 0.09F, 0.10F});
         drawHud(fb, state);
-        int top = 720;
+        int top = height;
         int bottom = -1;
-        for (int y = hudAimRect(720, 720).y1; y < 720; ++y) {
-            for (int x = 0; x < 720; ++x) {
+        for (int y = hudAimRect(width, height).y1; y < height; ++y) {
+            for (int x = 0; x < width; ++x) {
                 if (accent(unpackRgb(fb.pixels()[fb.index(x, y)]))) {
                     top = std::min(top, y);
                     bottom = std::max(bottom, y);
@@ -1216,11 +1218,33 @@ TEST_CASE("the voice row drawn stood down keeps the plate's register through a f
             }
         }
         REQUIRE(bottom >= top);
-        heights[pass] = bottom - top + 1;
+        return bottom - top + 1;
+    };
+    // 720x720, the window this case was written for. Under the height-only
+    // register its minor scale was 720/180 - 1 = 3 over the plate's 2, and
+    // the stood-down row dropped from 18 rows to 12. THE CELLS PASS keys the
+    // minor scale on the width too -- max(1, min(720/240, 720/425)) =
+    // min(3, 1) = 1 -- which is under the plate's 2 (rungPlateMetric: the
+    // glance 4 stepped to 2), and no window puts it over the plate's any
+    // more; so the row stands down at the minor scale, min(1, 2), and there
+    // is nothing to swell back to: six rows either way.
+    {
+        const int plate = rungPlateMetric(720, 720).scale;
+        CHECK(hudMinorScale(720, 720) == 1);
+        CHECK(plate == 2);
+        CHECK(nameHeight(720, 720, plate, false) == 6 * hudMinorScale(720, 720));
+        CHECK(nameHeight(720, 720, plate, true) == 6 * hudMinorScale(720, 720));
     }
-    CHECK(heights[0] == 6 * hudMinorScale(720));
-    CHECK(heights[1] == 6 * rungPlateMetric(720, 720).scale);
-    CHECK(heights[1] < heights[0]);
+    // THE RULE ITSELF, where the plate's register IS a tier under the minor
+    // scale -- handed in, since no window composes one now: at 960x540 the
+    // minor scale is max(1, min(540/240, 960/425)) = 2, and a row stood down
+    // to a register of 1 draws at 1 (six rows) through its fade, never at
+    // the minor scale's 2 (twelve).
+    {
+        CHECK(nameHeight(960, 540, 1, false) == 6 * hudMinorScale(960, 540));
+        CHECK(nameHeight(960, 540, 1, true) == 6);
+        CHECK(nameHeight(960, 540, 1, true) < nameHeight(960, 540, 1, false));
+    }
 }
 
 TEST_CASE("the head block sits on the card's axis for every track's head, to the half cell, on pixels") {
@@ -1765,8 +1789,12 @@ TEST_CASE("the drawn wiring: under a plate the alert row's own glyphs are half a
     // thirds, its dim text is grey, every field is black, and the boards
     // are the same in both frames and never counted.
     // At 960x540, where the plate's register is the minor scale, and at
-    // 1440x1080, where it is a step under it (rungPlateMetric) and the row
-    // must follow the plate, not the HUD.
+    // 1440x1080, where under the height-only register it was a step under
+    // it (4 under 5, rungPlateMetric) and the row had to follow the plate,
+    // not the HUD. Under the cells pass's register the two agree there too:
+    // max(1, min(1080/240, 1440/425)) = 3, which holds 96 cells, so the
+    // plate takes 3 and the row stands down to 3 (eighteen rows, not the
+    // twenty-four of the plate's old 4).
     for (const auto& size : {std::pair{960, 540}, std::pair{1440, 1080}}) {
     const int width = size.first;
     const int height = size.second;
@@ -1862,8 +1890,9 @@ TEST_CASE("the drawn wiring: under a plate the alert row's own glyphs are half a
     CHECK(bPeak < 0.7 * aPeak);
     // One register down: the glyphs stand exactly six rows of the glance
     // scale without the plate and six of the PLATE'S scale under it (the 4x6
-    // font's six rows) -- the minor scale at 960x540, a step under it at
-    // 1440x1080 -- and there are fewer of their pixels.
+    // font's six rows) -- 6 * 3 = 18 against 6 * 2 = 12 at 960x540, and
+    // 6 * 6 = 36 against 6 * 3 = 18 at 1440x1080 (it was 6 * 4 = 24 under
+    // the height-only register) -- and there are fewer of their pixels.
     CHECK(aBottom - aTop + 1 == 6 * hudScale(height));
     CHECK(bBottom - bTop + 1 == 6 * rungPlateMetric(width, height).scale);
     CHECK(bInk < aInk);
@@ -2082,11 +2111,27 @@ TEST_CASE("a squarer window steps the plate's register down until the frame hold
         const int height = size.second;
         INFO(width, "x", height);
         const PanelMetric metric = rungPlateMetric(width, height);
-        // Stepped down from the height's own register, and no further than
-        // the first scale that holds the sheet's frame.
-        CHECK(metric.scale < panelMetric(height).scale);
+        // Never fewer than the sheet's sixty-four cells across.
         CHECK(metric.cellsIn(width) >= 64);
-        CHECK(PanelMetric{metric.scale + 1}.cellsIn(width) < 64);
+        if (width == 1440) {
+            // THE CELLS PASS'S REGISTER HOLDS IT WITHOUT THE STEP. The
+            // height-only register was 1080/180 - 1 = 5 here, 1440/25 = 57
+            // cells, stepped to 4 (72). On both axes it is max(1, min(1080/240,
+            // 1440/425)) = min(4, 3) = 3, and 1440/15 = 96 cells: the plate
+            // takes the terminal register as it stands.
+            CHECK(metric.scale == 3);
+            CHECK(metric.scale == panelMetric(width, height).scale);
+        } else {
+            // 720x720: the minor scale bottoms out at one by the width,
+            // min(720/240, 720/425) = min(3, 1), under a HUD at 720/180 = 4,
+            // so the plate takes the glance scale and steps down -- 720/20 =
+            // 36 cells at 4, 720/15 = 48 at 3, 720/10 = 72 at 2 -- and no
+            // further than the first scale that holds the sheet's frame: the
+            // same 2 the height-only register's 3 (48 cells) stepped to.
+            CHECK(metric.scale == 2);
+            CHECK(metric.scale < hudScale(height));
+            CHECK(PanelMetric{metric.scale + 1}.cellsIn(width) < 64);
+        }
         RungPlateState state;
         state.head = "THE FLAME  --  THE ONE WHO WENT DOWN THERE";
         state.prose = longestRow;
@@ -2146,10 +2191,17 @@ TEST_CASE("the plate seats under the ribbon and the announce row, above the reti
             REQUIRE(box.draws);
             // THE REGISTER: the terminal register everywhere but 640x360,
             // where the minor scale has bottomed out at one under a HUD at
-            // two and the plate takes the glance scale.
+            // two and the plate takes the glance scale. The terminal
+            // register is the cells pass's, both axes: hudMinorScale =
+            // max(1, min(h/240, w/425)) -- 320x180 max(1, min(0, 0)) = 1;
+            // 640x360 min(1, 1) = 1 under hudScale 2, so 2 (64 cells);
+            // 960x540 min(2, 2) = 2; 1920x1080 min(4, 4) = 4, where the
+            // height-only register (1080/180 - 1) was 5.
             const PanelMetric metric = rungPlateMetric(width, height);
-            CHECK(metric.scale == (height == 360 ? hudScale(height) : panelMetric(height).scale));
-            CHECK(metric.scale >= panelMetric(height).scale);
+            CHECK(metric.scale ==
+                  (height == 360 ? hudScale(height) : panelMetric(width, height).scale));
+            CHECK(metric.scale >= panelMetric(width, height).scale);
+            CHECK(metric.scale == (width == 320 ? 1 : (width == 1920 ? 4 : 2)));
             // Inside the frame less a cell of margin a side, and centred.
             CHECK(box.x >= metric.cellW());
             CHECK(box.x + box.w <= width - metric.cellW());
@@ -2173,7 +2225,13 @@ TEST_CASE("the plate seats under the ribbon and the announce row, above the reti
             // is the one frame tight enough that the seat's own collision
             // clearance gets clamped back down to exactly this floor rather
             // than a full row past it -- the reticle's fence wins that trade,
-            // never the row above.
+            // never the row above. The cells pass leaves the 31 standing: the
+            // announce plate settles at 18 glance units plus six of the minor
+            // scale (topBand's label row), its glyphs and pad under that --
+            // 18 + 6 + 6 + 1 = 31 at 320x180, where the minor scale is still
+            // max(1, min(180/240, 320/425)) = 1 -- and the minor scale is
+            // never over the glance scale (h/240 <= h/180), so every larger
+            // frame is still under 31 glance units.
             CHECK(box.y >= 31 * hudScale(height));
             // ABOVE THE RETICLE'S FENCE: the plate never sits on the thing
             // the player is looking at, nor on the words that name it. WITH
@@ -2223,12 +2281,20 @@ TEST_CASE("the plate seats under the ribbon and the announce row, above the reti
             CHECK(box.y < (height - box.h) / 2);
             // THE TICK ROW: one row more where the frame has a row to spend
             // on it, and dropped whole where it has not -- 320x180 always,
-            // and 1920x1080 once the top row has taken the last one.
+            // and 640x360 once the top row has taken the last one. Dropped
+            // when floor + (rows + 2) cells + a cell of clearance passes the
+            // fence, h/2 - 17 * hudMinorScale(w, h): 320x180 31 + 42 + 7 =
+            // 80 > 73; 640x360 topped 62 + 98 + 14 = 174 > 163, untopped
+            // 62 + 84 + 14 = 160 <= 163; 960x540 topped 93 + 98 + 14 = 205
+            // <= 236. 1920x1080 holds it on the topped card too now: scale
+            // 4, 186 + 196 + 28 = 410 <= 540 - 68 = 472 (the height-only
+            // register's scale 5 and fence 455 made it 186 + 245 + 35 = 466
+            // and dropped it there).
             RungPlateState ticked = state;
             ticked.tick = "SKYRUNNING RISES TO 2";
             const RungPlateBox tickBox = rungPlateBox(width, height, ticked);
             REQUIRE(tickBox.draws);
-            const bool tickFits = (width == 960) || ((width == 1920 || width == 640) && !topped);
+            const bool tickFits = (width == 960) || (width == 1920) || (width == 640 && !topped);
             CHECK(tickBox.h == box.h + (tickFits ? metric.cellH() : 0));
             CHECK(tickBox.y + tickBox.h <= fence.y0);
             CHECK(tickBox.y >= floorY);
@@ -2338,7 +2404,11 @@ TEST_CASE("the plate seats under the ribbon and the announce row, above the reti
             state.fade = 1.0F;
             const RungPlateBox box = rungPlateBox(320, 180, state);
             REQUIRE(box.draws);
+            // The plate's own register, the terminal one here under either
+            // rule: max(1, min(180/240, 320/425)) = 1, as max(1, 180/180 - 1)
+            // was.
             const PanelMetric metric = rungPlateMetric(320, 180);
+            CHECK(metric.scale == panelMetric(320, 180).scale);
             const int widest = std::max(
                 static_cast<int>(text.head.size()) + 2,
                 std::max(static_cast<int>(text.prose.size()), static_cast<int>(text.top.size())));

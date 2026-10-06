@@ -202,14 +202,26 @@ inline constexpr std::int32_t kRungPlateRowAfterSteps = 120;
 /// bottomed out at one under a HUD at two or more (640x360): the plate is a
 /// notice in the play space, not a page, and a card in 6-pixel caps under a
 /// 12-pixel compass was the smallest type on the screen at its own moment
-/// (both critics, fourth pass). There, and only there, it takes the glance
-/// scale: a 64-cell frame at scale 2 is exactly 640 pixels, so the widest
+/// (both critics, fourth pass). There it takes the glance scale (and, since
+/// the cells pass, on a window narrow enough to bottom it out by its width:
+/// below): a 64-cell frame at scale 2 is exactly 640 pixels, so the widest
 /// card still fits with its margin, and the band between the floor and the
 /// aim prompt holds it with a row to spare. AND NEVER FEWER THAN 64 CELLS
 /// ACROSS: a squarer window (1440x1080, 720x720) at the height's register
 /// clipped the row's last beat with the cell drawer's mark, so the register
 /// steps down a scale until the frame holds the 64 cells the sheet was
 /// authored to -- the same move 640x360 makes in the other direction.
+///
+/// SINCE THE CELLS PASS the terminal register keys on both axes
+/// (hudMinorScale: the smaller of height/240 and width/425) and deals at
+/// least 85 cells across any window 425 px wide or more, so the minor scale
+/// never needs the step: 1440x1080 takes its own 3 (96 cells). The step now
+/// follows only the glance step, where the minor scale has bottomed out at
+/// one -- 640x360 by its height, a narrow window by its width: 720x720 is
+/// minor 1 under a HUD at 4, takes 4 and steps to 2 (36, 48, then 72
+/// cells), the card it drew before. And the plate's scale is never under
+/// the minor scale at any window, so the rows that step down to it
+/// (HudState::alertStepScale) stand down at the minor scale.
 [[nodiscard]] PanelMetric rungPlateMetric(int width, int height) noexcept;
 
 /// The plate's FLOOR, in rows of the glance scale: the lowest pixel of the
@@ -291,11 +303,14 @@ struct RungPlateBox {
 
 /// Whether a tick row on this card would DRAW at this frame size, by the
 /// same rule drawRungPlate drops it (a row of clearance over the prompt): at
-/// 320x180 and 3840x2160 never, at 640x360 and 1920x1080 not on a topped
-/// card. The plate's step asks this before it folds a skill's level into
-/// the card, so a level is told as a toast after the lift where the card
-/// has no row for it (the player, eighth pass: at 320x180 a level was told
-/// nowhere). `state.tick` may be empty; the probe supplies a row.
+/// 320x180 never, at 640x360 not on a topped card, at 960x540, 1280x720,
+/// 1920x1080, 2560x1440 and 3840x2160 always (under the height-only register
+/// 1920x1080 refused the topped card and 3840x2160 every card; the cells
+/// pass's smaller minor unit lowered the fence). The plate's step asks this
+/// before it folds a skill's level into the card, so a level is told as a
+/// toast after the lift where the card has no row for it (the player, eighth
+/// pass: at 320x180 a level was told nowhere). `state.tick` may be empty;
+/// the probe supplies a row.
 [[nodiscard]] bool rungPlateTickFits(int width, int height, const RungPlateState& state);
 
 /// The plate over a finished frame: a PanelFrame in the terminal register

@@ -144,9 +144,12 @@ struct PlateLayout {
     // smallest window has room for the card and nothing else; a tick there
     // would put the keyline on the stat stack or the prompt on the card. So
     // it is dropped, whole, at 320x180, and for a topped-out track's taller
-    // card at 640x360 and 1920x1080 (960x540 holds both; 3840x2160 has no
-    // row for a tick at all), and the Character tile has the level. A row
-    // of clearance is what it asks for; the seat then splits what is left.
+    // card at 640x360 (960x540, 1280x720 and 1920x1080 hold both, and so do
+    // 2560x1440 and 3840x2160 -- under the height-only register 1920x1080
+    // dropped it from the topped card and 3840x2160 from both; the cells
+    // pass's smaller minor unit lowered the prompt's fence there), and the
+    // Character tile has the level. A row of clearance is what it asks for;
+    // the seat then splits what is left.
     if (out.tickCells > 0) {
         const int floorY = kRungPlateFloorRows * hudScale(height);
         const CentreRect fence = hudAimRect(width, height);
@@ -177,7 +180,12 @@ struct PlateLayout {
 }  // namespace
 
 PanelMetric rungPlateMetric(int width, int height) noexcept {
-    const PanelMetric minor = panelMetric(height);
+    // THE CELLS PASS'S REGISTER, both axes (panelMetric(width, height)): it
+    // deals at least 85 cells across any window 425 px wide or more, so the
+    // sixty-four-cell step below only ever follows the glance step -- the
+    // minor scale bottomed out at one under a HUD at two or more, which is
+    // 640x360 by its height and a narrow window (720x720) by its width.
+    const PanelMetric minor = panelMetric(width, height);
     const int glance = hudScale(height);
     int scale = minor.scale;
     if (scale == 1 && glance >= 2) {
@@ -224,11 +232,13 @@ RungPlateBox rungPlateBox(int width, int height, const RungPlateState& state) {
     // director's finding: at 1920x1080 the slab stopped 23 px over the
     // prompt, under one text row); the quarter seat rides inside that band
     // with a row kept clear under it. With less -- whatever leaves the band
-    // under two rows of slack: a ticked or topped card at 640x360 and
-    // 1920x1080, any card at 320x180 -- the slack is shared: five glance
-    // units above the keyline first, the rest split, so the smallest window
-    // keeps five of its seven pixels between its keyline and the stat stack
-    // (below).
+    // under two rows of slack: a ticked or topped card at 640x360, a card
+    // both ticked and topped at 1280x720, 2560x1440 and 3840x2160, any card
+    // at 320x180 (1920x1080 left this list with the cells pass: its card and
+    // the prompt that sets the fence are drawn at 4 there now, not 5) -- the
+    // slack is shared: five glance units above the keyline first, the rest
+    // split, so the smallest window keeps five of its seven pixels between
+    // its keyline and the stat stack (below).
     const int floorY = kRungPlateFloorRows * hudScale(height);
     const int ceilY = fence.y0 - box.h;
     const int cellH = layout.metric.cellH();

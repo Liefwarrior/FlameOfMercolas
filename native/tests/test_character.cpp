@@ -293,7 +293,7 @@ TEST_CASE("IN HAND is always printed once the Kit exists: FISTS bare, THE EVICTO
     CHECK(armed[21] == "IN HAND  THE EVICTOR 7-9 IMPACT");
     bool carried = false;
     for (const std::string& row : armed) {
-        if (row.rfind("THE EVICTOR  44DR  30C  IN HAND", 0) == 0) {
+        if (row.rfind("THE EVICTOR  44DR  30C  HELD", 0) == 0) {
             carried = true;
         }
     }
@@ -374,7 +374,7 @@ TEST_CASE("a carried row prints its weight, its worth and its marks; a worn slot
     // this list holds (seven cells), and DR/C are each right-justified into
     // this list's own widest digit count -- rightAlignedDigits()'s contract,
     // proved here row by row rather than just by the alignment case below.
-    CHECK(rows[27] == "CUDGEL   40DR   6C  IN HAND  SLOT 3");
+    CHECK(rows[27] == "CUDGEL   40DR   6C  HELD  SLOT 3");
     CHECK(rows[28] == "COAT     60DR  12C  WORN");
     CHECK(rows[29] == "ROPE     48DR   6C");
     CHECK(rows[30] == "5 PICKS   5DR  10C");
@@ -511,7 +511,13 @@ TEST_CASE("LEFT and RIGHT on a carried row walk its quick slot, and X drops it a
     session.adjustKitSlot(3);
     CHECK(tavern.slotItemIndex(2) == cudgel);
     session.selectQuickSlot(2);
-    CHECK(session.lastMessage() == "SLOT 3 - CUDGEL.");
+    // THE CELLS PASS: a loaded slot's press is quiet on the alert row -- the
+    // strip names it -- so the last message is still the binding's own.
+    CHECK(session.lastMessage() == "CUDGEL -- SLOT 3.");
+    CHECK(session.quickBarWanted());
+    // ONE MARK FOR "IN YOUR HAND", CAST OR THING: the cudgel's slot is the
+    // strip's inverted cell, read off Session rather than a screenshot.
+    CHECK(session.equippedQuickSlot() == 2);
     CHECK(tavern.playerWeapon() == Weapon::Blunt);
     CHECK(session.characterRows()[21] == "IN HAND  CUDGEL 7-9 IMPACT");
     // X: dropped at the feet, the row gone, the hand bare, the slot stale.
