@@ -12614,11 +12614,14 @@ namespace {
 /// width of it -- the bartender who stepped in front of the witness. The
 /// Gull's roster at the sim's own Q8, the ward's on its slide; `speakerId`
 /// is the body being looked at, by the row's own id (a roster id below
-/// kWardSpeakerIdBase, a ward id lifted above it).
-[[nodiscard]] bool bodyBetween(const Session& session, std::int32_t xQ8, std::int32_t yQ8,
-                               std::int32_t band, std::int32_t speakerId) noexcept {
-    const double ax = static_cast<double>(session.body().x());
-    const double ay = static_cast<double>(session.body().y());
+/// kWardSpeakerIdBase, a ward id lifted above it). `bodyBetweenFrom` asks
+/// it from an eye at (eyeXQ8, eyeYQ8) the body is not standing at yet -- a
+/// stand being weighed before the placement.
+[[nodiscard]] bool bodyBetweenFrom(const Session& session, std::int32_t eyeXQ8,
+                                   std::int32_t eyeYQ8, std::int32_t xQ8, std::int32_t yQ8,
+                                   std::int32_t band, std::int32_t speakerId) noexcept {
+    const double ax = static_cast<double>(eyeXQ8);
+    const double ay = static_cast<double>(eyeYQ8);
     const double dx = static_cast<double>(xQ8) - ax;
     const double dy = static_cast<double>(yQ8) - ay;
     const double length = std::sqrt(dx * dx + dy * dy);
@@ -12656,6 +12659,12 @@ namespace {
         }
     }
     return false;
+}
+
+[[nodiscard]] bool bodyBetween(const Session& session, std::int32_t xQ8, std::int32_t yQ8,
+                               std::int32_t band, std::int32_t speakerId) noexcept {
+    return bodyBetweenFrom(session, session.body().x(), session.body().y(), xQ8, yQ8, band,
+                           speakerId);
 }
 
 /// Whether a body at a Q8 point is IN THE FRAME from where the player
@@ -14062,6 +14071,235 @@ void faceThePair(Session& session, bool mayWalk) {
                composeYawOffset(session, midX, midY, band, line.actorId, groupHalf));
 }
 
+// A stand's own ground tests, defined beside runStreetLine further down.
+[[nodiscard]] bool bodiesDrawnWithin(const Session& session, std::int32_t x, std::int32_t y,
+                                     std::int32_t band, std::int32_t radius,
+                                     std::int32_t exceptId) noexcept;
+[[nodiscard]] bool underOpenSky(const sim::TileQuery& tiles, std::int32_t x, std::int32_t y,
+                                std::int32_t band) noexcept;
+
+/// Where `--voice=overheard` stands, and the pair the channel hears from there.
+struct OverheardStand {
+    std::int32_t x = 0;
+    std::int32_t y = 0;
+    std::int32_t band = 0;
+    std::int32_t speakerId = -1;
+    std::int32_t partnerId = -1;
+};
+
+/// FIND TWO PEOPLE TALKING, AND A PLACE TO HEAR THEM FROM.
+///
+/// The overheard ending used to walk blind: forty-five seconds at the spawn,
+/// then forward with the smoke's drift of the head until the row came up. On
+/// the tree it was tuned on that walk met three serfs by the sacks at the
+/// Bilge's corner. The crowd-flow lane moved where the crowd is at any given
+/// second (a blocked walker sidesteps now instead of queueing), so the same
+/// walk crossed a different street and ended at (146,69) on band 21, inside
+/// the Gull's footprint -- where the channel only listens to the taproom
+/// (Tavern::playerInside asks x and y, not the band) -- having heard nobody
+/// in ninety seconds. The pairs never went anywhere: the crowd's nudge
+/// is a draw offset (kPersonalSpaceTiles, 0.15 of a tile, never written back)
+/// and the sim keeps no gap between two bodies at rest, so the street case
+/// (an overheard snatch comes from a body standing still beside another)
+/// still hears them. The walk just never met one.
+///
+/// So the drive looks first. The pairs are the channel's own
+/// (overheardStanding, kOverheardPairTiles), ones that STAY standing first --
+/// a crew ringing its post stands there all shift, a walker between two
+/// strides doesn't -- nearest the body first. For each, a stand the channel
+/// hears a pair from, asked of the channel itself (overheardStreetBodies, then
+/// overheardCompany, in the order it takes them), outside the Gull, and the
+/// picture checked before the body moves:
+///   - two tiles from the nearer of the two at least, faceThePair's own floor,
+///     and nobody inside the pass reach, so no good-day takes the row first;
+///   - a clear lens line to both, nobody drawn across either;
+///   - the two open wider than a figure, so faceThePair has no reason to walk;
+///   - the speaker the LEFT of the two: composeYawOffset stands a group left of
+///     the name plate, and the outer body of it is the one clear of the
+///     crosshair;
+///   - and room for that turn with the speaker still inside the frame at the
+///     widest one it could take.
+/// The nearest such stand wins -- the fewer tiles between you and the
+/// speaker, the fewer bodies that can stop in between and be heard first --
+/// then the widest margin, then the lower (y, x), so two runs stand in the
+/// same place. Four passes, strict to bare, runStreetLine's shape: the sky
+/// goes, then the margin narrows, then only the channel's rule is left.
+/// Render side; doubles legal, nothing written.
+[[nodiscard]] bool findOverheardStand(const Session& session, OverheardStand& out) {
+    constexpr double kTwoPi = 6.283185307179586;
+    constexpr double kDegree = kTwoPi / 360.0;
+    // speakerInView's own edge margin (kEdgeMarginBam, about 5.6 degrees)
+    // and two more for the drawn slide and the BAM rounding.
+    constexpr double kEdgeMargin = 7.6 * kDegree;
+    const sim::WardPopulation& people = session.people();
+    const sim::TileQuery& tiles = session.tiles();
+    const std::vector<sim::WardActor>& actors = people.actors();
+    const std::int32_t talkId = session.wardTalkingTo();
+    const double halfFov = std::atan(static_cast<double>(session.camera().hfovTan));
+    const std::int32_t fromX = session.body().tileX();
+    const std::int32_t fromY = session.body().tileY();
+    const auto tilesOf = [](std::int32_t q8) {
+        return static_cast<double>(q8) / static_cast<double>(sim::kSubOne);
+    };
+    // North is -Y, so the bearing of an offset is atan2(dx, -dy): clockwise,
+    // the same turn bearingToward measures.
+    const auto bearingOf = [](double dx, double dy) { return std::atan2(dx, -dy); };
+    const auto wrapped = [&](double radians) {
+        while (radians > kTwoPi / 2.0) {
+            radians -= kTwoPi;
+        }
+        while (radians <= -kTwoPi / 2.0) {
+            radians += kTwoPi;
+        }
+        return radians;
+    };
+    struct Seed {
+        std::int32_t apart;
+        std::int32_t a;
+        std::int32_t b;
+    };
+    for (int pass = 0; pass < 4; ++pass) {
+        const bool stillOnly = pass < 3;
+        const bool wantsSky = pass == 0;
+        const std::int32_t margin = pass <= 1 ? kPassReachTiles : (pass == 2 ? 1 : 0);
+        std::vector<Seed> seeds;
+        for (std::size_t i = 0; i < actors.size(); ++i) {
+            const sim::WardActor& a = actors[i];
+            if (!overheardStanding(a, talkId) || (stillOnly && !wardStandsStill(a))) {
+                continue;
+            }
+            for (std::size_t j = i + 1; j < actors.size(); ++j) {
+                const sim::WardActor& b = actors[j];
+                if (b.band != a.band || std::abs(b.x - a.x) > kOverheardPairTiles ||
+                    std::abs(b.y - a.y) > kOverheardPairTiles || !overheardStanding(b, talkId) ||
+                    (stillOnly && !wardStandsStill(b))) {
+                    continue;
+                }
+                seeds.push_back(
+                    Seed{std::max(std::abs(a.x - fromX), std::abs(a.y - fromY)), a.id, b.id});
+            }
+        }
+        std::sort(seeds.begin(), seeds.end(), [](const Seed& l, const Seed& r) {
+            if (l.apart != r.apart) {
+                return l.apart < r.apart;
+            }
+            return l.a != r.a ? l.a < r.a : l.b < r.b;
+        });
+        for (const Seed& seed : seeds) {
+            const sim::WardActor* a = people.byId(seed.a);
+            const sim::WardActor* b = people.byId(seed.b);
+            if (a == nullptr || b == nullptr) {
+                continue;
+            }
+            const std::int32_t band = a->band;
+            bool found = false;
+            std::int32_t bestApart = 0;
+            double bestSlack = 0.0;
+            OverheardStand best;
+            for (std::int32_t sy = std::max(a->y, b->y) - kOverheardEarshotTiles;
+                 sy <= std::min(a->y, b->y) + kOverheardEarshotTiles; ++sy) {
+                for (std::int32_t sx = std::max(a->x, b->x) - kOverheardEarshotTiles;
+                     sx <= std::min(a->x, b->x) + kOverheardEarshotTiles; ++sx) {
+                    // THE GROUND: the street, not the Gull (inside its walls
+                    // the channel hears the taproom), and clear.
+                    if (sim::gull::insideFootprint(sx, sy) || !tiles.standable(sx, sy, band)) {
+                        continue;
+                    }
+                    if (wantsSky && !underOpenSky(tiles, sx, sy, band)) {
+                        continue;
+                    }
+                    if (margin > 0 ? bodiesDrawnWithin(session, sx, sy, band, margin, -1)
+                                   : people.nearestTo(sx, sy, band, 0) != nullptr) {
+                        continue;
+                    }
+                    // THE CHANNEL'S OWN PICK from here: the first body in its
+                    // order with company, and that company.
+                    const std::vector<OverheardBody> near =
+                        overheardStreetBodies(people, &tiles, sx, sy, band, talkId);
+                    std::int32_t speakerId = -1;
+                    std::int32_t partnerId = -1;
+                    std::int32_t speakerApart = 0;
+                    for (std::size_t k = 0; k < near.size() && speakerId < 0; ++k) {
+                        const std::int32_t company = overheardCompany(near, k);
+                        if (company >= 0) {
+                            speakerId = near[k].speakerId;
+                            partnerId = company;
+                            speakerApart = near[k].apart;
+                        }
+                    }
+                    if (speakerId < 0) {
+                        continue;
+                    }
+                    const sim::WardActor* speaker = people.byId(speakerId - sim::kWardSpeakerIdBase);
+                    const sim::WardActor* partner = people.byId(partnerId - sim::kWardSpeakerIdBase);
+                    if (speaker == nullptr || partner == nullptr ||
+                        (stillOnly && (!wardStandsStill(*speaker) || !wardStandsStill(*partner)))) {
+                        continue;
+                    }
+                    // THE PICTURE, from the tile's centre (where the placement
+                    // puts the eye) to where the two are drawn.
+                    const std::int32_t eyeX = sim::q8_tile_centre(sx);
+                    const std::int32_t eyeY = sim::q8_tile_centre(sy);
+                    const std::pair<std::int32_t, std::int32_t> s = wardDrawnQ8(session, *speaker);
+                    const std::pair<std::int32_t, std::int32_t> p = wardDrawnQ8(session, *partner);
+                    const double sdx = tilesOf(s.first - eyeX);
+                    const double sdy = tilesOf(s.second - eyeY);
+                    const double pdx = tilesOf(p.first - eyeX);
+                    const double pdy = tilesOf(p.second - eyeY);
+                    const double nearer = std::min(std::hypot(sdx, sdy), std::hypot(pdx, pdy));
+                    if (nearer < 2.0) {
+                        continue;
+                    }
+                    const double leftOfPartner = wrapped(bearingOf(sdx, sdy) - bearingOf(pdx, pdy));
+                    if (leftOfPartner >= 0.0) {
+                        continue;  // the speaker would be the inner body, on the crosshair
+                    }
+                    const double opening = -leftOfPartner;
+                    const double figure = std::atan(0.8 / std::max(1.0, nearer));
+                    if (opening < figure + 2.0 * kDegree) {
+                        continue;  // stacked, or near enough that faceThePair walks
+                    }
+                    const double mdx = (sdx + pdx) / 2.0;
+                    const double mdy = (sdy + pdy) / 2.0;
+                    const double subjectHalf = opening / 2.0 + bodyHalfAngle(std::hypot(mdx, mdy));
+                    const double offLeast = std::max(kSubjectOffMin * halfFov, subjectHalf);
+                    const double offMost =
+                        std::min(kSubjectOffMax * halfFov, 0.92 * halfFov - subjectHalf);
+                    if (offMost - offLeast < 0.02 * halfFov) {
+                        continue;  // no turn of composeYawOffset's fits the group
+                    }
+                    const double beyond = wrapped(bearingOf(mdx, mdy) - bearingOf(sdx, sdy));
+                    const double widest = offMost + beyond;
+                    if (widest > halfFov - kEdgeMargin) {
+                        continue;
+                    }
+                    // THE LENS.
+                    if (!cameraSightClear(tiles, eyeX, eyeY, s.first, s.second, band, stillOnly) ||
+                        !cameraSightClear(tiles, eyeX, eyeY, p.first, p.second, band, false) ||
+                        bodyBetweenFrom(session, eyeX, eyeY, s.first, s.second, band, speakerId) ||
+                        bodyBetweenFrom(session, eyeX, eyeY, p.first, p.second, band, partnerId)) {
+                        continue;
+                    }
+                    const double slack = std::min(
+                        {opening - figure, offMost - offLeast, halfFov - kEdgeMargin - widest});
+                    if (!found || speakerApart < bestApart ||
+                        (speakerApart == bestApart && slack > bestSlack)) {
+                        found = true;
+                        bestApart = speakerApart;
+                        bestSlack = slack;
+                        best = OverheardStand{sx, sy, band, speakerId, partnerId};
+                    }
+                }
+            }
+            if (found) {
+                out = best;
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
 /// What `--voice=watch` owes. See runWatchRevealLine.
 constexpr std::int32_t kWatchRevealBeats = 4;
 
@@ -14349,20 +14587,38 @@ constexpr std::int32_t kWatchRevealBeats = 4;
         return landed;
     }
     if (ending == "overheard") {
-        // THE CROWD, STOOD IN. Hold at the spawn on the Tarwalk and listen;
-        // if the street in front of the Gull is thin, walk it with the
-        // smoke's own drift of the head, the way the pass ending does.
+        // THE CROWD, STOOD IN, BESIDE TWO PEOPLE TALKING. Not a blind walk
+        // any more (findOverheardStand says why): the crowd runs two seconds
+        // first, runStreetLine's own reason -- a session's bodies have not
+        // been ticked when the drive starts and every one of them reads as
+        // standing -- and then the drive finds a pair the channel will hear,
+        // stands where it hears them and listens. THE ONE PLACEMENT, the
+        // `--street` kind, said out loud: what the row says after it is the
+        // channel's own. A pair that breaks up before it speaks gets the
+        // search again, inside the same minute and a half the walk had.
+        gWatchHaltNote = " stand=none";
+        constexpr int kOverheardListenSteps = 3 * sim::kStepsPerSecond;
         bool heard = false;
-        for (int i = 0; i < kVoiceWaitSteps / 2 && !heard; ++i) {
-            session.step(sim::MoveInput{});
-            heard = voiceRowUpFrom(session, "overheard");
-        }
-        sim::MoveInput input;
-        input.forward = 1;
-        for (int i = 0; i < kVoiceWaitSteps / 2 && !heard; ++i) {
-            input.turn = (i / 90) % 4 == 3 ? 1 : 0;
-            session.step(input);
-            heard = voiceRowUpFrom(session, "overheard");
+        int spent = 0;
+        const auto listen = [&](int steps) {
+            for (int i = 0; i < steps && !heard && spent < kVoiceWaitSteps; ++i, ++spent) {
+                session.step(sim::MoveInput{});
+                heard = voiceRowUpFrom(session, "overheard");
+            }
+        };
+        listen(2 * sim::kStepsPerSecond);
+        while (!heard && spent < kVoiceWaitSteps) {
+            OverheardStand stand;
+            if (!findOverheardStand(session, stand)) {
+                listen(sim::kStepsPerSecond);  // the crowd shifts; ask again a second on
+                continue;
+            }
+            session.placeBodyAt(stand.x, stand.y, stand.band);
+            gWatchHaltNote = " stand=(" + std::to_string(stand.x) + "," + std::to_string(stand.y) +
+                             ",z" + std::to_string(stand.band) + ") pair=" +
+                             std::to_string(stand.speakerId - sim::kWardSpeakerIdBase) + "+" +
+                             std::to_string(stand.partnerId - sim::kWardSpeakerIdBase);
+            listen(kOverheardListenSteps);
         }
         if (!session.voice().current().name.empty()) {
             ++landed;  // 1. a pair stood together within earshot

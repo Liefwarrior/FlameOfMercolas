@@ -67,6 +67,7 @@
 // be hit, which is the STREET SENSES lane's declared population move and not
 // this one's.
 
+#include <cstddef>
 #include <cstdint>
 #include <string>
 #include <string_view>
@@ -79,6 +80,7 @@ namespace granadad::sim {
 class Tavern;
 class TileQuery;
 class WardPopulation;
+struct WardActor;
 }  // namespace granadad::sim
 
 namespace granadad::render {
@@ -154,6 +156,10 @@ inline constexpr std::int32_t kPassReachTiles = 2;
 inline constexpr std::int32_t kOverheardCooldownSteps = 1440;
 inline constexpr std::int32_t kOverheardSpeakerCooldownSteps = 5400;
 inline constexpr std::int32_t kOverheardEarshotTiles = 6;
+/// And "together" is that Chebyshev 1: the next tile over, the diagonal
+/// included. Named because two callers ask it -- the channel, and the
+/// `--voice=overheard` drive that has to find a pair the channel will hear.
+inline constexpr std::int32_t kOverheardPairTiles = 1;
 
 /// REACT. Four seconds between witnesses' lines -- enough to read one -- and
 /// fifteen before the same witness says another thing about the same fight.
@@ -236,6 +242,44 @@ inline constexpr std::size_t kVoiceSpeakerMemory = 64;
 /// names a victim nobody can name (empty) comes back empty, so the caller
 /// walks on to a row that does not.
 [[nodiscard]] std::string fillVictim(std::string_view row, std::string_view victim);
+
+/// OVERHEARD, THE STREET'S HALF OF THE RULE, out where a caller can ask it.
+/// StreetVoice::stepOverheard takes its street bodies from here, and so does
+/// the `--voice=overheard` drive when it looks for a pair to stand by -- one
+/// rule, two callers. A drive that re-derived it would agree with itself and
+/// not with the street (the pickVoiceLine test-twin lesson).
+///
+/// A ward body the channel hears at all: a speaker -- a living person on the
+/// board, not running for its life, not the one you're talking to -- that is
+/// STANDING, did not move this tick. Three walkers in file are not a
+/// conversation.
+[[nodiscard]] bool overheardStanding(const sim::WardActor& actor,
+                                     std::int32_t wardTalkId) noexcept;
+
+/// One street body in earshot: its lifted id (kWardSpeakerIdBase + ward id),
+/// its tile, and Chebyshev tiles from the listener.
+struct OverheardBody {
+    std::int32_t speakerId = -1;
+    std::int32_t x = 0;
+    std::int32_t y = 0;
+    std::int32_t apart = 0;
+    const sim::WardActor* ward = nullptr;
+};
+
+/// Every street body a listener on (tileX, tileY, band) can overhear:
+/// overheardStanding, on the listener's band, inside kOverheardEarshotTiles
+/// and on a sight line over the tiles (null tiles, every line open). Nearest
+/// first, the lowest id at a tie -- the order the channel takes them in.
+[[nodiscard]] std::vector<OverheardBody> overheardStreetBodies(const sim::WardPopulation& people,
+                                                               const sim::TileQuery* tiles,
+                                                               std::int32_t tileX, std::int32_t tileY,
+                                                               std::int32_t band,
+                                                               std::int32_t wardTalkId);
+
+/// Who bodies[index] stands together with: the first OTHER body of `bodies`,
+/// in its order, inside kOverheardPairTiles. Its lifted id, or -1.
+[[nodiscard]] std::int32_t overheardCompany(const std::vector<OverheardBody>& bodies,
+                                            std::size_t index) noexcept;
 
 // ---------------------------------------------------------------------------
 // the emitter
