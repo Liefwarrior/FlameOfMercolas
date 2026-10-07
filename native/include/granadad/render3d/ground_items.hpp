@@ -53,4 +53,19 @@ namespace granadad::render3d {
     float maxDistance = 40.0F, const render::LampGlow* pool = nullptr,
     const std::map<std::uint64_t, render::Rgb>* spill = nullptr);
 
+/// THE TABLE LANTERN'S GLOW (the 2026-10-06 director: at 22:00 the Gull's
+/// lantern was dark while the same model on the street wall glowed). A hung
+/// lantern's halo is placed with it (static_pieces.cpp, lampPieces: the
+/// flame quad off the baked lamp list); a thing on a tile never went near
+/// that path. So: one flame halo (PieceRole::Flame, kDrawHalo) per thing
+/// whose row is self-lit and names its glass, centred in the glass, sized
+/// kLanternFlameWidth in proportion to the hung lantern's scale, by the hour
+/// as every lamp's halo is (flameGlowByHour) and faced to `view` as every
+/// lamp's halo is (faceHaloToEye). Separate from groundItemInstances so
+/// that list stays Item pieces only. Empty when the hour leaves the halo
+/// no alpha at all, and with no Flame row.
+[[nodiscard]] std::vector<StaticInstance> groundItemHalos(const render::Session& session,
+                                                          const StaticCatalogue& catalogue,
+                                                          const render::Camera& view, float maxDistance = 40.0F);
+
 }  // namespace granadad::render3d

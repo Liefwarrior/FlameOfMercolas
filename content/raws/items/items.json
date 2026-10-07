@@ -9,88 +9,107 @@
     "dr is flat damage reduction while worn. heat is what the Watch adds per unit when it finds it on you.",
     "contraband names the sack good a row is the face for; its count is the sack's, never the Kit's.",
     "stands put a thing on a tile before anybody moves it; owned means taking it is theft (THEIRS on the crosshair).",
-    "carried is what a roster body has on it when it dies: by name first, then by role."
+    "carried is what a roster body has on it when it dies: by name first, then by role.",
+    "drawnCm is the span a thing is DRAWN over when it lies on a tile, centimetres above the floor: the 3D items table's lift, scale and pitch over its mesh (raws/world3d/docks-pieces.json), pinned against the meshes in test_kit_page. The crosshair names a thing, and E takes it, only when the reticle is on that span (Session::groundItemUnderReticle). A row without one is a hand's thing at the feet, 0 to 30."
   ],
   "items": [
     {
       "id": "cudgel", "name": "CUDGEL", "drams": 40, "royals": 6, "slot": "hand", "class": "blunt",
       "damage": [7, 9],
+      "drawnCm": [2, 8],
       "desc": "OAK, HANDLE-WORN. EVERY HOUSE KEEPS ONE UNDER THE BAR."
     },
     {
       "id": "the_evictor", "name": "THE EVICTOR", "drams": 44, "royals": 30, "slot": "hand", "class": "evictor",
       "damage": [7, 9],
+      "drawnCm": [1, 27],
       "desc": "A HEADED CUDGEL MADE FOR PUTTING A MAN OUT, NOT OPEN. THE FLAME'S OWN GIFT."
     },
     {
       "id": "mace", "name": "MACE", "drams": 48, "royals": 22, "slot": "hand", "class": "blunt",
       "damage": [7, 9],
+      "drawnCm": [1, 15],
       "desc": "AN IRON HEAD ON AN ASH HAFT. A WATCHMAN'S WHOLE ARGUMENT."
     },
     {
       "id": "bottle", "name": "BOTTLE", "drams": 5, "royals": 1, "slot": "hand", "class": "improvised",
       "damage": [5, 7],
+      "drawnCm": [0, 53],
       "desc": "CORKED AND HALF FULL. SWUNG, IT IS SOMETHING."
     },
     {
       "id": "knife", "name": "KNIFE", "drams": 8, "royals": 4, "slot": "hand", "class": "edged",
       "damage": [11, 13],
+      "drawnCm": [-4, 9],
       "desc": "A GUTTING KNIFE OFF THE STRAND. EVERY DOCKER OWNS ONE. IT IS NOT A BRAWL WEAPON."
     },
     {
       "id": "dagger", "name": "DAGGER", "drams": 12, "royals": 14, "slot": "hand", "class": "edged",
       "damage": [11, 13],
+      "drawnCm": [-2, 13],
       "desc": "A HAND'S LENGTH OF STEEL WITH A GUARD ON IT. THE ROOFS CARRY THESE."
     },
     {
       "id": "cutlass", "name": "CUTLASS", "drams": 36, "royals": 40, "slot": "hand", "class": "edged",
       "damage": [11, 13],
+      "drawnCm": [-6, 18],
       "desc": "SHORT AND HEAVY. THE KESTREL'S CREW WEAR THEM ASHORE AND THE WATCH LETS IT GO."
     },
     {
       "id": "boat_hook", "name": "BOAT-HOOK", "drams": 30, "royals": 5, "slot": "hand", "class": "edged",
       "damage": [11, 13],
+      "drawnCm": [2, 8],
       "desc": "AN IRON HOOK ON A POLE. THE QUAY'S OWN TOOL, AND IT OPENS A MAN LIKE ONE."
     },
     {
       "id": "coat", "name": "COAT", "drams": 60, "royals": 12, "slot": "body", "class": "fists", "dr": 2,
+      "drawnCm": [0, 44],
       "desc": "OILED WOOL, HEAVY WITH RAIN. IT TURNS THE WEATHER AND A LITTLE ELSE."
     },
     {
       "id": "hood", "name": "HOOD", "drams": 12, "royals": 3, "slot": "head", "class": "fists", "dr": 1,
+      "drawnCm": [0, 24],
       "desc": "TARRED CANVAS OVER THE EARS. WHO YOU ARE STAYS UNDER IT."
     },
     {
       "id": "boots", "name": "BOOTS", "drams": 30, "royals": 8, "slot": "feet", "class": "fists", "dr": 1,
+      "drawnCm": [0, 29],
       "desc": "SEA BOOTS, NEVER QUITE DRY. THE QUAY EATS SHOE LEATHER."
     },
     {
       "id": "purse", "name": "PURSE", "drams": 2, "royals": 2, "slot": "trinket", "class": "fists",
+      "drawnCm": [0, 17],
       "desc": "LEATHER, DRAWSTRING. WHAT A CUTPURSE IS AFTER. THE COIN IS COIN AND WEIGHS NOTHING."
     },
     {
       "id": "lantern", "name": "LANTERN", "drams": 30, "royals": 9, "slot": "none", "class": "fists",
+      "drawnCm": [100, 135],
       "desc": "HORN-PANED, HALF A CANDLE IN IT. THE DOCKS GO DARK EARLY."
     },
     {
       "id": "rope", "name": "ROPE", "drams": 48, "royals": 6, "slot": "none", "class": "fists",
+      "drawnCm": [0, 32],
       "desc": "TEN FATHOMS OF TARRED LINE. HEAVY, AND ALWAYS WANTED BY SOMEBODY."
     },
     {
       "id": "picks", "name": "PICKS", "drams": 1, "royals": 2, "slot": "none", "class": "fists",
+      "drawnCm": [1, 12],
       "desc": "A BENT WIRE AND A TENSION BAR. FINCH SELLS THEM BY THE SET AND ASKS NOTHING."
     },
     {
       "id": "letter", "name": "LETTER", "drams": 1, "royals": 0, "slot": "none", "class": "fists",
+      "drawnCm": [1, 3],
       "desc": "FOLDED PAPER. SOMEBODY'S BUSINESS, AND NOW YOURS."
     },
     {
       "id": "bale", "name": "BALE", "drams": 0, "royals": 0, "slot": "none", "class": "fists",
+      "drawnCm": [4, 71],
       "desc": "THREE OF SOMETHING SEWN INTO SACKING. THE SNUG'S OWN, UNTIL IT IS ON YOUR SHOULDER."
     },
     {
       "id": "strongbox", "name": "STRONGBOX", "drams": 400, "royals": 0, "slot": "none", "class": "fists",
       "fixed": true,
+      "drawnCm": [-19, 43],
       "desc": "IRON-STRAPPED, AT THE BED FOOT. IT DOES NOT TRAVEL. WHAT IS IN IT MIGHT."
     },
     {

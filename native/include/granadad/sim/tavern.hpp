@@ -1839,6 +1839,12 @@ public:
     /// Deed::Robbed, the house's own offence -- crouched or not, the STANCE
     /// only moves who notices (stealth.hpp), never whether it is a crime.
     StealResult takeGroundItem();
+    /// TAKE THAT ONE: the ground entry at `index` (the one the crosshair is
+    /// on, Session::groundItemUnderReticle), under exactly the same reach
+    /// -- kReachQ8 Manhattan from the player, the player's own band -- and
+    /// the same refusals. TooFar for an index out of the list or out of
+    /// reach. The bare takeGroundItem() is this on groundItemInReach().
+    StealResult takeGroundItem(std::int32_t index);
     /// DROP one unit of a Kit row at the feet. A worn row is bared first.
     StealResult dropItem(std::int32_t index);
     /// WEAR a Kit row in its own slot, or BARE it if it is worn -- the one

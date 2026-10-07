@@ -1399,6 +1399,7 @@ Reply DialogueDirector::choose(std::size_t index) {
             // sociable and is turned in later.
             noteAlmsGiven();
             out = reply(TopicKind::BuyDrinkFor, upper(speaker_.name) + " TAKES THE DRINK.");
+            out.report = true;
             out.coinDelta = -topic.payload;
             break;
         }
@@ -1413,6 +1414,7 @@ Reply DialogueDirector::choose(std::size_t index) {
                 recordDeed(Deed::Robbed);
                 out = reply(TopicKind::PickPocket,
                             upper(speaker_.name) + " CATCHES YOUR WRIST.");
+                out.report = true;
                 out.offence = true;
                 out.closes = true;
                 out.crime = Crime::Lift;
@@ -1820,6 +1822,7 @@ Reply DialogueDirector::choose(std::size_t index) {
                             upper(speaker_.name) + " LOOKS AT YOU AND WAITS. (" +
                                 std::to_string(menace) + " AGAINST " + std::to_string(nerve) +
                                 ")");
+                out.report = true;
                 out.offence = true;
                 out.ok = false;
                 out.crime = Crime::Extort;

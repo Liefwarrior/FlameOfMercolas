@@ -307,3 +307,64 @@ Not in the set, by scope: a real drive that binds two craftings (so a loaded, un
 by `test_hud_diet.cpp` rather than photographed), the keys page's rebind hint wrapping backwards at
 1280x720 and up (older than this pass), and the Character tile's row numbers reading like quick-slot
 numbers on the carried rows.
+
+## The rope-toast fix round, 2026-10-06
+
+The lane came back 6/6/6. Three critics, one union of findings, all of them fair. What moved:
+
+**Leaving stacked the report.** Buy Gerta a drink, say goodbye, and `GERTA SALTCOTTE TAKES THE DRINK.`
+sat on the alert row over `GERTA SALTCOTTE: MIND THE STEP...` on the voice row. Two things from one
+mouth. The goodbye stood the row down only when it started with `NAME: `, and a report has no colon.
+Now the row remembers whose it is (`Session::sayAs`, `messageMouth_`), and both goodbyes -- LEAVE off
+the list and the back key -- stand down whatever is theirs, voice or report. No text gets read to
+decide it.
+
+**The report is a flag now, not a guess.** The director knows when it writes a report: `TAKES THE
+DRINK`, `CATCHES YOUR WRIST`, `LOOKS AT YOU AND WAITS`. It says so on the reply (`Reply::report`) and
+the session's one helper reads it at all four reply sites, forge and haggle included. The text
+heuristic is gone, so a rumour Father Maell tells about Father Maell keeps its `NAME: `, and a name
+followed by `!` never mattered in the first place.
+
+**The table lantern.** It stands on the barrel the placer hash-picked onto (150,74), foot on the head
+within 2 cm, pinned. Its cord is trimmed off at load (`trimBand` / `trimUv` on the items row, the
+glass cut's own shape, its own cached model), so the hung lantern keeps the cord it hangs by and the
+one on the table stops pointing a fifth of a metre into nothing. After dark it burns like the hung
+ones: a flame halo of its own (`groundItemHalos`, the hung halo's size in proportion, by the hour, faced
+to the eye by the same rule), hot glass, and the brass capped under the glass. Up close the halo
+fades the way every lamp's does, so the glass carries it at arm's length and the glow reads from
+across the room. No pool on the boards from it yet; the sim's house lights don't know a lantern on a
+table, and that is a sim change for another day.
+
+**The crosshair only names what it's on.** Facing west at the coil, eye on a stall block eleven tiles
+off, the prompt read `ROPE 48DR / E - TAKE` with the coil under the frame. The read was the nearest
+thing in reach, wherever the eye was. Now it's the thing the reticle is within 25 degrees of
+(`Session::groundItemUnderReticle`), measured to the span the thing is actually drawn over (`drawnCm`
+in the items raws, pinned against every mesh). E takes that thing and nothing else, so the press still
+does what the prompt said. A coil at your feet means looking at your feet. The kit line does now.
+
+**The items-size case is honest.** The 3 cm floor on height failed the letter, which lies flat by
+design. The floor is on the longest span now (a thing, not a speck), and where the art tree exists
+every row gets measured or the case fails. It only says `skipped` when the tree really isn't there,
+which is the docker half.
+
+**Left as is.** The "giant plank" on the Tarwalk is still the map's own 2x2 trudgeon_wood stall block
+at (140-141, 62-63), dressed by the timber wall rule as a solid 3 m box, one of four along y=62-63 at
+x=116/124/132/140 (the gazetteer's Eel-Pots night stalls), the oak 2x2s along y=64-68 the same family.
+Dressing a stall needs a cell test the mesher and the placer both read and an export the pack doesn't
+carry. Owner's call. The coil still reads as a coil from standing height and a stool cap at fov 40
+from a foot away; the packs carry one rope knot and one straight rope, so it stays.
+
+Reviewer lines. All `granadad.exe --smoke=0 --hold --width=1280 --height=720 --scale=1 <line>
+--screenshot=<frame>`, default settle, on a hidden desktop.
+
+| what | line | look for |
+| --- | --- | --- |
+| a drink, then goodbye: Gerta | `--time=20 --spawn=152,73,19 --yaw=0 --talk --topic=5,8` | her goodbye on the voice row, the report gone off the alert row |
+| a drink, then goodbye: Cull | `--time=23 --spawn=151,68,19 --yaw=90 --talk --topic=5,7` | the same, a second mouth |
+| a drink, no goodbye | `--time=20 --spawn=152,73,19 --yaw=0 --talk --topic=5` | `GERTA SALTCOTTE TAKES THE DRINK.` said once, no name in front |
+| the Gull lantern by day, close | `--time=14 --spawn=150,76,19 --yaw=0` | on the barrel, ring up, no cord, dark glass |
+| the same at 22:00 | `--time=22 --spawn=150,76,19 --yaw=0` | hot glass, the brass under it, the halo |
+| from the side, by day | `--time=14 --spawn=148,74,19 --yaw=90 --fov=40` | the foot on the barrel head |
+| from the side, 22:00 | `--time=22 --spawn=148,74,19 --yaw=90 --fov=40` | lit, no cord over the ring |
+| the Tarwalk facing west from the coil | `--time=14 --spawn=153,63,19 --yaw=270` | no `ROPE` on the reticle |
+| the same, eye on the coil | `--time=14 --spawn=153,63,19 --yaw=270 --pitch=-35` | `ROPE  48DR` over `E - TAKE` |

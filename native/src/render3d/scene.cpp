@@ -333,6 +333,16 @@ std::uint64_t sceneHash(const SceneDescription& scene) noexcept {
             h.mixF32(piece.glassU1);
             h.mixF32(piece.glassV0);
             h.mixF32(piece.glassV1);
+            // And the trim, where there is one: a ref without one hashes
+            // exactly as it did before the trim existed.
+            if (piece.cutsTrim()) {
+                h.mixF32(piece.trimBandLo);
+                h.mixF32(piece.trimBandHi);
+                h.mixF32(piece.trimU0);
+                h.mixF32(piece.trimU1);
+                h.mixF32(piece.trimV0);
+                h.mixF32(piece.trimV1);
+            }
         }
         h.mixF32(piece.squareHalf);
     }

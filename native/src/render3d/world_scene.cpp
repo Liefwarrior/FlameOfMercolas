@@ -199,13 +199,13 @@ constexpr float kSmallHoursEase = 0.75F;
     return t * t * (3.0F - 2.0F * t);
 }
 
-/// THE LANTERN'S METAL AFTER DARK: the cap, the cage and the base are lit
-/// like everything else now -- the sky's ambient plus the lamp's own pool
-/// -- and capped at this, so the glass (below) out-values the cap at any
-/// range. They drew at their full catalogue tint, brighter than the glass,
-/// which was the critic's first note on the halo: a lamp whose dullest
-/// part was its light. By day they keep the full tint they always had.
-constexpr float kLampMetalNightCap = 0.5F;
+/// THE LANTERN'S METAL AFTER DARK (kLampMetalNightCap, world_scene.hpp):
+/// the cap, the cage and the base are lit like everything else now -- the
+/// sky's ambient plus the lamp's own pool -- and capped, so the glass
+/// (below) out-values the cap at any range. They drew at their full
+/// catalogue tint, brighter than the glass, which was the critic's first
+/// note on the halo: a lamp whose dullest part was its light. By day they
+/// keep the full tint they always had.
 
 /// THE CRITIC'S THIRD: how far a lit hung window's own frame (WindowTimber)
 /// leans from its ambient tint toward the law's own warm one -- mixed, not
@@ -801,10 +801,7 @@ void WorldScene::relightPieces(const ChunkLighting& lighting) {
             // (SkyState::haloScale, 1 in still air).
             Rgba8 own = p.instance.tint;
             if (p.role == PieceRole::Flame) {
-                const float glowAlpha = static_cast<float>(own.a) * (kFlameDayAlpha + (1.0F - kFlameDayAlpha) *
-                                                                                      (1.0F - sky.daylight)) *
-                                        sky.haloScale;
-                own.a = static_cast<std::uint8_t>(std::clamp(glowAlpha, 0.0F, 255.0F) + 0.5F);
+                own = flameGlowByHour(own, sky);
             }
             // Only a lamp whose glass the catalogue cuts out (StaticPieceRef
             // glassBand, applyGlass) has a glass to out-value its metal: a
@@ -1133,50 +1130,8 @@ void WorldScene::refresh(SceneDescription& scene, const render::Camera& camera, 
                 // That is why the fan's alpha is zero at the rim
                 // (haloFanMesh): the cut falls where there is nothing left
                 // to cut. Two-sided, so which way along the line is all
-                // one.
-                const PieceSpec& spec = specs[p.instance.piece];
-                const float dx = eye.x - p.anchor.x;
-                const float dy = eye.y - p.anchor.y;
-                const float dz = eye.z - p.anchor.z;
-                const float flat = std::sqrt(dx * dx + dz * dz);
-                const float len = std::sqrt(flat * flat + dy * dy);
-                // THE HALO UP CLOSE: its alpha by the eye's distance.
-                const float nearT = std::clamp((len - kHaloNearGone) / (kHaloNearFull - kHaloNearGone),
-                                               0.0F, 1.0F);
-                const float near = nearT * nearT * nearT;
-                const float fade = (kHaloNearFloor + (1.0F - kHaloNearFloor) * near) *
-                                   std::exp(-kHaloFogShare * skyState.veil * len);
-                const auto faded = [fade](Rgba8 c) {
-                    c.a = static_cast<std::uint8_t>(std::clamp(static_cast<float>(c.a) * fade, 0.0F, 255.0F) +
-                                                    0.5F);
-                    return c;
-                };
-                at.tint = faded(at.tint);
-                at.tint2 = faded(at.tint2);
-                at.tint3 = faded(at.tint3);
-                at.tint4 = faded(at.tint4);
-                const float yaw = flat > 1.0e-3F ? std::atan2(-dx, dz) : 0.0F;
-                // +Z pitched by `pitch` is (0, -sin, cos): positive tips the
-                // normal down, toward an eye below the anchor.
-                const float pitch = std::atan2(-dy, flat);
-                const float w = spec.width * at.scale.x;
-                const float h = spec.height * at.scale.y;
-                const float c = std::cos(yaw);
-                const float s = std::sin(yaw);
-                const float cp = std::cos(pitch);
-                const float sp = std::sin(pitch);
-                // The float toward the eye, as a fraction of the way there.
-                const float forward =
-                    len > 1.0e-3F ? std::min(kHaloForward, kHaloForwardCap * len) / len : 0.0F;
-                const Vec3 centre{p.anchor.x + dx * forward, p.anchor.y + dy * forward,
-                                  p.anchor.z + dz * forward};
-                at.yaw = yaw < 0.0F ? yaw + 2.0F * kPi : yaw;
-                at.pitch = pitch;
-                // The half-height step along the quad's own +Y, which the
-                // pitch takes to (0, cos, sin) and the yaw then turns.
-                at.position = Vec3{centre.x - 0.5F * w * c + 0.5F * h * sp * s,
-                                   centre.y - 0.5F * h * cp + spec.lift,
-                                   centre.z - 0.5F * w * s - 0.5F * h * sp * c};
+                // one. (faceHaloToEye, shared with the table lantern.)
+                faceHaloToEye(at, specs[p.instance.piece], p.anchor, eye, skyState.veil);
             }
             scene.statics.push_back(at);
             ++stats_.piecesInstanced;
@@ -1186,6 +1141,54 @@ void WorldScene::refresh(SceneDescription& scene, const render::Camera& camera, 
     }
 
     scene.clearColour = rgba(skyState.skyHorizon);
+}
+
+Rgba8 flameGlowByHour(Rgba8 own, const render::SkyState& sky) noexcept {
+    // Full at night, kFlameDayAlpha of itself at noon, the wind's share off.
+    const float glowAlpha = static_cast<float>(own.a) * (kFlameDayAlpha + (1.0F - kFlameDayAlpha) *
+                                                                          (1.0F - sky.daylight)) *
+                            sky.haloScale;
+    own.a = static_cast<std::uint8_t>(std::clamp(glowAlpha, 0.0F, 255.0F) + 0.5F);
+    return own;
+}
+
+void faceHaloToEye(StaticInstance& at, const PieceSpec& spec, Vec3 anchor, Vec3 eye, float veil) noexcept {
+    const float dx = eye.x - anchor.x;
+    const float dy = eye.y - anchor.y;
+    const float dz = eye.z - anchor.z;
+    const float flat = std::sqrt(dx * dx + dz * dz);
+    const float len = std::sqrt(flat * flat + dy * dy);
+    // THE HALO UP CLOSE: its alpha by the eye's distance.
+    const float nearT = std::clamp((len - kHaloNearGone) / (kHaloNearFull - kHaloNearGone), 0.0F, 1.0F);
+    const float near = nearT * nearT * nearT;
+    const float fade = (kHaloNearFloor + (1.0F - kHaloNearFloor) * near) * std::exp(-kHaloFogShare * veil * len);
+    const auto faded = [fade](Rgba8 c) {
+        c.a = static_cast<std::uint8_t>(std::clamp(static_cast<float>(c.a) * fade, 0.0F, 255.0F) + 0.5F);
+        return c;
+    };
+    at.tint = faded(at.tint);
+    at.tint2 = faded(at.tint2);
+    at.tint3 = faded(at.tint3);
+    at.tint4 = faded(at.tint4);
+    const float yaw = flat > 1.0e-3F ? std::atan2(-dx, dz) : 0.0F;
+    // +Z pitched by `pitch` is (0, -sin, cos): positive tips the normal
+    // down, toward an eye below the anchor.
+    const float pitch = std::atan2(-dy, flat);
+    const float w = spec.width * at.scale.x;
+    const float h = spec.height * at.scale.y;
+    const float c = std::cos(yaw);
+    const float s = std::sin(yaw);
+    const float cp = std::cos(pitch);
+    const float sp = std::sin(pitch);
+    // The float toward the eye, as a fraction of the way there.
+    const float forward = len > 1.0e-3F ? std::min(kHaloForward, kHaloForwardCap * len) / len : 0.0F;
+    const Vec3 centre{anchor.x + dx * forward, anchor.y + dy * forward, anchor.z + dz * forward};
+    at.yaw = yaw < 0.0F ? yaw + 2.0F * kPi : yaw;
+    at.pitch = pitch;
+    // The half-height step along the quad's own +Y, which the pitch takes
+    // to (0, cos, sin) and the yaw then turns.
+    at.position = Vec3{centre.x - 0.5F * w * c + 0.5F * h * sp * s, centre.y - 0.5F * h * cp + spec.lift,
+                       centre.z - 0.5F * w * s - 0.5F * h * sp * c};
 }
 
 }  // namespace granadad::render3d

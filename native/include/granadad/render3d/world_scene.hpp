@@ -89,6 +89,25 @@ inline constexpr float kSkyHeight = 220.0F;
 [[nodiscard]] std::size_t veilShellCount() noexcept;
 [[nodiscard]] float veilShellRadius(std::size_t shell) noexcept;
 
+/// THE LANTERN'S METAL AFTER DARK (world_scene.cpp says why): the light a
+/// lamp's cap, cage and base are capped at at night, so its glass out-values
+/// them. The hung lanterns' relight and the table lantern (ground_items.cpp)
+/// read the one number.
+inline constexpr float kLampMetalNightCap = 0.5F;
+
+/// A FLAME'S HALO BY THE HOUR: `own` with its alpha full at night, a small
+/// share of itself at noon, and the wind's share off it
+/// (SkyState::haloScale, 1 in still air). One rule for every lamp's halo
+/// the world places and for a lantern lying on a table.
+[[nodiscard]] Rgba8 flameGlowByHour(Rgba8 own, const render::SkyState& sky) noexcept;
+
+/// A HALO FACED TO THE EYE: `at` (a kDrawHalo instance of `spec`, the flame
+/// quad, at its own scale) turned about `anchor` -- the flame -- to face
+/// `eye` in three dimensions, floated a little toward it, and faded by the
+/// eye's distance and the fog (`veil`, SkyState::veil). The world scene's
+/// own billboard rule, shared with the table lantern's halo.
+void faceHaloToEye(StaticInstance& at, const PieceSpec& spec, Vec3 anchor, Vec3 eye, float veil) noexcept;
+
 struct WorldSceneParams {
     /// Seconds since midnight, from the session's clock.
     int timeOfDaySeconds = 12 * 3600;

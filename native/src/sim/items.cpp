@@ -267,6 +267,19 @@ ItemRegistry ItemRegistry::fromJson(std::string_view json) {
         item.contraband = stringOr(node, "contraband", "");
         item.desc = stringOr(node, "desc", "");
         item.fixed = boolOr(node, "fixed", false);
+        // The span it is drawn over, for the crosshair: two whole
+        // centimetres, low before high, or the default stands.
+        const auto drawn = node.find("drawnCm");
+        if (drawn != node.end()) {
+            if (!drawn->is_array() || drawn->size() != 2 || !(*drawn)[0].is_number_integer() ||
+                !(*drawn)[1].is_number_integer() ||
+                (*drawn)[0].get<std::int32_t>() >= (*drawn)[1].get<std::int32_t>()) {
+                out.warnings_.push_back("drawnCm on " + item.id + " is not [low, high] in centimetres");
+            } else {
+                item.drawnLoCm = (*drawn)[0].get<std::int32_t>();
+                item.drawnHiCm = (*drawn)[1].get<std::int32_t>();
+            }
+        }
         if (item.drams < 0 || item.royals < 0 || item.dr < 0 || item.heat < 0) {
             out.warnings_.push_back("negative number on " + item.id);
             continue;

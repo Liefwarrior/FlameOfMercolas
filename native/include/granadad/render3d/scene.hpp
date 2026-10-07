@@ -320,6 +320,22 @@ struct StaticPieceRef {
 
     [[nodiscard]] bool cutsGlass() const noexcept { return glassBandHi > glassBandLo; }
 
+    /// THE TRIM (the 2026-10-06 director's bail cord). The same two keys
+    /// as the glass -- `trimBand` in the model's own local Y, `trimUv` the
+    /// atlas patch -- name triangles the adapter DROPS at load: a hung
+    /// lantern's cord is the thing it hangs by, and stood on a table the
+    /// same cord pointed a fifth of a metre straight up into nothing. A
+    /// trimmed file is its own loaded model (the hung lantern keeps its
+    /// cord). Zero everywhere means no trim.
+    float trimBandLo = 0.0F;
+    float trimBandHi = 0.0F;
+    float trimU0 = 0.0F;
+    float trimU1 = 0.0F;
+    float trimV0 = 0.0F;
+    float trimV1 = 0.0F;
+
+    [[nodiscard]] bool cutsTrim() const noexcept { return trimBandHi > trimBandLo; }
+
     /// Over zero: the adapter squares the mesh's shaft at load
     /// (shaft_square.hpp), this being half its section in the mesh's own
     /// metres. A squared shaft is its own loaded model; the same file may

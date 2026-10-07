@@ -820,6 +820,54 @@ struct Backend::Impl {
         }
     }
 
+    /// THE TRIM (scene.hpp StaticPieceRef), once, at load: a triangle whose
+    /// EVERY vertex lies in the trim band and on the trim patch is dropped,
+    /// the glass cut's own test, so a ring that only touches the band stays
+    /// whole. A mesh the trim would empty is left as it was: a trim that
+    /// names a whole file is a catalogue mistake, not a reason to draw
+    /// nothing.
+    static void trimModel(Model& m, const StaticPieceRef& ref) {
+        for (int i = 0; i < m.meshCount; ++i) {
+            const Mesh& src = m.meshes[i];
+            if (src.vertices == nullptr || src.triangleCount <= 0) {
+                continue;
+            }
+            const auto inTrim = [&src, &ref](int tri) {
+                for (int corner = 0; corner < 3; ++corner) {
+                    const int slot = tri * 3 + corner;
+                    const int from = src.indices != nullptr ? static_cast<int>(src.indices[slot]) : slot;
+                    const float y = src.vertices[from * 3 + 1];
+                    if (y < ref.trimBandLo || y > ref.trimBandHi) {
+                        return false;
+                    }
+                    if (src.texcoords != nullptr) {
+                        const float u = src.texcoords[from * 2];
+                        const float v = src.texcoords[from * 2 + 1];
+                        if (u < ref.trimU0 || u > ref.trimU1 || v < ref.trimV0 || v > ref.trimV1) {
+                            return false;
+                        }
+                    }
+                }
+                return true;
+            };
+            int dropped = 0;
+            for (int tri = 0; tri < src.triangleCount; ++tri) {
+                dropped += inTrim(tri) ? 1 : 0;
+            }
+            if (dropped == 0 || dropped == src.triangleCount) {
+                continue;
+            }
+            Mesh rest = rebuiltTriangles(
+                src, [&inTrim](int tri) { return !inTrim(tri); },
+                [](float) { return Rgba8{255, 255, 255, 255}; }, false);
+            if (rest.triangleCount == 0) {
+                continue;
+            }
+            UnloadMesh(m.meshes[i]);
+            m.meshes[i] = rest;
+        }
+    }
+
     /// S LANE. The model for a piece file, loading it the first time it is
     /// asked for. Null when there is none: the caller draws nothing.
     StaticModel* staticFor(const StaticPieceRef& ref) {
@@ -829,8 +877,14 @@ struct Backend::Impl {
             return nullptr;
         }
         // A squared shaft is its own model: the same file may dress a
-        // hitching post as it comes.
-        const std::string key = squareHalf > 0.0F ? file + "#square" : file;
+        // hitching post as it comes. So is a trimmed one: the table lantern
+        // drops the cord the hung lantern hangs by.
+        std::string key = squareHalf > 0.0F ? file + "#square" : file;
+        if (ref.cutsTrim()) {
+            key += "#trim" + std::to_string(ref.trimBandLo) + "," + std::to_string(ref.trimBandHi) + "," +
+                   std::to_string(ref.trimU0) + "," + std::to_string(ref.trimU1) + "," +
+                   std::to_string(ref.trimV0) + "," + std::to_string(ref.trimV1);
+        }
         auto found = statics.find(key);
         if (found != statics.end()) {
             // Two rows can share one file (the hung lantern and the kit's
@@ -864,6 +918,9 @@ struct Backend::Impl {
                             }
                         }
                     }
+                }
+                if (ref.cutsTrim()) {
+                    trimModel(candidate->model, ref);
                 }
                 candidate->baseColour.resize(static_cast<std::size_t>(candidate->model.materialCount));
                 for (int m = 0; m < candidate->model.materialCount; ++m) {

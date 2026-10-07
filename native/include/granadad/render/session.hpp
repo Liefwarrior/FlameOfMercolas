@@ -1911,15 +1911,28 @@ public:
 
     /// The last thing that happened, for the HUD. Fades after a few seconds.
     [[nodiscard]] const std::string& lastMessage() const noexcept { return message_; }
+    /// Movement steps the alert row's own line has left on its clock: four
+    /// seconds from a say(), zero once it ran out or stood down (a goodbye
+    /// stands its speaker's line down, endTalk). Exposed so a test can pin
+    /// the stand-down itself, not a fade a bouncer's warning can hold up.
+    [[nodiscard]] std::int32_t messageStepsLeft() const noexcept { return messageSteps_; }
     /// VOICE LANE. The one voice channel: what the street said without the
     /// talk key, as the HUD's voice row draws it and the summary reports it.
     [[nodiscard]] const StreetVoice& voice() const noexcept { return voice_; }
     /// VOICE LANE. The name the alert row is quoting while it is on the
     /// frame at all ("Watchman Cull" under his halt, its clock or its fade
     /// still running), or empty.
+    ///
+    /// A line the session put up in somebody's name (sayAs) answers with
+    /// that name whether it was their voice or the director's report of
+    /// their deed -- "GERTA SALTCOTTE TAKES THE DRINK." is Gerta's on the
+    /// row as much as her greeting is. Only a sim line said whole falls
+    /// back to the "<name>: " prefix it carries.
     [[nodiscard]] std::string_view alertSpeakerNow() const noexcept {
-        return (messageSteps_ > 0 || alertAnim_.value() > 0.0F) ? alertSpeakerOf(message_)
-                                                                : std::string_view{};
+        if (messageSteps_ <= 0 && alertAnim_.value() <= 0.0F) {
+            return {};
+        }
+        return messageMouth_.empty() ? alertSpeakerOf(message_) : std::string_view{messageMouth_};
     }
     /// VOICE LANE, THE ADDRESS. The worded reaction to the last reply that
     /// moved the speaker's disposition -- "(THE FACE SOFTENS A HAIR)" -- for
@@ -1957,6 +1970,20 @@ public:
     /// Flame's eye) so the crosshair names exactly what the key would find.
     /// PUBLIC so the reach rule is a claim a case can make.
     [[nodiscard]] int leadInLookReach() const;
+    /// KIT BUILD. THE THING THE RETICLE IS ON: among the things on the
+    /// ground in the take's own reach (Tavern::kReachQ8, Manhattan from the
+    /// tile's centre, the body's band), the one the eye's line passes
+    /// nearest, and only when it passes within kThingAimDegrees of the span
+    /// the thing is drawn over (ItemDef::drawnLoCm..drawnHiCm on its tile)
+    /// -- an index into Tavern::groundItems(), or -1. The 2026-10-06
+    /// director's frame: at the Tarwalk coil facing west, the reticle on a
+    /// stall block eleven tiles off and the coil under the frame's bottom
+    /// edge, the prompt read ROPE 48DR / E - TAKE, because the old read was
+    /// the nearest thing in reach whatever the eye was on. Both walks read
+    /// this (the prompt names it, E takes it), so the press still does what
+    /// the prompt said. The BODY's own yaw and pitch, never the render-only
+    /// nods. PUBLIC so the rule is a claim a case can make.
+    [[nodiscard]] std::int32_t groundItemUnderReticle() const;
     /// THE CASEBOOK PASS. True when the body could LOOK at this lead from where
     /// it is standing right now -- the same reach examine() uses, boon
     /// included. Read by the page to choose between its two commit verbs; see
@@ -2180,10 +2207,11 @@ private:
     /// final attempt was anything other than TooFar, which is interact()'s
     /// cue to fall through to the investigation look instead.
     bool stealNearestThing();
-    /// KIT BUILD. The nearest registry thing on the ground within reach,
-    /// through Tavern::takeGroundItem -- the interact walk's 3b. Says the
-    /// line itself and answers whether anything was in reach at all, the
-    /// stealNearestThing contract.
+    /// KIT BUILD. The thing on the ground the reticle is on
+    /// (groundItemUnderReticle), through Tavern::takeGroundItem(index) --
+    /// the interact walk's 3b. Says the line itself and answers whether
+    /// anything was under the reticle at all, the stealNearestThing
+    /// contract.
     bool takeNearestItem();
     /// True when one of the three books has a heard lead under the look:
     /// the investigation outranks a thing on the ground and the lower of the
@@ -2194,8 +2222,9 @@ private:
     /// the one rule both walks read.
     [[nodiscard]] const sim::Actor* corpseToSearch() const;
     /// KIT BUILD. The crosshair's read of the thing on the ground the press
-    /// would TAKE (both walks, both stances): false when nothing is in reach,
-    /// the thing is fixed, or a named lead outranks it.
+    /// would TAKE (both walks, both stances): false when the reticle is on
+    /// nothing in reach (groundItemUnderReticle), the thing is fixed, or a
+    /// named lead outranks it.
     [[nodiscard]] bool groundTargetFor(InteractTarget& out) const;
 
     /// MORROWIND ROUND. Opens/refocuses the tiled Menu on tile `focus`
@@ -2285,6 +2314,13 @@ private:
     /// says. The verb's first caller.
     [[nodiscard]] std::string settleGroundPetition();
     void say(std::string line);
+    /// A LINE IN SOMEBODY'S NAME on the alert row, and the row remembers
+    /// whose it is. Their voice rides under "<name>: " so a row with three
+    /// people talking on it still says who said what; a REPORT (a reply the
+    /// director flagged, sim::Reply::report) already has the name in it and
+    /// is said bare. Either way the row is theirs (messageMouth_), which is
+    /// what the goodbye stands down -- by who, never by matching text.
+    void sayAs(const std::string& who, const std::string& line, bool report);
     /// VOICE LANE. Voices the goodbye on the street channel -- the director's
     /// own farewell(walkedOff) for whoever the open conversation is with --
     /// and ends the conversation: the tail closeConversation() runs for a
@@ -2375,6 +2411,11 @@ private:
     std::int64_t elapsedSeconds_ = 0;
     std::int32_t stepsThisSecond_ = 0;
     std::string message_;
+    /// Whose line message_ is, when the session put it up in a name
+    /// (sayAs): their voice or the director's report of their deed. Empty
+    /// for everything else -- a narration, a toast, a sim line said whole.
+    /// Presentation only, like message_ itself: unhashed.
+    std::string messageMouth_;
     /// Movement steps the message has left to live.
     std::int32_t messageSteps_ = 0;
     /// The line the top band was last asked to speak, and how many movement

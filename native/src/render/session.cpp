@@ -4612,7 +4612,7 @@ void Session::settleDefeat() {
     // What he said standing over you, out of the owner's tables -- and the
     // short report of what it made him when there is nothing authored.
     if (!rise.taunt.empty()) {
-        say(rise.who + ": " + rise.taunt);
+        sayAs(rise.who, rise.taunt, false);
     } else if (!rise.line.empty()) {
         say(rise.line);
     }
@@ -5352,6 +5352,7 @@ void Session::step(const sim::MoveInput& input) {
     // showing, not a clear racing it.
     if (messageSteps_ == 0 && alertAnim_.settled() && !alertAnim_.target()) {
         message_.clear();
+        messageMouth_.clear();
     }
     // THE SAME CLEAR, GENERALIZED. Once a row's own toggle has fully eased to
     // closed there is nothing left to fade, and clearing its cache is what
@@ -5546,24 +5547,24 @@ void Session::step(const sim::MoveInput& input) {
             const std::int32_t salt = static_cast<std::int32_t>(elapsedSeconds_ % 1024) + officer->id;
             switch (event.kind) {
                 case sim::WatchEventKind::Halt:
-                    say(name + ": " +
+                    sayAs(name,
                         std::string(barks.line(
                             barks.resolve({std::string("street.halt"), std::string("watch.halt"),
                                            std::string("watch.demand")}),
-                            salt)));
+                            salt)), false);
                     break;
                 case sim::WatchEventKind::Sheathe:
-                    say(name + ": " +
+                    sayAs(name,
                         std::string(barks.line(
                             barks.resolve({std::string("street.sheathe"), std::string("watch.demand")}),
-                            salt)));
+                            salt)), false);
                     break;
                 case sim::WatchEventKind::Offence:
                     tavern_->noteStreetOffence();
-                    say(name + ": " +
+                    sayAs(name,
                         std::string(barks.line(
                             barks.resolve({std::string("street.offence"), std::string("watch.demand")}),
-                            salt)));
+                            salt)), false);
                     break;
                 case sim::WatchEventKind::Arrest:
                     if (!inCustody() && !tavern_->hearingPending() && !tavern_->executed()) {
@@ -5710,36 +5711,17 @@ int Session::flyOutLeap() {
     return steps;
 }
 
-namespace {
-
-/// THE SPEAKER'S LINE ON THE ALERT ROW. Their voice rides under their
-/// name -- "<name>: <line>" -- so a row with three people talking on it
-/// still says who said what. A REPORT is not their voice: the director
-/// answers a deed with a short account of it written in the speaker's own
-/// name ("WATCHMAN CULL TAKES THE DRINK.", "FINCH CATCHES YOUR WRIST."),
-/// and prefixing that put the name on the row twice -- "WATCHMAN CULL:
-/// WATCHMAN CULL TAKES THE DRINK.", the 2026-09-25 critic's D_law frame.
-/// A line that opens with the speaker's own name is a report, and is said
-/// bare, the way a rise's report (say(rise.line)) already is. The name is
-/// matched whole -- case-blind, since the director upper-cases what it
-/// writes -- and must end where the line's next word begins, so a Hob is
-/// not mistaken for the report of a Hobbin.
-[[nodiscard]] std::string spokenBy(const std::string& who, const std::string& line) {
-    const auto fold = [](char c) {
-        return c >= 'a' && c <= 'z' ? static_cast<char>(c - 'a' + 'A') : c;
-    };
-    bool report = !who.empty() && line.size() > who.size();
-    for (std::size_t i = 0; report && i < who.size(); ++i) {
-        report = fold(who[i]) == fold(line[i]);
-    }
-    if (report) {
-        const char next = line[who.size()];
-        report = next == ' ' || next == '.' || next == ',' || next == '\'';
-    }
-    return report ? line : who + ": " + line;
+void Session::sayAs(const std::string& who, const std::string& line, bool report) {
+    // THE SPEAKER'S LINE ON THE ALERT ROW. A REPORT is not their voice: the
+    // director answers a deed with a short account of it written in the
+    // speaker's own name, and prefixing that put the name on the row twice
+    // -- "WATCHMAN CULL: WATCHMAN CULL TAKES THE DRINK.", the 2026-09-25
+    // critic's D_law frame. The director says which it wrote (Reply::report,
+    // set where the report is composed); the text is never read to guess,
+    // so a rumour that opens on the speaker's own name keeps its "<name>: ".
+    say(report ? line : who + ": " + line);
+    messageMouth_ = who;
 }
-
-}  // namespace
 
 void Session::say(std::string line) {
     // Clipped to what the bottom edge can hold at the narrowest resolution this
@@ -5760,6 +5742,8 @@ void Session::say(std::string line) {
         line += "..";
     }
     message_ = std::move(line);
+    // Nobody's until sayAs says whose: a bare say() is a narration.
+    messageMouth_.clear();
     // UI-EA (LANE HUD): FOUR SECONDS, the spec's own message-row narration
     // hold (sec. 2, EVENT tier). Six was the pre-diet number; a line the
     // player is reading is re-armed by the next line anyway, and the bottom
@@ -5925,7 +5909,7 @@ void Session::interact() {
             talkOpenTileX_ = body_->tileX();
             talkOpenTileY_ = body_->tileY();
             const sim::DialogueDirector& talk = tavern_->dialogue();
-            say(talk.speaker().name + ": " + talk.greeting());
+            sayAs(talk.speaker().name, talk.greeting(), false);
         };
         if (tavern_->talkTo()) {
             opened();
@@ -6026,11 +6010,70 @@ const sim::Actor* Session::corpseToSearch() const {
     return corpse;
 }
 
+namespace {
+
+/// HOW CLOSE TO A THING THE RETICLE HAS TO BE, in degrees between the eye's
+/// line and the nearest point of the span the thing is drawn over. A thing
+/// inside it is on screen (the 90-degree lens at 16:9 sees 29.4 degrees down
+/// from the reticle) and near the middle of it; the coil two tiles ahead of
+/// a level eye is 34.6 degrees under it, off the frame, and is not named.
+constexpr float kThingAimDegrees = 25.0F;
+
+}  // namespace
+
+std::int32_t Session::groundItemUnderReticle() const {
+    const Camera eye = Camera::fromBody(body_->x(), body_->y(), body_->eyeZ(), body_->yaw(), body_->pitch(), 1.0F);
+    const float level = std::cos(eye.pitch);
+    const float fx = std::sin(eye.yaw) * level;
+    const float fy = -std::cos(eye.yaw) * level;
+    const float fz = std::sin(eye.pitch);
+    const float cone = std::cos(kThingAimDegrees * (3.14159265358979323846F / 180.0F));
+    const std::vector<sim::GroundItem>& ground = tavern_->groundItems();
+    std::int32_t best = -1;
+    float bestCos = cone;
+    for (std::size_t i = 0; i < ground.size(); ++i) {
+        const sim::GroundItem& entry = ground[i];
+        if (entry.band != body_->band()) {
+            continue;
+        }
+        // The take's own reach (Tavern::groundItemInReachOf).
+        const std::int32_t dx = sim::q8_tile_centre(entry.x) - body_->x();
+        const std::int32_t dy = sim::q8_tile_centre(entry.y) - body_->y();
+        if ((dx < 0 ? -dx : dx) + (dy < 0 ? -dy : dy) > sim::kReachQ8) {
+            continue;
+        }
+        const sim::ItemDef* thing = tavern_->items().at(entry.item);
+        if (thing == nullptr) {
+            continue;
+        }
+        // The nearest of the span's foot, middle and head: a lantern on a
+        // barrel is looked at, not the boards under the barrel.
+        const float vx = static_cast<float>(entry.x) + 0.5F - eye.x;
+        const float vy = static_cast<float>(entry.y) + 0.5F - eye.y;
+        const float boards = bandSurface(entry.band);
+        float here = -2.0F;
+        for (int k = 0; k < 3; ++k) {
+            const std::int32_t cm = k == 0   ? thing->drawnLoCm
+                                    : k == 2 ? thing->drawnHiCm
+                                             : (thing->drawnLoCm + thing->drawnHiCm) / 2;
+            const float vz = boards + static_cast<float>(cm) * 0.01F - eye.z;
+            const float length = std::sqrt(vx * vx + vy * vy + vz * vz);
+            here = std::max(here, length < 1.0e-3F ? 1.0F : (vx * fx + vy * fy + vz * fz) / length);
+        }
+        // Strictly nearer the line wins; a tie keeps the list's order.
+        if (here >= cone && (best < 0 || here > bestCos)) {
+            best = static_cast<std::int32_t>(i);
+            bestCos = here;
+        }
+    }
+    return best;
+}
+
 bool Session::groundTargetFor(InteractTarget& out) const {
     if (leadNamedInReach()) {
         return false;
     }
-    const std::int32_t at = tavern_->groundItemInReachOf(body_->x(), body_->y(), body_->band());
+    const std::int32_t at = groundItemUnderReticle();
     if (at < 0) {
         return false;
     }
@@ -6209,8 +6252,10 @@ Session::InteractTarget Session::resolveInteract() const {
     // people: TAKE names the thing, the note is its weight, or THEIRS with
     // the Owned accent when taking it is theft (the reference's red hand,
     // before the press). A named lead in reach outranks it. The BODY's own
-    // position, as every other query on this walk. Crouched, the same read
-    // comes after the box (TAKE QUIETLY), where interact() takes it.
+    // position, as every other query on this walk, and the body's own eye:
+    // only the thing the reticle is on (groundItemUnderReticle). Crouched,
+    // the same read comes after the box (TAKE QUIETLY), where interact()
+    // takes it.
     if (!sneaking) {
         if (InteractTarget thing; groundTargetFor(thing)) {
             return thing;
@@ -6757,14 +6802,15 @@ void Session::chooseTopic(std::size_t index) {
                                  static_cast<std::int32_t>(body_->stepCount()));
             syncVoiceAnim();
             // And the goodbye is the LAST thing they said -- endTalk's own
-            // rule, for the panel LEAVE closed from inside: their greeting
-            // or reply still on the alert row's clock stands down rather
-            // than resurfacing under the goodbye.
-            if (message_.rfind(tavern_->dialogue().speaker().name + ": ", 0) == 0) {
+            // rule, for the panel LEAVE closed from inside: their greeting,
+            // reply or the report of the drink you stood them, still on the
+            // alert row's clock, stands down rather than resurfacing under
+            // the goodbye. Whose the row is was recorded when it was said.
+            if (!messageMouth_.empty() && messageMouth_ == tavern_->dialogue().speaker().name) {
                 messageSteps_ = 0;
             }
         } else {
-            say(spokenBy(tavern_->dialogue().speaker().name, reply.line));
+            sayAs(tavern_->dialogue().speaker().name, reply.line, reply.report);
         }
     }
     // VOICE LANE, THE ADDRESS: A WORDED REACTION when the reply moved them.
@@ -6994,7 +7040,7 @@ void Session::commitForge() {
     const std::string who = tavern_->dialogue().speaker().name;
     const sim::Reply reply = tavern_->commitForge();
     if (!reply.line.empty()) {
-        say(spokenBy(who, reply.line));
+        sayAs(who, reply.line, reply.report);
     }
     if (!reply.journalLine.empty()) {
         say(reply.journalLine);
@@ -7028,7 +7074,7 @@ void Session::makeOffer() {
     const std::string who = tavern_->dialogue().speaker().name;
     const sim::Reply reply = tavern_->offerPrice(haggleOffer_);
     if (!reply.line.empty()) {
-        say(spokenBy(who, reply.line));
+        sayAs(who, reply.line, reply.report);
     }
     haggleOffer_ = haggling() ? std::min(haggleOffer_, tavern_->dialogue().haggle().asking()) : 0;
 }
@@ -7040,7 +7086,7 @@ void Session::takeAskingPrice() {
     const std::string who = tavern_->dialogue().speaker().name;
     const sim::Reply reply = tavern_->takeAskingPrice();
     if (!reply.line.empty()) {
-        say(spokenBy(who, reply.line));
+        sayAs(who, reply.line, reply.report);
     }
     haggleOffer_ = 0;
 }
@@ -7917,8 +7963,9 @@ void Session::attackUp() {
                 const std::string_view key =
                     barks.resolve({std::string("street.routed"), std::string("crowd.flee")});
                 if (!key.empty()) {
-                    say(people_->identity(wardId).name + ": " +
-                        std::string(barks.line(key, static_cast<std::int32_t>(elapsedSeconds_ % 1024) + wardId)));
+                    sayAs(people_->identity(wardId).name,
+                          std::string(barks.line(key, static_cast<std::int32_t>(elapsedSeconds_ % 1024) + wardId)),
+                          false);
                 }
             }
         }
@@ -10429,10 +10476,13 @@ void Session::adjustKitSlot(int delta) {
 }
 
 bool Session::takeNearestItem() {
-    if (tavern_->groundItemInReach() < 0) {
+    // The thing the reticle is on, the one the prompt named -- not the
+    // nearest in reach whatever the eye is on.
+    const std::int32_t at = groundItemUnderReticle();
+    if (at < 0) {
         return false;
     }
-    const sim::Tavern::StealResult took = tavern_->takeGroundItem();
+    const sim::Tavern::StealResult took = tavern_->takeGroundItem(at);
     if (took.result == sim::ServiceResult::TooFar) {
         return false;
     }
@@ -10645,9 +10695,13 @@ void Session::endTalk(bool walkedOff) {
         // And the goodbye is the LAST thing they said: a greeting or a reply
         // still on the alert row's clock would resurface under it the moment
         // the panel let the row back -- the same mouth saying two things at
-        // once. Their own line stands down; a bouncer's warning or anybody
-        // else's word on the row is not theirs and keeps its clock.
-        if (message_.rfind(talk.speaker().name + ": ", 0) == 0) {
+        // once. Their own line stands down -- their voice or the director's
+        // report of their deed, both recorded as theirs by sayAs, so "GERTA
+        // SALTCOTTE TAKES THE DRINK." goes with her as surely as her
+        // greeting does (the 2026-10-06 critics' drink-then-leave frames).
+        // A bouncer's warning or anybody else's word is not theirs and keeps
+        // its clock.
+        if (!messageMouth_.empty() && messageMouth_ == talk.speaker().name) {
             messageSteps_ = 0;
         }
     }
@@ -14442,6 +14496,19 @@ void lookDownAtBoards(Session& session) {
     session.body().setPitch(sim::angle_from_degrees(-50));
 }
 
+/// The eye on a thing the body is standing on: near straight down, what a
+/// hand reaching to its own feet looks at. The reticle has to be on a thing
+/// to name it and to take it (Session::groundItemUnderReticle), and a thing
+/// underfoot is under a level frame altogether.
+void lookAtFeet(Session& session) {
+    session.body().setPitch(sim::angle_from_degrees(-85));
+}
+
+/// And the eye level again, for the next stop's frame.
+void lookLevel(Session& session) {
+    session.body().setPitch(0);
+}
+
 [[nodiscard]] int runKitLine(Session& session, const std::string& ending) {
     int landed = 0;
     gKitNote.clear();
@@ -14464,19 +14531,22 @@ void lookDownAtBoards(Session& session) {
     // Two in the afternoon: daylight on the quay, and the thing you walked
     // to outranks the passers-by.
     standAtFacing(session, 152, 63, 151, 63);
+    // The eye goes onto the coil BEFORE the prompt is read: the reticle has
+    // to be on a thing to name it (Session::groundItemUnderReticle, the
+    // 2026-10-06 director's frame), and a tile ahead it is sixty degrees
+    // under a level eye. See lookDownAtBoards for the geometry. Level again
+    // after the press: the next stop is a lantern on a barrel at eye height.
+    lookDownAtBoards(session);
     Session::InteractTarget aim = session.interactTarget();
     noteAim("take", aim);
     if (ending == "take") {
-        // KIT POLISH: the frame is of the coil, so the eye goes onto it --
-        // on this ending only, since the line's next stop is a lantern on a
-        // table at eye height. See lookDownAtBoards for the geometry.
-        lookDownAtBoards(session);
         return aim.verb == "TAKE" && aim.subject == "ROPE" ? 1 : 0;
     }
     session.interact();
     if (aim.verb == "TAKE" && aim.subject == "ROPE" && carried("rope")) {
         ++landed;  // 1
     }
+    lookLevel(session);
 
     // 2. THEIRS. Four the next morning, the house empty. The lantern on
     // Hobbin's table from Maell's chair, then the knife and the coat.
@@ -14492,10 +14562,13 @@ void lookDownAtBoards(Session& session) {
     }
     session.interact();
     standAtFacing(session, 155, 73, 156, 73);
-    session.interact();  // the knife
+    lookDownAtBoards(session);
+    session.interact();  // the knife, on the boards a tile ahead
     walkToTile(session, 148, 72);
     session.closeConversation();
+    lookAtFeet(session);
     session.interact();  // the coat, underfoot
+    lookLevel(session);
     if (theirsCue && carried("lantern") && carried("knife") && carried("coat")) {
         ++landed;  // 2
     }
@@ -14609,10 +14682,13 @@ void lookDownAtBoards(Session& session) {
     }
     session.closeConversation();
     standAtFacing(session, 150, 69, 150, 70);  // Bram's chair: the bottle on Wick's
+    lookDownAtBoards(session);
     session.interact();
     walkToTile(session, 149, 69);  // the hood on Bram's own
     session.closeConversation();
+    lookAtFeet(session);
     session.interact();
+    lookLevel(session);
     gKitNote += " load=" + std::to_string(tavern.loadDrams()) + "/" +
                 std::to_string(tavern.loadBudget()) + " legs=" + std::to_string(tavern.loadSpeedQ8()) +
                 "/256";
@@ -14685,12 +14761,13 @@ void lookDownAtBoards(Session& session) {
     // and nobody is standing on it for the frame.
     standAtFacing(session, 196, 62, 195, 62);
     // KIT POLISH: and the eye down onto it. "Stepped back to look at it on
-    // the boards" was only half true -- the crosshair named the coil (TAKE
-    // is by reach, not by the look-ray) while the mesh sat sixty degrees
-    // under a level frame, and the critic found it only at a --pitch of
-    // -40. Looking at it means looking down: the mouse follows what the
-    // hand put down. See lookDownAtBoards for the numbers and why no
-    // change to the mesh could have done this instead.
+    // the boards" was only half true -- the crosshair named the coil while
+    // the mesh sat sixty degrees under a level frame (TAKE was by reach
+    // then; it is by the reticle now, Session::groundItemUnderReticle),
+    // and the critic found it only at a --pitch of -40. Looking at it
+    // means looking down: the mouse follows what the hand put down. See
+    // lookDownAtBoards for the numbers and why no change to the mesh could
+    // have done this instead.
     lookDownAtBoards(session);
     bool coilDown = false;
     for (const sim::GroundItem& entry : tavern.groundItems()) {

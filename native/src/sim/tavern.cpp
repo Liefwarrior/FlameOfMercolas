@@ -5232,9 +5232,20 @@ bool Tavern::giveItem(std::string_view id, std::int32_t count) {
 }
 
 Tavern::StealResult Tavern::takeGroundItem() {
+    return takeGroundItem(groundItemInReach());
+}
+
+Tavern::StealResult Tavern::takeGroundItem(std::int32_t at) {
     StealResult out;
-    const std::int32_t at = groundItemInReach();
-    if (at < 0) {
+    // groundItemInReachOf's own reach shape, asked of this one entry.
+    bool reached = playerKnown_ && at >= 0 && static_cast<std::size_t>(at) < ground_.size();
+    if (reached) {
+        const GroundItem& there = ground_[static_cast<std::size_t>(at)];
+        const std::int32_t dx = q8_tile_centre(there.x) - playerX_;
+        const std::int32_t dy = q8_tile_centre(there.y) - playerY_;
+        reached = there.band == playerBand_ && (dx < 0 ? -dx : dx) + (dy < 0 ? -dy : dy) <= kReachQ8;
+    }
+    if (!reached) {
         out.result = ServiceResult::TooFar;
         out.line = "NOTHING HERE TO TAKE.";
         return out;

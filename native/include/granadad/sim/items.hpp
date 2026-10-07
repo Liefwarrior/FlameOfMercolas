@@ -152,6 +152,15 @@ struct ItemDef {
     /// strongbox. It has a record so the world can draw it and the prompt
     /// can name it; TAKE refuses it out loud.
     bool fixed = false;
+    /// The span the thing is DRAWN over lying on a tile, in centimetres
+    /// above the floor (`drawnCm` in the raws: the 3D items table's lift,
+    /// scale and pitch over its mesh, pinned against the meshes in
+    /// test_kit_page). Read by the crosshair only (Session::
+    /// groundItemUnderReticle) -- never by a rule, never hashed: the reticle
+    /// has to be ON the thing to name it. A hand's thing at the feet when
+    /// the raws leave it out.
+    std::int32_t drawnLoCm = 0;
+    std::int32_t drawnHiCm = 30;
 };
 
 /// Where the world puts a thing before anybody moves it.

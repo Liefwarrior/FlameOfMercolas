@@ -1623,9 +1623,9 @@ TEST_CASE("a deed the director reports in the speaker's own name is said once on
     // BuyDrinkFor -- and CATCHES YOUR WRIST, LOOKS AT YOU AND WAITS are the
     // same shape), and the session's alert row put "<name>: " in front of
     // every reply as if each were speech, so the name went on the row twice.
-    // Session composes the row through one helper now (spokenBy): a line in
-    // their voice rides under their name, a report in their name is said
-    // bare -- exactly as a rise's report already was.
+    // The director flags the report where it writes it (Reply::report) and
+    // the session's one helper (sayAs) reads the flag: a line in their voice
+    // rides under their name, a report in their name is said bare.
     render::SessionConfig config;
     config.contentDir = content::contentDir();
     config.timeOfDay = 20 * 3600;
@@ -1665,7 +1665,8 @@ TEST_CASE("a deed the director reports in the speaker's own name is said once on
     CHECK(memory->lastDeed == Deed::BoughtDrink);
 
     // And their next answer in their own voice is under their name again:
-    // the helper tells a report from speech by the name, not by the topic.
+    // the flag is on the one reply the director wrote as a report, and on
+    // nothing after it.
     // The clerk everybody has heard of is on every root list (#82 kept it
     // there) and is answered out of the raws.
     REQUIRE(session.talking());
@@ -1684,4 +1685,197 @@ TEST_CASE("a deed the director reports in the speaker's own name is said once on
     CHECK(spoken.rfind(who + ": ", 0) == 0);
     CHECK(spoken.find(who + ": ", who.size()) == std::string::npos);
     CHECK(spoken != said);
+}
+
+namespace {
+
+/// The first topic of a kind on the open list, or the list's size.
+std::size_t topicOfKind(const render::Session& session, TopicKind kind) {
+    const std::vector<Topic>& topics = session.tavern().dialogue().topics();
+    for (std::size_t i = 0; i < topics.size(); ++i) {
+        if (topics[i].kind == kind) {
+            return i;
+        }
+    }
+    return topics.size();
+}
+
+}  // namespace
+
+TEST_CASE("the director flags the reports it writes, and a line that only opens on the name is not one") {
+    // THE 2026-10-06 AUDIT. The lane's first cut told a report from speech
+    // by reading the text -- a line opening on the speaker's own name was a
+    // report -- so a rumour Father Maell tells about Father Maell lost its
+    // attribution, and a name followed by "!" or ":" was never matched. The
+    // director KNOWS when it writes one, and says so on the reply.
+    DialogueDirector director = DialogueDirector::load(content::contentDir());
+
+    // The false positive, exactly: a body called YOUR whose empty-purse
+    // answer opens on its own name. It is the house's narration, not a
+    // report of their deed, and keeps its "<name>: " on the row.
+    REQUIRE(director.open(dockerNamed(7, "Your"), hourOfDay(21)));
+    director.setPlayerCoin(0);
+    std::size_t buy = director.topics().size();
+    for (std::size_t i = 0; i < director.topics().size(); ++i) {
+        if (director.topics()[i].kind == TopicKind::BuyDrinkFor) {
+            buy = i;
+        }
+    }
+    REQUIRE(buy < director.topics().size());
+    const Reply broke = director.choose(buy);
+    CHECK(broke.line == "YOUR PURSE WILL NOT COVER IT.");
+    CHECK_FALSE(broke.report);
+    director.close();
+
+    // The three reports, each flagged where it is written -- each off a
+    // fresh director, so one deed's memory cannot shape the next list.
+    Speaker wick = dockerNamed(4, "Wick Hempson");
+    wick.awareness = 20;   // a beginner's hand is caught
+    wick.leanable = true;  // and a nobody leaning on him gets the stare
+    const auto pick = [&wick](TopicKind kind) {
+        DialogueDirector fresh = DialogueDirector::load(content::contentDir());
+        REQUIRE(fresh.open(wick, hourOfDay(21)));
+        fresh.setPlayerCoin(20);
+        for (std::size_t i = 0; i < fresh.topics().size(); ++i) {
+            if (fresh.topics()[i].kind == kind) {
+                return fresh.choose(i);
+            }
+        }
+        FAIL("no topic of kind " << static_cast<int>(kind) << " on the list");
+        return Reply{};
+    };
+    const Reply drink = pick(TopicKind::BuyDrinkFor);
+    CHECK(drink.line == "WICK HEMPSON TAKES THE DRINK.");
+    CHECK(drink.report);
+    const Reply stare = pick(TopicKind::Lean);
+    CHECK(stare.line.rfind("WICK HEMPSON LOOKS AT YOU AND WAITS.", 0) == 0);
+    CHECK(stare.report);
+    const Reply wrist = pick(TopicKind::PickPocket);
+    CHECK(wrist.line == "WICK HEMPSON CATCHES YOUR WRIST.");
+    CHECK(wrist.report);
+    CHECK(wrist.closes);
+
+    // And their voice is never flagged: the greeting's sibling, a plain
+    // topic answered out of the raws.
+    REQUIRE(director.open(dockerNamed(5, "Hob Tarrant"), hourOfDay(21)));
+    for (std::size_t i = 0; i < director.topics().size(); ++i) {
+        const TopicKind kind = director.topics()[i].kind;
+        if (kind == TopicKind::Leave || kind == TopicKind::PickPocket ||
+            kind == TopicKind::BuyDrinkFor || kind == TopicKind::Lean) {
+            continue;
+        }
+        const Reply said = director.choose(i);
+        INFO("topic ", i, ": ", said.line);
+        CHECK_FALSE(said.report);
+        if (!director.isOpen()) {
+            break;
+        }
+    }
+    director.close();
+}
+
+TEST_CASE("buy them a drink and say goodbye: the report goes with them, and the row is never two things from one mouth") {
+    // ALL THREE 2026-10-06 CRITICS: "GERTA SALTCOTTE TAKES THE DRINK." stayed
+    // up over "GERTA SALTCOTTE: MIND THE STEP..." after LEAVE. The stand-down
+    // at goodbye matched "<name>: " on the row, and a report has no colon.
+    // It reads whose the row is now, recorded by sayAs off the director's
+    // flag. Both goodbyes: LEAVE from the list, and the back key (endTalk).
+    render::SessionConfig config;
+    config.contentDir = content::contentDir();
+    config.timeOfDay = 20 * 3600;
+    render::Session session(config);
+    session.tavern().setPlayerCoin(40);
+    session.placeBodyAt(gull::kBartenderX, gull::kBartenderY + 1, gull::kGroundBand);
+    session.stepMany(MoveInput{}, kStepsPerSecond);
+
+    for (const bool byTheList : {true, false}) {
+        CAPTURE(byTheList);
+        session.interact();
+        REQUIRE(session.talking());
+        const std::string who = session.tavern().dialogue().speaker().name;
+        const std::size_t buy = topicOfKind(session, TopicKind::BuyDrinkFor);
+        REQUIRE(buy < session.tavern().dialogue().topics().size());
+        session.chooseTopic(buy);
+        const std::string said = session.lastMessage();
+        INFO("row: ", said);
+        CHECK(said == shouted(who) + " TAKES THE DRINK.");
+        // Bare on the row, and still THEIRS: the voice channel holds a line
+        // of theirs back while it is up, exactly as under their greeting.
+        CHECK(std::string(session.alertSpeakerNow()) == who);
+        REQUIRE(session.messageStepsLeft() > 0);
+
+        if (byTheList) {
+            const std::size_t leave = topicOfKind(session, TopicKind::Leave);
+            REQUIRE(leave < session.tavern().dialogue().topics().size());
+            session.chooseTopic(leave);
+        } else {
+            session.closeConversation();
+        }
+        REQUIRE_FALSE(session.talking());
+        // The goodbye is on the voice row in their name ...
+        CHECK(session.voice().lastOn(render::VoiceChannel::Farewell).name == who);
+        // ... and the report they were standing under is down, at once.
+        CHECK(session.messageStepsLeft() == 0);
+        session.stepMany(MoveInput{}, render::kPageEaseSteps * 2 + 2);
+        CHECK(session.lastMessage().find("TAKES THE DRINK") == std::string::npos);
+        // Settle before the second round's greeting.
+        session.stepMany(MoveInput{}, kStepsPerSecond);
+    }
+}
+
+TEST_CASE("the caught hand and the stare are reports too: said once, theirs on the row, and down at the goodbye") {
+    // THE 2026-10-06 AUDITOR: the drink was pinned and its two siblings were
+    // not. CATCHES YOUR WRIST closes the talk itself (the director's close(),
+    // no goodbye to stand under); LOOKS AT YOU AND WAITS leaves it open, so
+    // the back key's goodbye has to stand it down.
+    render::SessionConfig config;
+    config.contentDir = content::contentDir();
+    config.timeOfDay = 20 * 3600;
+
+    SUBCASE("the wrist") {
+        render::Session session(config);
+        session.placeBodyAt(gull::kBartenderX, gull::kBartenderY + 1, gull::kGroundBand);
+        session.stepMany(MoveInput{}, kStepsPerSecond);
+        session.interact();
+        REQUIRE(session.talking());
+        const std::string who = session.tavern().dialogue().speaker().name;
+        const std::size_t lift = topicOfKind(session, TopicKind::PickPocket);
+        REQUIRE(lift < session.tavern().dialogue().topics().size());
+        session.chooseTopic(lift);
+        const std::string said = session.lastMessage();
+        INFO("row: ", said);
+        // A beginner's hand in the bartender's till is caught (test_dialogue's
+        // own "she remembers" case); the row says her name once.
+        CHECK(said == shouted(who) + " CATCHES YOUR WRIST.");
+        CHECK(said.find(who + ": ") == std::string::npos);
+        CHECK(std::string(session.alertSpeakerNow()) == who);
+        CHECK_FALSE(session.talking());
+    }
+
+    SUBCASE("the stare") {
+        // The bartender takes a lean too (LEAN ON THEM is on her list), and
+        // a nobody leaning on her gets the stare.
+        render::Session session(config);
+        session.placeBodyAt(gull::kBartenderX, gull::kBartenderY + 1, gull::kGroundBand);
+        session.stepMany(MoveInput{}, kStepsPerSecond);
+        session.interact();
+        REQUIRE(session.talking());
+        const std::string who = session.tavern().dialogue().speaker().name;
+        const std::size_t lean = topicOfKind(session, TopicKind::Lean);
+        REQUIRE(lean < session.tavern().dialogue().topics().size());
+        session.chooseTopic(lean);
+        const std::string said = session.lastMessage();
+        INFO("row: ", said);
+        // A nobody leaning gets the stare, and the stare is hers, said once.
+        CHECK(said.rfind(shouted(who) + " LOOKS AT YOU AND WAITS.", 0) == 0);
+        CHECK(said.find(who + ": ") == std::string::npos);
+        CHECK(said.find(shouted(who) + ": ") == std::string::npos);
+        CHECK(std::string(session.alertSpeakerNow()) == who);
+        REQUIRE(session.talking());
+        REQUIRE(session.messageStepsLeft() > 0);
+        // The back key says goodbye, and the stare goes with her.
+        session.closeConversation();
+        REQUIRE_FALSE(session.talking());
+        CHECK(session.messageStepsLeft() == 0);
+    }
 }

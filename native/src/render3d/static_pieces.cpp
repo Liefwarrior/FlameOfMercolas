@@ -114,9 +114,9 @@ constexpr int kWaterMaxDepth = 7;
 /// tiles now (render::LampGlow::buildPool), so the disc grew with it --
 /// 1.5 m on a lantern, 1.2 on a fire -- and kHaloCoreFraction (scene.hpp)
 /// came down so the flat core stayed the 0.24 m it was: a longer skirt over
-/// a longer pool, the same flame inside it.
-constexpr float kLanternFlameWidth = 1.5F;
-constexpr float kLanternFlameHeight = 1.5F;
+/// a longer pool, the same flame inside it. The lantern's pair is in
+/// static_pieces.hpp now (kLanternFlameWidth / kLanternFlameHeight): the
+/// table lantern's halo is cut to it too.
 constexpr float kFireFlameWidth = 1.2F;
 constexpr float kFireFlameHeight = 1.2F;
 /// Where the flame sits in a lantern hung from `lift` (the lantern's origin
@@ -4353,6 +4353,23 @@ StaticCatalogue StaticCatalogue::fromJson(std::string_view json) {
                     spec.glassV1 = uv[3].get<float>();
                 }
             }
+            // The trim, the glass's own shape: what the adapter drops at
+            // load (the hung lantern's cord, on a lantern stood on a table).
+            if (row.contains("trimBand") && row["trimBand"].is_array() &&
+                row["trimBand"].size() == 2 && row.contains("trimUv") &&
+                row["trimUv"].is_array() && row["trimUv"].size() == 4) {
+                const nlohmann::json& band = row["trimBand"];
+                const nlohmann::json& uv = row["trimUv"];
+                if (band[0].is_number() && band[1].is_number() && uv[0].is_number() &&
+                    uv[1].is_number() && uv[2].is_number() && uv[3].is_number()) {
+                    spec.trimBandLo = band[0].get<float>();
+                    spec.trimBandHi = band[1].get<float>();
+                    spec.trimU0 = uv[0].get<float>();
+                    spec.trimU1 = uv[1].get<float>();
+                    spec.trimV0 = uv[2].get<float>();
+                    spec.trimV1 = uv[3].get<float>();
+                }
+            }
             spec.selfLit = row.value("selfLit", false);
             spec.tint = tintFromJson(row.contains("tint") ? row["tint"] : nlohmann::json(), Rgba8{});
             out.pieces_.push_back(std::move(spec));
@@ -4487,6 +4504,12 @@ std::vector<StaticPieceRef> StaticCatalogue::pieceRefs() const {
         ref.glassU1 = spec.glassU1;
         ref.glassV0 = spec.glassV0;
         ref.glassV1 = spec.glassV1;
+        ref.trimBandLo = spec.trimBandLo;
+        ref.trimBandHi = spec.trimBandHi;
+        ref.trimU0 = spec.trimU0;
+        ref.trimU1 = spec.trimU1;
+        ref.trimV0 = spec.trimV0;
+        ref.trimV1 = spec.trimV1;
         // A squared shaft's half section, in the mesh's own metres.
         const float core = spec.core > 0.0F ? spec.core : spec.width;
         ref.squareHalf = spec.square ? 0.5F * core : 0.0F;
@@ -4534,6 +4557,15 @@ std::uint64_t StaticCatalogue::digest() const noexcept {
         h.mixF32(spec.maxDistance);
         h.mixF32(spec.core);
         h.mixU8(static_cast<std::uint8_t>(spec.square ? 1 : 0));
+        // Only where there is one, so an untrimmed table digests as before.
+        if (spec.trimBandHi > spec.trimBandLo) {
+            h.mixF32(spec.trimBandLo);
+            h.mixF32(spec.trimBandHi);
+            h.mixF32(spec.trimU0);
+            h.mixF32(spec.trimU1);
+            h.mixF32(spec.trimV0);
+            h.mixF32(spec.trimV1);
+        }
     }
     h.mixU32(static_cast<std::uint32_t>(materials_.size()));
     for (const MaterialRule& rule : materials_) {

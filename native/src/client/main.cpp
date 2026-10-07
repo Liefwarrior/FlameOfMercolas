@@ -3898,6 +3898,11 @@ struct SceneRig {
             const std::vector<render3d::StaticInstance> things = render3d::groundItemInstances(
                 session, catalogue, session.camera(), 40.0F, world->pool(), &world->spill());
             scene.statics.insert(scene.statics.end(), things.begin(), things.end());
+            // And a lantern on a table burns like one on a wall: its halo,
+            // drawn last with every other (the adapter defers kDrawHalo).
+            const std::vector<render3d::StaticInstance> glows =
+                render3d::groundItemHalos(session, catalogue, session.camera(), 40.0F);
+            scene.statics.insert(scene.statics.end(), glows.begin(), glows.end());
         }
         // A LANE: the people. Sixteen placeholder rigs put once (the adapter
         // swaps in the glb by name where it has one), and the instances

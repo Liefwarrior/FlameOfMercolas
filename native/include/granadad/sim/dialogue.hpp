@@ -380,6 +380,15 @@ struct Reply {
     TopicKind kind = TopicKind::Leave;
     /// Somebody's authored voice, or a short report of what just happened.
     std::string line;
+    /// A REPORT IN THE SPEAKER'S NAME, not their voice: the director's own
+    /// account of a deed, written with the name already in it -- "GERTA
+    /// SALTCOTTE TAKES THE DRINK.", "... CATCHES YOUR WRIST.", "... LOOKS AT
+    /// YOU AND WAITS." Whoever puts the reply on a row says it bare, where a
+    /// line in their voice rides under "<name>: ". Set by the director at the
+    /// moment it writes one and never guessed from the text afterwards: a
+    /// rumour that happens to open on the speaker's own name is still their
+    /// voice.
+    bool report = false;
     std::int32_t dispositionBefore = 0;
     std::int32_t dispositionAfter = 0;
     Attitude attitude = Attitude::Neutral;

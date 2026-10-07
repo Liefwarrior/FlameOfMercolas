@@ -325,6 +325,13 @@ enum class PieceRole : std::uint8_t {
 };
 inline constexpr std::size_t kPieceRoleCount = 59;
 
+/// A hung lantern's halo, in METRES in the world: the disc round the flame
+/// at the hung lantern's own scale (static_pieces.cpp says why 1.5). A
+/// lantern at another scale -- the Gull's table lantern, an items row --
+/// wears it in proportion (groundItemHalos), so the glow fits the glass.
+inline constexpr float kLanternFlameWidth = 1.5F;
+inline constexpr float kLanternFlameHeight = 1.5F;
+
 /// The JSON key of a role ("wall", "wall_corner", ...), and back. None for
 /// an unknown key.
 [[nodiscard]] std::string_view pieceRoleName(PieceRole role) noexcept;
@@ -411,6 +418,16 @@ struct PieceSpec {
     float glassU1 = 0.0F;
     float glassV0 = 0.0F;
     float glassV1 = 0.0F;
+    /// The trim (scene.hpp StaticPieceRef): `trimBand` [lo, hi] in the
+    /// model's local Y and `trimUv` [u0, u1, v0, v1], the triangles the
+    /// adapter drops at load. Read on the items table only: the table
+    /// lantern's cord. Zero means nothing is trimmed.
+    float trimBandLo = 0.0F;
+    float trimBandHi = 0.0F;
+    float trimU0 = 0.0F;
+    float trimU1 = 0.0F;
+    float trimV0 = 0.0F;
+    float trimV1 = 0.0F;
     /// A strapped timber's own section inside its iron: the shaft, not the
     /// collars that ring it (`width` is the collars, the bounds). The door
     /// frame is placed by this -- the shaft's inner face on the opening's
