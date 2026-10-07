@@ -213,6 +213,7 @@ void StreetVoice::say(VoiceLine line) {
         return;
     }
     holdSteps_ = holdFor(line.text);
+    capped_ = false;
     lastOnChannel_[static_cast<std::size_t>(line.channel)] = line.step;
     last_[static_cast<std::size_t>(line.channel)] = line;
     if (isEvent(line.channel)) {
@@ -365,6 +366,7 @@ bool StreetVoice::dropIfSpeaker(std::string_view name) noexcept {
 
 void StreetVoice::standDown() noexcept {
     holdSteps_ = 0;
+    capped_ = false;
     current_ = VoiceLine{};
 }
 
@@ -394,7 +396,9 @@ void StreetVoice::speakFarewell(std::string name, std::string line, std::string 
 // ---------------------------------------------------------------------------
 
 void StreetVoice::step(const VoiceScene& scene) {
-    if (holdSteps_ > 0) {
+    // The plate holds an event line's clock (VoiceScene::holdClock); a
+    // passer-by's bark is a moment and runs.
+    if (holdSteps_ > 0 && !(scene.holdClock && isEvent(current_.channel))) {
         --holdSteps_;
     }
     if (scene.room == nullptr) {

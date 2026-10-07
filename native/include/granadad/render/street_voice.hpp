@@ -267,6 +267,15 @@ struct VoiceScene {
     /// The player's stance and hands, for watch.notice and the steel key.
     bool crouched = false;
     bool handsUp = false;
+    /// THE RUNG PLATE IS ON SCREEN (rung_plate.hpp): an EVENT line's hold (a
+    /// farewell, a react, the Watch) does not run this step -- the same held
+    /// clock the alert row keeps for news, so a farewell said with the rung
+    /// is shown whole after the plate lifts rather than living its whole
+    /// life dimmed under it; the line stays up and keeps its channel for as
+    /// long as it is held. A passer-by's bark (pass, overheard) is a moment
+    /// and runs under the plate: a rope coming through is nobody's news
+    /// seven seconds after it has gone.
+    bool holdClock = false;
     /// Who the alert row is quoting right now ("Watchman Cull" while his
     /// halt stands), or empty. The readback waits for the halt to leave the
     /// row rather than stacking a second line under the same name.
@@ -297,6 +306,24 @@ public:
     /// -- the arrest line landing under a watchman's readback -- so one man
     /// never says two things at once. True when a line was dropped.
     bool dropIfSpeaker(std::string_view name) noexcept;
+    /// The current line keeps at most this much of its hold: the rung
+    /// plate's cap once it lifts (kRungPlateRowAfterSteps), the alert row's
+    /// own rule.
+    void capHold(std::int32_t steps) noexcept {
+        holdSteps_ = holdSteps_ < steps ? holdSteps_ : steps;
+        // WHATEVER LINE IS PRESENT finishes small -- a line whose hold has
+        // already run out and is fading included (the auditor, ninth pass:
+        // keyed on the hold, the plate's last-frame cap un-capped a bark
+        // that had run out inside the lift, and its fade swelled).
+        capped_ = !current_.empty();
+    }
+    /// The current line had its hold capped by the plate and finishes small
+    /// (HudState::voiceStepsDown) -- through its ease-out too, which runs
+    /// after the hold has hit zero (the auditor: keyed on up(), the row
+    /// swelled to the minor scale for the eight frames of its fade). A new
+    /// line clears it, and so does the row clearing (clearIfSettled,
+    /// standDown).
+    [[nodiscard]] bool capped() const noexcept { return capped_ && !current_.empty(); }
     /// Takes the row down for good, no fade: the body was PLACED somewhere
     /// else (a travel, a waking, a scripted stand) and what somebody said
     /// within reach of the old feet is not on the row over the new ones.
@@ -366,6 +393,7 @@ private:
 
     VoiceLine current_;
     std::int32_t holdSteps_ = 0;
+    bool capped_ = false;
     std::int32_t spoken_ = 0;
     VoiceLine last_[5];
     std::int32_t lastOnChannel_[5] = {-1000000, -1000000, -1000000, -1000000, -1000000};

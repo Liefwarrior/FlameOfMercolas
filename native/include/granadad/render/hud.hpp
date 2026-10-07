@@ -443,8 +443,31 @@ struct HudState {
     /// only the alert row's own alpha; every other HUD row is unaffected.
     /// Defaults to 1, which is what every hand-built HudState already meant
     /// before this field existed, so `* alertFade` is a no-op for a caller
-    /// that never heard of it.
+    /// that never heard of it. Under the rung plate Session hands the row's
+    /// ease here unweighted and the plate's weight on the words apart
+    /// (alertInkWeight, rung_plate.hpp's alertWeightUnderRungPlate); the
+    /// field keeps the ease, the words take the product.
     float alertFade = 1.0F;
+    /// THE RUNG PLATE'S OTHER RULE FOR THIS ROW (rung_plate.hpp): while the
+    /// plate holds, the row steps DOWN to the plate's own register -- never
+    /// a tier above it -- and its bone rails take a quarter of the row's
+    /// alpha, so the keyline never outshines the words it is there to back.
+    /// False (every caller before the plate) draws exactly as before.
+    bool alertStepsDown = false;
+    /// The register the stepped-down rows take: the rung plate's own scale
+    /// (rungPlateMetric) where it is under the HUD's minor scale -- which a
+    /// square window's was under the height-only register, and no window's
+    /// is since the cells pass keyed the minor scale on the width too. 0
+    /// (every caller before the plate) means the minor scale; the rows never
+    /// take more than the minor scale either way.
+    int alertStepScale = 0;
+    /// THE RUNG PLATE'S WEIGHT, ON THE INK ONLY (rung_plate.hpp): the words'
+    /// alpha is multiplied by this; the backing field keeps alertFade, the
+    /// row's own ease, so fine print over a lit wall is still print (the
+    /// half-weight backing let the Gull's plaster through and the amber
+    /// read as mud -- the director's finding, fourth pass). 1 for every
+    /// caller that never heard of it.
+    float alertInkWeight = 1.0F;
     /// HARDENING PASS. THE SAME alertFade PATTERN, ONE PER ROW. #83 eased the
     /// alert row in and out and left every other row on this HUD popping --
     /// see this file's own header on the rule these rows draw under and
@@ -609,6 +632,15 @@ struct HudState {
     /// 0 (gone) .. 1 (full strength). Defaults to 0 for placePlateFade's
     /// reason: this row's ordinary state is "not there".
     float voiceFade = 0.0F;
+    /// The rung plate's weight on this row's ink, the alert row's own rule
+    /// (alertInkWeight): the words dim under the plate, the backing keeps
+    /// the row's ease, its rails take a quarter while the row stands down,
+    /// and the row takes the plate's register (alertStepScale).
+    float voiceInkWeight = 1.0F;
+    /// The voice row's own alertStepsDown: the plate is on screen, or this
+    /// row's line was capped under it and finishes small (never swelling
+    /// back to the minor scale once the plate has left).
+    bool voiceStepsDown = false;
 
     // --- THE PULL PACK (render/pull.hpp) --------------------------------------
     //
@@ -760,6 +792,12 @@ void drawHud(Framebuffer& target, const HudState& state);
 /// drawn. Public because the debug overlay and the capture stamp use it.
 int drawText(Framebuffer& target, int x, int y, std::string_view text, const Rgb& colour,
              float alpha, int scale);
+/// The same, with the drop shadow's alpha given rather than three quarters
+/// of the ink's: text on a slab that thins faster than its ink (the rung
+/// plate's lift) draws its shadows at the slab's alpha, so the letters never
+/// leave as black outlines round grey words.
+int drawText(Framebuffer& target, int x, int y, std::string_view text, const Rgb& colour,
+             float alpha, int scale, float shadowAlpha);
 
 /// HARDENING PASS. THE S8 "NES POP-UP" TREATMENT (docs/design/PLAYTEST-LOG.md's
 /// S8 entry), CARRIED OVER FROM client-observer -- retired whole in f712579
