@@ -117,11 +117,14 @@ struct PlateLayout {
     int headCells = 0;
     int proseCells = 0;
     int topCells = 0;
+    /// Zero when the state carries no tick OR the frame has no row to spend
+    /// on it (320x180): the row is dropped, never squeezed.
+    int tickCells = 0;
 };
 
 [[nodiscard]] PlateLayout layoutFor(int width, int height, const RungPlateState& state) {
     PlateLayout out;
-    out.metric = panelMetric(width, height);
+    out.metric = rungPlateMetric(width, height);
     if (state.head.empty()) {
         return out;
     }
@@ -134,16 +137,39 @@ struct PlateLayout {
     // air above; the top row, when a track is capped, sits directly under
     // the prose with none of its own, the dateline's own proximity.
     const bool hasProse = !state.prose.empty();
-    out.rows = 1 + (hasProse ? 2 : 0) + (state.top.empty() ? 0 : 1);
+    out.tickCells = static_cast<int>(state.tick.size());
+    out.rows = 1 + (hasProse ? 2 : 0) + (state.top.empty() ? 0 : 1) + (out.tickCells > 0 ? 1 : 0);
+    // THE TICK ROW IS SPENT ONLY WHERE THERE IS A ROW TO SPEND. Between the
+    // plate's floor (kRungPlateFloorRows) and the aim prompt's fence the
+    // smallest window has room for the card and nothing else; a tick there
+    // would put the keyline on the stat stack or the prompt on the card. So
+    // it is dropped, whole, at 320x180, and for a topped-out track's taller
+    // card at 640x360 (960x540, 1280x720 and 1920x1080 hold both, and so do
+    // 2560x1440 and 3840x2160 -- under the height-only register 1920x1080
+    // dropped it from the topped card and 3840x2160 from both; the cells
+    // pass's smaller minor unit lowered the prompt's fence there), and the
+    // Character tile has the level. A row of clearance is what it asks for;
+    // the seat then splits what is left.
+    if (out.tickCells > 0) {
+        const int floorY = kRungPlateFloorRows * hudScale(height);
+        const CentreRect fence = hudAimRect(width, height);
+        if (floorY + out.metric.heightOf(out.rows + 2) + out.metric.cellH() > fence.y0) {
+            out.tickCells = 0;
+            --out.rows;
+        }
+    }
     // SIZED TO ITS CONTENT (the spec's "size to content where content is
     // static"): the widest row, where the head wears a cell of the accent
-    // fill either side of its words; a cell of padding inside each edge; the
-    // two border cells. NEVER PAST THE WINDOW less a cell of margin a side --
-    // a row wider than that is clipped by the cell drawer's own mark, which
-    // the authored sheet is pinned never to need at 320x180.
-    const int widest = std::max(out.headCells + 2, std::max(out.proseCells, out.topCells));
+    // fill either side of its words; TWO CELLS OF GUTTER inside each edge
+    // (kRungPlateGutterCells -- one was the critic's finding, a row all but
+    // touching its keyline); the two border cells. NEVER PAST THE WINDOW less
+    // a cell of margin a side -- a row wider than that is clipped by the cell
+    // drawer's own mark, which the authored sheet is pinned never to need at
+    // 320x180: 56 glyphs, two gutters, two borders is the 64-cell frame less
+    // its margin exactly.
+    const int widest = std::max({out.headCells + 2, out.proseCells, out.topCells, out.tickCells});
     const int room = out.metric.cellsIn(width) - 2;
-    out.cells = std::min(widest + 4, room);
+    out.cells = std::min(widest + 2 + 2 * kRungPlateGutterCells, room);
     if (out.cells < 6) {
         return out;
     }
@@ -152,6 +178,29 @@ struct PlateLayout {
 }
 
 }  // namespace
+
+PanelMetric rungPlateMetric(int width, int height) noexcept {
+    // THE CELLS PASS'S REGISTER, both axes (panelMetric(width, height)): it
+    // deals at least 85 cells across any window 425 px wide or more, so the
+    // sixty-four-cell step below only ever follows the glance step -- the
+    // minor scale bottomed out at one under a HUD at two or more, which is
+    // 640x360 by its height and a narrow window (720x720) by its width.
+    const PanelMetric minor = panelMetric(width, height);
+    const int glance = hudScale(height);
+    int scale = minor.scale;
+    if (scale == 1 && glance >= 2) {
+        scale = glance;
+    }
+    while (scale > 1 && PanelMetric{scale}.cellsIn(width) < 64) {
+        --scale;
+    }
+    return PanelMetric{scale};
+}
+
+float alertWeightUnderRungPlate(float plateFade) noexcept {
+    const float fade = std::clamp(plateFade, 0.0F, 1.0F);
+    return 1.0F - (1.0F - kRungPlateAlertWeight) * fade;
+}
 
 RungPlateBox rungPlateBox(int width, int height, const RungPlateState& state) {
     RungPlateBox box;
@@ -178,9 +227,46 @@ RungPlateBox rungPlateBox(int width, int height, const RungPlateState& state) {
     // looking at.
     const int rawSeatY = ((height - box.h) * kRungPlateSeat) / 100 + layout.metric.cellH();
     const CentreRect fence = hudAimRect(width, height);
-    box.y = std::clamp(rawSeatY, 0, std::max(0, fence.y0 - box.h));
+    // A CELL ROW OF CLEARANCE above the prompt wherever the band between
+    // the floor and the fence has two rows of slack past the card (the
+    // director's finding: at 1920x1080 the slab stopped 23 px over the
+    // prompt, under one text row); the quarter seat rides inside that band
+    // with a row kept clear under it. With less -- whatever leaves the band
+    // under two rows of slack: a ticked or topped card at 640x360, a card
+    // both ticked and topped at 1280x720, 2560x1440 and 3840x2160, any card
+    // at 320x180 (1920x1080 left this list with the cells pass: its card and
+    // the prompt that sets the fence are drawn at 4 there now, not 5) -- the
+    // slack is shared: five glance units above the keyline first, the rest
+    // split, so the smallest window keeps five of its seven pixels between
+    // its keyline and the stat stack (below).
+    const int floorY = kRungPlateFloorRows * hudScale(height);
+    const int ceilY = fence.y0 - box.h;
+    const int cellH = layout.metric.cellH();
+    if (ceilY - floorY >= 2 * cellH) {
+        box.y = std::clamp(rawSeatY, floorY, ceilY - cellH);
+    } else {
+        // NO ROW TO SPEND: the card keeps at least five glance units
+        // between its keyline and whatever is above it, and splits the
+        // rest. The fourth pass split evenly, and at 320x180 -- where the
+        // top-right stat stack's fourth row reaches two rows UNDER this
+        // floor -- that put the keyline two pixels under the stack's ink
+        // while the aim prompt below had four to spare; the prompt
+        // tolerates a tight neighbour, a keyline touching text does not
+        // (the director's finding). Elsewhere the band is wider and the
+        // split is what shows.
+        const int room = std::max(0, ceilY - floorY);
+        box.y = floorY + std::max(room / 2, std::min(room, 5 * hudScale(height)));
+    }
     box.draws = true;
     return box;
+}
+
+bool rungPlateTickFits(int width, int height, const RungPlateState& state) {
+    RungPlateState probe = state;
+    if (probe.tick.empty()) {
+        probe.tick = "SKYRUNNING RISES TO 2";
+    }
+    return layoutFor(width, height, probe).tickCells > 0;
 }
 
 void drawRungPlate(Framebuffer& target, const RungPlateState& state) {
@@ -197,10 +283,12 @@ void drawRungPlate(Framebuffer& target, const RungPlateState& state) {
     }
     const PanelMetric& metric = layout.metric;
     const PanelInk& ink = panelInk();
-    // THE RISE: the announce plates' own lift, three scale units, through the
-    // seat and on out -- so the same continuous value drives the alpha and
-    // the offset and the plate can never be caught bright and mid-slide.
-    const int lift = 3 * hudScale(height);
+    // THE RISE AND THE LIFT: through the seat and on out, so the same
+    // continuous value drives the alpha and the offset and the plate can
+    // never be caught bright and mid-slide. Twice the announce plates' three
+    // units, over a lift three times as long (kRungPlateLiftSteps): a card
+    // that held five seconds leaves, it is not switched off.
+    const int lift = kRungPlateLiftUnits * hudScale(height);
     const float drift = std::clamp(state.drift, -1.0F, 1.0F);
     const int y = box.y - static_cast<int>(std::round(drift * static_cast<float>(lift)));
 
@@ -212,10 +300,49 @@ void drawRungPlate(Framebuffer& target, const RungPlateState& state) {
     FrameStyle style;
     // The heavier junction, the demo card's own: a corner, not a crossing.
     style.junction = Motif::Diamond;
-    style.alpha = fade;
     // NEARLY OPAQUE, like every composed page: a card the ward shows through
     // is a card nobody reads. No stipple -- three rows have no dead space.
-    style.groundAlpha = kPageGroundAlpha;
+    // THE SLAB IS DRAWN HERE, SYMMETRIC ABOUT THE KEYLINE, and the frame's
+    // own ground is turned off. The panel vocabulary's border cells put the
+    // rule's ink on the third of seven rows, so a page's slab carries two
+    // units above its top rule and four below its bottom one, and a diamond
+    // or a dash starts on the border cell's first column and ends a unit
+    // short of its last -- a composed page sits on a dark frame and nobody
+    // sees it; on a bright wall (the trade drive's) the director saw a black
+    // card with its keyline off centre. TWO UNITS OF SLAB outside the rules'
+    // dashes above and below and outside the side bars' column left and
+    // right, the same on each pair of edges; the corner diamonds, a column
+    // wider than the bars and a row taller than the dashes, sit one unit
+    // inside that on every side -- the slab runs to the last cell's own last
+    // column, a unit past the right-hand diamonds, whose glyph fills the
+    // cell's first four columns -- and a tilde's second row sits one closer
+    // below. (The dash
+    // is the font's own, row two of six; the bar is panel.cpp's kBar,
+    // column one of four; the diamond rows one to three and columns nought
+    // to three.)
+    style.groundAlpha = 0.0F;
+    const int s = metric.scale;
+    // THE SLAB LEAVES AHEAD OF THE WORDS: at the fade's own alpha it crossed
+    // a bright sky as a fogged pane of glass with grey words on it for a
+    // dozen steps (the player, fifth pass). The slab is the fade squared;
+    // THE INK HOLDS WHOLE THROUGH THE FIRST HALF OF THE LIFT and goes over
+    // the second (twice the fade, clamped), so the card leaves as words on
+    // a thinning slab and never as grey words on a pane of glass.
+    const float inkFade = std::min(1.0F, 2.0F * fade);
+    style.alpha = inkFade;
+    // AND THE SHADOWS LEAVE WITH THE SLAB, not with the ink: drawn at the
+    // ink's alpha they out-contrasted the letters from the lift's midpoint
+    // on (black outlines round grey words on a pane -- the director,
+    // seventh pass). On the up card they are invisible against the slab.
+    const float shadowFade = 0.75F * fade * fade;
+    style.shadowAlpha = shadowFade;
+    // AND THE DIM ROWS' SHADOWS ONE POWER FASTER: the tick and the top row
+    // are drawn in the dim ink, so on the lift's greying slab their shadow
+    // out-contrasted their own letters for six steps and the row read as
+    // embossed (the director, eighth pass). The cube of the fade.
+    const float dimShadowFade = shadowFade * fade;
+    target.fillRect(bounds.x - s, bounds.y, bounds.w + s, bounds.h - 2 * s, style.ground,
+                    kPageGroundAlpha * fade * fade);
     PanelFrame pane(target, bounds, metric, style);
     pane.draw();
     const PanelRect body = pane.interior();
@@ -223,12 +350,32 @@ void drawRungPlate(Framebuffer& target, const RungPlateState& state) {
 
     // THE HEAD, knocked out of an inverted fill in the body accent -- this
     // build's one idiom for emphasis (the reference's own), never a second
-    // glyph size. Centred on the interior, a cell of fill either side.
+    // glyph size. Centred on the interior, a cell of fill either side. THE
+    // BLOCK IS DRAWN BY HAND rather than by drawInvertedFill, for two units
+    // it cannot give: ONE UNIT OF GOLD ABOVE THE CAPS (the fill starts a
+    // unit into the border cell's empty last row, so the caps no longer sit
+    // on the block's own top edge with a whole row of gold under their
+    // feet), and the font's trailing advance column TRIMMED off the block's
+    // right end, so the pad after the last letter is the pad before the
+    // first. The director's finding, at every size.
+    // CENTRED TO THE HALF CELL: a row whose spare cells are odd sits half a
+    // cell right of the whole-cell centring, so its axis is the card's (the
+    // director, seventh pass: 5 px left at 960 on three of five heads, and
+    // every tick row).
+    const auto centred = [&](int cells) {
+        PanelRect at = body;
+        if (((interior - cells) & 1) != 0) {
+            at.x += metric.cellW() / 2;
+        }
+        return at;
+    };
     const int fillCells = std::min(interior, layout.headCells + 2);
     const int fillCell = std::max(0, (interior - fillCells) / 2);
-    drawInvertedFill(target, body, metric, fillCell, 0, fillCells, ink.accent, fade);
-    (void)drawCellTextKnockout(target, body, metric, fillCell + 1, 0, state.head, ink.knockout,
-                               fade);
+    const PanelRect headBody = centred(fillCells);
+    target.fillRect(headBody.x + metric.widthOf(fillCell), headBody.y - s,
+                    metric.widthOf(fillCells) - s, metric.cellH() + s, ink.accent, inkFade);
+    (void)drawCellTextKnockout(target, headBody, metric, fillCell + 1, 0, state.head,
+                               ink.knockout, inkFade);
     int row = 1;
     if (!state.prose.empty()) {
         // ONE CELL ROW OF LEADING, no ink, between the head and the prose --
@@ -236,15 +383,34 @@ void drawRungPlate(Framebuffer& target, const RungPlateState& state) {
         // second copy of the head's row.
         ++row;
         // What the ward says, in the prose ink, centred under the name.
-        (void)drawCellText(target, body, metric,
+        (void)drawCellText(target, centred(layout.proseCells), metric,
                            std::max(0, (interior - layout.proseCells) / 2), row, state.prose,
-                           ink.prose, fade);
+                           ink.prose, inkFade, shadowFade);
         ++row;
     }
     if (!state.top.empty()) {
         // The top of the ladder: a dateline's role, dim, read last.
-        (void)drawCellText(target, body, metric, std::max(0, (interior - layout.topCells) / 2),
-                           row, state.top, ink.dim, fade);
+        (void)drawCellText(target, centred(layout.topCells), metric,
+                           std::max(0, (interior - layout.topCells) / 2), row, state.top,
+                           ink.dim, inkFade, dimShadowFade);
+        ++row;
+    }
+    if (layout.tickCells > 0) {
+        // THE TICK, folded in: the skill that levelled on the rung's own
+        // step, in the dateline's ink and slot -- the game's word under the
+        // ward's, told once. layoutFor has already dropped it where the
+        // frame has no row for it. SET ONE UNIT LOW IN ITS ROW: set solid
+        // under the prose it read as the docker's second line in the
+        // system's voice (both critics); the row's own spare unit and one
+        // more make two of air above it, and two between its feet -- the
+        // font's own drop shadow included, invisible on the slab but drawn
+        // -- and the bottom rule's ink. Two units low, the shadow sat on
+        // the rule (the director, fifth pass).
+        PanelRect tickBody = centred(layout.tickCells);
+        tickBody.y += s;
+        (void)drawCellText(target, tickBody, metric,
+                           std::max(0, (interior - layout.tickCells) / 2), row, state.tick,
+                           ink.dim, inkFade, dimShadowFade);
         ++row;
     }
 }

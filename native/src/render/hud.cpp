@@ -504,6 +504,11 @@ bool isDrawableGlyph(char c) noexcept { return glyphFor(c) != nullptr; }
 
 int drawText(Framebuffer& target, int x, int y, std::string_view text, const Rgb& colour,
              float alpha, int scale) {
+    return drawText(target, x, y, text, colour, alpha, scale, alpha * 0.75F);
+}
+
+int drawText(Framebuffer& target, int x, int y, std::string_view text, const Rgb& colour,
+             float alpha, int scale, float shadowAlpha) {
     const int step = kGlyphAdvance * scale;
     int cursor = x;
     for (const char c : text) {
@@ -519,7 +524,7 @@ int drawText(Framebuffer& target, int x, int y, std::string_view text, const Rgb
                     // A one-pixel drop shadow, so the text survives being drawn
                     // over a pale sky as well as over black water.
                     target.fillRect(cursor + col * scale + scale, y + row * scale + scale, scale,
-                                    scale, kShadow, alpha * 0.75F);
+                                    scale, kShadow, shadowAlpha);
                     target.fillRect(cursor + col * scale, y + row * scale, scale, scale, colour,
                                     alpha);
                 }
@@ -544,12 +549,16 @@ void drawTextPlate(Framebuffer& target, int x0, int y0, int x1, int y1, int bord
     border = std::clamp(border, 1, std::min(x1 - x0, y1 - y0) / 2);
     // THE FIELD, THEN THE FOUR BORDER RAILS -- the identical order the
     // retired renderer's own box() drew in, so the border is never eaten by
-    // the fill it is drawn over.
+    // the fill it is drawn over. THE SIDE RAILS RUN BETWEEN THE TOP AND THE
+    // BOTTOM, not over them: a rail drawn twice at the corner is invisible
+    // at full alpha and a brighter dot at any other (a plate at a quarter
+    // under the rung plate wore four corner dots at nearly half).
     target.fillRect(x0, y0, x1 - x0, y1 - y0, kPlateBlack, alpha);
     target.fillRect(x0, y0, x1 - x0, border, kPlateBone, alpha);                 // top
     target.fillRect(x0, y1 - border, x1 - x0, border, kPlateBone, alpha);        // bottom
-    target.fillRect(x0, y0, border, y1 - y0, kPlateBone, alpha);                 // left
-    target.fillRect(x1 - border, y0, border, y1 - y0, kPlateBone, alpha);        // right
+    const int sideH = std::max(0, (y1 - border) - (y0 + border));
+    target.fillRect(x0, y0 + border, border, sideH, kPlateBone, alpha);          // left
+    target.fillRect(x1 - border, y0 + border, border, sideH, kPlateBone, alpha); // right
 }
 
 namespace {
@@ -1570,7 +1579,19 @@ void drawBottomBand(Framebuffer& target, const HudState& state, BottomBand& band
         // FACE FIXED IN..". A line the player has to read is worth a size
         // smaller; a line nobody can finish is worth nothing. So take the
         // largest scale it fits at, down to 1, and only then clip.
-        int alertScale = scale;
+        // THE RUNG PLATE'S RULE FOR THIS ROW (HudState::alertStepsDown): under
+        // the plate the row starts from the plate's own register or the
+        // minor scale, whichever is smaller (alertStepScale; never a tier
+        // above the plate) and shrinks from there as ever. Since the cells
+        // pass keyed the minor scale on the width as well, no window puts it
+        // over the plate's register (rungPlateMetric), so in play that is
+        // the minor scale; under the height-only register a square window's
+        // minor scale was a tier above the card, which is what the min is
+        // for.
+        int alertScale = state.alertStepsDown
+                             ? (state.alertStepScale > 0 ? std::min(minor, state.alertStepScale)
+                                                         : minor)
+                             : scale;
         while (alertScale > 1 && textWidth(state.alert, alertScale) > width - 2 * margin) {
             --alertScale;
         }
@@ -1609,13 +1630,37 @@ void drawBottomBand(Framebuffer& target, const HudState& state, BottomBand& band
             const float pulse = std::clamp(state.alertPulse, 0.0F, 1.0F);
             const int pulsePad = static_cast<int>(std::round(static_cast<float>(alertScale) * pulse));
             const int padX = alertScale * 2 + pulsePad;
-            const int padY = std::max(1, alertScale / 2) + pulsePad;
+            // A UNIT AND THE RAIL of padY when stepped down: at the minor
+            // scale the settled pad is one pixel, the glyphs' drop shadows
+            // hung under the lower rail as dark nicks on the wall, and the
+            // row read as label tape (the director, fifth pass). A whole
+            // unit put the shadow's last row ON the rail (the director,
+            // seventh pass: the rail dented under every letter), so the pad
+            // is the shadow's unit plus the rail's own thickness.
+            const int railSettled = std::max(1, alertScale / 2);
+            const int padYSettled =
+                state.alertStepsDown ? alertScale + railSettled : railSettled;
+            const int padY = padYSettled + pulsePad;
+            // UNDER THE RUNG PLATE THE FIELD STAYS AND THE RAILS DROP TO A
+            // QUARTER: the field at the row's own ease (fine print over the
+            // Gull's lit plaster is still print -- a half-weight field let
+            // the wall through and the amber read as mud), the words at the
+            // plate's weight on their ink (HudState::alertInkWeight), and
+            // the bone rails at a quarter, because bone at half is still
+            // brighter than amber at half and the frame outshone the words
+            // it framed (the director, fifth pass, measured 1.5x to 1.9x).
+            if (state.alertStepsDown) {
+                target.fillRect(textX - padX, y - padY, drawn + 2 * padX,
+                                kGlyphH * alertScale + 2 * padY, kPlateBlack, rowAlpha);
+            }
             drawTextPlate(target, textX - padX, y - padY, textX + drawn + padX,
                           y + kGlyphH * alertScale + padY,
-                          std::max(1, alertScale / 2 + pulsePad), rowAlpha);
+                          std::max(1, alertScale / 2 + pulsePad),
+                          state.alertStepsDown ? 0.25F * rowAlpha : rowAlpha);
             // TASK #83. Eased in Session, not here -- see HudState::alertFade.
             // A caller that never set it gets 1, which is 0.95F unchanged.
-            drawText(target, textX, y, alert, Rgb{0.90F, 0.62F, 0.30F}, 0.95F * rowAlpha,
+            drawText(target, textX, y, alert, Rgb{0.90F, 0.62F, 0.30F},
+                     0.95F * rowAlpha * std::clamp(state.alertInkWeight, 0.0F, 1.0F),
                      alertScale);
             // KIT FIX PASS. THE ONE SLOT THE COMMENT ABOVE WARNED ABOUT.
             // band.take(alertScale) reserves this row's SPAN off the bare
@@ -1638,7 +1683,7 @@ void drawBottomBand(Framebuffer& target, const HudState& state, BottomBand& band
             // (its settled padY, never the pulse's -- the rows above must
             // not jitter on the alert's rising edge) plus one minor unit of
             // air is what the next row actually needs; see BottomBand::pad.
-            band.pad(std::max(1, alertScale / 2) + minor);
+            band.pad(padYSettled + minor);
         }
     }
     // SPELLS BUILD. THE QUICK BAR STRIP, bottom-centre -- the hotbar slot
@@ -1849,19 +1894,29 @@ void drawBottomBand(Framebuffer& target, const HudState& state, BottomBand& band
     // frame exists to show.
     if (!state.voiceLine.empty() && state.voiceFade > 0.0F) {
         const float fade = std::clamp(state.voiceFade, 0.0F, 1.0F);
+        // UNDER THE RUNG PLATE this row takes the plate's register too when
+        // it is the smaller (HudState::alertStepScale): under the height-only
+        // register a square window's minor scale was a tier above the card,
+        // and a bark wrapped onto two lines under it. Since the cells pass
+        // no window does that (the alert row's note above), and the row
+        // stands down at the minor scale.
+        const float ink = std::clamp(state.voiceInkWeight, 0.0F, 1.0F);
+        const bool down = state.voiceStepsDown;
+        const int vs = (down && state.alertStepScale > 0) ? std::min(minor, state.alertStepScale)
+                                                          : minor;
         const std::string name =
             state.voiceName.empty() ? std::string() : std::string(state.voiceName) + ":";
-        const int gutter = name.empty() ? 0 : kGlyphAdvance * minor;
-        const int nameW = textWidth(name, minor);
+        const int gutter = name.empty() ? 0 : kGlyphAdvance * vs;
+        const int nameW = textWidth(name, vs);
         const int firstBudget = std::max(0, rowBudget - nameW - gutter);
         std::string first(state.voiceLine);
         std::string second;
-        if (textWidth(first, minor) > firstBudget) {
+        if (textWidth(first, vs) > firstBudget) {
             // Break at the last space that fits the first line; the rest
             // is the second, clipped to the full row if it must be.
             std::size_t cut = std::string::npos;
             for (std::size_t i = 0; i < first.size(); ++i) {
-                if (first[i] == ' ' && textWidth(std::string_view(first).substr(0, i), minor) <=
+                if (first[i] == ' ' && textWidth(std::string_view(first).substr(0, i), vs) <=
                                            firstBudget) {
                     cut = i;
                 }
@@ -1873,49 +1928,79 @@ void drawBottomBand(Framebuffer& target, const HudState& state, BottomBand& band
         }
         // The plate's own padding above the glyph box, carried into both
         // takes as clearance so the plate never crosses the floor and never
-        // sits on the line's first row (BottomBand::take).
-        const int padY = std::max(1, minor / 2);
-        const int y = band.take(minor, padY);
+        // sits on the line's first row (BottomBand::take). A unit and the
+        // rail of it while the row stands down under the rung plate, the
+        // alert row's own reason (the shadows under the lower rail); the
+        // rail alone otherwise. Both at the row's own register (`vs`).
+        const int padY = down ? vs + std::max(1, vs / 2) : std::max(1, vs / 2);
+        const int y = band.take(vs, padY);
         if (y >= 0) {
             int y2 = -1;
             if (!second.empty()) {
-                y2 = band.take(minor, padY);
+                y2 = band.take(vs, padY);
                 if (y2 < 0) {
                     // No second slot: one line, clipped and marked.
-                    first = clipToWidth(state.voiceLine, firstBudget, minor);
+                    first = clipToWidth(state.voiceLine, firstBudget, vs);
                     second.clear();
                 } else {
-                    second = clipToWidth(second, rowBudget, minor);
+                    second = clipToWidth(second, rowBudget, vs);
                 }
             } else {
-                first = clipToWidth(first, firstBudget, minor);
+                first = clipToWidth(first, firstBudget, vs);
             }
-            const int firstW = nameW + gutter + textWidth(first, minor);
-            const int secondW = textWidth(second, minor);
+            const int firstW = nameW + gutter + textWidth(first, vs);
+            const int secondW = textWidth(second, vs);
             const int drawn = std::max(firstW, secondW);
             const int textX = std::max(margin, (width - drawn) / 2);
-            const int padX = minor * 2;
+            const int padX = vs * 2;
             // THE CELLS PASS: the half unit the plate stands above the glyph
             // box is bought back for the row above, the way the alert buys
             // its own air -- the director found this plate's top rail one
             // pixel under the case tracker's drop shadow. Only where a further
-            // slot still fits under it: see BottomBand::padIfAfforded.
-            band.padIfAfforded(padY);
+            // slot still fits under it: see BottomBand::padIfAfforded. NOT
+            // WHILE THE ROW STANDS DOWN: its plate then stands a unit and the
+            // rail over the glyph box, and it buys that air whole after the
+            // draw (the rail and a minor unit, below, the rung plate's eighth
+            // pass) -- buying the half unit here as well would lift the row
+            // above twice.
+            if (!down) {
+                band.padIfAfforded(padY);
+            }
             // The second slot is ABOVE the first in the band's own order,
             // so the row reads down: the name and the opening on the upper
             // line, the turn on the lower.
             const int top = y2 >= 0 ? y2 : y;
             const int bottom = y2 >= 0 ? y : y;
+            // THE RUNG PLATE'S WEIGHT ON THE INK (HudState::voiceInkWeight),
+            // the alert row's own rule: the field keeps the row's ease, the
+            // rails take a quarter while the row stands down
+            // (HudState::voiceStepsDown), the words take the weight -- and
+            // the row is drawn at the plate's own register (`vs`, above).
+            if (down) {
+                target.fillRect(textX - padX, top - padY, drawn + 2 * padX,
+                                (bottom - top) + kGlyphH * vs + 2 * padY, kPlateBlack, fade);
+            }
             drawTextPlate(target, textX - padX, top - padY, textX + drawn + padX,
-                          bottom + kGlyphH * minor + padY, std::max(1, minor / 2), fade);
+                          bottom + kGlyphH * vs + padY, std::max(1, vs / 2),
+                          down ? 0.25F * fade : fade);
             const Rgb dim{0.74F, 0.72F, 0.64F};
             if (!name.empty()) {
                 drawText(target, textX, top, name, aimAccent(static_cast<int>(AimKind::Person)),
-                         0.95F * fade, minor);
+                         0.95F * fade * ink, vs);
             }
-            drawText(target, textX + nameW + gutter, top, first, dim, 0.92F * fade, minor);
+            drawText(target, textX + nameW + gutter, top, first, dim, 0.92F * fade * ink, vs);
             if (y2 >= 0) {
-                drawText(target, textX, bottom, second, dim, 0.92F * fade, minor);
+                drawText(target, textX, bottom, second, dim, 0.92F * fade * ink, vs);
+            }
+            // STOOD DOWN, THE PLATE OVERHANGS ITS SLOT BY THE RAIL: the slot
+            // grid leaves a minor unit of air above the glyph box, and the
+            // row above's drop shadow ends on the row just above that air,
+            // so a plate a unit and a rail tall put its top rail on the
+            // shadow's last row (the auditor, eighth pass). The rail plus a
+            // minor unit of air, bought in pixels the alert row's way
+            // (BottomBand::pad).
+            if (down) {
+                band.pad(std::max(1, vs / 2) + minor);
             }
         }
     }

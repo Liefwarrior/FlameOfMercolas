@@ -286,17 +286,16 @@ constexpr sv kSkillUpKenney[] = {
 // the toast's chime, and the vendored trees were searched before anything
 // was added -- the one low bell either of them holds is the Kenney heavy
 // bell the harbour's own sparse rows already ring (kHarbourBell, five
-// strikes). Reused here as a single strike on the World bus, which reads as
+// strikes). ONE OF THEM, THE LONGEST, EVERY TIME: the five run from 1.74 s
+// down to 0.30 s, and a rung that opened a five-second card on a tink one
+// time in five and never twice alike had no voice of its own (the player,
+// fifth pass). A single strike on the World bus, which reads as
 // a toll and not as the weather. NO LOT ROW ON PURPOSE: the LOT tree's only
 // candidates are the skill-up's chime and the case-closed sting, and a rung
 // that sounded like a case closing on one checkout and like a bell on the
 // gate would be two cues for one moment. No new art.
 constexpr sv kLegendRungKenney[] = {
-    "Impact Sounds/Audio/impactBell_heavy_000.ogg",
     "Impact Sounds/Audio/impactBell_heavy_001.ogg",
-    "Impact Sounds/Audio/impactBell_heavy_002.ogg",
-    "Impact Sounds/Audio/impactBell_heavy_003.ogg",
-    "Impact Sounds/Audio/impactBell_heavy_004.ogg",
 };
 
 // ---------------------------------------------------------------------------

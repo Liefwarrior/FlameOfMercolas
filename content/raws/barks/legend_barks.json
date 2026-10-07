@@ -4,7 +4,7 @@
   "tables": [
     {
       "key": "legend.wire.1",
-      "rows": ["The rope hands know your face now. That is not nothing."]
+      "rows": ["Ropewynd locks its boxes twice these days. That is you."]
     },
     {
       "key": "legend.wire.2",
@@ -12,23 +12,23 @@
     },
     {
       "key": "legend.wire.3",
-      "rows": ["Finch pours before you ask. That is a robber's welcome."]
+      "rows": ["Finch pays before the sack is open. Robber's rates."]
     },
     {
       "key": "legend.wire.4",
-      "rows": ["Nobody sees your hands. That is all the name means."]
+      "rows": ["The ward never saw your hands. It found a word anyway."]
     },
     {
       "key": "legend.roofs.1",
-      "rows": ["You went up and came down whole. The roofs noticed."]
+      "rows": ["Up and over, and the roofs had no objection."]
     },
     {
       "key": "legend.roofs.2",
-      "rows": ["Slates do not creak under you now. Someone was counting."]
+      "rows": ["Slates do not creak under you. Someone was counting."]
     },
     {
       "key": "legend.roofs.3",
-      "rows": ["The alley is a step to you now. The snug drinks to it."]
+      "rows": ["The alley is a step to you. The snug drinks to it."]
     },
     {
       "key": "legend.roofs.4",
@@ -36,11 +36,11 @@
     },
     {
       "key": "legend.flame.1",
-      "rows": ["You followed the trail. The Mission wrote you down."]
+      "rows": ["In the Mission's book already. Not your face, your work."]
     },
     {
       "key": "legend.flame.2",
-      "rows": ["The priests nod to you first now. The dockers saw it."]
+      "rows": ["The priests nod your way now. The dockers saw it."]
     },
     {
       "key": "legend.flame.3",
@@ -48,15 +48,15 @@
     },
     {
       "key": "legend.flame.4",
-      "rows": ["You went down there and came back. Nobody asks you why."]
+      "rows": ["Down there and back. The quay stopped asking why."]
     },
     {
       "key": "legend.trade.1",
-      "rows": ["Paid and on time. The counter remembers that first."]
+      "rows": ["A job done and coin taken for it. The counter remembers."]
     },
     {
       "key": "legend.trade.2",
-      "rows": ["Your word buys on credit now. Not much. But some."]
+      "rows": ["Your word buys on credit. Not much. But some."]
     },
     {
       "key": "legend.trade.3",
@@ -72,11 +72,11 @@
     },
     {
       "key": "legend.law.2",
-      "rows": ["Cull calls you by name across the room. On purpose."]
+      "rows": ["Cull calls out to you across the room. On purpose."]
     },
     {
       "key": "legend.law.3",
-      "rows": ["Folk lower their voices when you pass now. Even sober."]
+      "rows": ["Voices drop when you pass. The sober ones drop lowest."]
     },
     {
       "key": "legend.law.4",
@@ -84,7 +84,7 @@
     },
     {
       "key": "legend.top",
-      "rows": ["There is no rung above that one. Mind how you wear it."]
+      "rows": ["There is nothing above that. Mind how you wear it."]
     }
   ]
 }

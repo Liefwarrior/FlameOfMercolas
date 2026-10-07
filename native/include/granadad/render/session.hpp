@@ -1028,6 +1028,54 @@ public:
     /// three lines, the fade (zero under anything that owns the screen), the
     /// signed drift. Public so a case reads it instead of a screenshot.
     [[nodiscard]] RungPlateState rungPlateState() const noexcept;
+    /// The alert row's INK as drawn: its own ease times the plate's weight
+    /// (drawFrame hands the two to the HUD apart -- alertFade and
+    /// alertInkWeight -- and the field is drawn at the ease alone), and
+    /// at half weight under the plate (alertWeightUnderRungPlate on the
+    /// plate's own fade -- which is zero under a bouncer's WARNING, so the
+    /// one line the player must not miss is never the one dimmed). Public so
+    /// a case reads it instead of a screenshot.
+    [[nodiscard]] float alertFadeNow() const noexcept;
+    /// The plate ON SCREEN: wanted, or still lifting (its drawn fade above
+    /// zero). What every stand-down follows -- the alert row's register and
+    /// clock, the voice row's ink, the announce slot's fade and clock -- so
+    /// nothing comes back until the plate has left, not the step its hold
+    /// ends (both critics, fourth pass).
+    [[nodiscard]] bool rungPlateOnScreen() const noexcept;
+    /// The plate's weight on the alert and voice rows' INK: 1 with no plate,
+    /// half under one at full strength, on the plate's own fade. The rows'
+    /// backing keeps their own ease (HudState::alertInkWeight).
+    [[nodiscard]] float alertInkWeightNow() const noexcept;
+    /// Whether the alert row draws in the small register: while the plate is
+    /// on screen, and for the rest of a line that was on the row under it
+    /// (its capped two seconds) -- it never swells back.
+    [[nodiscard]] bool alertStepsDownNow() const noexcept;
+    /// The voice row's own: the plate is on screen, or its line was capped
+    /// under the plate and finishes small (StreetVoice::capped) -- what
+    /// drawFrame hands the HUD as voiceStepsDown, readable so a case can
+    /// follow the stand-down through a real bark's life (the Gull case).
+    [[nodiscard]] bool voiceStepsDownNow() const noexcept;
+    /// What is left of the alert row's own hold, in steps: the clock the
+    /// plate stops for a news line and caps at two seconds when it goes --
+    /// and never touches for a watchman's demand (the case that pins that
+    /// reads it here).
+    [[nodiscard]] std::int32_t alertStepsLeftNow() const noexcept { return messageSteps_; }
+    /// What the INTERACT prompt names right now ("WATCHMAN CULL  WATCHMAN",
+    /// "THE STRONGBOX  ROOM 3  EMPTIED"): the target in reach from where
+    /// the body stands, resolved by position and reach and never by the
+    /// reticle's ray, refreshed every step by syncPanelAnim. Public so a
+    /// drive's summary can say what the frame's prompt names (`aim=`).
+    [[nodiscard]] std::string_view aimSubjectNow() const noexcept {
+        return std::string_view{interactSubjectCache_};
+    }
+    /// The announce slot's drawn fades exactly as drawFrame composes them:
+    /// ZERO the instant the rung plate is wanted (the slot waits behind the
+    /// plate with its clock held -- the plate's own `outranked ? 0` rule,
+    /// because the slot's ease-out would otherwise cross the plate's rise
+    /// and the plate's first frame would carry NEW LEAD at full strength
+    /// above it), else their own ease. Public so a case reads them.
+    [[nodiscard]] float casePlateFadeNow() const noexcept;
+    [[nodiscard]] float placePlateFadeNow() const noexcept;
 
     // --- THE MOMENT LEADS OPEN ------------------------------------------------
     //
@@ -2319,7 +2367,9 @@ private:
     /// people talking on it still says who said what; a REPORT (a reply the
     /// director flagged, sim::Reply::report) already has the name in it and
     /// is said bare. Either way the row is theirs (messageMouth_), which is
-    /// what the goodbye stands down -- by who, never by matching text.
+    /// what the goodbye stands down -- by who, never by matching text. Like
+    /// say() it clears messageDemand_; the street Watch's three sites set it
+    /// back after the call, so a halt is both his line and a demand.
     void sayAs(const std::string& who, const std::string& line, bool report);
     /// VOICE LANE. Voices the goodbye on the street channel -- the director's
     /// own farewell(walkedOff) for whoever the open conversation is with --
@@ -2679,13 +2729,47 @@ private:
     /// ease) -- the toast's exact shape -- and the rungs waiting behind it.
     RungPlateText rungPlateText_;
     int rungPlateShowSteps_ = 0;
-    EasedToggle rungPlateAnim_{kPageEaseSteps, kPageEaseSteps};
+    EasedToggle rungPlateAnim_{kPageEaseSteps, kRungPlateLiftSteps};
     std::vector<RungPlateText> rungPlateQueue_;
+    /// Set by stepRungPlate, read by stepPull the same step: a skill that
+    /// levelled on the step a rung rose is the plate's own tick row, never a
+    /// toast after it.
+    bool rungRoseThisStep_ = false;
+    /// The line on the alert row is a street watchman's HALT, SHEATHE or
+    /// OFFENCE -- said through say() like any other, but an ignored halt
+    /// ends in an arrest at reach, so it outranks the plate for as long as
+    /// the row holds it (rungPlateOutranked), and it is never capped nor
+    /// stepped down. say() clears it; the four Watch sites (the street's
+    /// three, the Gull's own lastDemand) set it.
+    bool messageDemand_ = false;
+    /// The alert row was capped by the plate -- when the hold ended, when
+    /// the card was dismissed, or on the card's last frame -- while a line
+    /// had steps left OR its fade was still running: whatever is on the row
+    /// finishes in the small register and never swells back to the glance
+    /// size. say() clears it. (At a warning's dismissal the ease can be the
+    /// warning's own with no line on the row; the flag then means nothing
+    /// until the next say() clears it, and nothing is drawn small.)
+    bool messageCapped_ = false;
+    /// The plate was on screen (rungPlateOnScreen) at the end of the last
+    /// step: the edge stepRungPlate caps the row on.
+    bool rungPlateWasOnScreen_ = false;
+    /// The line on the row is NEWS (the take off a box, a fall's hurt, a
+    /// watchman's word: held under the plate and shown whole after) rather
+    /// than a MOMENT (a leap's length, a ledge mantled: its clock runs under
+    /// the plate, because a leap's length six seconds after the leap is
+    /// nobody's news). say() says news; the leap and the mantle say
+    /// otherwise after it. Whatever is still on the row when the plate
+    /// goes is capped and finishes small, a demand excepted.
+    bool messageHeld_ = true;
     /// True when something that outranks the plate owns the screen right
-    /// now: a page or a talk (conversingNow), the court's plates and custody,
-    /// the death and rope ceremonies, a bouncer's WARNING -- the alert row's
+    /// now: a page or a talk (conversingNow) and a page's closing tail, the
+    /// court's plates and custody, the death and rope ceremonies, a
+    /// bouncer's WARNING, a watchman's DEMAND on the row -- the alert row's
     /// own priority rule, applied whole.
     [[nodiscard]] bool rungPlateOutranked() const noexcept;
+    /// The bouncer's WARNING is on the alert row: drawFrame's and
+    /// syncPanelAnim's own three-line test, in one place at last.
+    [[nodiscard]] bool bouncerWarned() const noexcept;
     /// The one step hook: the Legend diff into the queue, the countdown, the
     /// dismissal under anything that outranks it, the next plate up off the
     /// queue with its bell. Runs BEFORE stepPull() so a rung and a skill
@@ -4039,6 +4123,14 @@ struct RungLineResult {
     /// What the plate reads: the head and the authored row.
     std::string head;
     std::string row;
+    /// What the INTERACT prompt named at the shutter ("WATCHMAN CULL
+    /// WATCHMAN"): Session::aimSubjectNow, the target in reach from where
+    /// the body stands, never the reticle's ray -- the cause of the rung in
+    /// the picture, or not.
+    std::string aim;
+    /// Why no rung rose, when none did and the drive knows: the trade and
+    /// the law need Cull at his table, and a daytime --time= finds him out.
+    std::string reason;
 };
 
 /// DISTRICT PHASE D. What a `--threshold` run actually did, so a case can

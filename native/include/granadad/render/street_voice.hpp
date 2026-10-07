@@ -67,6 +67,7 @@
 // be hit, which is the STREET SENSES lane's declared population move and not
 // this one's.
 
+#include <cstddef>
 #include <cstdint>
 #include <string>
 #include <string_view>
@@ -79,6 +80,7 @@ namespace granadad::sim {
 class Tavern;
 class TileQuery;
 class WardPopulation;
+struct WardActor;
 }  // namespace granadad::sim
 
 namespace granadad::render {
@@ -154,6 +156,10 @@ inline constexpr std::int32_t kPassReachTiles = 2;
 inline constexpr std::int32_t kOverheardCooldownSteps = 1440;
 inline constexpr std::int32_t kOverheardSpeakerCooldownSteps = 5400;
 inline constexpr std::int32_t kOverheardEarshotTiles = 6;
+/// And "together" is that Chebyshev 1: the next tile over, the diagonal
+/// included. Named because two callers ask it -- the channel, and the
+/// `--voice=overheard` drive that has to find a pair the channel will hear.
+inline constexpr std::int32_t kOverheardPairTiles = 1;
 
 /// REACT. Four seconds between witnesses' lines -- enough to read one -- and
 /// fifteen before the same witness says another thing about the same fight.
@@ -237,6 +243,44 @@ inline constexpr std::size_t kVoiceSpeakerMemory = 64;
 /// walks on to a row that does not.
 [[nodiscard]] std::string fillVictim(std::string_view row, std::string_view victim);
 
+/// OVERHEARD, THE STREET'S HALF OF THE RULE, out where a caller can ask it.
+/// StreetVoice::stepOverheard takes its street bodies from here, and so does
+/// the `--voice=overheard` drive when it looks for a pair to stand by -- one
+/// rule, two callers. A drive that re-derived it would agree with itself and
+/// not with the street (the pickVoiceLine test-twin lesson).
+///
+/// A ward body the channel hears at all: a speaker -- a living person on the
+/// board, not running for its life, not the one you're talking to -- that is
+/// STANDING, did not move this tick. Three walkers in file are not a
+/// conversation.
+[[nodiscard]] bool overheardStanding(const sim::WardActor& actor,
+                                     std::int32_t wardTalkId) noexcept;
+
+/// One street body in earshot: its lifted id (kWardSpeakerIdBase + ward id),
+/// its tile, and Chebyshev tiles from the listener.
+struct OverheardBody {
+    std::int32_t speakerId = -1;
+    std::int32_t x = 0;
+    std::int32_t y = 0;
+    std::int32_t apart = 0;
+    const sim::WardActor* ward = nullptr;
+};
+
+/// Every street body a listener on (tileX, tileY, band) can overhear:
+/// overheardStanding, on the listener's band, inside kOverheardEarshotTiles
+/// and on a sight line over the tiles (null tiles, every line open). Nearest
+/// first, the lowest id at a tie -- the order the channel takes them in.
+[[nodiscard]] std::vector<OverheardBody> overheardStreetBodies(const sim::WardPopulation& people,
+                                                               const sim::TileQuery* tiles,
+                                                               std::int32_t tileX, std::int32_t tileY,
+                                                               std::int32_t band,
+                                                               std::int32_t wardTalkId);
+
+/// Who bodies[index] stands together with: the first OTHER body of `bodies`,
+/// in its order, inside kOverheardPairTiles. Its lifted id, or -1.
+[[nodiscard]] std::int32_t overheardCompany(const std::vector<OverheardBody>& bodies,
+                                            std::size_t index) noexcept;
+
 // ---------------------------------------------------------------------------
 // the emitter
 // ---------------------------------------------------------------------------
@@ -267,6 +311,15 @@ struct VoiceScene {
     /// The player's stance and hands, for watch.notice and the steel key.
     bool crouched = false;
     bool handsUp = false;
+    /// THE RUNG PLATE IS ON SCREEN (rung_plate.hpp): an EVENT line's hold (a
+    /// farewell, a react, the Watch) does not run this step -- the same held
+    /// clock the alert row keeps for news, so a farewell said with the rung
+    /// is shown whole after the plate lifts rather than living its whole
+    /// life dimmed under it; the line stays up and keeps its channel for as
+    /// long as it is held. A passer-by's bark (pass, overheard) is a moment
+    /// and runs under the plate: a rope coming through is nobody's news
+    /// seven seconds after it has gone.
+    bool holdClock = false;
     /// Who the alert row is quoting right now ("Watchman Cull" while his
     /// halt stands), or empty. The readback waits for the halt to leave the
     /// row rather than stacking a second line under the same name.
@@ -297,6 +350,24 @@ public:
     /// -- the arrest line landing under a watchman's readback -- so one man
     /// never says two things at once. True when a line was dropped.
     bool dropIfSpeaker(std::string_view name) noexcept;
+    /// The current line keeps at most this much of its hold: the rung
+    /// plate's cap once it lifts (kRungPlateRowAfterSteps), the alert row's
+    /// own rule.
+    void capHold(std::int32_t steps) noexcept {
+        holdSteps_ = holdSteps_ < steps ? holdSteps_ : steps;
+        // WHATEVER LINE IS PRESENT finishes small -- a line whose hold has
+        // already run out and is fading included (the auditor, ninth pass:
+        // keyed on the hold, the plate's last-frame cap un-capped a bark
+        // that had run out inside the lift, and its fade swelled).
+        capped_ = !current_.empty();
+    }
+    /// The current line had its hold capped by the plate and finishes small
+    /// (HudState::voiceStepsDown) -- through its ease-out too, which runs
+    /// after the hold has hit zero (the auditor: keyed on up(), the row
+    /// swelled to the minor scale for the eight frames of its fade). A new
+    /// line clears it, and so does the row clearing (clearIfSettled,
+    /// standDown).
+    [[nodiscard]] bool capped() const noexcept { return capped_ && !current_.empty(); }
     /// Takes the row down for good, no fade: the body was PLACED somewhere
     /// else (a travel, a waking, a scripted stand) and what somebody said
     /// within reach of the old feet is not on the row over the new ones.
@@ -366,6 +437,7 @@ private:
 
     VoiceLine current_;
     std::int32_t holdSteps_ = 0;
+    bool capped_ = false;
     std::int32_t spoken_ = 0;
     VoiceLine last_[5];
     std::int32_t lastOnChannel_[5] = {-1000000, -1000000, -1000000, -1000000, -1000000};

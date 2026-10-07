@@ -213,6 +213,7 @@ void StreetVoice::say(VoiceLine line) {
         return;
     }
     holdSteps_ = holdFor(line.text);
+    capped_ = false;
     lastOnChannel_[static_cast<std::size_t>(line.channel)] = line.step;
     last_[static_cast<std::size_t>(line.channel)] = line;
     if (isEvent(line.channel)) {
@@ -365,6 +366,7 @@ bool StreetVoice::dropIfSpeaker(std::string_view name) noexcept {
 
 void StreetVoice::standDown() noexcept {
     holdSteps_ = 0;
+    capped_ = false;
     current_ = VoiceLine{};
 }
 
@@ -394,7 +396,9 @@ void StreetVoice::speakFarewell(std::string name, std::string line, std::string 
 // ---------------------------------------------------------------------------
 
 void StreetVoice::step(const VoiceScene& scene) {
-    if (holdSteps_ > 0) {
+    // The plate holds an event line's clock (VoiceScene::holdClock); a
+    // passer-by's bark is a moment and runs.
+    if (holdSteps_ > 0 && !(scene.holdClock && isEvent(current_.channel))) {
         --holdSteps_;
     }
     if (scene.room == nullptr) {
@@ -805,6 +809,46 @@ bool StreetVoice::stepPass(const VoiceScene& scene) {
 
 // --- overheard ---------------------------------------------------------------
 
+bool overheardStanding(const sim::WardActor& actor, std::int32_t wardTalkId) noexcept {
+    return wardSpeaker(actor, wardTalkId) && wardStanding(actor);
+}
+
+std::vector<OverheardBody> overheardStreetBodies(const sim::WardPopulation& people,
+                                                 const sim::TileQuery* tiles, std::int32_t tileX,
+                                                 std::int32_t tileY, std::int32_t band,
+                                                 std::int32_t wardTalkId) {
+    std::vector<OverheardBody> near;
+    for (const sim::WardActor& actor : people.actors()) {
+        if (actor.band != band || !overheardStanding(actor, wardTalkId)) {
+            continue;
+        }
+        const std::int32_t apart = tilesApart(actor.x, actor.y, tileX, tileY);
+        if (apart <= kOverheardEarshotTiles &&
+            (tiles == nullptr || tiles->lineOfSight(tileX, tileY, actor.x, actor.y, band))) {
+            near.push_back(
+                OverheardBody{sim::kWardSpeakerIdBase + actor.id, actor.x, actor.y, apart, &actor});
+        }
+    }
+    std::sort(near.begin(), near.end(), [](const OverheardBody& a, const OverheardBody& b) {
+        return a.apart != b.apart ? a.apart < b.apart : a.speakerId < b.speakerId;
+    });
+    return near;
+}
+
+std::int32_t overheardCompany(const std::vector<OverheardBody>& near, std::size_t index) noexcept {
+    if (index >= near.size()) {
+        return -1;
+    }
+    const OverheardBody& speaker = near[index];
+    for (const OverheardBody& other : near) {
+        if (other.speakerId != speaker.speakerId &&
+            tilesApart(speaker.x, speaker.y, other.x, other.y) <= kOverheardPairTiles) {
+            return other.speakerId;
+        }
+    }
+    return -1;
+}
+
 bool StreetVoice::stepOverheard(const VoiceScene& scene) {
     if (!channelFree(VoiceChannel::Overheard, scene.step)) {
         return false;
@@ -850,17 +894,12 @@ bool StreetVoice::stepOverheard(const VoiceScene& scene) {
             }
         }
     } else if (scene.people != nullptr) {
-        for (const sim::WardActor& actor : scene.people->actors()) {
-            if (actor.band != scene.playerBand || !wardSpeaker(actor, scene.wardTalkId) ||
-                !wardStanding(actor)) {
-                continue;
-            }
-            const std::int32_t apart =
-                tilesApart(actor.x, actor.y, scene.playerTileX, scene.playerTileY);
-            if (apart <= kOverheardEarshotTiles && heard(actor.x, actor.y)) {
-                near.push_back(Body{sim::kWardSpeakerIdBase + actor.id, actor.x, actor.y, apart,
-                                    nullptr, &actor});
-            }
+        // The street's half is the public query, so the drive that looks for
+        // a pair to stand by asks exactly this (overheardStreetBodies).
+        for (const OverheardBody& body :
+             overheardStreetBodies(*scene.people, scene.tiles, scene.playerTileX,
+                                   scene.playerTileY, scene.playerBand, scene.wardTalkId)) {
+            near.push_back(Body{body.speakerId, body.x, body.y, body.apart, nullptr, body.ward});
         }
     }
     if (near.size() < 2) {
@@ -877,7 +916,7 @@ bool StreetVoice::stepOverheard(const VoiceScene& scene) {
         std::int32_t company = -1;
         for (const Body& other : near) {
             if (other.speakerId != speaker.speakerId &&
-                tilesApart(speaker.x, speaker.y, other.x, other.y) <= 1) {
+                tilesApart(speaker.x, speaker.y, other.x, other.y) <= kOverheardPairTiles) {
                 company = other.speakerId;
                 break;
             }
