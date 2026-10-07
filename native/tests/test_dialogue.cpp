@@ -1700,6 +1700,45 @@ std::size_t topicOfKind(const render::Session& session, TopicKind kind) {
     return topics.size();
 }
 
+/// Opens a talk with the named Gull body from whichever side of it the talk
+/// key answers with them -- the key talks to the NEAREST body in reach, so a
+/// side that reaches somebody else is closed and the next one tried. False
+/// when nobody by that name is in, or no side reaches them.
+bool talkWith(render::Session& session, std::string_view name) {
+    // The id first: the session steps below, and a step may move the roster.
+    std::int32_t id = -1;
+    for (const Actor& actor : session.tavern().actors()) {
+        if (actor.present() && actor.name() == name) {
+            id = actor.id();
+            break;
+        }
+    }
+    if (id < 0) {
+        return false;
+    }
+    const std::int32_t sides[4][2] = {{0, 1}, {0, -1}, {1, 0}, {-1, 0}};
+    for (const auto& side : sides) {
+        const Actor* now = session.tavern().actorById(id);
+        if (now == nullptr) {
+            return false;
+        }
+        const std::int32_t x = now->tileX() + side[0];
+        const std::int32_t y = now->tileY() + side[1];
+        const std::int32_t band = now->band();
+        if (!session.tiles().standable(x, y, band)) {
+            continue;
+        }
+        session.placeBodyAt(x, y, band);
+        session.stepMany(MoveInput{}, 1);
+        session.interact();
+        if (session.talking() && session.tavern().talkingTo() == id) {
+            return true;
+        }
+        session.closeConversation();
+    }
+    return false;
+}
+
 }  // namespace
 
 TEST_CASE("the director flags the reports it writes, and a line that only opens on the name is not one") {
@@ -1878,4 +1917,41 @@ TEST_CASE("the caught hand and the stare are reports too: said once, theirs on t
         REQUIRE_FALSE(session.talking());
         CHECK(session.messageStepsLeft() == 0);
     }
+}
+
+TEST_CASE("Watchman Cull's own demand is his on the row, and his goodbye stands it down") {
+    // THE 2026-10-07 AUDITOR. The Gull's watchman demand (Tavern::lastDemand,
+    // which the sim writes "<name>: <row>") still went up through a bare
+    // say(), so it had no mouth, and Cull's goodbye no longer stood it down
+    // -- the old "<name>: " prefix test used to. It goes up through sayAs in
+    // his own name now, so the goodbye reads whose the row is.
+    render::SessionConfig config;
+    config.contentDir = content::contentDir();
+    config.timeOfDay = 23 * 3600;  // Cull drinks in the Gull 21:00 to 01:00
+    render::Session session(config);
+    session.stepMany(MoveInput{}, kStepsPerSecond);
+    REQUIRE(talkWith(session, "Watchman Cull"));
+    const std::string who = session.tavern().dialogue().speaker().name;
+    REQUIRE(who == "Watchman Cull");
+    // Eight jars of quayfire in the sack under his nose: noticePermille's own
+    // 750 cap, and he looks up every kWatchLookSeconds.
+    REQUIRE(session.tavern().giveItem("moonshine", 8));
+    int steps = 0;
+    while (session.tavern().lastDemand().empty() && session.talking() && steps < 60 * kStepsPerSecond) {
+        session.stepMany(MoveInput{}, 1);
+        ++steps;
+    }
+    REQUIRE_FALSE(session.tavern().lastDemand().empty());
+    REQUIRE(session.tavern().lastDemand().rfind(who + ": ", 0) == 0);
+    REQUIRE(session.talking());
+    // His demand is on the row, in his name, and the row is his.
+    INFO("row: ", session.lastMessage());
+    CHECK(session.lastMessage().rfind(who + ": ", 0) == 0);
+    CHECK(std::string(session.alertSpeakerNow()) == who);
+    REQUIRE(session.messageStepsLeft() > 0);
+    // His goodbye, by the back key: the row is his farewell only.
+    session.closeConversation();
+    REQUIRE_FALSE(session.talking());
+    CHECK(session.voice().lastOn(render::VoiceChannel::Farewell).name == who);
+    CHECK(session.messageStepsLeft() == 0);
 }

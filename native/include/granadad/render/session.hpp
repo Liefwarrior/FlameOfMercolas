@@ -2368,8 +2368,9 @@ private:
     /// director flagged, sim::Reply::report) already has the name in it and
     /// is said bare. Either way the row is theirs (messageMouth_), which is
     /// what the goodbye stands down -- by who, never by matching text. Like
-    /// say() it clears messageDemand_; the street Watch's three sites set it
-    /// back after the call, so a halt is both his line and a demand.
+    /// say() it clears messageDemand_; the four Watch sites (the street's
+    /// three, the Gull's lastDemand) set it back after the call, so a halt
+    /// is both his line and a demand.
     void sayAs(const std::string& who, const std::string& line, bool report);
     /// VOICE LANE. Voices the goodbye on the street channel -- the director's
     /// own farewell(walkedOff) for whoever the open conversation is with --

@@ -68,7 +68,22 @@ struct Placed {
     std::int32_t y = 0;
     std::int32_t band = 0;
     std::int32_t nth = 0;
+    /// A fixture stood against something instead of on its tile's centre
+    /// (a strongbox against its bed): an offset off the centre, in tiles,
+    /// and a set turn instead of the tile's hashed one.
+    float dx = 0.0F;
+    float dy = 0.0F;
+    bool turned = false;
+    float yaw = 0.0F;
 };
+
+/// THE BOX AGAINST THE BED, off the stand tile's centre toward the bed, in
+/// tiles: half a tile, less the chest's own half-depth at its 0.7 (0.209 m,
+/// SM_Gen_Prop_Chest_01's body is +-0.2986 deep), less a centimetre of air.
+/// At 0.7 its front stays on the bed's side of the stand tile's centre, so a
+/// body standing there to pick it is not standing in it. Pinned against the
+/// mesh in test_kit_page.
+constexpr float kBoxOffBed = 0.28F;
 
 /// Where a placed thing's origin stands in the scene: the tile's centre (a
 /// second thing on the same tile a hand's width off the first, so a knife
@@ -78,7 +93,8 @@ struct Placed {
     const float px = static_cast<float>(at.x) + 0.5F;
     const float py = static_cast<float>(at.y) + 0.5F;
     const float nudge = static_cast<float>(at.nth) * 0.22F;
-    return toScene(px + nudge, py - nudge * 0.5F, render::bandSurface(at.band) + at.spec->lift);
+    return toScene(px + nudge + at.dx, py - nudge * 0.5F + at.dy,
+                   render::bandSurface(at.band) + at.spec->lift);
 }
 
 /// A row with glass of its own to light: self-lit, and the catalogue
@@ -114,15 +130,31 @@ struct Placed {
         placed.push_back(at);
     }
     // --- the fixtures: the four strongboxes, the snug's bale ---------------
-    // The box stands ON the bed cell (a solid block the room reaches across
-    // from the stand tile); an emptied box is still a box.
+    // THE BOX AT THE BED'S FOOT (the 2026-10-07 auditor). The sim's box IS
+    // the bed cell (a solid CLOTH block the room reaches across from the
+    // stand tile), and the chunk mesh draws that cell a storey tall: a box
+    // stood on it was inside it, drawn and never seen. It stands on the
+    // stand tile's boards now, its back against the bed's face (kBoxOffBed),
+    // its latch (local +Z) to the room. A clockwise yaw takes +Z to (-sin,
+    // cos) in scene XZ, so the turn that sends it away from the bed, (-ax,
+    // -ay), is atan2(ax, -ay). An emptied box is still a box.
     if (const PieceSpec* box = catalogue.itemPiece("strongbox"); box != nullptr) {
         for (std::int32_t room = 0; room < sim::gull::kRoomCount; ++room) {
+            const sim::gull::GuestRoom& guest = sim::gull::kRooms[room];
+            const std::int32_t ax = guest.bedX - guest.standX;
+            const std::int32_t ay = guest.bedY - guest.standY;
             Placed at;
             at.spec = box;
-            at.x = sim::gull::kRooms[room].bedX;
-            at.y = sim::gull::kRooms[room].bedY;
+            at.x = guest.standX;
+            at.y = guest.standY;
             at.band = sim::gull::kUpperBand;
+            at.dx = static_cast<float>(ax) * kBoxOffBed;
+            at.dy = static_cast<float>(ay) * kBoxOffBed;
+            at.turned = true;
+            at.yaw = std::atan2(static_cast<float>(ax), static_cast<float>(-ay));
+            if (at.yaw < 0.0F) {
+                at.yaw += 6.28318530717958647692F;
+            }
             placed.push_back(at);
         }
     }
@@ -162,7 +194,7 @@ void describe(std::vector<StaticInstance>& out, const StaticCatalogue& catalogue
     piece.piece = static_cast<std::uint16_t>(index);
     piece.role = static_cast<std::uint8_t>(PieceRole::Item);
     piece.position = originOf(at);
-    piece.yaw = tileYaw(at.x, at.y, at.nth) + spec->yawOffset;
+    piece.yaw = (at.turned ? at.yaw : tileYaw(at.x, at.y, at.nth)) + spec->yawOffset;
     piece.pitch = spec->pitch;
     piece.scale = Vec3{spec->scale, spec->scale, spec->scale};
     // The light where the thing lies: the lamps' pool and a lit pane's

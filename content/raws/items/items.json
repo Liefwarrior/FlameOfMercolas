@@ -40,19 +40,19 @@
     {
       "id": "knife", "name": "KNIFE", "drams": 8, "royals": 4, "slot": "hand", "class": "edged",
       "damage": [11, 13],
-      "drawnCm": [-4, 9],
+      "drawnCm": [0, 13],
       "desc": "A GUTTING KNIFE OFF THE STRAND. EVERY DOCKER OWNS ONE. IT IS NOT A BRAWL WEAPON."
     },
     {
       "id": "dagger", "name": "DAGGER", "drams": 12, "royals": 14, "slot": "hand", "class": "edged",
       "damage": [11, 13],
-      "drawnCm": [-2, 13],
+      "drawnCm": [0, 15],
       "desc": "A HAND'S LENGTH OF STEEL WITH A GUARD ON IT. THE ROOFS CARRY THESE."
     },
     {
       "id": "cutlass", "name": "CUTLASS", "drams": 36, "royals": 40, "slot": "hand", "class": "edged",
       "damage": [11, 13],
-      "drawnCm": [-6, 18],
+      "drawnCm": [0, 23],
       "desc": "SHORT AND HEAVY. THE KESTREL'S CREW WEAR THEM ASHORE AND THE WATCH LETS IT GO."
     },
     {
@@ -109,7 +109,7 @@
     {
       "id": "strongbox", "name": "STRONGBOX", "drams": 400, "royals": 0, "slot": "none", "class": "fists",
       "fixed": true,
-      "drawnCm": [-19, 43],
+      "drawnCm": [0, 53],
       "desc": "IRON-STRAPPED, AT THE BED FOOT. IT DOES NOT TRAVEL. WHAT IS IN IT MIGHT."
     },
     {

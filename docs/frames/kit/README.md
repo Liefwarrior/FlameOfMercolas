@@ -364,7 +364,37 @@ Reviewer lines. All `granadad.exe --smoke=0 --hold --width=1280 --height=720 --s
 | a drink, no goodbye | `--time=20 --spawn=152,73,19 --yaw=0 --talk --topic=5` | `GERTA SALTCOTTE TAKES THE DRINK.` said once, no name in front |
 | the Gull lantern by day, close | `--time=14 --spawn=150,76,19 --yaw=0` | on the barrel, ring up, no cord, dark glass |
 | the same at 22:00 | `--time=22 --spawn=150,76,19 --yaw=0` | hot glass, the brass under it, the halo |
-| from the side, by day | `--time=14 --spawn=148,74,19 --yaw=90 --fov=40` | the foot on the barrel head |
-| from the side, 22:00 | `--time=22 --spawn=148,74,19 --yaw=90 --fov=40` | lit, no cord over the ring |
+| from the side, by day | `--time=14 --spawn=150,72,19 --yaw=180 --pitch=-15 --fov=40` | the foot on the barrel head |
+| from the side, 22:00 | `--time=22 --spawn=150,72,19 --yaw=180 --pitch=-15 --fov=40` | lit, no cord over the ring |
 | the Tarwalk facing west from the coil | `--time=14 --spawn=153,63,19 --yaw=270` | no `ROPE` on the reticle |
 | the same, eye on the coil | `--time=14 --spawn=153,63,19 --yaw=270 --pitch=-35` | `ROPE  48DR` over `E - TAKE` |
+
+2026-10-07, the auditor's three. Two side lines above stood the eye inside the trudgeon pillar at
+(148,74) -- tmx tile 14, a storey-tall box -- so both frames were a flat orange wall. The side is
+the north now, from the open boards at (150,72), two tiles off, the pillar at (151,74) beside the
+barrel rather than in front of the lens.
+
+Nothing rests under its floor any more. The knife, the dagger and the cutlass lay 4, 2 and 6 cm into
+the boards and the drawnCm pins called that correct; their lifts are raised so the guard sits on the
+planks (0.072, 0.062, 0.117), and the items-size case fails any row whose lowest point is more than a
+centimetre under its floor. The strongbox's -19 was the measuring, not the box: the chest is three
+nodes, lid and latch hung off the body, and the case read the latch's own local box at the chest's
+feet. The case walks the node tree now, the way raylib loads it.
+
+The strongboxes were the real find. The sim's box IS the bed cell, a cloth WALL the room reaches
+across from the stand tile, and the chunk mesh draws that cell a storey tall. The box stood on it
+was inside it, drawn and never seen. All four stand on their stand tiles now, back against the bed's
+face a centimetre off, latch to the room, at 0.7 so the front stops short of the tile's centre and
+a body picking the lock isn't standing in it. Pinned per room against the mesh.
+
+Cull's own demand -- the Gull's, not the street's -- went up through a bare say(), so it had no mouth
+and his goodbye stopped standing it down. It goes up through sayAs in his name now, demand flag after,
+and a case has him notice a sack of quayfire mid-talk, then say goodbye: the row is his farewell only.
+
+| what | line | look for |
+| --- | --- | --- |
+| a strongbox, north-west room | `--time=5 --spawn=151,68,20 --yaw=270 --pitch=-30` | the chest against the bed's east face, latch toward you |
+| the same box, from its stand | `--time=5 --spawn=149,68,20 --yaw=270 --pitch=-60` | the box under the reticle, PICK LOCK, nothing poking through the bed |
+
+Cull's demand has no reviewer line: no flag puts a sack on you, so it's the case in `test_dialogue.cpp`
+that plays it, through the real talk and the real notice rule.

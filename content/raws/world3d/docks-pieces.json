@@ -104,9 +104,9 @@
     "the_evictor":  { "pack": "PolygonDungeonRealms", "file": "SM_Wep_Mace_Large_01.gltf", "pitchDegrees": 90, "lift": 0.14, "scale": 0.9, "maxDistance": 32 },
     "mace":         { "pack": "PolygonFantasyHeroCharacters", "file": "SM_Wep_Mace_01.gltf", "pitchDegrees": 90, "lift": 0.08, "maxDistance": 32 },
     "bottle":       { "pack": "PolygonGeneric", "file": "SM_Gen_Prop_Bottle_01.gltf", "maxDistance": 24 },
-    "knife":        { "pack": "PolygonDungeonRealms", "file": "SM_Wep_Knife_Small_01.gltf", "pitchDegrees": 90, "lift": 0.03, "maxDistance": 24 },
-    "dagger":       { "pack": "PolygonFantasyHeroCharacters", "file": "SM_Wep_Dagger_01.gltf", "pitchDegrees": 90, "lift": 0.04, "maxDistance": 24 },
-    "cutlass":      { "pack": "PolygonFantasyHeroCharacters", "file": "SM_Wep_Sword_Small_01.gltf", "pitchDegrees": 90, "lift": 0.06, "maxDistance": 32 },
+    "knife":        { "pack": "PolygonDungeonRealms", "file": "SM_Wep_Knife_Small_01.gltf", "pitchDegrees": 90, "lift": 0.072, "maxDistance": 24 },
+    "dagger":       { "pack": "PolygonFantasyHeroCharacters", "file": "SM_Wep_Dagger_01.gltf", "pitchDegrees": 90, "lift": 0.062, "maxDistance": 24 },
+    "cutlass":      { "pack": "PolygonFantasyHeroCharacters", "file": "SM_Wep_Sword_Small_01.gltf", "pitchDegrees": 90, "lift": 0.117, "maxDistance": 32 },
     "boat_hook":    { "pack": "PolygonKnights", "file": "SM_Wep_Halberd_01.gltf", "pitchDegrees": 90, "lift": 0.05, "scale": 0.6, "tint": [170, 150, 120], "maxDistance": 32 },
     "coat":         { "pack": "PolygonGeneric", "file": "SM_Gen_Prop_Sack_01.gltf", "scale": 0.75, "tint": [104, 86, 62], "maxDistance": 32 },
     "hood":         { "pack": "PolygonGeneric", "file": "SM_Gen_Prop_Sack_01.gltf", "scale": 0.42, "tint": [70, 64, 58], "maxDistance": 24 },
@@ -117,7 +117,7 @@
     "picks":        { "pack": "PolygonGeneric", "file": "SM_Gen_Prop_Hook_01.gltf", "scale": 0.9, "lift": 0.06, "tint": [150, 150, 156], "maxDistance": 16 },
     "letter":       { "pack": "PolygonDungeonRealms", "file": "SM_Prop_Camp_Plank_01.gltf", "scale": 0.28, "lift": 0.02, "tint": [226, 216, 196], "maxDistance": 16 },
     "bale":         { "pack": "PolygonGeneric", "file": "SM_Gen_Prop_Sack_Stack_01.gltf", "scale": 0.7, "lift": 0.04, "maxDistance": 40 },
-    "strongbox":    { "pack": "PolygonGeneric", "file": "SM_Gen_Prop_Chest_01.gltf", "scale": 0.9, "maxDistance": 40 }
+    "strongbox":    { "pack": "PolygonGeneric", "file": "SM_Gen_Prop_Chest_01.gltf", "scale": 0.7, "maxDistance": 40 }
   },
   "materials": {
     "brick":          { "wall": "masonry", "tint": [255, 255, 255], "insideTint": [232, 224, 208], "topTint": [132, 76, 62], "ceilingTint": [160, 128, 116], "floor": "floor_cobble", "fill": "floor_fill", "fillTint": [118, 116, 110], "lip": "lip_stone", "lipTint": [128, 112, 100] },

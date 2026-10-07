@@ -5788,7 +5788,17 @@ void Session::step(const sim::MoveInput& input) {
     }
     if (tavern_->lastDemand() != lastDemandSpoken_) {
         lastDemandSpoken_ = tavern_->lastDemand();
-        say(lastDemandSpoken_);
+        // In the watchman's own name -- the sim writes it "<name>: <row>"
+        // (Tavern::tickWatch), so the prefix IS his name, exactly -- and
+        // through sayAs, so the row is his: his goodbye stands it down the
+        // way it stands down his greeting (the 2026-10-07 auditor: the old
+        // prefix test caught this line, and the mouth has to as well).
+        const std::string watchman(alertSpeakerOf(lastDemandSpoken_));
+        if (watchman.empty()) {
+            say(lastDemandSpoken_);
+        } else {
+            sayAs(watchman, lastDemandSpoken_.substr(watchman.size() + 2), false);
+        }
         // THE GULL'S OWN WATCHMAN'S DEMAND (Cull's halt, a contraband
         // demand, an arrest at reach behind it) outranks the plate exactly
         // as the street's does -- the auditor's finding, fifth pass.
@@ -5947,8 +5957,8 @@ void Session::say(std::string line) {
     // Nobody's until sayAs says whose: a bare say() is a narration.
     messageMouth_.clear();
     // An ordinary line. The four Watch sites (the street's three in step()
-    // through sayAs, the Gull's own lastDemand through say) set this back
-    // after the call -- see rungPlateOutranked.
+    // and the Gull's own lastDemand, all through sayAs) set this back after
+    // the call -- see rungPlateOutranked.
     messageDemand_ = false;
     // A new line, at whatever register the frame gives it, and news
     // unless the site says otherwise (messageHeld_).

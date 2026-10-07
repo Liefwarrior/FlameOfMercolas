@@ -449,6 +449,7 @@ TEST_CASE("a thing on a tile is an Item piece off the catalogue, and the placeho
 // ---------------------------------------------------------------------------
 
 #include <algorithm>
+#include <array>
 #include <cstring>
 #include <filesystem>
 #include <fstream>
@@ -463,9 +464,126 @@ TEST_CASE("a thing on a tile is an Item piece off the catalogue, and the placeho
 
 namespace {
 
-/// A piece file's POSITION bounds (Y up, metres -- the export pipeline's
-/// convention, the one static_pieces.cpp's extents are quoted in) over every
-/// primitive, off the accessors' own min/max. False when the file is not
+/// A glTF node's matrix, column-major as the file stores one: its own
+/// `matrix`, or translation * rotation * scale.
+using GltfMatrix = std::array<float, 16>;
+
+constexpr GltfMatrix kGltfIdentity{1.0F, 0.0F, 0.0F, 0.0F, 0.0F, 1.0F, 0.0F, 0.0F,
+                                   0.0F, 0.0F, 1.0F, 0.0F, 0.0F, 0.0F, 0.0F, 1.0F};
+
+GltfMatrix gltfLocal(const nlohmann::json& node) {
+    GltfMatrix m = kGltfIdentity;
+    if (node.contains("matrix") && node["matrix"].is_array() && node["matrix"].size() == 16) {
+        for (std::size_t i = 0; i < 16; ++i) {
+            m[i] = node["matrix"][i].get<float>();
+        }
+        return m;
+    }
+    float t[3] = {0.0F, 0.0F, 0.0F};
+    float q[4] = {0.0F, 0.0F, 0.0F, 1.0F};
+    float k[3] = {1.0F, 1.0F, 1.0F};
+    for (std::size_t i = 0; i < 3; ++i) {
+        if (node.contains("translation")) {
+            t[i] = node["translation"][i].get<float>();
+        }
+        if (node.contains("scale")) {
+            k[i] = node["scale"][i].get<float>();
+        }
+    }
+    if (node.contains("rotation")) {
+        for (std::size_t i = 0; i < 4; ++i) {
+            q[i] = node["rotation"][i].get<float>();
+        }
+    }
+    const float x = q[0];
+    const float y = q[1];
+    const float z = q[2];
+    const float w = q[3];
+    const float r[3][3] = {{1.0F - 2.0F * (y * y + z * z), 2.0F * (x * y - z * w), 2.0F * (x * z + y * w)},
+                           {2.0F * (x * y + z * w), 1.0F - 2.0F * (x * x + z * z), 2.0F * (y * z - x * w)},
+                           {2.0F * (x * z - y * w), 2.0F * (y * z + x * w), 1.0F - 2.0F * (x * x + y * y)}};
+    for (std::size_t col = 0; col < 3; ++col) {
+        for (std::size_t row = 0; row < 3; ++row) {
+            m[col * 4 + row] = r[row][col] * k[col];
+        }
+    }
+    m[12] = t[0];
+    m[13] = t[1];
+    m[14] = t[2];
+    return m;
+}
+
+GltfMatrix gltfMul(const GltfMatrix& a, const GltfMatrix& b) {
+    GltfMatrix out{};
+    for (std::size_t col = 0; col < 4; ++col) {
+        for (std::size_t row = 0; row < 4; ++row) {
+            float sum = 0.0F;
+            for (std::size_t i = 0; i < 4; ++i) {
+                sum += a[i * 4 + row] * b[col * 4 + i];
+            }
+            out[col * 4 + row] = sum;
+        }
+    }
+    return out;
+}
+
+std::array<float, 3> gltfApply(const GltfMatrix& m, float x, float y, float z) {
+    return {m[0] * x + m[4] * y + m[8] * z + m[12], m[1] * x + m[5] * y + m[9] * z + m[13],
+            m[2] * x + m[6] * y + m[10] * z + m[14]};
+}
+
+/// Every mesh the file draws, with the world matrix of the node that draws
+/// it -- the adapter's own load: raylib bakes each node's world transform
+/// into the vertices, so the strongbox's lid sits on its body and its latch
+/// on its lid, not all three at the chest's feet (the 2026-10-07 auditor
+/// read the latch's own local -21 cm as the box sunk through the floor).
+std::vector<std::pair<std::size_t, GltfMatrix>> gltfMeshes(const nlohmann::json& gltf) {
+    std::vector<std::pair<std::size_t, GltfMatrix>> out;
+    if (!gltf.contains("nodes") || !gltf["nodes"].is_array()) {
+        return out;
+    }
+    const nlohmann::json& nodes = gltf["nodes"];
+    std::vector<bool> isChild(nodes.size(), false);
+    for (const nlohmann::json& node : nodes) {
+        if (node.contains("children")) {
+            for (const nlohmann::json& child : node["children"]) {
+                const std::size_t i = child.get<std::size_t>();
+                if (i < isChild.size()) {
+                    isChild[i] = true;
+                }
+            }
+        }
+    }
+    std::vector<std::pair<std::size_t, GltfMatrix>> stack;
+    for (std::size_t i = 0; i < nodes.size(); ++i) {
+        if (!isChild[i]) {
+            stack.emplace_back(i, kGltfIdentity);
+        }
+    }
+    while (!stack.empty()) {
+        const std::pair<std::size_t, GltfMatrix> top = stack.back();
+        stack.pop_back();
+        const nlohmann::json& node = nodes[top.first];
+        const GltfMatrix world = gltfMul(top.second, gltfLocal(node));
+        if (node.contains("mesh")) {
+            out.emplace_back(node["mesh"].get<std::size_t>(), world);
+        }
+        if (node.contains("children")) {
+            for (const nlohmann::json& child : node["children"]) {
+                const std::size_t i = child.get<std::size_t>();
+                if (i < nodes.size()) {
+                    stack.emplace_back(i, world);
+                }
+            }
+        }
+    }
+    return out;
+}
+
+/// A piece file's bounds as the adapter draws it (Y up, metres -- the export
+/// pipeline's convention, the one static_pieces.cpp's extents are quoted
+/// in): every primitive's POSITION accessor box, its eight corners through
+/// the world matrix of the node that draws it. False when the file is not
 /// here to be measured.
 bool gltfBounds(const std::filesystem::path& file, float (&lo)[3], float (&hi)[3]) {
     std::ifstream in(file, std::ios::binary);
@@ -482,11 +600,11 @@ bool gltfBounds(const std::filesystem::path& file, float (&lo)[3], float (&hi)[3
         hi[i] = -kInf;
     }
     bool any = false;
-    for (const nlohmann::json& mesh : gltf["meshes"]) {
-        if (!mesh.contains("primitives")) {
+    for (const std::pair<std::size_t, GltfMatrix>& drawn : gltfMeshes(gltf)) {
+        if (drawn.first >= gltf["meshes"].size() || !gltf["meshes"][drawn.first].contains("primitives")) {
             continue;
         }
-        for (const nlohmann::json& prim : mesh["primitives"]) {
+        for (const nlohmann::json& prim : gltf["meshes"][drawn.first]["primitives"]) {
             if (!prim.contains("attributes") || !prim["attributes"].contains("POSITION")) {
                 continue;
             }
@@ -494,9 +612,20 @@ bool gltfBounds(const std::filesystem::path& file, float (&lo)[3], float (&hi)[3
             if (!acc.contains("min") || !acc.contains("max")) {
                 continue;
             }
-            for (int i = 0; i < 3; ++i) {
-                lo[i] = std::min(lo[i], acc["min"][static_cast<std::size_t>(i)].get<float>());
-                hi[i] = std::max(hi[i], acc["max"][static_cast<std::size_t>(i)].get<float>());
+            float mn[3];
+            float mx[3];
+            for (std::size_t i = 0; i < 3; ++i) {
+                mn[i] = acc["min"][i].get<float>();
+                mx[i] = acc["max"][i].get<float>();
+            }
+            for (int corner = 0; corner < 8; ++corner) {
+                const std::array<float, 3> p =
+                    gltfApply(drawn.second, (corner & 1) != 0 ? mx[0] : mn[0], (corner & 2) != 0 ? mx[1] : mn[1],
+                              (corner & 4) != 0 ? mx[2] : mn[2]);
+                for (std::size_t i = 0; i < 3; ++i) {
+                    lo[i] = std::min(lo[i], p[i]);
+                    hi[i] = std::max(hi[i], p[i]);
+                }
             }
             any = true;
         }
@@ -579,8 +708,8 @@ bool gltfTriangles(const std::filesystem::path& file, GltfTriangles& out) {
         }
         return f;
     };
-    for (const nlohmann::json& mesh : gltf["meshes"]) {
-        for (const nlohmann::json& prim : mesh["primitives"]) {
+    for (const std::pair<std::size_t, GltfMatrix>& drawn : gltfMeshes(gltf)) {
+        for (const nlohmann::json& prim : gltf["meshes"][drawn.first]["primitives"]) {
             const std::size_t pos = prim["attributes"]["POSITION"].get<std::size_t>();
             const std::size_t tex = prim["attributes"]["TEXCOORD_0"].get<std::size_t>();
             const std::size_t ind = prim["indices"].get<std::size_t>();
@@ -593,7 +722,10 @@ bool gltfTriangles(const std::filesystem::path& file, GltfTriangles& out) {
                 if (at + isize <= bin.size()) {
                     std::memcpy(&v, bin.data() + at, isize);  // little-endian, both toolchains
                 }
-                out.y.push_back(floatAt(where(pos, v, 3, 4) + 4));
+                const std::size_t corner = where(pos, v, 3, 4);
+                const std::array<float, 3> p =
+                    gltfApply(drawn.second, floatAt(corner), floatAt(corner + 4), floatAt(corner + 8));
+                out.y.push_back(p[1]);
                 out.uv.push_back(floatAt(where(tex, v, 2, 4)));
                 out.uv.push_back(floatAt(where(tex, v, 2, 4) + 4));
             }
@@ -701,6 +833,11 @@ TEST_CASE("every thing the items table puts on a tile is the size of a thing: a 
         INFO("drawn ", spec->lift + foot, " .. ", spec->lift + head, " m; drawnCm ", def->drawnLoCm, " .. ",
              def->drawnHiCm);
         CHECK(std::abs(spec->lift + foot - static_cast<float>(def->drawnLoCm) * 0.01F) <= 0.03F);
+        // AND NOTHING RESTS UNDER ITS FLOOR (the 2026-10-07 auditor: the
+        // pins above recorded a knife 4 cm into the boards, a cutlass 6, as
+        // correct). Every row's lowest point on or over the boards it lies
+        // on, to a centimetre; a lift is how far the origin stands off them.
+        CHECK(spec->lift + foot >= -0.01F);
         CHECK(std::abs(spec->lift + head - static_cast<float>(def->drawnHiCm) * 0.01F) <= 0.03F);
         ++measured;
     }
@@ -932,5 +1069,90 @@ TEST_CASE("the Gull's table lantern stands on the barrel under it, sheds its cor
         // No catalogue, no halo.
         const render3d::StaticCatalogue bare = render3d::StaticCatalogue::fromJson("{}");
         CHECK(render3d::groundItemHalos(night, bare, nightView).empty());
+    }
+}
+
+TEST_CASE("the four strongboxes stand on open boards against their beds, never inside them") {
+    // THE 2026-10-07 AUDITOR asked where the four boxes actually stand. The
+    // sim's box IS the bed cell -- a solid CLOTH block the room reaches
+    // across from the stand tile (gull::roomAtStand) -- and the chunk mesh
+    // draws that cell a storey tall, so a box stood on it was inside it.
+    // Each stands on its stand tile's boards now, its back against the
+    // bed's face, its front short of the tile's centre, where a body stands
+    // to pick it.
+    namespace render3d = granadad::render3d;
+    const render3d::StaticCatalogue catalogue =
+        render3d::StaticCatalogue::load(render3d::staticCataloguePath(content::contentDir()));
+    REQUIRE_FALSE(catalogue.empty());
+    const render3d::PieceSpec* box = catalogue.itemPiece("strongbox");
+    REQUIRE(box != nullptr);
+    const int boxIndex = catalogue.pieceIndex(render3d::PieceRole::Item, box->variant);
+    REQUIRE(boxIndex >= 0);
+    const std::filesystem::path statics = content::contentDir() / "art" / "lot-3d" / "static";
+    float lo[3] = {0.0F, 0.0F, 0.0F};
+    float hi[3] = {0.0F, 0.0F, 0.0F};
+    const bool measured = gltfBounds(statics / box->file, lo, hi);
+    if (std::filesystem::is_directory(statics)) {
+        REQUIRE(measured);
+    } else {
+        MESSAGE("box faces unmeasured: no licensed static tree at " << statics.string());
+    }
+
+    Session session(gullAt(5, sim::gull::kRooms[0].standX, sim::gull::kRooms[0].standY, sim::gull::kUpperBand));
+    // The eye in the middle of the upper floor, every box well inside reach.
+    granadad::render::Camera view = session.camera();
+    view.x = 152.5F;
+    view.y = 72.5F;
+    const std::vector<render3d::StaticInstance> things = render3d::groundItemInstances(session, catalogue, view);
+    const float boards = granadad::render::bandSurface(sim::gull::kUpperBand);
+    for (std::int32_t room = 0; room < sim::gull::kRoomCount; ++room) {
+        CAPTURE(room);
+        const sim::gull::GuestRoom& guest = sim::gull::kRooms[room];
+        const std::int32_t ax = guest.bedX - guest.standX;
+        REQUIRE(guest.bedY == guest.standY);
+        REQUIRE((ax == 1 || ax == -1));
+        // The bed is the solid block; the stand tile is open boards.
+        CHECK_FALSE(session.tiles().standable(guest.bedX, guest.bedY, sim::gull::kUpperBand));
+        REQUIRE(session.tiles().standable(guest.standX, guest.standY, sim::gull::kUpperBand));
+        const render3d::StaticInstance* at = nullptr;
+        for (const render3d::StaticInstance& thing : things) {
+            if (static_cast<int>(thing.piece) == boxIndex &&
+                static_cast<std::int32_t>(std::floor(thing.position.x)) == guest.standX &&
+                static_cast<std::int32_t>(std::floor(thing.position.z)) == guest.standY) {
+                at = &thing;
+            }
+        }
+        REQUIRE(at != nullptr);
+        CHECK(std::abs(at->position.y - (boards + box->lift)) < 1.0e-4F);
+        if (!measured) {
+            continue;
+        }
+        // The box as drawn: the mesh's bounds through the instance's scale
+        // and turn (a clockwise yaw takes local +X to (cos, sin) and +Z to
+        // (-sin, cos) in scene XZ), at its position.
+        const float c = std::cos(at->yaw);
+        const float s = std::sin(at->yaw);
+        float minX = std::numeric_limits<float>::infinity();
+        float maxX = -minX;
+        for (int corner = 0; corner < 4; ++corner) {
+            const float x = ((corner & 1) != 0 ? hi[0] : lo[0]) * at->scale.x;
+            const float z = ((corner & 2) != 0 ? hi[2] : lo[2]) * at->scale.z;
+            const float wx = at->position.x + x * c - z * s;
+            minX = std::min(minX, wx);
+            maxX = std::max(maxX, wx);
+        }
+        // The bed's face is the line between the two cells; the stand
+        // tile's centre is where a body stands to pick the box.
+        const float face = static_cast<float>(ax < 0 ? guest.standX : guest.standX + 1);
+        const float centre = static_cast<float>(guest.standX) + 0.5F;
+        const float gap = ax < 0 ? minX - face : face - maxX;
+        const float clear = ax < 0 ? centre - maxX : minX - centre;
+        INFO("box x ", minX, " .. ", maxX, ", the bed's face at ", face, ": ", gap, " m off it, ", clear,
+             " m short of the stand's centre");
+        CHECK(gap >= -0.005F);
+        CHECK(gap <= 0.02F);
+        CHECK(clear >= 0.0F);
+        // Its foot on the boards, to a centimetre.
+        CHECK(std::abs(at->position.y + lo[1] * at->scale.y - boards) <= 0.01F);
     }
 }
