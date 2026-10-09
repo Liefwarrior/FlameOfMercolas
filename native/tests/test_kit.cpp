@@ -24,6 +24,7 @@
 
 #include <doctest/doctest.h>
 
+#include <algorithm>
 #include <cstdint>
 #include <memory>
 #include <string>
@@ -36,10 +37,12 @@
 #include "granadad/sim/angle.hpp"
 #include "granadad/sim/contraband.hpp"
 #include "granadad/sim/crime.hpp"
+#include "granadad/sim/dialogue.hpp"
 #include "granadad/sim/docks.hpp"
 #include "granadad/sim/engine.hpp"
 #include "granadad/sim/items.hpp"
 #include "granadad/sim/player.hpp"
+#include "granadad/sim/shops.hpp"
 #include "granadad/sim/tavern.hpp"
 #include "granadad/sim/tile_query.hpp"
 #include "granadad/sim/world_hash.hpp"
@@ -778,4 +781,213 @@ TEST_CASE("a worn coat turns a flat DR off a landed blow, never below one, and h
     CHECK(lostCoat > 0);
     CHECK(turnedCoat > 0);
     CHECK(harnessCoat > 0);
+}
+
+// ===========================================================================
+// SHOPS (2026-10-09): the counters that sell a docker's things, and the one
+// that buys them back
+// ===========================================================================
+
+TEST_CASE("the shop raws load: three counters on the gazetteer's sites, every shelf row an item") {
+    const ShopRaws shops = ShopRaws::load(content::contentDir());
+    REQUIRE(shops.loaded());
+    REQUIRE(shops.counters().size() == 3);
+    const ItemRegistry items = ItemRegistry::load(content::contentDir());
+    for (const char* keeper : {"brann", "neddry", "fenner"}) {
+        INFO(keeper);
+        const ShopCounter* counter = shops.forKeeper(keeper);
+        REQUIRE(counter != nullptr);
+        CHECK_FALSE(counter->name.empty());
+        for (const std::string& id : counter->sells) {
+            INFO(id);
+            const ItemDef* item = items.find(id);
+            REQUIRE(item != nullptr);
+            CHECK_FALSE(item->fixed);
+            CHECK(item->contraband.empty());
+            CHECK(item->royals > 0);
+        }
+    }
+    // Only the pawn buys back, and never a case's own reward.
+    CHECK_FALSE(shops.forKeeper("brann")->buys());
+    CHECK_FALSE(shops.forKeeper("neddry")->buys());
+    const ShopCounter* pawn = shops.forKeeper("fenner");
+    CHECK(pawn->buys());
+    CHECK(std::find(pawn->neverBuys.begin(), pawn->neverBuys.end(), "the_evictor") !=
+          pawn->neverBuys.end());
+    CHECK(shops.forKeeper("cull") == nullptr);
+}
+
+TEST_CASE("a counter with no keeper, no name or nothing to trade is dropped; a seen id is not overwritten") {
+    const ShopRaws shops = ShopRaws::fromJson(R"({"counters": [
+        {"id": "a", "keeper": "brann", "name": "A", "sells": ["rope"]},
+        {"id": "a", "keeper": "neddry", "name": "Shadow", "sells": ["coat"]},
+        {"id": "b", "keeper": "", "name": "B", "sells": ["rope"]},
+        {"id": "c", "keeper": "fenner", "name": "C"},
+        {"id": "d", "keeper": "fenner", "name": "D", "buysPercent": 250}
+    ]})");
+    REQUIRE(shops.counters().size() == 2);
+    CHECK(shops.counters()[0].name == "A");
+    CHECK(shops.counters()[1].id == "d");
+    // A percentage past the whole is clamped to it, not honoured.
+    CHECK(shops.counters()[1].buysPercent == 100);
+    CHECK_FALSE(ShopRaws::fromJson("not json").loaded());
+}
+
+TEST_CASE("a counter's price is the item's worth through the guild term, never under one royal") {
+    CHECK(counterPrice(9, 0) == 9);
+    CHECK(counterPrice(9, -10) == 8);   // a member's rate, truncated
+    CHECK(counterPrice(9, 25) == 11);   // a strong house pricing a stranger up
+    CHECK(counterPrice(1, -50) == 1);   // never given away
+    CHECK(counterOffer(9, 50) == 4);
+    CHECK(counterOffer(1, 50) == 1);    // a thing worth anything fetches something
+    CHECK(counterOffer(0, 50) == 0);    // a thing worth nothing fetches nothing
+    CHECK(counterOffer(9, 0) == 0);     // a counter that does not buy
+}
+
+TEST_CASE("buying across a counter: the purse, the load, the Kit, and the hash that sees it") {
+    Room room(hourOfDay(14), gull::kBartenderX, gull::kBarY - 1);
+    Tavern& tavern = room.tavern();
+    const std::int32_t lantern = tavern.items().indexOf("lantern");
+    REQUIRE(lantern >= 0);
+
+    const CounterView view = tavern.counterViewFor("brann", true);
+    CHECK(view.keeps);
+    CHECK(view.atCounter);
+    CHECK_FALSE(view.buys);
+    CHECK(view.name == "Brann's Chandlery");
+    bool listed = false;
+    for (const CounterWare& ware : view.sells) {
+        listed = listed || ware.itemId == "lantern";
+    }
+    CHECK(listed);
+    CHECK_FALSE(tavern.counterViewFor("cull", true).keeps);
+
+    std::string line;
+    tavern.setPlayerCoin(3);
+    CHECK(tavern.buyFromCounter("lantern", 9, line) == ServiceResult::NoCoin);
+    CHECK(line == "YOUR PURSE WILL NOT COVER IT.");
+    CHECK(tavern.kit().count(lantern) == 0);
+
+    tavern.setPlayerCoin(50);
+    const std::uint64_t before = room.hash();
+    CHECK(tavern.buyFromCounter("lantern", 9, line) == ServiceResult::Served);
+    CHECK(line == "PAID 9C FOR THE LANTERN.");
+    CHECK(tavern.kit().count(lantern) == 1);
+    CHECK(tavern.playerCoin() == 41);
+    // A purchase the twin-run gate could not see is one it does not protect.
+    CHECK(room.hash() != before);
+
+    // Past the load, refused with TAKE's own numbers, and nothing moves.
+    tavern.setPlayerCoin(10000);
+    std::int32_t bought = 0;
+    while (tavern.buyFromCounter("lantern", 9, line) == ServiceResult::Served && bought < 100) {
+        ++bought;
+    }
+    CHECK(bought < 100);
+    CHECK(line.rfind("TOO MUCH ON YOU ALREADY. ", 0) == 0);
+}
+
+TEST_CASE("selling to the pawn: carried and unworn only, at its offer, and never its never list") {
+    Room room(hourOfDay(14), gull::kBartenderX, gull::kBarY - 1);
+    Tavern& tavern = room.tavern();
+    tavern.setPlayerCoin(100);
+    std::string line;
+    REQUIRE(tavern.buyFromCounter("knife", 4, line) == ServiceResult::Served);
+    REQUIRE(tavern.giveItem("the_evictor"));
+    const std::int32_t knife = tavern.items().indexOf("knife");
+
+    CounterView pawn = tavern.counterViewFor("fenner", true);
+    REQUIRE(pawn.buys);
+    std::int32_t offer = 0;
+    bool evictor = false;
+    for (const CounterWare& ware : pawn.pawnable) {
+        if (ware.itemId == "knife") {
+            offer = ware.royals;
+        }
+        evictor = evictor || ware.itemId == "the_evictor";
+    }
+    CHECK(offer == counterOffer(tavern.items().at(knife)->royals, 50));
+    CHECK_FALSE(evictor);
+
+    // Worn is not for sale: take it off first.
+    tavern.wearItem(knife);
+    REQUIRE(tavern.kit().isWorn(knife));
+    pawn = tavern.counterViewFor("fenner", true);
+    for (const CounterWare& ware : pawn.pawnable) {
+        CHECK(ware.itemId != "knife");
+    }
+    CHECK(tavern.sellToCounter("knife", offer, line) == ServiceResult::Refused);
+    CHECK(line == "TAKE IT OFF FIRST.");
+
+    tavern.wearItem(knife);  // the same press bares it
+    REQUIRE_FALSE(tavern.kit().isWorn(knife));
+    const std::int32_t coin = tavern.playerCoin();
+    CHECK(tavern.sellToCounter("knife", offer, line) == ServiceResult::Served);
+    CHECK(line == "SOLD THE KNIFE FOR " + std::to_string(offer) + "C.");
+    CHECK(tavern.kit().count(knife) == 0);
+    CHECK(tavern.playerCoin() == coin + offer);
+    CHECK(tavern.sellToCounter("knife", offer, line) == ServiceResult::Refused);
+}
+
+TEST_CASE("a keeper offers the shelf on their own list, and away from the counter says where it is") {
+    Room room(hourOfDay(14), gull::kBartenderX, gull::kBarY - 1);
+    Tavern& tavern = room.tavern();
+    DialogueDirector& talk = tavern.dialogue();
+    Speaker brann;
+    brann.actorId = 9001;
+    brann.name = "Brann";
+    brann.notableId = "brann";
+    brann.family = JobFamily::Trade;
+
+    const auto indexOf = [&talk](TopicKind kind) {
+        for (std::size_t i = 0; i < talk.topics().size(); ++i) {
+            if (talk.topics()[i].kind == kind) {
+                return static_cast<std::int32_t>(i);
+            }
+        }
+        return -1;
+    };
+
+    // At the counter: SEE THE WARES opens the shelf, every row priced.
+    talk.setCounter(tavern.counterViewFor("brann", true));
+    REQUIRE(talk.open(brann, hourOfDay(14)));
+    const std::int32_t wares = indexOf(TopicKind::Wares);
+    REQUIRE(wares >= 0);
+    CHECK(indexOf(TopicKind::Pawn) < 0);
+    (void)talk.choose(static_cast<std::size_t>(wares));
+    CHECK(talk.menu() == DialogueMenu::Wares);
+    REQUIRE(indexOf(TopicKind::BuyItem) >= 0);
+    for (const Topic& topic : talk.topics()) {
+        if (topic.kind == TopicKind::BuyItem) {
+            CHECK(topic.payload > 0);
+            CHECK(topic.label.find(" (") != std::string::npos);
+            CHECK(topic.label.back() == ')');
+        }
+    }
+    // A purse that cannot cover it is refused by the counter's own sentence.
+    talk.setPlayerCoin(0);
+    const Reply broke = talk.choose(static_cast<std::size_t>(indexOf(TopicKind::BuyItem)));
+    CHECK_FALSE(broke.ok);
+    CHECK(broke.line == "YOUR PURSE WILL NOT COVER IT.");
+    // Back goes to the root.
+    (void)talk.choose(static_cast<std::size_t>(indexOf(TopicKind::Back)));
+    CHECK(talk.menu() == DialogueMenu::Root);
+    talk.close();
+    CHECK_FALSE(talk.counter().keeps);
+
+    // Met away from the counter: the row is there, and it says where to go.
+    talk.setCounter(tavern.counterViewFor("brann", false));
+    REQUIRE(talk.open(brann, hourOfDay(23)));
+    const Reply away = talk.choose(static_cast<std::size_t>(indexOf(TopicKind::Wares)));
+    CHECK(away.line == "NOT OUT HERE. COME BY BRANN'S CHANDLERY.");
+    CHECK(talk.menu() == DialogueMenu::Root);
+    talk.close();
+
+    // Nobody else has a shelf.
+    Speaker stranger = brann;
+    stranger.notableId.clear();
+    talk.setCounter(tavern.counterViewFor("", true));
+    REQUIRE(talk.open(stranger, hourOfDay(14)));
+    CHECK(indexOf(TopicKind::Wares) < 0);
+    talk.close();
 }

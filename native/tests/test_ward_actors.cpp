@@ -931,3 +931,30 @@ TEST_CASE("E addresses the body in front of the eye; nearest only answers when n
     CHECK(ward.inFrontOf(sim::q8_tile_centre(alone->x + 3), eyeY, alone->band,
                          sim::kFacingWest, 2) == nullptr);
 }
+
+TEST_CASE("coin paid into a ward purse is minted, coin taken out is sunk, and the ledger holds") {
+    // SHOPS (2026-10-09). A purchase across a counter pays the keeper out of
+    // the player's purse, which is not one of the ward's: minted, the mirror
+    // of a robbery's sink, so minted - sunk == held across the boundary.
+    auto run = privateWard(8);
+    sim::WardPopulation& ward = run->people();
+    const auto held = [&ward] {
+        std::int64_t sum = 0;
+        for (const sim::WardActor& actor : ward.actors()) {
+            sum += actor.coin;
+        }
+        return sum;
+    };
+    const auto balance = [&ward] {
+        return ward.ledger().coinMinted - ward.ledger().coinSunk;
+    };
+    REQUIRE(balance() == held());
+    const std::int32_t keeper = ward.actors().front().id;
+    ward.payCoinTo(keeper, 9);
+    CHECK(balance() == held());
+    CHECK(ward.takeCoinFrom(keeper, 4) == 4);
+    CHECK(balance() == held());
+    ward.payCoinTo(keeper, 0);
+    ward.payCoinTo(-1, 5);
+    CHECK(balance() == held());
+}

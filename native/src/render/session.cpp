@@ -6030,6 +6030,61 @@ bool Session::haggling() const noexcept {
 
 const sim::WardActor* Session::wardAddresseeNow() const { return wardAddressee(); }
 
+bool Session::wardAtCounterNow(const sim::WardActor& who) const noexcept {
+    return wardAtCounter(who);
+}
+
+bool Session::wardAtCounter(const sim::WardActor& who) const noexcept {
+    // SHOPS. At the post the bake gave them, give or take the room it stands
+    // in: a keeper is behind the counter while they are working it, and met
+    // anywhere else -- the street at midnight, their own doorway -- says so.
+    return who.band == who.anchorBand && std::abs(who.x - who.anchorX) <= kCounterReachTiles &&
+           std::abs(who.y - who.anchorY) <= kCounterReachTiles;
+}
+
+void Session::settleCounterReply(sim::Reply& reply) {
+    // SHOPS (2026-10-09). The director said who wants what for how much; the
+    // Kit's owner says whether it fits, and the keeper's own purse -- the
+    // ward's -- takes the coin or pays it.
+    sim::DialogueDirector& talk = tavern_->dialogue();
+    const sim::WardActor* keeper = people_->byId(wardTalkId_);
+    if (keeper == nullptr) {
+        return;
+    }
+    std::string line;
+    if (reply.kind == sim::TopicKind::BuyItem) {
+        const sim::ServiceResult sold =
+            tavern_->buyFromCounter(reply.itemId, reply.itemPrice, line);
+        if (sold == sim::ServiceResult::Served) {
+            people_->payCoinTo(wardTalkId_, reply.itemPrice);
+        }
+        reply.ok = sold == sim::ServiceResult::Served;
+    } else {
+        // A pawnbroker pays out of his own purse, and a short one is short.
+        if (keeper->coin < reply.itemPrice) {
+            line = upperAscii(people_->identity(wardTalkId_).name) + " HAS NOT GOT IT TODAY.";
+            reply.ok = false;
+        } else {
+            const sim::ServiceResult bought =
+                tavern_->sellToCounter(reply.itemId, reply.itemPrice, line);
+            if (bought == sim::ServiceResult::Served) {
+                (void)people_->takeCoinFrom(wardTalkId_, reply.itemPrice);
+            }
+            reply.ok = bought == sim::ServiceResult::Served;
+        }
+    }
+    reply.line = line;
+    reply.report = true;
+    reply.coinDelta = 0;
+    // The shelf and the pawn list read the Kit and the purse: rebuild them.
+    talk.setPlayerCoin(tavern_->playerCoin());
+    talk.setCounter(tavern_->counterViewFor(talk.speaker().notableId, wardAtCounter(*keeper)));
+    talk.refreshTopics();
+    if (audio_ != nullptr) {
+        audio_->playOneShot(reply.ok ? audio::SoundId::UiConfirm : audio::SoundId::UiError);
+    }
+}
+
 const sim::WardActor* Session::wardAddressee() const {
     // ERRANDS A HUMAN CAN FINISH (2026-10-09). Whoever E would address from
     // here: the body IN FRONT of the eye within talk reach, and only when
@@ -6061,7 +6116,11 @@ bool Session::talkToWard() {
     talk.setPlayerCoin(tavern_->playerCoin());
     const sim::Speaker speaker = sim::wardSpeakerFor(
         *who, people_->identity(who->id), talk.notables(), talk.factions(), talk.barks());
+    // SHOPS (2026-10-09). If they keep a counter, the shelf behind it -- open
+    // only while they stand at their own post.
+    talk.setCounter(tavern_->counterViewFor(speaker.notableId, wardAtCounter(*who)));
     if (!talk.open(speaker, tavern_->timeOfDay())) {
+        talk.setCounter(sim::CounterView{});
         return false;
     }
     wardTalkId_ = who->id;
@@ -7260,6 +7319,10 @@ sim::Reply Session::chooseWardTopic(std::size_t index) {
         if (reply.closes || !talk.isOpen()) {
             wardTalkId_ = -1;
         }
+        return reply;
+    }
+    if (reply.kind == sim::TopicKind::BuyItem || reply.kind == sim::TopicKind::SellItem) {
+        settleCounterReply(reply);
         return reply;
     }
 
@@ -18565,6 +18628,155 @@ RadiantLineResult runRadiantLine(Session& session, const std::string& end) {
     return out;
 }
 
+namespace {
+
+/// SHOPS. Puts the body before `notableId` while they are working their
+/// counter: the clock is walked an hour at a time until their day has them
+/// at their post and some stand tile answers them by the talk key's own rule,
+/// then the body is PLACED there (runStreetLine's one placement) facing them,
+/// and the real interact opens the talk. True when it opened on them.
+bool talkToKeeperAtCounter(Session& session, std::string_view notableId) {
+    for (int hourStep = 0; hourStep < 24; ++hourStep) {
+        if (hourStep > 0) {
+            session.skipToHour((session.timeOfDay() / 3600 + 1) % 24);
+            session.stepMany(sim::MoveInput{}, 1);
+        }
+        const sim::WardActor* keeper = nullptr;
+        for (const sim::WardActor& actor : session.people().actors()) {
+            if (actor.visible() && session.people().identity(actor.id).notableId == notableId) {
+                keeper = &actor;
+                break;
+            }
+        }
+        if (keeper == nullptr || !session.wardAtCounterNow(*keeper)) {
+            continue;
+        }
+        for (std::int32_t oy = -kStreetReachTiles; oy <= kStreetReachTiles; ++oy) {
+            for (std::int32_t ox = -kStreetReachTiles; ox <= kStreetReachTiles; ++ox) {
+                const std::int32_t sx = keeper->x + ox;
+                const std::int32_t sy = keeper->y + oy;
+                if ((ox == 0 && oy == 0) || !session.tiles().standable(sx, sy, keeper->band)) {
+                    continue;
+                }
+                const sim::Angle look = cardinalToward(keeper->x - sx, keeper->y - sy);
+                const sim::WardActor* addressed = addresseeFrom(session, sx, sy, keeper->band, look);
+                if (addressed == nullptr || addressed->id != keeper->id) {
+                    continue;
+                }
+                const std::int32_t keeperId = keeper->id;
+                session.placeBodyAt(sx, sy, keeper->band);
+                session.body().setYaw(look);
+                session.stepMany(sim::MoveInput{}, 1);
+                session.interact();
+                return session.talking() && session.wardTalkingTo() == keeperId;
+            }
+        }
+    }
+    return false;
+}
+
+/// SHOPS. Chooses the first topic of `kind` (and `arg`, when given) on the open
+/// list, the way a number key would. True when one was there.
+bool chooseFirst(Session& session, sim::TopicKind kind, std::string_view arg = {}) {
+    const std::vector<sim::Topic>& topics = session.tavern().dialogue().topics();
+    for (std::size_t i = 0; i < topics.size(); ++i) {
+        if (topics[i].kind == kind && (arg.empty() || topics[i].arg == arg)) {
+            session.chooseTopic(i);
+            return true;
+        }
+    }
+    return false;
+}
+
+}  // namespace
+
+ShopLineResult runShopLine(Session& session, const std::string& end) {
+    ShopLineResult out;
+    constexpr std::string_view kWant = "lantern";
+    const std::int32_t lantern = session.tavern().items().indexOf(kWant);
+    if (lantern < 0) {
+        return out;
+    }
+    out.coinStart = session.tavern().playerCoin();
+
+    // 1. BRANN, AT HIS COUNTER, AND HIS SHELF.
+    out.chandler = talkToKeeperAtCounter(session, "brann");
+    if (!out.chandler) {
+        return out;
+    }
+    const std::int32_t brannId = session.wardTalkingTo();
+    out.wares = chooseFirst(session, sim::TopicKind::Wares);
+    std::int32_t price = 0;
+    for (const sim::Topic& topic : session.tavern().dialogue().topics()) {
+        if (topic.kind == sim::TopicKind::BuyItem && topic.arg == kWant) {
+            price = topic.payload;
+        }
+    }
+    out.wares = out.wares && price > 0;
+    out.price = price;
+    if (!out.wares || end == "wares") {
+        return out;
+    }
+
+    // 2. THE PURSE -- capture plumbing, said out loud in the summary: a fresh
+    // character's purse is whatever the biography gave, and this line is about
+    // the counter, not the biography.
+    if (session.tavern().playerCoin() < price) {
+        out.granted = price - session.tavern().playerCoin();
+        session.tavern().setPlayerCoin(price);
+    }
+
+    // 3. BUY IT. The Kit, the purse and Brann's purse, before and after.
+    const std::int32_t carried = session.tavern().kit().count(lantern);
+    const std::int32_t coin = session.tavern().playerCoin();
+    const std::int32_t brannCoin = session.people().byId(brannId)->coin;
+    (void)chooseFirst(session, sim::TopicKind::BuyItem, kWant);
+    out.boughtLine = session.lastMessage();
+    out.bought = session.tavern().kit().count(lantern) == carried + 1 &&
+                 session.tavern().playerCoin() == coin - price &&
+                 session.people().byId(brannId)->coin == brannCoin + price;
+    if (!out.bought || end == "bought") {
+        session.closeConversation();
+        out.coinEnd = session.tavern().playerCoin();
+        return out;
+    }
+    session.closeConversation();
+
+    // 4. FENNER, AT HIS PAWN, AND WHAT HE WOULD TAKE.
+    out.pawnbroker = talkToKeeperAtCounter(session, "fenner");
+    if (!out.pawnbroker) {
+        out.coinEnd = session.tavern().playerCoin();
+        return out;
+    }
+    const std::int32_t fennerId = session.wardTalkingTo();
+    (void)chooseFirst(session, sim::TopicKind::Pawn);
+    std::int32_t offer = 0;
+    for (const sim::Topic& topic : session.tavern().dialogue().topics()) {
+        if (topic.kind == sim::TopicKind::SellItem && topic.arg == kWant) {
+            offer = topic.payload;
+        }
+    }
+    out.pawnList = offer > 0;
+    out.offer = offer;
+    if (!out.pawnList || end == "pawn") {
+        out.coinEnd = session.tavern().playerCoin();
+        return out;
+    }
+
+    // 5. SELL IT BACK.
+    const std::int32_t held = session.tavern().kit().count(lantern);
+    const std::int32_t before = session.tavern().playerCoin();
+    const std::int32_t fennerCoin = session.people().byId(fennerId)->coin;
+    (void)chooseFirst(session, sim::TopicKind::SellItem, kWant);
+    out.soldLine = session.lastMessage();
+    out.sold = session.tavern().kit().count(lantern) == held - 1 &&
+               session.tavern().playerCoin() == before + offer &&
+               session.people().byId(fennerId)->coin == fennerCoin - offer;
+    out.coinEnd = session.tavern().playerCoin();
+    // Left talking: Fenner's list, one lantern lighter, is the shutter.
+    return out;
+}
+
 int scriptedStartHour(const SmokeRunConfig& config) noexcept {
     // ONE IN THE MORNING, and the hour is the point.
     //
@@ -18907,6 +19119,22 @@ SmokeRunResult runSmoke(const SmokeRunConfig& config) {
         result.scriptedLanded += (result.petitionResult.opened ? 1 : 0) +
                                  (result.petitionResult.rollLine.empty() ? 0 : 1) +
                                  (result.petitionResult.becameDuke ? 1 : 0);
+    }
+
+    if (config.shop) {
+        // SHOPS. See SmokeRunConfig::shop: the beats each end owes.
+        result.shopResult = runShopLine(session, config.shopEnd);
+        result.talking = session.talking();
+        const ShopLineResult& shop = result.shopResult;
+        const int wanted = config.shopEnd == "wares"    ? 2
+                           : config.shopEnd == "bought" ? 3
+                           : config.shopEnd == "pawn"   ? 5
+                                                        : 6;
+        const int landed = (shop.chandler ? 1 : 0) + (shop.wares ? 1 : 0) +
+                           (shop.bought ? 1 : 0) + (shop.pawnbroker ? 1 : 0) +
+                           (shop.pawnList ? 1 : 0) + (shop.sold ? 1 : 0);
+        result.scriptedWanted += wanted;
+        result.scriptedLanded += std::min(wanted, landed);
     }
 
     if (config.radiant) {
@@ -19725,6 +19953,17 @@ SmokeRunResult runSmoke(const SmokeRunConfig& config) {
                 << " roll=\"" << pet.rollLine << "\""
                 << " answer=\"" << pet.petitionLine << "\""
                 << " duke=" << (pet.becameDuke ? "yes" : "no");
+    }
+    if (config.shop) {
+        const ShopLineResult& shop = result.shopResult;
+        summary << " | shop chandler=" << (shop.chandler ? "yes" : "no")
+                << " wares=" << (shop.wares ? "yes" : "no") << " price=" << shop.price
+                << " bought=" << (shop.bought ? "yes" : "no")
+                << " pawnbroker=" << (shop.pawnbroker ? "yes" : "no")
+                << " listed=" << (shop.pawnList ? "yes" : "no") << " offer=" << shop.offer
+                << " sold=" << (shop.sold ? "yes" : "no") << " coin=" << shop.coinStart << "->"
+                << shop.coinEnd << " granted=" << shop.granted << " bought_line=\""
+                << shop.boughtLine << "\" sold_line=\"" << shop.soldLine << "\"";
     }
     if (config.radiant) {
         // RADIANT BUILD: which errand, whose word it is, and whether the

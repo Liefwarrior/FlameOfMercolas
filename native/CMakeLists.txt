@@ -229,6 +229,7 @@ add_library(granadad-sim STATIC
     # last because it depends on ward_actors.hpp's WardPopulation, the last
     # thing this library builds.
     src/sim/radiant_quest.cpp
+    src/sim/shops.cpp
 )
 target_include_directories(granadad-sim PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
 

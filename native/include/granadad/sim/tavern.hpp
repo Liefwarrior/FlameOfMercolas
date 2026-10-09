@@ -45,6 +45,7 @@
 #include "granadad/sim/dialogue.hpp"
 #include "granadad/sim/engine.hpp"
 #include "granadad/sim/items.hpp"
+#include "granadad/sim/shops.hpp"
 // TASK #81. earnedLegend() reads what a Trade or a Wire rung buys back.
 #include "granadad/sim/legend.hpp"
 // S9. A lock is a thing in the room, and being unseen is a fact about the room:
@@ -1859,6 +1860,27 @@ public:
     /// onto the picks counter.
     bool giveItem(std::string_view id, std::int32_t count = 1);
 
+    // --- SHOPS (2026-10-09) -------------------------------------------------
+    //
+    // The three counters of content/raws/shops/shops.json, priced off the
+    // items' own royals. The shelf is the counter's and unlimited, so a sale
+    // moves the Kit and the purses and nothing else.
+
+    /// The shelf behind the counter this notable keeps, and what it would
+    /// take off you -- for DialogueDirector::setCounter, before the
+    /// conversation opens. `atCounter`: the keeper is standing at their post
+    /// (the caller knows where bodies are; this does not).
+    [[nodiscard]] CounterView counterViewFor(std::string_view notableId, bool atCounter) const;
+    /// Buys one of `id` for `price`: the purse, then the load rule (the same
+    /// numbers TAKE prints when it refuses). `line` is what the counter says,
+    /// served or not.
+    ServiceResult buyFromCounter(std::string_view id, std::int32_t price, std::string& line);
+    /// Sells one carried, unworn `id` for `offer`. The keeper's own purse is
+    /// the caller's to check and to debit (it is the ward's, not this
+    /// house's).
+    ServiceResult sellToCounter(std::string_view id, std::int32_t offer, std::string& line);
+    [[nodiscard]] const ShopRaws& shops() const noexcept { return shops_; }
+
     /// A DEAD roster body within reach, or nullptr: the SEARCH subject.
     /// Roster only -- the street's people carry nothing (D10).
     [[nodiscard]] const Actor* corpseInReach() const noexcept;
@@ -1905,6 +1927,9 @@ private:
     void putOnGround(std::int32_t item, std::int32_t count, bool owned);
 
     ItemRegistry items_;
+    /// SHOPS: the ward's counters, pruned at load to the item ids and keepers
+    /// the raws actually have.
+    ShopRaws shops_;
     /// Hashed (the one declared tavern move of the Kit build): what is on
     /// the body decides what the next blow does, how fast the legs go and
     /// what the Watch finds -- state the twin-run gate compares.

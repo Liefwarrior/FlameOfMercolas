@@ -1191,6 +1191,10 @@ public:
     /// Takes coin off somebody. Answers what actually came out, which is never
     /// more than they had.
     [[nodiscard]] std::int32_t takeCoinFrom(std::int32_t actorId, std::int32_t coin) noexcept;
+    /// SHOPS (2026-10-09). takeCoinFrom's mirror: coin a body is PAID out of
+    /// the player's purse (a purchase across their counter), minted into the
+    /// ward's ledger the way a robbery's is sunk out of it.
+    void payCoinTo(std::int32_t actorId, std::int32_t coin) noexcept;
     /// Turns a body to look at a point. They look at you while you talk to
     /// them, which is the whole difference between a person and a prop.
     void faceToward(std::int32_t actorId, std::int32_t x, std::int32_t y) noexcept;

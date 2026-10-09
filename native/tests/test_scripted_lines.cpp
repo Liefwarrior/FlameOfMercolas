@@ -505,6 +505,43 @@ TEST_CASE("--radiant=settled finishes a word errand: found in a crowd, passed, a
     CHECK_FALSE(played.radiantResult.target.empty());
 }
 
+TEST_CASE("--shop buys a lantern across Brann's counter and sells it back across Fenner's") {
+    // SHOPS (2026-10-09). The round trip a player makes with a coin in their
+    // purse: the Kit and both keepers' purses read before and after each
+    // press, exact.
+    render::SmokeRunConfig run;
+    run.shop = true;
+    const render::SmokeRunResult played = play(run);
+    INFO(played.summary);
+    CHECK(played.ok);
+    CHECK_FALSE(played.scriptFellShort());
+    const render::ShopLineResult& shop = played.shopResult;
+    CHECK(shop.chandler);
+    CHECK(shop.wares);
+    CHECK(shop.bought);
+    CHECK(shop.pawnbroker);
+    CHECK(shop.pawnList);
+    CHECK(shop.sold);
+    CHECK(shop.price > 0);
+    CHECK(shop.offer > 0);
+    CHECK(shop.offer < shop.price);
+    CHECK(shop.coinEnd == shop.coinStart + shop.granted - shop.price + shop.offer);
+    CHECK(shop.boughtLine == "PAID " + std::to_string(shop.price) + "C FOR THE LANTERN.");
+}
+
+TEST_CASE("--shop=wares stops on Brann's shelf, the talk still open") {
+    render::SmokeRunConfig run;
+    run.shop = true;
+    run.shopEnd = "wares";
+    const render::SmokeRunResult played = play(run);
+    INFO(played.summary);
+    CHECK(played.ok);
+    CHECK_FALSE(played.scriptFellShort());
+    CHECK(played.shopResult.wares);
+    CHECK_FALSE(played.shopResult.bought);
+    CHECK(played.talking);
+}
+
 TEST_CASE("--kit lands all ten of its beats: named, taken, dropped, THEIRS, the sheet, worn, slotted, the coat's turn, the search, the load") {
     // KIT BUILD. The whole line, through the real verbs -- see runKitLine.
     render::SmokeRunConfig run;

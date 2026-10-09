@@ -58,6 +58,25 @@ Scorecards and the session's whole record: `docs/SESSION-2026-10-09.md`.
 - **open: the settle receipt `(24C)` is spoken on the alert row under the topic list**
   and is not on the conversation surface's own line. Cosmetic.
 
+### Slice 2 -- shops
+
+> "Bought a lantern off Brann for eight and sold it to Fenner for four, and I felt
+> robbed in exactly the right way. That's a pawnbroker. Brann's 'early custom's best
+> custom' is the first shopkeeper in this thing who sounds like he wants my money.
+> I went looking for Fenner at night and he told me to come by the shop -- good,
+> that's a town that closes. What I want next: a reason to buy the cutlass. Right
+> now nothing out there makes me need it. I'd play another night of this."
+
+- **fixed: the Kit's worths had no market.** was: twenty-three rows with an authored
+  price in royals and nobody in the ward who would sell or buy one; the only purchases
+  were a mug and a room. now: Brann's Chandlery, the Slop-Chest and Fenner's Pawn deal
+  in them (`content/raws/shops/shops.json`, `sim/shops.hpp`), the keepers' purses
+  real on both sides of the counter.
+- **open: the stock is unlimited.** Brann never runs out of lanterns. A shelf with a
+  count would be new hashed state; deferred until the owner rules on stock at all.
+- **open: nothing makes a blade worth buying yet** (Dave's own note) -- the street is
+  hittable since STREET SENSES, but no errand or contract asks for steel.
+
 ## FPV pass (the first-person view) — one round
 
 Source: Eli, verbatim — *"I want a demo with the ability to switch between 1st person and

@@ -2454,6 +2454,19 @@ std::int32_t WardPopulation::takeCoinFrom(std::int32_t actorId, std::int32_t coi
     return taken;
 }
 
+void WardPopulation::payCoinTo(std::int32_t actorId, std::int32_t coin) noexcept {
+    if (actorId < 0 || static_cast<std::size_t>(actorId) >= actors_.size() || coin <= 0) {
+        return;
+    }
+    // SHOPS (2026-10-09). takeCoinFrom's mirror: coin crossing INTO the ward
+    // from the player's purse (a purchase across a counter) is MINTED as far
+    // as the ward's ledger is concerned, for exactly the reason a robbery is
+    // sunk -- the player's purse is the Tavern's, not one of the ward's, and
+    // the identity minted - sunk == held must hold across the boundary.
+    actors_[static_cast<std::size_t>(actorId)].coin += coin;
+    ledger_.coinMinted += coin;
+}
+
 void WardPopulation::faceToward(std::int32_t actorId, std::int32_t x, std::int32_t y) noexcept {
     if (actorId < 0 || static_cast<std::size_t>(actorId) >= actors_.size()) {
         return;

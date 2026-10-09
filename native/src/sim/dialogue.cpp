@@ -1,4 +1,5 @@
 #include "granadad/sim/dialogue.hpp"
+#include "granadad/sim/shops.hpp"
 
 #include <algorithm>
 #include <memory>
@@ -147,6 +148,14 @@ std::string_view topicKindName(TopicKind kind) noexcept {
             return "yield the writ";
         case TopicKind::AskErrand:
             return "who needs a hand";
+        case TopicKind::Wares:
+            return "see the wares";
+        case TopicKind::BuyItem:
+            return "buy item";
+        case TopicKind::Pawn:
+            return "pawn";
+        case TopicKind::SellItem:
+            return "sell item";
     }
     return "?";
 }
@@ -407,6 +416,27 @@ void DialogueDirector::close() noexcept {
     bench_.reset();
     topics_.clear();
     menu_ = DialogueMenu::Root;
+    // SHOPS: a counter is the conversation's, not the director's.
+    counter_ = CounterView{};
+}
+
+void DialogueDirector::setCounter(CounterView view) {
+    counter_ = std::move(view);
+}
+
+void DialogueDirector::refreshTopics() {
+    if (open_) {
+        rebuildCurrentLevel();
+    }
+}
+
+std::int32_t DialogueDirector::counterPriceFor(std::int32_t royals) const noexcept {
+    if (!open_) {
+        return 0;
+    }
+    // The same guild term the counter applies to a mug -- see HaggleTerms --
+    // and nothing else: skill decides the price of ale and only that (S3).
+    return counterPrice(royals, guildPricePercent(standings_, speakerFaction()));
 }
 
 std::int32_t DialogueDirector::rowIndexFor(TopicKind kind, std::int32_t payload) const noexcept {
@@ -755,6 +785,26 @@ void DialogueDirector::buildTopics() {
         topic.label = "HAGGLE:" + std::string(goodsName(speaker_.goods));
         topic.payload = speaker_.basePrice;
         topics_.push_back(std::move(topic));
+    }
+
+    // SHOPS (2026-10-09). A counter keeper's shelf, and the pawn's own door --
+    // two rows on their list, each opening its own level, the way TELL ME
+    // ABOUT opens the tree. Met away from the counter they still offer the
+    // shelf, and SEE THE WARES answers that it is back at the counter: the
+    // world saying so, rather than the row vanishing for no reason given.
+    if (counter_.keeps) {
+        if (!counter_.sells.empty()) {
+            Topic topic;
+            topic.kind = TopicKind::Wares;
+            topic.label = "SEE THE WARES";
+            topics_.push_back(std::move(topic));
+        }
+        if (counter_.buys) {
+            Topic topic;
+            topic.kind = TopicKind::Pawn;
+            topic.label = "PAWN SOMETHING";
+            topics_.push_back(std::move(topic));
+        }
     }
 
     // 7. The two things that actually change how somebody feels about you.
@@ -1264,10 +1314,54 @@ const RadiantObjective* DialogueDirector::errandToName() const {
     return offers[mix % static_cast<std::uint32_t>(offers.size())];
 }
 
+void DialogueDirector::buildWaresTopics() {
+    topics_.clear();
+    menu_ = DialogueMenu::Wares;
+    for (const CounterWare& ware : counter_.sells) {
+        const std::int32_t price = counterPriceFor(ware.royals);
+        Topic topic;
+        topic.kind = TopicKind::BuyItem;
+        topic.label = ware.name + " (" + coins(price) + ")";
+        topic.payload = price;
+        topic.arg = ware.itemId;
+        topics_.push_back(std::move(topic));
+    }
+    pushBack();
+}
+
+void DialogueDirector::buildPawnTopics() {
+    topics_.clear();
+    menu_ = DialogueMenu::Pawn;
+    for (const CounterWare& ware : counter_.pawnable) {
+        Topic topic;
+        topic.kind = TopicKind::SellItem;
+        topic.label = ware.name + " (" + coins(ware.royals) + ")";
+        topic.payload = ware.royals;
+        topic.arg = ware.itemId;
+        topics_.push_back(std::move(topic));
+    }
+    pushBack();
+}
+
 void DialogueDirector::rebuildCurrentLevel() {
     switch (menu_) {
         case DialogueMenu::Root:
             buildTopics();
+            break;
+        case DialogueMenu::Wares:
+            // A shelf a keeper walked away from is no shelf: back to the root.
+            if (counter_.keeps && counter_.atCounter) {
+                buildWaresTopics();
+            } else {
+                buildTopics();
+            }
+            break;
+        case DialogueMenu::Pawn:
+            if (counter_.buys && counter_.atCounter) {
+                buildPawnTopics();
+            } else {
+                buildTopics();
+            }
             break;
         case DialogueMenu::Category:
             buildCategoryTopics();
@@ -1377,7 +1471,8 @@ Reply DialogueDirector::choose(std::size_t index) {
             // One level up. Category steps back to the root; any of the five
             // leaves step back to the category list -- there is nowhere else
             // a Back topic can ever be standing.
-            if (menu_ == DialogueMenu::Category) {
+            if (menu_ == DialogueMenu::Category || menu_ == DialogueMenu::Wares ||
+                menu_ == DialogueMenu::Pawn) {
                 buildTopics();
             } else {
                 buildCategoryTopics();
@@ -1672,6 +1767,48 @@ Reply DialogueDirector::choose(std::size_t index) {
             // journal contract a broker's job rides out on.
             out.journalLine = row->brief;
             out.radiantId = row->id;
+            break;
+        }
+        case TopicKind::Wares: {
+            // SHOPS. The shelf, as its own level -- or, away from the counter,
+            // the keeper saying where it is.
+            if (!counter_.atCounter) {
+                out = reply(TopicKind::Wares, "NOT OUT HERE. COME BY " + upper(counter_.name) + ".");
+                break;
+            }
+            out = reply(TopicKind::Wares, {});
+            buildWaresTopics();
+            break;
+        }
+        case TopicKind::Pawn: {
+            if (!counter_.atCounter) {
+                out = reply(TopicKind::Pawn, "NOT OUT HERE. COME BY " + upper(counter_.name) + ".");
+                break;
+            }
+            out = reply(TopicKind::Pawn,
+                        counter_.pawnable.empty() ? std::string("NOTHING ON YOU I WANT.")
+                                                  : std::string());
+            buildPawnTopics();
+            break;
+        }
+        case TopicKind::BuyItem: {
+            // An intent: the director knows the purse, the Kit's owner knows
+            // whether the thing fits on you. The purse is asked here so the
+            // refusal is the counter's own sentence.
+            if (playerCoin_ < topic.payload) {
+                out = reply(TopicKind::BuyItem, "YOUR PURSE WILL NOT COVER IT.");
+                out.ok = false;
+                break;
+            }
+            out = reply(TopicKind::BuyItem, {});
+            out.itemId = topic.arg;
+            out.itemPrice = topic.payload;
+            break;
+        }
+        case TopicKind::SellItem: {
+            out = reply(TopicKind::SellItem, {});
+            out.itemId = topic.arg;
+            out.itemPrice = topic.payload;
             break;
         }
         case TopicKind::AskErrand: {

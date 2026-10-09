@@ -378,6 +378,45 @@ granadad --radiant=settled --screenshot=x.png   # take, read the shelf, find, pa
 granadad --radiant=shelf --screenshot=x.png     # the CASES shelf on the errand's row
 ```
 
+### Buying and selling: three counters (since 2026-10-09)
+
+*(Status: **BUILT**, placeholder stock -- see the end of this section.)*
+
+Every thing in the Kit has a worth in royals, and three counters in the ward
+now deal in them -- the gazetteer's own sites, kept by the notables already
+bound to them:
+
+- **Brann's Chandlery** (Brann, the chandler) -- ship stores: a lantern, rope,
+  a knife, a boat-hook, a bottle.
+- **The Slop-Chest** (Slops Neddry) -- sailors' clothing: a coat, a hood,
+  boots, a purse.
+- **Fenner's Pawn** (Fenner, the pawnbroker) -- what was never redeemed: a
+  cudgel, a dagger, a cutlass, a mace. **And the one counter that buys**:
+  PAWN SOMETHING lists what he would take off you, at half its worth.
+
+Find them on the ward map (`M`, the index, or the PEOPLE tab on their
+ground), `E` the keeper while they are working their counter, and choose
+**SEE THE WARES**. Each row is priced -- the item's authored worth through
+the counter's guild term, the same term a mug of ale pays; your haggling
+skill does not move it (S3's law: skill decides the price of ale and only
+that). Buying puts the thing in your Kit (`J`, the Character tile) and
+refuses past your load with TAKE's own numbers. Met in the street at night,
+a keeper offers the shelf and tells you to come by the counter.
+
+**The purses are real.** What you pay goes into the keeper's own purse in
+the ward's ledger; what Fenner pays comes out of his, and a short pawnbroker
+says so: *"FENNER HAS NOT GOT IT TODAY."* Worn things are not for sale --
+take it off first. Fenner never buys a case's own reward.
+
+**Placeholder, flagged for the owner:** which counter sells what, and
+Fenner's half, are read off the gazetteer's lines rather than ruled
+(`content/raws/shops/shops.json` says so in its own notes).
+
+```
+granadad --shop --screenshot=x.png             # buy at Brann's, sell at Fenner's
+granadad --shop=wares --screenshot=x.png       # Brann's shelf
+```
+
 ---
 
 ## 6. What the corners of the screen mean
