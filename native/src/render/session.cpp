@@ -11055,6 +11055,16 @@ void Session::endTalk(bool walkedOff) {
     syncPanelAnim();
 }
 
+void Session::settleOverlaysForInspection() noexcept {
+    syncPanelAnim();
+    panelAnim_.snapTo(panelAnim_.target());
+    alertAnim_.snapTo(alertAnim_.target());
+    if (tavern_->dialogue().isOpen()) {
+        lastSpokenLine_ = tavern_->dialogue().lastLine();
+        speechAgeSteps_ = kSpeechRevealSteps;
+    }
+}
+
 void Session::syncPanelAnim() noexcept {
     // AUDIO WIRING: PANEL OPEN AND CLOSE, on the exact edge the plan names --
     // "wherever an EasedToggle target flips is exactly where the matching

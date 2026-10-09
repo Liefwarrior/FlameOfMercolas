@@ -130,6 +130,23 @@ half the coin a clean pick would have paid. `--burgle=lock` leaves the wire in
 the next box so the lockpicking row itself is on screen; `--burgle=taproom` walks
 back down among the people who did hear him.
 
+### The workbench
+
+`granadad-workbench` (2026-10-09) is a second executable beside the game: a
+Unity-shaped editor over one live `render::Session` -- hierarchy, scene,
+game, inspector, console and a command line -- built from the same render
+primitives as the game's own pages, with no new dependency. It has a window
+(through the same raylib backend) and two headless modes for agents:
+
+```
+granadad-workbench --script=look.wbs     # commands in, answers out
+granadad-workbench --serve=wbdir         # many workflows, one world
+```
+
+Every command is a public verb the game calls; a saved SCENE is the log of
+the world-changing commands and replays onto a fresh world to the identical
+hash (`test_workbench.cpp`). The whole guide: `docs/WORKBENCH.md`.
+
 ### Controls
 
 | | |

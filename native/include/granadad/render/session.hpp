@@ -2209,6 +2209,13 @@ public:
     /// SHOPS (2026-10-09). Whether a ward body is working its own counter --
     /// the private wardAtCounter() rule, public for the scripted shop line.
     [[nodiscard]] bool wardAtCounterNow(const sim::WardActor& who) const noexcept;
+    /// THE WORKBENCH (2026-10-09). Finishes every render-only ease at once --
+    /// the panel, the alert, the speech's typewriter -- so a frame drawn with
+    /// the world PAUSED shows the conversation that was just opened rather
+    /// than its first transparent frame. None of it is a fact about the world
+    /// (see panelAnim_'s own note): the hash cannot see this, and the
+    /// simulation is not stepped.
+    void settleOverlaysForInspection() noexcept;
 
 private:
     /// How close you have to be to address somebody on the street. Two tiles,

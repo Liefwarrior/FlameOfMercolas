@@ -23,7 +23,14 @@ The game is being rewritten in C++. **`native/` is the live tree**; read
 .\dist\granadad.exe --nemesis --screenshot=rival.png    # lose three fights, watch him rise
 .\dist\granadad.exe --ward                # the compounds, two years, as text
 .\scripts\verify-windows.ps1               # finishes the cross-toolchain determinism gate
+.\dist\granadad-workbench.exe              # the WORKBENCH: a Unity-shaped editor over the live ward
 ```
+
+**The workbench** (`docs/WORKBENCH.md`, added 2026-10-09) holds one running world and
+shows it six ways at once -- the ward from above, what the player sees, every person,
+place, errand and carried thing, an inspector and a console -- driven by the mouse, a
+command line, a `--script`, or `--serve=DIR`, where any number of agent workflows drop
+command files into one shared world and all see the same picture.
 
 `gate.ps1` (`gate.sh` off Windows) is `docker compose run --rm --build build` with
 `GRANADAD_REVISION` set to the commit you are on, `-dirty` appended if tracked files differ
