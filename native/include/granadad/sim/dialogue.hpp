@@ -311,6 +311,15 @@ enum class TopicKind : std::uint8_t {
     /// One carried row sold: payload the offer, arg the id. An intent, like
     /// BuyItem; the keeper's own purse has to cover it. APPENDED at 37.
     SellItem = 37,
+    /// THE TONE DIAL (2026-10-09). "TONE: NORMAL" on every root list, just
+    /// above SAY NO MORE: choosing it turns the register NORMAL -> POLITE ->
+    /// BLUNT -> NORMAL through setTone -- the engine #82 built and tested and
+    /// left with no door. The label always shows the register you are IN.
+    /// POLITE and BLUNT move the attitude gates by kToneGateShift (an offer a
+    /// cool stranger would not make, made; one a warm one would, withheld),
+    /// pick the .polite/.blunt line wherever one is authored, and say which
+    /// deed listening was. No roll. APPENDED at 38.
+    Tone = 38,
 };
 
 [[nodiscard]] std::string_view topicKindName(TopicKind kind) noexcept;

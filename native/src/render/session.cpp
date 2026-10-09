@@ -19099,6 +19099,32 @@ SmokeRunResult runSmoke(const SmokeRunConfig& config) {
         result.streetKey = street.barkKey;
     }
 
+    if (!config.tone.empty()) {
+        // THE TONE DIAL. The row a player presses, pressed until the register
+        // reads what was asked -- at most three presses, the dial's length.
+        result.scriptedWanted += 1;
+        // toneName answers in capitals; the flag is typed however it is typed.
+        const std::string want = upperAscii(config.tone);
+        bool landed = false;
+        for (int press = 0; press < 3 && session.talking() && !landed; ++press) {
+            std::string now(sim::toneName(session.tavern().dialogue().tone()));
+            landed = now == want;
+            if (landed) {
+                break;
+            }
+            const std::vector<sim::Topic>& topics = session.tavern().dialogue().topics();
+            for (std::size_t i = 0; i < topics.size(); ++i) {
+                if (topics[i].kind == sim::TopicKind::Tone) {
+                    session.chooseTopic(i);
+                    break;
+                }
+            }
+            landed = std::string(sim::toneName(session.tavern().dialogue().tone())) == want;
+        }
+        result.scriptedLanded += landed ? 1 : 0;
+        result.talking = session.talking();
+    }
+
     if (config.flame) {
         result.flameStages = runFlameLine(session, config.flameEnd);
         result.talking = session.talking();
@@ -19953,6 +19979,9 @@ SmokeRunResult runSmoke(const SmokeRunConfig& config) {
                 << " roll=\"" << pet.rollLine << "\""
                 << " answer=\"" << pet.petitionLine << "\""
                 << " duke=" << (pet.becameDuke ? "yes" : "no");
+    }
+    if (!config.tone.empty()) {
+        summary << " | tone=" << sim::toneName(session.tavern().dialogue().tone());
     }
     if (config.shop) {
         const ShopLineResult& shop = result.shopResult;

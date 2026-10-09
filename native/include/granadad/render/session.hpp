@@ -4098,6 +4098,11 @@ struct SmokeRunConfig {
     /// whole round trip (six).
     std::string shopEnd = "sold";
 
+    /// THE TONE DIAL (2026-10-09), VERIFICATION ONLY: once a conversation is
+    /// open (--street, --talk), press its TONE row until the register reads
+    /// this ("polite", "normal", "blunt"), the way a player would. One beat.
+    std::string tone;
+
     /// DISTRICT PHASE D, VERIFICATION ONLY: WALK ACROSS A NAMED BOUNDARY, so
     /// the threshold plate is actually on the frame when the shutter goes.
     ///

@@ -926,6 +926,9 @@ void print_usage() {
         "                       `settled` takes a word errand, walks to the\n"
         "                       one it is for and passes it, and is paid;\n"
         "                       `ask` asks a stranger WHO NEEDS A HAND?\n"
+        "  --tone=REGISTER      VERIFICATION ONLY: with --street or --talk,\n"
+        "                       press the conversation's TONE row until it\n"
+        "                       reads polite, normal or blunt\n"
         "  --shop[=END]         VERIFICATION ONLY: find Brann at his chandlery\n"
         "                       counter, SEE THE WARES and buy a lantern, then\n"
         "                       sell it back across Fenner's pawn. END is\n"
@@ -1431,6 +1434,9 @@ void print_usage() {
             // VERIFICATION ONLY. See SmokeRunConfig::petition's own header.
             options.smoke.petition = true;
             options.wantsSmoke = true;
+        } else if (starts_with(arg, "--tone=", &value)) {
+            // VERIFICATION ONLY. See SmokeRunConfig::tone.
+            options.smoke.tone = value;
         } else if (std::strcmp(arg, "--shop") == 0) {
             // VERIFICATION ONLY. See SmokeRunConfig::shop.
             options.smoke.shop = true;

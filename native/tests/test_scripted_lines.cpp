@@ -505,6 +505,20 @@ TEST_CASE("--radiant=settled finishes a word errand: found in a crowd, passed, a
     CHECK_FALSE(played.radiantResult.target.empty());
 }
 
+TEST_CASE("--tone=blunt presses a street conversation's TONE row until it reads BLUNT") {
+    // THE TONE DIAL (2026-10-09): the row a player presses, from the street.
+    render::SmokeRunConfig run;
+    run.street = true;
+    run.streetWho = "hand";
+    run.tone = "blunt";
+    const render::SmokeRunResult played = play(run);
+    INFO(played.summary);
+    CHECK(played.ok);
+    CHECK_FALSE(played.scriptFellShort());
+    CHECK(played.summary.find("| tone=BLUNT") != std::string::npos);
+    CHECK(played.talking);
+}
+
 TEST_CASE("--shop buys a lantern across Brann's counter and sells it back across Fenner's") {
     // SHOPS (2026-10-09). The round trip a player makes with a coin in their
     // purse: the Kit and both keepers' purses read before and after each

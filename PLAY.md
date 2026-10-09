@@ -269,7 +269,10 @@ existed — asking here is not a shortcut, it is the identical entry point
 asked a second way. **(BACK)** steps up one level; it never closes the
 conversation, `SAY NO MORE` still owns that.
 
-**One rough edge in this same screen, worth calling out directly:** topic
+**~~One rough edge in this same screen~~ -- fixed on the wip branch, re-verified
+2026-10-09:** the conversation surface no longer clips a topic label at all (it
+picks its column count from the longest label it holds; `clipLabel()` survives only
+on the tiled Menu panels). What this paragraph used to say: topic
 labels that overrun their column get hard-cut mid-word and a bare `.`
 appended as a "there's more" mark — `clipLabel()` in
 `native/src/render/dialogue_view.cpp`, a deliberate choice over a
@@ -282,20 +285,26 @@ screen's own `TELL ME ABOUT...` ellipsis, so a real "more text" mark and a
 "this word got cut off" mark currently look identical. The column-budget
 logic can stay; the marker itself is the part worth revisiting.
 
-**What "tone" is, and the honest state of it:** the Daggerfall reference
-material this build is measured against has a POLITE / NORMAL / BLUNT
-selector sitting beside the topic list, visibly changing what an NPC says
-back. Granadad has the identical mechanic **in the simulation** —
-`DialogueDirector::setTone()`/`tone()`, and `barks.json` lines can be
-authored under a `.polite` or `.blunt` suffix that the register reads before
-falling back to the normal line. **It has no key bound to it and no topic row
-that reaches it.** I checked the controls table (`Action` enum,
-`controls.cpp`), the client's key handling, and every test file that touches
-`setTone()` — all of it is `native/tests/test_dialogue.cpp`, unit tests
-against the sim layer directly. Nothing in `session.cpp` or `main.cpp`
-calls it. So: the tone *engine* exists and is tested: the tone *dial* is not
-in the game yet. If you go looking for it expecting a Daggerfall-style
-toggle, you will not find one — that is a gap, not something you are missing.
+**Tone -- POLITE / NORMAL / BLUNT (playable since 2026-10-09).** Every root
+list ends **TONE: NORMAL**, just above SAY NO MORE. Press it and the register
+turns -- NORMAL, POLITE, BLUNT, NORMAL -- with the row always showing the one
+you are in, and a line saying what you did (*"YOU MIND YOUR MANNERS."*,
+*"YOU DROP THE COURTESIES."*). It is Daggerfall's selector, through the
+mechanic this build already had in the simulation (`DialogueDirector::setTone`):
+
+- **It moves the gates, with no roll.** POLITE reads the person as a step
+  warmer than they are, BLUNT a step cooler -- so politeness can get a
+  stranger who is cool on you to offer an errand, and bluntness withholds one
+  a neutral stranger would have offered. The list rebuilds the moment you
+  turn the dial.
+- **It moves the words** wherever a `.polite`/`.blunt` line is authored (a
+  handful today: greetings and the contract brokers' lines), and the plain
+  line everywhere else.
+- **It counts as how you listened** -- the deed your conversation leaves on
+  their memory of you.
+
+The register stays where you left it from one conversation to the next.
+`--street=hand --tone=blunt` photographs it.
 
 ---
 
@@ -516,10 +525,8 @@ this build where "ask for work, do the work, get paid" is a complete loop.
 
 ### What is thin or missing
 
-**The tone selector is vapor.** It is real code, real tests, and zero
-reachability. If Eli specifically wants the Daggerfall-style POLITE/BLUNT
-toggle, it needs one topic row or one key — the hard part (the register
-itself, and authored `.polite`/`.blunt` lines) is already built.
+**~~The tone selector is vapor~~ -- no longer (2026-10-09).** It is the TONE
+row on every root list; see section 4.
 
 **~~The radiant board is the same story~~ -- no longer (2026-10-09).** The
 second quest generator is reachable and finishable now: ask anybody WHO
@@ -527,14 +534,13 @@ NEEDS A HAND?, take the errand, read it on the CASES shelf, settle it -- see
 section 5. Fetch errands are still PARTIAL (the goods come from the ward's
 sources, not the target's pocket).
 
-**Topic labels truncate mid-word** and read as typos rather than style — see
-§4's callout. Small, but it lands squarely on "no shitty English anywhere,"
-so it's worth a real fix, not a shrug.
+**~~Topic labels truncate mid-word~~** -- fixed on the conversation surface
+(section 4).
 
-**Interiors are still brown boxes**, the long game is still mostly a
-scoreboard, there is still no combat screen and no starter dungeon — none of
-that changed this morning; see the git history for the fuller list if you
-want it.
+**Still thin (2026-10-09):** there is **no save or load** -- a night's play ends
+with the window; the long game is still more scoreboard than world; there is
+no starter dungeon. (Combat is no longer a missing screen: it is real-time,
+in the world, since 2026-09-10.)
 
 ### The honest verdict
 
@@ -544,9 +550,8 @@ you done the quest yet," and it reuses everything this build already earned
 rather than reinventing a UI for itself. Character creation is a genuine,
 well-written front door.
 
-The thing to be careful of is the gap between "built" and "playable." Two
-real systems — tone, and the whole radiant board — exist, are tested, and
-currently do nothing for a player holding a keyboard. That is not a
-criticism of the work; both are exactly as far along as an engine layer is
-supposed to get before its interface. It is a note for whoever plans the
-next session: the wiring is the next job, not more content.
+The thing to be careful of is the gap between "built" and "playable." The two
+systems this paragraph used to name -- tone, and the whole radiant board --
+were wired and made finishable on 2026-10-09, and the Kit got a market the
+same day. The gap that is left is the biggest one: nothing a night of play
+does survives the window closing. Save and load is the next job.

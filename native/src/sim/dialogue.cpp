@@ -156,6 +156,8 @@ std::string_view topicKindName(TopicKind kind) noexcept {
             return "pawn";
         case TopicKind::SellItem:
             return "sell item";
+        case TopicKind::Tone:
+            return "tone";
     }
     return "?";
 }
@@ -933,6 +935,15 @@ void DialogueDirector::buildTopics() {
         Topic topic;
         topic.kind = TopicKind::YieldWrit;
         topic.label = "GIVE THE WRIT BACK";
+        topics_.push_back(std::move(topic));
+    }
+
+    // THE TONE DIAL (2026-10-09). The register you are speaking in, and the
+    // press that turns it -- see TopicKind::Tone.
+    {
+        Topic topic;
+        topic.kind = TopicKind::Tone;
+        topic.label = "TONE: " + upper(toneName(tone_));
         topics_.push_back(std::move(topic));
     }
 
@@ -1767,6 +1778,21 @@ Reply DialogueDirector::choose(std::size_t index) {
             // journal contract a broker's job rides out on.
             out.journalLine = row->brief;
             out.radiantId = row->id;
+            break;
+        }
+        case TopicKind::Tone: {
+            // THE TONE DIAL. One press, one turn; setTone rebuilds the list
+            // the player is looking at, so an offer the new register opens
+            // or shuts moves under the cursor at once. Said as a report --
+            // it is what YOU did, not what they said.
+            const Tone next = tone_ == Tone::Normal   ? Tone::Polite
+                              : tone_ == Tone::Polite ? Tone::Blunt
+                                                      : Tone::Normal;
+            setTone(next);
+            out = reply(TopicKind::Tone, next == Tone::Polite  ? "YOU MIND YOUR MANNERS."
+                                         : next == Tone::Blunt ? "YOU DROP THE COURTESIES."
+                                                               : "YOU SPEAK PLAINLY.");
+            out.report = true;
             break;
         }
         case TopicKind::Wares: {
