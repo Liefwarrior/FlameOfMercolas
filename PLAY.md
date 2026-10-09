@@ -332,33 +332,51 @@ just reading the code: it took the job, delivered it, got paid — `open=4
 taken=0 paid=1 lost=0 earned=12`. It works end to end, tonight, in this
 build.
 
-### What exists but you cannot reach: the radiant board
+### The ward's own errands: the radiant board (playable since 2026-10-09)
 
-This morning's later commits (`ddaa368` through `369ae59`) built a second,
-newer generator — `RadiantBoard`, `content/raws/quests/radiant_quests_flame.json`
-and `radiant_quests_skyrunner.json` — and it is a genuinely bigger idea than
-the contract board: instead of drawing from forty-two authored notables, it
-draws its cast from the **whole live ward**, resolving where a body is
-*actually standing right now* rather than a site baked into a raw file once.
-Eleven templates, real fetch/deliver objectives, real names, real places, all
-unit-tested (`test_radiant_quest.cpp`, `test_radiant_variety.cpp` — the
-variety suite genuinely catches a rigged draw; I did not just trust it, a
-sibling verification session mutated the draw to always pick index 0 and
-watched those tests go red on it).
+*(This section used to say the radiant board had no door. The RADIANT BUILD
+wired it on the wip branch; the 2026-10-09 session made it something a human
+can finish. Status: **BUILT** for word errands end to end; **PARTIAL** for
+fetch errands -- see the last paragraph.)*
 
-**None of it is wired to anything a player can press.** I grepped the whole
-of `native/src` and `native/include` for `RadiantBoard`, `RadiantRaws` and
-`RadiantObjective`: every hit is inside `radiant_quest.cpp`/`.hpp`
-themselves. `session.cpp`, `session.hpp` and `main.cpp` never mention
-"radiant" at all — no key, no topic, no HUD line. Even `--help`'s long list
-of scripted-capture flags, which has one for literally every other system in
-this build (`--flame`, `--roofs`, `--skyrun`, `--nemesis`, `--contract`,
-`--burgle`, `--trail`), has no `--radiant`. It is a complete, tested engine
-and content pack sitting on a shelf with no door built into the room it is
-in. If you go looking for "Skyrunner contraband runs" or "the Mission's own
-errands" in the actual game tonight, they are not there — the sentences are
-written, the objectives resolve against real bodies, and nothing hands
-either to a player.
+Four people somewhere in the ward want something done each day -- drawn off
+the **whole live roster**, not the Gull's fixed cast, with every name and
+place real. How to find and finish one, the way `--radiant=settled` does it:
+
+1. **Ask anybody.** `E` on anyone, `1` TELL ME ABOUT, then **A QUEST**, then
+   **WHO NEEDS A HAND?** They name one of today's givers and where they were
+   when the board went up: *"PETRA KEDGE, IN THE LANES UP THE SLOPE, WANTS
+   SOMEBODY TO CARRY WORD TO ONNA."* Different people name different
+   errands; the same person names the same one all day.
+2. **Find the giver.** `M`, select the ground they named, and the
+   **PEOPLE** tab lists everybody standing there now, by name and trade.
+3. **Take it.** Their topic list carries the errand (*CARRY WORD TO ONNA*).
+   The brief reads as a sentence -- *"Find Onna, last seen near the
+   quayside, and tell them there is no time to walk it twice."*
+4. **It stays in your notes.** `J`, then the **CASES** tab: the errand sits
+   under your books and questlines with **SAY IT TO** / **BRING IT TO**,
+   **LAST SEEN** and **PAYS**.
+5. **Settle it.** A word errand pays at its *target*: find them, `E`, **PASS
+   THE WORD FROM ...**, and the coin crosses the table. A fetch pays at its
+   giver when the sack holds the goods: **HAND OVER 3 DUST**.
+
+**`E` talks to whoever is in front of you** -- in a crowd, look at the one
+you mean. It used to answer with whoever stood nearest whatever you faced,
+and Onna at the Mission's night pot, with the sick at her elbow, could not be
+addressed from any tile a body can stand on. The crosshair's TALK prompt
+names the same person the press will.
+
+**PARTIAL -- fetch errands.** A fetch brief says the target "keeps" the
+goods, but by the Kit ruling (DECISIONS 71) a ward body carries and yields
+nothing, so nobody hands them over: the goods come from the ward's own
+sources -- the snug's bale, a guest's strongbox, a rat for a scalp. Whether a
+fetch target should hand them over when asked is flagged for the owner in
+`docs/SESSION-2026-10-09.md`.
+
+```
+granadad --radiant=settled --screenshot=x.png   # take, read the shelf, find, pass, paid
+granadad --radiant=shelf --screenshot=x.png     # the CASES shelf on the errand's row
+```
 
 ---
 
@@ -430,8 +448,9 @@ Reproduce any of it:
    again after dark and ask again. The line changes.
 3. **Walk the trail** (§3) — it is still the best fifteen minutes in the
    build.
-4. **Talk to Cull, then Finch, then Maell** — the one complete faction-work
-   loop that actually exists right now (§5).
+4. **Talk to Cull, then Finch, then Maell** — the contract board's
+   faction-work loop (§5) -- **and then ask a stranger WHO NEEDS A HAND?**,
+   the ward's own errands, finishable end to end since 2026-10-09.
 5. **Press `M`.** The whole district, top-down, with every signed door and
    way named on the ground — find the Mission of the Flame by reading the
    map, then walk there. (The *investigation's* map — bearings and ranges to
@@ -463,11 +482,11 @@ reachability. If Eli specifically wants the Daggerfall-style POLITE/BLUNT
 toggle, it needs one topic row or one key — the hard part (the register
 itself, and authored `.polite`/`.blunt` lines) is already built.
 
-**The radiant board is the same story, at a much bigger scale.** A whole
-second quest generator, built against the live ward instead of forty-two
-fixed names, fully tested, with zero way in. This is worth more attention
-than the tone gap — it's a sprint's worth of engine work with nothing
-downstream of it yet.
+**~~The radiant board is the same story~~ -- no longer (2026-10-09).** The
+second quest generator is reachable and finishable now: ask anybody WHO
+NEEDS A HAND?, take the errand, read it on the CASES shelf, settle it -- see
+section 5. Fetch errands are still PARTIAL (the goods come from the ward's
+sources, not the target's pocket).
 
 **Topic labels truncate mid-word** and read as typos rather than style — see
 §4's callout. Small, but it lands squarely on "no shitty English anywhere,"

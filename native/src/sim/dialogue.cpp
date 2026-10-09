@@ -145,6 +145,8 @@ std::string_view topicKindName(TopicKind kind) noexcept {
             return "take the writ";
         case TopicKind::YieldWrit:
             return "yield the writ";
+        case TopicKind::AskErrand:
+            return "who needs a hand";
     }
     return "?";
 }
@@ -1227,7 +1229,39 @@ void DialogueDirector::buildQuestTopics() {
         topics_.push_back(std::move(topic));
     }
 
+    // ERRANDS A HUMAN CAN FINISH (2026-10-09). WHO NEEDS A HAND? -- on the
+    // list while the board has an offer up that is not this speaker's own
+    // (theirs is on their root list already, as TAKE). See
+    // TopicKind::AskErrand.
+    if (errandToName() != nullptr) {
+        Topic topic;
+        topic.kind = TopicKind::AskErrand;
+        topic.label = "WHO NEEDS A HAND?";
+        topics_.push_back(std::move(topic));
+    }
+
     pushBack();
+}
+
+const RadiantObjective* DialogueDirector::errandToName() const {
+    // Every offer up whose giver is not the one being asked, in board order
+    // (ascending id); one of them by a pure draw of (speaker, day), so the
+    // same person names the same errand all day and two people may name
+    // different ones. Integer, unsigned, no stream draw: asking moves
+    // nothing.
+    const std::int32_t self = speakerWardId();
+    std::vector<const RadiantObjective*> offers;
+    for (const RadiantObjective& row : radiant_.objectives()) {
+        if (row.state == RadiantState::Offered && row.giverActorId != self) {
+            offers.push_back(&row);
+        }
+    }
+    if (offers.empty()) {
+        return nullptr;
+    }
+    const std::uint32_t mix = static_cast<std::uint32_t>(speaker_.actorId) * 2654435761u +
+                              static_cast<std::uint32_t>(radiant_.day());
+    return offers[mix % static_cast<std::uint32_t>(offers.size())];
 }
 
 void DialogueDirector::rebuildCurrentLevel() {
@@ -1638,6 +1672,28 @@ Reply DialogueDirector::choose(std::size_t index) {
             // journal contract a broker's job rides out on.
             out.journalLine = row->brief;
             out.radiantId = row->id;
+            break;
+        }
+        case TopicKind::AskErrand: {
+            // ERRANDS A HUMAN CAN FINISH. Who wants what done, and where they
+            // were when the board went up -- composed from the row's live
+            // nouns, the journal rows' own vocabulary. Nothing moves.
+            const RadiantObjective* row = errandToName();
+            if (row == nullptr) {
+                out = reply(TopicKind::AskErrand, "NOT THAT I HAVE HEARD. ASK AGAIN TOMORROW.");
+                break;
+            }
+            std::string line = upper(row->giverName) + ", " +
+                               upper(radiantPlacePhrase(row->giverPlace).at) +
+                               ", WANTS SOMEBODY TO " + row->verb;
+            if (row->isFetch()) {
+                line += " " + std::to_string(row->units) + " " +
+                        std::string(contrabandLabelFor(row->good, row->units));
+            } else {
+                line += " TO " + upper(row->targetName);
+            }
+            line += ".";
+            out = reply(TopicKind::AskErrand, line);
             break;
         }
         case TopicKind::SettleRadiant: {

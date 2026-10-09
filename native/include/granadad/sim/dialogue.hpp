@@ -286,6 +286,17 @@ enum class TopicKind : std::uint8_t {
     /// deed table already prices that. Intent-only like TakeWrit; the
     /// session closes the book. APPENDED at 32, same reason.
     YieldWrit = 32,
+    /// ERRANDS A HUMAN CAN FINISH (2026-10-09). "WHO NEEDS A HAND?" -- in the
+    /// TELL ME ABOUT tree's A QUEST branch, on anybody's list while the
+    /// radiant board has an offer up that is not their own. The answer names
+    /// one live giver, where they were when the board was posted, and what
+    /// they want done; which one is a pure draw of (speaker, board day) so
+    /// the same person names the same errand all day. People TELL the
+    /// Wielder things (DOCKS-GAZETTEER 5.3): no roll, no deed, nothing
+    /// moved -- the board's four givers among six hundred were otherwise
+    /// found only by talking to strangers at random. APPENDED at 33, for
+    /// the reason on Buy.
+    AskErrand = 33,
 };
 
 [[nodiscard]] std::string_view topicKindName(TopicKind kind) noexcept;
@@ -516,6 +527,10 @@ public:
 
     [[nodiscard]] RadiantBoard& radiant() noexcept { return radiant_; }
     [[nodiscard]] const RadiantBoard& radiant() const noexcept { return radiant_; }
+    /// ERRANDS A HUMAN CAN FINISH (2026-10-09). The offered errand this
+    /// speaker names when asked WHO NEEDS A HAND? -- see TopicKind::AskErrand
+    /// -- or null when the board has nothing up that is not their own.
+    [[nodiscard]] const RadiantObjective* errandToName() const;
     /// The authored templates, or an empty set when the raws were not found.
     [[nodiscard]] const RadiantRaws& radiantRaws() const noexcept { return *radiantRaws_; }
     /// Posts a day's errands off the live ward. Called by whoever owns the

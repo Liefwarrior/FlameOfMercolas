@@ -202,6 +202,50 @@ private:
     const std::filesystem::path& contentDir);
 
 // ---------------------------------------------------------------------------
+// the brief's English
+// ---------------------------------------------------------------------------
+
+/// ERRANDS A HUMAN CAN FINISH (2026-10-09). The two ways one of the ward's
+/// place labels reads inside a sentence somebody wrote.
+///
+/// docks::placeLabelAt answers in HUD vocabulary -- "TARWALK", "THE DOCKS -
+/// MID SLOPE" -- and the authored briefs use the place in two different
+/// grammatical seats. After a preposition it wants a bare noun ("last seen
+/// near {targetPlace}" -> "near the Tarwalk"); standing alone as an adverbial
+/// or an aside it wants the whole locative ("keeps the kennel {giverPlace}"
+/// -> "keeps the kennel on the Tarwalk", "{target}, {targetPlace}, has been
+/// asked" -> "Kessa Inkwater, on the Tarwalk, has been asked"). Substituting
+/// the label verbatim served neither seat, and the board printed "Old Cobb
+/// keeps the kennel the Docks - Mid Slope". So every label the ward can name
+/// carries both shapes here, and composeRadiantBrief picks one by the word
+/// in front of the token.
+struct PlacePhrase {
+    /// After a preposition: "the Tarwalk", "Saltgate Rise".
+    std::string bare;
+    /// On its own: "on the Tarwalk", "in the Gilded Gull".
+    std::string at;
+};
+
+/// Both shapes for one docks::placeLabelAt answer. Every entry of
+/// docks::kPlaces and every docks::bandFallbackLabel has its own authored
+/// row (test_radiant_quest.cpp pins that); a label outside that closed set
+/// falls back to title case and "at", which is plain English if not the
+/// ward's own idiom.
+[[nodiscard]] PlacePhrase radiantPlacePhrase(std::string_view label);
+
+/// One authored template's brief with every token substituted: the two
+/// names verbatim, each place in the shape its seat in the sentence wants
+/// (see PlacePhrase), {units} as a numeral and {good} as given (the caller
+/// lower-cases it; a deliver passes it empty). The board composes every
+/// row through this, and the copy case sweeps every authored template
+/// through it against every label the ward can name.
+[[nodiscard]] std::string composeRadiantBrief(std::string_view templ, std::string_view giverName,
+                                              std::string_view giverPlaceLabel,
+                                              std::string_view targetName,
+                                              std::string_view targetPlaceLabel,
+                                              std::int32_t units, std::string_view good);
+
+// ---------------------------------------------------------------------------
 // one generated objective
 // ---------------------------------------------------------------------------
 

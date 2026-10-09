@@ -2377,6 +2377,63 @@ const WardActor* WardPopulation::nearestTo(std::int32_t x, std::int32_t y, std::
     return best;
 }
 
+const WardActor* WardPopulation::inFrontOf(std::int32_t xQ8, std::int32_t yQ8, std::int32_t band,
+                                           Angle yaw, std::int32_t reachTiles) const noexcept {
+    // The look in Q8 (a Q16 unit vector shifted down), so every product
+    // below fits an int64 with room: |d| <= ~(reach + 1) * 256, |f| <= 256.
+    const std::int64_t fx = forward_x_q16(yaw) / 256;
+    const std::int64_t fy = forward_y_q16(yaw) / 256;
+    const std::int32_t tileX = q8_tile(xQ8);
+    const std::int32_t tileY = q8_tile(yQ8);
+    const WardActor* best = nullptr;
+    std::int64_t bestDot = 0;
+    std::int64_t bestLen2 = 0;
+    std::int32_t bestDistance = 0;
+    for (const WardActor& actor : actors_) {
+        if (!actor.visible() || actor.band != band) {
+            continue;
+        }
+        const std::int32_t distance =
+            std::max(std::abs(actor.x - tileX), std::abs(actor.y - tileY));
+        if (distance > reachTiles) {
+            continue;
+        }
+        const std::int64_t dx = q8_tile_centre(actor.x) - xQ8;
+        const std::int64_t dy = q8_tile_centre(actor.y) - yQ8;
+        const std::int64_t len2 = dx * dx + dy * dy;
+        const std::int64_t dot = dx * fx + dy * fy;
+        // ON THE EYE'S OWN TILE: dead ahead, whatever the sub-tile says.
+        const bool underfoot = distance == 0;
+        if (!underfoot) {
+            // IN THE CONE: cos(angle) >= 1/2, i.e. dot / (|d| * 256) >= 1/2,
+            // squared and cleared of the root: 4 * dot^2 >= 65536 * len2.
+            if (dot <= 0 || 4 * dot * dot < 65536 * len2) {
+                continue;
+            }
+        }
+        bool better = false;
+        if (best == nullptr) {
+            better = true;
+        } else if (underfoot || bestLen2 == 0) {
+            // Dead ahead beats any angle; between two dead-ahead bodies the
+            // nearer, then the lower id (iteration order), as below.
+            better = underfoot && (bestLen2 != 0 || distance < bestDistance);
+        } else {
+            // Better aligned: dot^2 / len2 larger, compared without dividing.
+            const std::int64_t mine = dot * dot * bestLen2;
+            const std::int64_t theirs = bestDot * bestDot * len2;
+            better = mine > theirs || (mine == theirs && distance < bestDistance);
+        }
+        if (better) {
+            best = &actor;
+            bestDot = underfoot ? 0 : dot;
+            bestLen2 = underfoot ? 0 : len2;
+            bestDistance = distance;
+        }
+    }
+    return best;
+}
+
 std::int32_t WardPopulation::takeCoinFrom(std::int32_t actorId, std::int32_t coin) noexcept {
     if (actorId < 0 || static_cast<std::size_t>(actorId) >= actors_.size() || coin <= 0) {
         return 0;

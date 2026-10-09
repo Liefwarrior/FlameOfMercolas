@@ -463,6 +463,16 @@ inline constexpr int kMinBodyRows = 8;
 /// Three rows for every row of the shelf, so nothing under them moves as the
 /// cursor walks it -- leadFactsFor's own rule.
 [[nodiscard]] std::vector<PanelFact> shelfFactsFor(const CasebookShelfRow& row) {
+    if (row.errand) {
+        // ERRANDS A HUMAN CAN FINISH. Who settles it, where they were when the
+        // job was posted, what it pays -- still three rows.
+        return {
+            PanelFact{row.whoLabel, row.who, InkRole::Prose},
+            PanelFact{"LAST SEEN", row.where.empty() ? std::string("--") : row.where,
+                      row.where.empty() ? InkRole::Dim : InkRole::Prose},
+            PanelFact{"PAYS", row.pays, InkRole::Number},
+        };
+    }
     return {
         PanelFact{row.book ? "READ" : "STAGE", row.tally.empty() ? std::string("--") : row.tally,
                   InkRole::Number},
@@ -950,7 +960,9 @@ void drawShelfDetail(Framebuffer& target, const PanelRect& detail, const PanelMe
         state.commitKey.empty() ? std::string(kGlyphReturn) : state.commitKey;
     const int lastRow = metric.rowsIn(detail.h) - 1;
     if (!row.book) {
-        drawCellText(target, detail, metric, 0, lastRow, "A LINE, NOT A BOOK. THE JOURNAL HAS IT.",
+        drawCellText(target, detail, metric, 0, lastRow,
+                     row.errand ? std::string(kErrandFindLine)
+                                : std::string("A LINE, NOT A BOOK. THE JOURNAL HAS IT."),
                      ink.dim, alpha);
         return;
     }

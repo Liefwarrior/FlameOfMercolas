@@ -13,6 +13,51 @@ plus the S5 re-verification pass. Anything the lost ranking held beyond these is
 unrecoverable and is declared as such — this file is the durable record going forward:
 new playtest defects get filed HERE, in the same shape, in the sprint they are found.
 
+## 2026-10-09 -- the customer's playtests (Dave)
+
+From the 2026-10-09 session on, every shipped slice also gets a verdict from the
+team's CUSTOMER role: **Dave**, 46, read *Dragons of Autumn Twilight* under the covers
+in 1986, played Morrowind till 3 a.m. in a dorm, gets sixty to ninety minutes three
+nights a week and judges the first ten of them harshly. His words, verbatim; the
+defects he finds are filed below them in this file's own `fix/was/now/open` shape.
+Scorecards and the session's whole record: `docs/SESSION-2026-10-09.md`.
+
+### Slice 1 -- errands a human can finish
+
+> "I asked a woman on the quay who needed a hand and she sent me up the hill to a
+> fella called Needle. *That's* the move -- somebody in the room knows somebody. The
+> Inn of the Last Home never had a job board either; it had Otik, who knew who was
+> looking. The bit where the priest's got somebody dying and wants the white cloth
+> and not the surgeon -- I read that twice. Found Onna in a crowd of sick people by
+> looking at her, which is how it should've always worked. I'd play another night of
+> this.
+>
+> "The fetch ones are a cheat, though. The paper says the fella's sitting on three
+> jars and he won't give me one. Either let me ask him for it or don't tell me he's
+> got it."
+
+- **fixed: radiant briefs read as broken English.** was: the HUD's place label went
+  into the sentence verbatim -- *"Old Cobb keeps the kennel the Docks - Mid Slope"*.
+  now: every label the ward can name has a bare and a locative shape, picked by the
+  word in front of the token (`composeRadiantBrief`); every authored template x every
+  label is swept by `test_radiant_quest.cpp`.
+- **fixed: a taken errand vanished from the notes.** was: the brief was spoken once on
+  the alert row (cut at *"KESSA I..."*) and the casebook page never listed errands.
+  now: the CASES shelf carries each taken errand -- SAY IT TO / BRING IT TO, LAST
+  SEEN, PAYS.
+- **fixed: nobody could tell you who had work.** was: four givers among six hundred,
+  found only by talking to strangers at random. now: TELL ME ABOUT > A QUEST > WHO
+  NEEDS A HAND? on anybody's list.
+- **fixed: E answered whoever stood nearest, whatever you looked at.** was: Onna at the
+  Mission's night pot could not be addressed from any standable tile -- three of the
+  sick were always nearer. now: E (and the crosshair's TALK prompt) address the body
+  in front within reach; nearest only when nobody is in front
+  (`WardPopulation::inFrontOf`).
+- **open: a fetch target names goods they never hand over.** The Kit ruling says ward
+  bodies yield nothing; flagged for the owner, not invented around.
+- **open: the settle receipt `(24C)` is spoken on the alert row under the topic list**
+  and is not on the conversation surface's own line. Cosmetic.
+
 ## FPV pass (the first-person view) — one round
 
 Source: Eli, verbatim — *"I want a demo with the ability to switch between 1st person and

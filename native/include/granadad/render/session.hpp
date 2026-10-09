@@ -2201,11 +2201,23 @@ public:
     /// proof that re-derived the rows itself would be proving its own copy.
     [[nodiscard]] std::vector<std::string> journalWorkRows() const;
 
+    /// ERRANDS A HUMAN CAN FINISH (2026-10-09). Who E would address right
+    /// now, from where the body stands and looks -- the private
+    /// wardAddressee() rule, public so a scripted line asks the press's own
+    /// question rather than a copy of it.
+    [[nodiscard]] const sim::WardActor* wardAddresseeNow() const;
+
 private:
     /// How close you have to be to address somebody on the street. Two tiles,
     /// which is the same reach Tavern::talkTo uses across a taproom -- one rule
     /// for "within arm's length and a word", not two.
     static constexpr std::int32_t kWardTalkReachTiles = 2;
+    /// ERRANDS A HUMAN CAN FINISH (2026-10-09). The street body E addresses
+    /// from where the body stands and looks: in front first
+    /// (WardPopulation::inFrontOf), nearest only when nobody is in front.
+    /// talkToWard and the crosshair's TALK prompt both ask this, so the
+    /// prompt never names somebody other than who answers.
+    [[nodiscard]] const sim::WardActor* wardAddressee() const;
     /// And how far a crime carries on an open street. The taproom's own witness
     /// range is eight tiles; a quay has no walls to shorten it and no reason to
     /// lengthen it.
@@ -4052,7 +4064,13 @@ struct SmokeRunConfig {
     /// Where the line stops for the shutter. "offer" opens the conversation
     /// and leaves the giver's own TAKE row on the visible list (one beat);
     /// "taken" -- the default -- presses it and proves the board moved and
-    /// the journal shows the errand (three beats).
+    /// the journal shows the errand (three beats). ERRANDS A HUMAN CAN
+    /// FINISH: "shelf" then opens the casebook on its CASES shelf with the
+    /// cursor on the errand's own row (four beats); "settled" takes a DELIVER
+    /// errand, finds the shelf row, walks to the target on the district's
+    /// own router, opens the conversation, passes the word and checks the
+    /// board and the purse (seven beats). "ask" stops on a stranger's answer
+    /// to TELL ME ABOUT, A QUEST, WHO NEEDS A HAND? (two beats).
     std::string radiantEnd = "taken";
 
     /// DISTRICT PHASE D, VERIFICATION ONLY: WALK ACROSS A NAMED BOUNDARY, so
@@ -4203,6 +4221,29 @@ struct RadiantLineResult {
     bool taken = false;
     /// journalWorkRows() carries the errand's row.
     bool journal = false;
+
+    // --- ERRANDS A HUMAN CAN FINISH (2026-10-09) -----------------------------
+    /// "shelf" and "settled": the casebook page's CASES shelf, opened the
+    /// way J opens it, carries the errand as its own row with who, where and
+    /// what it pays -- the notes a player reads after the alert has faded.
+    bool shelf = false;
+    /// "settled": the errand's settling body, re-found where they stand NOW.
+    bool reached = false;
+    /// The body got there on its own feet -- the district's own router on
+    /// the band it was on. False when the target stood on another band and
+    /// the line had to place the body instead; printed, never hidden.
+    bool walked = false;
+    /// The conversation opened on the target and the PASS THE WORD row was
+    /// on the list.
+    bool passed = false;
+    /// The board row reads Paid and the purse moved by exactly its pay.
+    bool settled = false;
+    std::string target;
+    std::int32_t pay = 0;
+    /// "ask": a stranger who gives nothing today was asked WHO NEEDS A
+    /// HAND? through the tree's own doors, and named a live giver.
+    bool asked = false;
+    std::string answer;
 };
 
 /// TIME-AND-TENURE BUILD. What a `--petition` run actually did, so a case can
@@ -4506,8 +4547,10 @@ PetitionLineResult runPetitionLine(Session& session, bool grantCoin);
 /// Exposed for exactly runStreetLine's reason: the evidence that TASK #81's
 /// generator is reachable is a topic on a real list, a board row that moved
 /// and a journal that shows it, and a case asserts those directly.
-/// `takeIt` false stops with the offer on the open list (the "offer" end).
-RadiantLineResult runRadiantLine(Session& session, bool takeIt);
+/// `end` is SmokeRunConfig::radiantEnd: "offer" stops with the offer on the
+/// open list, "taken" after the press, "shelf" on the casebook's own row
+/// for it, "settled" with the word passed and paid.
+RadiantLineResult runRadiantLine(Session& session, const std::string& end);
 
 /// DISTRICT PHASE D. Walks the body across one authored place boundary -- see
 /// SmokeRunConfig::threshold. Exposed for exactly runStreetLine's reason: the
