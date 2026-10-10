@@ -1,4 +1,5 @@
 #include "granadad/sim/dialogue.hpp"
+#include "granadad/sim/shops.hpp"
 
 #include <algorithm>
 #include <memory>
@@ -141,6 +142,22 @@ std::string_view topicKindName(TopicKind kind) noexcept {
             return "take errand";
         case TopicKind::SettleRadiant:
             return "settle errand";
+        case TopicKind::TakeWrit:
+            return "take the writ";
+        case TopicKind::YieldWrit:
+            return "yield the writ";
+        case TopicKind::AskErrand:
+            return "who needs a hand";
+        case TopicKind::Wares:
+            return "see the wares";
+        case TopicKind::BuyItem:
+            return "buy item";
+        case TopicKind::Pawn:
+            return "pawn";
+        case TopicKind::SellItem:
+            return "sell item";
+        case TopicKind::Tone:
+            return "tone";
     }
     return "?";
 }
@@ -313,6 +330,19 @@ void DialogueDirector::setVacantCharge(std::int32_t plotIndex, std::string name)
     }
 }
 
+void DialogueDirector::setEvictionCase(std::int32_t stage, bool quietWork) {
+    if (evictionStage_ == stage && evictionQuietWork_ == quietWork) {
+        return;
+    }
+    evictionStage_ = stage;
+    evictionQuietWork_ = quietWork;
+    // A writ taken or yielded mid-conversation moves its own row on or off
+    // the list with the reply that announced it -- setVacantCharge's rule.
+    if (open_) {
+        rebuildCurrentLevel();
+    }
+}
+
 std::vector<std::string> DialogueDirector::factionChain(std::string_view factionId,
                                                         std::string_view verb) const {
     std::vector<std::string> chain;
@@ -363,7 +393,11 @@ bool DialogueDirector::open(const Speaker& speaker, std::int32_t secondOfDay) {
     chain.insert(chain.end(), greetKeys.begin(), greetKeys.end());
 
     greetingKey_ = std::string(barks_.resolve(chain));
-    greeting_ = std::string(barks_.line(greetingKey_, rowIndexFor(TopicKind::Personal, 0)));
+    // VOICE LANE: read as a CELL, so an authored greet key widened by a
+    // numbered sibling (greet.serf.neutral.evening.2, a supplementary file)
+    // rotates across the union -- the key itself stays the owner's, and a
+    // key with no sibling reads row for row what line() always gave.
+    greeting_ = std::string(barks_.cellLine(greetingKey_, rowIndexFor(TopicKind::Personal, 0)));
     if (greeting_.empty()) {
         // The raws are missing or being edited. Say so plainly rather than
         // inventing a line and passing it off as canon.
@@ -384,6 +418,27 @@ void DialogueDirector::close() noexcept {
     bench_.reset();
     topics_.clear();
     menu_ = DialogueMenu::Root;
+    // SHOPS: a counter is the conversation's, not the director's.
+    counter_ = CounterView{};
+}
+
+void DialogueDirector::setCounter(CounterView view) {
+    counter_ = std::move(view);
+}
+
+void DialogueDirector::refreshTopics() {
+    if (open_) {
+        rebuildCurrentLevel();
+    }
+}
+
+std::int32_t DialogueDirector::counterPriceFor(std::int32_t royals) const noexcept {
+    if (!open_) {
+        return 0;
+    }
+    // The same guild term the counter applies to a mug -- see HaggleTerms --
+    // and nothing else: skill decides the price of ale and only that (S3).
+    return counterPrice(royals, guildPricePercent(standings_, speakerFaction()));
 }
 
 std::int32_t DialogueDirector::rowIndexFor(TopicKind kind, std::int32_t payload) const noexcept {
@@ -404,6 +459,37 @@ std::string DialogueDirector::speak(const std::vector<std::string>& chain, Topic
         return {};
     }
     return std::string(barks_.line(key, rowIndexFor(kind, payload)));
+}
+
+std::string DialogueDirector::farewellKey(bool walkedOff) const {
+    // Read off the speaker the director still holds, open or just closed:
+    // the LEAVE reply is composed before close() and reported after it.
+    if (speaker_.name.empty() || speaker_.beast) {
+        // A beast has no goodbye: greet.beast is three stage directions and
+        // that is the whole of what a cat has to say, at the start or the end.
+        return {};
+    }
+    if (walkedOff) {
+        // The word thrown after you: farewell.away.<family>, then the
+        // generic farewell.away -- NOT the attitude cells, because a man cut
+        // off mid-sentence says the same thing whether he likes you or not.
+        const std::string away = "farewell.away";
+        return std::string(barks_.resolve(
+            {away + "." + std::string(jobFamilyKey(speaker_.family)), away}));
+    }
+    return std::string(barks_.resolve(farewellChain(speaker_.typeKey, speaker_.family, attitude_)));
+}
+
+std::string DialogueDirector::farewell(bool walkedOff) const {
+    const std::string key = farewellKey(walkedOff);
+    if (key.empty()) {
+        return {};
+    }
+    // Keyed on Leave, whose ordinal (8) is fixed, so the rotation is a pure
+    // function of (talks, actor) exactly as every other row's is -- and the
+    // walk-off takes the next slot along so the two goodbyes of one visit
+    // are two different rows.
+    return std::string(barks_.line(key, rowIndexFor(TopicKind::Leave, walkedOff ? 1 : 0)));
 }
 
 void DialogueDirector::buildTopics() {
@@ -703,6 +789,26 @@ void DialogueDirector::buildTopics() {
         topics_.push_back(std::move(topic));
     }
 
+    // SHOPS (2026-10-09). A counter keeper's shelf, and the pawn's own door --
+    // two rows on their list, each opening its own level, the way TELL ME
+    // ABOUT opens the tree. Met away from the counter they still offer the
+    // shelf, and SEE THE WARES answers that it is back at the counter: the
+    // world saying so, rather than the row vanishing for no reason given.
+    if (counter_.keeps) {
+        if (!counter_.sells.empty()) {
+            Topic topic;
+            topic.kind = TopicKind::Wares;
+            topic.label = "SEE THE WARES";
+            topics_.push_back(std::move(topic));
+        }
+        if (counter_.buys) {
+            Topic topic;
+            topic.kind = TopicKind::Pawn;
+            topic.label = "PAWN SOMETHING";
+            topics_.push_back(std::move(topic));
+        }
+    }
+
     // 7. The two things that actually change how somebody feels about you.
     {
         Topic topic;
@@ -807,6 +913,37 @@ void DialogueDirector::buildTopics() {
         topic.kind = TopicKind::Petition;
         topic.label = "PETITION FOR " + vacantPlotName_;
         topic.payload = vacantPlot_;
+        topics_.push_back(std::move(topic));
+    }
+
+    // 9d. EVICTION CASE -- the writ, offered and retrieved. The case's own
+    //     priest and nobody else (kEvictionPriestId: the ward's only priest,
+    //     and compounds.json's charter priest of every plot -- canon's
+    //     casting, one constant to recast), in the stage the session says
+    //     the case is in: dormant offers the hire, live-and-unserved offers
+    //     the walk-back, done offers neither. The open-hand gate is
+    //     deliberately NOT here: a topic that hid itself below the bar
+    //     would be a secret check, and the design wants the measure SAID --
+    //     choose() states the bar and the player's own number out loud.
+    if (speaker_.notableId == kEvictionPriestId && evictionStage_ == 0) {
+        Topic topic;
+        topic.kind = TopicKind::TakeWrit;
+        topic.label = "THE MISSION'S WRIT";
+        topics_.push_back(std::move(topic));
+    }
+    if (speaker_.notableId == kEvictionPriestId && evictionStage_ == 1) {
+        Topic topic;
+        topic.kind = TopicKind::YieldWrit;
+        topic.label = "GIVE THE WRIT BACK";
+        topics_.push_back(std::move(topic));
+    }
+
+    // THE TONE DIAL (2026-10-09). The register you are speaking in, and the
+    // press that turns it -- see TopicKind::Tone.
+    {
+        Topic topic;
+        topic.kind = TopicKind::Tone;
+        topic.label = "TONE: " + upper(toneName(tone_));
         topics_.push_back(std::move(topic));
     }
 
@@ -1064,12 +1201,15 @@ void DialogueDirector::buildPersonTopics() {
         topics_.push_back(std::move(topic));
     }
 
-    // What the ward is saying.
-    if (barks_.has("gossip")) {
+    // What the ward is saying. VOICE LANE: in this trade's own mouth first
+    // (rumor.<family>, a supplementary file) and the owner's generic gossip
+    // table as the floor it always was, so a sailor's WHAT THE WARD SAYS is
+    // the lanes and a keeper's is the dogs.
+    if (const std::string key(barks_.resolve(rumorChain(speaker_.family))); !key.empty()) {
         Topic topic;
         topic.kind = TopicKind::WardTalk;
         topic.label = "WHAT THE WARD SAYS";
-        topic.barkKey = "gossip";
+        topic.barkKey = key;
         topics_.push_back(std::move(topic));
     }
 
@@ -1150,6 +1290,67 @@ void DialogueDirector::buildQuestTopics() {
         topics_.push_back(std::move(topic));
     }
 
+    // ERRANDS A HUMAN CAN FINISH (2026-10-09). WHO NEEDS A HAND? -- on the
+    // list while the board has an offer up that is not this speaker's own
+    // (theirs is on their root list already, as TAKE). See
+    // TopicKind::AskErrand.
+    if (errandToName() != nullptr) {
+        Topic topic;
+        topic.kind = TopicKind::AskErrand;
+        topic.label = "WHO NEEDS A HAND?";
+        topics_.push_back(std::move(topic));
+    }
+
+    pushBack();
+}
+
+const RadiantObjective* DialogueDirector::errandToName() const {
+    // Every offer up whose giver is not the one being asked, in board order
+    // (ascending id); one of them by a pure draw of (speaker, day), so the
+    // same person names the same errand all day and two people may name
+    // different ones. Integer, unsigned, no stream draw: asking moves
+    // nothing.
+    const std::int32_t self = speakerWardId();
+    std::vector<const RadiantObjective*> offers;
+    for (const RadiantObjective& row : radiant_.objectives()) {
+        if (row.state == RadiantState::Offered && row.giverActorId != self) {
+            offers.push_back(&row);
+        }
+    }
+    if (offers.empty()) {
+        return nullptr;
+    }
+    const std::uint32_t mix = static_cast<std::uint32_t>(speaker_.actorId) * 2654435761u +
+                              static_cast<std::uint32_t>(radiant_.day());
+    return offers[mix % static_cast<std::uint32_t>(offers.size())];
+}
+
+void DialogueDirector::buildWaresTopics() {
+    topics_.clear();
+    menu_ = DialogueMenu::Wares;
+    for (const CounterWare& ware : counter_.sells) {
+        const std::int32_t price = counterPriceFor(ware.royals);
+        Topic topic;
+        topic.kind = TopicKind::BuyItem;
+        topic.label = ware.name + " (" + coins(price) + ")";
+        topic.payload = price;
+        topic.arg = ware.itemId;
+        topics_.push_back(std::move(topic));
+    }
+    pushBack();
+}
+
+void DialogueDirector::buildPawnTopics() {
+    topics_.clear();
+    menu_ = DialogueMenu::Pawn;
+    for (const CounterWare& ware : counter_.pawnable) {
+        Topic topic;
+        topic.kind = TopicKind::SellItem;
+        topic.label = ware.name + " (" + coins(ware.royals) + ")";
+        topic.payload = ware.royals;
+        topic.arg = ware.itemId;
+        topics_.push_back(std::move(topic));
+    }
     pushBack();
 }
 
@@ -1157,6 +1358,21 @@ void DialogueDirector::rebuildCurrentLevel() {
     switch (menu_) {
         case DialogueMenu::Root:
             buildTopics();
+            break;
+        case DialogueMenu::Wares:
+            // A shelf a keeper walked away from is no shelf: back to the root.
+            if (counter_.keeps && counter_.atCounter) {
+                buildWaresTopics();
+            } else {
+                buildTopics();
+            }
+            break;
+        case DialogueMenu::Pawn:
+            if (counter_.buys && counter_.atCounter) {
+                buildPawnTopics();
+            } else {
+                buildTopics();
+            }
             break;
         case DialogueMenu::Category:
             buildCategoryTopics();
@@ -1266,7 +1482,8 @@ Reply DialogueDirector::choose(std::size_t index) {
             // One level up. Category steps back to the root; any of the five
             // leaves step back to the category list -- there is nowhere else
             // a Back topic can ever be standing.
-            if (menu_ == DialogueMenu::Category) {
+            if (menu_ == DialogueMenu::Category || menu_ == DialogueMenu::Wares ||
+                menu_ == DialogueMenu::Pawn) {
                 buildTopics();
             } else {
                 buildCategoryTopics();
@@ -1322,6 +1539,7 @@ Reply DialogueDirector::choose(std::size_t index) {
             // sociable and is turned in later.
             noteAlmsGiven();
             out = reply(TopicKind::BuyDrinkFor, upper(speaker_.name) + " TAKES THE DRINK.");
+            out.report = true;
             out.coinDelta = -topic.payload;
             break;
         }
@@ -1336,6 +1554,7 @@ Reply DialogueDirector::choose(std::size_t index) {
                 recordDeed(Deed::Robbed);
                 out = reply(TopicKind::PickPocket,
                             upper(speaker_.name) + " CATCHES YOUR WRIST.");
+                out.report = true;
                 out.offence = true;
                 out.closes = true;
                 out.crime = Crime::Lift;
@@ -1561,6 +1780,85 @@ Reply DialogueDirector::choose(std::size_t index) {
             out.radiantId = row->id;
             break;
         }
+        case TopicKind::Tone: {
+            // THE TONE DIAL. One press, one turn; setTone rebuilds the list
+            // the player is looking at, so an offer the new register opens
+            // or shuts moves under the cursor at once. Said as a report --
+            // it is what YOU did, not what they said.
+            const Tone next = tone_ == Tone::Normal   ? Tone::Polite
+                              : tone_ == Tone::Polite ? Tone::Blunt
+                                                      : Tone::Normal;
+            setTone(next);
+            out = reply(TopicKind::Tone, next == Tone::Polite  ? "YOU MIND YOUR MANNERS."
+                                         : next == Tone::Blunt ? "YOU DROP THE COURTESIES."
+                                                               : "YOU SPEAK PLAINLY.");
+            out.report = true;
+            break;
+        }
+        case TopicKind::Wares: {
+            // SHOPS. The shelf, as its own level -- or, away from the counter,
+            // the keeper saying where it is.
+            if (!counter_.atCounter) {
+                out = reply(TopicKind::Wares, "NOT OUT HERE. COME BY " + upper(counter_.name) + ".");
+                break;
+            }
+            out = reply(TopicKind::Wares, {});
+            buildWaresTopics();
+            break;
+        }
+        case TopicKind::Pawn: {
+            if (!counter_.atCounter) {
+                out = reply(TopicKind::Pawn, "NOT OUT HERE. COME BY " + upper(counter_.name) + ".");
+                break;
+            }
+            out = reply(TopicKind::Pawn,
+                        counter_.pawnable.empty() ? std::string("NOTHING ON YOU I WANT.")
+                                                  : std::string());
+            buildPawnTopics();
+            break;
+        }
+        case TopicKind::BuyItem: {
+            // An intent: the director knows the purse, the Kit's owner knows
+            // whether the thing fits on you. The purse is asked here so the
+            // refusal is the counter's own sentence.
+            if (playerCoin_ < topic.payload) {
+                out = reply(TopicKind::BuyItem, "YOUR PURSE WILL NOT COVER IT.");
+                out.ok = false;
+                break;
+            }
+            out = reply(TopicKind::BuyItem, {});
+            out.itemId = topic.arg;
+            out.itemPrice = topic.payload;
+            break;
+        }
+        case TopicKind::SellItem: {
+            out = reply(TopicKind::SellItem, {});
+            out.itemId = topic.arg;
+            out.itemPrice = topic.payload;
+            break;
+        }
+        case TopicKind::AskErrand: {
+            // ERRANDS A HUMAN CAN FINISH. Who wants what done, and where they
+            // were when the board went up -- composed from the row's live
+            // nouns, the journal rows' own vocabulary. Nothing moves.
+            const RadiantObjective* row = errandToName();
+            if (row == nullptr) {
+                out = reply(TopicKind::AskErrand, "NOT THAT I HAVE HEARD. ASK AGAIN TOMORROW.");
+                break;
+            }
+            std::string line = upper(row->giverName) + ", " +
+                               upper(radiantPlacePhrase(row->giverPlace).at) +
+                               ", WANTS SOMEBODY TO " + row->verb;
+            if (row->isFetch()) {
+                line += " " + std::to_string(row->units) + " " +
+                        std::string(contrabandLabelFor(row->good, row->units));
+            } else {
+                line += " TO " + upper(row->targetName);
+            }
+            line += ".";
+            out = reply(TopicKind::AskErrand, line);
+            break;
+        }
         case TopicKind::SettleRadiant: {
             const RadiantObjective* row = radiant_.find(topic.payload);
             if (row == nullptr) {
@@ -1627,6 +1925,52 @@ Reply DialogueDirector::choose(std::size_t index) {
             // tenure and purse itself, and its answer -- Done or any of the
             // refusals -- is the line the settlement writes back.
             out = reply(TopicKind::Petition, {});
+            break;
+        }
+        case TopicKind::TakeWrit: {
+            // EVICTION CASE. THE ONE SKILL CHECK IN THE BUILD THAT IS SAID
+            // OUT LOUD. The gazetteer's law bans persuasion rolls from the
+            // TRAIL; this is not the trail -- it is a hiring, the brief's own
+            // "good skill in open hand" -- and it is deterministic: the live
+            // SkillTrack read against a named bar, no draw, stated to the
+            // player in the refusal with both numbers. Passing does not
+            // spend anything; a player refused can train and return, and
+            // the topic stands.
+            const std::int32_t hand = skills_.level(kOpenHandSkill);
+            if (hand < kEvictionOpenHandBar) {
+                out = reply(TopicKind::TakeWrit,
+                            "THE MEASURE IS OPEN HAND AT " +
+                                std::to_string(kEvictionOpenHandBar) +
+                                " OF THE HUNDRED. YOURS READS " + std::to_string(hand) +
+                                ". THE FLAME DOES NOT HIRE HOPE.");
+                out.ok = false;
+                break;
+            }
+            // The speech is the priest's; the CASE is the session's -- an
+            // ok reply of this kind is the intent the casebook's owner
+            // settles, exactly ReadRoll's split. The one line of continuity
+            // the design allows rides the flag the session set.
+            std::string line = evictionQuietWork_
+                                   ? "YOUR HANDS HAVE DONE THE MISSION'S QUIET WORK BEFORE. "
+                                   : "";
+            line +=
+                "SERVE IT IN THE EVENING, ONCE THEY ARE HOME, AND NOTHING EDGED. "
+                "A POOR FAMILY AND AN IMPOSSIBLE ASK. DO IT ANYWAY. "
+                "ORDER KEPT IS WHY THE CITY IS SUFFERED TO STAND.";
+            out = reply(TopicKind::TakeWrit, std::move(line));
+            break;
+        }
+        case TopicKind::YieldWrit: {
+            // EVICTION CASE. The disrupt path's settlement. WalkedOut is the
+            // ledger's own price for a bargain struck and handed back -- a
+            // REAL consequence through the deed table the whole ward already
+            // runs on, not a bespoke penalty -- and the priest's regard
+            // falls exactly as far as walking out on any other deal moves
+            // anybody's. The session closes the book off this reply.
+            recordDeed(Deed::WalkedOut);
+            out = reply(TopicKind::YieldWrit,
+                        "THEN IT FINDS HARDER HANDS, AND THE DOOR WILL LIKE THEM LESS. "
+                        "THE MISSION REMEMBERS WHOSE NERVE WENT.");
             break;
         }
         case TopicKind::Rival: {
@@ -1697,6 +2041,7 @@ Reply DialogueDirector::choose(std::size_t index) {
                             upper(speaker_.name) + " LOOKS AT YOU AND WAITS. (" +
                                 std::to_string(menace) + " AGAINST " + std::to_string(nerve) +
                                 ")");
+                out.report = true;
                 out.offence = true;
                 out.ok = false;
                 out.crime = Crime::Extort;
@@ -1718,7 +2063,12 @@ Reply DialogueDirector::choose(std::size_t index) {
             break;
         }
         case TopicKind::Leave: {
-            out = reply(TopicKind::Leave, {});
+            // VOICE LANE: LEAVING IS A TRANSITION, NOT A CUT. The goodbye
+            // rides the reply -- whoever owns the body voices it on the
+            // street channel as the panel closes -- and it is composed
+            // BEFORE close() empties the speaker. Nothing is recorded: a
+            // goodbye is not a deed.
+            out = reply(TopicKind::Leave, farewell(false));
             out.closes = true;
             close();
             break;

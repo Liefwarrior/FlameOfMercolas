@@ -20,10 +20,19 @@ std::uint32_t packRgb(const Rgb& colour) noexcept {
            0xFF000000U;
 }
 
+std::uint32_t packRgba(const Rgb& colour, float alpha) noexcept {
+    return channel(colour.r) | (channel(colour.g) << 8) | (channel(colour.b) << 16) |
+           (channel(alpha) << 24);
+}
+
 Rgb unpackRgb(std::uint32_t pixel) noexcept {
     return Rgb{static_cast<float>(pixel & 0xFFU) / 255.0F,
                static_cast<float>((pixel >> 8) & 0xFFU) / 255.0F,
                static_cast<float>((pixel >> 16) & 0xFFU) / 255.0F};
+}
+
+float unpackAlpha(std::uint32_t pixel) noexcept {
+    return static_cast<float>((pixel >> 24) & 0xFFU) / 255.0F;
 }
 
 Framebuffer::Framebuffer(int width, int height)
@@ -38,6 +47,11 @@ void Framebuffer::clear(const Rgb& colour) {
     std::fill(depth_.begin(), depth_.end(), std::numeric_limits<float>::infinity());
 }
 
+void Framebuffer::clearTransparent() {
+    std::fill(pixels_.begin(), pixels_.end(), 0x00000000U);
+    std::fill(depth_.begin(), depth_.end(), std::numeric_limits<float>::infinity());
+}
+
 void Framebuffer::blend(int x, int y, const Rgb& colour, float alpha) noexcept {
     if (!contains(x, y) || alpha <= 0.0F) {
         return;
@@ -47,7 +61,29 @@ void Framebuffer::blend(int x, int y, const Rgb& colour, float alpha) noexcept {
         pixels_[i] = packRgb(colour);
         return;
     }
-    pixels_[i] = packRgb(lerp(unpackRgb(pixels_[i]), colour, alpha));
+    const std::uint32_t under = pixels_[i];
+    if ((under >> 24) == 0xFFU) {
+        // THE PATH EVERY SOFTWARE FRAME TAKES, byte for byte as it was
+        // before the 3D build: an opaque pixel stays opaque and its colour is
+        // the same lerp. Eighteen pixel-exact test files rest on this line
+        // not changing.
+        pixels_[i] = packRgb(lerp(unpackRgb(under), colour, alpha));
+        return;
+    }
+    // A transparent or partial pixel: straight-alpha "over" with coverage.
+    // Only reachable after clearTransparent(), i.e. on the HUD overlay.
+    const float underAlpha = unpackAlpha(under);
+    const float outAlpha = alpha + underAlpha * (1.0F - alpha);
+    if (outAlpha <= 0.0F) {
+        return;
+    }
+    const float sourceWeight = alpha / outAlpha;
+    const float underWeight = underAlpha * (1.0F - alpha) / outAlpha;
+    const Rgb underColour = unpackRgb(under);
+    const Rgb out{colour.r * sourceWeight + underColour.r * underWeight,
+                  colour.g * sourceWeight + underColour.g * underWeight,
+                  colour.b * sourceWeight + underColour.b * underWeight};
+    pixels_[i] = packRgba(out, outAlpha);
 }
 
 void Framebuffer::fillRect(int x, int y, int w, int h, const Rgb& colour, float alpha) {

@@ -37,7 +37,23 @@ replay_pid*
 # (The curated, tracked tiles live under content/art/kenney/CityPack/.)
 /content/art/kenney-all-in-1/
 
+# 3D BUILD. The Lord of Trojia asset lane's glTF exports (Synty POLYGON,
+# Malbers Animations, weapons) -- licensed, so they live here gitignored with
+# a committed manifest, never in public git. The game loads them at runtime
+# when they are present; the tests never need them and draw procedural
+# meshes instead.
+/content/art/lot-3d/
+
 # #77. The controls file the game writes beside itself. It is the PLAYER's,
 # not the repo's: rebinding a key must not show up as a working-tree change.
 granadad-controls.cfg
 granadad-screenshot.png
+
+# Lord of Trojia derived assets (Synty/Malbers/Artsystack/Piloto/audio packs are
+# purchased asset-store licenses: fine inside a built game, not as raw files in a
+# public repo). tools/lot-pipeline/ stages here; only the tools and MANIFEST.md are tracked.
+/content/art/lot/
+# (Its 3D twin, /content/art/lot-3d/ -- render-lot.ps1 -Mode gltf|glb -- is ignored above.)
+
+# Python bytecode from tools/
+__pycache__/

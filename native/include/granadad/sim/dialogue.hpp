@@ -88,6 +88,14 @@ struct Speaker {
     /// A mood.* override key when they are in no state for pleasantries --
     /// "mood.downed" for somebody on the floor. Empty for the usual case.
     std::string moodKey;
+    /// VOICE LANE. The trade INSIDE the family, as a bark key -- "urchin",
+    /// "fisher", "disciple" (wardVoiceKey) -- or empty for a body that has
+    /// only a family, which is the whole of the Gilded Gull's roster. The
+    /// voice chains (farewellChain, voiceChain) try `<prefix>.<type>` above
+    /// `<prefix>.<family>`, so an urchin's goodbye is not a wastrel's; the
+    /// greeting chain does not read it, deliberately -- greet.<family> is the
+    /// owner's authored vocabulary and widening it is his call.
+    std::string typeKey;
 
     // --- S4: who they are to the guilds --------------------------------------
 
@@ -258,6 +266,60 @@ enum class TopicKind : std::uint8_t {
     /// TARGET -- the word is the settlement, and the fee travels with the
     /// letter (see RadiantBoard::deliver). APPENDED at 30, same reason.
     SettleRadiant = 30,
+    /// EVICTION CASE. Take the Mission's writ of distraint off Father Maell
+    /// -- the hiring beat of the owner's third case, and the one topic in
+    /// the build gated in the open on a SKILL the priest names out loud
+    /// (open hand at kEvictionOpenHandBar; the refusal states the measure
+    /// and the player's own number, the ward telling you what it weighs).
+    /// The SPEECH is answered here; the CASE is the session's -- reply.ok
+    /// with this kind is the intent whoever owns the casebook settles,
+    /// exactly the ReadRoll/Petition contract. Offered only by the speaker
+    /// whose notable id is the eviction case's priest, and only while the
+    /// session says the case is dormant (setEvictionCase). APPENDED at 31,
+    /// for the reason on Buy: the ordinal is folded into which authored row
+    /// a topic speaks from.
+    TakeWrit = 31,
+    /// EVICTION CASE. Carry the writ back unserved -- the disrupt path's
+    /// own settlement, offered by the same priest only while the case runs
+    /// unserved. Choosing it is WalkedOut in the ledger's terms: a bargain
+    /// struck and handed back, and the Mission's regard moves the way the
+    /// deed table already prices that. Intent-only like TakeWrit; the
+    /// session closes the book. APPENDED at 32, same reason.
+    YieldWrit = 32,
+    /// ERRANDS A HUMAN CAN FINISH (2026-10-09). "WHO NEEDS A HAND?" -- in the
+    /// TELL ME ABOUT tree's A QUEST branch, on anybody's list while the
+    /// radiant board has an offer up that is not their own. The answer names
+    /// one live giver, where they were when the board was posted, and what
+    /// they want done; which one is a pure draw of (speaker, board day) so
+    /// the same person names the same errand all day. People TELL the
+    /// Wielder things (DOCKS-GAZETTEER 5.3): no roll, no deed, nothing
+    /// moved -- the board's four givers among six hundred were otherwise
+    /// found only by talking to strangers at random. APPENDED at 33, for
+    /// the reason on Buy.
+    AskErrand = 33,
+    /// SHOPS (2026-10-09). SEE THE WARES -- on a counter keeper's root list
+    /// (sim/shops.hpp). Opens the shelf as its own level of the list, the way
+    /// TELL ME ABOUT opens the tree. APPENDED at 34, for the reason on Buy.
+    Wares = 34,
+    /// One row of the shelf: payload is the price, arg the items.json id. An
+    /// INTENT, the Buy contract: the director checks the purse, whoever owns
+    /// the Kit (Tavern) hands the thing over or refuses it. APPENDED at 35.
+    BuyItem = 35,
+    /// PAWN SOMETHING -- on a counter that buys. Opens the carried rows it
+    /// will take, each at its offer. APPENDED at 36.
+    Pawn = 36,
+    /// One carried row sold: payload the offer, arg the id. An intent, like
+    /// BuyItem; the keeper's own purse has to cover it. APPENDED at 37.
+    SellItem = 37,
+    /// THE TONE DIAL (2026-10-09). "TONE: NORMAL" on every root list, just
+    /// above SAY NO MORE: choosing it turns the register NORMAL -> POLITE ->
+    /// BLUNT -> NORMAL through setTone -- the engine #82 built and tested and
+    /// left with no door. The label always shows the register you are IN.
+    /// POLITE and BLUNT move the attitude gates by kToneGateShift (an offer a
+    /// cool stranger would not make, made; one a warm one would, withheld),
+    /// pick the .polite/.blunt line wherever one is authored, and say which
+    /// deed listening was. No roll. APPENDED at 38.
+    Tone = 38,
 };
 
 [[nodiscard]] std::string_view topicKindName(TopicKind kind) noexcept;
@@ -278,6 +340,27 @@ inline constexpr std::string_view kAskQuest = "quest";
 /// tavern.hpp, because the dialogue layer must not know what a tavern is. A
 /// test pins the two to each other, so a change to one is a change to both.
 inline constexpr std::int32_t kBoughtDrinkCost = 2;
+
+/// EVICTION CASE. The skill the priest's hiring beat reads, by its raws id
+/// (content/raws/skills/skills.json: "open_hand", Open Hand, AGI, TRAINED),
+/// and the bar it reads it against. FIFTEEN IS THE MAJOR-DESIGNATION LINE
+/// (chargen.hpp kMajorStartLevel): a sheet that took Open Hand as a major or
+/// primary walks in hired; a minor or a blank does not, and the priest says
+/// the number out loud -- the ward tells you what it measures, per the
+/// design's transparent-check ruling. FLAGGED for the owner: the brawl does
+/// not yet train open_hand by use (the punch rides MGT), so until that lands
+/// this bar reads what chargen wrote -- the gate is real, the training path
+/// behind it is the progression system's named gap, said plainly rather than
+/// papered.
+inline constexpr std::string_view kOpenHandSkill = "open_hand";
+inline constexpr std::int32_t kEvictionOpenHandBar = 15;
+
+/// EVICTION CASE. The notables.json id of the case's priest -- the one
+/// speaker who offers the writ topics. Maell is the ward's only priest and
+/// compounds.json names him charter priest of every plot, so this is canon's
+/// own casting; it is a named constant so the day the ward has a second
+/// priest, recasting the case is one line.
+inline constexpr std::string_view kEvictionPriestId = "maell";
 
 /// #81. TopicKind::TakeContract's payload when a broker will not deal with
 /// the player AT ALL yet -- brokerWillTalk() is false. Answered out of
@@ -323,6 +406,40 @@ enum class DialogueMenu : std::uint8_t {
     Thing = 4,
     Work = 5,
     Quest = 6,
+    /// SHOPS: the shelf of a counter (BuyItem rows), and what it will take
+    /// off you (SellItem rows). Back from either goes to the root.
+    Wares = 7,
+    Pawn = 8,
+};
+
+/// SHOPS (2026-10-09). One row of a counter, as the conversation shows it.
+struct CounterWare {
+    /// items.json id.
+    std::string itemId;
+    /// The sheet's own name for it: "LANTERN".
+    std::string name;
+    /// SELLS: the thing's authored worth, before the guild term. PAWNABLE:
+    /// what this counter pays for one, already worked out.
+    std::int32_t royals = 0;
+};
+
+/// SHOPS. What the speaker's counter offers, assembled by whoever owns the
+/// Kit and the shelf (Tavern::counterViewFor) and handed to the director
+/// before the conversation opens -- the director has no idea what a Kit is,
+/// the setPlayerCoin pattern. Derived every time; nothing here is state.
+struct CounterView {
+    /// The speaker keeps a counter at all.
+    bool keeps = false;
+    /// ...and is standing at it. A keeper met in the street says so.
+    bool atCounter = false;
+    /// "Brann's Chandlery".
+    std::string name;
+    std::vector<CounterWare> sells;
+    /// The counter buys (Fenner's).
+    bool buys = false;
+    /// What it would take off you right now: carried, not worn, worth
+    /// something, and not on its never list.
+    std::vector<CounterWare> pawnable;
 };
 
 /// What choosing a topic produced.
@@ -331,6 +448,15 @@ struct Reply {
     TopicKind kind = TopicKind::Leave;
     /// Somebody's authored voice, or a short report of what just happened.
     std::string line;
+    /// A REPORT IN THE SPEAKER'S NAME, not their voice: the director's own
+    /// account of a deed, written with the name already in it -- "GERTA
+    /// SALTCOTTE TAKES THE DRINK.", "... CATCHES YOUR WRIST.", "... LOOKS AT
+    /// YOU AND WAITS." Whoever puts the reply on a row says it bare, where a
+    /// line in their voice rides under "<name>: ". Set by the director at the
+    /// moment it writes one and never guessed from the text afterwards: a
+    /// rumour that happens to open on the speaker's own name is still their
+    /// voice.
+    bool report = false;
     std::int32_t dispositionBefore = 0;
     std::int32_t dispositionAfter = 0;
     Attitude attitude = Attitude::Neutral;
@@ -348,6 +474,9 @@ struct Reply {
     /// not know what a cellar is. Whoever owns the counter resolves it and
     /// fills in the line and the coin.
     bool wantsPurchase = false;
+    /// SHOPS: BuyItem/SellItem's thing and the coin it changes hands for.
+    std::string itemId;
+    std::int32_t itemPrice = 0;
     /// A questline moved. What the journal just wrote, or empty -- so the HUD
     /// can say "the journal is longer" without reading the journal.
     std::string journalLine;
@@ -458,6 +587,20 @@ public:
 
     [[nodiscard]] RadiantBoard& radiant() noexcept { return radiant_; }
     [[nodiscard]] const RadiantBoard& radiant() const noexcept { return radiant_; }
+    /// SHOPS (2026-10-09). The counter the NEXT open() -- and every rebuild
+    /// after it -- shows; see CounterView. Cleared by close().
+    void setCounter(CounterView view);
+    [[nodiscard]] const CounterView& counter() const noexcept { return counter_; }
+    /// Rebuilds whatever level of the list is up -- for a caller that moved
+    /// something the list reads (a purchase settled across the counter).
+    void refreshTopics();
+    /// What this counter asks for a thing worth `royals`, through the
+    /// speaker's guild term. Zero when no conversation is open.
+    [[nodiscard]] std::int32_t counterPriceFor(std::int32_t royals) const noexcept;
+    /// ERRANDS A HUMAN CAN FINISH (2026-10-09). The offered errand this
+    /// speaker names when asked WHO NEEDS A HAND? -- see TopicKind::AskErrand
+    /// -- or null when the board has nothing up that is not their own.
+    [[nodiscard]] const RadiantObjective* errandToName() const;
     /// The authored templates, or an empty set when the raws were not found.
     [[nodiscard]] const RadiantRaws& radiantRaws() const noexcept { return *radiantRaws_; }
     /// Posts a day's errands off the live ward. Called by whoever owns the
@@ -495,6 +638,19 @@ public:
     void setVacantCharge(std::int32_t plotIndex, std::string name);
     [[nodiscard]] std::int32_t vacantCharge() const noexcept { return vacantPlot_; }
 
+    /// EVICTION CASE. Where the writ stands, as told by whoever owns the
+    /// casebook -- render::Session -- under exactly the setGroundPlot
+    /// contract above: conversation context, derived from state the session
+    /// already proves scripted-deterministic, so NOT hashed here. 0 dormant
+    /// (the priest offers the writ), 1 live and unserved (the priest takes
+    /// it back), 2 done -- served, or yielded, or otherwise past offering
+    /// (neither topic appears). `quietWork` is the one line of continuity
+    /// the design note allows: true when the courier errand closed, so the
+    /// hire can say the Mission knows these hands. Rebuilds the open topic
+    /// list immediately, the setters' shared rule.
+    void setEvictionCase(std::int32_t stage, bool quietWork);
+    [[nodiscard]] std::int32_t evictionStage() const noexcept { return evictionStage_; }
+
     // --- one conversation ---------------------------------------------------
 
     /// Opens on somebody. Returns false when there is nothing to talk with.
@@ -530,6 +686,22 @@ public:
 
     /// Picks a topic off the list.
     Reply choose(std::size_t index);
+
+    /// VOICE LANE. THE GOODBYE. What the person in front of you says as the
+    /// conversation ends, out of farewellChain(their trade, their family,
+    /// what they think of you) -- the LEAVE topic carries it in its Reply
+    /// (dialogue.cpp used to answer Leave with an empty line and the panel
+    /// closed on nothing), and whoever owns the body asks for it again when
+    /// the player walks off mid-talk (`walkedOff`, the farewell.away cell)
+    /// or presses the back key. Pure and draw-free: the same rowIndexFor
+    /// rotation every other line uses, keyed on TopicKind::Leave, so two runs
+    /// say the same goodbye. Read off the speaker the director holds, which
+    /// outlives close() -- the LEAVE reply is composed before the close and
+    /// reported after it. Empty for a beast, for nobody, or when nothing is
+    /// authored; never "...".
+    [[nodiscard]] std::string farewell(bool walkedOff = false) const;
+    /// The key the farewell comes out of, for the summary line and the suite.
+    [[nodiscard]] std::string farewellKey(bool walkedOff = false) const;
 
     /// TIME-AND-TENURE BUILD. Voices a line composed OUTSIDE the director --
     /// the settled half of an intent reply (ReadRoll/Petition follow Buy's
@@ -598,6 +770,9 @@ private:
     /// buildTopics()'s own active-stage loop shows at the root, MINUS
     /// Oath/Teach/Forge, which stay verbs and never appear here.
     void buildQuestTopics();
+    /// SHOPS: the shelf, and what the counter would take off you.
+    void buildWaresTopics();
+    void buildPawnTopics();
     /// Appends the "(BACK)" topic every non-root level ends on.
     void pushBack();
     /// Rebuilds whichever level menu_ currently names. The single call site
@@ -697,6 +872,8 @@ private:
     /// RADIANT BUILD. Shared for contractRaws_'s exact reason: the director
     /// is built by a factory that returns by value.
     std::shared_ptr<const RadiantRaws> radiantRaws_;
+    /// SHOPS: the speaker's counter, if any. Derived, never hashed.
+    CounterView counter_;
     RadiantBoard radiant_;
     ForgeBench bench_;
     /// Which authored line the bench was opened for, and at which stage. Held
@@ -732,6 +909,10 @@ private:
     std::string groundPlotName_;
     std::int32_t vacantPlot_ = -1;
     std::string vacantPlotName_;
+    /// EVICTION CASE. Conversation context, session-fed, unhashed -- the
+    /// groundPlot_ contract; see setEvictionCase.
+    std::int32_t evictionStage_ = 0;
+    bool evictionQuietWork_ = false;
     /// Bumped by every conversation opened. Hashed, so replaying the same
     /// actions reproduces the same rotation through the authored rows.
     std::int32_t conversations_ = 0;

@@ -601,6 +601,62 @@ TEST_CASE("the ward map page: toggles, exclusivity, ESC, and the frame it draws"
     CHECK(differing > plain.pixels().size() / 2);
 }
 
+TEST_CASE("FAST TRAVEL's page fields default empty and gate the foot they add") {
+    // THE DEFAULTS-ARE-OLD-LITERALS RULE, pinned. The TRAVEL verb added
+    // travelKey/travelCost/travelRefusal to DistrictMapState; a live Session
+    // always fills travelKey, but every hand-built state -- the capture
+    // harness's, test_map_view's own, the ones written before the field
+    // existed -- leaves it empty, and an empty travelKey must draw the exact
+    // four-row detail foot the page has always drawn. Proven by taking a
+    // wired live state, CLEARING its travel fields (which is the historical
+    // page), and showing the cleared frame is stable and DIFFERS from the
+    // filled one -- so the field is the thing that changes the picture, and a
+    // committed frame moves only where a Session fills it.
+    SessionConfig config;
+    config.contentDir = content::contentDir();
+    config.width = 640;
+    config.height = 360;
+    config.timeOfDay = 20 * 3600;
+    config.timeOfDayGiven = true;
+    Session session(config);
+    session.stepMany(sim::MoveInput{}, 1);
+    session.toggleDistrictMap();
+    REQUIRE(session.selectDistrictMapPlace("The Weighhouse"));
+    const DistrictMapState live = session.districtMapState();
+    REQUIRE_FALSE(live.travelKey.empty());  // a live Session offers the verb
+
+    // The historical page: the same state with the travel fields at their
+    // empty defaults.
+    DistrictMapState old = live;
+    old.travelKey.clear();
+    old.travelCost.clear();
+    old.travelRefusal.clear();
+
+    Framebuffer oldFoot(config.width, config.height);
+    drawDistrictMap(oldFoot, old);
+    Framebuffer again(config.width, config.height);
+    drawDistrictMap(again, old);
+    std::size_t drift = 0;
+    for (std::size_t i = 0; i < oldFoot.pixels().size(); ++i) {
+        if (oldFoot.pixels()[i] != again.pixels()[i]) {
+            ++drift;
+        }
+    }
+    CHECK(drift == 0);  // the empty-defaulted foot is deterministic
+
+    // The live page draws the verb, so the frame is no longer identical -- the
+    // field is what changed it, not an accident of the composition.
+    Framebuffer verbFoot(config.width, config.height);
+    drawDistrictMap(verbFoot, live);
+    std::size_t moved = 0;
+    for (std::size_t i = 0; i < oldFoot.pixels().size(); ++i) {
+        if (oldFoot.pixels()[i] != verbFoot.pixels()[i]) {
+            ++moved;
+        }
+    }
+    CHECK(moved > 0);
+}
+
 TEST_CASE("--map-overlay's own beat: runSmoke opens the ward map for the shutter") {
     SmokeRunConfig config;
     config.session.contentDir = content::contentDir();
@@ -613,4 +669,36 @@ TEST_CASE("--map-overlay's own beat: runSmoke opens the ward map for the shutter
     CHECK(result.ok);
     CHECK(result.scriptedWanted == 1);
     CHECK(result.scriptedLanded == 1);
+}
+
+TEST_CASE("violation #8: the map's tab row answers a pixel the way it was drawn") {
+    // FLOW lane, UI-EA-SPEC sec. 4. mapTabAtPixel is the inverse of the tab
+    // row drawDistrictMap prints -- same band, same four tabs, same readout
+    // -- through panel.hpp's tabRowTabAt, the casebook's own proven pattern.
+    // Scan the row's own scanline: all four tabs must be findable, in order,
+    // and a pixel in the map pane must answer -1 rather than a tab.
+    DistrictMapState state;
+    state.bounds = mapContentBounds(sim::TileQuery(bakedDocks()));
+    state.readout = "08:00   BAND 1";
+    const MapPageLayout layout = mapPageLayout(960, 540, state);
+    REQUIRE(layout.usable);
+
+    const int rowY = layout.interior.y + layout.metric.heightOf(layout.tabRow) +
+                     layout.metric.cellH() / 2;
+    std::vector<int> seen;
+    for (int px = layout.interior.x; px < layout.interior.x + layout.interior.w; ++px) {
+        const int tab = mapTabAtPixel(state, 960, 540, px, rowY);
+        if (tab >= 0 && (seen.empty() || seen.back() != tab)) {
+            seen.push_back(tab);
+        }
+    }
+    CHECK(seen == std::vector<int>{0, 1, 2, 3});
+
+    // Off the row: the middle of the map pane is nobody's tab.
+    const int paneX = layout.mapPane.x + layout.mapPane.w / 2;
+    const int paneY = layout.mapPane.y + layout.mapPane.h / 2;
+    CHECK(mapTabAtPixel(state, 960, 540, paneX, paneY) == -1);
+
+    // And an unusably small frame answers -1 rather than reading garbage.
+    CHECK(mapTabAtPixel(state, 8, 8, 4, 4) == -1);
 }

@@ -80,7 +80,12 @@ TEST_CASE("the four tiles compose one frame at every size the game runs at") {
         CHECK(layout.journal.w == layout.metric.widthOf(interiorCells));
         CHECK(layout.journal.y > layout.character.bottom());
         const int journalRows = layout.metric.rowsIn(layout.journal.h);
-        CHECK(layout.topRows + 1 + journalRows == interiorRows);
+        // NINE AND THE STICKS: two rows under the Journal are the foot -- a
+        // rule and the nav band that names the ring.
+        CHECK(layout.topRows + 1 + journalRows + 2 == interiorRows);
+        CHECK(layout.footRuleRow == layout.topRows + 1 + journalRows);
+        CHECK(layout.metric.rowsIn(layout.nav.h) == 1);
+        CHECK(layout.nav.y > layout.journal.bottom());
         // Roughly a third: 9/25 of the interior, never starved to nothing and
         // never eating the tiles above it.
         CHECK(journalRows * 100 >= interiorRows * 30);
@@ -280,6 +285,12 @@ TEST_CASE("the empty-state sentence draws in room the rows did not want, at ever
         MenuTileState tiles;
         tiles.open = true;
         tiles.map = chart;
+        // FOCUSED: a rows-and-sentence tile only speaks its sentence in the
+        // full form now -- an unfocused summary with rows shows the picked
+        // row and `+N` instead (UI-EA-SPEC 1.6).
+        tiles.focus = kMenuFocusMap;
+        tiles.mapFocus = 1.0F;
+        tiles.journalFocus = 0.0F;
         Framebuffer worded(width, height);
         drawMenuTiles(worded, tiles);
 
@@ -358,9 +369,10 @@ TEST_CASE("the journal tile's prose moves its list, and the hit-test moves with 
     // names for that neighbour.
     MenuTileState tiles;
     tiles.open = true;
-    tiles.focus = kMenuFocusLetters;  // journal unfocused, exactly as the live Menu shows it
-    tiles.lettersFocus = 1.0F;
-    tiles.journalFocus = 0.0F;
+    // FOCUSED: only the full form lists rows now (UI-EA-SPEC 1.6) -- an
+    // unfocused journal is a summary, and its hit-test answers the tile.
+    tiles.focus = kMenuFocusJournal;
+    tiles.journalFocus = 1.0F;
     tiles.journal = listTile(4, 0);
     tiles.journal.speaker = "THE CASEBOOK";
     tiles.journal.line = "A HOOK SENTENCE LONG ENOUGH TO WRAP ACROSS THE FULL-WIDTH JOURNAL BAND "

@@ -222,6 +222,73 @@ TEST_CASE("strike at full term with no bonus is bit-identical to the shipped rol
     }
 }
 
+// ---------------------------------------------------------------------------
+// action-combat: the charge tier scales the ROLLED weapon damage
+// ---------------------------------------------------------------------------
+
+TEST_CASE("the charge tier: kSwingChargeQ8 is the shipped blow, kHardSwingChargeQ8 doubles it") {
+    // ((base+variance)*chargeQ8)>>8: at 256 that is base+variance to the bit
+    // (so a tap is the shipped blow, and the default third arg), and at 512 it
+    // doubles the rolled weapon damage. The whiff carving is identical at both
+    // tiers -- a hard swing is not a truer swing -- and the crown, Evictor's
+    // own, rides the same roll at both. Swept across every weapon and the high
+    // bits so the tired band and the crown are exercised, not merely present.
+    for (const Weapon weapon :
+         {Weapon::Fists, Weapon::Improvised, Weapon::Blunt, Weapon::Evictor, Weapon::Edged}) {
+        for (std::uint64_t seed = 0; seed < 2048; ++seed) {
+            const std::uint64_t roll = seed * 0x9E3779B97F4A7C15ull + seed;
+            Fighter tap;
+            tap.hp = 100000;
+            tap.hpMax = 100000;
+            Fighter hard;
+            hard.hp = 100000;
+            hard.hpMax = 100000;
+            Fighter shipped;
+            shipped.hp = 100000;
+            shipped.hpMax = 100000;
+            const Blow tapBlow =
+                strike(weapon, tap, roll, 0, kFatigueTermFullQ8, kSwingChargeQ8);
+            const Blow hardBlow =
+                strike(weapon, hard, roll, 0, kFatigueTermFullQ8, kHardSwingChargeQ8);
+            // kSwingChargeQ8 is the default third argument, and the shipped blow.
+            const Blow byDefault = strike(weapon, shipped, roll);
+            CHECK(tapBlow.landed == byDefault.landed);
+            CHECK(tapBlow.damage == byDefault.damage);
+            CHECK(tapBlow.crowned == byDefault.crowned);
+            // Same roll, same whiff, same crown -- only the rolled damage scales.
+            CHECK(hardBlow.landed == tapBlow.landed);
+            CHECK(hardBlow.crowned == tapBlow.crowned);
+            if (tapBlow.landed) {
+                CHECK(hardBlow.damage == 2 * tapBlow.damage);
+            } else {
+                CHECK(hardBlow.damage == 0);
+            }
+        }
+    }
+}
+
+TEST_CASE("the MGT bonus lands AFTER the charge scale: a hard swing doubles the weapon, not the arm") {
+    // ((base+variance)*chargeQ8>>8) + bonus, then max(1,..): the bonus is added
+    // once, after the tier, so a hard swing doubles the WEAPON and carries the
+    // MGT behind it unchanged. roll 0x11 lands (low bits set) with variance
+    // (0x11>>3)%3 == 2.
+    const std::uint64_t roll = 0x11ull;
+    const std::int32_t bonus = meleeDamageBonus(100);  // +4 at the ceiling
+    REQUIRE(bonus == 4);
+    Fighter tap;
+    tap.hp = 1000;
+    tap.hpMax = 1000;
+    Fighter hard;
+    hard.hp = 1000;
+    hard.hpMax = 1000;
+    const Blow tapBlow = strike(Weapon::Fists, tap, roll, bonus, kFatigueTermFullQ8, kSwingChargeQ8);
+    const Blow hardBlow =
+        strike(Weapon::Fists, hard, roll, bonus, kFatigueTermFullQ8, kHardSwingChargeQ8);
+    const std::int32_t rolled = baseDamage(Weapon::Fists) + 2;  // base 3 + variance 2
+    CHECK(tapBlow.damage == rolled + bonus);
+    CHECK(hardBlow.damage == 2 * rolled + bonus);
+}
+
 TEST_CASE("an emptying pool only ever ADDS misses, off the same roll") {
     std::int32_t fullMisses = 0;
     std::int32_t emptyMisses = 0;

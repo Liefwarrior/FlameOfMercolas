@@ -198,6 +198,41 @@ JobFamily wardJobFamily(WardType type) noexcept {
     return JobFamily::Serf;
 }
 
+std::string_view wardVoiceKey(WardType type) noexcept {
+    switch (type) {
+        case WardType::Serf:
+            return "serf";
+        case WardType::Shopkeeper:
+            return "shopkeeper";
+        case WardType::Sailor:
+            return "sailor";
+        case WardType::Fisher:
+            return "fisher";
+        case WardType::Carter:
+            return "carter";
+        case WardType::MilitiaWatch:
+            return "watch";
+        case WardType::Wastrel:
+            return "wastrel";
+        case WardType::Urchin:
+            return "urchin";
+        case WardType::Thief:
+            return "thief";
+        case WardType::PriestOfTheFlame:
+            return "priest";
+        case WardType::DiscipleOfTheFlame:
+            return "disciple";
+        case WardType::AnimalKeeper:
+            return "keeper";
+        case WardType::Dog:
+        case WardType::Stray:
+        case WardType::Cat:
+        case WardType::Mouse:
+            return {};
+    }
+    return {};
+}
+
 std::string_view wardSkillId(WardType type) noexcept {
     switch (type) {
         case WardType::Fisher:
@@ -263,6 +298,12 @@ std::string wardMoodKey(const WardActor& actor, JobFamily family, const BarkTabl
         return {};
     }
     if (actor.policy == WardPolicy::Flee) {
+        // BARKS LANE (feel/build): only WardPopulation::alarm puts a PERSON
+        // under the FLEE gate (street panic, 9a), so a fleeing person is
+        // running from the player's violence and crowd.flee is the sentence
+        // for it -- `crowd.flee.<family>` first, then the sheet, then the
+        // owner's own mood.panicked as the floor it always had.
+        wanted.emplace_back("crowd.flee");
         wanted.emplace_back("mood.panicked");
     }
     if (actor.need(Need::Hunger) <= kNeedCritical) {
@@ -379,6 +420,9 @@ Speaker wardSpeakerFor(const WardActor& actor, const WardIdentity& who,
     speaker.notableId = who.notableId;
     speaker.family = wardJobFamily(actor.type);
     speaker.beast = !wardSpeaks(actor.type);
+    // VOICE LANE: the trade inside the family, for the goodbye and the
+    // street channel. The greeting never reads it -- see Speaker::typeKey.
+    speaker.typeKey = std::string(wardVoiceKey(actor.type));
 
     speaker.skillId = std::string(wardSkillId(actor.type));
     speaker.skillLevel = wardTradeLevel(actor);

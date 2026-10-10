@@ -20,9 +20,12 @@
 // the other side of the district.
 
 #include <array>
+#include <climits>
 #include <cstdint>
 #include <filesystem>
+#include <functional>
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -32,13 +35,20 @@
 #include "granadad/render/atlas.hpp"
 #include "granadad/render/casebook_page.hpp"
 #include "granadad/render/controls.hpp"
+#include "granadad/render/creation_page.hpp"
 #include "granadad/render/dialogue_view.hpp"
 #include "granadad/render/framebuffer.hpp"
+#include "granadad/render/hearing_page.hpp"
 #include "granadad/render/hud.hpp"
 #include "granadad/render/keys_page.hpp"
 #include "granadad/render/lamps.hpp"
+#include "granadad/render/lighting.hpp"
 #include "granadad/render/map_view.hpp"
 #include "granadad/render/menu_view.hpp"
+#include "granadad/render/street_voice.hpp"
+#include "granadad/render/pull.hpp"
+#include "granadad/render/rung_plate.hpp"
+#include "granadad/render/viewmodel_machine.hpp"
 #include "granadad/render/world_renderer.hpp"
 #include "granadad/sim/casebook.hpp"
 #include "granadad/sim/compound.hpp"
@@ -47,6 +57,7 @@
 #include "granadad/sim/letters.hpp"
 #include "granadad/sim/notables.hpp"
 #include "granadad/sim/player.hpp"
+#include "granadad/sim/region_path.hpp"
 #include "granadad/sim/tavern.hpp"
 #include "granadad/sim/tile_query.hpp"
 #include "granadad/sim/ward_actors.hpp"
@@ -75,6 +86,11 @@ struct SessionConfig {
     /// BAM facing at spawn.
     std::int32_t spawnYaw = 0;
     bool spawnYawGiven = false;
+    /// BAM pitch at spawn (positive looks up), clamped by the body exactly as
+    /// mouse look is. Only applied when given: a capture can look down at a
+    /// doorstep or up at a roof line without a player at the mouse.
+    std::int32_t spawnPitch = 0;
+    bool spawnPitchGiven = false;
     /// Internal render resolution, before any window upscale.
     int width = 640;
     int height = 360;
@@ -88,6 +104,19 @@ struct SessionConfig {
     int fovDegrees = 90;
     /// The only persisted RNG state there is.
     std::uint64_t worldSeed = 0x4752414E41444144ull;  // "GRANADAD"
+    /// WEATHER (roadmap 21a; D15: render-only). LIVE weather draws the sky
+    /// off render::weatherFor(worldSeed, the tavern's day, the clock): fog,
+    /// overcast, wind and clear in periods of a few hours, easing in and out.
+    /// OFF BY DEFAULT AND ON IN THE CLIENT, exactly openingPage's pattern and
+    /// for the same reason: two hundred test cases and every committed frame
+    /// were drawn under the clear sky, and a Session built by a test must
+    /// still draw it. main.cpp turns it on for the windowed game and for
+    /// captures; --weather=STATE turns it off again and pins `weather`.
+    bool liveWeather = false;
+    /// The pinned state when liveWeather is false, at full intensity (Clear
+    /// is intensity zero, the sky every frame before this lane was drawn
+    /// under). The sim never reads either field.
+    WeatherKind weather = WeatherKind::Clear;
     /// OPEN THE CASE ON THE FIRST FRAME. What a new game does: the notes come
     /// up with the hook on them and the one lead the ward has given you, and
     /// the first step the player takes puts them away for good.
@@ -126,6 +155,79 @@ struct SessionConfig {
     bool hud = true;
 };
 
+// ---------------------------------------------------------------------------
+// CASE WATCH -- the drive on tape
+// ---------------------------------------------------------------------------
+//
+// `--case` proves THE QUIET TENANT at CPU speed and `--case-watch` has to show
+// the identical errand at a human one. The only way both can be true of ONE
+// route is for the route to be recorded rather than re-invented: while the
+// scripted drive runs, every public verb it spends lands on this tape -- one
+// entry per Session::step (with the yaw the walker set before it, because
+// stepToward steers the body's head directly) and one entry per instantaneous
+// call (a punch, the letters toggle, the clock skip). Replaying the tape onto
+// a fresh Session of the same config reproduces the drive step for step, and
+// the frames a watcher spends BETWEEN entries cost the simulation nothing --
+// which is the whole determinism argument, and test_case_watch.cpp holds it.
+/// How tall a body of each kind stands, in tiles, and the width its drawing is
+/// scaled to at that height. Defined in session.cpp (the figure tables); public
+/// since the 3D build so the actor instancer sizes its rigs off the same rows.
+struct FigureScale {
+    float heightTiles;
+    float widthTiles;
+};
+[[nodiscard]] FigureScale figureScaleOf(sim::WardType type) noexcept;
+/// Which drawn figure a TAVERN role wears -- one look for a person in this
+/// game, whether they stand in the Gull or on the quay. Patrons split by id.
+[[nodiscard]] sim::WardType figureForRole(sim::ActorRole role, std::int32_t id) noexcept;
+
+enum class WatchOpKind : std::uint8_t {
+    /// One Session::step. `move` is the input, `a` the body yaw the drive's
+    /// walker had set before stepping (stepToward writes yaw outside step).
+    Step,
+    Climb,
+    /// dropDown -- how comeDownstairs leaves the guest floor. Missing from
+    /// the first cut of this tape, and the twin gate caught it exactly as
+    /// designed: the replay stood at the stair-head forever, beats 6-8 dead.
+    Drop,
+    Punch,
+    Interact,
+    Examine,
+    CourierNow,
+    /// toggleLetters -- opens on the first, closes on the second.
+    Letters,
+    /// chooseVisibleTopic(a).
+    Topic,
+    Casebook,
+    /// skipToHour(a).
+    SkipHour,
+    Crouch,
+    /// Not a verb: runCaseLine announcing which of its eight beats is about
+    /// to play (`a` = beat index). The watch director hangs its caption on it.
+    Chapter,
+    /// Not a verb: a beat's own mark() verdict (`a` = beat index, `ok` = did
+    /// it land). The watch director's shutter goes here -- the payoff frame.
+    BeatLanded,
+};
+
+struct WatchOp {
+    WatchOpKind kind = WatchOpKind::Step;
+    sim::MoveInput move{};
+    std::int32_t a = 0;
+    bool ok = false;
+    [[nodiscard]] bool operator==(const WatchOp&) const = default;
+};
+
+/// THE ARREST BEAT'S TWO HOLDS, in movement steps (sixty a second). The
+/// officer's line is a sentence and a half on the alert row: two and a half
+/// seconds, the message row's own four-second hold not yet run out when the
+/// cut takes it. The plate is one line over black: a second and three
+/// quarters, the rope plate's register at a fraction of its hold. Both are
+/// presentation's numbers, read by the suite and the drive; the sim never
+/// waits on either.
+inline constexpr std::int32_t kTakenOfficerSteps = 150;
+inline constexpr std::int32_t kTakenPlateSteps = 105;
+
 /// A loaded, standing, drawable session.
 class Session {
 public:
@@ -157,6 +259,21 @@ public:
     [[nodiscard]] const sim::TileQuery& tiles() const noexcept { return *tiles_; }
     [[nodiscard]] sim::PlayerBody& body() noexcept { return *body_; }
     [[nodiscard]] const sim::PlayerBody& body() const noexcept { return *body_; }
+    /// Movement steps into the current simulated second, 0..kStepsPerSecond-1.
+    /// THE RENDERER'S SLIDE: wardSprites() interpolates a ward body from
+    /// prevX to x by this over kStepsPerSecond, and the 3D actor instancer
+    /// (render3d/actor_instances.hpp) must use the identical fraction so a
+    /// body stands in the same place on both paths. Read-only; nothing here
+    /// is ever written back into the sim.
+    [[nodiscard]] std::int32_t stepsThisSecond() const noexcept { return stepsThisSecond_; }
+    /// 3D BUILD, V LANE. What the player's own hands are doing -- the
+    /// viewmodel machine's pose, stepped once per movement step in step()
+    /// off the combat sim's public getters and the three edges this session
+    /// already sees (a swing released in attackUp, a cast thrown in
+    /// castEquipped, a blow taken off the hp comparison). Render-only, never
+    /// hashed, never written back; render3d/viewmodel.hpp turns it into the
+    /// posed hands the 3D pass draws. See viewmodel_machine.hpp.
+    [[nodiscard]] const ViewmodelPose& viewmodel() const noexcept { return viewmodel_.pose(); }
     [[nodiscard]] const WorldRenderer& renderer() const noexcept { return *renderer_; }
     [[nodiscard]] const TileAtlas& atlas() const noexcept { return atlas_; }
     [[nodiscard]] std::size_t lampCount() const noexcept { return renderer_->lamps().size(); }
@@ -217,6 +334,19 @@ public:
     /// engine goes away.
     void setAudio(audio::AudioEngine* engine);
 
+    /// CASE WATCH. Points the recorder at a tape (null detaches, the default
+    /// every test and every ordinary run keeps -- the no-op-hook pattern
+    /// setAudio states above). While attached, every top-level public verb
+    /// this session is driven through appends one WatchOp; verbs a verb calls
+    /// internally (interact()'s own examine(), a courier the step pump fires)
+    /// are NOT recorded, because the replay's own call will make them again.
+    void setWatchRecorder(std::vector<WatchOp>* tape) noexcept { watchTape_ = tape; }
+    /// CASE WATCH. The scripted drive announcing "beat `index` plays now" /
+    /// "beat `index` landed". Recorder-only marks: with no tape attached both
+    /// are no-ops, and neither touches a byte of simulation either way.
+    void watchChapter(std::int32_t index);
+    void watchBeatLanded(std::int32_t index, bool ok);
+
     /// Advances the body by one movement step, and the world with it.
     void step(const sim::MoveInput& input);
 
@@ -225,17 +355,187 @@ public:
 
     /// Seconds since midnight, right now.
     [[nodiscard]] int timeOfDay() const noexcept { return timeOfDay_; }
+    /// WEATHER. The sky this frame is drawn under: live off (worldSeed, the
+    /// tavern's own dayNumber(), the clock) when config().liveWeather, else
+    /// config().weather pinned at full. Read render-side only -- the day is
+    /// a public getter on hashed state, and nothing here writes back or is
+    /// hashed. Every sky consumer on both paths reads sky() below rather
+    /// than skyAt(timeOfDay()), so the 2D pass, the chunks, the pieces, the
+    /// people and the HUD's lamp mix agree about the weather.
+    [[nodiscard]] Weather weather() const noexcept;
+    /// skyAt(timeOfDay(), weather()) -- the one SkyState every consumer reads.
+    [[nodiscard]] SkyState sky() const noexcept;
     /// Simulated seconds since the session began.
     [[nodiscard]] std::int64_t elapsedSeconds() const noexcept { return elapsedSeconds_; }
     /// Jumps the clock, without simulating what happened in between. What
     /// sleeping in a rented room does, and what a capture at a named hour does.
     void skipToHour(int hour);
+    /// FAST TRAVEL (TRAVEL lane). The same jump, in whole seconds: advances
+    /// the clock THROUGH THE WAIT MACHINERY -- Tavern::skipTo plus
+    /// syncClockAfterSkip(), the identical pair skipToHour() spends -- so a
+    /// travel and a wait are ONE time system, never two. skipToHour truncates
+    /// to the top of an hour because its page prints hours; a walk is minutes,
+    /// so this twin takes the seconds whole. Zero or less does nothing.
+    void skipSeconds(int seconds);
+    /// JUSTICE BUILD (SENTENCES LANE). Serves the judged hearing's sentence
+    /// THROUGH THE SAME WAIT MACHINERY: Tavern::serveSentence (the coin, the
+    /// cell and the yard as skipHours, the mirror, the temple, the body, then
+    /// the ledger's record after the skip) plus syncClockAfterSkip(), so the
+    /// ward's roll runs every day the sentence cost (Ward::advanceToDay --
+    /// the ground penny falls due inside a sentence like inside a rented bed)
+    /// and the district's people follow the clock. One time system, never
+    /// two. The release that follows is the arrest's own (takeArrestRelease,
+    /// read in step()); THE ROPE fires none and sets tavern().runEnd(). The
+    /// page that calls this and stages what it returns is presentation's.
+    const sim::Tavern::SentenceReport& serveSentence();
+
+    // --- JUSTICE BUILD (HEARING PAGE LANE): the court, the rope, the end ----
+    //
+    // THE HEARING IS A PAGE, drawn into the Framebuffer like every other page
+    // (render/hearing_page.hpp) over the hashed HearingState the crime ledger
+    // keeps. TAKEN: the step that reads the arrest's release with a hearing
+    // pending puts the body on the Mission's own arrival tile (the walk
+    // elided, dressInstantCut's dip), says "TAKEN TO THE MISSION. HH:MM." and
+    // opens the page -- modal, un-backable: the player cannot walk out of
+    // custody (PLAY-MODE-SPEC's own rule; step() drops the movement input and
+    // every world verb and page toggle is refused while inCustody()). The
+    // plea is a stepped input through the page's own rows (armed on the
+    // first press, confirmed on the second -- the QUIT pattern), the
+    // weighing is shown in the check block, and the sentence row appears
+    // after sim::kJudgmentHoldSteps. Serving it is Session::serveSentence
+    // and the release that follows closes the page at the Mission's door
+    // (SPARED, FINED) or on the Tarwalk. THE ROPE arms the rope ceremony:
+    // the held black dip, the plate that never fades, then the end rows.
+    //
+    // ALL OF IT ON SESSION AND NOT IN THE CLIENT, for the reason the six
+    // verbs are: the suite drives exactly the code a keypress drives
+    // (routeCourtKey is the whole grammar, and main.cpp calls it first).
+
+    /// The hearing page is up: taken with paper, not yet released.
+    [[nodiscard]] bool courtOpen() const noexcept { return courtOpen_; }
+    /// The officer's hand is on you, the page, the rope ceremony or the end
+    /// rows own the frame: the body is the ward's, not the player's.
+    [[nodiscard]] bool inCustody() const noexcept {
+        return takenHold_ > 0 || courtOpen_ || ropeCeremonySteps_ > 0 || ropeRowsUp_;
+    }
+
+    /// THE ARREST, ON SCREEN (JUSTICE-SPEC 2.2, the two beats before the
+    /// page). Taken at reach with paper, the player SEES it before the bench
+    /// does anything: first the officer's own line -- watch.held / maimed /
+    /// condemned, "There is paper out on you and I am the man holding it.
+    /// Walk." -- said on the alert row IN THE ROOM, over the world, with his
+    /// hand on you, held for kTakenOfficerSteps; then the cut, an instant
+    /// black with one line on it in the rope plate's own register, "TAKEN TO
+    /// THE MISSION. 23:00.", held for kTakenPlateSteps; and only then the
+    /// body at the Mission's door and the page. Nothing is drawn under a page
+    /// that hides the alert row: the line the spec promised is on the frame
+    /// for as long as it takes to read. A record reopened between the arrest
+    /// and the plea (a hearing pending with no release fired) skips both
+    /// beats and opens the page at once.
+    /// The officer's beat: his line on the row, the room still around you.
+    [[nodiscard]] bool takenBeatUp() const noexcept { return takenHold_ > kTakenPlateSteps; }
+    /// The plate: black, the one line, before the page.
+    [[nodiscard]] bool takenPlateUp() const noexcept {
+        return takenHold_ > 0 && takenHold_ <= kTakenPlateSteps;
+    }
+    /// "TAKEN TO THE MISSION. 23:00." -- what the plate reads, empty until it
+    /// is up.
+    [[nodiscard]] const std::string& takenPlate() const noexcept { return takenPlate_; }
+    /// What the pause menu's WAIT row reads, and says when pressed, while in
+    /// custody: "THE PRIEST IS WAITING." at the bench, "THE WATCH HAS YOU."
+    /// under the officer's hand before it. Empty means nobody has you.
+    [[nodiscard]] std::string custodyWaitLine() const;
+    /// The plate over the finished frame: the black and the line, at full
+    /// alpha for the whole hold. A no-op while it is not up. Public, like
+    /// composeRopeCeremony, so a case can compose the expected frame itself
+    /// and pin the rendered one against it.
+    void composeTakenPlate(Framebuffer& target) const;
+    /// Everything the page draws, off the ledger's record. Built here so a
+    /// case can assert what the page SAYS without a framebuffer.
+    [[nodiscard]] HearingPageState hearingPageState() const;
+    [[nodiscard]] int courtCursor() const noexcept { return courtCursor_; }
+    /// HEAR THE PAPER is open in the detail pane; 0 - BACK returns.
+    [[nodiscard]] bool courtPaperOpen() const noexcept { return courtPaperOpen_; }
+    /// A plea row was pressed once and waits for its second press.
+    [[nodiscard]] bool courtPleaArmed() const noexcept { return courtArmed_ >= 0; }
+    /// The judgment has landed and the hold has run: the one row that serves
+    /// the sentence (or takes the drop) is on the list.
+    [[nodiscard]] bool courtSentenceOffered() const noexcept;
+    /// The rows as printed, "1 - I DID IT." first. Exposed for the suite.
+    [[nodiscard]] std::vector<std::string> courtRows() const;
+    void moveCourtCursor(int delta);
+    /// ENTER / A: arms a plea, confirms an armed one, opens the paper, backs
+    /// out of it, serves the sentence, takes the drop, picks an end row.
+    void chooseCourtRow();
+    /// The printed digit picks the row it prints. 0 is BACK while the paper
+    /// is open (the digit it prints) and nothing otherwise.
+    void chooseCourtVisibleRow(int slot);
+    /// ESC / B: closes the paper, disarms an armed plea, and does NOTHING
+    /// else -- the grammar exception (JUSTICE-SPEC 6.3): the hearing has no
+    /// opener and no back.
+    void courtBack();
+    /// THE WHOLE PAGE GRAMMAR, keyboard and pad: arrows and the D-pad move,
+    /// digits pick, ENTER/A confirm, ESC/B back (PadEast arrives already
+    /// remapped to Escape by the client's pageBackRemap, and is also read
+    /// raw here so a test can press it). Returns true when the page took the
+    /// key -- and while in custody it takes EVERY key but Pause, so no world
+    /// verb can reach the body from the bench.
+    bool routeCourtKey(Key key);
+
+    /// THE ROPE, STAGED: true from the drop until the run ends -- the dip,
+    /// the held plate, then the end rows.
+    [[nodiscard]] bool ropeCeremonyUp() const noexcept {
+        return ropeCeremonySteps_ > 0 || ropeRowsUp_;
+    }
+    /// The plate's hold has run and the two rows are live under it.
+    [[nodiscard]] bool ropeRowsUp() const noexcept { return ropeRowsUp_; }
+    [[nodiscard]] int ropeCursor() const noexcept { return ropeCursor_; }
+    /// The end row pressed once and waiting for its second press, or -1.
+    /// THE QUIT PATTERN on the two rows that end a run: a leaned-on ENTER
+    /// after the plate's hold cannot start a new man or leave the game; the
+    /// armed row carries "-- SURE? <key>" on its tail (the pause card's own
+    /// QUIT row), and ESC/B or moving the cursor disarms it. The armed row is
+    /// the one state of the plate a player sees that is not the plate.
+    [[nodiscard]] int ropeRowArmed() const noexcept { return ropeArmed_; }
+    /// "1 - A NEW MAN", "2 - LEAVE" -- the armed one with its SURE tail. No
+    /// save row: no save exists.
+    [[nodiscard]] std::vector<std::string> ropeRows() const;
+    /// The plate's three lines: "HANGED AT THE SALTGATE POST." / "BY THE
+    /// WARD. FOR CANNIC." / "THE FOURTH DAY. 23:52."
+    [[nodiscard]] const std::string& ropePlateTop() const noexcept { return ropePlateTop_; }
+    [[nodiscard]] const std::string& ropePlateMid() const noexcept { return ropePlateMid_; }
+    [[nodiscard]] const std::string& ropePlateFoot() const noexcept { return ropePlateFoot_; }
+    /// The veil, the plate and (after the hold) the rows, over the finished
+    /// frame -- composeDeathCeremony's primitives with the fade-out removed.
+    /// The veil holds. A no-op while nothing is armed.
+    void composeRopeCeremony(Framebuffer& target) const;
+    void moveRopeCursor(int delta);
+    void chooseRopeRow();
+    void chooseRopeVisibleRow(int slot);
+
+    /// THE END, CHOSEN. A NEW MAN routes to the creation window for a fresh
+    /// run (main.cpp's loop reads this beside quitRequested); LEAVE is the
+    /// shipped quit. Never set by anything but the end rows.
+    enum class RunEndChoice : std::uint8_t { None = 0, NewMan = 1, Leave = 2 };
+    [[nodiscard]] bool runEnded() const noexcept { return runEnded_; }
+    [[nodiscard]] RunEndChoice runEndReason() const noexcept { return runEndReason_; }
 
     /// The camera the body is currently looking through.
     [[nodiscard]] Camera camera() const noexcept;
 
+    /// 3D BUILD. Which passes drawFrame runs. `world` off skips the software
+    /// world pass (the sky, the tiles, the sprites) and clears the target to
+    /// transparent first, so everything drawn after it -- signage, washes,
+    /// the HUD, every page -- lands on an OVERLAY the raylib backend
+    /// composites over its own 3D frame. On by default: every test and the
+    /// software capture path draw the frame they always drew.
+    struct FramePasses {
+        bool world = true;
+    };
+
     /// Draws the world, everybody in it, and the HUD into `target`.
-    FrameStats drawFrame(Framebuffer& target) const;
+    FrameStats drawFrame(Framebuffer& target) const { return drawFrame(target, FramePasses{}); }
+    FrameStats drawFrame(Framebuffer& target, FramePasses passes) const;
 
     /// Where the player is, in words the player would use. Derived from x, y
     /// AND the band — see sim::docks::kPlaces for why that is worth saying.
@@ -266,7 +566,12 @@ public:
     ///      its lock -- crackStrongbox() does not read stance, so "facing a
     ///      lock picks it, sneaking or not" is already true with no branch
     ///      here), the bale, the rat, the wire that buys more picks.
-    ///   5. NOTHING RESOLVED: the investigation look (examine()), which
+    ///   5. HANDS UP AND NOTHING IN REACH = LOWER HANDS (STANCE & ROOM
+    ///      BUILD, oblivion-roadmap.md 3.2 lower rule 1): after the person,
+    ///      the fixture and a lead the book has heard of, before the
+    ///      never-refusing look. Tavern::lowerPlayerHands(); the reticle says
+    ///      LOWER HANDS before the press through lowerHandsResolves().
+    ///   6. NOTHING RESOLVED: the investigation look (examine()), which
     ///      never refuses.
     ///
     /// interactPrompt() BELOW WALKS THE IDENTICAL ORDER on read-only queries,
@@ -344,6 +649,15 @@ public:
     /// for the ninth exit to forget it. Nothing outside interactTarget() has
     /// any business calling this.
     [[nodiscard]] InteractTarget resolveInteract() const;
+    /// STANCE & ROOM BUILD. THE LOWER HANDS SLOT'S ONE PREDICATE, shared by
+    /// the act walk (interact()) and the prompt walk (resolveInteract()) so
+    /// the reticle cannot say LOWER HANDS on a press that would LOOK, or the
+    /// reverse: true exactly when the hands are up and no lead the book has
+    /// heard of stands under the crosshair (a named lead is something in
+    /// reach, and the look outranks the lower). It is the SLOT'S predicate,
+    /// asked by both walks only after the person and the fixture slots ahead
+    /// of it have not resolved -- it does not re-ask those. Read-only.
+    [[nodiscard]] bool lowerHandsResolves() const;
     /// #85. Was Jump + Traverse + DropDown. ONE BUTTON, RESOLVED BY WHAT IS
     /// DIRECTLY AHEAD OR BELOW: climb (mantle, or the leap it falls back to)
     /// first, a drop if there is a ledge to step off, an ordinary standing
@@ -360,7 +674,30 @@ public:
     void vertical();
     /// F. Throws a punch. In a taproom that is an offence, and the house has
     /// opinions about it.
+    ///
+    /// ACTION-COMBAT BUILD: now a TAP of the new Attack verbs -- attackDown()
+    /// then an immediate attackUp() with no charge behind it -- so the swing
+    /// runs through the same sightline/lethal path a mouse press does, and the
+    /// six existing call sites (the scripted drives, case_watch, the render
+    /// suite) drive real combat rather than the retired legacy tap. A tap
+    /// never reaches the hard tier, so it is always a Subdue swing: it can down
+    /// a man but the intent-by-verb rule never lets a tap alone turn a bar
+    /// fight lethal.
     void punch();
+    /// Attack DOWN-EDGE. Starts the sim's hold clock (Tavern::playerAttackDown)
+    /// -- the charge is measured in movement steps by the room, so the tier is
+    /// deterministic. Overlays are dismissed the same way punch() dismisses
+    /// them. INPUT calls this on the Attack key's down-edge; a page-consumed
+    /// press must be guarded out on the client's side (the attack-armed
+    /// tracker), the same shape the QuickWheel self-guards.
+    void attackDown();
+    /// Attack RELEASE-EDGE. Resolves the swing through Tavern::playerAttackUp()
+    /// -- hard iff the hold reached kHardSwingHoldSteps -- and speaks the diet's
+    /// surviving lines (downs, a crowning, a kill, the refusals), never the
+    /// per-blow HIT/MISSED log the say-row diet retired. Fires the connecting
+    /// wash and the by-band swing audio. A release with no charge behind it
+    /// (an edge that arrived in recovery or idle) says nothing and does nothing.
+    void attackUp();
     /// C. Casts the equipped crafting -- sim::Tavern::playerCastEquipped() is
     /// the whole resolution including every refusal, and every outcome is
     /// said on the alert row, because a key that can silently do nothing is a
@@ -492,6 +829,32 @@ public:
     /// --case scripted line uses so a headless run does not walk in place for
     /// six seconds. A no-op once the beat has fired; requires the raws loaded.
     void courierDeliverNow();
+    /// EVICTION CASE. The third book and its raws -- EVICTION, the writ
+    /// Maell's own conversation opens (TopicKind::TakeWrit; no courier, no
+    /// start lead: the hire IS the delivery). A third fixed member pair, the
+    /// courier chassis's own "two authored cases are two members" rule grown
+    /// by exactly one -- see the flagged note on activeCaseRaws() below.
+    [[nodiscard]] sim::Casebook& evictBook() noexcept { return evictBook_; }
+    [[nodiscard]] const sim::Casebook& evictBook() const noexcept { return evictBook_; }
+    [[nodiscard]] const sim::CasebookRaws& evictRaws() const noexcept { return evictRaws_; }
+    /// True while the writ is the errand in front: at least one lead heard,
+    /// close not read -- sheetCaseLive()'s exact rule over the third book.
+    [[nodiscard]] bool evictCaseLive() const noexcept {
+        return evictBook_.active() && !evictBook_.known().empty() && !evictBook_.closed();
+    }
+    /// True from the moment the paper changes hands at the Marrow door until
+    /// the case closes at the Mission -- the eviction's sheetCarry_: what the
+    /// HUD's objective swings on and what stepEvictCase() completes.
+    [[nodiscard]] bool writServed() const noexcept { return writServed_; }
+    /// True once the door has answered tonight's knock -- the serve press is
+    /// only offered on an answered door, so the choice is always spoken
+    /// before it is spent.
+    [[nodiscard]] bool evictKnocked() const noexcept { return evictKnocked_; }
+    /// True once the door has EVER answered -- the fact the record keeps when
+    /// the live flag re-arms as the player steps off the step. The disrupt
+    /// path's whole ledger entry ("the family had an evening's warning") reads
+    /// this, not the door's own state machine.
+    [[nodiscard]] bool evictEverKnocked() const noexcept { return evictEverKnocked_; }
     /// What the counters add up to. Derived on every call and held by nobody --
     /// see legend.hpp on why that is the design and not a shortcut.
     [[nodiscard]] sim::Legend legend() const;
@@ -578,6 +941,141 @@ public:
     /// The whole page, ready to draw. Public for keysPageState()'s own reason:
     /// a case reads it instead of a screenshot.
     [[nodiscard]] CasebookPageState casebookPageState() const;
+
+    // --- THE PULL PACK (render/pull.hpp) --------------------------------------
+    //
+    // THE STREET SAYS WHERE NEXT. One lead the player chose to FOLLOW rides
+    // the compass ribbon as "NE 40  THE WEIGHHOUSE" with the paces running
+    // down as they walk; discovered named places tick the ribbon; a skill
+    // rising toasts in situ; every book change lands on the plate with a
+    // cue; and the casebook page grows a CASES shelf so "follow" means
+    // something across three books. ALL OF IT IS RENDER STATE -- nothing
+    // below is hashed, encoded or read by the simulation -- test_pull.cpp
+    // proves the tavern and world hashes are byte-identical with and without
+    // a followed lead. The marker doctrine (owner ruling D8) is kept by
+    // construction: the line names a PLACE, never a person and never a clue;
+    // the ticks are bearings on the ribbon, never an arrow in the world;
+    // nothing is drawn on the map plan.
+
+    /// The ONE lead the ribbon follows this frame -- the player's pick while
+    /// it is still Open, else the fronted book's authored next lead.
+    [[nodiscard]] PullTarget pullTarget() const noexcept;
+    /// What the player chose, raw. lead < 0 when they chose nothing.
+    [[nodiscard]] const FollowedLead& followedLead() const noexcept { return followedLead_; }
+    /// FOLLOW a lead by book and index. False (and nothing changes) for a
+    /// lead that is not Open in that book -- there is nowhere to go. Picking
+    /// the lead already followed UNFOLLOWS it (back to the authored default),
+    /// so the one verb is its own undo. Speaks a line either way.
+    bool followLead(CaseBookId book, std::int32_t lead);
+    /// THE FOLLOW VERB ON THE CASEBOOK PAGE (F, or the pad's X): on the LEADS
+    /// and THE CASE views, the highlighted lead; on the CASES shelf, the
+    /// highlighted case's own next lead.
+    void followCasebookSelection();
+    /// "NE 40  THE WEIGHHOUSE", or empty. What the ribbon prints.
+    [[nodiscard]] std::string pullLineNow() const;
+    /// Which book the page and the case row are reading -- the player's
+    /// pick from the CASES shelf while that book is begun and has not since
+    /// closed, else the courier chassis's own auto rule (eviction live, then
+    /// courier live, then the Bloodletter).
+    [[nodiscard]] CaseBookId frontedBook() const noexcept;
+    /// FRONT a book for the page (the CASES shelf's commit). False for a book
+    /// the player has not been handed yet.
+    bool frontCase(CaseBookId book);
+    /// The CASES shelf's own cursor -- a row index into
+    /// CasebookPageState::shelf.
+    [[nodiscard]] int casebookShelfCursor() const noexcept { return caseShelfCursor_; }
+    /// The skill-up toast: what it says, and whether it is wanted -- the
+    /// targets test_pull.cpp asserts on, casePlateWanted()'s own shape.
+    [[nodiscard]] std::string_view skillToastLabel() const noexcept {
+        return std::string_view{skillToastText_};
+    }
+    [[nodiscard]] bool skillToastWanted() const noexcept { return skillToastShowSteps_ > 0; }
+    /// The pull's own HUD fields -- the ribbon line, the two kinds of tick,
+    /// the toast -- on an otherwise default HudState, exactly as drawFrame
+    /// composes them. Public so a case reads the ticks instead of a
+    /// screenshot (keysPageState()'s own reason).
+    [[nodiscard]] HudState pullHud() const;
+    /// The combined hash of the engine's world and every registered system
+    /// (the Gull, the ward, the population) plus the three books -- what
+    /// test_pull.cpp compares with and without a followed lead. Reads only;
+    /// public for exactly that proof.
+    [[nodiscard]] std::uint64_t simHash() const;
+
+    // --- THE RUNG PLATE (render/rung_plate.hpp) -------------------------------
+    //
+    // A Legend rung rising gets a plate: the track and the new title over one
+    // authored line of what the ward now says about you, centred high, held
+    // five seconds, on its own ease and its own bell. LegendRiseWatch diffs
+    // the five rungs once a step (the skill toast's own shape); the queue,
+    // the priority rule and the dismissal live in stepRungPlate(). RENDER
+    // STATE, never hashed -- test_rung_plate.cpp proves the room's and the
+    // ward's digests identical with the plate up, drawn, dismissed and
+    // queued.
+
+    /// True while the plate is WANTED -- its hold still running. The drawn
+    /// alpha is its EasedToggle's business; this is the target a case
+    /// asserts on, casePlateWanted()'s own shape.
+    [[nodiscard]] bool rungPlateWanted() const noexcept { return rungPlateShowSteps_ > 0; }
+    /// What the plate reads (head, prose, top), held through the fade so
+    /// the notice ends with its own words. Empty before any rung has risen.
+    [[nodiscard]] const RungPlateText& rungPlateText() const noexcept { return rungPlateText_; }
+    /// 0 (gone) .. 1 (fully up): the plate's own ease, as drawn.
+    [[nodiscard]] float rungPlateFade() const noexcept { return rungPlateAnim_.value(); }
+    /// Rungs waiting their turn behind the plate on screen (or behind a page,
+    /// a warning or the court that outranks it). Queued, never dropped.
+    [[nodiscard]] std::size_t rungPlateQueued() const noexcept { return rungPlateQueue_.size(); }
+    /// The plate's own draw state exactly as drawFrame composes it -- the
+    /// three lines, the fade (zero under anything that owns the screen), the
+    /// signed drift. Public so a case reads it instead of a screenshot.
+    [[nodiscard]] RungPlateState rungPlateState() const noexcept;
+    /// The alert row's INK as drawn: its own ease times the plate's weight
+    /// (drawFrame hands the two to the HUD apart -- alertFade and
+    /// alertInkWeight -- and the field is drawn at the ease alone), and
+    /// at half weight under the plate (alertWeightUnderRungPlate on the
+    /// plate's own fade -- which is zero under a bouncer's WARNING, so the
+    /// one line the player must not miss is never the one dimmed). Public so
+    /// a case reads it instead of a screenshot.
+    [[nodiscard]] float alertFadeNow() const noexcept;
+    /// The plate ON SCREEN: wanted, or still lifting (its drawn fade above
+    /// zero). What every stand-down follows -- the alert row's register and
+    /// clock, the voice row's ink, the announce slot's fade and clock -- so
+    /// nothing comes back until the plate has left, not the step its hold
+    /// ends (both critics, fourth pass).
+    [[nodiscard]] bool rungPlateOnScreen() const noexcept;
+    /// The plate's weight on the alert and voice rows' INK: 1 with no plate,
+    /// half under one at full strength, on the plate's own fade. The rows'
+    /// backing keeps their own ease (HudState::alertInkWeight).
+    [[nodiscard]] float alertInkWeightNow() const noexcept;
+    /// Whether the alert row draws in the small register: while the plate is
+    /// on screen, and for the rest of a line that was on the row under it
+    /// (its capped two seconds) -- it never swells back.
+    [[nodiscard]] bool alertStepsDownNow() const noexcept;
+    /// The voice row's own: the plate is on screen, or its line was capped
+    /// under the plate and finishes small (StreetVoice::capped) -- what
+    /// drawFrame hands the HUD as voiceStepsDown, readable so a case can
+    /// follow the stand-down through a real bark's life (the Gull case).
+    [[nodiscard]] bool voiceStepsDownNow() const noexcept;
+    /// What is left of the alert row's own hold, in steps: the clock the
+    /// plate stops for a news line and caps at two seconds when it goes --
+    /// and never touches for a watchman's demand (the case that pins that
+    /// reads it here).
+    [[nodiscard]] std::int32_t alertStepsLeftNow() const noexcept { return messageSteps_; }
+    /// What the INTERACT prompt names right now ("WATCHMAN CULL  WATCHMAN",
+    /// "THE STRONGBOX  ROOM 3  EMPTIED"): the target in reach from where
+    /// the body stands, resolved by position and reach and never by the
+    /// reticle's ray, refreshed every step by syncPanelAnim. Public so a
+    /// drive's summary can say what the frame's prompt names (`aim=`).
+    [[nodiscard]] std::string_view aimSubjectNow() const noexcept {
+        return std::string_view{interactSubjectCache_};
+    }
+    /// The announce slot's drawn fades exactly as drawFrame composes them:
+    /// ZERO the instant the rung plate is wanted (the slot waits behind the
+    /// plate with its clock held -- the plate's own `outranked ? 0` rule,
+    /// because the slot's ease-out would otherwise cross the plate's rise
+    /// and the plate's first frame would carry NEW LEAD at full strength
+    /// above it), else their own ease. Public so a case reads them.
+    [[nodiscard]] float casePlateFadeNow() const noexcept;
+    [[nodiscard]] float placePlateFadeNow() const noexcept;
 
     // --- THE MOMENT LEADS OPEN ------------------------------------------------
     //
@@ -678,14 +1176,25 @@ public:
     /// closes it otherwise -- the same "the key that opened it closes it"
     /// rule Keys, Options and Pause each still have on their own.
     void toggleMenu();
-    /// Steps menuFocus() forward one tile, wrapping Journal -> Character ->
-    /// Map -> Letters -> (back to Journal). Does nothing while the tiled
-    /// Menu is not open -- a bumper press with nothing open is not what
-    /// opens it, and Keys/Options/Pause have no tiles of their own to step
-    /// between.
+    /// NINE AND THE STICKS: THE RING. Steps one page forward through your
+    /// papers -- the four tiles (Character -> Map -> Letters -> Journal),
+    /// then the WARD MAP, then the GRIMOIRE, then round to Character. On a
+    /// pad the ward map and the grimoire are reachable by NO button of their
+    /// own (SELECT is WAIT, the QuickWheel is cut), so this ring is how a
+    /// controller reaches them: NOTES, then the bumpers -- Oblivion's own
+    /// tabbed menu, where the map is a tab. Does nothing while none of the
+    /// three surfaces is open (a bumper with nothing open opens nothing) and
+    /// nothing from Keys/Options/Pause, which are not pages of NOTES.
     void menuPageNext();
-    /// The same cycle, backward.
+    /// The same ring, backward.
     void menuPagePrev();
+    /// WAIT, the verb: opens the hour-select page (openWait(false)) or closes
+    /// it if it is up -- T and SELECT's own toggle; the pause menu's WAIT row
+    /// is the same door.
+    void toggleWait();
+    /// One turn of the paper -- the BookFlip every step of the ring and every
+    /// tile focus change speaks, in one place.
+    void pageTurnSound();
     /// THE POINTER PASS: focus by NAME rather than by cycling -- a hover or a
     /// click landing on a tile, setCasebookCursor's "a printed digit, or a
     /// mouse click" shape. One BookFlip when the focus actually moves; a
@@ -739,6 +1248,31 @@ public:
     /// Convenience: classify `key` and note its device. Key::None is nobody
     /// and is ignored rather than counted as the keyboard.
     void noteInputKey(Key key);
+
+    /// UI-EA-SPEC sec. 2, cross-lane contract (c): THE TUTOR WAKE EDGE.
+    /// FLOW's half of the tutor-band contract -- the client calls this on
+    /// the two wake events only IT can see: the prompt device changing
+    /// hands, and an unrecognized press (a key that resolved to no action
+    /// and no page verb -- the player asking a question the game did not
+    /// answer, which is the request for help). HUD's countdown/toggle
+    /// helper re-raises every tutor band whenever this serial moves; a
+    /// serial rather than a countdown so the signal composes with however
+    /// many bands exist without this side knowing their holds. CLIENT
+    /// state, promptDevice_'s own contract: never hashed, never fed to
+    /// MoveInput.
+    void noteTutorWake() noexcept { ++tutorWakeSerial_; }
+    [[nodiscard]] std::uint32_t tutorWakeSerial() const noexcept { return tutorWakeSerial_; }
+
+    /// UI-EA-SPEC sec. 3 rule 5, cross-lane contract (b): THE COMMIT BEAT.
+    /// The client arms this at commit routing -- the press that fires FACE
+    /// IT, TRAVEL, GO TO IT, REBIND, a wait or grimoire row, the
+    /// quit-confirm -- and the page drawers read the value back for one
+    /// restrained flash on the inverted fill (ImpactPulse's own decay,
+    /// kPageEaseSteps). One pulse for all pages -- at most one page owns
+    /// the input, so at most one commit lands per press. Render-side flow
+    /// state: never hashed, never fed to MoveInput.
+    void armCommitPulse() noexcept { commitPulse_.trigger(); }
+    [[nodiscard]] float commitPulseValue() const noexcept { return commitPulse_.value(); }
 
     /// THE CONTROLS PAGE, as the terminal-panel surface actually draws it:
     /// binding, verb, second binding, one sentence of help, and which family
@@ -847,15 +1381,22 @@ public:
     // menu_view.hpp's drawMenuTiles() rather than filling the whole
     // conversation surface the way it did as one of #85's six pages.
     //
-    // NO PAPER DOLL AND NO ARMOUR RATING, ON PURPOSE. There is no item and no
-    // equipment-slot model in this build -- the quick bar's own comment says so
-    // (VERIFICATION GAP #77, above) -- so a screen that drew ten empty slots
-    // would be furniture claiming a state the simulation does not have. What
-    // the simulation DOES have is five derived standings and four skills
-    // actually wired to a verb (SKYRUNNING, CRACKSMANSHIP, STREETWISE,
-    // LINKCRAFT -- the other sixteen entries in content/raws/skills/skills.json
-    // are authored vocabulary with nothing in this build that levels them yet),
-    // and this page is exactly that, no more.
+    // NO PAPER DOLL AND NO ARMOUR RATING, STILL. KIT BUILD (D10): there IS
+    // an item and an equipment-slot model now -- sim/items.hpp, owned by the
+    // Tavern -- and this tile is where it lives (Oblivion's own Inventory and
+    // Character are two tabs of one screen; the four-tile Morrowind layout
+    // stays as ruled). So the sheet grows, in the reference's own worded
+    // grammar and never as a doll: IN HAND is ALWAYS printed once the Kit
+    // exists (fists are a real state then), a worn slot prints ONLY when the
+    // raws hold at least one item for it, then the LOAD line against the
+    // budget off MIGHT, then every carried row with its weight and its worth
+    // and its WORN / IN HAND / SLOT marks. The five derived standings and the
+    // four wired skills stay exactly what they were above it.
+    //
+    // THE VERBS ON A ROW, through the Menu's own grammar and nothing new:
+    // ENTER/A on a carried row WEARS it (or bares it), LEFT/RIGHT walk which
+    // quick slot it rides (the Grimoire's own cycle), and X drops it at the
+    // feet. The tile's epithet says so in the device's own words.
     void toggleCharacter();
     /// True while the tiled Menu is open -- the same bool casebookOpen() is;
     /// see that accessor's own note.
@@ -866,8 +1407,61 @@ public:
     /// title, standing, next-rung cost -- the owner's numbers-on-the-sheet
     /// ruling; NPCs still talk in words only), and what the ward and the
     /// purse currently say -- one row a line, built fresh from the same
-    /// counters the HUD's corner rows read.
+    /// counters the HUD's corner rows read. KIT BUILD: then the equipment
+    /// block, the load line and the carried rows (kitRows()).
     [[nodiscard]] std::vector<std::string> characterRows() const;
+
+    // --- THE KIT on the tile (KIT BUILD) ------------------------------------
+
+    /// One carried row of the composed list: the Kit's own rows, the sack's
+    /// (contraband.hpp's counts, viewed), the bale on the shoulder and the
+    /// picks, all in the registry's document order, every row with a count
+    /// above zero. `inKit` is a row the Kit itself holds -- the only kind
+    /// WEAR, DROP and a quick slot can act on.
+    struct KitRow {
+        std::int32_t item = -1;
+        std::int32_t count = 0;
+        bool inKit = false;
+    };
+    [[nodiscard]] std::vector<KitRow> kitRows() const;
+    /// How many rows the sheet prints BEFORE the carried list (the standings,
+    /// the equipment block, the load line): the cursor offset the tile's
+    /// verbs subtract.
+    [[nodiscard]] std::size_t characterKitOffset() const;
+    /// The carried row under the Character tile's cursor, or nullopt on a
+    /// sheet row.
+    [[nodiscard]] std::optional<KitRow> highlightedKitRow() const;
+    /// ENTER on the Character tile: WEAR the highlighted row in its slot, or
+    /// bare it if worn. Refusals are said out loud in the room's own words.
+    void wearHighlightedKitRow();
+    /// X on the Character tile: DROP one of the highlighted row at the feet.
+    void dropHighlightedKitRow();
+    /// LEFT/RIGHT on the Character tile: walk which quick slot the
+    /// highlighted row is bound to, NONE and 1..10 round, the Grimoire's own
+    /// cycle -- a slot is a spell OR an item, so binding an item clears a
+    /// crafting from that slot exactly as a crafting would clear it.
+    void adjustKitSlot(int delta);
+    /// The load line: "LOAD  212 / 240 DRAMS".
+    [[nodiscard]] std::string loadLine() const;
+
+    // --- THE SEARCH LIST (KIT BUILD) ----------------------------------------
+    //
+    // A dead roster body in reach opens a list of what he carried -- the
+    // authored corpse kit for his name or his role, less what was taken --
+    // on the ONE list widget every page is, wearing the Grimoire page's own
+    // flag: grimoireOpen_ with searchActorId_ set is the search list, and
+    // every stand-down that puts the Grimoire away puts this away, so no
+    // fifteenth page flag was added and no new key was spent. A row is TAKE
+    // (the printed number, ENTER); the last row is TAKE ALL.
+
+    /// Opens the list over the dead body in reach. False with nobody dead
+    /// in reach. Refused in custody, while talking or picking.
+    bool searchNearestCorpse();
+    /// True while the Grimoire widget is showing a corpse's kit.
+    [[nodiscard]] bool searchOpen() const noexcept {
+        return grimoireOpen_ && searchActorId_ >= 0;
+    }
+    [[nodiscard]] std::int32_t searchActorId() const noexcept { return searchActorId_; }
 
     // --- #82: the district map ------------------------------------------------
     //
@@ -923,9 +1517,10 @@ public:
     // Pure render-layer reads: nothing here reaches the simulation, nothing
     // is hashed, and the world hash is byte-identical with the page open.
 
-    /// M (or PadBack -- Select -- on a pad). Toggles the ward map; inert
-    /// while talking or picking, exactly like toggleGrimoire, and every
-    /// other overlay stands down when it opens.
+    /// M on a keyboard; on a pad the map is a page of NOTES (the ring, see
+    /// menuPageNext) and has no button of its own. Toggles the ward map;
+    /// inert while talking or picking, exactly like toggleGrimoire, and
+    /// every other overlay stands down when it opens.
     void toggleDistrictMap();
     [[nodiscard]] bool districtMapOpen() const noexcept { return districtMapOpen_; }
 
@@ -969,6 +1564,121 @@ public:
     /// half of "going to a place" -- you cannot walk somewhere you cannot face.
     void faceDistrictMapSelection();
 
+    // --- FAST TRAVEL (TRAVEL lane) -------------------------------------------
+    //
+    // THE OWNER'S ASK, this session: he read the ward map's cursor, named
+    // selection and FACE IT as a fast-travel screen, was told it is only a
+    // compass, and said plainly he wants the real thing -- Daggerfall's map
+    // travels. So the page gets a second commit verb, TRAVEL, built out of
+    // parts already spent: the cost is the route the district's own PathFinder
+    // answers, priced at the shipped walking pace (the travel* functions at
+    // the bottom of this file); the clock advances through skipSeconds() --
+    // THE WAIT MACHINERY PLUS A RELOCATION, one time system, not two; the body
+    // lands by the same PlayerBody::placeAt the rented bed and the Watch's
+    // morning release already make; and the threshold plate announces the
+    // arrival exactly as a walked crossing would be announced.
+    //
+    // WHAT REFUSES, AND WHY IT IS THE WAIT PAGE'S OWN LIST PLUS TWO. Every
+    // waitRefusal() clause holds verbatim (a travel IS a wait). On top:
+    // carrying the courier case's man -- stepSheetCase() completes the
+    // delivery the moment the body is near the back room, so a permitted
+    // travel-while-carrying would teleport-finish the case's whole final act;
+    // and WatchStance::Closing -- you do not stroll off mid-witness. Mere
+    // heat or a warrant deliberately does NOT refuse, consistent with the
+    // owner's wait ruling that waiting one out is a tactic.
+
+    /// Everything the TRAVEL verb knows about the current selection: the cost
+    /// if the walk is honest, or the one-line reason it is not.
+    struct TravelPlan {
+        /// The selection contains the body -- or its aim point sits within
+        /// two paces of it (the HERE clause: a door can stand just outside
+        /// its own footprint, and the arrival ring lands you on it). Either
+        /// way: nothing to travel to, no verb -- the pane's HERE badge words
+        /// it, and the T press is inert.
+        bool standingIn = false;
+        /// Route found, ground standable, nothing refusing: the verb is live.
+        bool available = false;
+        /// Why not, in the city register, or empty. ONE string for the pane's
+        /// verb row and the press's spoken line, so the page and the key can
+        /// never name different doors -- waitRefusal()'s own contract.
+        std::string refusal;
+        /// The route the cost was derived from: steps, octile units, honest
+        /// seconds, and the whole minutes the clock will actually advance.
+        std::int32_t routeSteps = 0;
+        std::int32_t units = 0;
+        std::int32_t seconds = 0;
+        std::int32_t minutes = 0;
+        /// Where the body lands: the selection's own aim point (the door you
+        /// knock on) snapped to the nearest standable tile on the place's
+        /// band -- never inside geometry.
+        std::int32_t toX = 0;
+        std::int32_t toY = 0;
+        std::int32_t toBand = 0;
+    };
+    /// The plan for the cursor's place, recomputed on demand -- a pure read;
+    /// nothing moves until travelDistrictMapSelection() spends it.
+    [[nodiscard]] TravelPlan districtMapTravelPlan() const;
+    /// Why travel is refused here and now, or "" -- the carry clause first
+    /// (the one refusal that is load-bearing for the courier case), then the
+    /// Watch closing, then waitRefusal()'s own list verbatim. Re-checked on
+    /// the press, not only at draw, exactly as the wait page re-checks.
+    [[nodiscard]] std::string travelRefusal() const;
+    /// The TRAVEL commit: refuses out loud (the page staying up), or advances
+    /// the clock by the plan's exact minutes through the wait machinery,
+    /// relocates, faces the door, arms the threshold plate, dips the frame to
+    /// black to ease up at the destination, and says the arrival line.
+    void travelDistrictMapSelection();
+
+    // --- RELOCATED: SNAP THE VIEW -- the one seam for every instant jump ----
+    //
+    // THE OWNER'S BUG, run to ground: "teleporting through walls ... double
+    // vision/ghosting" on the scripted routes. The BODY has always jumped
+    // clean (PlayerBody::placeAt zeroes every arc, haul and velocity, and the
+    // camera reads the body raw -- there is no eased camera position in this
+    // build to race across the district). What DID survive a jump was the
+    // render side's eased, position-derived furniture: the crosshair's
+    // subject, the lock row, the room row -- each on its own EasedToggle --
+    // kept easing OUT over the NEW street for eight frames, a label from a
+    // place three hundred tiles away ghosting over the arrival. These three
+    // calls are the whole cure, and every relocation seam funnels through
+    // them so the next one (fast travel's arrival is already here; whatever
+    // comes after it will not be) cannot re-open the bug.
+
+    /// Snaps every eased, position-derived piece of VIEW state to what the
+    /// body's new ground actually offers -- which, on the frame of a jump, is
+    /// nothing: the stale crosshair subject, lock row and room row close NOW
+    /// instead of easing out over ground they were never true of. The next
+    /// step()'s own sync re-opens whichever of them the new place earns.
+    /// Render-only: nothing here reaches the simulation, the hash, or the
+    /// gate. EXPORTED as the arrival half of any future instant relocation --
+    /// a caller that moves the body by any means other than placeBodyAt()
+    /// calls this the same instant.
+    void snapViewAfterRelocation();
+
+    /// PlayerBody::placeAt plus snapViewAfterRelocation(), as one verb --
+    /// so a relocation cannot forget its snap. Every scripted placement
+    /// (the demo's cuts, the capture lines' stagings, the respawn, the
+    /// arrest release, the travel commit) goes through here.
+    void placeBodyAt(std::int32_t tileX, std::int32_t tileY, std::int32_t band);
+
+    /// DRESSES an instant cut in the travel seam's own cloth: the frame of
+    /// the cut is already fully black and the destination eases up under the
+    /// plate (see travelFadeAnim_'s header -- the owner called raw cuts
+    /// "teleporting"; this is the difference). Separate from the snap
+    /// deliberately: the capture lines relocate and must photograph the
+    /// world, not the veil, so they snap without dressing; a SCRIPTED cut a
+    /// viewer watches (a demo cut, a clock jump, a travel) snaps AND
+    /// dresses. Advanced in step(), so it serves any caller whose steps run
+    /// one per frame -- the demo, travel, live play. --case-watch's holds
+    /// step zero times a frame, so the watch wears its own veil at the same
+    /// width (see CaseWatchDirector).
+    void dressInstantCut();
+
+    /// The seam veil's current strength, 0 (clear) to 1 (black) -- so a case
+    /// can pin that a scripted cut was dressed and that no shutter ever
+    /// fires through it.
+    [[nodiscard]] float cutVeil() const noexcept { return travelFadeAnim_.value(); }
+
     /// The whole page, ready to draw. Public because a case reads it and
     /// because it is the same shape keysPageState() already has.
     [[nodiscard]] DistrictMapState districtMapState() const;
@@ -1002,14 +1712,67 @@ public:
     void selectQuickSlot(int slot);
     [[nodiscard]] int quickSlot() const noexcept { return quickSlot_; }
     /// Keeps the bottom-centre quick bar strip on screen for a couple of
-    /// seconds -- called by the client when the QuickWheel goes down, and by
-    /// selectQuickSlot itself, so the strip is up exactly while it is being
+    /// seconds -- called by selectQuickSlot itself (every digit, wheel and
+    /// D-pad step lands there), so the strip is up exactly while it is being
     /// used and stands down after (its own EasedToggle does the easing).
     void showQuickBar();
-    /// True while the strip is WANTED (held wheel or recent selection). The
+    /// True while the strip is WANTED (a recent selection). The
     /// drawn alpha is its EasedToggle's business; this is the target a test
     /// can assert on.
     [[nodiscard]] bool quickBarWanted() const noexcept { return quickBarShowSteps_ > 0; }
+    /// KITFIX LANE. THE DRAWN ALPHA ITSELF -- 0 (closed) .. 1 (snapped fully
+    /// open). quickBarWanted() only ever proved the COUNTDOWN was armed; it
+    /// stayed true through a --settle-steps=0 capture that showed no strip
+    /// at all, because the strip's EASE can lag its own target with no
+    /// step() left to close the gap. This is the number a shutter actually
+    /// draws with, and the one a case checking "snapped, not mid-ease" has
+    /// to read -- see showQuickBar()'s own header.
+    [[nodiscard]] float quickBarFadeValue() const noexcept { return quickBarAnim_.value(); }
+    /// THE CELLS PASS: the quick slot whose crafting OR item is the one in the
+    /// hand, -1 for none -- the strip's inverted cell, read off the one place
+    /// so a case can pin it without a screenshot.
+    [[nodiscard]] int equippedQuickSlot() const noexcept;
+
+    // --- the Law of Earned Text (UI-EA-SPEC sec. 2, LANE HUD) ----------------
+    //
+    // TEXT PRINTS WHEN IT CHANGES, WHEN IT IS AIMED AT, OR WHEN THE PLAYER
+    // HESITATES -- NEVER MERELY BECAUSE IT IS TRUE. The street HUD's
+    // reference rows (clock, purse, case, room, guild, objective) used to be
+    // furniture: up every frame, saying that nothing had happened. Each is an
+    // EVENT row now -- a countdown armed on its own edge in syncPanelAnim(),
+    // spent once a step in step(), eased by its own EasedToggle, exactly the
+    // quickBarShowSteps_ machinery generalized. All render-side, steps-based,
+    // unhashed. These accessors are the targets tests assert on, the same
+    // deal quickBarWanted()/placePlateWanted() already offer.
+
+    /// True while the clock is WANTED: ~2.5s after an hour tick or a time
+    /// charge (travel, a wait pick, a sleep), for the life of the wait page
+    /// (whose rows price the very hours the clock shows), and on the pause
+    /// stack (the spec's #34 keeps rows, clock and title there).
+    [[nodiscard]] bool clockWanted() const noexcept {
+        return waitOpen_ || pauseOpen_ || clockShowSteps_ > 0;
+    }
+    /// True while the purse is WANTED: ~2.5s after any coin delta.
+    [[nodiscard]] bool purseWanted() const noexcept { return purseShowSteps_ > 0; }
+    /// True while the case row is WANTED: ~2.5s after a beat/lead change or a
+    /// casebook close -- and never while the lead-opened plate is up, which
+    /// says the same news louder ("the notice IS the case news").
+    [[nodiscard]] bool caseRowWanted() const noexcept { return caseShowSteps_ > 0; }
+    /// True while the room row is WANTED: ~2.5s after a room entry or the
+    /// room's loudness turning over. A head-count drifting is not an event.
+    [[nodiscard]] bool roomRowWanted() const noexcept { return roomShowSteps_ > 0; }
+    /// True while the guild/objective rows are WANTED: ~2.5s after a change.
+    [[nodiscard]] bool guildRowWanted() const noexcept { return guildShowSteps_ > 0; }
+    [[nodiscard]] bool objectiveRowWanted() const noexcept {
+        return objectiveShowSteps_ > 0;
+    }
+    /// The Q-hold tutor toast: what it says while it is up, and whether it is
+    /// wanted. Armed on the quick bar's first two risings ever, riding the
+    /// strip's own countdown, then retired for the session.
+    [[nodiscard]] std::string_view wheelHintLabel() const noexcept {
+        return std::string_view{wheelHintText_};
+    }
+    [[nodiscard]] bool wheelHintWanted() const noexcept { return wheelHint_.wanted(); }
 
     // --- the threshold plate (DISTRICT PHASE D) -------------------------------
     //
@@ -1055,13 +1818,11 @@ public:
 
     // --- the Grimoire page (SPELLS BUILD) ------------------------------------
     //
-    // OWNER RULING: QuickWheel + a Grimoire list page, NO new Menu tile. The
-    // page is the same DialogueViewState/drawDialogue panel every other page
-    // is -- one list widget, proven once -- and it opens off the key the
-    // quick bar already owns: a TAP of QuickWheel (held, the key is the
-    // wheel; released inside HoldToggle's own kTapSteps without stepping a
-    // slot, it is this page). No new binding, no new tile, and the one key
-    // that means "craftings" covers both surfaces.
+    // A list page, NO new Menu tile. The page is the same DialogueViewState/
+    // drawDialogue panel every other page is -- one list widget, proven once.
+    // NINE AND THE STICKS: it is a PAGE OF NOTES now -- one bumper past the
+    // ward map in the ring menuPageNext()/menuPagePrev() walk -- since the
+    // QuickWheel tap that used to open it is cut. No binding of its own.
 
     /// Opens or closes the page. Inert while talking or picking, exactly like
     /// toggleKeys; every other overlay stands down when it opens.
@@ -1165,6 +1926,21 @@ public:
     /// fight is not a verb.
     void settleDefeat();
 
+    /// ACTION-COMBAT BUILD (section 4.5). THE DEATH CEREMONY, drawn over
+    /// everything the instant a defeat lands under lethal rules (steel was out
+    /// -- tavern_->escalated()). Fills the frame toward black, holds the
+    /// epitaph plate (killer, weapon, place) for kDeathHoldSteps, then eases
+    /// back to reveal the quay revive settleDefeat already performed under it.
+    /// Render-only, never hashed: the sim revived at the moment of defeat, this
+    /// is the OCCASION laid over the top -- Barony's lesson that ceremony at the
+    /// end buys the frictionless beginning. A no-op while deathCeremonySteps_ is
+    /// zero, so it is harmless in every drawFrame return path it rides.
+    void composeDeathCeremony(Framebuffer& target) const;
+    /// Arms the ceremony above from the last defeat's Rise -- the killer's name,
+    /// a weapon word off his hand, and the place it happened. Called by
+    /// settleDefeat only on an escalated (lethal) defeat.
+    void armDeathCeremony();
+
     /// What the last roof move did, in words. Exposed so a test can assert on
     /// the REPORT and not only on where the body ended up.
     [[nodiscard]] const std::string& lastRoofMove() const noexcept { return roofMove_; }
@@ -1183,6 +1959,33 @@ public:
 
     /// The last thing that happened, for the HUD. Fades after a few seconds.
     [[nodiscard]] const std::string& lastMessage() const noexcept { return message_; }
+    /// Movement steps the alert row's own line has left on its clock: four
+    /// seconds from a say(), zero once it ran out or stood down (a goodbye
+    /// stands its speaker's line down, endTalk). Exposed so a test can pin
+    /// the stand-down itself, not a fade a bouncer's warning can hold up.
+    [[nodiscard]] std::int32_t messageStepsLeft() const noexcept { return messageSteps_; }
+    /// VOICE LANE. The one voice channel: what the street said without the
+    /// talk key, as the HUD's voice row draws it and the summary reports it.
+    [[nodiscard]] const StreetVoice& voice() const noexcept { return voice_; }
+    /// VOICE LANE. The name the alert row is quoting while it is on the
+    /// frame at all ("Watchman Cull" under his halt, its clock or its fade
+    /// still running), or empty.
+    ///
+    /// A line the session put up in somebody's name (sayAs) answers with
+    /// that name whether it was their voice or the director's report of
+    /// their deed -- "GERTA SALTCOTTE TAKES THE DRINK." is Gerta's on the
+    /// row as much as her greeting is. Only a sim line said whole falls
+    /// back to the "<name>: " prefix it carries.
+    [[nodiscard]] std::string_view alertSpeakerNow() const noexcept {
+        if (messageSteps_ <= 0 && alertAnim_.value() <= 0.0F) {
+            return {};
+        }
+        return messageMouth_.empty() ? alertSpeakerOf(message_) : std::string_view{messageMouth_};
+    }
+    /// VOICE LANE, THE ADDRESS. The worded reaction to the last reply that
+    /// moved the speaker's disposition -- "(THE FACE SOFTENS A HAIR)" -- for
+    /// as long as it stands on the panel's dateline row; empty otherwise.
+    [[nodiscard]] const std::string& reactionLine() const noexcept { return reactionLine_; }
 
     /// "3 FLOWER  24DR", or empty when the sack is empty. Public because the
     /// HUD rule is a testable claim and not a preference: an inventory in this
@@ -1215,6 +2018,20 @@ public:
     /// Flame's eye) so the crosshair names exactly what the key would find.
     /// PUBLIC so the reach rule is a claim a case can make.
     [[nodiscard]] int leadInLookReach() const;
+    /// KIT BUILD. THE THING THE RETICLE IS ON: among the things on the
+    /// ground in the take's own reach (Tavern::kReachQ8, Manhattan from the
+    /// tile's centre, the body's band), the one the eye's line passes
+    /// nearest, and only when it passes within kThingAimDegrees of the span
+    /// the thing is drawn over (ItemDef::drawnLoCm..drawnHiCm on its tile)
+    /// -- an index into Tavern::groundItems(), or -1. The 2026-10-06
+    /// director's frame: at the Tarwalk coil facing west, the reticle on a
+    /// stall block eleven tiles off and the coil under the frame's bottom
+    /// edge, the prompt read ROPE 48DR / E - TAKE, because the old read was
+    /// the nearest thing in reach whatever the eye was on. Both walks read
+    /// this (the prompt names it, E takes it), so the press still does what
+    /// the prompt said. The BODY's own yaw and pitch, never the render-only
+    /// nods. PUBLIC so the rule is a claim a case can make.
+    [[nodiscard]] std::int32_t groundItemUnderReticle() const;
     /// THE CASEBOOK PASS. True when the body could LOOK at this lead from where
     /// it is standing right now -- the same reach examine() uses, boon
     /// included. Read by the page to choose between its two commit verbs; see
@@ -1237,6 +2054,22 @@ public:
     /// empty otherwise -- the held state made visible, not the keypress.
     /// PUBLIC for the identical reason.
     [[nodiscard]] std::string blockLine() const;
+    /// ACTION-COMBAT BUILD. "HELD HARD -- CUDGEL 14-18" while the swing is
+    /// charged past the hard threshold (Tavern::playerChargeHard), naming the
+    /// held weapon in the sheet's own weaponSheetLine grammar. Empty at rest,
+    /// at a light charge, and in recovery -- the row is the hard tier made
+    /// visible, the reticle carries the light one. PUBLIC so a case can pin
+    /// what it says and that it stays on its edge, the same as blockLine.
+    [[nodiscard]] std::string chargeLine() const;
+    /// KIT BUILD. "COAT TURNS 2" while the turn row's hold is running, else
+    /// empty -- the row the coat's own softening of a blow earns.
+    [[nodiscard]] std::string turnLine() const;
+    /// STANCE & ROOM BUILD. "FISTS UP" / "CUDGEL UP" / "THE EVICTOR UP" /
+    /// "STEEL UP" exactly while the room's own playerHandsUp() is true, and
+    /// empty otherwise -- fighting mode made visible, the ONE presentation
+    /// touch the stance lane makes, on the blockLine pattern: the ROOM's fact,
+    /// never the keypress. PUBLIC for the identical reason blockLine is.
+    [[nodiscard]] std::string handsLine() const;
     /// HELD-EFFECTS BUILD. "STEADY THE HAND 842S" -- the slot-th live hold on
     /// the player, its name out of the grimoire and the seconds it has left,
     /// counting down continuously. Empty past the table's end, which is the
@@ -1258,8 +2091,39 @@ public:
     [[nodiscard]] bool haggling() const noexcept;
     /// Everything the surface draws. Empty and closed when nobody is talking.
     [[nodiscard]] DialogueViewState dialogueView() const;
-    /// Which topic the cursor is on. An index into the WHOLE list.
+
+    /// UI-EA-SPEC 1.7 (LANE PAGES, strip->card): true while one of the four
+    /// pause-stack strips (pause, wait, options, grimoire) is up -- the family
+    /// that now draws as ONE composed card (drawCreationPage's own generic
+    /// composition) instead of a HUD strip, the ship note's standing item
+    /// extended to the family. The card's content comes from stripCard().
+    [[nodiscard]] bool stripCardOpen() const noexcept {
+        return pauseOpen_ || waitOpen_ || optionsOpen_ || grimoireOpen_;
+    }
+    /// The composed card for whichever pause-stack page is up. Rows, cursor
+    /// and digit windows keep exactly the meaning the strip gave them --
+    /// wrapCursorAndPage's nine-key arithmetic included -- so every input
+    /// path lands where it always did; only the drawing changed register.
+    [[nodiscard]] CreationPage stripCard() const;
+    /// Which topic the cursor is on. An index into the WHOLE list -- the
+    /// CONVERSATION's list, and only that one: this is topicCursor_, the
+    /// field the arrows move while somebody is talking. The tiled Menu's
+    /// tiles and the keys page keep their own cursors (moveTopicCursor
+    /// routes by focus); a caller reading this under one of them is reading
+    /// the wrong list. menuCursor(), right below, is the one that follows
+    /// the focus.
     [[nodiscard]] int topicCursor() const noexcept { return topicCursor_; }
+    /// KIT POLISH. The row the cursor is on, on WHICHEVER list has the keys
+    /// -- routed exactly as moveTopicCursor() routes the arrows: the keys
+    /// page's caseCursor_, then the tiled Menu's own per-tile cursor
+    /// (characterCursor_, mapCursor_, lettersCursor_, the Journal's
+    /// caseCursor_), then the conversation's topicCursor_. The same number
+    /// dialogueView().cursor answers, without composing the panel to get
+    /// it. This is what ENTER hands chooseTopic(): main.cpp used to hand it
+    /// topicCursor() on the tiled Menu, which the Character tile got away
+    /// with (its press reads its own cursor and ignores the index) and the
+    /// Letters tile did not (it OPENS the index it is given).
+    [[nodiscard]] int menuCursor() const noexcept;
     /// Which page of the list is showing.
     [[nodiscard]] int topicPage() const noexcept { return topicPage_; }
     void moveTopicCursor(int delta);
@@ -1337,11 +2201,43 @@ public:
     /// proof that re-derived the rows itself would be proving its own copy.
     [[nodiscard]] std::vector<std::string> journalWorkRows() const;
 
+    /// ERRANDS A HUMAN CAN FINISH (2026-10-09). Who E would address right
+    /// now, from where the body stands and looks -- the private
+    /// wardAddressee() rule, public so a scripted line asks the press's own
+    /// question rather than a copy of it.
+    [[nodiscard]] const sim::WardActor* wardAddresseeNow() const;
+    /// SHOPS (2026-10-09). Whether a ward body is working its own counter --
+    /// the private wardAtCounter() rule, public for the scripted shop line.
+    [[nodiscard]] bool wardAtCounterNow(const sim::WardActor& who) const noexcept;
+    /// THE WORKBENCH (2026-10-09). Finishes every render-only ease at once --
+    /// the panel, the alert, the speech's typewriter -- so a frame drawn with
+    /// the world PAUSED shows the conversation that was just opened rather
+    /// than its first transparent frame. None of it is a fact about the world
+    /// (see panelAnim_'s own note): the hash cannot see this, and the
+    /// simulation is not stepped.
+    void settleOverlaysForInspection() noexcept;
+
 private:
     /// How close you have to be to address somebody on the street. Two tiles,
     /// which is the same reach Tavern::talkTo uses across a taproom -- one rule
     /// for "within arm's length and a word", not two.
     static constexpr std::int32_t kWardTalkReachTiles = 2;
+    /// ERRANDS A HUMAN CAN FINISH (2026-10-09). The street body E addresses
+    /// from where the body stands and looks: in front first
+    /// (WardPopulation::inFrontOf), nearest only when nobody is in front.
+    /// talkToWard and the crosshair's TALK prompt both ask this, so the
+    /// prompt never names somebody other than who answers.
+    [[nodiscard]] const sim::WardActor* wardAddressee() const;
+    /// SHOPS (2026-10-09). How far from their post a keeper still counts as
+    /// behind the counter: the room it stands in, give or take.
+    static constexpr std::int32_t kCounterReachTiles = 4;
+    /// The ward body is standing at its own post (the bake's anchor), on its
+    /// band, within kCounterReachTiles -- a keeper working their counter.
+    [[nodiscard]] bool wardAtCounter(const sim::WardActor& who) const noexcept;
+    /// Settles a BuyItem/SellItem intent across a ward counter: the Kit and
+    /// the player's purse through Tavern, the keeper's purse through the
+    /// ward's own ledger, the lists rebuilt.
+    void settleCounterReply(sim::Reply& reply);
     /// And how far a crime carries on an open street. The taproom's own witness
     /// range is eight tiles; a quay has no walls to shorten it and no reason to
     /// lengthen it.
@@ -1391,6 +2287,25 @@ private:
     /// final attempt was anything other than TooFar, which is interact()'s
     /// cue to fall through to the investigation look instead.
     bool stealNearestThing();
+    /// KIT BUILD. The thing on the ground the reticle is on
+    /// (groundItemUnderReticle), through Tavern::takeGroundItem(index) --
+    /// the interact walk's 3b. Says the line itself and answers whether
+    /// anything was under the reticle at all, the stealNearestThing
+    /// contract.
+    bool takeNearestItem();
+    /// True when one of the three books has a heard lead under the look:
+    /// the investigation outranks a thing on the ground and the lower of the
+    /// hands alike. The one three-book walk both rules read.
+    [[nodiscard]] bool leadNamedInReach() const;
+    /// KIT BUILD. The corpse the press would SEARCH: the dead body in reach
+    /// of the BODY's own position when no living roster body is nearer --
+    /// the one rule both walks read.
+    [[nodiscard]] const sim::Actor* corpseToSearch() const;
+    /// KIT BUILD. The crosshair's read of the thing on the ground the press
+    /// would TAKE (both walks, both stances): false when the reticle is on
+    /// nothing in reach (groundItemUnderReticle), the thing is fixed, or a
+    /// named lead outranks it.
+    [[nodiscard]] bool groundTargetFor(InteractTarget& out) const;
 
     /// MORROWIND ROUND. Opens/refocuses the tiled Menu on tile `focus`
     /// (kMenuFocusCharacter/Map/Letters/Journal, mod 4): if the Menu is
@@ -1444,6 +2359,13 @@ private:
     /// same value, which is the whole point -- a dateline is a fact about
     /// the SIMULATED moment, not about how long a player paused there.
     [[nodiscard]] std::int64_t caseNowSeconds() const noexcept;
+    /// CASE WATCH. Appends one call-op to the attached tape, top-level calls
+    /// only -- see setWatchRecorder. The depth counter is what "top-level"
+    /// means: every recorded verb holds it raised for its own body (session.cpp,
+    /// WatchDepthGuard), so a verb reached THROUGH another verb records nothing.
+    void recordWatchOp(WatchOpKind kind, std::int32_t a = 0, bool ok = false);
+    std::vector<WatchOp>* watchTape_ = nullptr;
+    int watchDepth_ = 0;
     /// Runs the ward's day forward to the tavern's calendar. Called after every
     /// step and after every jump of the clock -- see the note on the definition
     /// for why the ward could not previously see a slept night.
@@ -1472,11 +2394,41 @@ private:
     /// says. The verb's first caller.
     [[nodiscard]] std::string settleGroundPetition();
     void say(std::string line);
+    /// A LINE IN SOMEBODY'S NAME on the alert row, and the row remembers
+    /// whose it is. Their voice rides under "<name>: " so a row with three
+    /// people talking on it still says who said what; a REPORT (a reply the
+    /// director flagged, sim::Reply::report) already has the name in it and
+    /// is said bare. Either way the row is theirs (messageMouth_), which is
+    /// what the goodbye stands down -- by who, never by matching text. Like
+    /// say() it clears messageDemand_; the four Watch sites (the street's
+    /// three, the Gull's lastDemand) set it back after the call, so a halt
+    /// is both his line and a demand.
+    void sayAs(const std::string& who, const std::string& line, bool report);
+    /// VOICE LANE. Voices the goodbye on the street channel -- the director's
+    /// own farewell(walkedOff) for whoever the open conversation is with --
+    /// and ends the conversation: the tail closeConversation() runs for a
+    /// live talk, shared with the walk-off close in step(). A no-op with
+    /// nothing open.
+    void endTalk(bool walkedOff);
+    /// VOICE LANE. The voice row's toggle, re-read from the channel -- called
+    /// from syncPanelAnim and eagerly from the verbs that can say a line.
+    void syncVoiceAnim() noexcept;
+    /// VOICE LANE. The name a sim line on the alert row is quoting -- the
+    /// "<name>: " prefix the halt, the join, the flee, the arrest line and
+    /// a reply all carry -- or empty.
+    [[nodiscard]] static std::string_view alertSpeakerOf(std::string_view line) noexcept;
     /// Charges a landing to the body: the skill, the guild's teaching, the hit
     /// points and the roof-run tally, in the one place a landing is resolved.
     void settleLanding(const sim::RoofResult& move);
     /// "WANTED  HEAT 62  LOOT 3", or empty when the ward has heard nothing.
+    /// JUSTICE BUILD: "WANTED FOR BLOOD  HEAT 60" while the paper has a
+    /// corpse behind it, "CONDEMNED  HEAT 12" after a commutation. This row
+    /// is the criminal tag's one presentation, so it is reachable to be
+    /// proved (test_court.cpp) the way unlockedLetters() is.
+public:
     [[nodiscard]] std::string heatLine() const;
+
+private:
     /// "THE GULL  14 IN  BUSY", or empty when the player is not inside.
     /// Pulled out of drawFrame() into its own Line() method, the same shape
     /// every other bottom-band row already had, so syncPanelAnim() can call
@@ -1542,6 +2494,11 @@ private:
     std::int64_t elapsedSeconds_ = 0;
     std::int32_t stepsThisSecond_ = 0;
     std::string message_;
+    /// Whose line message_ is, when the session put it up in a name
+    /// (sayAs): their voice or the director's report of their deed. Empty
+    /// for everything else -- a narration, a toast, a sim line said whole.
+    /// Presentation only, like message_ itself: unhashed.
+    std::string messageMouth_;
     /// Movement steps the message has left to live.
     std::int32_t messageSteps_ = 0;
     /// The line the top band was last asked to speak, and how many movement
@@ -1610,6 +2567,28 @@ private:
     sim::CasebookRaws sheetRaws_;
     sim::Casebook sheetBook_;
     sim::LetterRaws sheetLetterRaws_;
+    /// EVICTION CASE. The third case's raws, book and paper, held to the
+    /// sheet trio's exact contract above: ALL SESSION-SIDE AND NONE OF IT
+    /// HASHED -- the twin gate's workloads never construct a Session, and
+    /// determinism is proven the scripted way (test_eviction_line runs both
+    /// paths twice and requires identical books).
+    sim::CasebookRaws evictRaws_;
+    sim::Casebook evictBook_;
+    sim::LetterRaws evictLetterRaws_;
+    /// True from the paper changing hands at the door until the Mission
+    /// close -- sheetCarry_'s sibling, worn by the objective row, completed
+    /// by stepEvictCase().
+    bool writServed_ = false;
+    /// Tonight's knock: false until the door answers, cleared when the
+    /// serve lands or the evening gate refuses. The serve press is only
+    /// offered on an answered door.
+    bool evictKnocked_ = false;
+    /// The record's copy of the knock: set with the first answered knock and
+    /// never cleared, whatever the live flag does when the player steps away.
+    bool evictEverKnocked_ = false;
+    /// The one-per-arming nudge naming the door verbs -- sheetTakeSaid_'s
+    /// sibling, re-armed when the player steps out of reach.
+    bool evictDoorSaid_ = false;
     /// Where the courier beat has got to (0 unfired / 1 hailed / 2 said the
     /// follow-up), and the countdown of world-steps before it fires. The
     /// countdown starts once the opening page is down (firstRun_ false) and
@@ -1620,7 +2599,9 @@ private:
     /// True from TAKE HIM UP until the Mission's back room. The bale's own
     /// shape: a flag the HUD wears, not a body the renderer carries -- the
     /// slung-over-the-shoulder drawing is flagged follow-up work, and the
-    /// heat row's "FINCH IN HAND" is the honest interim.
+    /// heat row's "CARRYING FINCH" is the honest interim. TRAVEL lane also
+    /// reads this: fast travel refuses while it is set (travelRefusal), so
+    /// the nervous walk to the Mission cannot be skipped.
     bool sheetCarry_ = false;
     /// The one-per-downing nudge that names the take verb, re-armed when the
     /// quarry is back on his feet -- see stepSheetCase().
@@ -1638,11 +2619,47 @@ private:
     [[nodiscard]] bool caseTakeReady() const;
     [[nodiscard]] const sim::Actor* sheetQuarry() const;
     [[nodiscard]] int sheetLeadInLookReach() const;
+    /// EVICTION CASE, the errand's own moving parts, each the courier
+    /// machinery's exact sibling: stepEvictCase() is the per-step machine
+    /// (the return-to-Mission close and the Evictor grant); evictDoorReady()
+    /// answers whether the knock/serve press is the verb right now (case
+    /// live, writ unserved, within reach of the family-door lead's own
+    /// site); evictLeadInLookReach() is sheetLeadInLookReach()'s walk over
+    /// the third book; syncEvictionTopics() feeds the dialogue director the
+    /// case's stage (the setGroundPlot contract) so Maell's writ topics
+    /// appear and retire honestly; settleTakeWrit()/settleYieldWrit() are
+    /// the session halves of the two intent replies.
+    void stepEvictCase();
+    [[nodiscard]] bool evictDoorReady() const;
+    [[nodiscard]] int evictLeadInLookReach() const;
+    void syncEvictionTopics();
+    void settleTakeWrit();
+    void settleYieldWrit();
+    /// EVICTION CASE. THE REWARD SEAM, and the one place in this build that
+    /// arms the player at all: the agreed weapon id is "the_evictor", the
+    /// weapon itself is the weapon lane's to define. Until that lane's enum
+    /// lands, this grants the class the brawl already has on the Evictor's
+    /// own side of the lethal line -- Blunt, Subdue intent (the player's
+    /// default, so nothing meaningful is stomped) -- and the integrate step
+    /// is one identifier swap HERE and nowhere else.
+    void grantEvictor();
+    /// COURIER CASE + EVICTION CASE: the one case-switching rule, applied
+    /// everywhere a page, a row or the HUD reads "the case". THREE books
+    /// now: the eviction fronts while it lives (it begins by an explicit
+    /// deed mid-play, so it is always the newest thing the player did),
+    /// then the courier's errand, then the Bloodletter. Still fixed members
+    /// in fixed declaration order, still no switcher UI -- the same flagged
+    /// scope cut, one book deeper.
+    ///
+    /// THE PULL PACK GAVE IT THE SWITCHER: frontedBook() is the auto rule
+    /// above unless the player picked a book off the casebook page's CASES
+    /// shelf (caseFront_), which is the "no switcher UI" scope cut closed --
+    /// render state, so the world hash cannot see which book the page reads.
     [[nodiscard]] const sim::CasebookRaws& activeCaseRaws() const noexcept {
-        return sheetCaseLive() ? sheetRaws_ : caseRaws_;
+        return rawsOf(frontedBook());
     }
     [[nodiscard]] const sim::Casebook& activeCasebook() const noexcept {
-        return sheetCaseLive() ? sheetBook_ : casebook_;
+        return bookOf(frontedBook());
     }
     bool keysOpen_ = false;
     /// SPELLS BUILD. The Grimoire page: whether it is up, which crafting the
@@ -1679,6 +2696,127 @@ private:
     /// string is held through the fade so the notice ends with its own words.
     std::string casePlateText_;
     int casePlateShowSteps_ = 0;
+    /// UI-EA (LANE HUD): THE ONE NOTICE GRAMMAR -- "<NEWS> - <key>", the
+    /// spec's own "3 NEW LEADS - J". The news in the ward's words, a dash,
+    /// the live key that opens the book, through promptLabel so a pad reads
+    /// its own button. "YOUR CASEBOOK"/"YOUR LETTERS" died in the diet: the
+    /// key IS the pointer, and every notice ends at the same door (the Menu).
+    /// One place builds it so six announcement sites cannot drift apart.
+    void armCasePlate(std::string news);
+    // --- THE PULL PACK's own state (see the public block above) -------------
+    /// The player's choice. Render state, never hashed -- pull.hpp's header.
+    FollowedLead followedLead_;
+    /// The CASES shelf's pick: -1 for the auto rule. Cleared on the step the
+    /// picked book closes, so the page falls back to whatever is live.
+    int caseFront_ = -1;
+    int caseShelfCursor_ = 0;
+    /// Per-skill level cache the toast diffs against, once a step.
+    SkillRiseWatch skillRise_;
+    /// The toast's own EVENT triple (text held through the fade, countdown,
+    /// ease) -- the case plate's exact shape. A second rise while one is up
+    /// queues behind it rather than overwriting the words mid-fade.
+    std::string skillToastText_;
+    int skillToastShowSteps_ = 0;
+    EasedToggle skillToastAnim_{kPageEaseSteps, kPageEaseSteps};
+    std::vector<std::string> skillToastQueue_;
+    /// The book-change watcher, once a step.
+    BookNewsWatch bookNews_;
+    /// A site armed the plate in its own words THIS step (examine()'s "3 NEW
+    /// LEADS", the courier's "A MISSION SHEET"), so the watcher does not say
+    /// the same change twice. Set by armCasePlate, cleared in stepPull().
+    bool casePlateArmedThisStep_ = false;
+    /// "NE 40  THE WEIGHHOUSE", rebuilt once a step (and on the press that
+    /// changes it) -- the storage HudState::pullLabel points into.
+    std::string pullLineCache_;
+    /// THE FOLLOW VERB'S ANSWER, readable: "THE COMPASS HOLDS THE
+    /// WEIGHHOUSE.", "A DEAD END IS NOT A DIRECTION." -- in the casebook
+    /// page's own header band for the plate's hold (the alert row is stood
+    /// down under a page), and on the message row once the book goes down.
+    std::string pageNote_;
+    int pageNoteSteps_ = 0;
+    void notePage(std::string line);
+    /// Named places (mapPlaces() indices) the body has stood in -- the other
+    /// half of "discovered" for the ribbon ticks. Render state.
+    std::vector<std::uint8_t> placesStood_;
+    std::int32_t placesStoodTileX_ = INT32_MIN;
+    std::int32_t placesStoodTileY_ = INT32_MIN;
+    /// The three books as pull.hpp sees them, in fixed member order.
+    [[nodiscard]] BookSet bookSet() const noexcept;
+    /// The one step hook: the skill diff, the book news, the toast's
+    /// countdown, the fronted book's close edge, the places stood.
+    void stepPull();
+    /// The one draw hook: the ribbon line, the ticks and the toast onto the
+    /// HudState drawFrame is assembling.
+    void composePullHud(HudState& hud) const;
+    /// The book whose leads the page lists, by id -- activeCasebook() reads
+    /// through this.
+    [[nodiscard]] const sim::Casebook& bookOf(CaseBookId id) const noexcept;
+    [[nodiscard]] const sim::CasebookRaws& rawsOf(CaseBookId id) const noexcept;
+    /// The CASES shelf rows, for casebookPageState().
+    [[nodiscard]] std::vector<CasebookShelfRow> casebookShelfRows() const;
+    // --- THE RUNG PLATE's own state (see the public block above) ------------
+    /// Per-track rung cache the plate diffs against, once a step -- the
+    /// skill toast's skillRise_, for the Legend.
+    LegendRiseWatch legendRise_;
+    /// The plate's EVENT triple (text held through the fade, countdown,
+    /// ease) -- the toast's exact shape -- and the rungs waiting behind it.
+    RungPlateText rungPlateText_;
+    int rungPlateShowSteps_ = 0;
+    EasedToggle rungPlateAnim_{kPageEaseSteps, kRungPlateLiftSteps};
+    std::vector<RungPlateText> rungPlateQueue_;
+    /// Set by stepRungPlate, read by stepPull the same step: a skill that
+    /// levelled on the step a rung rose is the plate's own tick row, never a
+    /// toast after it.
+    bool rungRoseThisStep_ = false;
+    /// The line on the alert row is a street watchman's HALT, SHEATHE or
+    /// OFFENCE -- said through say() like any other, but an ignored halt
+    /// ends in an arrest at reach, so it outranks the plate for as long as
+    /// the row holds it (rungPlateOutranked), and it is never capped nor
+    /// stepped down. say() clears it; the four Watch sites (the street's
+    /// three, the Gull's own lastDemand) set it.
+    bool messageDemand_ = false;
+    /// The alert row was capped by the plate -- when the hold ended, when
+    /// the card was dismissed, or on the card's last frame -- while a line
+    /// had steps left OR its fade was still running: whatever is on the row
+    /// finishes in the small register and never swells back to the glance
+    /// size. say() clears it. (At a warning's dismissal the ease can be the
+    /// warning's own with no line on the row; the flag then means nothing
+    /// until the next say() clears it, and nothing is drawn small.)
+    bool messageCapped_ = false;
+    /// The plate was on screen (rungPlateOnScreen) at the end of the last
+    /// step: the edge stepRungPlate caps the row on.
+    bool rungPlateWasOnScreen_ = false;
+    /// The line on the row is NEWS (the take off a box, a fall's hurt, a
+    /// watchman's word: held under the plate and shown whole after) rather
+    /// than a MOMENT (a leap's length, a ledge mantled: its clock runs under
+    /// the plate, because a leap's length six seconds after the leap is
+    /// nobody's news). say() says news; the leap and the mantle say
+    /// otherwise after it. Whatever is still on the row when the plate
+    /// goes is capped and finishes small, a demand excepted.
+    bool messageHeld_ = true;
+    /// True when something that outranks the plate owns the screen right
+    /// now: a page or a talk (conversingNow) and a page's closing tail, the
+    /// court's plates and custody, the death and rope ceremonies, a
+    /// bouncer's WARNING, a watchman's DEMAND on the row -- the alert row's
+    /// own priority rule, applied whole.
+    [[nodiscard]] bool rungPlateOutranked() const noexcept;
+    /// The bouncer's WARNING is on the alert row: drawFrame's and
+    /// syncPanelAnim's own three-line test, in one place at last.
+    [[nodiscard]] bool bouncerWarned() const noexcept;
+    /// The one step hook: the Legend diff into the queue, the countdown, the
+    /// dismissal under anything that outranks it, the next plate up off the
+    /// queue with its bell. Runs BEFORE stepPull() so a rung and a skill
+    /// level in the same step resolve with the plate first and the toast
+    /// waiting.
+    void stepRungPlate();
+    /// The one draw hook: the plate over the HUD, under the ceremonies and
+    /// the court's own plate. A no-op while nothing is up.
+    void composeRungPlate(Framebuffer& target) const;
+    /// Which named place (mapPlaces() index) a lead of ANY book stands in, or
+    /// -1 -- mapPlaceForLead's own two rules (the sign's name, then the
+    /// smallest footprint under the site) freed from the active book's index
+    /// space, for the ribbon's notches and its line.
+    [[nodiscard]] int placeIndexOfLead(const sim::Lead& lead) const;
     /// THE CHARACTER TILE'S OWN CURSOR AND PAGE. Read-only (nothing on this
     /// tile is a choice to make), so there is no "entry" to remember.
     int characterCursor_ = 0;
@@ -1715,6 +2853,8 @@ private:
     /// that never heard of it (every test, every capture flag) draws the
     /// exact frames it always drew.
     InputDevice promptDevice_ = InputDevice::KeyboardMouse;
+    /// Contract (c)'s wake edge -- see noteTutorWake(). Client state.
+    std::uint32_t tutorWakeSerial_ = 0;
     bool optionsOpen_ = false;
     int optionCursor_ = 0;
     int optionPage_ = 0;
@@ -1805,6 +2945,22 @@ private:
     /// nothing to do with a guard going up, so they do not share one.
     EasedToggle spellAnim_;
     EasedToggle blockAnim_;
+    /// ACTION-COMBAT BUILD. The "HELD HARD -- <weapon> <span>" charge row's own
+    /// EasedToggle, on the bottom band adjacent to the guard row -- the same
+    /// per-row convention. A guard going up and a swing charging hard are
+    /// unrelated, so they do not share a toggle; and a charge is mutually
+    /// exclusive with a guard by construction (the guard only holds in Idle),
+    /// so the two rows never both want the band at once.
+    EasedToggle chargeAnim_;
+    /// STANCE & ROOM BUILD. The "<WEAPON> UP" fighting-mode row's own
+    /// EasedToggle, the per-row convention: hands coming up has nothing to do
+    /// with a guard going up (a guard RAISES the hands, but a swing raises
+    /// them too and the guard does not follow), so they do not share one.
+    EasedToggle handsAnim_;
+    /// KIT BUILD. The "COAT TURNS 2" row's own EasedToggle, the per-row
+    /// convention: a turned blow has nothing to do with the hands or the
+    /// guard, and it is an EVENT with a hold (turnSteps_), not a state.
+    EasedToggle turnAnim_;
     /// FATIGUE BUILD. The fatigue bar's own visibility ease -- its OWN
     /// EasedToggle per the pinned convention, mirroring the health bar's one
     /// visibility rule (down for the length of a conversation, up otherwise)
@@ -1817,6 +2973,18 @@ private:
     /// convention (DECISIONS.md UI rule 1), driven from syncPanelAnim() and
     /// advanced in step() exactly like every sibling above.
     EasedToggle districtMapAnim_;
+    /// FAST TRAVEL's arrival seam (TRAVEL lane). The owner called the demo's
+    /// raw placeAt cuts "teleporting", so a travel does not snap: the commit
+    /// SNAPS this toggle fully open -- the first frame after the press is
+    /// already black, so the origin is never seen again -- and eases it back
+    /// down over half a second while the destination, its place plate and the
+    /// arrival line come up underneath. drawFrame() dips its finished
+    /// composition by value() as its last act on every path. NEW RENDER
+    /// VOCABULARY -- no full-screen fade existed anywhere in the build before
+    /// this -- flagged for the owner's eye. Render-only, hash-free, advanced
+    /// in step() like every sibling.
+    static constexpr int kTravelFadeSteps = 36;
+    EasedToggle travelFadeAnim_{8, kTravelFadeSteps};
     /// SPELLS BUILD. The bottom-centre quick bar strip's own ease -- per the
     /// pinned convention, its OWN toggle: the strip appearing (a wheel held,
     /// a slot picked) has nothing to do with any other row's trigger. The
@@ -1830,6 +2998,64 @@ private:
     static constexpr int kQuickBarShowSteps = 120;
     int quickBarShowSteps_ = 0;
     std::array<std::string, 10> quickBarNames_{};
+    /// UI-EA (LANE HUD): THE LAW OF EARNED TEXT's own state. One wake
+    /// countdown per reference row (the quickBarShowSteps_ shape, one each,
+    /// because a purse waking has nothing to do with a room waking), the two
+    /// toggles the rows that draw live numbers need (clock, purse -- no
+    /// cache, numbers do not go away mid-fade), and the last-seen values the
+    /// edges are detected against. hudEdgesSeeded_ is lastPlaceName_'s own
+    /// reasoning for the whole family: the first syncPanelAnim() call seeds
+    /// every last-value and arms nothing, so a session cannot boot with its
+    /// corner rows all announcing themselves. EVENT tier holds
+    /// kPlateHoldSteps (~2.5s) -- hud.hpp's shared constant, named once per
+    /// the spec's own rule. All render-side, none of it hashed.
+    static constexpr int kHudWakeSteps = kPlateHoldSteps;
+    EasedToggle clockAnim_;
+    EasedToggle purseAnim_;
+    int clockShowSteps_ = 0;
+    int purseShowSteps_ = 0;
+    int caseShowSteps_ = 0;
+    int roomShowSteps_ = 0;
+    int guildShowSteps_ = 0;
+    int objectiveShowSteps_ = 0;
+    bool hudEdgesSeeded_ = false;
+    int lastClockHour_ = 0;
+    int lastClockTod_ = 0;
+    std::int32_t lastCoinSeen_ = 0;
+    std::string lastCaseSeen_;
+    std::string lastRoomSeen_;
+    std::string lastGuildSeen_;
+    std::string lastObjectiveSeen_;
+    bool lastBookOpen_ = false;
+    /// UI-EA (LANE HUD): THE QUICK BAR'S TUTOR TOAST. Nine and the sticks
+    /// cut the QuickWheel hold, so what is taught is the STEP -- "WHEEL -
+    /// STEP", through promptLabel so a pad names its own D-pad halves and a
+    /// rebind re-words it, raised on the quick bar's first TWO risings ever and
+    /// riding the strip's own countdown, then retired for the session. Two
+    /// exposures because one can land while the player is looking at the
+    /// street, and a third is nagging. The band itself is hud.hpp's
+    /// TutorBand -- the countdown/toggle helper the cross-lane contract has
+    /// this lane land, used here first so the shape PAGES instantiates per
+    /// band and FLOW wakes is a shape that demonstrably works.
+    static constexpr int kWheelHintShows = 2;
+    int wheelHintShows_ = 0;
+    bool lastQuickBarUp_ = false;
+    std::string wheelHintText_;
+    TutorBand wheelHint_;
+    /// UI-EA contract (c), joined at integration: one tutor band per composed
+    /// page this Session itself feeds (the ward map, the casebook page, the
+    /// keys page -- creation drives its own, see CreationFlow::tutorValue()).
+    /// PAGES draws the raised verb words off each state's `tutor`; FLOW bumps
+    /// tutorWakeSerial_ on device change and unrecognized presses; step()
+    /// raises these on the page's own open edge and on any serial move, and
+    /// advances them once a step like every countdown in the family.
+    TutorBand mapTutor_;
+    TutorBand casebookTutor_;
+    TutorBand keysTutor_;
+    std::uint32_t tutorWakeSeen_ = 0;
+    bool mapTutorWasOpen_ = false;
+    bool casebookTutorWasOpen_ = false;
+    bool keysTutorWasOpen_ = false;
     /// DISTRICT PHASE D. The threshold plate's own ease -- its OWN toggle per
     /// the settled convention (DECISIONS.md UI rule 1): crossing a boundary
     /// has nothing to do with any other row's trigger, and sharing one would
@@ -1893,6 +3119,20 @@ private:
     std::string stashCache_;
     std::string spellCache_;
     std::string blockCache_;
+    /// ACTION-COMBAT BUILD. The charge row's cache, filled while the swing is
+    /// held hard and kept through the fade-out the identical way blockCache_ is
+    /// -- an alpha cannot fade a string that is already gone.
+    std::string chargeCache_;
+    /// STANCE & ROOM BUILD. The fighting-mode row's cache, kept through the
+    /// fade-out the identical way blockCache_ is.
+    std::string handsCache_;
+    /// KIT BUILD. The turn row's cache and its hold: kPlateHoldSteps from
+    /// the step a blow was softened, counted down in step(); the label is
+    /// composed on that edge (the piece, the number) and held through the
+    /// fade-out the identical way blockCache_ is.
+    std::string turnCache_;
+    std::string turnLine_;
+    std::int32_t turnSteps_ = 0;
     /// HELD-EFFECTS BUILD. One toggle and one cache PER ROW, the pinned
     /// convention: a warmth lapsing has nothing to do with a tuning arriving,
     /// so slot i eases on its own. Slots are table order (oldest hold first);
@@ -1929,6 +3169,22 @@ private:
     // the constructor's own note for why journalFocusAnim_ specifically
     // needs the real answer rather than an assumed one).
 
+    /// UI-EA-SPEC sec. 3 rule 4 -- CLOSE HONESTY: a page fades as what it
+    /// WAS. drawFrame() remembers, per frame, whether the surface it drew
+    /// the shared panel fade for was the tiled Menu, so the few frames of
+    /// close tail after casebookOpen_ goes false can keep drawing the tiles
+    /// easing out instead of the empty single panel the close used to hand
+    /// over to (the seam session.cpp:7455's own comment admitted).
+    /// `mutable` because drawFrame() is const and this is a memo about what
+    /// drawFrame itself just drew -- written and read nowhere else, so it
+    /// cannot desynchronize anything; a run's frame sequence is a pure
+    /// function of its steps and draws exactly as before. Never hashed.
+    mutable bool panelTailTiles_ = false;
+    /// JUSTICE BUILD: the same memo for the hearing page's close tail, so
+    /// the bench fades as the bench (UI-EA-SPEC sec. 3 rule 4) rather than
+    /// as the empty single panel the dialogue path would otherwise draw.
+    mutable bool panelTailCourt_ = false;
+
     // --- INNOVATION SPRINT ITEM #3: some impact, tastefully -----------------
     //
     // Two real moments this build had never given any physical weight to --
@@ -1957,6 +3213,78 @@ private:
     /// its two siblings.
     ImpactPulse blockPulse_;
     std::int32_t lastBlowsBlocked_ = 0;
+    /// KIT BUILD. The blowsTurned edge: a blow the worn kit softened says
+    /// so once on the row ("COAT TURNS 2."), the blocked-blow shape.
+    std::int32_t lastBlowsTurned_ = 0;
+    /// KIT BUILD. The corpse whose kit the Grimoire widget is showing, or
+    /// -1 (the widget is the Grimoire). UI state, never hashed: what he
+    /// carries is the Tavern's corpseRows(), a pure function of hashed state.
+    std::int32_t searchActorId_ = -1;
+    /// STREET PANIC BUILD (feel/build, 9a). What the room looked like last
+    /// step, so step() can tell the street what just happened to it: the sum
+    /// of every non-vermin hp on the tavern roster (a drop under lethal rules
+    /// is a landed blow) and how many of them are corpses (a rise is a
+    /// killing). The identical comparison-not-flag shape lastPlayerHp_ keeps
+    /// for the player's own body, and for the identical reason: nothing new
+    /// reaches into the simulation and nothing here is hashed. -1 until the
+    /// first step has read the room, so boot never reads as a blow.
+    std::int32_t lastRoomHpForAlarm_ = -1;
+    std::int32_t lastCorpsesForAlarm_ = -1;
+    /// BARKS LANE (feel/build). The last halt / join / panic line step() put
+    /// on the alert row, so a line the sim composed once is said once: the
+    /// same comparison-not-flag shape as the two latches above. Unhashed.
+    std::string lastDemandSpoken_;
+    std::string lastJoinSpoken_;
+    std::string lastFleeSpoken_;
+    /// VOICE LANE. THE ONE VOICE CHANNEL -- see street_voice.hpp. Stepped
+    /// once per movement step after the room and the ward have moved, from
+    /// public state only; drawn on the HUD's voice row through its own
+    /// EasedToggle (DECISIONS.md UI rule 1). Unhashed, read-only, draw-free:
+    /// the same run with the channel silenced hashes byte-identical, and
+    /// test_street_voice.cpp pins it.
+    StreetVoice voice_;
+    EasedToggle voiceAnim_;
+    /// VOICE LANE, THE ADDRESS. The worded reaction to the last reply that
+    /// moved the speaker's disposition, on the panel's dateline row for
+    /// kReactionHoldSteps, and the countdown that keeps it there. Pure UI
+    /// state, never hashed: the disposition it describes already is.
+    std::string reactionLine_;
+    std::int32_t reactionSteps_ = 0;
+    /// VOICE LANE, THE ADDRESS. The tile the open conversation was started
+    /// from, so the walk-off close can tell the player leaving (the word
+    /// thrown after you) from the body leaving (its ordinary goodbye, said
+    /// as it goes). Pure UI state, never hashed.
+    std::int32_t talkOpenTileX_ = 0;
+    std::int32_t talkOpenTileY_ = 0;
+    static constexpr std::int32_t kReactionHoldSteps = 4 * sim::kStepsPerSecond;
+    /// VOICE LANE, THE ADDRESS. Tiles past which a conversation on foot is
+    /// over -- five: more than twice the talk reach, so a body that shifts a
+    /// tile or a player who steps back to look at somebody (the scripted
+    /// lines stand three tiles off for their frames) does not end it, and a
+    /// player who walks off does. The goodbye is farewell.away, the word
+    /// thrown after you.
+    static constexpr std::int32_t kTalkWalkOffTiles = 5;
+    /// ACTION-COMBAT BUILD (section 5, channel 5). THE CAMERA IMPULSE, composed
+    /// as a render-only BAM offset inside Session::camera() -- never written to
+    /// sim yaw. Three events, three pulses: a HARD swing's own forward dip on
+    /// release (this one, triggered in attackUp), the taken-jolt (punchTakenPulse_
+    /// above) and the block-nudge (blockPulse_ above) reused, since those already
+    /// fire on exactly their events. Decays over kPageEaseSteps like its siblings;
+    /// its peak angle is capped in camera() well under the spec's <=2deg. Not
+    /// hashed -- a camera impulse is a courtesy to the eye, like the washes.
+    ImpactPulse hardSwingDipPulse_;
+    /// 3D BUILD, V LANE. THE HANDS. The machine is stepped in step() beside
+    /// the pulses above, fed the room's charge/guard getters plus the two
+    /// edges below, which attackUp() and castEquipped() latch for the very
+    /// next step (the edges arrive between steps, from input; the machine
+    /// only moves on a step). Not hashed, same reason as its siblings: what
+    /// the hands look like is a courtesy to the eye. See viewmodel().
+    ViewmodelMachine viewmodel_;
+    /// 0 = no swing released since the last step, 1 = light, 2 = hard.
+    std::uint8_t viewmodelSwingPending_ = 0;
+    /// A cast was ATTEMPTED since the last step (a fizzle counts, a refusal
+    /// does not -- the hand only moves when the room let it try).
+    bool viewmodelCastPending_ = false;
     /// Whether the Block key is physically down, straight off the client's
     /// edge events. Render-side bookkeeping, NOT the fact the sim hashes --
     /// step() derives that (held AND not talking/picking) and pushes it into
@@ -1981,6 +3309,32 @@ private:
     /// having just been struck on its very first frame.
     std::int32_t lastPlayerHp_ = 0;
 
+    /// UI-EA-SPEC sec. 3 rule 5, cross-lane contract (b): THE COMMIT BEAT.
+    /// One restrained ImpactPulse for every page commit -- FACE IT, TRAVEL,
+    /// GO TO IT, REBIND, a wait row, a grimoire row, the quit-confirm --
+    /// triggered by the client at commit ROUTING (route_menu_key and
+    /// session_pointer's click commits, main.cpp), decayed here beside its
+    /// pulse siblings, and read back by the page drawers on the inverted
+    /// fill (PAGES' half of the contract). CreationFlow::commitPulse_ is
+    /// the same idea on the first window; this is the world's copy. One
+    /// instance for all pages, deliberately: at most one page owns the
+    /// input, so at most one commit can land per press, and per-page
+    /// instances would be state for a collision that cannot happen.
+    /// Render-side, never hashed.
+    ImpactPulse commitPulse_;
+
+    /// UI-EA-SPEC sec. 4 violation #4: WHO OPENED THE PAGE. True while the
+    /// Keys, Options or Wait page on screen was entered from the pause menu
+    /// (its CONTROLS/SETTINGS/WAIT rows) rather than by a direct shortcut,
+    /// re-derived at every open -- toggleKeys()/toggleOptions()/openWait()
+    /// set it from "was the pause menu up when I opened", and the keys<->
+    /// options sibling-tab swap carries it across (either of the pair still
+    /// owes its close to the same opener). closeConversation() reads it:
+    /// back returns to the OPENER -- the pause menu, cursor on the row that
+    /// opened the page, or the street for F1/F2 -- instead of always
+    /// skipping to the street. Render-side flow state, never hashed.
+    bool pageOpenedFromPause_ = false;
+
     /// A bouncer's warning finally lands with a little weight: the alert
     /// row's own legibility plate (drawTextPlate, this same sprint) briefly
     /// overshoots its settled size and eases back down the instant a NEW
@@ -1993,6 +3347,77 @@ private:
     /// showing" (re-read every step, must NOT retrigger the pulse every
     /// step) and "warned went from true back to false" (no pulse either way).
     bool lastWarned_ = false;
+    /// ACTION-COMBAT BUILD (section 4.1). Whether the fight had crossed the
+    /// brawl line as of the last step, so step() can catch the RISING EDGE of
+    /// tavern_->escalated() -- the one instant steel comes out -- and speak the
+    /// flip once ("STEEL OUT. THE ROOM STANDS BACK." + the SwordDraw) rather
+    /// than every step the latch stays up. The same remember-the-edge shape
+    /// lastWarned_ uses; clearEscalation() drops the latch and this follows it
+    /// down, ready to fire again on the next fight that draws.
+    bool lastEscalated_ = false;
+    /// ACTION-COMBAT BUILD (section 4.5). THE DEATH CEREMONY's own countdown,
+    /// in movement steps, and the two epitaph lines it holds. Nonzero only
+    /// between an escalated (lethal) defeat and the reveal kDeathHoldSteps +
+    /// the two eases later; armDeathCeremony() sets it, step() spends it, and
+    /// composeDeathCeremony() reads it to draw the dip and the plate. Render-
+    /// only, never hashed -- the sim revived at the defeat; this is the veil
+    /// laid over the top. NOT travelFadeAnim_ (an ease that cannot hold).
+    std::int32_t deathCeremonySteps_ = 0;
+    std::string deathEpitaphTop_;
+    std::string deathEpitaphBottom_;
+
+    // --- JUSTICE BUILD (HEARING PAGE LANE) --------------------------------
+    /// The page is up. NOT in dismissOverlays(): the ten world verbs cannot
+    /// put a hearing down. Render-side state over the ledger's hashed
+    /// HearingState; a hearing pending with no page up opens one on the next
+    /// step, so a run reopened between the arrest and the plea reopens at
+    /// the bench.
+    bool courtOpen_ = false;
+    int courtCursor_ = 0;
+    bool courtPaperOpen_ = false;
+    /// The armed plea row, or -1. The QUIT pattern: one press arms, the next
+    /// confirms; moving the cursor or ESC disarms.
+    int courtArmed_ = -1;
+    /// Steps before the sentence row is offered after the judgment lands
+    /// (sim::kJudgmentHoldSteps): the badge is held first, so a leaned-on
+    /// ENTER cannot plead and serve in one breath.
+    std::int32_t courtJudgmentHold_ = 0;
+    /// The page served the sentence and waits for the release step() reads
+    /// to close it -- at the Mission's door or on the Tarwalk.
+    bool courtServing_ = false;
+    TutorBand courtTutor_;
+    bool courtTutorWasOpen_ = false;
+    /// THE ROPE. The dip and the held plate, counted down once a step like
+    /// the death ceremony's; then the rows. Never fades back: the veil holds.
+    std::int32_t ropeCeremonySteps_ = 0;
+    bool ropeRowsUp_ = false;
+    int ropeCursor_ = 0;
+    int ropeArmed_ = -1;
+    std::string ropePlateTop_;
+    std::string ropePlateMid_;
+    std::string ropePlateFoot_;
+    bool runEnded_ = false;
+    RunEndChoice runEndReason_ = RunEndChoice::None;
+    /// THE ARREST BEAT, counted down once a step like the ceremonies: the
+    /// officer's line in the room while it is above kTakenPlateSteps, the
+    /// plate while it is at or below, the page when it reaches zero. Zero
+    /// while nobody's hand is on you. Render-only, never hashed: the sim's
+    /// hearing is already open on the ledger.
+    std::int32_t takenHold_ = 0;
+    std::string takenPlate_;
+    /// TAKEN: the arrest's release read with a hearing pending. Puts the
+    /// body on the Mission's arrival tile, dips, says the line, opens the
+    /// page over everything.
+    void openCourt();
+    /// The page down, the body where the sentence left it, the line said.
+    void closeCourt();
+    void armRopeCeremony();
+    /// The Mission's own arrival tile: the sign's aim point snapped to
+    /// standable ground, the travel verb's own landing rule.
+    [[nodiscard]] bool missionArrivalTile(std::int32_t& outX, std::int32_t& outY,
+                                          std::int32_t& outBand) const;
+    /// A world verb or a page toggle asked from the bench: refused, quietly.
+    [[nodiscard]] bool refusedInCustody() const noexcept { return inCustody(); }
 
     // --- the audio wiring pass ----------------------------------------------
     //
@@ -2010,18 +3435,88 @@ private:
     /// settled, a pocket picked, rent paid -- is one CoinHandle, caught by
     /// comparison exactly the way lastPlayerHp_ catches a blow.
     std::int32_t lastCoinForAudio_ = 0;
+    /// THE LOT PASS. The STANCE as of the last step, so step() can catch BOTH
+    /// edges of tavern_->playerHandsUp(): rising = hands up (SwordDraw, the
+    /// Malbers draw), falling = hands down (Sheathe, the Malbers store) --
+    /// however they came down: the lull, LOWER HANDS, the cancel list. The
+    /// same remember-the-edge shape lastEscalated_ uses.
+    bool lastHandsUp_ = false;
+    /// THE LOT PASS. How many of the three casebooks (the Hold, the sheet,
+    /// the eviction) read closed() as of the last step, so a case closing --
+    /// whichever book, whatever lead closed it -- is one CaseClosed sting,
+    /// caught by comparison exactly the way the purse is.
+    std::int32_t lastClosedBooks_ = 0;
+
+    /// The count behind lastClosedBooks_.
+    [[nodiscard]] std::int32_t closedBookCount() const noexcept;
 };
+
+// ---------------------------------------------------------------------------
+// FAST TRAVEL (TRAVEL lane): the cost of a walk, in the sim's own integers
+// ---------------------------------------------------------------------------
+//
+// THE COST BASIS IS THE ROUTE, NEVER THE CROW. The Overview pane's "54 PACES"
+// is a render-layer float straight line and map_view.hpp bars the simulation
+// from reading anything in that file -- and the travel cost lands in
+// timeOfDay_, which the twin gate compares byte for byte. So the cost is
+// derived from the route the district's own PathFinder answers (salt 0, no
+// jitter; Gait::Walk, the pace being charged), counted in the router's own
+// octile currency (10 per straight step, 14 per diagonal), and converted at
+// the shipped walking pace through human_scale.hpp's constants. Pure integer
+// functions of their arguments, so a case pins the numbers rather than
+// adjectives.
+
+/// The octile units of a walked route: 10 per orthogonal step, 14 per
+/// diagonal -- path_finder.hpp's own kStepCost pair, recomputed from the
+/// returned route so the charge is exactly the distance the router chose.
+/// Walk-gait band changes (a stair) ride their step at no surcharge, which is
+/// what the router itself charges them under Gait::Walk.
+[[nodiscard]] std::int32_t travelRouteUnits(const sim::PathStep& from,
+                                            const std::vector<sim::PathStep>& route) noexcept;
+
+/// Seconds a walk of `units` costs at the shipped walking pace (human_scale's
+/// kWalkSpeed, 1.48 m/s), rounded UP -- travel is never free. One octile unit
+/// is 25.6 Q8 tile-widths; the body walks kWalkSpeed Q8 per movement step at
+/// kStepsPerSecond steps a second.
+[[nodiscard]] std::int32_t travelWalkSeconds(std::int32_t units) noexcept;
+
+/// The whole minutes the clock actually advances -- seconds rounded UP, never
+/// below one, so the verb's restated cost and the delivered skip are the same
+/// number: the Wait page's own honesty rule ("a list that said 1 HOUR while
+/// delivering forty minutes would be lying").
+[[nodiscard]] std::int32_t travelClockMinutes(std::int32_t seconds) noexcept;
+
+/// The verb's cost restatement: "4 MIN", or "ABOUT AN HOUR" from sixty up.
+[[nodiscard]] std::string travelCostLabel(std::int32_t minutes);
 
 /// What a scripted capture run was asked to do.
 struct SmokeRunConfig {
     SessionConfig session;
+    /// NINE AND THE STICKS: an EXPLICIT settings file for the headless path
+    /// (`--controls=`), applied through the same loadControls/setControls
+    /// pair the window makes at boot, so a capture can be taken under a
+    /// rebound table. Empty leaves the shipped defaults -- the default file
+    /// beside the exe is never read here, which keeps every shipped frame
+    /// byte-stable against a player's own bindings.
+    std::filesystem::path controlsFile;
     /// Movement steps to run before the frame is taken. 0 captures the spawn.
     int steps = 0;
     /// Where the PNG goes. Empty writes nothing.
     std::filesystem::path screenshot;
     /// Integer upscale applied to the captured PNG. 1 writes the raw buffer.
     int captureScale = 2;
-    /// A one-line stamp burnt into the corner of the capture.
+    /// 3D BUILD. THE CLIENT'S OWN SHUTTER. When set, runSmoke hands the
+    /// finished session and the software frame it just drew to this instead
+    /// of writing the PNG itself: the client composites the frame through
+    /// the raylib backend and writes what the window would have shown. It
+    /// returns whether the PNG was written. Null keeps the software capture,
+    /// which is what every test and the docker host check use.
+    std::function<bool(const Session&, const Framebuffer&)> shutter;
+    /// UI-EA (LANE HUD): RETIRED, ACCEPTED AS A NO-OP. This used to burn
+    /// "GRANADAD <version>" into the corner of every capture; the word diet
+    /// deleted the stamp outright (it rides the pause/keys title rule only),
+    /// and the census transcribes captures, so it had to leave this path too.
+    /// The field stays so every existing caller and capture script parses.
     bool stamp = true;
     /// Walk the scripted route forward. Off holds position, which is what a
     /// capture of a room wants.
@@ -2192,16 +3687,36 @@ struct SmokeRunConfig {
     /// all. N presses of the same public nextTopicPage() the 0/MORE key
     /// makes, after the menu-opening flags above have put a tile up.
     int tilePage = 0;
-    /// VERIFICATION ONLY (INNOVATION SPRINT). Closes any open conversation
-    /// and throws the player's own punch at whoever is nearest, retrying up
-    /// to eight times (one movement step apart) until one actually LANDS --
+    /// VERIFICATION ONLY (INNOVATION SPRINT). Closes any open conversation,
+    /// WALKS UP TO whoever is nearest, puts them on the crosshair and throws
+    /// the player's own punch, retrying up to sixteen times (a full recovery
+    /// lockout apart, re-facing them each time) until one actually LANDS --
     /// a miss leaves nothing to photograph, and the swing itself is a coin
     /// flip this flag has no business hardcoding around. Exists for the
     /// identical reason `character`/`map` do: item #3's brawl-impact flash
     /// (and, as a natural side effect of throwing a punch inside a taproom
     /// with bouncers watching, the alert plate's own pulse once the house
     /// notices) had no headless capture path at all before this.
+    ///
+    /// ACTION-COMBAT BUILD: the walk-up is not decoration. A swing hits the
+    /// first body on the LOOK-RAY (Tavern::sightlineTarget), not the nearest
+    /// body in reach, so a punch thrown from wherever the smoke walk left the
+    /// body is a punch at air -- which is how this flag came to land 0/1 at
+    /// the Tarwalk spawn. It now drives the same walk-up / face / tap /
+    /// recovery beat the nemesis and tenant lines throw.
     bool punch = false;
+    /// 3D SLICE ONE (ship lane). VERIFICATION ONLY, the identical reason
+    /// `punch` exists: the hard swing's WIND-UP -- the viewmodel's Charging
+    /// and ChargedHard states -- had no headless capture path, because every
+    /// scripted swing is a tap. Walks up to the nearest person and puts them
+    /// on the crosshair exactly as --punch does, then presses the Attack key
+    /// DOWN through Session::attackDown() -- the same call a held left mouse
+    /// button makes -- and holds it for this many steps WITHOUT releasing,
+    /// so the shutter photographs the charge: under sim::kHardSwingHoldSteps
+    /// the wind-up mid-scrub, at or past it the hard tier held with its
+    /// tremor. --settle-steps=0 keeps the count exact; the default settle
+    /// steps on with the key still down.
+    int chargeSteps = 0;
     /// FATIGUE BUILD. VERIFICATION ONLY, the identical reason every flag
     /// above states: the fatigue bar's mid and empty states, the winded
     /// sprint gate and its one refusal line had no headless capture path.
@@ -2216,12 +3731,20 @@ struct SmokeRunConfig {
     /// FIRST-PERSON COMBAT (S13). VERIFICATION ONLY, the identical reason
     /// `punch` exists: the held-guard indicator and its blocked-blow wash had
     /// no headless capture path. Starts a brawl exactly the way --punch does
-    /// (the same Session::punch() a keypress calls), raises the guard through
-    /// the same Session::setBlocking() the right mouse button calls, and
-    /// holds it until at least one blow has actually been SOFTENED (the
+    /// (walked up to, faced and tapped through the same Session::punch() a
+    /// keypress calls, until the tap connects and there is a man in the fight
+    /// to throw the blows the guard is meant to catch), raises the guard
+    /// through the same Session::setBlocking() the right mouse button calls,
+    /// and holds it until at least one blow has actually been SOFTENED (the
     /// room's own blowsBlocked() moving) or a bounded wait runs out -- a
     /// brawl whose every swing whiffed leaves nothing on screen to prove.
     bool block = false;
+    /// THE PULL PACK: how many blows the held guard waits to have softened
+    /// before the shutter -- `--block=5`. One is the old drive; five is what
+    /// shieldwall's first level costs (NEGLECTED: 4 x 320 / 256), so the
+    /// skill-up toast is photographed IN the fight it was earned in, through
+    /// the same guard the right mouse button holds.
+    int blockBlows = 1;
     /// FIRST-PERSON COMBAT (S13). VERIFICATION ONLY. One press of Cast --
     /// Session::castEquipped(), the same call C makes -- after whatever the
     /// other flags scripted. Paired with --flame (whose line ends with the
@@ -2286,6 +3809,78 @@ struct SmokeRunConfig {
     /// "away" (closed, so the HUD's own RIVAL line is visible).
     bool nemesis = false;
     std::string nemesisEnd = "away";
+    /// BARKS LANE (feel/build). Play the Watch on seen violence: walk into
+    /// the Gull at Watchman Cull's hour, draw steel, swing at a patron he
+    /// can SEE, and stand there -- he closes with the halt (watch.halt) on
+    /// the alert row and takes you at reach, cause VIOLENCE, and the impound
+    /// turns you loose on the Tarwalk. WHERE is "halt" (stop the step he
+    /// starts Closing, so the frame holds the halt) or "street" (the whole
+    /// arc, the arrest line on the row).
+    bool watchHalt = false;
+    std::string watchHaltEnd = "street";
+    /// VOICE LANE. Photograph the one voice channel through the real verbs
+    /// -- see runVoiceLine. WHERE is what the row is asked to hold: "pass"
+    /// (walk the Tarwalk until a body passes within reach and says its one
+    /// line), "overheard" (stand in the crowd until two bodies standing
+    /// together are overheard), "farewell" (the street line, then LEAVE by
+    /// its own topic: the goodbye on the row as the panel closes), "moved"
+    /// (the street line, then a topic that moves them: the worded reaction
+    /// on the panel's dateline row), "react" (into the Gull, a tap on the
+    /// nearest patron, a witness's line), "watch" (the Watch line to the
+    /// halt, then the approach readback as Cull crosses the room), "hold"
+    /// (the talk key on a drinking patron in the Gull and ten seconds of
+    /// the room running: he holds where the talk found him, facing you).
+    bool voice = false;
+    std::string voiceEnd = "pass";
+    /// STREET SENSES (9a completion). PROOF. Stand in a crowd on the Tarwalk
+    /// and raise STEEL -- an Edged weapon in the hand, the hands up, no blow --
+    /// the stance the ward reads as violence (Tavern::violenceInView), so the
+    /// crowd within the blade's radius and line of sight gives him room: serfs
+    /// flee, shopkeepers and priests cower. The drive finds the densest
+    /// Tarwalk spot the hour offers (deterministic, ascending id) and stands
+    /// the player one tile off it, facing in; the SETTLE window then does the
+    /// scattering, so `--street-assault --shot=F.png --settle-steps=N` shoots
+    /// the crowd N sim-steps into the panic (N=0 the blade just up, N=180
+    /// three flee ticks, N=360 scattered). Nothing here reaches into the sim
+    /// sideways -- setPlayerCombat and setBlocking are the same calls the
+    /// weapon grant and the right mouse button make; the alarm fires through
+    /// Session::step's own one call site. WHERE is reserved (unused today).
+    bool streetAssault = false;
+    std::string streetAssaultWhere;
+    /// JUSTICE BUILD (HEARING PAGE LANE). Play the court: walk into the Gull
+    /// at Cull's hour, lift in his sight until the row reads WANTED, stand
+    /// still with steel up until he takes you at reach -- his own line on
+    /// the row with his hand on you, the plate (TAKEN TO THE MISSION over
+    /// black), and then the page. WHERE is "page" (the rows, the default),
+    /// "cull" (the arrest's first beat, his line in the room), "taken" (the
+    /// plate), "paper" (HEAR THE PAPER open), "armed" (I DID IT pressed
+    /// once: SURE on its tail, the priest pressing), "plea" (I DID IT
+    /// pleaded, the check block and the sentence row), "deny" (I DID NOT,
+    /// the priest's doubt in the block), "hand" (the Skyrunners' oath off
+    /// Finch first, so the paper asks for the hand and I DID IT lands THE
+    /// HAND), "serve" (I DID IT and the sentence row taken: the coin, the
+    /// clock, TURNED LOOSE with the day on the row), "bloodtag" (a killing
+    /// at eight, WANTED FOR BLOOD on the row), "ropepage" (the killing, the
+    /// wait to ten, taken to a rope hearing, THE ROPE passed and THE DROP
+    /// offered), "rope" (the drop taken: the plate with A NEW MAN / LEAVE
+    /// under it), "newman" (the rope, then A NEW MAN armed by its row and
+    /// taken -- the answer main() loops on) or "wanted" (the tag alone, the
+    /// first beat, nobody's hand on you). With `flame` set first the court
+    /// waits for Cull through the wait page and THE DOOR is weighed.
+    bool court = false;
+    std::string courtEnd = "page";
+    /// KIT BUILD. Play the Kit: the coil on the Tarwalk named and taken,
+    /// the house's lantern named THEIRS and lifted with the knife and the
+    /// coat at four in the morning, the Character tile on the carried rows,
+    /// the coat worn and the knife in hand by the tile's press, the knife on
+    /// slot 3 and the strip, the coat turning Ox's blow (COAT TURNS n), Ox
+    /// put down and SEARCHed, everything off him and the legs at half with
+    /// the tile on the LOAD line, the coil put down on the Tarwalk through
+    /// the tile and looked at. WHERE is take, theirs, sheet, equip, slot,
+    /// dr, search, load, drop, or empty for the whole line (the tile on
+    /// what is left).
+    bool kit = false;
+    std::string kitEnd;
     /// S9. Play a burglary: crouch, cross a dark taproom unseen, lift a purse
     /// off somebody who does not feel it, up the stair, wire into a guest's
     /// strongbox, work the pins, and empty it. WHERE is "box" (standing over
@@ -2316,10 +3911,28 @@ struct SmokeRunConfig {
     /// the shutter goes: "sheet" (stop with the mission sheet open on the
     /// Letters tile), "gull" (stop after the door lead, book open), "night"
     /// (stop crouched on the guest floor over the box lead), "down" (stop
-    /// the step Finch goes down, before the take), or empty for the whole
-    /// errand delivered.
+    /// the step Finch goes down, before the take), "taken" (TRAVEL lane:
+    /// stop with the man genuinely in hand, after TAKE HIM UP -- the one
+    /// state the errand never otherwise parks in, so the travel probe can
+    /// press its verb against the carry refusal for real), or empty for the
+    /// whole errand delivered.
     bool caseRun = false;
     std::string caseEnd;
+    /// EVICTION CASE (lane: eviction). PLAY THE OWNER'S THIRD CASE, both
+    /// paths, through the same Session verbs a keypress makes: the hire off
+    /// Father Maell's evening table (the open-hand measure read live), the
+    /// writ on the Letters tile, the walk east to the Netters' gate, the
+    /// knock at the Marrow door once they are home, and then EITHER the
+    /// serve and the walk back for The Evictor, OR the walk-back unserved.
+    /// `evictionEnd` is where the shutter goes: "writ" (stop with the writ
+    /// open on the Letters tile), "gate" (stop after the gate lead, book
+    /// open), "knock" (stop at the answered door, the choice live), "served"
+    /// (stop the moment the paper changes hands, before the walk home), or
+    /// "refused" (the DISRUPT path: knock, then carry the writ back whole --
+    /// the case closes with no weapon granted). Empty serves and returns:
+    /// the whole participate path, The Evictor in hand.
+    bool evictionRun = false;
+    std::string evictionEnd;
     /// Run the Priest of the Flame line end to end and capture wherever it
     /// finishes: the oath, the night pot, the captain's word, the report, the
     /// teaching, and a crafting composed at the bench. Driven through the same
@@ -2393,6 +4006,18 @@ struct SmokeRunConfig {
     std::string caseLead;
     std::string caseTab;
     bool caseRoute = false;
+    /// THE PULL PACK. `--follow=ID` presses FOLLOW on a lead by its
+    /// casebook.json id, through the page's own verbs -- the book opened by
+    /// the Menu key's call, the cursor put on the lead, the FOLLOW verb
+    /// pressed -- and leaves the book up, so the frame is FOLLOWING on the
+    /// row and the badge. `--follow-end=street` puts the book down again,
+    /// so the frame is the ribbon carrying the lead; `--follow-walk=N` then
+    /// walks N steps forward first, so two frames show the paces running
+    /// down. Runs AFTER the trail flags (so `--trail=mission` can have opened
+    /// the lead) and BEFORE the menu flags.
+    std::string follow;
+    std::string followEnd;
+    int followWalk = 0;
 
     /// THE WARD MAP (core action #13), VERIFICATION ONLY: open the district
     /// map through the same Session::toggleDistrictMap() the M key calls,
@@ -2418,6 +4043,19 @@ struct SmokeRunConfig {
     std::string mapPlace;
     std::string mapTab;
     int mapZoom = 0;
+
+    /// FAST TRAVEL (TRAVEL lane), the scripted probe: put the ward map's
+    /// cursor on this authored place name and press the TRAVEL verb, through
+    /// the same public methods the T key spends -- toggleDistrictMap,
+    /// selectDistrictMapPlace, travelDistrictMapSelection. Runs AFTER every
+    /// scripted line and the map flags, so `--case=taken --travel=...` probes
+    /// the carry refusal with the man genuinely in hand, and BEFORE `--face`,
+    /// which would close the page this needs open. The summary's own
+    /// `| travel` segment prints the plan, the clock either side of the
+    /// press, the landing and the plate -- run twice, the segment must match
+    /// to the byte, which is the twin-run check for a session-scripted
+    /// feature (test_case_line's own discipline).
+    std::string travelTo;
 
     /// THE CROSSHAIR PASS, VERIFICATION ONLY: TURN THE BODY TOWARD AN AUTHORED
     /// PLACE and leave it standing there, with no page open.
@@ -2446,8 +4084,31 @@ struct SmokeRunConfig {
     /// Where the line stops for the shutter. "offer" opens the conversation
     /// and leaves the giver's own TAKE row on the visible list (one beat);
     /// "taken" -- the default -- presses it and proves the board moved and
-    /// the journal shows the errand (three beats).
+    /// the journal shows the errand (three beats). ERRANDS A HUMAN CAN
+    /// FINISH: "shelf" then opens the casebook on its CASES shelf with the
+    /// cursor on the errand's own row (four beats); "settled" takes a DELIVER
+    /// errand, finds the shelf row, walks to the target on the district's
+    /// own router, opens the conversation, passes the word and checks the
+    /// board and the purse (seven beats). "ask" stops on a stranger's answer
+    /// to TELL ME ABOUT, A QUEST, WHO NEEDS A HAND? (two beats).
     std::string radiantEnd = "taken";
+
+    /// SHOPS (2026-10-09), VERIFICATION ONLY: find Brann at his chandlery
+    /// counter (walking the clock an hour at a time until his day has him
+    /// there), SEE THE WARES, buy a lantern; then Fenner at his pawn, PAWN
+    /// SOMETHING, sell it back. The purse is topped up first if a fresh one
+    /// cannot cover a lantern, and the summary says by how much.
+    bool shop = false;
+    /// "wares" stops on Brann's shelf (two beats), "bought" after the
+    /// purchase with the talk closed so --character can photograph the Kit
+    /// (three), "pawn" on Fenner's list (five), "sold" -- the default -- the
+    /// whole round trip (six).
+    std::string shopEnd = "sold";
+
+    /// THE TONE DIAL (2026-10-09), VERIFICATION ONLY: once a conversation is
+    /// open (--street, --talk), press its TONE row until the register reads
+    /// this ("polite", "normal", "blunt"), the way a player would. One beat.
+    std::string tone;
 
     /// DISTRICT PHASE D, VERIFICATION ONLY: WALK ACROSS A NAMED BOUNDARY, so
     /// the threshold plate is actually on the frame when the shutter goes.
@@ -2487,6 +4148,45 @@ struct SmokeRunConfig {
     /// frame itself, standing over the mouth, with the plate up. Only read
     /// when `threshold` is set.
     std::string thresholdEnd = "in";
+
+    /// THE RUNG PLATE, VERIFICATION ONLY: `--rung=TRACK` plays the real verbs
+    /// until a Legend rung rises on that track and STOPS ON THE PLATE, fully
+    /// up. The same hole every plate flag in this struct states: the plate is
+    /// on screen for five seconds after a rung and for no other reason, and
+    /// without a drive it could be unit-tested for its words and never
+    /// looked at. TRACK is wire, roofs, flame, trade or law -- the bark keys'
+    /// own words -- and each takes the shortest path the smoke's own lines
+    /// already walk (see runRungLine): a guest's strongbox cracked at two in
+    /// the morning, the roof and the alley leapt, the Mission's two leads
+    /// read, the ward's bounty paid, the Watch stood four drinks.
+    std::string rung;
+};
+
+/// THE RUNG PLATE. What a `--rung` run actually did, so a case can assert
+/// the arc -- a real rise on the named track, and the plate up with that
+/// rung's own authored words on it -- rather than reading pixels.
+struct RungLineResult {
+    /// The track word was one of the five.
+    bool found = false;
+    sim::LegendTrack track = sim::LegendTrack::Wire;
+    /// The rung before the line and at the shutter.
+    std::int32_t from = 0;
+    std::int32_t to = 0;
+    /// `to` is above `from`: the verbs genuinely moved the counters.
+    bool rose = false;
+    /// The plate is WANTED and fully risen when the line returns.
+    bool plateUp = false;
+    /// What the plate reads: the head and the authored row.
+    std::string head;
+    std::string row;
+    /// What the INTERACT prompt named at the shutter ("WATCHMAN CULL
+    /// WATCHMAN"): Session::aimSubjectNow, the target in reach from where
+    /// the body stands, never the reticle's ray -- the cause of the rung in
+    /// the picture, or not.
+    std::string aim;
+    /// Why no rung rose, when none did and the drive knows: the trade and
+    /// the law need Cull at his table, and a daytime --time= finds him out.
+    std::string reason;
 };
 
 /// DISTRICT PHASE D. What a `--threshold` run actually did, so a case can
@@ -2516,6 +4216,30 @@ struct ThresholdLineResult {
     std::string plate;
 };
 
+/// FAST TRAVEL (TRAVEL lane). What a `--travel` run planned and did, so a
+/// case asserts the whole claim -- the honest cost, the exact clock advance,
+/// the landing, the plate -- rather than reading pixels. A refusal is a real
+/// answer, not a failure: `moved` false with `refusal` filled and the clock
+/// unmoved is the feature working.
+struct TravelLineResult {
+    /// The name matched an authored place.
+    bool found = false;
+    /// What the plan said at the moment of the press.
+    Session::TravelPlan plan;
+    /// The clock either side of the press, seconds since midnight.
+    std::int32_t clockFrom = 0;
+    std::int32_t clockTo = 0;
+    /// Where the body ended, and whether that is the plan's own landing with
+    /// the page down -- i.e. a travel actually taken.
+    std::int32_t endX = 0;
+    std::int32_t endY = 0;
+    std::int32_t endBand = 0;
+    bool moved = false;
+    /// The threshold plate at the shutter: wanted, and saying what.
+    bool plateUp = false;
+    std::string plate;
+};
+
 /// RADIANT BUILD. What a `--radiant` run actually did, so a case can assert
 /// the arc -- the board had work, the giver answered, the take landed, the
 /// journal carries it -- rather than reading pixels.
@@ -2534,6 +4258,59 @@ struct RadiantLineResult {
     bool taken = false;
     /// journalWorkRows() carries the errand's row.
     bool journal = false;
+
+    // --- ERRANDS A HUMAN CAN FINISH (2026-10-09) -----------------------------
+    /// "shelf" and "settled": the casebook page's CASES shelf, opened the
+    /// way J opens it, carries the errand as its own row with who, where and
+    /// what it pays -- the notes a player reads after the alert has faded.
+    bool shelf = false;
+    /// "settled": the errand's settling body, re-found where they stand NOW.
+    bool reached = false;
+    /// The body got there on its own feet -- the district's own router on
+    /// the band it was on. False when the target stood on another band and
+    /// the line had to place the body instead; printed, never hidden.
+    bool walked = false;
+    /// The conversation opened on the target and the PASS THE WORD row was
+    /// on the list.
+    bool passed = false;
+    /// The board row reads Paid and the purse moved by exactly its pay.
+    bool settled = false;
+    std::string target;
+    std::int32_t pay = 0;
+    /// "ask": a stranger who gives nothing today was asked WHO NEEDS A
+    /// HAND? through the tree's own doors, and named a live giver.
+    bool asked = false;
+    std::string answer;
+};
+
+/// SHOPS (2026-10-09). What a `--shop` run actually did: a lantern bought
+/// across Brann's counter and sold back across Fenner's, through the verbs a
+/// player presses, with both purses and the Kit read before and after.
+struct ShopLineResult {
+    /// Brann found at his own counter, answerable, and the talk opened on him.
+    bool chandler = false;
+    /// SEE THE WARES put the shelf up, with the lantern on it.
+    bool wares = false;
+    /// Bought: the Kit carries one more lantern, the purse fell by exactly the
+    /// price, and Brann's purse rose by it.
+    bool bought = false;
+    std::int32_t price = 0;
+    /// Fenner found at his counter and the talk opened on him.
+    bool pawnbroker = false;
+    /// PAWN SOMETHING listed the lantern.
+    bool pawnList = false;
+    /// Sold: one lantern fewer, the purse up by exactly the offer, Fenner's
+    /// down by it.
+    bool sold = false;
+    std::int32_t offer = 0;
+    /// The purse the line started with, and what capture plumbing put in it
+    /// first (said out loud: a fresh character's purse is the biography's).
+    std::int32_t coinStart = 0;
+    std::int32_t granted = 0;
+    std::int32_t coinEnd = 0;
+    /// What the counters said, last.
+    std::string boughtLine;
+    std::string soldLine;
 };
 
 /// TIME-AND-TENURE BUILD. What a `--petition` run actually did, so a case can
@@ -2618,6 +4395,34 @@ struct SmokeRunResult {
     std::int32_t flameStages = 0;
     /// The same for the Skyrunner line.
     std::int32_t skyrunStages = 0;
+    /// BARKS LANE: beats of the Watch-on-violence line (--watch-halt).
+    std::int32_t watchHaltBeats = 0;
+    /// VOICE LANE. What the voice line landed, and what the row held at the
+    /// shutter: the channel, the key, the speaker and the row verbatim, so a
+    /// frame cannot pass as a picture of a line that was not on it.
+    std::int32_t voiceBeats = 0;
+    std::string voiceChannel;
+    std::string voiceKey;
+    std::string voiceSpeaker;
+    std::string voiceRow;
+    /// Who the alert row was quoting at the shutter, or empty: the proof
+    /// that a watchman's readback and his halt were never stacked.
+    std::string voiceAlertSpeaker;
+    /// Whether the speaker the row names was IN THE FRAME at the shutter --
+    /// inside the field of view, with a clear lens line to where it is
+    /// drawn -- and how far off, in tenths of a tile (-1 with nobody named).
+    /// The proof a composed shot owes: a frame of a line is a frame of its
+    /// speaker, or the summary says it is not.
+    bool voiceSpeakerInView = false;
+    std::int32_t voiceSpeakerTenths = -1;
+    /// And how far off the middle of the frame they are, in degrees (-1 with
+    /// nobody named): in view is not the same as composed -- the field of
+    /// view is ninety degrees wide and a body at its edge is in it.
+    std::int32_t voiceSpeakerOffDeg = -1;
+    /// JUSTICE BUILD: beats of the court line (--court), by its ending.
+    std::int32_t courtBeats = 0;
+    /// KIT BUILD: beats of the Kit line (--kit), by its ending.
+    std::int32_t kitBeats = 0;
     /// How many of the six beats of the bounty run landed.
     std::int32_t contractBeats = 0;
     /// How many of the seven beats of the nemesis arc landed.
@@ -2634,6 +4439,9 @@ struct SmokeRunResult {
     /// discipline, for the same S4-review reason it has it.
     std::int32_t caseBeats = 0;
     std::int32_t caseBeatMask = 0;
+    /// EVICTION CASE: how many of the --eviction beats landed, and which.
+    std::int32_t evictBeats = 0;
+    std::int32_t evictBeatMask = 0;
     /// WHICH of them landed, one bit each, in order. A count says how many; a
     /// mask says which, and a case that cares about one specific claim -- beat
     /// 2, "somebody awake was in reach and did not make me out" -- can name it.
@@ -2666,6 +4474,10 @@ struct SmokeRunResult {
     /// never asked for a refocus, which is what a hand-built result already
     /// means.
     float characterFocusAtCapture = 0.0F;
+    /// THE PULL PACK: what the compass ribbon read at the shutter -- "NE 40
+    /// THE WEIGHHOUSE" -- so a case can pin which door a scripted line left
+    /// the street pointing at (test_pull's --case=taken pin).
+    std::string pullLineAtCapture;
     float mapFocusAtCapture = 0.0F;
     float lettersFocusAtCapture = 0.0F;
     float journalFocusAtCapture = 0.0F;
@@ -2676,12 +4488,22 @@ struct SmokeRunResult {
     /// RADIANT BUILD: what a --radiant run found and did, printed in the
     /// summary for the identical reason.
     RadiantLineResult radiantResult;
+    /// SHOPS: what a --shop run did.
+    ShopLineResult shopResult;
     /// DISTRICT PHASE D: what a --threshold run walked and whether the plate
     /// actually fired, printed in the summary for the identical reason. A
     /// screenshot of a plate that is not there looks exactly like a screenshot
     /// of a street, which is precisely the failure mode a picture cannot
     /// report on itself.
     ThresholdLineResult thresholdResult;
+    /// TRAVEL lane: what a --travel run planned and did, printed in the
+    /// summary for the identical reason again -- the clock moving by exactly
+    /// the restated minutes is the one claim a PNG cannot make.
+    TravelLineResult travelResult;
+    /// THE RUNG PLATE: what a --rung run raised and what the plate read,
+    /// printed as `rung=<track> <a>-><b> row="..."` -- a frame of a plate is
+    /// a frame of words, and the words on it are the claim.
+    RungLineResult rungResult;
     [[nodiscard]] bool scriptFellShort() const noexcept {
         return scriptedWanted > 0 && scriptedLanded < scriptedWanted;
     }
@@ -2706,12 +4528,84 @@ struct SmokeRunResult {
 /// no display server: this is the path every later sprint proves itself with.
 [[nodiscard]] SmokeRunResult runSmoke(const SmokeRunConfig& config);
 
+/// CASE WATCH. Where a session ended, in every coordinate the courier case's
+/// summary reads -- the twin-run comparator for the tape: a replay that ends
+/// equal to the drive in all of these ended equal in everything `--case`
+/// prints. Compared whole, defaulted, C++20's own memberwise rule.
+struct WatchFingerprint {
+    std::int32_t timeOfDay = 0;
+    std::int64_t elapsedSeconds = 0;
+    std::int32_t tileX = 0;
+    std::int32_t tileY = 0;
+    std::int32_t band = 0;
+    std::int32_t yaw = 0;
+    std::int32_t read = 0;
+    std::int32_t known = 0;
+    std::int32_t dread = 0;
+    std::int32_t letters = 0;
+    bool closed = false;
+    bool live = false;
+    bool carry = false;
+    bool tenantDown = false;
+    [[nodiscard]] bool operator==(const WatchFingerprint&) const = default;
+};
+
+/// The fingerprint of a session as it stands right now.
+[[nodiscard]] WatchFingerprint watchFingerprintOf(const Session& session);
+
+/// CASE WATCH. One recorded run of the courier drive: the tape, what the
+/// drive's own marks said it landed, and where it ended.
+struct CaseWatchDrive {
+    std::vector<WatchOp> ops;
+    /// Beats landed / owed and the which-one mask, exactly as `--case` counts
+    /// them (a short `ending` owes only the beats up to its shutter).
+    std::int32_t beats = 0;
+    std::int32_t beatsWanted = 0;
+    std::int32_t mask = 0;
+    /// How many of `ops` are Steps -- the watch run's minimum frame count.
+    std::int32_t stepCount = 0;
+    WatchFingerprint end;
+};
+
+/// CASE WATCH. Runs the SAME runCaseLine `--case` runs -- same session
+/// construction, same scripted hour, same verbs -- with the recorder attached,
+/// and hands back the tape. This is the drive; the watch is its replay.
+[[nodiscard]] CaseWatchDrive recordCaseDrive(const SmokeRunConfig& config);
+
 /// #79. Stands the body beside a body of the named trade out in the ward and
 /// opens a conversation. Exposed rather than buried in runSmoke so a case can
 /// drive it and assert WHO answered and out of WHICH authored table -- the
 /// evidence for "a dockhand and a watchman do not sound alike" is a key and a
 /// sentence, not a screenshot.
 StreetLineResult runStreetLine(Session& session, const std::string& who, int topic);
+
+/// VOICE LANE. Whether the LENS at one Q8 point has a clear line to a body
+/// at another -- the composed shots' own question, and NOT the one
+/// sim::TileQuery::lineOfSight answers: that is a walk between two TILE
+/// CENTRES that lets a ray through a lattice corner when only one of the two
+/// cells it grazes is solid (the right rule between people; a camera at a
+/// Q8 point, drawing every solid cell as a block, sees the block). A grid
+/// walk from the exact eye to the exact body, every cell entered asked of
+/// solid(), a corner shut if EITHER grazed cell is, run down the middle and
+/// a quarter tile either side: `whole` wants all three (a stand is composed
+/// on it), without it the middle and either side will do ("can you see
+/// them"). Exposed so a case can hold the two rules against each other on
+/// the taproom table that made the watch reveal a picture of a wall.
+[[nodiscard]] bool cameraSightClear(const sim::TileQuery& tiles, std::int32_t fromXQ8,
+                                    std::int32_t fromYQ8, std::int32_t toXQ8, std::int32_t toYQ8,
+                                    std::int32_t band, bool whole = true) noexcept;
+
+/// STREET SENSES (9a completion). PROOF. Stands the player in the densest
+/// crowd on the Tarwalk and raises steel (an Edged weapon, hands up, no blow),
+/// so the SETTLE window that follows scatters the street. See
+/// SmokeRunConfig::streetAssault. `found` is whether a crowd tile was found;
+/// `actorId` the body the player was stood beside. Exposed for runStreetLine's
+/// reason: a case can drive it and read the ward's Safety directly.
+StreetLineResult runStreetAssault(Session& session, const std::string& where);
+
+/// SHOPS (2026-10-09). Plays the shop line -- see SmokeRunConfig::shop.
+/// Exposed for runStreetLine's reason: a case asserts the Kit and the purses.
+ShopLineResult runShopLine(Session& session, const std::string& end);
 
 /// TIME-AND-TENURE BUILD. Plays the leasehold petition end to end -- see
 /// SmokeRunConfig::petition. Exposed for exactly runStreetLine's reason: the
@@ -2726,8 +4620,10 @@ PetitionLineResult runPetitionLine(Session& session, bool grantCoin);
 /// Exposed for exactly runStreetLine's reason: the evidence that TASK #81's
 /// generator is reachable is a topic on a real list, a board row that moved
 /// and a journal that shows it, and a case asserts those directly.
-/// `takeIt` false stops with the offer on the open list (the "offer" end).
-RadiantLineResult runRadiantLine(Session& session, bool takeIt);
+/// `end` is SmokeRunConfig::radiantEnd: "offer" stops with the offer on the
+/// open list, "taken" after the press, "shelf" on the casebook's own row
+/// for it, "settled" with the word passed and paid.
+RadiantLineResult runRadiantLine(Session& session, const std::string& end);
 
 /// DISTRICT PHASE D. Walks the body across one authored place boundary -- see
 /// SmokeRunConfig::threshold. Exposed for exactly runStreetLine's reason: the

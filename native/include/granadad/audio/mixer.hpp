@@ -3,11 +3,14 @@
 // The voice mixer — float32 stereo at 48000 Hz.
 //
 // Everything audible passes through render(): one-shot voices, looped bed
-// layers, and the two PROCEDURAL ambience layers (filtered-noise water-lap and
-// wind — the vendored asset set has no ambience recordings, see sound_ids.hpp
-// on BedId). Per-voice: linear-interp pitch, constant-power pan, a per-sample
-// gain ramp so nothing clicks. Per-bus gains plus Master, then a tanh soft
-// clip so a pile-up of impacts saturates instead of wrapping.
+// layers, the MusicDirector's stereo loop voices (Bus::Music, the LOT pass),
+// and the two PROCEDURAL ambience layers (filtered-noise water-lap and wind —
+// the vendored asset set has no ambience recordings, see sound_ids.hpp on
+// BedId). Per-voice: linear-interp pitch, constant-power pan, a per-sample
+// gain ramp so nothing clicks. A stereo sample plays its own two channels
+// through the same pan gains (centre = each side at -3 dB). Per-bus gains
+// plus Master, then a tanh soft clip so a pile-up of impacts saturates
+// instead of wrapping.
 //
 // THREAD SAFETY. Every public method takes the one internal mutex. That is
 // the whole design: the SDL backend's device callback pulls render() on the
@@ -64,6 +67,10 @@ public:
 
     /// Ramps a voice's gain to `gain` over rampSec.
     void setVoiceGain(VoiceId voice, float gain, float rampSec);
+
+    /// A voice's CURRENT (mid-ramp) gain; 0 for an unknown or finished
+    /// voice. Observable so a test can prove a music crossfade is monotone.
+    [[nodiscard]] float voiceGain(VoiceId voice) const;
 
     void setBusGain(Bus bus, float gain);
     [[nodiscard]] float busGain(Bus bus) const;

@@ -1,0 +1,92 @@
+{
+  "id": "watch_voice_barks",
+  "notes": "VOICE LANE (lane/voice): the Watch on you, unprompted. watch.notice.hands is a watchman's eyes landing on you with your fists up and watch.notice.sneak with you crouched (a glance, not a cause, and never the one said to the other); watch.heat is a watchman passing a man the post has heard of (heat above kWatchHeatNoticedAt, no paper yet); watch.paper is a watchman passing a man with a warrant out -- a demand or a seethe, NEVER a blow and never an arrest by itself (the arrest is the room's, at reach, through applyArrest); watch.wielder is the deference table, the Watch through gritted teeth to a presented Wielder (DOCKS-GAZETTEER 4.1: never hostile, absolute). watch.approach.<cause> is the ONE readback as a Closing watchman crosses the room: it waits for his halt (watch.halt, the alert row) to leave the row or replaces it at reach, never stacked beside it in his name; keyed by the cause the room recorded, violence split by what is actually up (.steel with a blade in the hands, the bare key with fists), paper for a warrant, goods for a sack. Plain ASCII, no dashes, at most 72 glyphs, contractions where a watchman would.",
+  "tables": [
+    {
+      "key": "watch.notice.hands",
+      "rows": [
+        "Hands where I can see them, and we needn't talk at all.",
+        "Lower them. Whatever you were about to do, do it elsewhere.",
+        "You. Yes, you. Fists down.",
+        "I see the hands. Now let me see them open."
+      ]
+    },
+    {
+      "key": "watch.notice.sneak",
+      "rows": [
+        "I see you. Stand up straight and be seen.",
+        "Up. Nobody creeps past the Watch on his knees.",
+        "Crouching where I can see you. That's a sore back or a bad idea.",
+        "Walk like a man with nothing to hide, or I'll find what you're hiding."
+      ]
+    },
+    {
+      "key": "watch.heat",
+      "rows": [
+        "Word's out on you. Not paper. Not yet.",
+        "Your name came up at the post. Twice. Keep it from a third.",
+        "I have heard things. Give me a reason to have seen them.",
+        "Walk on. The sergeant knows your face and I know the sergeant."
+      ]
+    },
+    {
+      "key": "watch.paper",
+      "rows": [
+        "There's paper on you. Stand still and this goes easy.",
+        "The post has your name written down. I'm reading it now.",
+        "Paper out, and here you are on my street as if there wasn't.",
+        "Don't run. Every man who runs ends up on the same post."
+      ]
+    },
+    {
+      "key": "watch.wielder",
+      "rows": [
+        "Wielder. The ward's yours, as ever. Go where you like.",
+        "No door's locked to you. That was never my choice.",
+        "Whatever you need, Wielder. I'll write down that I gave it."
+      ]
+    },
+    {
+      "key": "watch.approach",
+      "rows": [
+        "Stay where you are. I'm coming to you.",
+        "Don't make me run. I'm not paid to run.",
+        "Hands out. Empty. Now."
+      ]
+    },
+    {
+      "key": "watch.approach.violence",
+      "rows": [
+        "Stand still. I saw it, and I'm the one who says what it was.",
+        "Put your hands down. Down. I won't say it a third time.",
+        "Nobody leaves this room. Least of all you.",
+        "Steady now. You're done swinging. That part's over."
+      ]
+    },
+    {
+      "key": "watch.approach.violence.steel",
+      "rows": [
+        "Put the blade down. Down, and step back from it.",
+        "Steel in my sight. It goes on the floor before I reach you.",
+        "Nobody leaves this room with a blade out. Least of all you.",
+        "Drop it. You're done with it, whether you know that yet or not."
+      ]
+    },
+    {
+      "key": "watch.approach.paper",
+      "rows": [
+        "The paper says your name and so do I. Stand there.",
+        "I've been looking for that face. Don't turn it away.",
+        "Stay put. The cell's warmer than the strand."
+      ]
+    },
+    {
+      "key": "watch.approach.goods",
+      "rows": [
+        "That sack. Set it down where I can see it.",
+        "The sack stays. You stay with it. Don't make it two crimes.",
+        "Set it down. The jars are the ward's now, and so's your evening."
+      ]
+    }
+  ]
+}

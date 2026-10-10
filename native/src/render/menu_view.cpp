@@ -193,9 +193,17 @@ void drawLetterPane(Framebuffer& target, const PanelRect& pane, const PanelMetri
 ///   then     the empty-state sentence, in room the rows did not want, and a
 ///            stippled field under whatever is left -- emptiness textured,
 ///            not blank.
+/// HOW MUCH OF ITSELF A TILE SHOWS (UI-EA-SPEC 1.6) -- the Law of Earned Text
+/// applied to the hub: the FOCUSED tile is the real surface (its list, its
+/// prose); an unfocused tile is a SUMMARY -- badge, epithet, the picked row
+/// and a `+N` count -- because its forty rows are not news until you turn to
+/// them; and in READING MODE (a letter open) every other tile collapses to a
+/// CHIP, its one-word badge, so the letter has the room and the quiet.
+enum class TileMode : std::uint8_t { Full, Summary, Chip };
+
 void drawTile(Framebuffer& target, const PanelRect& pane, const PanelMetric& metric,
               const DialogueViewState& view, bool focused, float focusAmount, float fade,
-              bool journal, const Rgb& accent) {
+              bool journal, const Rgb& accent, TileMode mode) {
     const PanelInk& ink = panelInk();
     const int paneRows = metric.rowsIn(pane.h);
     const int paneCells = metric.cellsIn(pane.w);
@@ -218,10 +226,20 @@ void drawTile(Framebuffer& target, const PanelRect& pane, const PanelMetric& met
         }
         // A cell of air off the frame's own edge -- a value flush against the
         // border reads as punctuated by the `|`/`!` flicker.
-        if (!view.attitude.empty() &&
+        if (mode != TileMode::Chip && !view.attitude.empty() &&
             badge + static_cast<int>(view.attitude.size()) + 3 <= paneCells) {
             drawCellTextRight(target, pane, metric, 1, 0, view.attitude, ink.dim, 0.85F * fade);
         }
+    }
+    // A CHIP IS ITS BADGE -- reading mode's collapsed form. An alert still
+    // outranks the quiet: a bouncer does not wait for you to finish a letter.
+    if (mode == TileMode::Chip) {
+        if (!view.alert.empty()) {
+            drawCellText(target, pane, metric, 0, 1,
+                         clipLabel(view.alert, static_cast<std::size_t>(paneCells)), kAlertInk,
+                         fade);
+        }
+        return;
     }
 
     // --- row 1: the epithet, or a warning, which outranks it ----------------
@@ -230,15 +248,59 @@ void drawTile(Framebuffer& target, const PanelRect& pane, const PanelMetric& met
         drawCellText(target, pane, metric, 0, row,
                      clipLabel(view.alert, static_cast<std::size_t>(paneCells)), kAlertInk, fade);
     } else if (!view.epithet.empty()) {
+        // KITFIX LANE. ONE CELL OF AIR OFF THE TILE'S OWN EDGE -- the
+        // identical reason panes[0]'s right-aligned state word and the
+        // casebook's own header readout already leave one (drawCellTextRight
+        // callers throughout this vocabulary): a value flush against the
+        // divider reads as punctuated by the `|`/`!` flicker between tiles
+        // rather than as a row that ended on purpose. Every other row here
+        // (the badge's attitude, the list's own value column) already
+        // reserves this cell; the epithet was the one row still clipped to
+        // the bare pane width, so a long enough one (a reputation title, a
+        // held-goods verb string) could butt the tile's own border.
         drawCellText(target, pane, metric, 0, row,
-                     clipLabel(view.epithet, static_cast<std::size_t>(paneCells)), ink.dim,
-                     0.85F * fade);
+                     clipLabel(view.epithet, static_cast<std::size_t>(std::max(1, paneCells - 1))),
+                     ink.dim, 0.85F * fade);
     }
     ++row;
 
     // --- the letter branch: a document, not a menu --------------------------
     if (view.letter) {
         drawLetterPane(target, pane, metric, view, row, fade);
+        return;
+    }
+
+    // --- the summary form: what an unfocused tile earns ---------------------
+    // The picked row (the active lead, the newest-read letter, wherever the
+    // tile's own cursor sat) in the tile's accent, and `+N` for the rest --
+    // count and headline, no wall. The full list waits for focus.
+    if (mode == TileMode::Summary) {
+        ++row;
+        const int count = static_cast<int>(view.topics.size());
+        if (count > 0 && row < paneRows) {
+            const int at = std::clamp(view.cursor, 0, count - 1);
+            drawCellText(target, pane, metric, 0, row,
+                         clipLabel(view.topics[static_cast<std::size_t>(at)],
+                                   static_cast<std::size_t>(std::max(1, paneCells - 4))),
+                         accent, 0.95F * fade);
+            if (count > 1) {
+                drawCellTextRight(target, pane, metric, 1, row, "+" + std::to_string(count - 1),
+                                  ink.dim, 0.85F * fade);
+            }
+            ++row;
+        } else if (count == 0 && !view.emptyLine.empty() && row < paneRows) {
+            // An empty tile's summary IS its empty state -- worded, six words
+            // or fewer, so a fresh hub still says what each pane is for.
+            const PanelRect say = rowBand(pane, metric, row, std::max(1, paneRows - row - 1));
+            const std::vector<PanelLine> lines{
+                PanelLine{Bullet::None, "", view.emptyLine, InkRole::Dim, accent}};
+            row += drawProse(target, say, metric, lines, fade);
+        }
+        const int spare = paneRows - row - 1;
+        if (spare >= 3) {
+            drawStipple(target, rowBand(pane, metric, row + 1, spare - 1), metric, ink.rule,
+                        kPaneStippleAlpha * fade);
+        }
         return;
     }
 
@@ -293,9 +355,19 @@ void drawTile(Framebuffer& target, const PanelRect& pane, const PanelMetric& met
             // an unkeyed marker. The cursor pages this list: the screen shown
             // follows it. Same unkeyed shape casebook_page.cpp's own MORE
             // indicator settled on.
+            //
+            // KITFIX LANE. CLIPPED TO THE TILE, WHICH drawCellText ITSELF
+            // NEVER DOES -- a capture at a narrow tile column (three tiles
+            // across a modest window) showed "MORE (3/3)" running straight
+            // through the divider and into the next tile's own text, because
+            // every OTHER row on this pane goes through clipLabel/clipToWidth
+            // and this one was the row that did not. paneCells is the tile's
+            // own width in cells; the mark stays whole (clipLabel's own
+            // three-glyph floor) well inside it at any width this pane draws.
             drawCellText(target, listRect, metric, 0, capacity - 1,
-                         "MORE (" + std::to_string(page.screen + 1) + "/" +
-                             std::to_string(page.screens) + ")",
+                         clipLabel("MORE (" + std::to_string(page.screen + 1) + "/" +
+                                       std::to_string(page.screens) + ")",
+                                   static_cast<std::size_t>(std::max(1, paneCells))),
                          ink.dim, 0.75F * fade);
             used = capacity;
         }
@@ -359,7 +431,13 @@ MenuTileHit menuTileHitAtPixel(const MenuTileState& state, int width, int height
         // drawTile's own refusals: nothing listed on a closed view, a pane too
         // small to compose, or an open letter (a document, not a menu). The
         // pane itself is still the answer -- a click there is on the TILE.
-        if (!view.open || paneRows < 4 || paneCells < 8 || view.letter) {
+        // AND ONLY THE FULL TILE ANSWERS ROWS: an unfocused tile draws a
+        // summary now (UI-EA-SPEC 1.6), so a row hit there would point at
+        // pixels no list occupies -- the click focuses the tile instead.
+        const bool letterReading = state.letters.open && state.letters.letter;
+        const bool full = letterReading ? pane.tile == kMenuFocusLetters
+                                        : state.focus == pane.tile;
+        if (!view.open || paneRows < 4 || paneCells < 8 || view.letter || !full) {
             return hit;
         }
         const int row = tileListStartRow(view, paneRows, paneCells, pane.journal);
@@ -395,7 +473,7 @@ MenuTileHit menuTileHitAtPixel(const MenuTileState& state, int width, int height
 
 MenuTileLayout menuTileLayout(int width, int height) {
     MenuTileLayout out;
-    out.metric = panelMetric(height);
+    out.metric = panelMetric(width, height);
     const int cells = out.metric.cellsIn(width);
     const int rows = out.metric.rowsIn(height);
     // Below this there is no composition: four panes need a border, a rule,
@@ -412,16 +490,22 @@ MenuTileLayout menuTileLayout(int width, int height) {
 
     // THE BOTTOM BAND (Journal) TAKES ROUGHLY A THIRD -- 9/25 of the interior,
     // the same 36 percent the pre-conversion layout gave it, so the two
-    // frames of this screen agree about where the Journal lives.
+    // frames of this screen agree about where the Journal lives. NINE AND
+    // THE STICKS: two rows under it are the foot -- a rule and the nav band
+    // that names the ring, the casebook page's own shape.
     const std::vector<PanelRect> bands = splitRows(interior, out.metric,
                                                    {
                                                        spanWeight(16),  // the three tiles
                                                        spanCells(1),    // the rule
                                                        spanWeight(9),   // the Journal
+                                                       spanCells(1),    // the foot's rule
+                                                       spanCells(1),    // the nav band
                                                    });
     out.topRows = out.metric.rowsIn(bands[0].h);
     out.ruleRow = (bands[1].y - interior.y) / out.metric.cellH();
     out.journal = bands[2];
+    out.footRuleRow = (bands[3].y - interior.y) / out.metric.cellH();
+    out.nav = bands[4];
 
     // Three columns over the top band, split by two one-cell dividers that
     // the shared frame draws in step with its own edges.
@@ -520,26 +604,54 @@ void drawMenuTiles(Framebuffer& target, const MenuTileState& state) {
     style.groundAlpha = kPageGroundAlpha;
     PanelFrame frame(target, comp.bounds, comp.metric, style);
     frame.addRule(comp.ruleRow);
+    frame.addRule(comp.footRuleRow);
     frame.addDivider(comp.dividerCellA, 0, comp.topRows);
     frame.addDivider(comp.dividerCellB, 0, comp.topRows);
     frame.draw();
 
-    // CHARACTER, MAP, LETTERS: the three top tiles keep suppressing their own
-    // instructional `line` prose (each already said once, in full, on the page
-    // that first taught a new player to open this) so their rows -- the state
-    // a player opened the Menu to read -- get the pane. Letters' own prose
-    // reappears the moment a letter is picked, as that document's own body,
-    // via the letter branch. The Journal keeps its prose: the hook, the
-    // ward's dread, a picked lead's found text and its `•` dateline are the
-    // point of the page.
+    // THE LAW OF EARNED TEXT ON THE HUB (UI-EA-SPEC 1.6): the focused tile is
+    // the real surface; the others are summaries -- badge, epithet, headline
+    // row, `+N`. And READING MODE: with a letter open, the letter is the
+    // point of the whole page -- every other tile collapses to its chip so
+    // 169 words of neighbouring chrome stop shouting over 175 words of
+    // authored prose. The Journal keeps its prose when focused: the hook,
+    // the ward's dread and a picked lead's dateline are the page.
+    const bool reading = state.letters.open && state.letters.letter;
+    const auto modeFor = [&state, reading](int tile) {
+        if (reading) {
+            return tile == kMenuFocusLetters ? TileMode::Full : TileMode::Chip;
+        }
+        return state.focus == tile ? TileMode::Full : TileMode::Summary;
+    };
     drawTile(target, comp.character, comp.metric, state.character,
-             state.focus == kMenuFocusCharacter, state.characterFocus, fade, false, ink.accent);
+             state.focus == kMenuFocusCharacter, state.characterFocus, fade, false, ink.accent,
+             modeFor(kMenuFocusCharacter));
     drawTile(target, comp.map, comp.metric, state.map, state.focus == kMenuFocusMap,
-             state.mapFocus, fade, false, ink.accent);
+             state.mapFocus, fade, false, ink.accent, modeFor(kMenuFocusMap));
     drawTile(target, comp.letters, comp.metric, state.letters, state.focus == kMenuFocusLetters,
-             state.lettersFocus, fade, false, kParchmentInk);
+             state.lettersFocus, fade, false, kParchmentInk, modeFor(kMenuFocusLetters));
     drawTile(target, comp.journal, comp.metric, state.journal, state.focus == kMenuFocusJournal,
-             state.journalFocus, fade, true, ink.accent);
+             state.journalFocus, fade, true, ink.accent, modeFor(kMenuFocusJournal));
+
+    // THE FOOT: the ring, learnable from the hub itself. Bare keycaps with
+    // their words -- the hub is where a stranger learns them, so the words
+    // stay; a page a player has learned is the casebook page, whose foot
+    // fades its words on the tutor tier.
+    const std::vector<PanelOption> nav{
+        PanelOption{state.navMoveKeys, "ROW", "", ink.accent, InkRole::Dim, false},
+        PanelOption{state.navPageKeys, "NOTES", "", ink.accent, InkRole::Dim, false},
+        PanelOption{state.confirmKey, "PICK", "", ink.accent, InkRole::Dim, false},
+        PanelOption{state.closeKey, "CLOSE", "", ink.accent, InkRole::Dim, false},
+    };
+    OptionListStyle navStyle;
+    navStyle.showKeys = true;
+    navStyle.maxColumns = 4;
+    navStyle.gutterCells = 2;
+    navStyle.minRows = 1;
+    const PanelRect navRect{comp.nav.x, comp.nav.y, std::max(0, comp.nav.w - comp.metric.cellW()),
+                            comp.nav.h};
+    const OptionListPlan navPlan = planOptionList(nav, navRect, comp.metric, navStyle);
+    drawOptionListPlanned(target, navRect, comp.metric, nav, -1, navPlan, fade);
 }
 
 }  // namespace granadad::render

@@ -30,8 +30,10 @@
 //   1. TWO SIZES, NOT ONE. hudScale() is the register the player reads at a
 //      glance -- the compass, the hour, the health bar, a shout. Everything
 //      else is reference material they look at deliberately, and it is drawn
-//      at hudMinorScale(), one step down. That is a hierarchy rather than a
-//      shrink: the frame says what to read first.
+//      at hudMinorScale(), one step down at the 16:9 capture sizes up to
+//      720 tall and further under it above that or at a narrower aspect
+//      (see hudMinorScale below). That is a hierarchy rather than a shrink:
+//      the frame says what to read first.
 //
 //   2. ABSENCE COSTS NOTHING. A row that says nothing happened does not get a
 //      row. "NOBODY IN PARTICULAR" is the ward having no opinion of you, and
@@ -101,10 +103,68 @@
 #include <cstdint>
 #include <string>
 #include <string_view>
+#include <vector>
 
+#include "granadad/render/anim.hpp"
 #include "granadad/render/framebuffer.hpp"
 
 namespace granadad::render {
+
+// ---------------------------------------------------------------------------
+// UI-EA: THE DISCLOSURE DURATIONS live in anim.hpp (included above), named
+// once and shared per UI-EA-SPEC sec. 3 -- kPlateHoldSteps (150, the EVENT
+// tier's ~2.5s hold), kTutorHoldSteps (180, the TUTOR tier's ~3s),
+// kIdleWakeSteps (300, hesitation-as-a-request-for-help). Both lanes landed
+// the same numbers in two homes; the integrator kept anim.hpp's and this
+// header defers to it. kPageEaseSteps is already EasedToggle's default 8.
+// ---------------------------------------------------------------------------
+
+/// THE TUTOR BAND: the quickBar countdown-plus-toggle pattern, generalized --
+/// UI-EA-SPEC's cross-lane contract (c). A band of instructional text is
+/// raised in full on an event (page open, device change, an unrecognized
+/// press, idle hesitation), holds for its countdown, and eases back down to
+/// whatever its at-rest form is (keycaps, or nothing).
+///
+/// OWNERSHIP SPLIT, per the contract: LANE HUD lands this shape; LANE PAGES
+/// instantiates one per band (map band, casebook foot, keys foot, creation
+/// feet, pause legend) and draws raised/rest forms off value(); LANE FLOW
+/// calls raise() on the wake events it routes. Steps-based, render-side,
+/// unhashed, exactly like every EasedToggle in the game.
+///
+/// THE CALLING CONVENTION IS THE QUICK BAR'S, deliberately: raise() wherever
+/// the event lands (any number of times per step -- a raise extends a live
+/// hold and never shortens one), sync(suppressed) wherever the owner's
+/// syncPanelAnim-equivalent runs (also any number of times per step), and
+/// advance() EXACTLY once per step -- a countdown spent per call would make
+/// the hold depend on how many keys were pressed during it, the defect
+/// Session::step()'s own countdown comment names.
+struct TutorBand {
+    EasedToggle anim;
+    int showSteps = 0;
+
+    /// The event: raise the band in full for `holdSteps`.
+    void raise(int holdSteps = kTutorHoldSteps) noexcept {
+        if (holdSteps > showSteps) {
+            showSteps = holdSteps;
+        }
+    }
+    /// Put it down now -- a page closing takes its bands with it.
+    void cancel() noexcept { showSteps = 0; }
+    /// Re-assert the target: up while the countdown lives and nothing owns
+    /// the frame over it. Safe to call many times per step.
+    void sync(bool suppressed) noexcept { anim.setTarget(!suppressed && showSteps > 0); }
+    /// Once per step, never from a const draw path.
+    void advance() noexcept {
+        if (showSteps > 0) {
+            --showSteps;
+        }
+        anim.advance();
+    }
+    /// 0 (at rest) .. 1 (fully raised): what the band's raised form draws at.
+    [[nodiscard]] float value() const noexcept { return anim.value(); }
+    /// True while the raise is still wanted -- the target a test asserts on.
+    [[nodiscard]] bool wanted() const noexcept { return showSteps > 0; }
+};
 
 /// What the HUD is told about the player. Nothing here is authoritative — the
 /// simulation owns all of it and the HUD only draws it.
@@ -137,12 +197,27 @@ struct HudState {
     bool showCompass = true;
     /// BAM facing, straight off the body.
     std::int32_t yawBam = 0;
-    /// Shown under the compass. Empty draws nothing.
-    std::string_view locationLabel;
+    /// UI-EA (LANE HUD): THE STREET SUB-LABEL IS GONE. locationLabel used to
+    /// sit here -- the place name under the ribbon, up every frame. The word
+    /// diet's row table deletes it outright: the threshold plate already
+    /// announces every crossing at the moment it happens, and a reference row
+    /// restating it sixty times a second was a word on screen because it was
+    /// true, not because it changed. The map and the dialogue epithet still
+    /// print Session::placeLabel(); the street does not.
     /// Seconds since midnight. Drawn top-right as HH:MM. Negative draws nothing.
     int timeOfDaySeconds = -1;
+    /// UI-EA (LANE HUD): THE CLOCK IS EARNED TEXT NOW. Session's own
+    /// EasedToggle (clockAnim_) raises it on an hour tick, on any time charge
+    /// (travel, a wait pick, a sleep) and while the wait page is pricing
+    /// hours, and puts it down ~2.5s later. Defaults to 1: every hand-built
+    /// HudState that predates the diet draws exactly as it always has.
+    float clockFade = 1.0F;
     /// The purse, top-right under the clock. Negative draws nothing.
     int coin = -1;
+    /// UI-EA (LANE HUD): THE PURSE WAKES ON A COIN DELTA and sleeps ~2.5s
+    /// later -- money is on screen when it moves, which is when it matters.
+    /// Same default-1 contract as clockFade.
+    float purseFade = 1.0F;
     /// What the ward as a whole thinks of the player, top-right under the
     /// purse. Reputation READABLE rather than hidden. Empty draws nothing.
     std::string_view standingLabel;
@@ -182,6 +257,33 @@ struct HudState {
     /// in priority -- a held guard is read every second of a fight, and it
     /// is the ROOM's fact (what tickBrawl actually reads), never the key's.
     std::string_view blockLabel;
+    /// ACTION-COMBAT BUILD (section 5, channel 2): "HELD HARD -- CUDGEL 14-18"
+    /// while a swing is charged past the hard threshold. Bottom band, adjacent
+    /// to the guard row, in the hot charge register -- a swing and a guard are
+    /// mutually exclusive (the guard drops the instant the hand leaves Idle),
+    /// so the two never contend for the band. Empty draws nothing, the usual
+    /// state, so every hand-built HudState that predates it is pixel-identical.
+    std::string_view chargeLabel;
+    /// STANCE & ROOM BUILD: "FISTS UP" / "CUDGEL UP" / "STEEL UP" exactly
+    /// while the room's own fighting-mode bit (Tavern::playerHandsUp) is true
+    /// -- the state the owner could not see. Bottom band, centred, right
+    /// behind the guard row and the turn row: the three CAN share the band
+    /// (a guard raises the hands), and all read as one fact -- what the
+    /// hands are doing. Empty draws nothing, the usual state, so every
+    /// hand-built HudState that predates it is pixel-identical.
+    std::string_view handsLabel;
+    /// KIT BUILD (defence v1): "COAT TURNS 2" for kPlateHoldSteps after a
+    /// landed blow the worn kit softened -- the piece with the most DR on
+    /// the body and what the blow lost to it. An EVENT row (the Law of
+    /// Earned Text: said when it happens, never furniture), centred right
+    /// behind the guard row in the blocked-blow wash's own steel-cool ink,
+    /// so the row and the wash read as one fact. Its own row rather than
+    /// the alert, because a bouncer's warning outranks the alert for as
+    /// long as the house minds you and would eat every turn in a brawl --
+    /// and AHEAD of the hands row (KIT POLISH) for the same reason: on the
+    /// three-slot band every monitor size gets, a warning plus FISTS UP
+    /// would eat it just as surely. Empty draws nothing, the usual state.
+    std::string_view turnLabel;
     /// SPELLS BUILD: the quick bar strip -- BOTTOM-CENTRE, which is this
     /// file's own header giving Barony's hotbar its place ("hotbar
     /// bottom-centre"). Ten cells out of the bottom band's slot grid, never
@@ -196,20 +298,45 @@ struct HudState {
     int quickSelected = -1;
     int quickEquipped = -1;
     float quickBarFade = 0.0F;
+    /// UI-EA (LANE HUD): THE QUICK BAR'S TUTOR TOAST -- "WHEEL - STEP" on a
+    /// keyboard, the D-pad's left and right on a pad (the keys through
+    /// promptLabel, so a rebind re-words it). Nine and the sticks cut the
+    /// QuickWheel hold, so the STEP is what is taught: Session raises it the
+    /// first two times the quick bar comes up, riding the strip's own
+    /// countdown, and never again. TUTOR tier: it
+    /// takes a bottom-band slot directly after the strip, in the quiet
+    /// reference ink, and both empty-and-zero defaults draw nothing at all.
+    std::string_view wheelHint;
+    float wheelHintFade = 0.0F;
     /// The ladder the player is highest on, and the rung: "FLAME - DISCIPLE".
     /// Bottom-left, stacked over the health bar, because that is where a
     /// character's own state lives and the centre stays empty. Drawn only when
     /// the player is on a rung at all.
+    /// UI-EA (LANE HUD): earned text -- wakes for ~2.5s when the rung
+    /// changes, sleeps otherwise. A title held for a week is on the sheet.
     std::string_view guildLabel;
     /// What the current questline wants next, in the journal's own words.
     /// Bottom-left under the guild, and clipped to a single line.
+    /// UI-EA (LANE HUD): earned text -- wakes on change, sleeps otherwise.
     std::string_view objectiveLabel;
-    /// S8: the man who has put the player on the floor most often, what he
-    /// answers to now, and whether he is looking for them -- "RIVAL BRAM
-    /// MARROW - CRAFTLORD x2  HUNTING". Bottom-left under the objective, still
-    /// on the edge. Empty draws nothing, which is the usual case: nobody has
+    /// S8: the man who has put the player on the floor most often and how
+    /// often -- "BRAM MARROW x2". Bottom-left under the objective, still on
+    /// the edge. Empty draws nothing, which is the usual case: nobody has
     /// beaten you yet.
+    ///
+    /// UI-EA (LANE HUD): DIETED 6 -> 3 (the spec's "rank 6->3"). The "RIVAL "
+    /// prefix and the title were reference material -- the row's own corner
+    /// and colour already say what he is, and his title is on his sheet. The
+    /// HUNTING word leaves the label too; the fact rides rivalHunts below and
+    /// the row's red ink, which is how the row has always been read at a
+    /// glance ("a hunted man should not have to read the line to notice it").
+    /// The count (x2) is a value and values never get vaguer.
     std::string_view rivalLabel;
+    /// UI-EA (LANE HUD): whether the rival is currently hunting the player.
+    /// Colours the row red. The word itself is off the label (above); a
+    /// hand-built label that still says "HUNTING" is honoured too, so every
+    /// pre-diet HudState draws in the colour it always did.
+    bool rivalHunts = false;
     /// S9: whether the room can currently make the player out, how much light
     /// is falling on them and how much noise they are making -- "HIDDEN CROUCH
     /// DARK 12  QUIET". Top-right under the sack, still hugging the edge.
@@ -247,9 +374,30 @@ struct HudState {
     std::string_view aimNote;
     /// Which accent the subject and the reticle take. See AimKind.
     int aimKind = 0;
+    /// ACTION-COMBAT BUILD (section 5, channel 1). THE RETICLE IS THE WEAPON --
+    /// the charge readout, DECOUPLED from the interact prompt so it draws the
+    /// reticle during a swing hold even with nothing in reach (aimVerb empty),
+    /// which the interact-only early-return could not do.
+    ///   aimChargeFrac    0..1, the hold's progress toward the hard threshold;
+    ///                    the four ticks retract toward centre across it.
+    ///   aimChargeHard    the hold reached the hard tier; the ticks take the
+    ///                    warm accent.
+    ///   aimChargeOnLine  a body sits on the look-ray right now; the ticks
+    ///                    brighten, and a swing thrown will land.
+    /// All three default to the at-rest values, so every hand-built HudState
+    /// that predates them draws its reticle exactly as it always has.
+    float aimChargeFrac = 0.0F;
+    bool aimChargeHard = false;
+    bool aimChargeOnLine = false;
     /// S10: where the bloodletter trail stands and where it wants you next --
-    /// "CASE 2/6 > THE DROWNED HOLD". Bottom-left, ONE row. Empty only when
-    /// casebook.json is missing.
+    /// "CASE 2/6 > THE DROWNED HOLD". Bottom-left, ONE row.
+    ///
+    /// UI-EA (LANE HUD): EARNED TEXT. The row used to be up every frame; now
+    /// Session raises it for ~2.5s when a beat or a lead moves and when the
+    /// casebook closes (the recap a player putting the book down actually
+    /// wants), and it sleeps the rest of the time -- the J page is where the
+    /// case lives, and a corner row nobody is looking at cannot orient
+    /// anybody by being permanent.
     ///
     /// AN INVESTIGATION READOUT IS THE ELEMENT MOST LIKELY TO BECOME A PANEL IN
     /// THE MIDDLE OF THE SCREEN. It gets one row on an edge, the same deal the
@@ -267,6 +415,9 @@ struct HudState {
     /// this struct at once at three resolutions.
     std::string_view caseLabel;
     /// One line about the room the player is standing in. Bottom-right.
+    /// UI-EA (LANE HUD): earned text -- wakes on room entry and on the room's
+    /// loudness turning over, sleeps ~2.5s later. A head-count drifting by
+    /// one is not an event and does not wake it.
     std::string_view roomLabel;
     /// Something said to the player that they need to have heard -- a
     /// bouncer's warning. Bottom edge, centred horizontally but well below the
@@ -292,8 +443,31 @@ struct HudState {
     /// only the alert row's own alpha; every other HUD row is unaffected.
     /// Defaults to 1, which is what every hand-built HudState already meant
     /// before this field existed, so `* alertFade` is a no-op for a caller
-    /// that never heard of it.
+    /// that never heard of it. Under the rung plate Session hands the row's
+    /// ease here unweighted and the plate's weight on the words apart
+    /// (alertInkWeight, rung_plate.hpp's alertWeightUnderRungPlate); the
+    /// field keeps the ease, the words take the product.
     float alertFade = 1.0F;
+    /// THE RUNG PLATE'S OTHER RULE FOR THIS ROW (rung_plate.hpp): while the
+    /// plate holds, the row steps DOWN to the plate's own register -- never
+    /// a tier above it -- and its bone rails take a quarter of the row's
+    /// alpha, so the keyline never outshines the words it is there to back.
+    /// False (every caller before the plate) draws exactly as before.
+    bool alertStepsDown = false;
+    /// The register the stepped-down rows take: the rung plate's own scale
+    /// (rungPlateMetric) where it is under the HUD's minor scale -- which a
+    /// square window's was under the height-only register, and no window's
+    /// is since the cells pass keyed the minor scale on the width too. 0
+    /// (every caller before the plate) means the minor scale; the rows never
+    /// take more than the minor scale either way.
+    int alertStepScale = 0;
+    /// THE RUNG PLATE'S WEIGHT, ON THE INK ONLY (rung_plate.hpp): the words'
+    /// alpha is multiplied by this; the backing field keeps alertFade, the
+    /// row's own ease, so fine print over a lit wall is still print (the
+    /// half-weight backing let the Gull's plaster through and the amber
+    /// read as mud -- the director's finding, fourth pass). 1 for every
+    /// caller that never heard of it.
+    float alertInkWeight = 1.0F;
     /// HARDENING PASS. THE SAME alertFade PATTERN, ONE PER ROW. #83 eased the
     /// alert row in and out and left every other row on this HUD popping --
     /// see this file's own header on the rule these rows draw under and
@@ -326,6 +500,16 @@ struct HudState {
     /// Cast/Block task added, each on its own Session-side EasedToggle.
     float spellFade = 1.0F;
     float blockFade = 1.0F;
+    /// ACTION-COMBAT BUILD. The HELD HARD charge row's own ease, its own
+    /// Session-side EasedToggle, the same no-op-by-default reasoning as every
+    /// *Fade above: a HudState nobody eased draws exactly as it always has.
+    float chargeFade = 1.0F;
+    /// STANCE & ROOM BUILD. The fighting-mode row's own ease, its own
+    /// Session-side EasedToggle, the same no-op-by-default reasoning.
+    float handsFade = 1.0F;
+    /// KIT BUILD. The turn row's own ease, its own Session-side EasedToggle,
+    /// the same no-op-by-default reasoning.
+    float turnFade = 1.0F;
     /// INNOVATION SPRINT ITEM #3. 1 the instant a NEW bouncer's warning
     /// arrives, easing down to 0 over a handful of frames -- see
     /// render::ImpactPulse's own header and Session::alertPulse_'s. Unlike
@@ -343,15 +527,15 @@ struct HudState {
     /// of the Quayward's east gate -- announced once, briefly, on a plate
     /// centred over the compass ribbon, and then gone.
     ///
-    /// IT IS NOT A SECOND locationLabel AND IT MUST NEVER BECOME ONE.
-    /// locationLabel (above) is REFERENCE: the sub-label of the compass, up
-    /// every frame, dim, small, read when you want it. This is an EVENT --
-    /// crossing a boundary -- and the whole of what it adds is that the
-    /// crossing is legible AT THE MOMENT IT HAPPENS instead of only by
-    /// noticing that a dim row two sizes down has quietly changed its words.
-    /// Both are drawn from the same fact (sim::docks::placeNameAt); neither
-    /// is derived from the other, because one is a state and the other is an
-    /// edge, exactly the distinction anim.hpp draws between EasedToggle and
+    /// IT IS NOT A REFERENCE ROW AND IT MUST NEVER BECOME ONE. The old
+    /// locationLabel sub-label -- the same fact up every frame, dim, small --
+    /// is exactly what the word diet deleted; this is an EVENT -- crossing a
+    /// boundary -- and the whole of what it adds is that the crossing is
+    /// legible AT THE MOMENT IT HAPPENS. With the sub-label gone the plate is
+    /// the one thing on the street that names ground, which is the diet's own
+    /// argument: text prints when it changes, never merely because it is
+    /// true. Drawn from sim::docks::placeNameAt, an edge and not a state --
+    /// exactly the distinction anim.hpp draws between EasedToggle and
     /// ImpactPulse.
     ///
     /// TOP BAND, NOT THE MIDDLE, and that is this file's own rule and not a
@@ -409,11 +593,12 @@ struct HudState {
     /// already guarantees only one is non-empty at a time, and hud.cpp enforces
     /// it anyway rather than trusting a caller.
     ///
-    /// IT IS NOT A SECOND caseLabel. caseLabel is REFERENCE -- the bottom-left
-    /// row that is up every frame and says where the trail stands. This is an
-    /// EVENT. The same distinction placePlate draws against locationLabel, for
-    /// the same reason, and it is why this is a plate and not a brighter
-    /// corner: a row nobody is looking at cannot announce anything by changing.
+    /// IT IS NOT A SECOND caseLabel. caseLabel is the bottom-left row that
+    /// says where the trail stands -- and under the word diet even THAT row
+    /// sleeps at rest, waking only when a beat moves or the book closes. This
+    /// is an EVENT plate, and while it is up the case row is deliberately
+    /// kept down (the spec's "the notice IS the case news"): one piece of
+    /// news, said once, in one place.
     ///
     /// Empty draws nothing, and so does a zero fade: every hand-built HudState
     /// that predates these three fields is pixel-identical.
@@ -424,6 +609,69 @@ struct HudState {
     /// Where the plate is in its own rise, signed. See placePlateDrift: the
     /// identical contract, driven off the identical toggle shape.
     float casePlateDrift = 0.0F;
+
+    /// VOICE LANE: THE ONE VOICE CHANNEL'S ROW. What a body said WITHOUT the
+    /// talk key -- a docker passing you on the Tarwalk, a witness to a blow,
+    /// the goodbye as a panel closes, the watchman's word as he crosses the
+    /// room -- as Oblivion's one subtitle line: the speaker in the person
+    /// accent (the crosshair's own colour for a body) and the row in dim
+    /// ink, exactly the court's officer block, on one plate.
+    ///
+    /// NOT THE ALERT. The alert (amber, its own plate) is the line the player
+    /// must not miss and it keeps its slot and its rank; this is quieter and
+    /// takes the slot above it when both are up, its own slot when the
+    /// alert is down. Its own EasedToggle per DECISIONS.md UI rule 1. Empty
+    /// draws nothing and so does a zero fade: every hand-built HudState that
+    /// predates these three fields is pixel-identical.
+    ///
+    /// `voiceName` is drawn with a colon after it; `voiceLine` is the row.
+    /// The pair is clipped as one line against the frame's own width, the
+    /// row before the name, so the speaker is never the part that is cut.
+    std::string_view voiceName;
+    std::string_view voiceLine;
+    /// 0 (gone) .. 1 (full strength). Defaults to 0 for placePlateFade's
+    /// reason: this row's ordinary state is "not there".
+    float voiceFade = 0.0F;
+    /// The rung plate's weight on this row's ink, the alert row's own rule
+    /// (alertInkWeight): the words dim under the plate, the backing keeps
+    /// the row's ease, its rails take a quarter while the row stands down,
+    /// and the row takes the plate's register (alertStepScale).
+    float voiceInkWeight = 1.0F;
+    /// The voice row's own alertStepsDown: the plate is on screen, or this
+    /// row's line was capped under it and finishes small (never swelling
+    /// back to the minor scale once the plate has left).
+    bool voiceStepsDown = false;
+
+    // --- THE PULL PACK (render/pull.hpp) --------------------------------------
+    //
+    // THE STREET SAYS WHERE NEXT. Three additions to the top band, every one
+    // of them defaulting to "draw nothing" so every hand-built HudState that
+    // predates them is pixel-identical.
+
+    /// STATE tier: "NE 40  THE WEIGHHOUSE" -- the ONE lead the player chose to
+    /// FOLLOW (or the authored next lead standing in for a choice), on the
+    /// ribbon's own sub-label row, from the same bearing/paces arithmetic the
+    /// casebook page prints. Up every frame while a lead is followed; that is
+    /// the one line the UI-EA rest budget grew by (spec 1.2 #11). Empty draws
+    /// nothing. Never a person, never a clue -- the marker doctrine.
+    std::string_view pullLabel;
+    /// The followed lead's own bearing, BAM 0..65535, or -1: drawn as the
+    /// amber tick on the ribbon, under the strip, so the eye can line the
+    /// fixed mark up on it without reading a word.
+    std::int32_t pullTickBam = -1;
+    /// Bearings of DISCOVERED NAMED PLACES (a heard lead names them, or the
+    /// body has stood in them), BAM 0..65535 each: the bone ticks on the
+    /// ribbon. Only the ones inside the strip's 180-degree window draw.
+    std::vector<std::int32_t> placeTickBams;
+
+    /// EVENT tier: the skill-up toast, top-left -- "SKYRUNNING RISES TO 12" --
+    /// Oblivion's own beat in this HUD's own register. Rises through its
+    /// resting row and fades, on Session's own EasedToggle, in situ (mid-fight,
+    /// mid-climb) and never pausing anything. Empty or zero fade draws nothing.
+    std::string_view skillToast;
+    float skillToastFade = 0.0F;
+    /// Signed drift, the plates' own contract: -1 rising in, +1 drifting out.
+    float skillToastDrift = 0.0F;
 };
 
 /// The size the HUD's own register is drawn at: the compass, the hour, the
@@ -431,9 +679,10 @@ struct HudState {
 /// keeps the same apparent size at every resolution.
 [[nodiscard]] int hudScale(int height) noexcept;
 
-/// One step down, and the size everything the player looks at DELIBERATELY is
-/// drawn at: the place name, the purse, standing, heat, the sack, the stealth
-/// line, the case, the rung, the objective, the rival, the room.
+/// The size everything the player looks at DELIBERATELY is drawn at: the place
+/// name, the purse, standing, heat, the sack, the stealth line, the case, the
+/// rung, the objective, the rival, the room -- and, through panelMetric(),
+/// every composed page in the game.
 ///
 /// It is a hierarchy and not a shrink. Ten sprints put ten rows on this HUD and
 /// drew every one of them at the size of the health bar, so the frame had no
@@ -442,12 +691,20 @@ struct HudState {
 /// the size the whole HUD is at 640x360 -- a resolution the game already calls
 /// legible -- and at 320x180 it is the same as hudScale(), because there is
 /// nothing below a 4x6 font to step down to.
-[[nodiscard]] int hudMinorScale(int height) noexcept;
+///
+/// THE SMALLER OF HEIGHT / 240 AND WIDTH / 425, WITH NO OFFSET, and that is
+/// the property that matters. It used to be hudScale() - 1, and the flat step
+/// made a bigger window deal FEWER cells across every page. Now the cells
+/// across any window at least 425 px wide never fall under 1280x720's 85, at
+/// any size and any aspect (16:10 included, which the height alone got
+/// wrong). It is no longer always one step under hudScale(): 720 tall is 4
+/// and 3, 1080 tall is 6 and 4. The arithmetic is on the definition.
+[[nodiscard]] int hudMinorScale(int width, int height) noexcept;
 
 /// How wide the top-right stack is at its widest, so the conversation surface
 /// can wrap clear of it instead of guessing. A spoken line running under the
 /// hour is unreadable and looks like a bug.
-[[nodiscard]] int hudTopRightReserve(int height) noexcept;
+[[nodiscard]] int hudTopRightReserve(int width, int height) noexcept;
 
 /// The fraction of the screen, on each axis, that the HUD may occupy from an
 /// edge. Anything between these on both axes is play space and must stay clear.
@@ -480,6 +737,10 @@ enum class AimKind : int {
     /// this one and a player who cannot tell it from a doorway is the player
     /// who thought the Bloodletter trail ended at the Weighhouse.
     Clue = 4,
+    /// KIT BUILD. SOMEBODY'S THING: taking it is theft, and the crosshair
+    /// says so before the press -- the reference's red hand. Its own
+    /// accent, and the THEIRS note beside the name.
+    Owned = 5,
 };
 
 /// THE ONE REGION OF THE PLAY SPACE THE HUD MAY ENTER, and it is a clamp
@@ -531,6 +792,12 @@ void drawHud(Framebuffer& target, const HudState& state);
 /// drawn. Public because the debug overlay and the capture stamp use it.
 int drawText(Framebuffer& target, int x, int y, std::string_view text, const Rgb& colour,
              float alpha, int scale);
+/// The same, with the drop shadow's alpha given rather than three quarters
+/// of the ink's: text on a slab that thins faster than its ink (the rung
+/// plate's lift) draws its shadows at the slab's alpha, so the letters never
+/// leave as black outlines round grey words.
+int drawText(Framebuffer& target, int x, int y, std::string_view text, const Rgb& colour,
+             float alpha, int scale, float shadowAlpha);
 
 /// HARDENING PASS. THE S8 "NES POP-UP" TREATMENT (docs/design/PLAYTEST-LOG.md's
 /// S8 entry), CARRIED OVER FROM client-observer -- retired whole in f712579

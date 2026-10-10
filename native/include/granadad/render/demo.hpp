@@ -120,6 +120,25 @@ struct DemoBeat {
     int shotAt = -1;
 };
 
+/// The demo's lower-left commentary pane and its centred title card, exposed
+/// so the case-watch overlay (case_watch.hpp) draws the exact panes the demo
+/// draws instead of growing a second vocabulary for the same two ideas. Both
+/// are pure draws: state (what the text is, how far the fade has got) stays
+/// with whichever director owns the run.
+void drawRouteCaption(Framebuffer& target, const std::string& caption, float alpha);
+void drawRouteCard(Framebuffer& target, const std::string& line, const std::string& sub,
+                   const std::string& foot, float alpha);
+/// The seam veil -- a plain black fill at `amount`, the same cloth
+/// Session::drawFrame dips travel's arrival in. Shared so the one director
+/// that cannot ride the session's step()-advanced veil (--case-watch, whose
+/// holds step zero times a frame) paints its frame-clocked twin with the
+/// identical draw instead of a second opinion of what black is.
+void drawRouteVeil(Framebuffer& target, float amount);
+/// True while a page, a conversation or the case plate owns the pixels a
+/// caption would take -- the demo's own stand-down rule, shared for the same
+/// reason the draws are.
+[[nodiscard]] bool routeOverlayStandsDown(const Session& session);
+
 /// The route, in order. Exposed so a test can walk it without a window.
 [[nodiscard]] const std::vector<DemoBeat>& demoRoute();
 
@@ -171,6 +190,11 @@ class DemoDirector {
 
     [[nodiscard]] int beatIndex() const noexcept { return at_; }
     [[nodiscard]] std::int64_t frameIndex() const noexcept { return frame_; }
+    /// True on a frame whose advance() armed the shutter -- exposed so a case
+    /// can pin that no committed frame is ever photographed through the seam
+    /// veil (Session::cutVeil): the fade dresses the cuts and must never
+    /// darken the shot list.
+    [[nodiscard]] bool shutterArmed() const noexcept { return pending_ != nullptr; }
 
   private:
     void enter(Session& session);

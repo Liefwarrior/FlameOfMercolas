@@ -1,0 +1,78 @@
+{
+  "jobName": "docks-3d-rigs",
+  "subdir": "characters",
+  "sheetCell": 256,
+  "sheetColumns": 5,
+  "camera": { "width": 512, "height": 512, "fov": 30, "nearClip": 0.05, "farClip": 20, "msaa": 1 },
+  "light": { "euler": [50, -30, 0], "intensity": 1.15, "ambient": 0.45, "color": [1, 0.97, 0.9] },
+
+  "_clipOrder": "index 0..7 = granadad::render3d::ActorClip { Idle, Walk, PunchLeft, PunchRight, Block, Hit, Recover, Death }; 8, 9 are extras",
+  "clips": [
+    { "name": "idle",        "clip": "Assets/Malbers Animations/Common/Human Anims/Idle/Idle_Combat.fbx",                                 "clipName": "Idle_Combat" },
+    { "name": "walk",        "clip": "Assets/Malbers Animations/Common/Human Anims/Locomotion/Strafe/S_Strafe_Walk_N_IP.fbx",             "clipName": "S_Strafe_Walk_N_IP" },
+    { "name": "punch_l",     "clip": "Assets/Malbers Animations/Common/Human Anims/Attacks/H_Punching Left.fbx",                          "clipName": "H_Punching Left" },
+    { "name": "punch_r",     "clip": "Assets/Malbers Animations/Common/Human Anims/Attacks/H_Punching Right.fbx",                         "clipName": "H_Punching Right" },
+    { "name": "block",       "clip": "Assets/Malbers Animations/Common/Human Anims/Block/H_Block_Unharmed.fbx",                           "clipName": "H_Block_Disarmed" },
+    { "name": "hit",         "clip": "Assets/Malbers Animations/Common/Human Anims/Hit/H_Hit_Front.fbx",                                  "clipName": "H_Hit_Front" },
+    { "name": "recover",     "clip": "Assets/Malbers Animations/Common/Human Anims/Recover/S_Recover_FaceDown.fbx",                       "clipName": "S_Recover_FaceDown" },
+    { "name": "death",       "clip": "Assets/Malbers Animations/Common/Human Anims/Deaths/H_Death1.fbx",                                  "clipName": "H_Death1" },
+    { "name": "sword_swing", "clip": "Assets/Malbers Animations/Common/Human Anims/Weapons/Sword_OneHand/Human_SwordOneHand_Right.fbx",   "clipName": "Human_SwordOneHand_Right" },
+    { "name": "spell_blast", "clip": "Assets/Malbers Animations/Common/Human Anims/Weapons/Spell_1H/H_1HSpell_Blast_Loop.fbx",            "clipName": "H_1HSpell_Blast_Loop" }
+  ],
+
+  "_viewmodelOrder": "index 0..7 = granadad::render3d::ViewmodelState { Idle, Charging, ChargedHard, SwingLight, SwingHard, Block, Cast, Hit }",
+  "rigs": [
+    {
+      "name": "townsman", "role": "actor",
+      "rigPrefab": "Assets/Synty/PolygonGeneric/Prefabs/Characters/SM_Gen_Chr_Peasent_Male_01.prefab",
+      "avatarModel": "Assets/Synty/PolygonGeneric/Models/Generic_Characters.fbx"
+    },
+    {
+      "name": "dockhand", "role": "actor",
+      "rigPrefab": "Assets/Synty/PolygonFantasyHeroCharacters/Prefabs/Characters_Presets/Chr_FantasyHero_Preset_1.prefab",
+      "avatarModel": "Assets/Synty/PolygonFantasyHeroCharacters/Models/FixedScale/ModularCharacters.fbx"
+    },
+    {
+      "name": "watchman", "role": "actor",
+      "rigPrefab": "Assets/Synty/PolygonKnights/Prefabs/Characters/SM_Chr_Soldier_01_Blue.prefab",
+      "avatarModel": "Assets/Synty/PolygonKnights/Models/Characters/Characters.fbx"
+    },
+    {
+      "name": "viewmodel_fists", "role": "viewmodel",
+      "rigPrefab": "Assets/Synty/PolygonFantasyHeroCharacters/Prefabs/Characters_Presets/Chr_FantasyHero_Preset_1.prefab",
+      "avatarModel": "Assets/Synty/PolygonFantasyHeroCharacters/Models/FixedScale/ModularCharacters.fbx",
+      "keepRenderers": ["ArmUpper", "ArmLower", "Hand", "ShoulderAttach", "ElbowAttach"],
+      "clipOverrides": [
+        { "name": "idle",         "clip": "Assets/Malbers Animations/Common/Human Anims/Idle/Idle_Combat.fbx",                         "clipName": "Idle_Combat" },
+        { "name": "charging",     "clip": "Assets/Malbers Animations/Common/Human Anims/Attacks/H_Punching Right.fbx",                 "clipName": "H_Punching Right" },
+        { "name": "charged_hard", "clip": "Assets/Malbers Animations/Common/Human Anims/Attacks/H_Punching Left.fbx",                  "clipName": "H_Punching Left" },
+        { "name": "swing_light",  "clip": "Assets/Malbers Animations/Common/Human Anims/Attacks/H_Punching Right.fbx",                 "clipName": "H_Punching Right" },
+        { "name": "swing_hard",   "clip": "Assets/Malbers Animations/Common/Human Anims/Attacks/H_Punching Left.fbx",                  "clipName": "H_Punching Left" },
+        { "name": "block",        "clip": "Assets/Malbers Animations/Common/Human Anims/Block/H_Block_Unharmed.fbx",                   "clipName": "H_Block_Disarmed" },
+        { "name": "cast",         "clip": "Assets/Malbers Animations/Common/Human Anims/Weapons/Spell_1H/H_1HSpell_Blast_Loop.fbx",    "clipName": "H_1HSpell_Blast_Loop" },
+        { "name": "hit",          "clip": "Assets/Malbers Animations/Common/Human Anims/Hit/H_Hit_Front.fbx",                          "clipName": "H_Hit_Front" }
+      ]
+    },
+    {
+      "name": "viewmodel_sword", "role": "viewmodel",
+      "rigPrefab": "Assets/Synty/PolygonFantasyHeroCharacters/Prefabs/Characters_Presets/Chr_FantasyHero_Preset_1.prefab",
+      "avatarModel": "Assets/Synty/PolygonFantasyHeroCharacters/Models/FixedScale/ModularCharacters.fbx",
+      "keepRenderers": ["ArmUpper", "ArmLower", "Hand", "ShoulderAttach", "ElbowAttach"],
+      "weapon": {
+        "prefab": "Assets/Synty/PolygonFantasyHeroCharacters/Prefabs/Weapons/SM_Wep_Sword_01.prefab",
+        "bone": "RightHand", "boneNameFallback": "Hand_R",
+        "localPos": [0, 0, 0], "localEuler": [0, 0, 0], "localScale": 1
+      },
+      "clipOverrides": [
+        { "name": "idle",         "clip": "Assets/Malbers Animations/Common/Human Anims/Idle/Idle_Combat.fbx",                                          "clipName": "Idle_Combat" },
+        { "name": "charging",     "clip": "Assets/Malbers Animations/Common/Human Anims/Weapons/Sword_OneHand/Human_SwordOneHand_Right.fbx",            "clipName": "Human_SwordOneHand_Right_Charge" },
+        { "name": "charged_hard", "clip": "Assets/Malbers Animations/Common/Human Anims/Weapons/Sword_OneHand/Human_SwordOneHand_Right.fbx",            "clipName": "Human_SwordOneHand_Right_Charge" },
+        { "name": "swing_light",  "clip": "Assets/Malbers Animations/Common/Human Anims/Weapons/Sword_OneHand/Human_SwordOneHand_Right.fbx",            "clipName": "Human_SwordOneHand_Right" },
+        { "name": "swing_hard",   "clip": "Assets/Malbers Animations/Common/Human Anims/Weapons/Sword_OneHand/Human_SwordOneHand_SwipeUp.fbx",          "clipName": "Human_SwordOneHand_SwipeUp" },
+        { "name": "block",        "clip": "Assets/Malbers Animations/Common/Human Anims/Block/H_Block_Axe.fbx",                                         "clipName": "H_Block_Axe" },
+        { "name": "cast",         "clip": "Assets/Malbers Animations/Common/Human Anims/Weapons/Spell_1H/H_1HSpell_Blast_Loop.fbx",                     "clipName": "H_1HSpell_Blast_Loop" },
+        { "name": "hit",          "clip": "Assets/Malbers Animations/Common/Human Anims/Hit/H_Hit_Front.fbx",                                           "clipName": "H_Hit_Front" }
+      ]
+    }
+  ]
+}

@@ -43,9 +43,16 @@ struct Rgb {
 }
 
 /// Packs to 0xAABBGGRR, which is R,G,B,A in memory on a little-endian machine —
-/// what stb_image_write wants and what SDL calls PIXELFORMAT_ABGR8888.
+/// what stb_image_write wants, what SDL calls PIXELFORMAT_ABGR8888, and what
+/// raylib calls PIXELFORMAT_UNCOMPRESSED_R8G8B8A8. Alpha is always 0xFF.
 [[nodiscard]] std::uint32_t packRgb(const Rgb& colour) noexcept;
+/// The same, with a coverage alpha (0..1). 3D BUILD: the HUD overlay is a
+/// transparent surface composited over the raylib frame, and this is how a
+/// pixel says how much of it is there. See Framebuffer::clearTransparent.
+[[nodiscard]] std::uint32_t packRgba(const Rgb& colour, float alpha) noexcept;
 [[nodiscard]] Rgb unpackRgb(std::uint32_t pixel) noexcept;
+/// The coverage alpha of a packed pixel, 0..1. 1 for anything packRgb wrote.
+[[nodiscard]] float unpackAlpha(std::uint32_t pixel) noexcept;
 
 /// A drawable surface. Pixels and depth are parallel, row-major, top row first.
 class Framebuffer {
@@ -74,6 +81,16 @@ public:
 
     void clear(const Rgb& colour);
 
+    /// 3D BUILD. Clears to NOTHING -- every pixel fully transparent, depth
+    /// infinite -- so what the HUD, the pages and the washes then draw is an
+    /// overlay the 3D backend composites over its own frame. Nothing about
+    /// how they draw changes: set() writes opaque pixels exactly as before,
+    /// and blend() over an OPAQUE pixel is bit-identical to what it always
+    /// was, which is what keeps every pixel-exact HUD/page test green. Only
+    /// a blend over a pixel that is not yet opaque -- a state no software
+    /// frame ever had -- takes the coverage path.
+    void clearTransparent();
+
     void set(int x, int y, const Rgb& colour, float depthValue) noexcept {
         const std::size_t i = index(x, y);
         pixels_[i] = packRgb(colour);
@@ -81,7 +98,9 @@ public:
     }
 
     /// Blends `colour` over what is there, with no depth write. For the HUD and
-    /// for additive sprite glow.
+    /// for additive sprite glow. Straight-alpha "over": on an opaque pixel the
+    /// RGB result is the same lerp it has always been; on a transparent or
+    /// partial pixel the alpha accumulates as coverage (a + A(1 - a)).
     void blend(int x, int y, const Rgb& colour, float alpha) noexcept;
 
     /// Fills an axis-aligned rectangle, clipped. HUD workhorse.

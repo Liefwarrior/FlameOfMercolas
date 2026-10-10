@@ -1,0 +1,38 @@
+{
+  "schemaVersion": 1,
+  "notes": "Input for tools/lot-pipeline/pack-vfx.py. Each row cuts one cell out of a Piloto Studio texture (LOT) and downsamples it to the register's scale (16-32 px) for WorldRenderer::drawSprite's textured path (hard cutout at alpha >= 128, colour = texel * sprite.colour). grid = [cols, rows] over the source; cell = 0-based index row-major (or 'whole'); bbox = crop to the alpha bounding box (square-padded) before scaling; mode: rgba = keep colour+alpha (pre-coloured sources like the fireball), mask = keep alpha, force RGB white (tint comes from sprite.colour), luma = rgb24-on-black sources, luma becomes alpha and colour becomes white, packed:r|g|b = channel-packed masks, one plane becomes alpha. out = [w, h]. Every cell must keep at least minCoverage of its texels after the >= 128 cutout or the tool fails loudly. Colours and step counts named in purpose are the spec's (ASSET-PIPELINE-SPEC 3.4) and live in code, not here.",
+  "pack": "Piloto Studio",
+  "license": "asset-store-eula",
+  "sheetCell": 32,
+  "sheetColumns": 8,
+  "cutoutAlpha": 128,
+  "minCoverage": 0.04,
+  "cells": [
+    { "id": "glint_block",  "src": "Piloto Studio/Textures/Glints_Pickbook_4x4.png",           "grid": [4, 4], "cell": 0,       "bbox": true,  "mode": "mask", "out": [32, 32],
+      "purpose": "steel glint when a guard catches the blow: chest of the striker on the look-ray, tinted the block wash's (0.52,0.60,0.70) x blockPulse, 8 steps, halfWidth 0.12 tile. (Spec named cell 5; that one is a soft dot that cuts to nothing at >= 128 -- cell 0 is the 4-point star.)" },
+    { "id": "fleck_landed", "src": "Piloto Studio/Textures/Hit_Punch.png",                     "grid": [2, 2], "cell": 0,       "bbox": true,  "mode": "luma", "out": [32, 32],
+      "purpose": "warm impact fleck for a landed punch: struck body at chest height, tinted bone (0.92,0.86,0.70) x punchLandedPulse, 8 steps" },
+    { "id": "splat_kill",   "src": "Piloto Studio/Textures/Water_splash_1.png",                "grid": [3, 3], "cell": 4,       "bbox": true,  "mode": "mask", "out": [32, 32],
+      "purpose": "hard-edged splash for a kill / top-band hit: at the body, tinted the taken wash's own red (0.58,0.10,0.08) x light, 12 steps, halfWidth 0.16. Source is blue-baked, so RGB is forced white here and the red comes from sprite.colour" },
+    { "id": "puff_0",       "src": "Piloto Studio/Textures/ToonSmokePuff_3x3_Contrasted.png",  "grid": [3, 3], "cell": 0,       "bbox": false, "mode": "rgba", "out": [32, 32],
+      "purpose": "dust puff frame 0 of 4 when a body goes down: at its feet, z 0.05, grey x ground light, 3 steps per frame, halfWidth 0.20" },
+    { "id": "puff_1",       "src": "Piloto Studio/Textures/ToonSmokePuff_3x3_Contrasted.png",  "grid": [3, 3], "cell": 1,       "bbox": false, "mode": "rgba", "out": [32, 32], "purpose": "dust puff frame 1 of 4" },
+    { "id": "puff_2",       "src": "Piloto Studio/Textures/ToonSmokePuff_3x3_Contrasted.png",  "grid": [3, 3], "cell": 2,       "bbox": false, "mode": "rgba", "out": [32, 32], "purpose": "dust puff frame 2 of 4" },
+    { "id": "puff_3",       "src": "Piloto Studio/Textures/ToonSmokePuff_3x3_Contrasted.png",  "grid": [3, 3], "cell": 3,       "bbox": false, "mode": "rgba", "out": [32, 32], "purpose": "dust puff frame 3 of 4" },
+    { "id": "flame_0",      "src": "Piloto Studio/Textures/FireFlip_4x3_Fireball.png",         "grid": [4, 3], "cell": 0,       "bbox": false, "mode": "rgba", "out": [32, 24],
+      "purpose": "the Flame cast, frame 0 of 8: one tile ahead on the look-ray, colour white (orange/yellow baked), 2 steps per frame, halfWidth 0.25 capped at 48 px on screen" },
+    { "id": "flame_1",      "src": "Piloto Studio/Textures/FireFlip_4x3_Fireball.png",         "grid": [4, 3], "cell": 1,       "bbox": false, "mode": "rgba", "out": [32, 24], "purpose": "the Flame cast, frame 1 of 8" },
+    { "id": "flame_2",      "src": "Piloto Studio/Textures/FireFlip_4x3_Fireball.png",         "grid": [4, 3], "cell": 2,       "bbox": false, "mode": "rgba", "out": [32, 24], "purpose": "the Flame cast, frame 2 of 8" },
+    { "id": "flame_3",      "src": "Piloto Studio/Textures/FireFlip_4x3_Fireball.png",         "grid": [4, 3], "cell": 3,       "bbox": false, "mode": "rgba", "out": [32, 24], "purpose": "the Flame cast, frame 3 of 8" },
+    { "id": "flame_4",      "src": "Piloto Studio/Textures/FireFlip_4x3_Fireball.png",         "grid": [4, 3], "cell": 4,       "bbox": false, "mode": "rgba", "out": [32, 24], "purpose": "the Flame cast, frame 4 of 8" },
+    { "id": "flame_5",      "src": "Piloto Studio/Textures/FireFlip_4x3_Fireball.png",         "grid": [4, 3], "cell": 5,       "bbox": false, "mode": "rgba", "out": [32, 24], "purpose": "the Flame cast, frame 5 of 8" },
+    { "id": "flame_6",      "src": "Piloto Studio/Textures/FireFlip_4x3_Fireball.png",         "grid": [4, 3], "cell": 6,       "bbox": false, "mode": "rgba", "out": [32, 24], "purpose": "the Flame cast, frame 6 of 8" },
+    { "id": "flame_7",      "src": "Piloto Studio/Textures/FireFlip_4x3_Fireball.png",         "grid": [4, 3], "cell": 7,       "bbox": false, "mode": "rgba", "out": [32, 24], "purpose": "the Flame cast, frame 7 of 8" },
+    { "id": "slash_hard",   "src": "Piloto Studio/Textures/AnimeSlash_HalfRing.png",           "grid": [1, 1], "cell": "whole", "bbox": true,  "mode": "mask", "out": [32, 32],
+      "purpose": "crescent for a hard (held) swing at the struck body, tinted the hard-charge warm (0.95,0.55,0.20), 8 steps. Optional -- the first VFX to cut if it reads loud" }
+  ],
+  "animations": {
+    "puff":  ["puff_0", "puff_1", "puff_2", "puff_3"],
+    "flame": ["flame_0", "flame_1", "flame_2", "flame_3", "flame_4", "flame_5", "flame_6", "flame_7"]
+  }
+}

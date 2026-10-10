@@ -194,6 +194,14 @@ private:
 /// enumerate this directory keyed on exactly those two arrays, and a file that
 /// grew either would be silently loaded into a hashed system.
 [[nodiscard]] std::filesystem::path missionSheetRawsPath(const std::filesystem::path& contentDir);
+/// content/raws/quests/eviction.json -- the eviction case (owner's third
+/// brief: a priest of the Flame hiring open hands to serve a distraint in
+/// the Netters'). A THIRD case file with the same top-level shape as the
+/// courier's, and for the identical reason that file's own comment gives:
+/// "case" + "leads" at top level, never "stages" and never "templates",
+/// because QuestBook::load and RadiantRaws::load enumerate this directory
+/// keyed on exactly those two arrays.
+[[nodiscard]] std::filesystem::path evictionRawsPath(const std::filesystem::path& contentDir);
 
 /// What one look produced.
 struct LookResult {

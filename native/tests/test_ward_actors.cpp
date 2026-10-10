@@ -160,6 +160,132 @@ TEST_CASE("one body per square, and it holds while six hundred of them walk") {
     CHECK(std::adjacent_find(cells.begin(), cells.end()) == cells.end());
 }
 
+TEST_CASE("crowds sidestep instead of gluing into a column at a chokepoint") {
+    // Companion to the reading just above, on the same ward: the morning
+    // commute (the day trades open at seven) is when a compound's whole
+    // household funnels toward one door at once, and until sidestep()
+    // existed the tile dead ahead was the only move a blocked body ever
+    // tried -- so a dozen bodies converging on the same doorway queued in an
+    // exact single-file column, glued directly behind one another, and never
+    // shifted into open ground beside the line. sidesteps() is zero if that
+    // mechanism never actually fires under a real rush and nonzero the
+    // moment a real body steps around one that is in its way; a busy hour
+    // with none recorded at all would mean the fix compiles but never runs.
+    const sim::WardPopulation& run = wardAt(7, 900);
+    INFO("sidesteps recorded by 900 ticks past seven: ", run.sidesteps());
+    CHECK(run.sidesteps() > 0);
+
+    // And the invariant it must never spend to get there -- the same measure
+    // "one body per square, and it holds while six hundred of them walk"
+    // takes above, read again on this reading.
+    std::vector<std::uint64_t> cells;
+    for (const sim::WardActor& actor : run.actors()) {
+        if (!actor.visible()) {
+            continue;
+        }
+        cells.push_back((static_cast<std::uint64_t>(actor.band) << 40) |
+                        (static_cast<std::uint64_t>(actor.y) << 20) |
+                        static_cast<std::uint64_t>(actor.x));
+    }
+    std::sort(cells.begin(), cells.end());
+    CHECK(std::adjacent_find(cells.begin(), cells.end()) == cells.end());
+}
+
+TEST_CASE("a blocked body does not oscillate: sidestep never doubles back on itself") {
+    // A played session found the bug a still frame could not: a body wedged
+    // against a blocked hop sidestepped off it, and the very next tick's
+    // replan routed it straight back onto the blocked hop's own cell, which
+    // sidestepped it off again -- eighty-plus ticks running, never actually
+    // going anywhere. The guard meant to stop exactly this compared against
+    // WardActor::prevX/Y, which tickActor resets to the CURRENT position at
+    // the top of every tick, before any policy runs -- so it could never
+    // fire. The fix is real cross-tick memory (cameFromX/Y/Band, written by
+    // tryEnter alone) plus preferring a strictly closer cell over a level
+    // one. This proves it over ten real minutes of the morning rush, not one
+    // frame: for every visible body, track how many ticks IN A ROW its
+    // current cell equals its cell from two ticks back AND differs from
+    // last tick's -- the A-B-A-B cadence an oscillation makes, and NOT the
+    // ordinary case of a body that simply has not moved in a while (which
+    // trivially equals its own cell from two ticks back and is not a bug at
+    // all -- the first version of this case mistook a sleeping serf for an
+    // eighty-tick loop before that second clause was added) -- and require
+    // the worst streak stays short. A genuine squeeze-past or a
+    // shove-and-reclaim trades a tile once or twice; it does not settle into
+    // a metronome.
+    const auto run = privateWard(7);
+    constexpr int kTicks = 600;
+    struct Recent {
+        std::int64_t twoAgo = -1;
+        std::int64_t oneAgo = -1;
+        std::int32_t streak = 0;
+    };
+    std::vector<Recent> recent(run->people().actors().size());
+    std::int32_t worstStreak = 0;
+    std::int32_t worstActor = -1;
+    for (int t = 0; t < kTicks; ++t) {
+        run->run(1);
+        for (const sim::WardActor& actor : run->people().actors()) {
+            if (!actor.visible()) {
+                continue;
+            }
+            Recent& r = recent[static_cast<std::size_t>(actor.id)];
+            const std::int64_t here = (static_cast<std::int64_t>(actor.band) << 40) |
+                                      (static_cast<std::int64_t>(actor.y) << 20) |
+                                      static_cast<std::int64_t>(actor.x);
+            r.streak = (here == r.twoAgo && here != r.oneAgo) ? r.streak + 1 : 0;
+            if (r.streak > worstStreak) {
+                worstStreak = r.streak;
+                worstActor = actor.id;
+            }
+            r.twoAgo = r.oneAgo;
+            r.oneAgo = here;
+        }
+    }
+    INFO("worst back-and-forth streak: ", worstStreak, " ticks, actor ", worstActor);
+    CHECK(worstStreak < 10);
+}
+
+TEST_CASE("nobody ever stands on the player's own tile") {
+    // tryEnter refuses the player's own cell outright, and sidestep's and
+    // tryPush's candidate loops pre-check the same rule -- but nothing
+    // proved it under real, sustained pressure until this. A busy corner of
+    // the Tarwalk near the authored spawn, ten real minutes of the morning
+    // rush, the player planted and never moving: if the refusal ever lapsed
+    // for even one tick, some body converging on that stretch of street
+    // would have landed on it.
+    const auto run = privateWard(7);
+    sim::WardPopulation& people = run->people();
+    std::int32_t px = 0;
+    std::int32_t py = 0;
+    std::int32_t pband = 0;
+    bool found = false;
+    for (std::int32_t dx = -3; dx <= 3 && !found; ++dx) {
+        for (std::int32_t dy = -3; dy <= 3 && !found; ++dy) {
+            const std::int32_t cx = 156 + dx;
+            const std::int32_t cy = 63 + dy;
+            if (sharedTiles().standable(cx, cy, 19) &&
+                people.nearestTo(cx, cy, 19, 0) == nullptr) {
+                px = cx;
+                py = cy;
+                pband = 19;
+                found = true;
+            }
+        }
+    }
+    REQUIRE(found);
+    people.setPlayer(px, py, pband);
+    for (int t = 0; t < 300; ++t) {
+        run->run(1);
+        for (const sim::WardActor& actor : people.actors()) {
+            if (!actor.visible()) {
+                continue;
+            }
+            INFO("tick ", t, " actor ", actor.id);
+            CHECK_FALSE((actor.x == px && actor.y == py && actor.band == pband));
+        }
+    }
+}
+
 TEST_CASE("no guard pile-ups: a watchman never shoves a watchman on duty") {
     // The Java build's own etiquette gate, and the reason the patrol yield is
     // the resolution mechanism instead of two watchmen wrestling in a doorway
@@ -749,4 +875,86 @@ TEST_CASE("every actor's home and its work anchor are mutually reachable") {
             total > 0 ? (100.0 * failed) / total : 0.0, "%), worst SUCCESSFUL search expanded ",
             worstOk, " nodes");
     CHECK(failed == 0);
+}
+
+TEST_CASE("E addresses the body in front of the eye; nearest only answers when nobody is") {
+    // ERRANDS A HUMAN CAN FINISH (2026-10-09). The talk key used to ask
+    // nearestTo alone, so in a crowd the closest body answered whatever the
+    // eye was on -- Onna at the Mission's night pot could not be addressed
+    // from any tile a body can stand on (--radiant=settled now proves she
+    // can). Pinned here on the real roster, on a body standing alone.
+    const sim::WardPopulation& ward = wardAt(8, 0);
+    const sim::WardActor* alone = nullptr;
+    for (const sim::WardActor& actor : ward.actors()) {
+        if (!actor.visible()) {
+            continue;
+        }
+        bool crowded = false;
+        for (const sim::WardActor& other : ward.actors()) {
+            if (&other == &actor || !other.visible() || other.band != actor.band) {
+                continue;
+            }
+            if (std::max(std::abs(other.x - actor.x), std::abs(other.y - actor.y)) <= 4) {
+                crowded = true;
+                break;
+            }
+        }
+        if (!crowded) {
+            alone = &actor;
+            break;
+        }
+    }
+    REQUIRE(alone != nullptr);
+    // The eye one tile EAST of them.
+    const std::int32_t eyeX = sim::q8_tile_centre(alone->x + 1);
+    const std::int32_t eyeY = sim::q8_tile_centre(alone->y);
+    // Looking at them: they answer.
+    const sim::WardActor* ahead =
+        ward.inFrontOf(eyeX, eyeY, alone->band, sim::kFacingWest, 2);
+    REQUIRE(ahead != nullptr);
+    CHECK(ahead->id == alone->id);
+    // Looking away, or square across them: nobody is in front.
+    CHECK(ward.inFrontOf(eyeX, eyeY, alone->band, sim::kFacingEast, 2) == nullptr);
+    CHECK(ward.inFrontOf(eyeX, eyeY, alone->band, sim::kFacingNorth, 2) == nullptr);
+    CHECK(ward.inFrontOf(eyeX, eyeY, alone->band, sim::kFacingSouth, 2) == nullptr);
+    // ...which is when nearestTo still answers, as it always did.
+    const sim::WardActor* nearest = ward.nearestTo(alone->x + 1, alone->y, alone->band, 2);
+    REQUIRE(nearest != nullptr);
+    CHECK(nearest->id == alone->id);
+    // On their own tile, any facing: dead ahead.
+    const sim::WardActor* underfoot = ward.inFrontOf(sim::q8_tile_centre(alone->x),
+                                                     sim::q8_tile_centre(alone->y), alone->band,
+                                                     sim::kFacingNorth, 2);
+    REQUIRE(underfoot != nullptr);
+    CHECK(underfoot->id == alone->id);
+    // Out of reach is out of reach, in front or not.
+    CHECK(ward.inFrontOf(sim::q8_tile_centre(alone->x + 3), eyeY, alone->band,
+                         sim::kFacingWest, 2) == nullptr);
+}
+
+TEST_CASE("coin paid into a ward purse is minted, coin taken out is sunk, and the ledger holds") {
+    // SHOPS (2026-10-09). A purchase across a counter pays the keeper out of
+    // the player's purse, which is not one of the ward's: minted, the mirror
+    // of a robbery's sink, so minted - sunk == held across the boundary.
+    auto run = privateWard(8);
+    sim::WardPopulation& ward = run->people();
+    const auto held = [&ward] {
+        std::int64_t sum = 0;
+        for (const sim::WardActor& actor : ward.actors()) {
+            sum += actor.coin;
+        }
+        return sum;
+    };
+    const auto balance = [&ward] {
+        return ward.ledger().coinMinted - ward.ledger().coinSunk;
+    };
+    REQUIRE(balance() == held());
+    const std::int32_t keeper = ward.actors().front().id;
+    ward.payCoinTo(keeper, 9);
+    CHECK(balance() == held());
+    CHECK(ward.takeCoinFrom(keeper, 4) == 4);
+    CHECK(balance() == held());
+    ward.payCoinTo(keeper, 0);
+    ward.payCoinTo(-1, 5);
+    CHECK(balance() == held());
 }

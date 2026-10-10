@@ -18,8 +18,10 @@
 //     typed in.
 //
 // And then the same composition, resolved at 320x180, 640x360, 960x540,
-// 1280x720 and 1920x1080, because "width-aware" is a claim and these are the
-// numbers that make it one.
+// 1280x720, 1600x900 and 1920x1080, because "width-aware" is a claim and these
+// are the numbers that make it one. (1600x900 is the one grid, 106x42, that no
+// other capture size shares since the register became height/240; 1920x1080 is
+// 960x540's grid at twice the pixel and 2560x1440 is 1280x720's.)
 
 #include <doctest/doctest.h>
 
@@ -37,13 +39,15 @@ using namespace granadad::render;
 namespace {
 
 /// Every window size this suite claims the composition holds at. The 960x540
-/// baseline is the one docs/HUD-REAL-ESTATE.md measures at; the other four are
-/// the ends of the range the game actually runs in.
+/// baseline is the one docs/HUD-REAL-ESTATE.md measures at; the others are
+/// the ends of the range the game actually runs in, and 1600x900 the one grid
+/// none of the others share.
 struct Size {
     int w;
     int h;
 };
-constexpr Size kSizes[] = {{320, 180}, {640, 360}, {960, 540}, {1280, 720}, {1920, 1080}};
+constexpr Size kSizes[] = {{320, 180},  {640, 360},   {960, 540},  {1280, 720},
+                           {1600, 900}, {1920, 1080}};
 
 [[nodiscard]] std::vector<PanelOption> namedOptions(const std::vector<std::string>& labels) {
     std::vector<PanelOption> out;
@@ -83,8 +87,90 @@ TEST_CASE("the panel grid is the font's own grid") {
     // And the metric a composed screen picks is the register hud.hpp reserves
     // for reference material, at every size the game runs at.
     for (const Size& size : kSizes) {
-        CHECK(panelMetric(size.h).scale == hudMinorScale(size.h));
+        CHECK(panelMetric(size.w, size.h).scale == hudMinorScale(size.w, size.h));
     }
+}
+
+TEST_CASE("a bigger window never deals fewer cells across than 1280x720") {
+    // THE REGISTER'S OWN CONTRACT (hud.cpp, kMinorScaleDivisor). It used to be
+    // hudScale() - 1, and the flat step made cells across FALL as the window
+    // grew: 1920x1080 dealt 76 where 960x540 dealt 96, and the chart tile that
+    // fit MISSION OF THE FLA. at 1600x900 truncated to MISSION OF THE. at
+    // 2560x1440. With the scale proportional to the height and floored, no
+    // window at least 425 px wide, at any aspect, deals fewer than 1280x720's
+    // own 85.
+    const auto cellsAcross = [](int w, int h) { return panelMetric(w, h).cellsIn(w); };
+    // The seven sizes this build is captured at, and what each deals now.
+    CHECK(hudMinorScale(320, 180) == 1);
+    CHECK(hudMinorScale(640, 360) == 1);
+    CHECK(hudMinorScale(960, 540) == 2);
+    CHECK(hudMinorScale(1280, 720) == 3);
+    CHECK(hudMinorScale(1600, 900) == 3);
+    CHECK(hudMinorScale(1920, 1080) == 4);
+    CHECK(hudMinorScale(2560, 1440) == 6);
+    CHECK(cellsAcross(320, 180) == 64);
+    CHECK(cellsAcross(640, 360) == 128);
+    CHECK(cellsAcross(960, 540) == 96);
+    CHECK(cellsAcross(1280, 720) == 85);
+    CHECK(cellsAcross(1600, 900) == 106);
+    CHECK(cellsAcross(1920, 1080) == 96);
+    CHECK(cellsAcross(2560, 1440) == 85);
+    // The floor at every 16:9 height from 720 up to 4K, not only the pinned
+    // ones: the sawtooth an integer scale makes bottoms out at 85, never under.
+    const int floor = cellsAcross(1280, 720);
+    for (int h = 720; h <= 2160; h += 4) {
+        const int w = h * 16 / 9;
+        INFO("at ", w, "x", h);
+        CHECK(cellsAcross(w, h) >= floor);
+    }
+    // AND AT EVERY ASPECT, which the height alone got wrong: 16:10 is what
+    // the owner plays on, and height/240 dealt 1920x1200 the old 76. The
+    // width term binds there, and at 4:3, 5:4 and the owner's own 1707x1067.
+    CHECK(hudMinorScale(1920, 1200) == 4);
+    CHECK(cellsAcross(1920, 1200) == 96);
+    CHECK(cellsAcross(1680, 1050) == 112);
+    CHECK(cellsAcross(2560, 1600) == 85);
+    CHECK(cellsAcross(1707, 1067) == 85);
+    CHECK(cellsAcross(1024, 768) == 102);
+    CHECK(cellsAcross(1280, 1024) == 85);
+    CHECK(cellsAcross(2560, 1080) == 128);
+    CHECK(cellsAcross(3440, 1440) == 114);
+    for (const auto& [w, h] : {std::pair{1920, 1200}, std::pair{1680, 1050}, std::pair{2560, 1600},
+                               std::pair{1024, 768}, std::pair{1280, 1024}, std::pair{2560, 1080},
+                               std::pair{3440, 1440}, std::pair{1707, 1067}}) {
+        INFO("at ", w, "x", h);
+        CHECK(cellsAcross(w, h) >= floor);
+    }
+    // The four smaller capture sizes did not move, so everything pinned at
+    // them before this rule stays pinned; from 900 up the register is no
+    // longer one step under hudScale(), and that is the point.
+    CHECK(hudMinorScale(320, 180) == hudScale(180));
+    CHECK(hudMinorScale(640, 360) == hudScale(360) - 1);
+    CHECK(hudMinorScale(960, 540) == hudScale(540) - 1);
+    CHECK(hudMinorScale(1280, 720) == hudScale(720) - 1);
+    CHECK(hudMinorScale(1920, 1080) == hudScale(1080) - 2);
+}
+
+TEST_CASE("a row of columns loses its last columns whole before it loses a letter") {
+    // THE CELLS PASS. The Character tile's carried row at the register's
+    // floor: 85 cells across, a 27-cell tile, a label column of about 24,
+    // and a 32-glyph row. clipToWidth cut it to `HEL..` and every critic
+    // read it. Whole columns fall off instead, unmarked, while that keeps
+    // three quarters of the room; below that the marked cut is honest.
+    const std::string row = "CUDGEL   40DR   6C  HELD  SLOT 3";
+    CHECK(clipColumns(row, 32, 1) == row);
+    CHECK(clipColumns(row, 40, 1) == row);
+    CHECK(clipColumns(row, 31, 1) == "CUDGEL   40DR   6C  HELD");
+    CHECK(clipColumns(row, 24, 1) == "CUDGEL   40DR   6C  HELD");
+    CHECK(clipColumns(row, 22, 1) == "CUDGEL   40DR   6C");
+    CHECK(clipColumns(row, 13, 1) == "CUDGEL   40DR");
+    // Under three quarters, the boundary would throw the room away: the
+    // marked cut keeps it (clipToWidth's own two-glyph mark).
+    CHECK(clipColumns(row, 12, 1) == "CUDGEL   4..");
+    // A row with no columns in it is clipToWidth's as it always was.
+    CHECK(clipColumns("PICK THEIR POCKET", 12, 1) == "PICK THEIR..");
+    CHECK(clipColumns("PICK THEIR POCKET", 17, 2) == "PICK THEIR POCKET");
+    CHECK(clipColumns(row, 0, 1).empty());
 }
 
 TEST_CASE("a span split adds up to its bounds and lands on the grid") {
@@ -427,11 +513,13 @@ TEST_CASE("the controls page composes at every window size the game runs at") {
         const KeysPageScroll scroll = keysPageScroll(state, size.w, size.h);
         CHECK(scroll.perScreen > 0);
         CHECK(scroll.screens >= 1);
-        // THE NUMBER THAT MADE THIS WORTH DOING. The surface this replaced
-        // showed NINE rows per page whatever the window was, which is four
-        // pages for this list. Every size here beats that, and 960x540 shows
-        // the whole list at once.
+        // Better than the old nine-row topic grid at every size, and CAPPED at
+        // the EA paging rule (UI-EA-SPEC 1.7 #36) PER COLUMN: no column runs
+        // past fifteen rows, and a wide pane is not made to fold what it can
+        // show -- nine and the sticks' "the nine on one screen, no forty
+        // percent empty pane". Two screens at most for the twenty-nine.
         CHECK(scroll.perScreen > 9);
+        CHECK(scroll.perScreen <= 15 * 3);
         CHECK(scroll.screens <= 2);
 
         // The cursor on the last row lands on the last screenful, and the
@@ -443,10 +531,12 @@ TEST_CASE("the controls page composes at every window size the game runs at") {
         CHECK(end.firstRow <= state.cursor);
     }
 
-    // At the baseline the whole list is on one screen -- no page turn at all,
-    // which is the thing the old layout could not do at any resolution.
+    // At the baseline the whole table is ONE screen: the pane holds two
+    // columns of fifteen, so the twenty-nine rows never fold and no column
+    // ends in a one-row orphan.
     state.cursor = 0;
     CHECK(keysPageScroll(state, 960, 540).screens == 1);
+    CHECK(keysPageScroll(state, 960, 540).perScreen >= 29);
 }
 
 TEST_CASE("a closed page and a zero ease draw nothing at all") {
@@ -655,7 +745,7 @@ TEST_CASE("the column hit-test agrees with the column layout at every window siz
                                       "MAJ", panelInk().accent});
     }
     for (const Size& window : kSizes) {
-        const PanelMetric metric = panelMetric(window.h);
+        const PanelMetric metric = panelMetric(window.w, window.h);
         const PanelRect pane{0, 0, metric.widthOf(metric.cellsIn(window.w) - 2),
                              metric.heightOf(8)};
         OptionListStyle style;
@@ -760,11 +850,14 @@ TEST_CASE("masterDetailCellsFor is the inverse of splitMasterDetail, and both ha
 }
 
 TEST_CASE("the held detail width is what the narrowest window would have dealt the share") {
-    // 1920x1080 is 76 cells across, 74 inside the border -- the narrowest
-    // interior any full-width page ever had, and the panes every height hold
-    // in this build was judged against. The held width is splitMasterDetail's
-    // own deal at that interior: pinned here against the split itself so the
-    // two cannot drift.
+    // 74 inside the border is the narrowest interior any full-width page ever
+    // had (1920x1080 under the register's old height/180 - 1 rule), and the
+    // panes every height hold in this build was judged against. The register
+    // is the smaller of height/240 and width/425 now and no window at least
+    // 425 px wide deals under 83,
+    // so the constant is a floor with headroom. The held width is
+    // splitMasterDetail's own deal at that interior: pinned here against the
+    // split itself so the two cannot drift.
     const PanelMetric metric{1};
     const PanelRect narrowest{0, 0, metric.widthOf(kPanelNarrowestFullInteriorCells),
                               metric.heightOf(20)};
@@ -914,7 +1007,12 @@ TEST_CASE("the controls-page hit-test answers for every drawn binding and nothin
         state.rows.push_back(row);
     }
     state.cursor = 0;
-    REQUIRE(keysPageScroll(state, 960, 540).screens == 1);
+    // The cap is per column (UI-EA-SPEC 1.7 #36, nine and the sticks): at
+    // 960x540 the whole twenty-nine-row list is one screen of two columns,
+    // and every one of its rows answers to a pixel.
+    const KeysPageScroll first = keysPageScroll(state, 960, 540);
+    REQUIRE(first.screens == 1);
+    REQUIRE(first.perScreen >= 29);
 
     std::vector<bool> found(state.rows.size(), false);
     for (int py = 0; py < 540; py += 2) {
@@ -926,7 +1024,7 @@ TEST_CASE("the controls-page hit-test answers for every drawn binding and nothin
             }
         }
     }
-    CHECK(std::count(found.begin(), found.end(), true) == 29);
+    CHECK(std::count(found.begin(), found.end(), true) == static_cast<int>(state.rows.size()));
 
     // The cursor does not move the geometry (the scroll is the same screen),
     // so a hover that follows the cursor cannot chase its own tail.

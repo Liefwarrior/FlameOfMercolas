@@ -54,6 +54,19 @@ constexpr Glyph kGlyphs[] = {
     {';', {0x0, 0x4, 0x0, 0x0, 0x4, 0x8}}, {'"', {0xA, 0xA, 0x0, 0x0, 0x0, 0x0}},
     {'+', {0x0, 0x4, 0xE, 0x4, 0x0, 0x0}}, {'>', {0x8, 0x4, 0x2, 0x2, 0x4, 0x8}},
     {'<', {0x2, 0x4, 0x8, 0x8, 0x4, 0x2}}, {'*', {0x0, 0xA, 0x4, 0xA, 0x0, 0x0}},
+    // THE KEYCAP MOTIFS (UI-EA-SPEC sec. 5), IN THE FONT ITSELF -- the six
+    // sentinel bytes controls.hpp declares (kMotifReturn .. kMotifDPad), the
+    // same 4x6 bitmaps panel.cpp's border-motif table draws. They used to be
+    // overlaid by the panel drawers only, so every HUD row that prints a
+    // prompt through drawText -- the opening band, the case plate, the tutor
+    // toast -- left a BLANK where a pad's D-pad cross should be. Nine and the
+    // sticks: one font, every drawer, no second channel to keep in step.
+    {'\x01', {0x0, 0x1, 0x5, 0xF, 0x4, 0x0}},  // the return hook (ENTER)
+    {'\x02', {0x0, 0x6, 0xF, 0xF, 0x0, 0x0}},  // arrowhead up
+    {'\x03', {0x0, 0xF, 0xF, 0x6, 0x0, 0x0}},  // arrowhead down
+    {'\x04', {0x0, 0x3, 0xF, 0x3, 0x0, 0x0}},  // arrowhead left
+    {'\x05', {0x0, 0xC, 0xF, 0xC, 0x0, 0x0}},  // arrowhead right
+    {'\x06', {0x0, 0x6, 0xF, 0xF, 0x6, 0x0}},  // the d-pad cross
 };
 
 constexpr int kGlyphW = 4;
@@ -106,15 +119,53 @@ constexpr Rgb kFrame{0.55F, 0.50F, 0.40F};
 /// A drawn row is six glyph rows plus the one-pixel drop shadow under them.
 [[nodiscard]] constexpr int rowHeight(int scale) noexcept { return (kGlyphH + 1) * scale; }
 
+/// THE MINOR REGISTER IS SIZED SO THAT A BIGGER WINDOW NEVER SHOWS LESS.
+///
+/// hudMinorScale used to be hudScale(height) - 1: one step under the glance
+/// register, which read as a hierarchy and WAS one, but the flat -1 made the
+/// minor cell grow a little faster than the frame -- (height/180 - 1)/height
+/// climbs towards 1/180 from below as the height grows -- so at a fixed aspect
+/// ratio the number of cells across every terminal-register page FELL as the
+/// window grew, for ever: 640x360 dealt 128 cells, 960x540 96, 1280x720 85,
+/// 1920x1080 76, 2560x1440 73, and the chart tile that fits MISSION OF THE
+/// FLA. at 1600x900 truncated to MISSION OF THE. at 2560x1440 (the kitfix's
+/// own finding, docs/frames/kit/README.md). The panel vocabulary had learnt
+/// to live with it -- kPanelNarrowestFullInteriorCells, casebook_page.cpp's
+/// kMasterShare -- but "more monitor, less text" is not a thing to live with.
+///
+/// TWO DIVISORS, NO OFFSET, THE SMALLER WINS. The minor cell is the frame
+/// height over 240 or the frame width over 425, whichever is less, floored to
+/// a whole unit. Floored means the scale is never more than width/425, so the
+/// cells across any window at least 425 px wide are never fewer than 85 --
+/// 425 is five units a cell times 1280x720's own 85, the size the register
+/// was judged at (3 = 720/240 = 1280/425) -- at ANY aspect. The first cut of
+/// this pass keyed the register off the height alone, and both critics
+/// caught 16:10 at once: 1920x1200 dealt the old 76 and the chart read
+/// MISSION OF THE. again, on the aspect the owner's own display is. With
+/// both axes it deals 96 there, 1680x1050 112, 2560x1600 85, 1024x768 (4:3)
+/// 102, 2560x1080 (21:9) 128. At 16:9 the height term binds (width/425 is
+/// always the larger there), so the four smaller capture sizes are
+/// untouched: 320x180 and 640x360 stay at 1, 960x540 at 2, 1280x720 at 3,
+/// and everything pinned there stays pinned; 1920x1080 goes from 5 to 4 (a
+/// 16x24 glyph, 96 cells across). With an integer glyph scale the count is a
+/// sawtooth -- 1600x900 deals 106, 1920x1080 96, 2560x1440 85 -- and
+/// monotonic is not on offer, but it never again falls under the size it was
+/// judged at. hudScale keeps its own 180 and its one argument: the glance
+/// register is not a page and has no cells across to defend.
+constexpr int kMinorScaleDivisor = 240;
+constexpr int kMinorScaleWidthDivisor = 5 * 85;
+
 }  // namespace
 
 int hudScale(int height) noexcept { return std::max(1, height / 180); }
 
-int hudMinorScale(int height) noexcept { return std::max(1, hudScale(height) - 1); }
+int hudMinorScale(int width, int height) noexcept {
+    return std::max(1, std::min(height / kMinorScaleDivisor, width / kMinorScaleWidthDivisor));
+}
 
-int hudTopRightReserve(int height) noexcept {
+int hudTopRightReserve(int width, int height) noexcept {
     const int scale = hudScale(height);
-    const int minor = hudMinorScale(height);
+    const int minor = hudMinorScale(width, height);
     // WHAT IS STILL DRAWN THERE WHILE SOMEBODY IS TALKING, and nothing else.
     // Standing, heat, the sack and the stealth line all stand down for the
     // length of a conversation -- Session sets them empty -- so the corner is
@@ -145,8 +196,8 @@ class BottomBand {
   public:
     BottomBand(int width, int height) noexcept
         : scale_(hudScale(height)),
-          minor_(hudMinorScale(height)),
-          step_(rowHeight(hudMinorScale(height)) + hudMinorScale(height)),
+          minor_(hudMinorScale(width, height)),
+          step_(rowHeight(hudMinorScale(width, height)) + hudMinorScale(width, height)),
           margin_(6 * hudScale(height)),
           floor_(hudCentreRect(width, height).y1) {
         // Slot 1 is the row directly above the health bar's frame.
@@ -162,15 +213,65 @@ class BottomBand {
     /// Takes the next free slot tall enough for a row drawn at `scale`, and
     /// answers the y it should be drawn at. -1 when the band is full: the row
     /// is dropped rather than drawn over the play space.
-    [[nodiscard]] int take(int scale) noexcept {
+    ///
+    /// `clearance` is the padding a PLATED row draws above its glyph box (the
+    /// strip, the voice line): the slot is refused when the plate, not only
+    /// the glyphs, would cross the floor. The cells pass first clamped the
+    /// plate's top at the floor instead, and at 320x180 -- three slots, the
+    /// alert, the strip and the street's line all up -- the clamped rail sat
+    /// on the line's first glyph row and the player critic read "FAIHER
+    /// HAELL". A row that cannot be seated whole is dropped; nothing is
+    /// drawn under a rail.
+    [[nodiscard]] int take(int scale, int clearance = 0) noexcept {
         const int span = std::max(1, (rowHeight(scale) + step_ - 1) / step_);
-        const int top = base_ - (taken_ + span) * step_;
-        if (top < floor_) {
+        const int top = base_ - pad_ - (taken_ + span) * step_;
+        if (top - std::max(0, clearance) < floor_) {
             return -1;
         }
         taken_ += span;
         return top;
     }
+
+    /// KIT POLISH. Lifts every slot handed out from here on by `px` pixels
+    /// -- PIXELS, not a slot. A row that draws a plate past its own glyph
+    /// box (the alert's padY) can buy the air above it here without
+    /// spending a whole row's worth of the band on it. The band is shallow:
+    /// at 960x540 it is four minor slots between the health bar and the
+    /// exclusion rectangle (base 501, floor 422, step 16), and the alert
+    /// at full scale already spans two of them. The KIT FIX PASS bought
+    /// this same air with a bare take(minor) thrown away, which was the
+    /// fourth slot -- and the row the priority order handed it to next,
+    /// COAT TURNS 2, was refused at 421 against a floor of 422 and never
+    /// drew (docs/frames/kit/kit-dr-960x540.png, one pixel short). The
+    /// floor check in take() still sees the pad, so nothing here can put a
+    /// row in the play space.
+    void pad(int px) noexcept { pad_ += std::max(0, px); }
+
+    /// THE CELLS PASS. The air pad() bought, given back -- for a row that
+    /// asks for air it can do without: the quick bar strip tries its take
+    /// with a row of air over the hand and, refused, takes the bare slot
+    /// instead of vanishing. Never below zero.
+    void unpad(int px) noexcept { pad_ = std::max(0, pad_ - std::max(0, px)); }
+
+    /// Pixels left above the last row handed out, before the floor.
+    [[nodiscard]] int slack() const noexcept { return base_ - pad_ - taken_ * step_ - floor_; }
+
+    /// pad(), but only when a further slot would still fit under the air --
+    /// for the air a plated row buys for the row ABOVE it (the strip, the
+    /// voice line). At 320x180 the band is three slots and the strip's one
+    /// pixel of air was the pixel the street's line needed; a row of speech
+    /// outranks a pixel of air, so the air is what gives.
+    void padIfAfforded(int px) noexcept {
+        px = std::max(0, px);
+        if (slack() - px >= step_) {
+            pad_ += px;
+        }
+    }
+
+    /// Slots handed out so far. Zero means the band is empty and the next row
+    /// lands right above the health bar -- the one case the strip's air is for.
+    [[nodiscard]] int taken() const noexcept { return taken_; }
+
 
   private:
     int scale_;
@@ -180,6 +281,7 @@ class BottomBand {
     int floor_;
     int base_ = 0;
     int taken_ = 0;
+    int pad_ = 0;
 };
 
 }  // namespace
@@ -228,7 +330,7 @@ struct AimBox {
 
 [[nodiscard]] AimBox aimBox(int width, int height) noexcept {
     AimBox box;
-    box.unit = hudMinorScale(height);
+    box.unit = hudMinorScale(width, height);
     box.cx = width / 2;
     box.cy = height / 2;
     box.gap = box.unit;
@@ -402,6 +504,11 @@ bool isDrawableGlyph(char c) noexcept { return glyphFor(c) != nullptr; }
 
 int drawText(Framebuffer& target, int x, int y, std::string_view text, const Rgb& colour,
              float alpha, int scale) {
+    return drawText(target, x, y, text, colour, alpha, scale, alpha * 0.75F);
+}
+
+int drawText(Framebuffer& target, int x, int y, std::string_view text, const Rgb& colour,
+             float alpha, int scale, float shadowAlpha) {
     const int step = kGlyphAdvance * scale;
     int cursor = x;
     for (const char c : text) {
@@ -417,7 +524,7 @@ int drawText(Framebuffer& target, int x, int y, std::string_view text, const Rgb
                     // A one-pixel drop shadow, so the text survives being drawn
                     // over a pale sky as well as over black water.
                     target.fillRect(cursor + col * scale + scale, y + row * scale + scale, scale,
-                                    scale, kShadow, alpha * 0.75F);
+                                    scale, kShadow, shadowAlpha);
                     target.fillRect(cursor + col * scale, y + row * scale, scale, scale, colour,
                                     alpha);
                 }
@@ -442,12 +549,16 @@ void drawTextPlate(Framebuffer& target, int x0, int y0, int x1, int y1, int bord
     border = std::clamp(border, 1, std::min(x1 - x0, y1 - y0) / 2);
     // THE FIELD, THEN THE FOUR BORDER RAILS -- the identical order the
     // retired renderer's own box() drew in, so the border is never eaten by
-    // the fill it is drawn over.
+    // the fill it is drawn over. THE SIDE RAILS RUN BETWEEN THE TOP AND THE
+    // BOTTOM, not over them: a rail drawn twice at the corner is invisible
+    // at full alpha and a brighter dot at any other (a plate at a quarter
+    // under the rung plate wore four corner dots at nearly half).
     target.fillRect(x0, y0, x1 - x0, y1 - y0, kPlateBlack, alpha);
     target.fillRect(x0, y0, x1 - x0, border, kPlateBone, alpha);                 // top
     target.fillRect(x0, y1 - border, x1 - x0, border, kPlateBone, alpha);        // bottom
-    target.fillRect(x0, y0, border, y1 - y0, kPlateBone, alpha);                 // left
-    target.fillRect(x1 - border, y0, border, y1 - y0, kPlateBone, alpha);        // right
+    const int sideH = std::max(0, (y1 - border) - (y0 + border));
+    target.fillRect(x0, y0 + border, border, sideH, kPlateBone, alpha);          // left
+    target.fillRect(x1 - border, y0 + border, border, sideH, kPlateBone, alpha); // right
 }
 
 namespace {
@@ -574,9 +685,9 @@ struct TopBand {
     int bottom;
 };
 
-[[nodiscard]] TopBand topBand(int height) noexcept {
+[[nodiscard]] TopBand topBand(int width, int height) noexcept {
     const int scale = hudScale(height);
-    const int minor = hudMinorScale(height);
+    const int minor = hudMinorScale(width, height);
     TopBand band{};
     band.stripY = 3 * scale;
     band.stripH = rowHeight(scale) + scale;
@@ -587,7 +698,6 @@ struct TopBand {
 
 void drawCompass(Framebuffer& target, const HudState& state) {
     const int scale = hudScale(target.height());
-    const int minor = hudMinorScale(target.height());
     // NARROWER, SHALLOWER, AND HARD AGAINST THE EDGE. The ribbon took a third
     // of the frame width and started five scale units down from the top, which
     // at 960x540 is a 320x27 black block hanging in the middle of the sky with
@@ -596,7 +706,7 @@ void drawCompass(Framebuffer& target, const HudState& state) {
     const int stripW = std::min(target.width() / 4, 120 * scale);
     // DISTRICT PHASE D: OFF topBand(), NOT re-derived here. Identical values,
     // one owner -- see the struct's own header on which defect that is about.
-    const TopBand band = topBand(target.height());
+    const TopBand band = topBand(target.width(), target.height());
     const int stripH = band.stripH;
     const int x = (target.width() - stripW) / 2;
     const int y = band.stripY;
@@ -628,18 +738,246 @@ void drawCompass(Framebuffer& target, const HudState& state) {
         drawText(target, px - labelWidth / 2, y + scale, point.label,
                  cardinal ? kInk : Rgb{0.62F, 0.60F, 0.54F}, cardinal ? 0.95F : 0.7F, scale);
     }
+    // THE PULL PACK: TICKS ON THE RIBBON FOR DISCOVERED NAMED PLACES (owner
+    // ruling D8). On the strip's TOP rail -- the frame line above the strip
+    // and the strip's own first row, which the letters never reach (their
+    // first glyph row is y + scale) and which no drop shadow can cross
+    // (shadows fall down and right). Bone for a named place, amber -- the
+    // fixed mark's own ink -- for the followed lead's site, and wider, so
+    // the eye lines it up with the mark without reading a word; when the two
+    // coincide you are facing it. Drawn BEFORE the mark so the mark stays on
+    // top. Every tick sits on its TRUE bearing (pull.hpp's pullTickBam, a
+    // real atan2): a notch snapped to a compass letter would sit under the
+    // letter, not on the bearing. A bearing on a strip of sky, not an arrow
+    // in the world: the doctrine's own shape.
+    const auto tickDelta = [&](std::int32_t bam) -> std::int32_t {
+        std::int32_t delta = (bam & 65535) - (state.yawBam & 65535);
+        return ((delta + 32768) & 65535) - 32768;  // to [-32768, 32768)
+    };
+    const auto tickX = [&](std::int32_t delta) -> int {
+        return x + stripW / 2 + static_cast<int>(static_cast<float>(delta) * pixelsPerBam);
+    };
+    const int tickY = y - scale;
+    const auto notch = [&](int px, int halfWidth, const Rgb& ink, float alpha) {
+        // A tick at the strip's very edge (a place dead abeam) is clipped to
+        // the strip rather than dropped: half a notch at the rail still says
+        // "there, just off the arc", which is the fact a body turning wants.
+        const int x0 = std::max(x, px - halfWidth);
+        const int x1 = std::min(x + stripW, px + halfWidth + scale);
+        if (x1 > x0) {
+            target.fillRect(x0, tickY, x1 - x0, 2 * scale, ink, alpha);
+        }
+    };
+    for (const std::int32_t bam : state.placeTickBams) {
+        const std::int32_t delta = tickDelta(bam);
+        if (delta < -16384 || delta > 16384) {
+            continue;  // outside the arc: a place has no peg, only the pull does
+        }
+        notch(tickX(delta), scale / 2, Rgb{0.90F, 0.87F, 0.78F}, 0.95F);
+    }
+    if (state.pullTickBam >= 0) {
+        // BEHIND YOU THE PULL DOES NOT VANISH: it pegs at the nearer rail,
+        // half a notch's worth, so a turn keeps something to turn toward.
+        const std::int32_t delta = tickDelta(state.pullTickBam);
+        const bool behind = delta < -16384 || delta > 16384;
+        const int px = behind ? (delta < 0 ? x : x + stripW - scale) : tickX(delta);
+        notch(px, behind ? scale / 2 : scale, Rgb{0.95F, 0.80F, 0.35F}, behind ? 0.85F : 1.0F);
+    }
     // The fixed mark. One pixel column, at the very top edge of the strip, so
     // it never encroaches on the view.
     target.fillRect(x + stripW / 2, y, scale, 2 * scale, Rgb{0.95F, 0.80F, 0.35F}, 1.0F);
 
-    // The place name is REFERENCE, not register: you read it when you arrive
-    // and never again until you arrive somewhere else. It is the sub-label of
-    // the ribbon now rather than a second line the same size as it, which is
-    // what a hierarchy looks like when it is doing its job.
-    if (!state.locationLabel.empty()) {
-        const int width = textWidth(state.locationLabel, minor);
-        drawText(target, (target.width() - width) / 2, band.labelY, state.locationLabel,
-                 Rgb{0.70F, 0.68F, 0.60F}, 0.85F, minor);
+    // UI-EA (LANE HUD): THE SUB-LABEL ROW WAS EMPTIED. The place name used
+    // to be printed here every frame; the word diet deleted it -- the
+    // threshold plate announces every crossing at the moment it happens, and
+    // that plate still settles on this band's own labelY-derived row (see
+    // topBand/drawAnnouncePlate), so the geometry the blessed travel frames
+    // were taken against has not moved a pixel.
+    //
+    // THE PULL PACK PUTS ONE LINE BACK, and it is the one line the rest
+    // budget grew by (UI-EA-SPEC 1.2 #11): the FOLLOWED LEAD -- "NE 40  THE
+    // WEIGHHOUSE" -- which changes every step you walk, so it is a word on
+    // screen because it moves, not because it is true. Drawn by drawPullLine
+    // from drawHud, AFTER the top-right stack has measured itself, because
+    // this is a centred line in the same band as a right-anchored corner and
+    // the corner wins -- the announce plate's own rule, one row up.
+}
+
+/// THE FOLLOWED LEAD, under the ribbon. Centred on the frame at the minor
+/// size (reference material, read deliberately), on the sub-label row the
+/// diet emptied. `rightBlock` is what drawTopRight just claimed, and the
+/// line's budget is what is left between two of them -- symmetric, because a
+/// centred line that stays centred by eating its own left margin is not
+/// centred. When the whole line does not fit it sheds the place's leading
+/// article first (the map plan's own label rule), then clips with the mark,
+/// so the bearing and the paces -- the two numbers that change as you walk
+/// -- are never the part that goes.
+void drawPullLine(Framebuffer& target, const HudState& state, int rightBlock) {
+    if (state.pullLabel.empty()) {
+        return;
+    }
+    const int width = target.width();
+    const int height = target.height();
+    const int scale = hudScale(height);
+    const int minor = hudMinorScale(width, height);
+    const int margin = 6 * scale;
+    // THREE SCALE UNITS OF AIR OFF THE CORNER, each side: a line that ended
+    // flush against SEEN read as one word with it.
+    const int budget = width - 2 * (margin + std::max(0, rightBlock) + 3 * scale);
+    if (budget <= 0) {
+        return;
+    }
+    std::string line(state.pullLabel);
+    if (textWidth(line, minor) > budget) {
+        // "NE 40  THE WEIGHHOUSE" -> "NE 40  WEIGHHOUSE": the article is the
+        // first thing to go, exactly as casebook_page.cpp's shortPlace and
+        // map_view.cpp's label rule remove it.
+        const std::size_t gap = line.find("  THE ");
+        if (gap != std::string::npos) {
+            line.erase(gap + 2, 4);
+        }
+    }
+    if (textWidth(line, minor) > budget) {
+        // STILL TOO WIDE: the PLACE is what gets cut, marked, and the two
+        // numbers that change as you walk -- the point and the paces in
+        // front, the plane behind -- stay whole. The line is "bearing
+        // place" or "bearing  place  BELOW", two cells of air between parts.
+        // THE CUT IS ON A WORD, and never after an article: "MISSION OF
+        // THE.." names nothing, "MISSION.." names the Mission.
+        const std::size_t first = line.find("  ");
+        const std::size_t tailAt = line.rfind("  ");
+        if (first != std::string::npos) {
+            const std::string head = line.substr(0, first + 2);
+            const bool hasTail = tailAt != std::string::npos && tailAt > first;
+            const std::string tail = hasTail ? line.substr(tailAt) : std::string();
+            std::string place =
+                line.substr(first + 2, hasTail ? tailAt - (first + 2) : std::string::npos);
+            const int room = budget - textWidth(head, minor) - textWidth(tail, minor);
+            // Whole words off the end until the place and its mark fit, then
+            // the articles and joints a cut leaves dangling.
+            const auto fits = [&](const std::string& text) {
+                return textWidth(text + "..", minor) <= room;
+            };
+            bool cut = false;
+            while (!place.empty() && !fits(place)) {
+                const std::size_t space = place.rfind(' ');
+                place = space == std::string::npos ? std::string() : place.substr(0, space);
+                cut = true;
+            }
+            for (bool trimmed = true; trimmed && cut;) {
+                trimmed = false;
+                for (const char* joint : {" THE", " OF", " AND", " O'"}) {
+                    const std::string_view word(joint);
+                    if (place.size() > word.size() &&
+                        place.compare(place.size() - word.size(), word.size(), word) == 0) {
+                        place.erase(place.size() - word.size());
+                        trimmed = true;
+                    }
+                }
+            }
+            if (cut && !place.empty()) {
+                place += "..";
+            }
+            line = place.empty() ? head.substr(0, first) + tail : head + place + tail;
+        }
+    }
+    if (textWidth(line, minor) > budget) {
+        line = clipToWidth(line, budget, minor);
+    }
+    if (line.empty()) {
+        return;
+    }
+    const TopBand band = topBand(width, height);
+    const int drawn = textWidth(line, minor);
+    // The old sub-label's own ink and strength, so the blessed frames that
+    // carried a place name here read the same weight of bone.
+    drawText(target, (width - drawn) / 2, band.labelY, line, Rgb{0.86F, 0.82F, 0.68F}, 0.90F,
+             minor);
+}
+
+/// THE SKILL-UP TOAST, top-left. Oblivion prints "Heavy Armor increased to
+/// 39" in the corner mid-fight and never pauses; this is that beat in the
+/// HUD's own register -- a plate, the way every announcement in this HUD is a
+/// plate, rising through its resting row and drifting out as it fades.
+///
+/// TOP-LEFT BECAUSE IT IS THE ONE FREE CORNER. The compass owns the top
+/// centre and the announce plate under it (a lead opening, a crossing); the
+/// hour and the ward's opinion own the top right; the bars own the bottom
+/// left and the state rows the bottom centre. A skill rising is the fourth
+/// kind of news and it gets the fourth corner, so it never fights the case
+/// plate for the one announcement slot and never lands on FISTS UP mid-brawl.
+///
+/// WHOLE OR SMALLER, NEVER CUT. Its budget is the sky between the left margin
+/// and the ribbon's own left edge; it takes the largest size the whole line
+/// fits at, and when the longest name in the raws ("CRACKSMANSHIP RISES TO
+/// 12") fits at no size -- which is 320x180 -- it breaks into two rows at the
+/// name, because a skill name cut in half is not a skill.
+void drawSkillToast(Framebuffer& target, const HudState& state) {
+    const float fade = std::clamp(state.skillToastFade, 0.0F, 1.0F);
+    if (state.skillToast.empty() || fade <= 0.0F) {
+        return;
+    }
+    const int width = target.width();
+    const int height = target.height();
+    const int scale = hudScale(height);
+    const int margin = 6 * scale;
+    const int stripW = std::min(width / 4, 120 * scale);
+    const int stripX = (width - stripW) / 2;
+    // Two scale units of air off the ribbon's frame, and the plate's own
+    // padding inside the budget (the announce plate's rule).
+    const int budget = stripX - scale - margin - 2 * scale - 2 * scale;
+    if (budget <= 0) {
+        return;
+    }
+    std::string_view rows[2] = {state.skillToast, std::string_view{}};
+    int rowCount = 1;
+    int plateScale = scale;
+    while (plateScale > 1 && textWidth(rows[0], plateScale) > budget) {
+        --plateScale;
+    }
+    if (textWidth(rows[0], plateScale) > budget) {
+        // At the name: "CRACKSMANSHIP" / "RISES TO 12".
+        const std::size_t cut = state.skillToast.rfind(" RISES TO ");
+        if (cut == std::string_view::npos) {
+            return;
+        }
+        rows[0] = state.skillToast.substr(0, cut);
+        rows[1] = state.skillToast.substr(cut + 1);
+        rowCount = 2;
+        if (textWidth(rows[0], plateScale) > budget || textWidth(rows[1], plateScale) > budget) {
+            return;
+        }
+    }
+    int drawn = 0;
+    for (int i = 0; i < rowCount; ++i) {
+        drawn = std::max(drawn, textWidth(rows[i], plateScale));
+    }
+    const TopBand band = topBand(width, height);
+    const int lift = 3 * scale;
+    // Settles on the ribbon's own top row, so the two top blocks share a
+    // line -- the corner's rule, mirrored.
+    const int settledY = band.stripY + lift;
+    const int padX = plateScale * 2;
+    // A FULL SCALE UNIT OF PAD, and the text's height counts every row's
+    // drop shadow: a plate shallower than the shadow let the letters' feet
+    // spill under its bottom rail.
+    const int padY = plateScale;
+    const int textH = rowCount * rowHeight(plateScale);
+    const int lowest = settledY + lift + textH + padY;
+    if (lowest >= hudCentreRect(width, height).y0) {
+        return;
+    }
+    const float drift = std::clamp(state.skillToastDrift, -1.0F, 1.0F);
+    const int y = settledY - static_cast<int>(std::round(drift * static_cast<float>(lift)));
+    const int textX = margin + padX;
+    drawTextPlate(target, textX - padX, y - padY, textX + drawn + plateScale + padX,
+                  y + textH + padY, std::max(1, plateScale / 2), fade);
+    // The number ink, the same green the case plate spends on "the trail
+    // grew": a level is the one other place on this frame where green means
+    // you gained something.
+    for (int i = 0; i < rowCount; ++i) {
+        drawText(target, textX, y + i * rowHeight(plateScale), rows[i],
+                 Rgb{0.62F, 0.88F, 0.56F}, 0.95F * fade, plateScale);
     }
 }
 
@@ -669,7 +1007,7 @@ void drawCompass(Framebuffer& target, const HudState& state) {
 /// 0 when the corner drew nothing at all.
 int drawTopRight(Framebuffer& target, const HudState& state) {
     const int scale = hudScale(target.height());
-    const int minor = hudMinorScale(target.height());
+    const int minor = hudMinorScale(target.width(), target.height());
     const int margin = 6 * scale;
     const int ceiling = hudCentreRect(target.width(), target.height()).y0;
     // The same three scale units from the edge the compass ribbon starts at, so
@@ -681,7 +1019,13 @@ int drawTopRight(Framebuffer& target, const HudState& state) {
     // forget to.
     int claimed = 0;
 
-    if (state.timeOfDaySeconds >= 0 && y + rowHeight(scale) <= ceiling) {
+    // UI-EA (LANE HUD): THE CLOCK IS EARNED TEXT. clockFade is Session's own
+    // EasedToggle -- up on an hour tick, a time charge or the wait page,
+    // asleep otherwise -- and a fully asleep clock costs neither its row nor
+    // its width: the corner packs up as if it were never there, exactly what
+    // "absence costs nothing" has meant on this stack since polish-1.
+    const float clockFade = std::clamp(state.clockFade, 0.0F, 1.0F);
+    if (state.timeOfDaySeconds >= 0 && clockFade > 0.0F && y + rowHeight(scale) <= ceiling) {
         const int hour = (state.timeOfDaySeconds / 3600) % 24;
         const int minute = (state.timeOfDaySeconds / 60) % 60;
         const char text[6] = {static_cast<char>(48 + hour / 10),
@@ -692,8 +1036,8 @@ int drawTopRight(Framebuffer& target, const HudState& state) {
                               0};
         const std::string_view clock(text);
         claimed = std::max(claimed, textWidth(clock, scale));
-        drawText(target, target.width() - margin - textWidth(clock, scale), y, clock, kInk, 0.9F,
-                 scale);
+        drawText(target, target.width() - margin - textWidth(clock, scale), y, clock, kInk,
+                 0.9F * clockFade, scale);
         y += rowHeight(scale) + 1;
     }
 
@@ -711,8 +1055,15 @@ int drawTopRight(Framebuffer& target, const HudState& state) {
     // Ten now (was 6): the held-effects build adds up to four live-hold rows.
     std::array<Row, 10> rows{};
     std::size_t count = 0;
+    // UI-EA (LANE HUD): AN INVISIBLE ROW COSTS NOTHING. Every row's cache
+    // outlives its own fade on purpose (so the fade has words to fade), which
+    // used to mean a row eased to zero still claimed a slot and pushed live
+    // rows down the sky while drawing no ink at all. With most of this stack
+    // asleep at rest that ghost cost would be most of the corner, so a row at
+    // zero alpha is skipped before it can take a slot -- visually a no-op for
+    // every caller there has ever been.
     const auto add = [&](std::string_view text, const Rgb& ink, float alpha, int rank) {
-        if (!text.empty() && count < rows.size()) {
+        if (!text.empty() && alpha > 0.0F && count < rows.size()) {
             rows[count++] = Row{text, ink, alpha, rank};
         }
     };
@@ -729,8 +1080,11 @@ int drawTopRight(Framebuffer& target, const HudState& state) {
     const int rowBudget = std::max(0, target.width() - 2 * margin);
     std::string purse;
     if (state.coin >= 0) {
+        // UI-EA (LANE HUD): the purse wakes on a coin delta and sleeps after
+        // -- purseFade is Session's toggle, default 1 for every hand-built
+        // state, and add() above drops the row whole once it is fully asleep.
         purse = clipToWidth(std::to_string(std::min(state.coin, 99999)) + " C", rowBudget, minor);
-        add(purse, Rgb{0.82F, 0.72F, 0.38F}, 0.9F, 3);
+        add(purse, Rgb{0.82F, 0.72F, 0.38F}, 0.9F * std::clamp(state.purseFade, 0.0F, 1.0F), 3);
     }
     // PLANNING SPRINT (item #2, the sweep). `* clamp(state.*Fade)`, THE SAME
     // MULTIPLY stealthLabel already carries below -- see HudState::
@@ -887,7 +1241,7 @@ void drawAnnouncePlate(Framebuffer& target, std::string_view text, float rawFade
     }
     const int textX = (width - drawn) / 2;
 
-    const TopBand band = topBand(height);
+    const TopBand band = topBand(width, height);
     // THE WHOLE TRAVEL FITS UNDER THE RIBBON BLOCK, NOT JUST THE SETTLED ROW.
     // The plate keeps rising as it fades, so its HIGHEST point (drift == +1,
     // the last frame of the fade) is `lift` above where it settles -- and the
@@ -923,8 +1277,18 @@ void drawAnnouncePlate(Framebuffer& target, std::string_view text, float rawFade
 /// runs.
 constexpr Rgb kAimVerb{0.92F, 0.80F, 0.38F};
 /// The qualifier beside the subject -- a trade, a state, what you came for.
-/// Deliberately the quietest ink on the frame: it is the third thing read.
-constexpr Rgb kAimNote{0.60F, 0.58F, 0.52F};
+/// The third thing read, not the loudest -- but KIT FIX PASS: the original
+/// {0.60, 0.58, 0.52} (luma ~0.58) is a note read against whatever ground
+/// sits behind the reticle, not a fixed backdrop the way a menu row is, and
+/// a real capture (docs/frames/kit/kit-take-960x540.png, "ROPE  48DR" over
+/// open sky and a sunlit crate) showed the weight number nearly vanish --
+/// the scrim behind this row only darkens the ground in proportion to how
+/// bright it reads, and a note this close to mid-grey still loses to a
+/// bright sky even scrimmed. Raised to a bright, slightly warm bone so it
+/// reads unaided against ground the scrim under-corrects for, while staying
+/// visibly quieter than kAimVerb's saturated gold -- still the third thing
+/// read, just no longer an invisible one.
+constexpr Rgb kAimNote{0.82F, 0.80F, 0.74F};
 
 /// ONE ACCENT PER KIND OF THING A CROSSHAIR CAN LAND ON. Scannable by hue
 /// before a word of it is read, which is the whole argument for entity accents
@@ -944,6 +1308,12 @@ constexpr Rgb kAimNote{0.60F, 0.58F, 0.52F};
             // this reason; a player has to be able to tell "this is the
             // investigation" from "this is a door" without reading.
             return Rgb{0.76F, 0.58F, 0.88F};
+        case AimKind::Owned:
+            // KIT BUILD. SOMEBODY'S. The reference's red hand, in this HUD's
+            // own ink: warm enough to read as a warning before the THEIRS
+            // note is, and nothing else on the frame wears it -- the brawl
+            // washes are alpha blends, not an accent.
+            return Rgb{0.92F, 0.46F, 0.40F};
         case AimKind::Nothing:
         default:
             return Rgb{0.74F, 0.72F, 0.66F};
@@ -963,19 +1333,36 @@ constexpr Rgb kAimNote{0.60F, 0.58F, 0.52F};
 /// straight off the sign table and a trade off the roster; neither has a
 /// length this file controls.
 void drawAim(Framebuffer& target, const HudState& state) {
-    if (state.aimVerb.empty()) {
+    // ACTION-COMBAT BUILD (section 5, channel 1). THE RETICLE IS THE WEAPON, so
+    // it draws during a swing hold even with nothing in reach: the interact
+    // prompt (aimVerb) is no longer the sole gate -- a live charge fraction
+    // draws the reticle on its own, and only the two prompt ROWS below still
+    // ride the interact verb. At rest (no verb, no charge) it still returns.
+    const float charge = std::clamp(state.aimChargeFrac, 0.0F, 1.0F);
+    const bool charging = charge > 0.0F;
+    if (state.aimVerb.empty() && !charging) {
         return;
     }
     const float alpha = std::clamp(state.interactFade, 0.0F, 1.0F);
-    if (alpha <= 0.0F) {
+    // The reticle rides its OWN alpha: loud while charging (a deliberate press
+    // earns feedback even over nothing), the interact fade otherwise.
+    const float reticleAlpha = charging ? std::max(alpha, 0.85F) : alpha;
+    if (reticleAlpha <= 0.0F) {
         return;
     }
     const int width = target.width();
     const int height = target.height();
     const AimBox box = aimBox(width, height);
     const CentreRect fence = hudAimRect(width, height);
-    const Rgb accent = aimAccent(state.aimKind);
-    const bool onSomething = static_cast<AimKind>(state.aimKind) != AimKind::Nothing;
+    // THE ACCENT TAKES THE WARM CHARGE HUE at the hard threshold -- a swing
+    // about to land twice as hard reads hot -- and the subject's accent
+    // otherwise.
+    const Rgb warmCharge{0.95F, 0.55F, 0.20F};
+    const Rgb accent = state.aimChargeHard ? warmCharge : aimAccent(state.aimKind);
+    // BRIGHT when something is in reach to interact with OR a body sits on the
+    // look-ray a swing would land on -- the reticle answering "this will hit".
+    const bool onSomething = static_cast<AimKind>(state.aimKind) != AimKind::Nothing ||
+                             state.aimChargeOnLine;
 
     // Clamped fill. Everything below goes through it, reticle included.
     const auto fill = [&](int x, int y, int w, int h, const Rgb& colour, float a) {
@@ -992,13 +1379,18 @@ void drawAim(Framebuffer& target, const HudState& state) {
     // the subject's accent when something is in reach and sits back to a dim
     // bone when nothing is -- the reference frame's "the spatial view
     // highlights the current interaction target", in eight small rectangles.
-    const float tickAlpha = (onSomething ? 0.85F : 0.40F) * alpha;
+    const float tickAlpha = (onSomething ? 0.85F : 0.40F) * reticleAlpha;
     const int half = box.unit / 2;
+    // THE TICKS RETRACT toward centre across the hold: each slides inward by up
+    // to one gap-unit as the charge fills, so the reticle visibly closes on the
+    // aim point the longer the swing is held. Zero pull at rest, so an ordinary
+    // interact reticle is drawn at exactly the pixels it always was.
+    const int pull = static_cast<int>(std::lround(charge * static_cast<float>(box.gap)));
     const int ticks[4][4] = {
-        {box.cx - box.reach, box.cy - half, box.arm, box.unit},
-        {box.cx + box.gap, box.cy - half, box.arm, box.unit},
-        {box.cx - half, box.cy - box.reach, box.unit, box.arm},
-        {box.cx - half, box.cy + box.gap, box.unit, box.arm},
+        {box.cx - box.reach + pull, box.cy - half, box.arm, box.unit},
+        {box.cx + box.gap - pull, box.cy - half, box.arm, box.unit},
+        {box.cx - half, box.cy - box.reach + pull, box.unit, box.arm},
+        {box.cx - half, box.cy + box.gap - pull, box.unit, box.arm},
     };
     for (const auto& tick : ticks) {
         // THE FONT'S OWN DROP SHADOW, ON A SHAPE THAT IS NOT A GLYPH. The
@@ -1187,7 +1579,19 @@ void drawBottomBand(Framebuffer& target, const HudState& state, BottomBand& band
         // FACE FIXED IN..". A line the player has to read is worth a size
         // smaller; a line nobody can finish is worth nothing. So take the
         // largest scale it fits at, down to 1, and only then clip.
-        int alertScale = scale;
+        // THE RUNG PLATE'S RULE FOR THIS ROW (HudState::alertStepsDown): under
+        // the plate the row starts from the plate's own register or the
+        // minor scale, whichever is smaller (alertStepScale; never a tier
+        // above the plate) and shrinks from there as ever. Since the cells
+        // pass keyed the minor scale on the width as well, no window puts it
+        // over the plate's register (rungPlateMetric), so in play that is
+        // the minor scale; under the height-only register a square window's
+        // minor scale was a tier above the card, which is what the min is
+        // for.
+        int alertScale = state.alertStepsDown
+                             ? (state.alertStepScale > 0 ? std::min(minor, state.alertStepScale)
+                                                         : minor)
+                             : scale;
         while (alertScale > 1 && textWidth(state.alert, alertScale) > width - 2 * margin) {
             --alertScale;
         }
@@ -1226,22 +1630,72 @@ void drawBottomBand(Framebuffer& target, const HudState& state, BottomBand& band
             const float pulse = std::clamp(state.alertPulse, 0.0F, 1.0F);
             const int pulsePad = static_cast<int>(std::round(static_cast<float>(alertScale) * pulse));
             const int padX = alertScale * 2 + pulsePad;
-            const int padY = std::max(1, alertScale / 2) + pulsePad;
+            // A UNIT AND THE RAIL of padY when stepped down: at the minor
+            // scale the settled pad is one pixel, the glyphs' drop shadows
+            // hung under the lower rail as dark nicks on the wall, and the
+            // row read as label tape (the director, fifth pass). A whole
+            // unit put the shadow's last row ON the rail (the director,
+            // seventh pass: the rail dented under every letter), so the pad
+            // is the shadow's unit plus the rail's own thickness.
+            const int railSettled = std::max(1, alertScale / 2);
+            const int padYSettled =
+                state.alertStepsDown ? alertScale + railSettled : railSettled;
+            const int padY = padYSettled + pulsePad;
+            // UNDER THE RUNG PLATE THE FIELD STAYS AND THE RAILS DROP TO A
+            // QUARTER: the field at the row's own ease (fine print over the
+            // Gull's lit plaster is still print -- a half-weight field let
+            // the wall through and the amber read as mud), the words at the
+            // plate's weight on their ink (HudState::alertInkWeight), and
+            // the bone rails at a quarter, because bone at half is still
+            // brighter than amber at half and the frame outshone the words
+            // it framed (the director, fifth pass, measured 1.5x to 1.9x).
+            if (state.alertStepsDown) {
+                target.fillRect(textX - padX, y - padY, drawn + 2 * padX,
+                                kGlyphH * alertScale + 2 * padY, kPlateBlack, rowAlpha);
+            }
             drawTextPlate(target, textX - padX, y - padY, textX + drawn + padX,
                           y + kGlyphH * alertScale + padY,
-                          std::max(1, alertScale / 2 + pulsePad), rowAlpha);
+                          std::max(1, alertScale / 2 + pulsePad),
+                          state.alertStepsDown ? 0.25F * rowAlpha : rowAlpha);
             // TASK #83. Eased in Session, not here -- see HudState::alertFade.
             // A caller that never set it gets 1, which is 0.95F unchanged.
-            drawText(target, textX, y, alert, Rgb{0.90F, 0.62F, 0.30F}, 0.95F * rowAlpha,
+            drawText(target, textX, y, alert, Rgb{0.90F, 0.62F, 0.30F},
+                     0.95F * rowAlpha * std::clamp(state.alertInkWeight, 0.0F, 1.0F),
                      alertScale);
+            // KIT FIX PASS. THE ONE SLOT THE COMMENT ABOVE WARNED ABOUT.
+            // band.take(alertScale) reserves this row's SPAN off the bare
+            // glyph height, which says nothing about padY -- so the plate
+            // above (drawn at y - padY, outside the glyph box) can land
+            // inside the slot the priority order is about to hand the next
+            // row up. A real capture caught it: docs/frames/kit/
+            // kit-dr-960x540.png stacked "FISTS UP" against this row's own
+            // plate with barely a pixel between the two. padY stays tight
+            // (the comment above still holds -- a taller plate is the wrong
+            // fix), so the gap is bought here instead.
+            //
+            // KIT POLISH. BOUGHT IN PIXELS NOW, NOT A SLOT. The fix pass
+            // spent a whole bare take(minor) on this gap, and at 960x540
+            // that was the band's fourth and last slot: the alert holds two,
+            // the spacer took the third, FISTS UP the fourth, and the row
+            // the priority order stacks next -- COAT TURNS 2, the one the
+            // dr frame exists to show -- was refused one pixel over the
+            // exclusion floor and never drew. The plate's own overhang
+            // (its settled padY, never the pulse's -- the rows above must
+            // not jitter on the alert's rising edge) plus one minor unit of
+            // air is what the next row actually needs; see BottomBand::pad.
+            band.pad(padYSettled + minor);
         }
     }
     // SPELLS BUILD. THE QUICK BAR STRIP, bottom-centre -- the hotbar slot
     // this file's own header has reserved in Barony's name since task #66,
-    // finally holding something. Right after the alert in priority: while it
-    // is up at all, it is up because the player's hand is ON it (a held
-    // wheel, a number press), which is exactly when it must not be the row
-    // that gets dropped. Out of the band's slot grid like every row here, so
+    // finally holding something. Right after the alert in priority, AHEAD OF
+    // THE VOICE LINE: while it is up at all, it is up because the player's
+    // hand is ON it (a held wheel, a number press), which is exactly when it
+    // must not be the row that gets dropped -- and the cells pass found it
+    // dropped at three of five capture sizes, because the street's line
+    // (drawn after this block since 2026-09-26) had taken the slot the
+    // strip's air needed. Hand-on feedback outranks a bark it can share the
+    // band with. Out of the band's slot grid like every row here, so
     // it can never land in the play space or on another row's pixels; behind
     // its own plate, because ten dim digits over open floor is the alert's
     // own S8 legibility failure again; and TRANSIENT (quickBarFade is a
@@ -1249,60 +1703,304 @@ void drawBottomBand(Framebuffer& target, const HudState& state, BottomBand& band
     // this game's TES-quiet bar is not.
     if (state.quickBarFade > 0.0F) {
         const float fade = std::clamp(state.quickBarFade, 0.0F, 1.0F);
-        const int y = band.take(minor);
+        // KITFIX LANE. ONE ROW OF AIR BOUGHT BEFORE THE TAKE -- not only when
+        // an earlier row happened to pad it there (and, since the cells pass
+        // below, only when the band is empty). With nothing
+        // else on the band (the common case a wheel/number press interrupts:
+        // no alert, no guard, no held-effect row), take() alone lands the
+        // strip on the FIRST slot, right above the health bar, which is
+        // exactly the screen real estate the drawn hand and its blade rest
+        // in -- a capture at --kit=slot showed the strip's own plate sitting
+        // in that footprint, the viewmodel's edge reading through it. The
+        // strip is drawn on top of the 3D frame already (present_frame()
+        // composites the HUD overlay after drawScene()/drawViewmodel()), so
+        // the plate's OWN alpha is what let the blade read through it, not
+        // the paint order -- lifting the row clear of the hand's usual
+        // resting height is the fix this file can make without touching the
+        // 3D pass or the hand's own rig.
+        // THE CELLS PASS. THE AIR IS BOUGHT ONLY WHEN THE BAND IS EMPTY, AND
+        // GIVEN BACK WHEN THE TAKE IS REFUSED. Bought always, the row of air
+        // was the difference between a strip and no strip: with the alert's
+        // two slots and the voice line's one already taken, a four-slot band
+        // (1280x720, 2560x1440) refused the padded take and the strip -- the
+        // feature under test -- was not drawn at all. The air exists to lift
+        // the strip off the hand's resting height when NOTHING else does; a
+        // band with rows on it has lifted the strip already.
+        const int air = band.taken() == 0 ? rowHeight(minor) : 0;
+        band.pad(air);
+        // The plate's own padding above the glyph box, carried into the take
+        // as clearance so the plate never crosses the floor (BottomBand::take).
+        const int padY = std::max(1, minor / 2);
+        int y = band.take(minor, padY);
+        if (y < 0 && air > 0) {
+            band.unpad(air);
+            y = band.take(minor, padY);
+        }
         if (y >= 0) {
             constexpr int kQuickSlots = 10;
-            const int cellW = (kGlyphAdvance + 2) * minor;
-            const int cellsW = kQuickSlots * cellW;
+            // SLOTS, NOT A NUMBER. The critic's line on the first strip
+            // (2026-09-25, docs/frames/kit/README.md): "1234567890 runs as
+            // one number". Ten digits at a seven-unit pitch on one bare
+            // plate is a number; ten CELLS, each ruled off from the next
+            // and each holding its digit with near two units of air a side,
+            // are ten places a thing can go. The rule between cells is the
+            // plate's own border weight, so the strip reads as one ruled
+            // row and not as ten little plates, and the closing rule after
+            // the tenth cell is drawn so the last slot is a cell too and
+            // not the start of the name.
+            const int rail = std::max(1, minor / 2);
+            const int cellW = (kGlyphW + 4) * minor;
+            const int cellsW = kQuickSlots * cellW + rail;
             // The selected slot's own name rides the same row -- the digits
             // say which slots are loaded, the name says with what.
+            //
+            // THE WHEEL'S TUTOR TOAST RIDES THIS PLATE TOO (the cells pass,
+            // 2026-09-26). It used to take its own slot off the band as a
+            // fourth tier of bare grey text, which the player critic found
+            // squeezed between the voice line and the strip and unreadable
+            // under the drawn fist; a hint about the strip belongs ON the
+            // strip. It takes the plate's right end, after the name, in the
+            // reference ink, and costs the band no slot.
+            const bool hinted = !state.wheelHint.empty() && state.wheelHintFade > 0.0F;
+            const int hintW =
+                hinted ? 2 * kGlyphAdvance * minor + textWidth(state.wheelHint, minor) : 0;
             std::string name;
             if (state.quickSelected >= 0 && state.quickSelected < kQuickSlots) {
                 const std::string_view picked =
                     state.quickSlots[static_cast<std::size_t>(state.quickSelected)];
-                name = clipToWidth(picked, rowBudget - cellsW - 2 * kGlyphAdvance * minor,
-                                   minor);
+                name = clipToWidth(picked,
+                                   rowBudget - cellsW - hintW - 2 * kGlyphAdvance * minor, minor);
             }
             const int nameW =
                 name.empty() ? 0 : 2 * kGlyphAdvance * minor + textWidth(name, minor);
-            const int x0 = std::max(margin, (width - cellsW - nameW) / 2);
-            const int padY = std::max(1, minor / 2);
-            drawTextPlate(target, x0 - 2 * minor, y - padY, x0 + cellsW + nameW + 2 * minor,
-                          y + kGlyphH * minor + padY, std::max(1, minor / 2), 0.80F * fade);
+            const int x0 = std::max(margin, (width - cellsW - nameW - hintW) / 2);
+            // THE CELLS PASS: the half unit the plate stands above the glyph
+            // box is bought back for the row above, the way the alert buys
+            // its own air -- the director found this plate's top rail one
+            // pixel under the case tracker's drop shadow. Only where a further
+            // slot still fits under it: see BottomBand::padIfAfforded.
+            band.padIfAfforded(padY);
+            // THE CELL BOX HOLDS THE GLYPH AND ITS DROP-SHADOW ROW, so nothing
+            // hangs under the plate (the auditor's dark dashes under every
+            // cell, at every scale from 2 up); the plate is the same box, run
+            // out under the name. With padY the plate's own border weight,
+            // the box is the slot's step tall and crosses no neighbour.
+            const int boxY0 = y - padY;
+            const int boxY1 = y + (kGlyphH + 1) * minor + padY;
+            // At 0.92 the plate is opaque enough that the world behind it no
+            // longer decides a cell's colour -- the director's cells 8 and 9
+            // went red over a patron's shirt at 0.80, and the drawn fist read
+            // through the whole strip.
+            drawTextPlate(target, x0 - 2 * minor, boxY0,
+                          x0 + cellsW + nameW + hintW + 2 * minor, boxY1, rail, 0.92F * fade);
             for (int slot = 0; slot < kQuickSlots; ++slot) {
                 const int cx = x0 + slot * cellW;
                 const bool loaded = !state.quickSlots[static_cast<std::size_t>(slot)].empty();
                 const bool equipped = slot == state.quickEquipped;
                 const bool selected = slot == state.quickSelected;
+                // The cell's own rule, on its left; the tenth cell's right
+                // rule closes the row below.
+                target.fillRect(cx, boxY0, rail, boxY1 - boxY0, kPlateBone, 0.45F * fade);
                 if (equipped) {
                     // INVERTED, the strongest mark on the strip: this cell is
                     // what the next press of Cast spends, the same fact the
                     // CAST row reads off the same equipped id.
-                    target.fillRect(cx, y - padY, cellW - minor, kGlyphH * minor + 2 * padY,
-                                    kPlateBone, 0.90F * fade);
+                    target.fillRect(cx + rail, boxY0, cellW - rail, boxY1 - boxY0, kPlateBone,
+                                    0.90F * fade);
+                } else if (selected) {
+                    // THE SELECTED CELL IS TINTED, faintly gold, under its
+                    // frame: at the small scales the frame is one pixel and
+                    // the tint is what the eye lands on.
+                    target.fillRect(cx + rail, boxY0, cellW - rail, boxY1 - boxY0,
+                                    Rgb{0.85F, 0.80F, 0.60F}, 0.28F * fade);
+                } else if (loaded) {
+                    // A LOADED CELL IS FILLED, faintly -- a slot with a thing
+                    // in it is a different shape from an empty one before
+                    // the digit is read, which is how a hotbar is read: the
+                    // eye counts filled cells, it does not read ten digits.
+                    target.fillRect(cx + rail, boxY0, cellW - rail, boxY1 - boxY0, kPlateBone,
+                                    0.30F * fade);
                 }
                 if (selected) {
-                    // FRAMED, one pixel-row of border: where the wheel or the
-                    // number row last pointed, which need not be the equipped
-                    // cell (an empty slot can be selected and says so).
+                    // FRAMED, in gold: where the wheel or the number row last
+                    // pointed, which need not be the equipped cell (an empty
+                    // slot can be selected and says so). Drawn over the
+                    // cell's own rule so the frame owns all four sides, at the
+                    // rule's own weight so it sits in the padding and never
+                    // over the digit (a minor-thick frame overlapped the glyph
+                    // by minor - padY, the auditor's finding).
                     const Rgb gold{0.85F, 0.80F, 0.60F};
-                    const int frameY0 = y - padY;
-                    const int frameY1 = y + kGlyphH * minor + padY;
-                    target.fillRect(cx, frameY0, cellW - minor, minor, gold, fade);
-                    target.fillRect(cx, frameY1 - minor, cellW - minor, minor, gold, fade);
-                    target.fillRect(cx, frameY0, minor, frameY1 - frameY0, gold, fade);
-                    target.fillRect(cx + cellW - 2 * minor, frameY0, minor,
-                                    frameY1 - frameY0, gold, fade);
+                    target.fillRect(cx, boxY0, cellW, rail, gold, fade);
+                    target.fillRect(cx, boxY1 - rail, cellW, rail, gold, fade);
+                    target.fillRect(cx, boxY0, rail, boxY1 - boxY0, gold, fade);
+                    target.fillRect(cx + cellW - rail, boxY0, rail, boxY1 - boxY0, gold, fade);
                 }
                 const char digit[2] = {static_cast<char>(slot == 9 ? '0' : '1' + slot), '\0'};
-                const Rgb ink = equipped ? kPlateBlack : kPlateBone;
-                const float inkAlpha = equipped ? fade : (loaded ? 0.95F : 0.35F) * fade;
-                drawText(target, cx + (cellW - kGlyphW * minor) / 2, y, digit, ink, inkAlpha,
-                         minor);
+                // THE DIGIT'S INK. The kitfix pass lifted unselected digits
+                // from kPlateBone at a 0.35 alpha (near-invisible against
+                // the plate in every capture) to kAimNote at a 0.75 floor;
+                // the critic's second look still read them as a wash. A
+                // loaded slot's digit is the plate's own bone now, at full
+                // strength -- the brightest warm ink this HUD has, the ink
+                // the strip's rails and the picked name already wear -- and
+                // an empty slot's digit is kAimNote at 0.60, well under it
+                // (the director measured the 0.80 step at seventeen percent
+                // and could not read it), so LOADED and EMPTY are two inks on
+                // two cell
+                // fills and not two alphas of one grey. The equipped cell
+                // keeps its black knockout on the inverted fill -- the one
+                // digit that is meant to read as SELECTED rather than as a
+                // slot merely present.
+                const Rgb ink = equipped ? kPlateBlack : (loaded ? kPlateBone : kAimNote);
+                const float inkAlpha = equipped ? fade : (loaded ? 1.0F : 0.60F) * fade;
+                drawText(target, cx + rail + (cellW - rail - kGlyphW * minor) / 2, y, digit, ink,
+                         inkAlpha, minor);
             }
+            target.fillRect(x0 + kQuickSlots * cellW, boxY0, rail, boxY1 - boxY0, kPlateBone,
+                            0.45F * fade);
             if (!name.empty()) {
                 drawText(target, x0 + cellsW + 2 * kGlyphAdvance * minor, y, name,
                          Rgb{0.90F, 0.87F, 0.76F}, 0.92F * fade, minor);
+            }
+            if (hinted) {
+                drawText(target, x0 + cellsW + nameW + 2 * kGlyphAdvance * minor, y,
+                         state.wheelHint, Rgb{0.62F, 0.60F, 0.54F},
+                         0.85F * std::clamp(state.wheelHintFade, 0.0F, 1.0F) * fade, minor);
+            }
+        }
+    }
+    // VOICE LANE. THE STREET'S OWN LINE, right after the alert and the quick
+    // bar strip in priority and under both in rank (the strip's tutor toast
+    // rides the strip's own plate and takes no slot): it takes the slot above
+    // the alert when both are up (above
+    // the strip too, while the player's hand is on that -- the cells pass,
+    // 2026-09-26) and the alert's own slot when the alert is down. Drawn at
+    // the minor
+    // size -- it is read, not heeded -- on the same plate the alert stands
+    // on, the speaker in the person accent (aimAccent(AimKind::Person),
+    // the colour a body already wears under the crosshair) and the row in
+    // the panel's dim ink, the court's officer block moved to the street.
+    //
+    // TWO LINES WHEN ONE WILL NOT DO. A row's turn is its last sentence,
+    // and at 320x180 the minor scale holds fifty-nine cells, so a long row
+    // clipped to one line lost the part the craft is in. A row that does
+    // not fit beside its name breaks at a word onto a second slot, the
+    // name on the first; only when the band has no second slot does it
+    // clip, marked, as the alert does. The row of air between this plate
+    // and the alert's is the one the alert already spends above (the KIT
+    // FIX PASS slot): this row used to buy a second, and with the two the
+    // band at 960x540 ran out under a bouncer's shout -- the witness's
+    // line was dropped off the top of the band, the one row the react
+    // frame exists to show.
+    if (!state.voiceLine.empty() && state.voiceFade > 0.0F) {
+        const float fade = std::clamp(state.voiceFade, 0.0F, 1.0F);
+        // UNDER THE RUNG PLATE this row takes the plate's register too when
+        // it is the smaller (HudState::alertStepScale): under the height-only
+        // register a square window's minor scale was a tier above the card,
+        // and a bark wrapped onto two lines under it. Since the cells pass
+        // no window does that (the alert row's note above), and the row
+        // stands down at the minor scale.
+        const float ink = std::clamp(state.voiceInkWeight, 0.0F, 1.0F);
+        const bool down = state.voiceStepsDown;
+        const int vs = (down && state.alertStepScale > 0) ? std::min(minor, state.alertStepScale)
+                                                          : minor;
+        const std::string name =
+            state.voiceName.empty() ? std::string() : std::string(state.voiceName) + ":";
+        const int gutter = name.empty() ? 0 : kGlyphAdvance * vs;
+        const int nameW = textWidth(name, vs);
+        const int firstBudget = std::max(0, rowBudget - nameW - gutter);
+        std::string first(state.voiceLine);
+        std::string second;
+        if (textWidth(first, vs) > firstBudget) {
+            // Break at the last space that fits the first line; the rest
+            // is the second, clipped to the full row if it must be.
+            std::size_t cut = std::string::npos;
+            for (std::size_t i = 0; i < first.size(); ++i) {
+                if (first[i] == ' ' && textWidth(std::string_view(first).substr(0, i), vs) <=
+                                           firstBudget) {
+                    cut = i;
+                }
+            }
+            if (cut != std::string::npos && cut > 0) {
+                second = first.substr(cut + 1);
+                first.resize(cut);
+            }
+        }
+        // The plate's own padding above the glyph box, carried into both
+        // takes as clearance so the plate never crosses the floor and never
+        // sits on the line's first row (BottomBand::take). A unit and the
+        // rail of it while the row stands down under the rung plate, the
+        // alert row's own reason (the shadows under the lower rail); the
+        // rail alone otherwise. Both at the row's own register (`vs`).
+        const int padY = down ? vs + std::max(1, vs / 2) : std::max(1, vs / 2);
+        const int y = band.take(vs, padY);
+        if (y >= 0) {
+            int y2 = -1;
+            if (!second.empty()) {
+                y2 = band.take(vs, padY);
+                if (y2 < 0) {
+                    // No second slot: one line, clipped and marked.
+                    first = clipToWidth(state.voiceLine, firstBudget, vs);
+                    second.clear();
+                } else {
+                    second = clipToWidth(second, rowBudget, vs);
+                }
+            } else {
+                first = clipToWidth(first, firstBudget, vs);
+            }
+            const int firstW = nameW + gutter + textWidth(first, vs);
+            const int secondW = textWidth(second, vs);
+            const int drawn = std::max(firstW, secondW);
+            const int textX = std::max(margin, (width - drawn) / 2);
+            const int padX = vs * 2;
+            // THE CELLS PASS: the half unit the plate stands above the glyph
+            // box is bought back for the row above, the way the alert buys
+            // its own air -- the director found this plate's top rail one
+            // pixel under the case tracker's drop shadow. Only where a further
+            // slot still fits under it: see BottomBand::padIfAfforded. NOT
+            // WHILE THE ROW STANDS DOWN: its plate then stands a unit and the
+            // rail over the glyph box, and it buys that air whole after the
+            // draw (the rail and a minor unit, below, the rung plate's eighth
+            // pass) -- buying the half unit here as well would lift the row
+            // above twice.
+            if (!down) {
+                band.padIfAfforded(padY);
+            }
+            // The second slot is ABOVE the first in the band's own order,
+            // so the row reads down: the name and the opening on the upper
+            // line, the turn on the lower.
+            const int top = y2 >= 0 ? y2 : y;
+            const int bottom = y2 >= 0 ? y : y;
+            // THE RUNG PLATE'S WEIGHT ON THE INK (HudState::voiceInkWeight),
+            // the alert row's own rule: the field keeps the row's ease, the
+            // rails take a quarter while the row stands down
+            // (HudState::voiceStepsDown), the words take the weight -- and
+            // the row is drawn at the plate's own register (`vs`, above).
+            if (down) {
+                target.fillRect(textX - padX, top - padY, drawn + 2 * padX,
+                                (bottom - top) + kGlyphH * vs + 2 * padY, kPlateBlack, fade);
+            }
+            drawTextPlate(target, textX - padX, top - padY, textX + drawn + padX,
+                          bottom + kGlyphH * vs + padY, std::max(1, vs / 2),
+                          down ? 0.25F * fade : fade);
+            const Rgb dim{0.74F, 0.72F, 0.64F};
+            if (!name.empty()) {
+                drawText(target, textX, top, name, aimAccent(static_cast<int>(AimKind::Person)),
+                         0.95F * fade * ink, vs);
+            }
+            drawText(target, textX + nameW + gutter, top, first, dim, 0.92F * fade * ink, vs);
+            if (y2 >= 0) {
+                drawText(target, textX, bottom, second, dim, 0.92F * fade * ink, vs);
+            }
+            // STOOD DOWN, THE PLATE OVERHANGS ITS SLOT BY THE RAIL: the slot
+            // grid leaves a minor unit of air above the glyph box, and the
+            // row above's drop shadow ends on the row just above that air,
+            // so a plate a unit and a rail tall put its top rail on the
+            // shadow's last row (the auditor, eighth pass). The rail plus a
+            // minor unit of air, bought in pixels the alert row's way
+            // (BottomBand::pad).
+            if (down) {
+                band.pad(std::max(1, vs / 2) + minor);
             }
         }
     }
@@ -1325,6 +2023,39 @@ void drawBottomBand(Framebuffer& target, const HudState& state, BottomBand& band
     // and the flash read as one fact.
     takeCentred(state.blockLabel, Rgb{0.62F, 0.70F, 0.80F},
                 0.92F * std::clamp(state.blockFade, 0.0F, 1.0F));
+    // KIT BUILD (defence v1). THE TURN, right behind the guard: "COAT TURNS
+    // 2" for a plate's hold after a blow the worn kit softened, in the
+    // blocked-blow wash's own steel-cool ink so the row and the wash read as
+    // one fact. An event, its own slot: a guard, raised hands and a turned
+    // blow can all be true on one step.
+    //
+    // KIT POLISH: AHEAD OF THE HANDS, NOT BEHIND THEM. The turn is an EVENT
+    // with a plate's hold; FISTS UP is a STATE the raised hands on screen
+    // already show. On a three-slot band -- which is every monitor size
+    // from 1080p up (base 1002, floor 843, step 40: a fourth slot misses
+    // by one pixel), and 960x540 with a guard held -- the bouncer's warning
+    // holds two and there is exactly one left, and it belongs to the news.
+    // hud.hpp's own argument for giving the turn its own row was that a
+    // warning "would eat every turn in a brawl"; being eaten by the hands
+    // row instead was the same loss through a different door.
+    takeCentred(state.turnLabel, Rgb{0.62F, 0.70F, 0.80F},
+                0.92F * std::clamp(state.turnFade, 0.0F, 1.0F));
+    // STANCE & ROOM BUILD. FIGHTING MODE, right behind the turn: "FISTS UP"
+    // while the room's own hands-up bit is true. Bone ink -- the plate's own
+    // register, neither the guard's steel-cool nor the charge's heat, because
+    // a raised fist is a STATE and not a moment. A guard and raised hands can
+    // both be true (a guard raises the hands), so this takes its own slot.
+    takeCentred(state.handsLabel, Rgb{0.82F, 0.76F, 0.60F},
+                0.90F * std::clamp(state.handsFade, 0.0F, 1.0F));
+    // ACTION-COMBAT BUILD (section 5, channel 2). THE HELD HARD charge row,
+    // adjacent to the guard row and in the hot charge register -- the same warm
+    // hue the reticle takes at the hard threshold, so the row and the reticle
+    // read as one fact. A swing charging hard and a guard held are mutually
+    // exclusive (the guard drops the instant the hand leaves Idle), so they
+    // never both claim the band; and it sits behind the alert and the lock, a
+    // shout and a lock both outranking a swing the player is still winding up.
+    takeCentred(state.chargeLabel, Rgb{0.90F, 0.58F, 0.24F},
+                0.94F * std::clamp(state.chargeFade, 0.0F, 1.0F));
     // The case. IT IS THE COLOUR OF THE WARD'S NERVE and not a fixed one: a
     // player who has frightened the district enough that nobody walks the
     // Gullet alone should see that without reading the words.
@@ -1346,13 +2077,14 @@ void drawBottomBand(Framebuffer& target, const HudState& state, BottomBand& band
     }
     // The man who put you here, anchored to the right edge so a long name
     // cannot run off the frame the way S6 alert did. A hunted man should not
-    // have to read the line to notice it. Checked against the UNCLIPPED
-    // label: HUNTING is always the last word rivalLine() appends, and
-    // clipping only ever removes the tail, so the unclipped field still
-    // answers this correctly even on the frame narrow enough to have dropped
-    // the word.
+    // have to read the line to notice it -- and under the word diet he no
+    // longer CAN read it: the HUNTING word is off the label (rank 6 -> 3, the
+    // spec's own cut) and the fact arrives as rivalHunts, set by Session off
+    // the same Nemesis the line is built from. The label sniff stays as the
+    // fallback so every pre-diet hand-built HudState keeps its colour.
     {
-        const bool hunting = state.rivalLabel.find("HUNTING") != std::string_view::npos;
+        const bool hunting =
+            state.rivalHunts || state.rivalLabel.find("HUNTING") != std::string_view::npos;
         takeRight(state.rivalLabel, hunting ? Rgb{0.88F, 0.40F, 0.30F} : Rgb{0.74F, 0.60F, 0.52F},
                   0.90F * std::clamp(state.rivalFade, 0.0F, 1.0F));
     }
@@ -1388,6 +2120,14 @@ void drawHud(Framebuffer& target, const HudState& state) {
     // panel owns the screen), so a gate here would be the same test written
     // twice in two places -- which is the drift conversingNow() exists to stop.
     const int rightBlock = drawTopRight(target, state);
+    // THE PULL PACK. The followed lead on the ribbon's sub-label row, and the
+    // skill-up toast in the free corner -- both gated on showCompass, because
+    // the top band belongs to whoever is talking to you and every page stands
+    // the compass down (the same test written once, not twice).
+    if (state.showCompass) {
+        drawPullLine(target, state, rightBlock);
+        drawSkillToast(target, state);
+    }
     // THE CASEBOOK PASS. ONE ANNOUNCEMENT SLOT, AND THE CASE OUTRANKS THE
     // CROSSING. Both notices are edges announced once in the same band; two of
     // them stacked would be two notices fighting. Session already guarantees

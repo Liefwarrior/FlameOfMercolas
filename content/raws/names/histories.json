@@ -25,6 +25,12 @@
       "bioB": "Signed quiet paper at Fenner's window after the boats were lost; the charge stands on his patience.",
       "gossip": "gossip.netter-fenner-debt" },
 
+    { "id": "maell-netter-shortfall", "kind": "pact",
+      "a": "maell", "b": "netter", "edge": "FRIEND",
+      "bioA": "Weighs a petition-day docket the stopped Mercian shipments have made long, the Widow Netter's plea among them, and gives the Flame's hard answers because a dead quay cannot pay the gentle ones.",
+      "bioB": "Brings Father Maell more petitions than she can stomach since the Dezdant war with Trojia took the Mercian lanes, her charge pledged and her wing behind, and hates each one she signs.",
+      "gossip": "gossip.maell-netter-shortfall" },
+
     { "id": "vess-venn-grudge", "kind": "feud",
       "a": "vess", "b": "venn", "edge": "RIVAL",
       "bioA": "Nurses a sergeant's grudge against Master Venn - the Gull's back room has cost the Watch too many clean cases.",
@@ -91,5 +97,5 @@
       "bioB": "Keeps a sailmaker's needle behind the bar and the Loft's lamp in the corner of her eye.",
       "gossip": "gossip.luff-redda-lamp" }
   ],
-  "notes": "Sprint-2 WORLD micro-histories (S2-1 'the stories between them'): authored feuds/debts/romances/pacts among the Forty Notables, realized at bake as real RelationshipRegistry edges plus one bio-addendum sentence per side (appended by NameForge after the notable's authored bio). Parties are notables.json ids - spawn-site-bound, never raw ActorIds. S5 MIGRATION (the S4 declared debt, paid): the RIVAL/DEBTOR/ROMANCE kinds now exist in the sim's append-only enum and this file uses them - feud -> RIVAL (symmetric; BarkSelector now greets these pairs hostile, the fiction finally on the surface), debt -> DEBTOR directed a(creditor) -> b(debtor) (legibility only, no tick-path consumer yet), romance -> ROMANCE (symmetric; greets as friend and keeps the Barter kitchen-price Royal off - behavior-identical to the old FRIEND placeholder), pact/secret stay FRIEND (a quiet alignment reads as friendship). Each history's gossip key must exist in barks/barks.json (asserted by DocksMicroHistoryTest)."
+  "notes": "Sprint-2 WORLD micro-histories (S2-1 'the stories between them'): authored feuds/debts/romances/pacts among the Forty Notables, realized at bake as real RelationshipRegistry edges plus one bio-addendum sentence per side (appended by NameForge after the notable's authored bio). Parties are notables.json ids - spawn-site-bound, never raw ActorIds. S5 MIGRATION (the S4 declared debt, paid): the RIVAL/DEBTOR/ROMANCE kinds now exist in the sim's append-only enum and this file uses them - feud -> RIVAL (symmetric; BarkSelector now greets these pairs hostile, the fiction finally on the surface), debt -> DEBTOR directed a(creditor) -> b(debtor) (legibility only, no tick-path consumer yet), romance -> ROMANCE (symmetric; greets as friend and keeps the Barter kitchen-price Royal off - behavior-identical to the old FRIEND placeholder), pact/secret stay FRIEND (a quiet alignment reads as friendship). Each history's gossip key must exist in barks/barks.json (asserted by DocksMicroHistoryTest). EVICTION addendum (the Mercian/Dezdant war, heard ward-wide): maell-netter-shortfall is the one WORLD EVENT in this file, and it does not fit the two-party mould honestly - a war on the Dezdant ground that stops the Mercian bottoms has no single interpersonal party. It is pegged to the priest and the charge-holder the shortfall bites hardest and binds together: Maell, who weighs a petition-day docket the dead quay has made long, and Widow Netter, who must bring the petitions she hates. kind 'pact' -> FRIEND is the least-wrong edge (two co-servants of the roll, aligned in a bad season, not a feud and not warmth); the war itself lives in the gossip table and the ward-wide knowers, not in the edge. Flagged for the owner: this is a modelling peg, not a claim that the priest and the widow are friends."
 }

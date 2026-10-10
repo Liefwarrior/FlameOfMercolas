@@ -467,3 +467,41 @@ TEST_CASE("no row of the aim prompt ever says the same word twice") {
     // NOT VACUOUS: the sweep really did land on things with names.
     CHECK(named > 20);
 }
+
+TEST_CASE("with the fists up, a street body's prompt says the swing cannot reach them") {
+    // NINE AND THE STICKS: THE RETICLE DOES NOT LIE ABOUT THE HAND. A street
+    // body is in TALK reach and out of the swing's -- Tavern::sightlineTarget
+    // walks the Gull's roster only, so SWING on the Tarwalk whiffs with
+    // NOBODY IN REACH. While the hands are up the note says so BEFORE the
+    // press, in the same breath TALK is offered; with the hands down the
+    // note is the trade alone, as it always was. (The street becomes
+    // hittable when the STREET SENSES lane lands, and this note goes with it.)
+    Session session(gullAt(16, 153, 63, sim::gull::kGroundBand));
+    // Find a tile with a street body under the crosshair -- the same sweep
+    // the no-repeat case walks, stopping on the first TALK the ward answers.
+    bool found = false;
+    for (std::int32_t y = 40; y <= 120 && !found; y += 7) {
+        for (std::int32_t x = 40; x <= 200 && !found; x += 7) {
+            session.body().placeAt(x, y, sim::gull::kGroundBand);
+            const Session::InteractTarget aim = session.interactTarget();
+            if (aim.verb != "TALK" || session.tavern().playerInside()) {
+                continue;
+            }
+            found = true;
+            CHECK(aim.note.find("NO BLOW REACHES THEM") == std::string::npos);
+            // Hands up: one SWING press from hands down raises them (and
+            // whiffs here); the reticle now carries the reach note.
+            session.attackDown();
+            session.attackUp();
+            REQUIRE(session.tavern().playerHandsUp());
+            const Session::InteractTarget up = session.interactTarget();
+            CHECK(up.verb == "TALK");
+            CHECK(up.subject == aim.subject);
+            CHECK(up.note.find("NO BLOW REACHES THEM") != std::string::npos);
+            // And LOWER HANDS puts it away again.
+            session.tavern().lowerPlayerHands();
+            CHECK(session.interactTarget().note.find("NO BLOW REACHES THEM") == std::string::npos);
+        }
+    }
+    CHECK(found);
+}

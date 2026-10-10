@@ -57,9 +57,20 @@ constexpr MotifGlyph kBar{{0x4, 0x4, 0x4, 0x4, 0x4, 0x4}};
 constexpr MotifGlyph kDiamond{{0x0, 0x6, 0xF, 0x6, 0x0, 0x0}};
 constexpr MotifGlyph kDot{{0x0, 0x0, 0x6, 0x6, 0x0, 0x0}};
 constexpr MotifGlyph kRing{{0x0, 0x6, 0x9, 0x6, 0x0, 0x0}};
+// THE KEYCAP MOTIFS (UI-EA-SPEC sec. 5). Solid arrowheads on the diamond's own
+// rows -- a 2-wide apex, because a 4-wide cell has no centre column and a
+// 1-wide point reads lopsided. The return hook is the classic bent arrow:
+// stem down the right, shaft across, a 2-pixel head at the left. The cross is
+// the d-pad read as a heavy plus.
+constexpr MotifGlyph kArrowUp{{0x0, 0x6, 0xF, 0xF, 0x0, 0x0}};
+constexpr MotifGlyph kArrowDown{{0x0, 0xF, 0xF, 0x6, 0x0, 0x0}};
+constexpr MotifGlyph kArrowLeft{{0x0, 0x3, 0xF, 0x3, 0x0, 0x0}};
+constexpr MotifGlyph kArrowRight{{0x0, 0xC, 0xF, 0xC, 0x0, 0x0}};
+constexpr MotifGlyph kReturn{{0x0, 0x1, 0x5, 0xF, 0x4, 0x0}};
+constexpr MotifGlyph kCross{{0x0, 0x6, 0xF, 0xF, 0x6, 0x0}};
 
 void blitMotif(Framebuffer& target, int x, int y, const MotifGlyph& glyph, const Rgb& colour,
-               float alpha, int scale) {
+               float alpha, int scale, float shadowAlpha) {
     for (int row = 0; row < kGlyphRows; ++row) {
         for (int col = 0; col < 4; ++col) {
             const bool on = (glyph.rows[static_cast<std::size_t>(row)] >> (3 - col)) & 1U;
@@ -71,11 +82,18 @@ void blitMotif(Framebuffer& target, int x, int y, const MotifGlyph& glyph, const
             // glyph and a font glyph side by side are indistinguishable in
             // treatment.
             target.fillRect(x + col * scale + scale, y + row * scale + scale, scale, scale, kShadow,
-                            alpha * 0.75F);
+                            shadowAlpha);
             target.fillRect(x + col * scale, y + row * scale, scale, scale, colour, alpha);
         }
     }
 }
+
+// THE KEYCAP SENTINELS ARE GLYPHS OF THE FONT NOW (hud.cpp's kGlyphs carries
+// the six bitmaps above under the bytes controls.hpp declares), so drawText
+// draws them in every run -- the panel drawers below no longer overlay them
+// after the fact, and the knockout pass picks them up through its own mask
+// exactly as it does every other glyph. The border-motif table keeps the same
+// bitmaps for the frames it draws (see Motif::ArrowUp .. Motif::Cross).
 
 /// Uppercased, because the font draws lowercase as uppercase anyway and every
 /// surface in this build prints in caps. Doing it here means a caller can pass
@@ -111,8 +129,32 @@ int PanelMetric::rowsIn(int pixels) const noexcept {
     return pixels <= 0 ? 0 : pixels / cellH();
 }
 
-PanelMetric panelMetric(int frameHeight) noexcept {
-    return PanelMetric{std::max(1, hudMinorScale(std::max(1, frameHeight)))};
+PanelMetric panelMetric(int frameWidth, int frameHeight) noexcept {
+    return PanelMetric{
+        std::max(1, hudMinorScale(std::max(1, frameWidth), std::max(1, frameHeight)))};
+}
+
+std::string clipColumns(std::string_view label, int cells, int scale) {
+    const int fit = std::max(0, cells);
+    if (static_cast<int>(label.size()) <= fit) {
+        return std::string(label);
+    }
+    std::size_t cut = std::string_view::npos;
+    for (std::size_t at = label.find("  "); at != std::string_view::npos;
+         at = label.find("  ", at + 1)) {
+        if (static_cast<int>(at) > fit) {
+            break;
+        }
+        cut = at;
+    }
+    if (cut != std::string_view::npos && static_cast<int>(cut) * 4 >= fit * 3) {
+        std::string out(label.substr(0, cut));
+        while (!out.empty() && out.back() == ' ') {
+            out.pop_back();
+        }
+        return out;
+    }
+    return clipToWidth(label, PanelMetric{std::max(1, scale)}.widthOf(fit), std::max(1, scale));
 }
 
 int panelSeatY(int frameHeight, int panelHeight) noexcept {
@@ -253,7 +295,15 @@ Rgb inkFor(InkRole role) noexcept {
 // ---------------------------------------------------------------------------
 
 void drawMotif(Framebuffer& target, int x, int y, Motif motif, const Rgb& colour, float alpha,
+               int scale, float shadowAlpha);
+
+void drawMotif(Framebuffer& target, int x, int y, Motif motif, const Rgb& colour, float alpha,
                int scale) {
+    drawMotif(target, x, y, motif, colour, alpha, scale, alpha * 0.75F);
+}
+
+void drawMotif(Framebuffer& target, int x, int y, Motif motif, const Rgb& colour, float alpha,
+               int scale, float shadowAlpha) {
     if (alpha <= 0.0F || scale <= 0) {
         return;
     }
@@ -261,31 +311,74 @@ void drawMotif(Framebuffer& target, int x, int y, Motif motif, const Rgb& colour
         // THE TWO THE FONT ALREADY HAS go through the font, so there is exactly
         // one `!` and one `+` in this build and they cannot drift apart.
         case Motif::Bang:
-            drawText(target, x, y, "!", colour, alpha, scale);
+            drawText(target, x, y, "!", colour, alpha, scale, shadowAlpha);
             return;
         case Motif::Plus:
-            drawText(target, x, y, "+", colour, alpha, scale);
+            drawText(target, x, y, "+", colour, alpha, scale, shadowAlpha);
             return;
         case Motif::Tilde:
-            blitMotif(target, x, y, kTilde, colour, alpha, scale);
+            blitMotif(target, x, y, kTilde, colour, alpha, scale, shadowAlpha);
             return;
         case Motif::Bar:
-            blitMotif(target, x, y, kBar, colour, alpha, scale);
+            blitMotif(target, x, y, kBar, colour, alpha, scale, shadowAlpha);
             return;
         case Motif::Diamond:
-            blitMotif(target, x, y, kDiamond, colour, alpha, scale);
+            blitMotif(target, x, y, kDiamond, colour, alpha, scale, shadowAlpha);
             return;
         case Motif::Dot:
-            blitMotif(target, x, y, kDot, colour, alpha, scale);
+            blitMotif(target, x, y, kDot, colour, alpha, scale, shadowAlpha);
             return;
         case Motif::Ring:
-            blitMotif(target, x, y, kRing, colour, alpha, scale);
+            blitMotif(target, x, y, kRing, colour, alpha, scale, shadowAlpha);
+            return;
+        case Motif::ArrowUp:
+            blitMotif(target, x, y, kArrowUp, colour, alpha, scale, shadowAlpha);
+            return;
+        case Motif::ArrowDown:
+            blitMotif(target, x, y, kArrowDown, colour, alpha, scale, shadowAlpha);
+            return;
+        case Motif::ArrowLeft:
+            blitMotif(target, x, y, kArrowLeft, colour, alpha, scale, shadowAlpha);
+            return;
+        case Motif::ArrowRight:
+            blitMotif(target, x, y, kArrowRight, colour, alpha, scale, shadowAlpha);
+            return;
+        case Motif::Return:
+            blitMotif(target, x, y, kReturn, colour, alpha, scale, shadowAlpha);
+            return;
+        case Motif::Cross:
+            blitMotif(target, x, y, kCross, colour, alpha, scale, shadowAlpha);
             return;
     }
 }
 
+bool motifForSentinel(char c, Motif& out) noexcept {
+    switch (c) {
+        case kSentinelArrowUp:
+            out = Motif::ArrowUp;
+            return true;
+        case kSentinelArrowDown:
+            out = Motif::ArrowDown;
+            return true;
+        case kSentinelArrowLeft:
+            out = Motif::ArrowLeft;
+            return true;
+        case kSentinelArrowRight:
+            out = Motif::ArrowRight;
+            return true;
+        case kSentinelReturn:
+            out = Motif::Return;
+            return true;
+        case kSentinelCross:
+            out = Motif::Cross;
+            return true;
+        default:
+            return false;
+    }
+}
+
 void drawRuleRun(Framebuffer& target, int x, int y, int cells, const PanelMetric& metric,
-                 Motif junction, const Rgb& colour, float alpha,
+                 Motif junction, const Rgb& colour, float alpha, float shadowAlpha,
                  const std::vector<int>& interiorJunctions) {
     if (alpha <= 0.0F || cells <= 0) {
         return;
@@ -297,11 +390,11 @@ void drawRuleRun(Framebuffer& target, int x, int y, int cells, const PanelMetric
             isEnd || std::find(interiorJunctions.begin(), interiorJunctions.end(), i) !=
                          interiorJunctions.end();
         if (isJoin) {
-            drawMotif(target, cx, y, junction, colour, alpha, metric.scale);
+            drawMotif(target, cx, y, junction, colour, alpha, metric.scale, shadowAlpha);
         } else if ((i % 2) == 1) {
-            drawMotif(target, cx, y, Motif::Tilde, colour, alpha, metric.scale);
+            drawMotif(target, cx, y, Motif::Tilde, colour, alpha, metric.scale, shadowAlpha);
         } else {
-            drawText(target, cx, y, "-", colour, alpha, metric.scale);
+            drawText(target, cx, y, "-", colour, alpha, metric.scale, shadowAlpha);
         }
     }
 }
@@ -424,6 +517,9 @@ void PanelFrame::draw() {
     }
     Framebuffer& target = *target_;
     const int cw = metric_.cellW();
+    // The motifs' shadow: the style's own if it set one, the font's three
+    // quarters of the ink otherwise (FrameStyle::shadowAlpha).
+    const float shadow = style_.shadowAlpha >= 0.0F ? style_.shadowAlpha : 0.75F * style_.alpha;
 
     target.fillRect(bounds_.x, bounds_.y, metric_.widthOf(cellsWide_),
                     metric_.heightOf(rows_ + 2), style_.ground,
@@ -448,13 +544,13 @@ void PanelFrame::draw() {
     // starts at content row 0 meets the top rule and one that ends at the last
     // content row meets the bottom rule.
     drawRuleRun(target, bounds_.x, bounds_.y, cellsWide_, metric_, style_.junction, style_.rule,
-                style_.alpha, junctionsFor(-1));
+                style_.alpha, shadow, junctionsFor(-1));
     drawRuleRun(target, bounds_.x, rowY(rows_), cellsWide_, metric_, style_.junction, style_.rule,
-                style_.alpha, junctionsFor(rows_));
+                style_.alpha, shadow, junctionsFor(rows_));
 
     for (const int r : rules_) {
         drawRuleRun(target, bounds_.x, rowY(r), cellsWide_, metric_, style_.junction, style_.rule,
-                    style_.alpha, junctionsFor(r));
+                    style_.alpha, shadow, junctionsFor(r));
     }
 
     const auto isRuleRow = [this](int r) {
@@ -467,8 +563,8 @@ void PanelFrame::draw() {
         }
         const Motif edge = edgeAt(r);
         const int y = rowY(r);
-        drawMotif(target, bounds_.x, y, edge, style_.rule, style_.alpha, metric_.scale);
-        drawMotif(target, rightX, y, edge, style_.rule, style_.alpha, metric_.scale);
+        drawMotif(target, bounds_.x, y, edge, style_.rule, style_.alpha, metric_.scale, shadow);
+        drawMotif(target, rightX, y, edge, style_.rule, style_.alpha, metric_.scale, shadow);
     }
 
     for (const Divider& d : dividers_) {
@@ -477,7 +573,8 @@ void PanelFrame::draw() {
             if (isRuleRow(r)) {
                 continue;
             }
-            drawMotif(target, x, rowY(r), edgeAt(r), style_.rule, style_.alpha, metric_.scale);
+            drawMotif(target, x, rowY(r), edgeAt(r), style_.rule, style_.alpha, metric_.scale,
+                      shadow);
         }
     }
 }
@@ -488,6 +585,12 @@ void PanelFrame::draw() {
 
 int drawCellText(Framebuffer& target, const PanelRect& rect, const PanelMetric& metric, int cell,
                  int row, std::string_view text, const Rgb& colour, float alpha) {
+    return drawCellText(target, rect, metric, cell, row, text, colour, alpha, alpha * 0.75F);
+}
+
+int drawCellText(Framebuffer& target, const PanelRect& rect, const PanelMetric& metric, int cell,
+                 int row, std::string_view text, const Rgb& colour, float alpha,
+                 float shadowAlpha) {
     if (alpha <= 0.0F || text.empty() || rect.empty()) {
         return 0;
     }
@@ -500,8 +603,10 @@ int drawCellText(Framebuffer& target, const PanelRect& rect, const PanelMetric& 
     // mid-glyph and reads as a rendering bug rather than as a line that was too
     // long. The pane knows its own width; this takes it.
     const std::string cut = clipToWidth(shout(text), metric.widthOf(cells), metric.scale);
-    drawText(target, rect.x + cell * metric.cellW(), rect.y + row * metric.cellH(), cut, colour,
-             alpha, metric.scale);
+    const int x = rect.x + cell * metric.cellW();
+    const int y = rect.y + row * metric.cellH();
+    // The keycap motifs are glyphs of the font -- drawText draws them.
+    drawText(target, x, y, cut, colour, alpha, metric.scale, shadowAlpha);
     return cellsOf(cut);
 }
 
@@ -600,6 +705,8 @@ int drawCellTextKnockout(Framebuffer& target, const PanelRect& rect, const Panel
             target.fillRect(originX + px, originY + py, 1, 1, colour, alpha);
         }
     }
+    // The keycap motifs came through the mask with the rest of the run: they
+    // are glyphs of the font now, so the scratch pass drew them in white too.
     return cellsOf(cut);
 }
 
@@ -1014,8 +1121,7 @@ void drawOptionListPlanned(Framebuffer& target, const PanelRect& rect, const Pan
             }
             at += plan.keyCells;
         }
-        const std::string label = clipToWidth(shout(option.label), metric.widthOf(plan.labelCells),
-                                              metric.scale);
+        const std::string label = clipColumns(shout(option.label), plan.labelCells, metric.scale);
         if (picked) {
             drawCellTextKnockout(target, rect, metric, at, row, label, kInk.knockout, alpha);
         } else {
@@ -1734,6 +1840,34 @@ void drawCommitVerb(Framebuffer& target, const PanelRect& pane, const PanelMetri
     const int wide = drawCellText(target, pane, metric, 0, row, verb, accent, alpha);
     if (!cost.empty()) {
         drawCellText(target, pane, metric, wide + 1, row, cost, panelInk().number, alpha);
+    }
+}
+
+void drawCommitPulse(Framebuffer& target, const PanelRect& pane, const PanelMetric& metric,
+                     std::string_view verb, std::string_view cost, const Rgb& accent, float alpha,
+                     float pulse) {
+    if (pulse <= 0.0F || alpha <= 0.0F || pane.empty() || verb.empty()) {
+        return;
+    }
+    const int rows = metric.rowsIn(pane.h);
+    if (rows <= 0) {
+        return;
+    }
+    // THE SAME PLACEMENT WALK drawCommitVerb makes, so the flash lands exactly
+    // on the row the verb holds -- including the moved-restatement case, where
+    // the flash covers the verb's row only (the cost above it is information,
+    // not the act).
+    const int row = rows - 1;
+    const int cells = metric.cellsIn(pane.w);
+    const int want = cellsOf(verb) + 1 + cellsOf(cost);
+    const bool stacked = !cost.empty() && want > cells && row > 0;
+    const int fillCells = std::min(cells, stacked ? cellsOf(verb) + 1 : want + 1);
+    const float lit = alpha * std::min(1.0F, pulse);
+    drawInvertedFill(target, pane, metric, 0, row, fillCells, accent, lit);
+    drawCellTextKnockout(target, pane, metric, 0, row, verb, panelInk().knockout, lit);
+    if (!stacked && !cost.empty()) {
+        drawCellTextKnockout(target, pane, metric, cellsOf(verb) + 1, row, cost,
+                             panelInk().knockout, lit);
     }
 }
 

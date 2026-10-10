@@ -67,6 +67,10 @@ std::filesystem::path missionSheetRawsPath(const std::filesystem::path& contentD
     return contentDir / "raws" / "quests" / "mission_sheet.json";
 }
 
+std::filesystem::path evictionRawsPath(const std::filesystem::path& contentDir) {
+    return contentDir / "raws" / "quests" / "eviction.json";
+}
+
 CasebookRaws CasebookRaws::load(const std::filesystem::path& contentDir) {
     return loadFile(casebookRawsPath(contentDir));
 }

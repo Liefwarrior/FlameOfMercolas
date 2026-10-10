@@ -16,12 +16,19 @@ fast loop.
 From the repo root:
 
 ```
-docker compose run --rm --build build
+.\scripts\gate.ps1         # scripts/gate.sh off Windows
 ```
 
-That is the whole thing. It compiles the C++ inside a pinned container, runs the
-test suite, and puts a native Windows binary in `dist/`. Then, on Windows,
-natively:
+That is the whole thing. It is `docker compose run --rm --build build` with
+`GRANADAD_REVISION` set to the commit you are on (`-dirty` appended when a
+tracked file differs from it, the rule `git describe --dirty` uses), so
+`dist/GATE-STAMP.txt` and `granadad.exe --version` name the tree that was built.
+The container cannot find that out for itself: `.git` is not in the build
+context. Type the compose command by hand and it builds exactly the same; the
+stamp just says `unknown`.
+
+Either way it compiles the C++ inside a pinned container, runs the test suite,
+and puts a native Windows binary in `dist/`. Then, on Windows, natively:
 
 ```
 .\dist\granadad.exe --selftest     # no window, just proves the binary works
@@ -122,6 +129,23 @@ all five picks, jams the lock and has to put a shoulder to it — loudly, and fo
 half the coin a clean pick would have paid. `--burgle=lock` leaves the wire in
 the next box so the lockpicking row itself is on screen; `--burgle=taproom` walks
 back down among the people who did hear him.
+
+### The workbench
+
+`granadad-workbench` (2026-10-09) is a second executable beside the game: a
+Unity-shaped editor over one live `render::Session` -- hierarchy, scene,
+game, inspector, console and a command line -- built from the same render
+primitives as the game's own pages, with no new dependency. It has a window
+(through the same raylib backend) and two headless modes for agents:
+
+```
+granadad-workbench --script=look.wbs     # commands in, answers out
+granadad-workbench --serve=wbdir         # many workflows, one world
+```
+
+Every command is a public verb the game calls; a saved SCENE is the log of
+the world-changing commands and replays onto a fresh world to the identical
+hash (`test_workbench.cpp`). The whole guide: `docs/WORKBENCH.md`.
 
 ### Controls
 
@@ -481,12 +505,15 @@ recorded in `BUILD-MANIFEST.txt`, so drift shows up instead of hiding.
 ### Options
 
 ```
+BUILD_TYPE=Debug scripts/gate.sh
 GRANADAD_REVISION=$(git rev-parse --short HEAD) docker compose run --rm --build build
-BUILD_TYPE=Debug docker compose run --rm --build build
 ```
 
-`GRANADAD_REVISION` gets baked into the binary and printed on startup, so a bug
-report names the commit it came from.
+Anything in the environment passes through the wrapper (`$env:BUILD_TYPE='Debug'`
+then `.\scripts\gate.ps1` on Windows). The second line is what the wrapper does
+for you, minus the `-dirty` check; `GRANADAD_REVISION` gets baked into the
+binary and printed on startup, so a bug report names the commit it came from.
+Unset, it is `unknown`.
 
 ---
 

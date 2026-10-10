@@ -64,6 +64,13 @@ namespace {
 /// other player-facing surface to.
 void mustReadAsEnglish(std::string_view what, std::string_view text) {
     for (const char c : text) {
+        // The keycap motif sentinels (panel.hpp's 0x01-0x06 contract) are
+        // drawable BY THE PANEL DRAWERS -- arrowheads, the return hook, the
+        // d-pad cross -- and legal wherever a key or verb prints.
+        render::Motif motif;
+        if (render::motifForSentinel(c, motif)) {
+            continue;
+        }
         INFO("in ", what, ": ", text);
         INFO("undrawable character: '", c, "' (", static_cast<int>(c), ")");
         CHECK(render::isDrawableGlyph(c));
@@ -904,11 +911,24 @@ TEST_CASE("DEVIN's fixed sheet, applied through CreationResult, reaches the live
     //
     // MORROWIND ROUND: ONE SPACE, NOT TWO -- see characterRows()'s own note
     // on why the tiled Character tile's narrower column gave that glyph
-    // back to the skill rows.
+    // back to the skill rows. THE HONEST SHEET (PULL PACK): a skill that has
+    // moved carries what the next level costs after the level --
+    // "SKYRUNNING LV 25  41 TO NEXT" -- so the pin is the row's head, and
+    // the figure is checked against the track's own arithmetic rather than
+    // retyped.
     const std::string expected =
         "SKYRUNNING LV " + std::to_string(chosen.companion.startingLevel(sim::kRoofSkill));
     const std::vector<std::string> rows = session.characterRows();
-    CHECK(std::find(rows.begin(), rows.end(), expected) != rows.end());
+    bool found = false;
+    for (const std::string& row : rows) {
+        if (row.rfind(expected, 0) == 0) {
+            found = true;
+            const std::int32_t level = chosen.companion.startingLevel(sim::kRoofSkill);
+            CHECK(row.find("  " + std::to_string(live.scaledUsesForLevel(sim::kRoofSkill, level)) +
+                           " TO NEXT") != std::string::npos);
+        }
+    }
+    CHECK(found);
 }
 
 TEST_CASE("CUSTOM's point-bought Chargen sheet, applied through CreationResult, reaches the "
@@ -1472,8 +1492,10 @@ TEST_CASE("every step composes a page, and every string on it can actually be dr
     for (const render::CreationFlow& flow : steps) {
         const render::CreationPage page = flow.page();
         INFO("step ", static_cast<int>(flow.step()));
-        CHECK_FALSE(page.crumbs.empty());
-        CHECK_FALSE(page.instruction.empty());
+        // UI-EA-SPEC sec. 5: the breadcrumb line is retired -- the tab row is
+        // the one header -- and only TASK steps (a question to answer) carry
+        // an instruction phrase.
+        CHECK(page.crumbs.empty());
         CHECK_FALSE(page.rows.empty());
         CHECK_FALSE(page.nav.empty());
         // EVERY PANEL CARRIES A HEADER and every step names where it is in the
@@ -1487,27 +1509,44 @@ TEST_CASE("every step composes a page, and every string on it can actually be dr
     }
 }
 
-TEST_CASE("a quiz answer reaches the screen WHOLE -- the eighteen-glyph clip is gone") {
-    // THE DEFECT, NAMED: the old topic grid clipped every answer at eighteen
-    // glyphs including its row number, so a hundred-glyph moral choice arrived
-    // as "1 YOU TOLD THE." and the renderer printed the hovered one three times
-    // per frame to compensate.
-    const render::CreationFlow flow = atQuiz(0);
+TEST_CASE("the stubs law: stubs never cut a word, and the full answer is behind the highlight") {
+    // UI-EA-SPEC 1.1: the answers collapse to short STUBS in the master list
+    // and the HIGHLIGHTED answer's full text prints whole in the detail pane.
+    // Nothing is deleted; it moves behind the highlight. The old defect this
+    // must never resurrect is the mid-word cut -- "1 YOU TOLD THE." was not a
+    // choice anybody could make.
+    render::CreationFlow flow = atQuiz(0);
     REQUIRE(flow.quiz().loaded());
-    const render::CreationPage page = flow.page();
-    REQUIRE(page.rows.size() == 3U);
     const sim::QuizQuestion& question = flow.quiz().questions().front();
     const std::array<int, 3> order = render::quizDisplayOrder(0);
-    bool sawLongOne = false;
-    for (std::size_t i = 0; i < page.rows.size(); ++i) {
-        const std::string& authored = question.answers[static_cast<std::size_t>(order[i])].text;
-        CHECK(page.rows[i].label == authored);
-        sawLongOne = sawLongOne || authored.size() > 18U;
+    for (int at = 0; at < 3; ++at) {
+        flow.setChoiceCursor(at);
+        const render::CreationPage page = flow.page();
+        REQUIRE(page.rows.size() == 3U);
+        const std::string& authored =
+            question.answers[static_cast<std::size_t>(order[static_cast<std::size_t>(at)])].text;
+        // The stub is the answer's own opening -- a prefix on a word
+        // boundary, marked -- or the whole short answer.
+        const std::string& stub = page.rows[static_cast<std::size_t>(at)].label;
+        if (stub != authored) {
+            REQUIRE(stub.size() > 2U);
+            const std::string prefix = stub.substr(0, stub.size() - 2);
+            CHECK(stub.compare(stub.size() - 2, 2, "..") == 0);
+            CHECK(authored.compare(0, prefix.size(), prefix) == 0);
+            // Never mid-word: the authored text continues with a space, or
+            // the cut fell on a boundary the stub kept whole.
+            CHECK((prefix.size() >= authored.size() ||
+                   authored[prefix.size()] == ' ' || prefix.back() != ' '));
+        }
+        // THE FULL ANSWER, WHOLE, in the detail pane's own lines.
+        bool whole = false;
+        for (const render::PanelLine& line : page.lines) {
+            whole = whole || line.body == authored;
+        }
+        CHECK(whole);
+        // And the question itself is the instruction row, not a clipped header.
+        CHECK(page.instruction == question.prompt);
     }
-    // If none of them were long, this case would be proving nothing.
-    CHECK(sawLongOne);
-    // And the question itself is the instruction row, not a clipped header.
-    CHECK(page.instruction == question.prompt);
 }
 
 TEST_CASE("the quiz says what an answer buys: the axis, the meters, and the trade it points at") {
@@ -1529,13 +1568,15 @@ TEST_CASE("the quiz says what an answer buys: the axis, the meters, and the trad
         liveTotal += count;
     }
     CHECK(drawnTotal == liveTotal + 1);
-    // And the provisional verdict is named, which is the direct answer to
-    // spending choices blind.
-    bool headingFor = false;
-    for (const render::PanelFact& fact : page.facts) {
-        headingFor = headingFor || fact.label == "HEADING FOR";
+    // The consequence is BARS AND A SIGNED DELTA now (UI-EA-SPEC 1.1 #3,
+    // 29 -> 8): the running HEADING FOR fact is retired -- the tallest bar
+    // says it wordlessly, and the verdict step still says the whole of it.
+    CHECK(page.facts.empty());
+    bool delta = false;
+    for (const render::PanelLine& line : page.lines) {
+        delta = delta || line.body == "+1";
     }
-    CHECK(headingFor);
+    CHECK(delta);
 }
 
 TEST_CASE("a biography answer's cost is spelled out in names and numbers, never in ids") {
@@ -1597,14 +1638,14 @@ TEST_CASE("state changes the verb rather than greying it out, on the row and on 
     const render::CreationPage named = flow.page();
     CHECK(named.commitVerb != blank.commitVerb);
 
-    // A skill row's verb follows its designation, and the restatement under it
-    // says which tiers still have room BEFORE the key is pressed.
+    // A skill row's verb follows its designation -- the slot-room restatement
+    // is retired (UI-EA-SPEC 1.1 #7: the header readout IS the slot count).
     flow.setCustomizeCursor(2);
     const render::CreationPage undesignated = flow.page();
     flow.adjustCustomizeRow(1);
     const render::CreationPage designated = flow.page();
     CHECK(undesignated.commitVerb != designated.commitVerb);
-    CHECK_FALSE(designated.commitCost.empty());
+    CHECK(designated.commitCost.empty());
 }
 
 TEST_CASE("a fixed sheet says it is fixed in the verb, not by refusing silently") {
@@ -1614,8 +1655,8 @@ TEST_CASE("a fixed sheet says it is fixed in the verb, not by refusing silently"
     REQUIRE(flow.chosenCompanion() != nullptr);
     flow.setCustomizeCursor(2);
     const render::CreationPage page = flow.page();
-    CHECK(page.commitVerb == "A FIXED SHEET");
-    CHECK_FALSE(page.commitCost.empty());
+    // One word now -- the reference's own state-label idiom (Owned -> FIXED).
+    CHECK(page.commitVerb == "FIXED");
 }
 
 TEST_CASE("every row of every step is reachable by pointer, and the pointer mirrors the cursor") {
@@ -1988,6 +2029,11 @@ TEST_CASE("THE DOOR measures to its own widest row and is seated 45/55 across") 
     render::CreationFlow devin = fresh();
     devin.moveOriginCursor(4);
     const render::CreationPage quick = devin.page();
+    // THE FORMULA MOVED WITH THE DIET: the door's detail pane carries no
+    // key/value facts any more (the explainer prints for the highlighted row
+    // only, UI-EA-SPEC 1.1 #1), so the ask is badge + prose + verb, plus the
+    // breathing row -- the old +4 facts term counted rows the diet deleted.
+    REQUIRE(quick.facts.empty());
     const render::CreationLayout tall = render::creationLayout(quick, 640, 360);
     REQUIRE(tall.usable);
     REQUIRE(tall.body.split);
@@ -1995,7 +2041,7 @@ TEST_CASE("THE DOOR measures to its own widest row and is seated 45/55 across") 
         render::PanelRect{0, 0, tall.detailRect.w, tall.metric.heightOf(60)}, tall.metric,
         quick.lines);
     REQUIRE(prose >= 6);  // not vacuous: the bio genuinely wraps
-    CHECK(tall.bodyRows == 2 + 4 + prose + 2 + 1);
+    CHECK(tall.bodyRows == 2 + prose + 2 + 1);
 }
 
 TEST_CASE("THE NAME measures to its keyboard, and the narrower prose is counted taller") {
@@ -2015,16 +2061,23 @@ TEST_CASE("THE NAME measures to its keyboard, and the narrower prose is counted 
     CHECK(layout.bounds.x == render::panelSeatX(640, layout.bounds.w));
     CHECK(layout.bounds.x == 114);
     // The body: three grid rows against a detail of badge (2), two facts and
-    // their air (3), the pane's one sentence -- whole at the held width -- and
-    // the commit verb (2), sized with a breathing row by the height measure
-    // run at the MEASURED width.
-    CHECK(layout.bodyRows == 9);
+    // their air (3), and the commit verb (2), sized with a breathing row by
+    // the height measure run at the MEASURED width. The pane's old sentence
+    // died in the diet (OSK prose 10 -> 0, UI-EA-SPEC 1.1 #10), and its row
+    // went with it.
+    CHECK(layout.bodyRows == 8);
 
     // The measure is in CELLS, so it holds at every window whose cell count
-    // affords it -- and where the window is narrower than the measure (1920's
-    // 76 cells, 320's 64) the clamp lands at the window: full width by
-    // construction, no special case.
-    for (const auto& size : {std::pair{960, 540}, std::pair{1280, 720}}) {
+    // affords it. 1920x1080 used to be the one capture size that did NOT --
+    // the register stepped up faster than the height and dealt it 76 cells
+    // against a 77-cell measure, so the clamp landed at the window there --
+    // and it deals 96 now (hudMinorScale is the smaller of height/240 and
+    // width/425, and no window at least 425 px wide deals under 85), so the
+    // biggest window composes the
+    // same 77-cell card as the two under it, seated by the one rule. The
+    // clamp-at-the-window half of the contract is 320x180's now, and the
+    // next case proves it.
+    for (const auto& size : {std::pair{960, 540}, std::pair{1280, 720}, std::pair{1920, 1080}}) {
         const render::CreationLayout wide =
             render::creationLayout(page, size.first, size.second);
         INFO("window ", size.first, "x", size.second);
@@ -2032,28 +2085,39 @@ TEST_CASE("THE NAME measures to its keyboard, and the narrower prose is counted 
         CHECK(wide.metric.cellsIn(wide.bounds.w) == 77);
         CHECK(wide.bounds.x == render::panelSeatX(size.first, wide.bounds.w));
     }
-    const render::CreationLayout narrowest = render::creationLayout(page, 1920, 1080);
-    REQUIRE(narrowest.usable);
-    CHECK(narrowest.metric.cellsIn(narrowest.bounds.w) == narrowest.metric.cellsIn(1920));
 }
 
 TEST_CASE("a page that earns the window keeps it by construction, not by special case") {
-    // hudMinorScale steps with height, so THE BIGGEST WINDOW IS THE NARROWEST
-    // IN CELLS: 1920x1080 has 76 across, and every measured creation step
-    // wants 77 or more -- so at 1920 the clamp lands on the window and each
-    // page is exactly the full-width composition it always was. No
-    // is-this-page branch anywhere; that is the whole point of the clamp,
-    // and it is also why the ward map and the controls page (which never
-    // call the measure) cannot be touched by it.
+    // A window with fewer cells across than a measured step wants lands the
+    // page on the window, full width, with no is-this-page branch anywhere;
+    // that is the whole point of the clamp, and it is also why the ward map
+    // and the controls page (which never call the measure) cannot be touched
+    // by it. That window used to be the BIGGEST one -- the register stepped
+    // up faster than the height, so 1920x1080 dealt 76 cells where every
+    // measured step wants 77 or more -- and it is the SMALLEST now:
+    // hudMinorScale is the smaller of height/240 and width/425, no window at
+    // least 425 px wide deals under 85, and 320x180's 64 is the one capture
+    // size narrower than any
+    // measure. So the proof is 320x180's, for both pages.
     render::CreationFlow sheet = atSheet();
     for (const render::CreationPage& page : {fresh().page(), sheet.page()}) {
-        const render::CreationLayout layout = render::creationLayout(page, 1920, 1080);
+        const render::CreationLayout layout = render::creationLayout(page, 320, 180);
         REQUIRE(layout.usable);
-        CHECK(layout.metric.cellsIn(layout.bounds.w) == layout.metric.cellsIn(1920));
+        CHECK(layout.metric.cellsIn(layout.bounds.w) == layout.metric.cellsIn(320));
         // And the seat degenerates to the sub-cell remainder, just as the
         // centring it replaced did.
         CHECK(layout.bounds.x <= layout.metric.cellW());
     }
+    // And the other half, at the size that used to be the proof: a window
+    // with cells to spare deals the measure and seats it by the one rule.
+    // It does not hand the door the whole frame because the frame is big --
+    // 96 cells across at 1920x1080 now, and the door's card is 77 of them,
+    // the same 77 it is at 640x360.
+    const render::CreationLayout door = render::creationLayout(fresh().page(), 1920, 1080);
+    REQUIRE(door.usable);
+    CHECK(door.metric.cellsIn(1920) == 96);
+    CHECK(door.metric.cellsIn(door.bounds.w) == 77);
+    CHECK(door.bounds.x == render::panelSeatX(1920, door.bounds.w));
 }
 
 // ---------------------------------------------------------------------------
@@ -2080,20 +2144,22 @@ TEST_CASE("the creation feet re-word for the pad, live, on every step") {
     CHECK(flow.promptDevice() == render::InputDevice::KeyboardMouse);
     std::string kb = navLine(flow.page());
     CHECK(kb.find("ESC LEAVE") != std::string::npos);
-    CHECK(kb.find("UP DOWN MOVE") != std::string::npos);
-    CHECK(kb.find("ENTER OPEN") != std::string::npos);
-    CHECK(kb.find("1-5 PICK") != std::string::npos);
-    CHECK(flow.page().commitVerb == "ENTER - OPEN THIS DOOR");
+    // PAGES' diet through FLOW's choke points: UP DOWN and ENTER are motifs,
+    // the digit foot is retired everywhere (UI-EA-SPEC sec. 5): digits pick
+    // what they print, and the rows print them.
+    CHECK(kb.find("\x02\x03 MOVE") != std::string::npos);
+    CHECK(kb.find("\x01 OPEN") != std::string::npos);
+    CHECK(kb.find("PICK") == std::string::npos);
+    CHECK(flow.page().commitVerb == "\x01 - OPEN");
 
-    // One pad press: the SAME page re-words -- no reopen, no menu visit. And
-    // the digit entry is GONE, because a pad has no number row to press.
+    // One pad press: the SAME page re-words -- no reopen, no menu visit.
     flow.noteInputDevice(render::InputDevice::Pad);
     std::string pad = navLine(flow.page());
     CHECK(pad.find("B LEAVE") != std::string::npos);
-    CHECK(pad.find("D-PAD MOVE") != std::string::npos);
+    CHECK(pad.find("\x06 MOVE") != std::string::npos);
     CHECK(pad.find("A OPEN") != std::string::npos);
     CHECK(pad.find("PICK") == std::string::npos);
-    CHECK(flow.page().commitVerb == "A - OPEN THIS DOOR");
+    CHECK(flow.page().commitVerb == "A - OPEN");
 
     // The sheet -- the critical path the ship note shot keyboard-worded
     // around a pad (pad-sheet-begin-640.png). WALK YOUR OWN PATH is two
@@ -2104,13 +2170,68 @@ TEST_CASE("the creation feet re-word for the pad, live, on every step") {
     if (flow.step() == render::CreationStep::Customize) {
         pad = navLine(flow.page());
         CHECK(pad.find("B BACK") != std::string::npos);
-        CHECK(pad.find("D-PAD MOVE") != std::string::npos);
-        CHECK(pad.find("LEFT RIGHT SPEND") != std::string::npos);
+        CHECK(pad.find("\x06 MOVE") != std::string::npos);
+        // The spend key wears the arrowhead keycaps now (UI-EA-SPEC sec. 5).
+        CHECK(pad.find("\x04\x05 SPEND") != std::string::npos);
+        CHECK(pad.find("LEFT RIGHT") == std::string::npos);
         CHECK(pad.find("A OPEN") != std::string::npos);
         // And back to the keyboard the instant a key speaks.
         flow.noteInputKey(render::Key::S);
         kb = navLine(flow.page());
         CHECK(kb.find("ESC BACK") != std::string::npos);
-        CHECK(kb.find("ENTER OPEN") != std::string::npos);
+        CHECK(kb.find("\x01 OPEN") != std::string::npos);
     }
+}
+
+// ===========================================================================
+// UI-EA-SPEC sec. 3 rule 1 + sec. 4 violation #7 (FLOW lane): the page ease
+// and the door's armed quit
+// ===========================================================================
+
+TEST_CASE("the creation page ease: cold draws stay full, a live window eases each step") {
+    // THE COLD-DRAW GUARANTEE. A flow that is never advanced draws settled
+    // at full alpha -- byte-for-byte the old hard-coded 1.0F -- which is
+    // what keeps every headless capture and every hand-built frame in this
+    // suite exactly what it was.
+    render::CreationFlow flow = fresh();
+    CHECK(flow.page().alpha == 1.0F);
+    flow.chooseOrigin();  // a step change, with no advance() yet
+    CHECK(flow.page().alpha == 1.0F);
+
+    // THE LIVE-WINDOW EASE. advance() notices the step change, re-arms the
+    // ease from its opening bump (never exactly zero -- EasedToggle's own
+    // first-frame rule), and settles back to exactly 1 within
+    // kPageEaseSteps.
+    flow.advance();
+    const float bump = flow.page().alpha;
+    CHECK(bump > 0.0F);
+    CHECK(bump < 1.0F);
+    for (int i = 0; i < granadad::render::kPageEaseSteps; ++i) {
+        flow.advance();
+    }
+    CHECK(flow.page().alpha == 1.0F);
+
+    // And advancing WITHOUT a step change never re-arms: the page holds
+    // its settled alpha while the player reads it.
+    flow.advance();
+    CHECK(flow.page().alpha == 1.0F);
+}
+
+TEST_CASE("violation #7: the door's quit is armed state, and any other press disarms it") {
+    // The client's creation_input owns the edge (first ESC arms, second
+    // leaves, other presses disarm); this is the state surface it drives
+    // and the page prints the armed row from. Proven here at the Session
+    // altitude the suite can reach -- the routing itself lives in main.cpp's
+    // anonymous namespace, the file's own documented gap.
+    render::CreationFlow flow = fresh();
+    CHECK_FALSE(flow.quitArmed());
+    flow.armQuit();
+    CHECK(flow.quitArmed());
+    flow.disarmQuit();
+    CHECK_FALSE(flow.quitArmed());
+    // Arming is idempotent and survives advance() -- the countdown-free
+    // pause-menu shape: armed until something disarms it, never on a timer.
+    flow.armQuit();
+    flow.advance();
+    CHECK(flow.quitArmed());
 }

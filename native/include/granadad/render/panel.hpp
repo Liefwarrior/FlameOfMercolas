@@ -119,7 +119,7 @@ struct PanelMetric {
     [[nodiscard]] int heightOf(int rows) const noexcept { return rows * cellH(); }
 };
 
-/// The metric a composed screen at this frame height draws its BODY at:
+/// The metric a composed screen at this frame size draws its BODY at:
 /// hudMinorScale, the register hud.hpp already reserves for "reference material
 /// the player reads deliberately", which is what a panel full of rows is.
 ///
@@ -129,7 +129,7 @@ struct PanelMetric {
 /// rather than from a second, larger glyph size, because two glyph sizes on one
 /// surface means two cell grids, and two cell grids is how a column stops
 /// lining up with the rule above it.
-[[nodiscard]] PanelMetric panelMetric(int frameHeight) noexcept;
+[[nodiscard]] PanelMetric panelMetric(int frameWidth, int frameHeight) noexcept;
 
 /// WHERE A PAGE THAT ENDED AFTER ITS CONTENT SITS IN THE WINDOW.
 ///
@@ -340,19 +340,87 @@ enum class Motif : std::uint8_t {
     Dot,
     /// `◦` -- a sub-item under an effect.
     Ring,
+    // THE KEYCAP MOTIFS (UI-EA-SPEC sec. 5) -- the six word-savers the EA diet
+    // substitutes for key WORDS: `UP DOWN` becomes two arrowheads, `ENTER`
+    // becomes the return hook, `D-PAD` becomes the cross. Same 4x6 cell, same
+    // advance, same shadow; NOT in the font (the font is untouched) and never
+    // used in prose -- they are keycaps, and they enter label strings only
+    // through the sentinel bytes below.
+    /// `▲`
+    ArrowUp,
+    /// `▼`
+    ArrowDown,
+    /// `◀`
+    ArrowLeft,
+    /// `▶`
+    ArrowRight,
+    /// `⏎` -- the return hook. The word ENTER, retired.
+    Return,
+    /// `✚` -- the d-pad cross.
+    Cross,
 };
+
+// ---------------------------------------------------------------------------
+// THE MOTIF SENTINELS -- UI-EA-SPEC sec. 5, cross-lane contract (a)
+// ---------------------------------------------------------------------------
+// Bytes 0x01-0x06 inside ANY label string drawn by this vocabulary render as
+// the keycap motifs above: the text drawers (drawCellText and its right-aligned
+// and knocked-out kin, and everything built on them -- option lists, tab rows,
+// commit verbs) map sentinel -> motif in place, one cell each, in the run's own
+// ink. drawText itself draws nothing for them and still advances the cursor,
+// so a sentinel that ever reaches the raw font is a BLANK CELL, not garbage --
+// visible in a frame, harmless to a player.
+//
+// THE MAPPING IS THE CONTRACT and it is fixed: the promptKey choke points
+// (controls.cpp -- LANE FLOW's) emit these same bytes, so device-awareness
+// survives by construction: a pad still prints `A`, `B`, `X` as words. Never
+// printable-character collisions: 0x01-0x06 are control bytes the font has no
+// glyph for and authored prose never contains (test_copy's sweep would refuse
+// them), which is what makes them safe to smuggle through std::string.
+// INTEGRATION RULING: the two lanes landed contract (a) with DIFFERENT byte
+// assignments -- controls.cpp's choke points emit Return=0x01, Up=0x02,
+// Down=0x03, Left=0x04, Right=0x05, DPad=0x06, and that numbering is pinned
+// in ~30 places across controls.cpp and three test files, against two pins
+// here. The emitter's numbering wins; these constants renumber to match it.
+// The values are arbitrary -- AGREEMENT is the contract.
+inline constexpr char kSentinelReturn = '\x01';
+inline constexpr char kSentinelArrowUp = '\x02';
+inline constexpr char kSentinelArrowDown = '\x03';
+inline constexpr char kSentinelArrowLeft = '\x04';
+inline constexpr char kSentinelArrowRight = '\x05';
+inline constexpr char kSentinelCross = '\x06';
+
+/// The composed forms a page's own copy reaches for. `kGlyphMoveKeys` is the
+/// rest-state keycap form of `ARROWS`/`UP DOWN LEFT RIGHT`; the single glyphs
+/// compose feet like `"\x01 - FACE IT"`.
+inline constexpr std::string_view kGlyphReturn = "\x01";
+inline constexpr std::string_view kGlyphUp = "\x02";
+inline constexpr std::string_view kGlyphDown = "\x03";
+inline constexpr std::string_view kGlyphLeft = "\x04";
+inline constexpr std::string_view kGlyphRight = "\x05";
+inline constexpr std::string_view kGlyphCross = "\x06";
+inline constexpr std::string_view kGlyphMoveKeys = "\x02\x03\x04\x05";
+inline constexpr std::string_view kGlyphUpDown = "\x02\x03";
+
+/// The motif a sentinel byte names, or false for any other character. Public
+/// so a page measuring words in a label (the census, the token-count pins) can
+/// ask the same question the drawer answers.
+[[nodiscard]] bool motifForSentinel(char c, Motif& out) noexcept;
 
 /// One motif glyph on the 4x6 cell, top-left anchored, with drawText's own
 /// one-pixel drop shadow so it sits in register beside real text.
 void drawMotif(Framebuffer& target, int x, int y, Motif motif, const Rgb& colour, float alpha,
                int scale);
+/// The same, with the drop shadow's own alpha (FrameStyle::shadowAlpha).
+void drawMotif(Framebuffer& target, int x, int y, Motif motif, const Rgb& colour, float alpha,
+               int scale, float shadowAlpha);
 
 /// A run of the `+~-~-` rule motif, `cells` cells wide, starting at (x, y).
 /// Alternates `~` and `-` and puts `junction` at BOTH ends. Cells listed in
 /// `interiorJunctions` (indices into the run) get a junction too -- that is
 /// where a column divider meets the rule.
 void drawRuleRun(Framebuffer& target, int x, int y, int cells, const PanelMetric& metric,
-                 Motif junction, const Rgb& colour, float alpha,
+                 Motif junction, const Rgb& colour, float alpha, float shadowAlpha,
                  const std::vector<int>& interiorJunctions = {});
 
 /// The faint `.`/`'` field the reference fills a large otherwise-empty panel
@@ -425,6 +493,12 @@ struct FrameStyle {
     /// The caller's own fade -- an overlay's EasedToggle, per the project's UI
     /// conventions. 0 draws nothing at all.
     float alpha = 1.0F;
+    /// The rules' and bars' drop-shadow alpha. Below zero (every frame before
+    /// the rung plate) means the font's own: three quarters of `alpha`. A
+    /// card whose slab thins faster than its ink (the rung plate's lift)
+    /// sets the slab's own alpha here, so its frame never leaves as black
+    /// nicks under grey dashes on a pane.
+    float shadowAlpha = -1.0F;
     /// How opaque the ground is over whatever is behind it. The first-person
     /// view is behind these panels and is allowed to show through a little.
     float groundAlpha = 0.94F;
@@ -622,6 +696,21 @@ struct OptionListStyle {
     /// Print `key` at all. A list of plain names passes false.
     bool showKeys = true;
 };
+
+/// A ROW OF COLUMNS LOSES ITS LAST COLUMNS WHOLE BEFORE IT LOSES A LETTER.
+///
+/// The Character tile's carried rows are composed as columns two spaces
+/// apart -- `KNIFE    8DR   4C  HELD  SLOT 3` -- and at the register's floor
+/// of 85 cells the tile's label column holds about 24 of those 32 glyphs.
+/// clipToWidth() cut that row inside its last word and marked it, and every
+/// critic of the cells pass read `HEL..` on every common monitor. This clip
+/// looks for the last double-space boundary that fits, and takes the row up
+/// to it, unmarked, when that keeps at least three quarters of the room:
+/// `KNIFE    8DR   4C  HELD` at 24, the tag gone whole and the strip left to
+/// say which slot. A row with no such boundary, or one that would throw a
+/// quarter of the room away, falls back to clipToWidth's marked cut. In
+/// cells of the given scale.
+[[nodiscard]] std::string clipColumns(std::string_view label, int cells, int scale);
 
 /// What drawOptionList worked out, without drawing anything.
 struct OptionListPlan {
@@ -1034,12 +1123,18 @@ struct MasterDetail {
 [[nodiscard]] int masterDetailCellsFor(int masterShare, int minMasterCells, int masterCells,
                                        int detailCells) noexcept;
 
-/// THE NARROWEST INTERIOR A FULL-WIDTH PAGE EVER HAD, in cells. hudMinorScale
-/// steps up with the frame height, so THE BIGGEST WINDOW IS THE NARROWEST IN
-/// CELLS: 1920x1080 has 76 across and 74 inside the border, against 960x540's
-/// 94. Every held-height floor in this build -- CreationPage::bodyHoldRows,
-/// the casebook's kDetailHoldRows -- was judged against detail panes the
-/// full-width compositions dealt, and the narrowest of those was dealt HERE.
+/// THE NARROWEST INTERIOR A FULL-WIDTH PAGE EVER HAD, in cells. Under the
+/// register's old height/180 - 1 rule THE BIGGEST WINDOW WAS THE NARROWEST IN
+/// CELLS -- 1920x1080 dealt 76 across and 74 inside the border, against
+/// 960x540's 94 -- and every held-height floor in this build
+/// (CreationPage::bodyHoldRows, the casebook's kDetailHoldRows) was judged
+/// against detail panes dealt at THAT width. hudMinorScale is the smaller of
+/// height/240 and width/425 now, and no window at least 425 px wide deals
+/// fewer than 85 across (83 inside; 1920x1080 and 1920x1200 both deal 94), so
+/// from 1280x720 up the 74 is a floor with headroom at any aspect. 320x180
+/// deals 62, which panelMeasureCells' own floor handles. It stays at 74
+/// because the holds were judged against it, and a wider judgement would
+/// loosen every one of them for nothing.
 inline constexpr int kPanelNarrowestFullInteriorCells = 74;
 
 /// THE WIDTH A MEASURED PAGE HOLDS ITS DETAIL PANE AT, at least: what
@@ -1075,6 +1170,23 @@ inline constexpr int kPanelNarrowestFullInteriorCells = 74;
 void drawCommitVerb(Framebuffer& target, const PanelRect& pane, const PanelMetric& metric,
                     std::string_view verb, std::string_view cost, const Rgb& accent, float alpha);
 
+/// THE COMMIT BEAT -- UI-EA-SPEC sec. 3 rule 5, cross-lane contract (b).
+///
+/// An ImpactPulse rendered on the inverted fill: for the few steps after a
+/// commit lands (FACE IT, TRAVEL, REBIND, BEGIN, quit-confirm), the commit row
+/// flashes as a solid accent fill with the verb knocked out dark, easing back
+/// to the plain drawCommitVerb render as `pulse` decays to zero. Draw the
+/// plain verb first, then call this over it; at pulse 0 it draws nothing at
+/// all, so an unwired page costs nothing and changes nothing.
+///
+/// PAGES render it off a `commitPulse` field on their state; LANE FLOW arms
+/// that field from the routing's own ImpactPulse at the commit press. Same
+/// last-row placement rule as drawCommitVerb, so the flash lands exactly on
+/// the row the verb holds.
+void drawCommitPulse(Framebuffer& target, const PanelRect& pane, const PanelMetric& metric,
+                     std::string_view verb, std::string_view cost, const Rgb& accent, float alpha,
+                     float pulse);
+
 // ---------------------------------------------------------------------------
 // text, on the grid
 // ---------------------------------------------------------------------------
@@ -1085,6 +1197,11 @@ void drawCommitVerb(Framebuffer& target, const PanelRect& pane, const PanelMetri
 /// Returns the cells drawn.
 int drawCellText(Framebuffer& target, const PanelRect& rect, const PanelMetric& metric, int cell,
                  int row, std::string_view text, const Rgb& colour, float alpha);
+/// The same, with the drop shadow's own alpha (hud.hpp's drawText overload):
+/// for text on a slab whose alpha is not the ink's.
+int drawCellText(Framebuffer& target, const PanelRect& rect, const PanelMetric& metric, int cell,
+                 int row, std::string_view text, const Rgb& colour, float alpha,
+                 float shadowAlpha);
 
 /// The same, right-aligned so the LAST glyph lands on `cell` counted from the
 /// rect's right edge.

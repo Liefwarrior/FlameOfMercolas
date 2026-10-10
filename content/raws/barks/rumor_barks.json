@@ -1,0 +1,62 @@
+{
+  "id": "rumor_barks",
+  "notes": "VOICE LANE (lane/voice): rumor.<family> is WHAT THE WARD SAYS in a trade's own mouth -- the ward's NEWS, things that happened this week and who they happened to, never the snatch overheard.* already carries. The WardTalk topic resolves rumor.<family> first and the owner's gossip table after it, so the same door in a sailor's mouth is the lanes and in a keeper's is the dogs. The one row that says the learned word is a priest's (rumor.clergy), by the owner's diction rule; no other family's row ever does, and the suite greps for it. These rows are the panel's (wrapped), not the voice row's. Plain ASCII, no dashes, no colon.",
+  "tables": [
+    {
+      "key": "rumor.serf",
+      "rows": [
+        "Muster was short again this morning. The foreman took half the names and sent the rest home.",
+        "A crate broke on the crane line Kingsday and a lad went under it. He's at the Mission now.",
+        "The Netters' Duke posted the penny early. Early means she's afraid of something."
+      ]
+    },
+    {
+      "key": "rumor.trade",
+      "rows": [
+        "The Weighhouse turned a hull away at dawn. No papers, they said. It had papers.",
+        "Somebody cracked Brann's cellar again and took nothing. Took nothing. Think on that.",
+        "Fenner's had the shutters up since Kingsday. A pawnbroker who won't open is a pawnbroker who's owed."
+      ]
+    },
+    {
+      "key": "rumor.maritime",
+      "rows": [
+        "Wake's not sailing the Kestrel. Says she needs caulking. She needs a lane.",
+        "The strand gave up a man at low tide and the post wrote him down as drowned. Drowned men don't come up dry.",
+        "There's talk of a bottom lying off the point at night with no lights. Nobody's rowed out to ask."
+      ]
+    },
+    {
+      "key": "rumor.watch",
+      "rows": [
+        "The sergeant's pulled the night post off the Rise and put it at the Bond. Guarding boxes, not people.",
+        "Two lads on the Tarwalk beat were paid off Kingsday. The paper's still pinned, so nobody's said why.",
+        "There's a name on the post's board that wasn't there yesterday and nobody at the post will read it out."
+      ]
+    },
+    {
+      "key": "rumor.wastrel",
+      "rows": [
+        "The crimp lost a man off the Bilge Kingsday. Lost him. Nobody's fished him up, so he's not lost, he's sold.",
+        "Old Cobb's dog went into the Hold's alley and came out the other side. Dogs don't do that there.",
+        "There's a stranger at the Eel-Pots paying for the names of who works the strand at night. Paying well."
+      ]
+    },
+    {
+      "key": "rumor.clergy",
+      "rows": [
+        "Father Maell sat up with a drowned man's widow last night and wrote a letter after. He's stopped sealing them.",
+        "Two disciples came back from the strand at dawn and one of them won't go near the water now. Won't say why.",
+        "The catechism has a word for what I think crossed the sea. Bloodletter. I'll say it in here and nowhere else."
+      ]
+    },
+    {
+      "key": "rumor.husbandry",
+      "rows": [
+        "Cobb's terriers won't take the east end. He walked them there twice this week and they sat down.",
+        "The impound dog howled all Kingsday night at nothing anyone could see. The keeper's lost his voice at it.",
+        "Three goats gone off the Gallows Row pen this quarter. Not stolen. Gone. The gate was shut."
+      ]
+    }
+  ]
+}

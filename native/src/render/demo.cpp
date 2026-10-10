@@ -257,6 +257,10 @@ std::vector<DemoBeat>& routeStore() {
 
 }  // namespace
 
+bool routeOverlayStandsDown(const Session& session) {
+    return pageOwnsScreen(session) || session.casePlateWanted();
+}
+
 const std::vector<DemoBeat>& demoRoute() { return routeStore(); }
 
 std::vector<std::string> demoSections() {
@@ -332,7 +336,19 @@ void DemoDirector::enter(Session& session) {
             std::int32_t x = beat.a;
             std::int32_t y = beat.b;
             if (nearestStandable(session, beat.a, beat.b, beat.c, &x, &y)) {
-                session.body().placeAt(x, y, beat.c);
+                // THROUGH THE ONE RELOCATION SEAM, not the body directly: the
+                // snap closes the old street's eased crosshair/lock/room rows
+                // the same instant the body jumps, so nothing from three
+                // hundred tiles away ghosts over the arrival -- the owner's
+                // "double vision" read of these cuts, run to ground.
+                session.placeBodyAt(x, y, beat.c);
+                // AND THE CUT IS DRESSED: fully black on this very frame,
+                // easing up on the new street -- the travel seam's own cloth
+                // (Session::dressInstantCut), because the owner called even a
+                // clean raw cut "teleporting". The demo steps the simulation
+                // once per rendered frame, so the session-side veil decays at
+                // exactly the cadence a watcher sees.
+                session.dressInstantCut();
             }
             session.body().setYaw(sim::angle_from_degrees(beat.degrees));
             yawFrom_ = session.body().yaw();
@@ -395,6 +411,12 @@ void DemoDirector::enter(Session& session) {
             break;
         case DemoAct::Clock:
             session.skipToHour(beat.a);
+            // A CLOCK JUMP IS A CUT TOO -- noon to night in one frame reads
+            // as the same glitch a placeAt cut does -- so it wears the same
+            // veil. The route's own night section runs Clock straight into a
+            // Cut; the Cut's snapTo simply re-blacks a veil already up, and
+            // one fade covers the pair.
+            session.dressInstantCut();
             break;
         case DemoAct::Card:
         case DemoAct::Hold:
@@ -426,7 +448,7 @@ DemoDirector::Tick DemoDirector::advance(Session& session) {
     // hidden underneath a line of commentary about it. Session::casePlateWanted
     // already existed for the HUD; this is the same fact, used the same way.
     captionFade_.setTarget(!caption_.empty() && beat.act != DemoAct::Card &&
-                           !pageOwnsScreen(session) && !session.casePlateWanted());
+                           !routeOverlayStandsDown(session));
     card_.advance();
     captionFade_.advance();
 
@@ -597,79 +619,93 @@ bool DemoDirector::cardOwnsFrame() const noexcept {
     return card_.value() > 0.01F && !cardLine_.empty();
 }
 
-void DemoDirector::drawOverlay(Framebuffer& target, const Session& session) const {
-    const PanelMetric metric = panelMetric(target.height());
-    const PanelInk& ink = panelInk();
-
-    // --- the caption -------------------------------------------------------
-    //
-    // SIZED TO ITS CONTENT, because it is static text that does not swap under
-    // a cursor -- the spec's own "size to content where content is static".
-    //
-    // AND IT STANDS OFF THE HUD RATHER THAN OVER IT, which the first run of
-    // this route got wrong: pinned to the bottom edge it half-covered the trail
-    // row (`CASE 1/4 > MISSION OF THE FLAME`) and the fatigue bar, leaving two
-    // sentences interleaved a row apart. Those rows are part of what the demo
-    // is SHOWING, so the caption reserves the bottom band for them and sits
-    // above it. It also stands down entirely under any page, above -- a page IS
-    // the content and a line of commentary over one is the same collision one
-    // step worse.
-    const float captionAlpha = captionFade_.value();
-    if (captionAlpha > 0.01F && !caption_.empty()) {
-        const int cells = std::min(static_cast<int>(caption_.size()),
-                                   std::max(8, metric.cellsIn(target.width()) - 4));
-        PanelRect bounds;
-        bounds.w = std::min(metric.widthOf(cells) + 2 * metric.cellW(),
-                            target.width() - 2 * metric.cellW());
-        bounds.h = metric.heightOf(3);
-        bounds.x = metric.cellW();
-        // The HUD's own bottom band, in rows of the HUD's metric rather than a
-        // pixel constant, so it holds at every window size.
-        bounds.y = target.height() - target.height() / 9 - bounds.h;
-        FrameStyle style;
-        style.junction = Motif::Plus;
-        style.alpha = captionAlpha;
-        style.groundAlpha = 0.93F;
-        PanelFrame pane(target, bounds, metric, style);
-        pane.draw();
-        (void)drawCellText(target, pane.interior(), metric, 0, 0, caption_, ink.prose,
-                           captionAlpha);
-    }
-
-    // --- the title card ----------------------------------------------------
-    const float cardAlpha = card_.value();
-    if (cardAlpha <= 0.01F || cardLine_.empty()) {
+// SIZED TO ITS CONTENT, because it is static text that does not swap under
+// a cursor -- the spec's own "size to content where content is static".
+//
+// AND IT STANDS OFF THE HUD RATHER THAN OVER IT, which the first run of
+// the demo route got wrong: pinned to the bottom edge it half-covered the
+// trail row (`CASE 1/4 > MISSION OF THE FLAME`) and the fatigue bar, leaving
+// two sentences interleaved a row apart. Those rows are part of what the demo
+// is SHOWING, so the caption reserves the bottom band for them and sits
+// above it. It also stands down entirely under any page (the caller's
+// business, via routeOverlayStandsDown) -- a page IS the content and a line
+// of commentary over one is the same collision one step worse.
+// THE SEAM VEIL, the route overlays' third shared draw. The same cloth
+// Session::drawFrame dips travel's arrival in (dipTravelSeam): a plain black
+// fill at `amount`, because a cut's cover wants no border, no ink and no
+// register -- it is the absence of a picture, briefly. Shared here for the
+// one director that cannot ride the session's own veil: --case-watch's holds
+// step the simulation ZERO times a frame, so a step()-advanced EasedToggle
+// would freeze black for the whole hold; the watch advances its own toggle
+// on ITS clock (frames) and paints it with this.
+void drawRouteVeil(Framebuffer& target, float amount) {
+    if (amount <= 0.0F) {
         return;
     }
-    // AT TWICE THE BODY METRIC, and this is the one place in the build that
-    // gets to do that. The spec's ONE METRIC PER SCREEN rule is about a screen
-    // whose columns have to line up with each other; a card is a screen of its
-    // own with three centred rows on it and nothing to line up WITH, and drawn
-    // at hudMinorScale over a 640x360 frame the first version's title was
-    // eight pixels tall and unreadable at a glance -- which for a title card is
-    // the whole job failed.
+    target.fillRect(0, 0, target.width(), target.height(), Rgb{0.0F, 0.0F, 0.0F},
+                    amount > 1.0F ? 1.0F : amount);
+}
+
+void drawRouteCaption(Framebuffer& target, const std::string& caption, float alpha) {
+    if (alpha <= 0.01F || caption.empty()) {
+        return;
+    }
+    const PanelMetric metric = panelMetric(target.width(), target.height());
+    const PanelInk& ink = panelInk();
+    const int cells = std::min(static_cast<int>(caption.size()),
+                               std::max(8, metric.cellsIn(target.width()) - 4));
+    PanelRect bounds;
+    bounds.w = std::min(metric.widthOf(cells) + 2 * metric.cellW(),
+                        target.width() - 2 * metric.cellW());
+    bounds.h = metric.heightOf(3);
+    bounds.x = metric.cellW();
+    // The HUD's own bottom band, in rows of the HUD's metric rather than a
+    // pixel constant, so it holds at every window size.
+    bounds.y = target.height() - target.height() / 9 - bounds.h;
+    FrameStyle style;
+    style.junction = Motif::Plus;
+    style.alpha = alpha;
+    style.groundAlpha = 0.93F;
+    PanelFrame pane(target, bounds, metric, style);
+    pane.draw();
+    (void)drawCellText(target, pane.interior(), metric, 0, 0, caption, ink.prose, alpha);
+}
+
+// AT TWICE THE BODY METRIC, and this is the one place in the build that
+// gets to do that. The spec's ONE METRIC PER SCREEN rule is about a screen
+// whose columns have to line up with each other; a card is a screen of its
+// own with three centred rows on it and nothing to line up WITH, and drawn
+// at hudMinorScale over a 640x360 frame the first version's title was
+// eight pixels tall and unreadable at a glance -- which for a title card is
+// the whole job failed.
+void drawRouteCard(Framebuffer& target, const std::string& line, const std::string& sub,
+                   const std::string& foot, float alpha) {
+    if (alpha <= 0.01F || line.empty()) {
+        return;
+    }
+    const PanelMetric metric = panelMetric(target.width(), target.height());
+    const PanelInk& ink = panelInk();
     const PanelMetric big{metric.scale * 2};
-    const int titleCells = static_cast<int>(cardLine_.size());
-    const int subCells = static_cast<int>(cardSub_.size());
-    const std::string where = session.placeLabel();
-    const int footCells = static_cast<int>(where.size());
+    const int titleCells = static_cast<int>(line.size());
+    const int subCells = static_cast<int>(sub.size());
+    const int footCells = static_cast<int>(foot.size());
     const int widest = std::max(std::max(titleCells + 2, subCells), footCells);
     const int cells = std::min(std::max(widest + 4, 18), std::max(8, big.cellsIn(target.width()) - 4));
     PanelRect bounds;
     bounds.w =
         std::min(big.widthOf(cells) + 2 * big.cellW(), target.width() - 2 * big.cellW());
-    bounds.h = big.heightOf(where.empty() ? 3 : 5) + 2 * big.cellH();
+    bounds.h = big.heightOf(foot.empty() ? 3 : 5) + 2 * big.cellH();
     bounds.x = (target.width() - bounds.w) / 2;
     bounds.y = (target.height() - bounds.h) / 2;
     FrameStyle style;
     style.junction = Motif::Diamond;
-    style.alpha = cardAlpha;
+    style.alpha = alpha;
     // NEARLY OPAQUE, like every other composed page in this build
     // (kPageGroundAlpha): a card the ward shows through is a card nobody reads.
     style.groundAlpha = kPageGroundAlpha;
     style.stipple = true;
     PanelFrame pane(target, bounds, big, style);
-    if (!where.empty()) {
+    if (!foot.empty()) {
         pane.addRule(3);
     }
     pane.draw();
@@ -677,19 +713,23 @@ void DemoDirector::drawOverlay(Framebuffer& target, const Session& session) cons
     // The title, knocked out of an inverted fill in the accent -- this build's
     // one idiom for emphasis.
     const int titleCell = std::max(1, (cells - titleCells) / 2);
-    drawInvertedFill(target, body, big, titleCell - 1, 0, titleCells + 2, ink.accent, cardAlpha);
-    (void)drawCellTextKnockout(target, body, big, titleCell, 0, cardLine_, ink.knockout,
-                               cardAlpha);
-    if (!cardSub_.empty()) {
-        (void)drawCellText(target, body, big, std::max(0, (cells - subCells) / 2), 2, cardSub_,
-                           ink.prose, cardAlpha);
+    drawInvertedFill(target, body, big, titleCell - 1, 0, titleCells + 2, ink.accent, alpha);
+    (void)drawCellTextKnockout(target, body, big, titleCell, 0, line, ink.knockout, alpha);
+    if (!sub.empty()) {
+        (void)drawCellText(target, body, big, std::max(0, (cells - subCells) / 2), 2, sub,
+                           ink.prose, alpha);
     }
-    // The foot: where the demo is standing, in the ward's own words -- a
+    // The foot: where the route is standing, in the ward's own words -- a
     // dateline, not a caption, so it takes the dim role under its own rule.
-    if (!where.empty()) {
-        (void)drawCellText(target, body, big, std::max(0, (cells - footCells) / 2), 4, where,
-                           ink.dim, cardAlpha);
+    if (!foot.empty()) {
+        (void)drawCellText(target, body, big, std::max(0, (cells - footCells) / 2), 4, foot,
+                           ink.dim, alpha);
     }
+}
+
+void DemoDirector::drawOverlay(Framebuffer& target, const Session& session) const {
+    drawRouteCaption(target, caption_, captionFade_.value());
+    drawRouteCard(target, cardLine_, cardSub_, session.placeLabel(), card_.value());
 }
 
 }  // namespace granadad::render

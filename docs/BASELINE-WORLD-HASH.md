@@ -503,3 +503,568 @@ The docks `WRLD` chunk hash in the world-hash report likewise still reads
 **A pass that draws something new and moves this number has done something it did not say it
 was doing.** This one did not, and the identical hash and the identical byte count are the
 proof rather than the claim.
+
+---
+
+## Oblivion feel — street panic: the ONE declared population move (2026-09-10)
+
+The Oblivion-feel program (`feel/build`, DECISIONS.md "Oblivion feel: street panic") is the
+first thing since the port to change a `WardActor`'s BEHAVIOUR off the player: `WardPopulation::
+alarm(x, y, band, radiusTiles, severity)` drives the Safety reserve of every person who can SEE
+the player's violence (same band, in range, line of sight) under `kNeedCritical`, and the
+dormant `WardPolicy::Flee` channel — built, hashed, and never once fired for a person — takes
+it from there. **By law that is a declared move of this number, whether or not the number
+moves, and so it is re-run and re-blessed here.**
+
+Why the number was expected to stand, stated before the run rather than after it: the gate's
+population workload has no player and calls nothing that alarms anybody, and the one arithmetic
+change in the needs loop — `kPanicRecoverPerTick` added to a PERSON's Safety recovery — is
+applied only while that person is under the FLEE gate, which only `alarm()` puts a person under
+(every authored row starts Safety at 9,000 or 10,000 with a decay of 0; beasts, whose mice ARE
+driven under the gate by the hunt, are excluded from the panic rate and keep the raws' own).
+`test_street_panic.cpp`'s "only the frightened pay the panic rate" is that argument in
+miniature: after an alarm, everybody the alarm did not reach carries Safety and its accumulator
+byte-for-byte as an un-alarmed twin does.
+
+```
+at branch feel/build (street panic),
+granadad-twin-gate --population --population-hour 16 --ticks 7200, 96 walkers
+COMBINED WORLD HASH: 0x2646C1AAA2BA38DF      <- unchanged; DECLARED and RE-BLESSED
+```
+
+Linux/GCC (the Docker gate's own host build, Debug): run A == run B == `0x2646C1AAA2BA38DF`,
+report text byte-identical at **18,772 bytes** both times — the same count Phase C and Phase D
+recorded.
+
+Recorded directly from `dist\granadad-twin-gate.exe --population --population-hour 16
+--ticks 7200` on Windows/mingw, **two invocations**, each `run A` == `run B` ==
+`0x2646C1AAA2BA38DF`, report text byte-identical at 18,772 bytes in all four runs — on the gate
+whose stamp names this tree (`native/` digest `82c4def57fd4a1e1673d4609ca2c15216d53f5d0bb426501843f7bea80d2ba92`,
+285 files, 88/88 ctest entries green, 1,134 doctest cases, `test_street_panic.cpp` among them;
+`verify-windows.ps1` PASS — 1,053 sim cases / 1,323,865 assertions and 71 content cases /
+902,135 assertions under mingw, content-fingerprint and world-hash reports byte-identical
+linux/gcc vs mingw/windows, the stamp checked against the working tree).
+The tavern/gate-workload twin on the same exe still reads the Oblivion-feel program's one
+declared tavern move, `0x86E05F527E54E795` (`--tavern --ticks 900`, run A == run B): every
+other baseline unmoved.
+
+**The population baseline is therefore re-blessed at `0x2646C1AAA2BA38DF` with one declared
+behaviour change behind it.** The next lane that touches a `WardActor` — the street Watch's
+`Respond` (9b, an appended `WardPolicy` and a per-actor alarm tick, both hashed) or the street
+combat sheets (9c) — moves this number for real, and declares it the same way.
+
+---
+
+## Justice build -- the ONE declared tavern move, re-blessed (2026-09-11)
+
+The justice build (`justice/build`, DECISIONS.md "Justice build landed") is the Daggerfall
+court: an arrest WITH PAPER no longer resolves to an inert sentence and a clock jump but opens
+a HEARING on the crime ledger -- the charge sheet, the officer, the arrest's one draw, then the
+plea, the priest's weighing and the judgment, all hashed and codec'd (`kCrimeVersion` 4 -> 5:
+`commuted_`, `executed_`, `lastPlea_`, `lastJudgment_`, `hearings_`, `daysServed_`,
+`slewWitnesses_`, `servedTallies_[6]`, the `HearingState` with its length-prefixed officer
+name). `CrimeLedger::hashInto` appends the same in the same order, and the ledger is hashed
+under the tavern through `DialogueDirector::hashInto` -- so the tavern/gate-workload twin
+moved, declared by the TAG & COURT lane and re-blessed ONCE here. The workload itself never
+arrests: the arrest keeps its one `drawForPlayerAction()` at the same stream position, the
+nights keep `draw % 49`, and the plea reads a declared band above them (`(draw >> 16) % 21`).
+The presentation lane (the hearing page, the rope ceremony, the end rows) added no hashed
+field: `courtOpen_` and its family are render state like `deathCeremonySteps_`.
+
+```
+at branch justice/build,
+granadad-twin-gate --tavern --ticks 900
+COMBINED WORLD HASH: 0x86E05F527E54E795 -> 0x837E94019BC49C25      <- DECLARED and RE-BLESSED
+```
+
+Recorded directly from `dist\granadad-twin-gate.exe --tavern --ticks 900` on Windows/mingw,
+two invocations, each `run A` == `run B` == `0x837E94019BC49C25`, report text byte-identical
+(3,153 bytes) -- on the gate whose stamp names this tree (`native/` digest
+`f5e16a5041b11b5844606837826b783e072fa998ecfa65d217c54f25ce411027`, 293 files, 90/90 ctest
+entries green, 1,192 doctest cases -- `test_court.cpp`, `test_hearing_page.cpp` and the
+`--court` lines in `test_scripted_lines.cpp` among them; `verify-windows.ps1` PASS -- 1,111 sim
+cases / 1,358,098 assertions and 71 content cases / 902,135 assertions under mingw,
+content-fingerprint and world-hash reports byte-identical linux/gcc vs mingw/windows).
+
+```
+at branch justice/build,
+granadad-twin-gate --population --population-hour 16 --ticks 7200, 96 walkers
+COMBINED WORLD HASH: 0x2646C1AAA2BA38DF      <- unchanged: no WardActor touched
+```
+
+`run A` == `run B`, report text byte-identical at **18,772 bytes** -- the same count every
+section since Phase C records. The court is a page over the Gull's own Watch; the street Watch
+(9b) is still the named ceiling and still the next declared population move.
+
+**The tavern baseline is therefore re-blessed at `0x837E94019BC49C25` with one declared
+record change behind it** -- the court's own v5 fields on the ledger the tavern hashes.
+
+The BARKS & GATE lane (the build's last) added no hashed field -- two bark tables
+(`court.taken`, `court.plead`), a page field and the drive's endings are content and render --
+and read both numbers again off the final gated exe: `--tavern --ticks 900` `run A` == `run B`
+== `0x837E94019BC49C25` (3,153 bytes); `--population --population-hour 16 --ticks 7200` `run A`
+== `run B` == `0x2646C1AAA2BA38DF` (18,772 bytes). That gate's stamp: `native/` digest
+`4b790c199f96417cd33cc2530f545be84415d2fe4646903de6e79c9afff1b4f7`, 293 files, 90/90 ctest
+entries green, 1,197 doctest cases (`2026-09-11T13:24:20Z`); `verify-windows.ps1` PASS --
+1,116 sim cases / 1,363,521 assertions and 71 content cases / 902,135 assertions under mingw,
+content-fingerprint and world-hash reports byte-identical linux/gcc vs mingw/windows, the
+stamp naming this tree.
+
+### The fix pass (2026-09-11): nothing moved
+
+The critic's eleven defects (DECISIONS.md "Justice fix pass") were closed without a hashed
+field changing: the arrest beat and the taken plate are render state beside
+`deathCeremonySteps_`; the case-keyed bark tables are content; the whole-night rounding
+(`cellNights`) lives in `sentenceTerms`, a pure function of the record that the workload
+never calls (it never pleads or serves); the short-way `arrest()` now writes fewer bits on
+the Condemned rung, and the workload's arrests are paperless. Read again off the re-gated exe:
+`--tavern --ticks 900` `run A` == `run B` == `0x837E94019BC49C25` (3,153 bytes);
+`--population --population-hour 16 --ticks 7200` `run A` == `run B` == `0x2646C1AAA2BA38DF`
+(18,772 bytes). The gate stamp and the counts are in the commit that carries this note.
+
+---
+
+## The Kit -- the ONE declared tavern move, re-blessed (2026-09-12)
+
+The Kit build (`lane/kit`, DECISIONS.md "The Kit landed") gives the room an
+item record: the player's Kit (dense int32 counts per row of
+`content/raws/items/items.json` plus one worn row per slot), the list of what
+lies on the tiles (the raws' authored stands less what was taken, plus what was
+dropped), what has been taken off each corpse (a mask per actor), and the two
+counters a turned blow moves. All of it decides what the next blow does, how
+fast the legs go and what the next TAKE picks up, so all of it joined
+`Tavern::hash_into` -- a DECLARED structure move of the tavern/gate-workload
+twin, the S13 shape (the pinned codec goldens hash fixed byte specs, not this
+struct; the live gates compare THIS shape against itself). The workload never
+takes, drops or wears: its draw schedule did not move, and the sack, the
+picks and every field that was hashed before are hashed exactly where they
+were. The Stash stays the illicit view over the Kit (its counts, codec and
+hash seat under the crime ledger are untouched), which is why the court's v5
+record did not have to be re-cut.
+
+```
+at branch lane/kit,
+granadad-twin-gate --tavern --ticks 900
+COMBINED WORLD HASH: 0x837E94019BC49C25 -> 0x63F354D02A6B600F      <- DECLARED and RE-BLESSED
+```
+
+Recorded directly from `dist\granadad-twin-gate.exe --tavern --ticks 900` on
+Windows/mingw, two invocations, each `run A` == `run B` ==
+`0x63F354D02A6B600F`, report text byte-identical (3,153 bytes) -- on the gate
+whose stamp names this tree (`native/` digest `a9f9e3d3255990afd78734e73fd5840b72541ed2663e00b7d0f298ef56cda702`, 323 files, 96/96
+ctest entries green, 1,194 doctest cases -- `test_kit.cpp`,
+`test_kit_page.cpp` and the `--kit` lines in `test_scripted_lines.cpp` among
+them; `verify-windows.ps1` PASS -- 1,194 sim cases / 2,164,818 assertions and
+71 content cases / 902,135 assertions under mingw, content-fingerprint and
+world-hash reports byte-identical linux/gcc vs mingw/windows, the stamp
+checked against the working tree).
+
+```
+at branch lane/kit,
+granadad-twin-gate --population --population-hour 16 --ticks 7200, 96 walkers
+COMBINED WORLD HASH: 0x2646C1AAA2BA38DF      <- unchanged: no WardActor touched
+```
+
+`run A` == `run B`, report text byte-identical at **18,772 bytes**, two
+invocations -- the same count every section since Phase C records. The
+street's people carry, drop and yield nothing (D10): the Kit's stands are
+authored tavern tiles and the corpse kits are the roster's, and the ONE call
+the renderer makes reads the room's list and writes nothing back.
+
+**The tavern baseline is therefore re-blessed at `0x63F354D02A6B600F` with one
+declared record change behind it** -- the Kit, the ground, the corpse masks
+and the turned-blow counters on the room the tavern hashes. The next lane
+that changes the SHAPE of what the room hashes (a save frame's own fields, the
+attribute derivation D10 still owes) declares it the same way.
+
+---
+
+## STREET SENSES leg (a) -- the crowd flees and cowers for real (2026-09-11)
+
+The STREET SENSES lane (roadmap item 13; Eli's consented one-move-three-legs, given through
+a wizard 2026-09-11: CONSENT to the ONE declared move of the population baseline, ALL THREE
+LEGS, re-blessed per leg with a violence leg in the gate). **Leg (a) is the first of the
+three, and it MOVES this number for real.** 9a shipped `alarm()` and the panic recovery, but
+the population workload had no player and startled nobody -- so the number 9a re-blessed
+(`0x2646C1AAA2BA38DF`) was a district nobody ever frightened compared to itself. Leg (a)
+completes the reaction and adds the violence leg that proves it.
+
+What changed the number, all in `WardPopulation`:
+
+1. **`setPlayer(x, y, band)`**, the mirror of `Tavern::setPlayer`, pushed by the client every
+   step and HASHED -- a frightened body now reads where the player is. Appended to
+   `hash_into` (playerX/Y/band + a known-flag), so a run that never pushes a player moves
+   only by four fixed zero bytes and not by its arithmetic.
+2. **FLEE is an away plan**: `actFlee` steps directly away from the pushed player (the
+   orthogonal step that opens the most Chebyshev distance, draw-free, deterministic
+   tie-break), leash ignored, falling back to 9a's drawn shuffle only with no player pushed
+   (a beast's panic, the gate before its assault) or when boxed -- so the no-player
+   arithmetic is byte-for-byte 9a's.
+3. **`WardPolicy::Cower = 7`**, appended (the Hunt ordinal precedent, a hashed byte): the same
+   FLEE gate, the response the gazetteer's ladder gives shopkeepers and priests ("Serfs flee,
+   Shopkeepers bucket-chain, Priest walks in"). `wardTypeCowers` is Shopkeeper /
+   PriestOfTheFlame / DiscipleOfTheFlame; they hold the tile and face the fright rather than
+   run.
+4. **The loiter shuffle stays direction-blind** (`oneDrawnStep`, shared) so a body merely
+   standing near the player does not back away from him -- the away-vector is a frightened
+   body's alone.
+
+And the **violence leg in the gate**: the population workload registers a
+`StreetAssaultDriver` (TickBegin, before the Actors phase) that throws a scripted blow on the
+Tarwalk at 16:30 -- `setPlayer` + `alarm(Blow)` at the first standing docker's tile, held for
+a window -- so the run the baseline is taken from PROVES the behaviour. The report now shows
+the street scatter on the line the gate compares (`flee=`/`cower=`), where 9a's player-less
+run showed nothing move.
+
+```
+at branch lane/street (STREET SENSES leg (a)),
+granadad-twin-gate --population --population-hour 16 --ticks 7200, 96 walkers
+COMBINED WORLD HASH: 0x2646C1AAA2BA38DF -> 0xF493AF6F939D52D3      <- DECLARED and RE-BLESSED
+```
+
+Recorded directly from `dist\granadad-twin-gate.exe --population --population-hour 16
+--ticks 7200` on Windows/mingw, **two invocations**, each `run A` == `run B` ==
+`0xF493AF6F939D52D3`, report text byte-identical at **19,947 bytes** in all runs (up from 9a's
+18,772: the assault driver adds a system line and its section, and `reportLine` now carries
+`flee=`/`cower=`). On Linux/GCC the same gate ran green in the Docker build (ctest
+`granadad-twin-run-gate-population` PASSED, `run A` == `run B`).
+
+The tavern/gate-workload twin on the same exe is UNMOVED: `--tavern --ticks 900`, `run A` ==
+`run B` == `0x837E94019BC49C25`, two invocations (3,153 bytes) -- leg (a) touched no hashed
+tavern field. The nemesis arc is untouched (no combat/tavern change): `granadad.exe --nemesis`
+reads `beats=7/7 mask=127`, Tarn Wrenhale rising through the same three defeats, and
+`test_nemesis` was re-read and unchanged.
+
+**The population baseline is therefore re-blessed at `0xF493AF6F939D52D3` with one declared
+leg behind it.** The next two legs -- (b) STREET BODIES (a hittable `WardActor` combat sheet,
+the player swing over `people_`, the murder-law path) and (c) THE WATCH (MilitiaWatch `Pursue`
++ arrest through the hearing seam) -- move it again, each declared and re-blessed the same way,
+on the same branch.
+
+Proved by `native/tests/test_street_panic.cpp` (the split by type, the away-vector, the pinned
+panic length, the twin run), gated on the tree whose GATE-STAMP names it (`native/` digest
+`dc56c116a6865b70ca6b4adedb9c5a3ce7ea3d0eb5d20266bbd939b3841af8ca`, ctest cases 1249, 317
+files; `verify-windows.ps1` PASS -- content 71 cases / 902,135 assertions and sim 1168 cases /
+2,164,336 assertions under mingw, content-fingerprint and world-hash reports byte-identical
+linux/gcc vs mingw/windows, the stamp naming this tree), and photographed through the real
+`--street-assault` verb (`docs/frames/street/`).
+
+---
+
+## STREET SENSES leg (b) -- a body to hit (2026-09-11)
+
+The second leg of the same consented move (DECISIONS.md "Street senses, leg (b)"). The gap
+analysis' first finding was that the street had no body to hit: the sightline raycast walked
+the seventeen-body tavern roster only, and a `WardActor` carried no hit points, no floor and
+no death by violence. **Leg (b) MOVES this number for real, and the second time.**
+
+What changed the number, all hashed `WardActor` fields and behaviour:
+
+1. **The combat sheet**, appended to `hash_into`: `hp` (kActorHealth, the Gull's twenty-four),
+   `downedUntil` reused as the brawl floor, `slain` (dead by violence, which also sets `dead`),
+   `fightUntil` and `swingSeq` for a body that swings back.
+2. **`WardPolicy::Brawl = 8`**, appended (the Cower precedent): a struck sailor or thief
+   closing on the pushed player and swinging, one draw per swing on his own key and sequence
+   (`context.draw(id ^ 'SWNG', swingSeq)`) -- the Gull's `npcSwingSeq_` shape, no new stream.
+3. **`sightlineTarget`** on the ward roster: VETO 1's integer projection, line for line, over
+   standing persons on the player's band; `applyStreetBlow`: the floor (six seconds, up at a
+   quarter through `standUp`), the death, the rout (the leg (a) flee plan at the Kill floor),
+   the fight-back, and the crowd alarmed at the tile. The swing itself is the room's
+   (`Tavern::playerAttackUpStreet`, the same head as the roster swing through
+   `armPlayerSwing`, the same one `drawForPlayerAction`, `strike()`, `classifyFight`, the
+   murder law with the street's witness count) -- the tavern roster is never touched.
+
+And the **violence leg in the gate** grew its blow: the `StreetAssaultDriver` now strikes the
+docker it found -- `strike()` on his sheet, a fist a tick on the driver's own system salt,
+until he drops -- then leaves him to lie his six seconds and stand, so the compared report
+shows `downed=` rise and fall, with `brawl=` and `slain=` beside it.
+
+```
+at branch lane/street (STREET SENSES leg (b)),
+granadad-twin-gate --population --population-hour 16 --ticks 7200, 96 walkers
+COMBINED WORLD HASH: 0xF493AF6F939D52D3 -> 0xED0CA90E26DB0F5B      <- DECLARED and RE-BLESSED
+```
+
+Recorded directly from `dist\granadad-twin-gate.exe --population --population-hour 16
+--ticks 7200` on Windows/mingw, **two invocations**, each `run A` == `run B` ==
+`0xED0CA90E26DB0F5B`, report text byte-identical at **21,746 bytes** in all runs (up from leg
+(a)'s 19,947: the driver's blow count and the three new report fields). On Linux/GCC the same
+gate ran green in the Docker build (ctest `granadad-twin-run-gate-population` PASSED, `run A`
+== `run B`).
+
+The tavern/gate-workload twin on the same exe is UNMOVED: `--tavern --ticks 900`, `run A` ==
+`run B` == `0x837E94019BC49C25`, two invocations (3,153 bytes). `armPlayerSwing` is a pure
+factoring of the roster swing (the same operations in the same order), `playerAttackUpStreet`,
+`takeStreetBlow` and `playerSightlineAlong` are never called by the tavern workload, and the
+lull's intent reset is a no-op where the disengage already ran. The nemesis arc is untouched:
+`granadad.exe --nemesis` reads `beats=7/7 mask=127`; `test_nemesis` re-read.
+
+**The population baseline is therefore re-blessed at `0xED0CA90E26DB0F5B` with two declared
+legs behind it.** Leg (c) THE WATCH moves it a third time, declared and re-blessed the same way.
+
+Proved by `native/tests/test_street_bodies.cpp` (the street's ray against the spec's
+projection computed independently; a struck docker down and up; a struck serf routing deeper
+than a bystander and a struck sailor swinging back; a landed street blow scattering the crowd
+in sight; a blow thrown at the player landing through the Gull's own player-side rules; a
+street kill as murder with the witnesses counted, through the client's own attack path; the
+twin run under street blows), gated on the tree whose GATE-STAMP names it (`native/` digest
+`8d54a6a95cc3f42d96855f4496e784c7ce7d09b3197196bbda560d2992ab2b0c`, ctest cases 1256, 318
+files; `verify-windows.ps1` PASS -- content 71 cases / 902,135 assertions and sim 1175 cases /
+2,165,602 assertions under mingw, content-fingerprint and world-hash reports byte-identical
+linux/gcc vs mingw/windows, the stamp naming this tree), and photographed through the real
+`--street-assault=blow|down|up|kill|hearing` verbs (`docs/frames/street/`).
+
+---
+
+## STREET SENSES leg (c) -- the Watch on the beats gets eyes (2026-09-12)
+
+The third and last leg of the consented move (DECISIONS.md "Street senses, leg (c)"). The gap
+analysis' third finding: "THE STREET WATCH IS SCENERY. Thirteen MilitiaWatch WardActors by day
+and seven by night walk beats with no eyes." **Leg (c) MOVES this number for real, the third
+time.**
+
+What changed the number, all in `WardPopulation`:
+
+1. **`WardPolicy::Close = 9`**, appended (the Brawl precedent): a watchman with cause and a
+   clock (`closingUntil`, `closeCause`, `sheatheBy`, all hashed) walks the player down, priced
+   under Brawl (a blow on him makes him a brawler -- `wardTypeFightsBack` now includes
+   MilitiaWatch -- and he fights rather than arrests) and over everything else.
+2. **`alarm()` stopped skipping the Watch outright.** A watchman is now given cause by the same
+   three-clause notice rule everybody else's fright already reads (own sight range, line of
+   sight, never for a presented Wielder), closes, and arrests at reach through the ONE seam the
+   Gull's Cull uses (`Tavern::arrestByStreetWatch` -> the new shared `arrestPlayer`, factored out
+   of `applyArrest` -- one charge sheet, two officers). Steel alone is a DEMAND first
+   (`kSheatheGraceSeconds` 6s), an ignored one an Offence (`kSheatheOffenceHeat` 10, no arrest by
+   itself) -- D5.
+3. **A house's own brawl is not street business.** The gap analysis' own bar-fight rule
+   ("a brawl-class fist fight is the house's law... the Watch has no cause in it") only ever
+   existed for Watchman Cull's separate, already-nuanced watch. Once the street Watch stopped
+   being skipped, `Session::step()`'s PRE-EXISTING per-step alarm (leg (a): room HP falling
+   under an escalated fight, unconditional on indoor/outdoor since it shipped) started reaching
+   a street watchman through the Gull's own open door -- the owner's rule ("a killing at the bar
+   reaches the Tarwalk only through the door") the crowd already leans on, now also read by a
+   beat cop with no jurisdiction over a sanctioned house brawl. Found by
+   `test_scripted_lines.cpp`'s nemesis line (a fresh regression on every one of six walk-length
+   timelines it had held before this leg): a watchman closed on the player mid-brawl and
+   arrested at reach, clearing the room's brawl roster and stalling the arc at its third win,
+   every time. **`onWalkingGround` was tried first and does not help at all -- the Gull's own
+   floor tiles answer yes to it exactly as the street does.** The fix is a fourth hashed field,
+   `playerIndoors_` (`WardPopulation::setPlayerIndoors`, pushed from `Session::step` off
+   `Tavern::playerInside()`, the deference flag's own shape): while true, no watchman is ever
+   given cause, and one already closing stands down -- the ordinary crowd's own door-leak panic
+   (leg a/b, untested and unmoved by this) is completely unaffected, because only the Watch
+   branch reads it.
+4. **The client** (`Session::attackUp`) says the halt, the demand and the offence off the new
+   `content/raws/barks/street_barks.json` (four keys: `street.halt`, `street.sheathe`,
+   `street.offence`, `street.routed`), falling through to the Gull's own `watch.*` rows until
+   each key is authored -- it already is. A struck body that is not a fighter and not the Watch
+   now says `street.routed` once, the moment it is struck and still standing.
+
+```
+at branch lane/street (STREET SENSES leg (c)),
+granadad-twin-gate --population --population-hour 16 --ticks 7200, 96 walkers
+COMBINED WORLD HASH: 0xED0CA90E26DB0F5B -> 0xDD3890042DD2B472      <- DECLARED and RE-BLESSED
+```
+
+Recorded directly from `dist\granadad-twin-gate.exe --population --population-hour 16
+--ticks 7200` on Windows/mingw, **two invocations**, each `run A` == `run B` ==
+`0xDD3890042DD2B472`, report text byte-identical at **22,320 bytes** in all runs (up from leg
+(b)'s 21,746: the Watch's own closing/cause/sheathe state, hashed). On Linux/GCC the same gate
+ran green in the Docker build (ctest `granadad-twin-run-gate-population` PASSED, `run A` ==
+`run B`).
+
+The tavern/gate-workload twin on the same exe is UNMOVED: `--tavern --ticks 900`, `run A` ==
+`run B` == `0x837E94019BC49C25`, two invocations (3,153 bytes) -- leg (c) touched no hashed
+tavern field (`arrestPlayer` is a pure factoring of `applyArrest`'s own body, same operations,
+same order; the tavern workload has no player and never calls it). The nemesis arc, the very
+thing this leg nearly broke, is the sharpest proof available that it did not:
+`granadad.exe --nemesis` (via `--smoke=N --nemesis`, all six of the README's own walk lengths,
+0/40/50/80/100/120) reads `beats=7/7 mask=127` on every one, `Tarn Wrenhale x3`, `Foreman of The
+Ropewalk Gang (7 members, toll 6%) holds THE GULLET` -- the exact leg (b) baseline, re-read
+clean.
+
+**The population baseline is therefore re-blessed at `0xDD3890042DD2B472` with all three
+declared legs behind it.** Street senses is complete.
+
+Proved by `native/tests/test_street_watch.cpp` (a watchman who sees a blow closes, halts, and
+arrests at reach through the Gull's own seam; steel is a demand with a grace and only an
+ignored one becomes an offence, never an arrest by itself; a presented Wielder is never given
+cause and standing one down stands every closing watchman down; the population twin-runs
+byte-identical under all three), gated on the tree whose GATE-STAMP names it (`native/` digest
+`f5115d84289d76430fc78e1a5bfde7ee79ab506c29c298243ea490cbe63f740b`, ctest cases 1260, 319
+files; `verify-windows.ps1` PASS -- content 71 cases / 902,135 assertions and sim 1179 cases /
+2,167,264 assertions under mingw, content-fingerprint and world-hash reports byte-identical
+linux/gcc vs mingw/windows, the stamp naming this tree), and photographed through the real
+`--street-assault=watch-halt|watch-sheathe|watch-offence` verbs and the leg (b) `blow` ending
+re-shot under this tree (`docs/frames/street/`).
+
+---
+
+## Crowd flow -- a blocked body sidesteps instead of gluing into a column (2026-09-16)
+
+A critic pass reviewing lane/3d2's Docks screenshots (door-leaf and deck-classification fixes,
+unrelated) flagged something incidental at every location it looked: NPCs converging on a
+doorway or a chokepoint jammed into a rigid single-file line and just stood there, instead of
+spreading into the open ground beside it. The cause was `WardPopulation::stepToward` -- a
+blocked body's ONLY move was the one cell dead ahead of its cached route; facing a taken tile it
+just waited and rolled for a shove (`kPushCooldownTicks` 36, and only against the exact occupant
+of that one cell). A dozen bodies converging on the same door therefore queued in an exact
+column, glued directly behind one another, because nothing ever looked sideways. **This moves
+the population number for real, DECLARED and RE-BLESSED.**
+
+`WardPopulation::sidestep()` (`ward_actors.hpp/.cpp`) is the look sideways: when the planned hop
+is taken, a blocked body tries the other seven neighbours, in a per-actor rotated order (the same
+`routeJitterHash` the route search itself is jittered with -- two bodies wedged at one corner give
+way to different sides), and takes the first that is standable, empty, not a cut corner
+(PathFinder's own rule), not the tile it just left, and no farther from its real target than it
+already stands. A genuine one-wide bottleneck -- every flank a wall or another body -- still
+finds nothing here and queues exactly as it always did; this only ever spends slack a crowd
+actually has. A new hashed counter, `sidesteps()`, is appended after `shoves_` in `hash_into` and
+the report line, the same precedent `shoves_`/`catches_`/`futileChases_` set: a plain log, not a
+policy input.
+
+**A real, pre-existing test timing assumption was exposed, not caused, and is fixed on the
+record.** `test_street_bodies.cpp`'s "a street kill is murder with the witnesses counted" scans
+the whole population for anybody geometrically in the corpse's Kill-radius/line-of-sight after
+the kill and asserts each was frightened. `alarm()` fires synchronously inside `attackUp()`, off
+who could see the tile at that instant -- but the scan itself used to run after the killing tap's
+own trailing `stepMany(kHardSwingRecoverySteps + 1)`, real ward-time nobody needed once the loop
+was about to exit. Under the old wait-or-shove-only movement a nearby body spent that window
+either standing still or queued behind one that was; with sidestep landed, the same window was
+enough for somebody who never saw the blow to walk into the corpse's own witness geometry on
+perfectly ordinary business, which the scan then wrongly counted as a witness. Fixed by skipping
+that trailing `stepMany` once the kill has already landed -- nothing downstream needs it, and the
+census now reads the instant `alarm()` itself fired rather than one recovery animation later.
+
+**The critic's first pass (7/10, below the 8 gate) found two real things sidestep still owed.**
+NPCs walked through the player -- he is not a `WardActor` and was never in the occupancy index, so
+nothing refused a route that targeted his exact cell, "the loudest remaining not-a-real-crowd
+tell." And two bodies the sim placed on adjacent tiles -- far more common now that a crowd spreads
+sideways instead of queuing -- could visually interpenetrate, since the placeholder figure's
+shoulders are wider than the ~0.9 m tile grid. Two fixes landed: `tryEnter` refuses the player's
+own tile outright (`playerX_`/`Y_`/`band_` are already hashed, pushed every step by
+`Session::step`), with `sidestep()`'s and `tryPush()`'s candidate loops pre-checking the same rule
+so neither loop's own "cannot fail" `tryEnter` call stops being true -- nobody needed to stand
+where he stands, since arrests and street swings both reach him at adjacency already. And
+`actor_instances.hpp` gained a small, stable render-only nudge within each body's own tile
+(`personalSpaceNudge`) so two bodies on adjacent tiles get real clearance. Exposed two tests that
+independently computed a ward actor's expected render position against the un-nudged tile centre
+(`test_scene3d.cpp`, `test_render3d.cpp`); fixed by sharing the one function instead of two
+hand-copied formulas.
+
+**THE GATE POLICY WIDENED MID-LANE (Eli, 2026-09-25): one critic became three, in parallel,
+lowest governs (director / player / auditor).** The director-only 8/10 above was re-run under the
+new policy and both new hats found the director's screenshots could not: the AUDITOR (5/10) read
+`sidestep()` line by line and proved the "not the tile it just left" guard was DEAD CODE -- it
+compared against `prevX/Y`, which `tickActor` resets to the current position before any policy
+runs, so the comparison could never be true -- and separately proved by exhaustive computation that
+`personalSpaceNudge`'s id-keyed offset shrank an orthogonally-adjacent pair's own clearance in very
+close to half of all id pairs (it does not know where the neighbour is, so it is a coin flip, not a
+push apart). The PLAYER (6/10) then caught the dead guard's real consequence in driven play: a
+wastrel at King's Bond oscillating between two tiles for 80+ consecutive ticks, a body that never
+actually goes anywhere -- plus a genuine ~5x ward-tick cost regression, since every sidestep clears
+the cached route and forces a fresh A* search, and the oscillating body was doing that every tick.
+
+**Round 3 fixed the real bug, not a cosmetic one.** `WardActor::cameFromX/Y/Band` is real cross-tick
+memory -- written by `tryEnter` alone, before the position changes, so it survives the `tickActor`
+reset that clobbers `prevX/Y` -- and `sidestep()` now runs two passes, taking a strictly CLOSER
+candidate over a merely level one whenever one exists, so a body only ever mills sideways when
+there truly is nothing better. `personalSpaceNudge` was rebuilt on tile-coordinate parity instead
+of actor id: two cells that differ by one step on an axis always differ in that axis's parity, so
+pushing -X on an even x and +X on an odd x (and the same on y) sends any adjacent pair's pushes in
+OPPOSITE directions by construction, not by luck. And `Session::step` had a real staleness bug the
+auditor's TOCTOU read caught: `setPlayer` was pushed to the ward AFTER `engine_->tick()`, so the
+ward's own movement each second always ran against where the player stood up to a full second
+earlier; moved to push before the tick. Two new regression tests close the gap the old lane had
+none for: an oscillation detector over 600 real ticks of the morning rush (its own first draft had
+a false positive -- it flagged a body that simply had not moved in ten minutes as "oscillating",
+fixed by also requiring the position differ from one tick back, the other half of an A-B-A-B
+signature), and a sustained player-tile-refusal check under real foot traffic.
+
+```
+at branch merge/crowd-flow-into-wip,
+granadad-twin-gate --population --population-hour 16 --ticks 7200, 96 walkers
+COMBINED WORLD HASH: 0xDD3890042DD2B472 -> 0xC45435FE8EBBB41E -> 0x5CDF07325BAC9C75
+                     -> 0x66B5A1B2F32270B9      <- DECLARED and RE-BLESSED (final, round 3)
+```
+
+Recorded directly from `dist\granadad-twin-gate.exe --population --population-hour 16
+--ticks 7200` on Windows/mingw, **two invocations**, each `run A` == `run B` ==
+`0x66B5A1B2F32270B9`, report text byte-identical at **23,415 bytes** in both runs (down from round
+2's 23,458 -- fewer sidesteps overall once the pathological oscillation stopped re-triggering one
+every tick). The two intermediate hashes above (`0xC45435FE8EBBB41E` after sidestep alone,
+`0x5CDF07325BAC9C75` after the player-avoidance/nudge round) never shipped past this branch; only
+the final number is the one re-blessed. On Linux/GCC the same gate ran green in the Docker build
+(ctest `granadad-twin-run-gate-population` PASSED, `run A` == `run B`).
+
+The tavern/gate-workload twin on the same exe is UNMOVED across all three rounds: `--tavern
+--ticks 900`, `run A` == `run B` == `0x63F354D02A6B600F` (3,153 bytes) -- every change in this
+lane lives on `WardPopulation`, `actor_instances`, or `Session::step`'s player-push order; the
+tavern workload has no ward, no renderer and no live player, and never calls any of it.
+
+**The population baseline is therefore re-blessed at `0x66B5A1B2F32270B9`, a real crowd-movement
+change behind it. This number is NOT the lane's last word: it is superseded by round 4 below,
+which the auditor's own re-review of this number caught two further real gaps in before the
+three-hat gate actually closed.**
+
+Proved by three cases in `native/tests/test_ward_actors.cpp`: "crowds sidestep instead of gluing
+into a column at a chokepoint" (`sidesteps() > 0` under a real rush, one-body-per-cell holds), "a
+blocked body does not oscillate: sidestep never doubles back on itself" (an A-B-A-B detector over
+600 ticks, the round-3 regression test), and "nobody ever stands on the player's own tile" (a
+sustained refusal check under real foot traffic).
+
+## Round 4 -- what the round-3 three-hat re-review actually found, and what it did not close
+
+The round-3 numbers above never shipped past this worktree either. Re-reviewed under the same
+three-hat gate, the AUDITOR (4/10) and the PLAYER (5/10) each found real gaps round 3 missed:
+
+**Auditor, confirmed and fixed:** `cameFromX/Y/Band` was written by `tryEnter` alone, but four
+other places move an actor's tile directly without going through it -- both of `tryPush`'s
+branches, `standUp`, `revivePrey`, `settleToSchedule` -- so a shoved or just-stood-up body could
+carry a stale `cameFrom` into its very next sidestep. Consolidated into one
+`WardPopulation::shiftCameFrom()` so a sixth write site can't quietly repeat the gap. The auditor
+also proved a single step of memory isn't enough on its own: a body with two level, unpreferred
+flanks either side of a blocked doorway can cycle through both forever (neither flank is ever the
+OTHER flank's own `cameFrom`). Extended to two steps (`cameFrom2X/Y/Band`), both hashed, both
+excluded by `sidestep()`'s candidate loop. And the auditor proved BY EXHAUSTIVE COMPUTATION, a
+second time, that round 3's tile-parity `personalSpaceNudge` was the SAME defect as round 2's
+id-keyed one by a different route -- provably unfixable by formula, since no function of one
+cell's own coordinate can push away from every possible neighbour. Rebuilt a second time: given
+the same actor roster `actorInstances()` is about to draw, it now finds every other visible body
+within one tile and pushes away from where they actually are -- correct by construction.
+
+**Player, found but NOT yet closed:** driven play at street level (not the overhead vantage the
+round-3 capture used) reproduced the oscillation in a DIFFERENT shape -- a 3-4 tile cycle through
+ORDINARY route-replanning, not `sidestep()`'s own candidate loop. `cameFrom`/`cameFrom2` only
+gate `sidestep()`; a fresh A* search from a sidestepped-to tile has no awareness of which cells
+the body recently abandoned, and if the target is still blocked, the shortest path very often
+routes straight back through the same chokepoint as an ORDINARY planned hop (via `tryEnter`, not
+`sidestep`), which round 4's guard never touches. This needs either the search itself, or a
+short-lived per-actor avoid-list feeding it, to carry that awareness -- materially bigger than a
+`sidestep()`-local fix, and not attempted in round 4. The existing regression test cannot see it
+either: it only detects a period-2 A-B-A-B pattern, not the longer cycle.
+
+```
+at branch merge/crowd-flow-into-wip, round 4,
+granadad-twin-gate --population --population-hour 16 --ticks 7200, 96 walkers
+COMBINED WORLD HASH: 0x66B5A1B2F32270B9 -> 0x499B2D62A49840B5      <- DECLARED and RE-BLESSED
+```
+
+Recorded directly from `dist\granadad-twin-gate.exe --population --population-hour 16
+--ticks 7200` on Windows/mingw, **two invocations**, each `run A` == `run B` ==
+`0x499B2D62A49840B5`, report text byte-identical at **23,419 bytes**. Tavern unmoved at
+`0x63F354D02A6B600F` (3,153 bytes). Gated on the tree whose GATE-STAMP names it (`native/` digest
+`d2a9590ff7edfe6ee1c17950908c9c5890a6a716f3bd13300754e8b89a4f0686`, 334 files, ctest cases 1367
+(floor 537), 99/99 ctest suites green; `verify-windows.ps1` PASS -- 1,286 sim doctest cases /
+2,682,185 assertions under mingw, 0 failed, content-fingerprint and world-hash reports
+byte-identical linux/gcc vs mingw/windows).
+
+**Eli's call (2026-09-26): land it.** The original bug -- rigid single-file columns at doorways
+-- is fixed and independently confirmed by two critic hats on the real build. Two things are
+landing as KNOWN, WRITTEN-UP GAPS rather than blockers: the oscillation survives in a narrower
+form through ordinary A* route-replanning (cameFrom/cameFrom2 only gate sidestep()'s own candidate
+loop; closing this for real needs the pathfinder itself, or a per-actor avoid-list feeding it, to
+carry short-term memory -- a materially bigger change than this lane's four rounds), and the
+director hat's broader asks (personal space near the player, street-width crowd distribution,
+idle-standing animation) are a different scope of work than the bug this lane was opened to fix.
+See DECISIONS.md for the full four-round account and the follow-up list.

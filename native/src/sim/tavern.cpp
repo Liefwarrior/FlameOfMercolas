@@ -10,6 +10,9 @@
 // method's own comment on tavern.hpp.
 #include "granadad/sim/casebook.hpp"
 #include "granadad/sim/fixed.hpp"
+// STREET SENSES leg (b): kWardSpeakerIdBase, the one lift that keeps a ward
+// body's ledger row clear of the Gull's fourteen when a street swing lands.
+#include "granadad/sim/ward_voice.hpp"
 
 namespace granadad::sim {
 
@@ -376,6 +379,25 @@ Tavern::Tavern(const TileQuery& tiles, std::int32_t timeOfDaySeconds, std::uint6
     // a second load of the owner's file, so the two can never disagree about
     // which faction is index 2.
     nemesis_ = NemesisBook::load(contentDir, dialogue_.factionsShared());
+    // KIT BUILD. The item registry off the same raws tree, the Kit sized to
+    // it, and the raws' stands put on the tiles before anybody has taken a
+    // step. An absent items.json is an empty registry: nothing to take, the
+    // sheet prints IN HAND FISTS, and the game boots exactly as before.
+    items_ = ItemRegistry::load(contentDir);
+    kit_.resize(items_.size());
+    // SHOPS (2026-10-09). The counters, every shelf row checked against the
+    // registry -- a fixed thing, a sack good or an id items.json does not have
+    // is dropped -- and every keeper against notables.json, by name.
+    shops_ = ShopRaws::load(contentDir);
+    shops_.prune(
+        [this](const std::string& id) {
+            const ItemDef* item = items_.find(id);
+            return item != nullptr && !item->fixed && item->contraband.empty() && item->royals > 0;
+        },
+        [this](const std::string& keeper) { return dialogue_.notables().find(keeper) != nullptr; });
+    picksItem_ = items_.indexOf("picks");
+    baleItem_ = items_.indexOf("bale");
+    seedStands();
     buildRoster();
     // Tonight's boat, and tonight's work. Both are posted before anybody has
     // taken a step, so a session that opens at ten at night opens on a board
@@ -500,6 +522,10 @@ void Tavern::setTimeOfDay(std::int32_t secondOfDay) noexcept {
 // S3 note: what it deliberately does NOT touch is the social ledger. Sleeping
 // a night does not make anybody forget you robbed them.
 void Tavern::skipTo(std::int32_t secondOfDay) {
+    // STANCE (lower rule 3): sleeping -- and every other jump of the clock
+    // that passes through here: a wait, a travel, a night in the cell, the
+    // blackout after a defeat -- lowers the hands. Nobody sleeps fists up.
+    lowerPlayerHands();
     // How long the jump actually was, forward round the clock face. Heat cools
     // for every one of those seconds: a night asleep IS a night the ward had to
     // forget in, and that is the one thing skipTo has always been allowed to
@@ -552,8 +578,39 @@ void Tavern::setPlayer(std::int32_t xQ8, std::int32_t yQ8, std::int32_t band) no
 }
 
 void Tavern::setPlayerCombat(Weapon weapon, Intent intent) noexcept {
+    // KIT BUILD. The sheet that arms a hand DIRECTLY outranks the Kit: the
+    // hand row is bared so playerWeapon() reads the byte set here and not a
+    // cudgel worn an hour ago. The tests and the drives that stage a fight
+    // by class keep reading exactly what they set.
+    kit_.bare(ItemSlot::Hand);
     playerWeapon_ = weapon;
     playerIntent_ = intent;
+}
+
+bool Tavern::grantPlayerWeapon(std::string_view weaponId) noexcept {
+    // The roster is deliberately the ids the world can actually hand over,
+    // not the enum: "fists" is not a thing anyone grants, and Edged arriving
+    // through a reward string would put a fight on the LETHAL side of the
+    // brawl line by way of a typo-sized diff. See the header.
+    //
+    // KIT BUILD: the id is a registry row first. THE EVICTOR goes into the
+    // Kit and onto the hand as a THING -- weighed, printed, droppable --
+    // past the load rule (a reward that would not fit still fits: a case
+    // beat has no refusal line to speak, and the legs simply slow).
+    if (items_.find(weaponId) != nullptr) {
+        const std::int32_t index = items_.indexOf(weaponId);
+        const ItemDef* item = items_.at(index);
+        if (item == nullptr || item->slot != ItemSlot::Hand || item->fixed) {
+            return false;
+        }
+        kit_.add(index, 1);
+        return kit_.wear(items_, index);
+    }
+    if (weaponId == kEvictorWeaponId) {
+        playerWeapon_ = Weapon::Evictor;
+        return true;
+    }
+    return false;
 }
 
 std::int32_t Tavern::takePlayerShoveX() noexcept {
@@ -642,7 +699,10 @@ const Actor* Tavern::nearestTo(std::int32_t xQ8, std::int32_t yQ8,
     const Actor* best = nullptr;
     std::int32_t bestDistance = reachQ8 + 1;
     for (const Actor& actor : actors_) {
-        if (!actor.present() || actor.activity() == Activity::Downed) {
+        // isFloored, not just Downed: a corpse is skipped by conversation,
+        // greeting and targeting exactly as a downed man is (a dead man closes
+        // no cases and answers no questions).
+        if (!actor.present() || isFloored(actor.activity())) {
             continue;
         }
         // NEAREST PERSON. Everything that asks this -- talking, greeting, the
@@ -682,6 +742,10 @@ const Actor* Tavern::findRole(ActorRole role, bool presentOnly) const noexcept {
 }
 
 std::int32_t Tavern::speedFor(const Actor& actor) const noexcept {
+    if (actor.routing()) {
+        // A man breaking off for the street is not strolling.
+        return kActorPurposefulSpeed;
+    }
     switch (actor.activity()) {
         case Activity::Warning:
         case Activity::Ejecting:
@@ -698,11 +762,34 @@ std::int32_t Tavern::speedFor(const Actor& actor) const noexcept {
 
 void Tavern::stepMovement() {
     for (Actor& actor : actors_) {
-        if (!actor.present() || actor.activity() == Activity::Downed) {
+        if (!actor.present() || isFloored(actor.activity())) {
+            continue;
+        }
+        // VOICE LANE: THE ADDRESS. The one you are talking to HOLDS for the
+        // talk -- stands where the conversation found them and keeps their
+        // face to you, so a conversation reads as being looked at rather
+        // than as a panel opened over somebody walking off to their post.
+        // Only the peaceable activities hold: a bouncer mid-warning, a man
+        // in the fight and a Closing watchman all have somewhere to be that
+        // outranks a chat, and the rota, the brawl and the arrest keep them.
+        // DERIVED, NOT STORED: the hold reads talkingToId_ (hashed since S3)
+        // and adds no field, and the gate's workload opens and closes its
+        // conversation inside one tick with no movement step between, so
+        // the tavern baseline reads exactly what it read.
+        if (holdsForTalk(actor)) {
+            actor.faceToward(playerX_, playerY_);
             continue;
         }
         actor.step(path_, speedFor(actor));
     }
+
+    // ACTION-COMBAT BUILD: the player's swing machine and the NPC swing cadence
+    // both run on the movement step, not the 1 Hz tick. Driven here so every
+    // owner of the step loop -- the client, the tests, the scripted drives --
+    // gets them without wiring a second call. The player's position and facing
+    // for this step were pushed by setPlayer/setPlayerYaw before this call.
+    stepPlayerCombat();
+    stepBrawl();
 
     // THE RUN LANDS AT THE THRESHOLD, and it is a transition rather than a
     // state: a bale that is out of the house is out, and standing in the street
@@ -877,6 +964,13 @@ void Tavern::drawBaleGoods() noexcept {
 }
 
 void Tavern::applySchedules() {
+    // WATCH & RHYTHM BUILD -- THE ROOM STANDS BACK, and stays back. The
+    // stand-back itself is one move on the escalation edge (standBack); what
+    // holds it is this: while a lethal fight is live nobody keeps the rota --
+    // nobody walks back to a stool three tiles from a drawn blade, nobody
+    // arrives, nobody clocks off through the middle of it. Computed once a
+    // second, draw-free.
+    const bool roomStandsBack = lethalFightLive();
     for (Actor& actor : actors_) {
         // Trouble outranks the rota. A bouncer mid-ejection does not clock off,
         // and somebody on the floor is not walking anywhere.
@@ -885,9 +979,18 @@ void Tavern::applySchedules() {
             case Activity::Ejecting:
             case Activity::Brawling:
             case Activity::Downed:
+            // A corpse keeps no schedule: it never resumes the rota, exactly
+            // as a downed man does not walk anywhere (it simply never gets up).
+            case Activity::Dead:
                 continue;
             default:
                 break;
+        }
+        // A routing man is walking OUT, and keeps walking out until the fight
+        // he ran from is over (tickBrawl clears the flag); and a room standing
+        // back holds where it stands.
+        if (actor.routing() || roomStandsBack) {
+            continue;
         }
 
         if (actor.role() == ActorRole::Vermin) {
@@ -957,7 +1060,7 @@ Actor* Tavern::onDutyBouncerNearestPlayer() noexcept {
     std::int32_t bestDistance = 0;
     for (Actor& actor : actors_) {
         if (actor.role() != ActorRole::Bouncer || !actor.present() ||
-            actor.activity() == Activity::Downed) {
+            isFloored(actor.activity())) {
             continue;
         }
         const std::int32_t distance = actor.distanceTo(playerX_, playerY_);
@@ -1010,15 +1113,40 @@ void Tavern::tickBouncers() {
         return;
     }
 
+    // KIT BUILD, a corpse-convention fix found by the --kit line: isFloored,
+    // not Downed alone. A responder the player KILLED was still the
+    // responder here, and the ladder's setActivity below stood him back up
+    // -- a corpse that never stands (COMBAT-ACTION-SPEC 4.4) was standing
+    // at the door again the next second, and could be talked to.
     Actor* responder = respondingBouncerId_ < 0 ? nullptr : mutableActorById(respondingBouncerId_);
     if (responder == nullptr || !responder->present() ||
-        responder->activity() == Activity::Downed) {
+        isFloored(responder->activity())) {
         responder = onDutyBouncerNearestPlayer();
         respondingBouncerId_ = responder == nullptr ? -1 : responder->id();
     }
     if (responder == nullptr) {
         // Nobody on the door. The house minds, and can do nothing about it
         // until somebody comes on shift -- which is what a rota is for.
+        // KIT BUILD: and the last man's warning comes off the row -- a dead
+        // bouncer's "THE DOOR." stood on the alert row for the rest of the
+        // evening once the --kit line had put him down; whoever takes the
+        // door next speaks his own.
+        lastWarning_.clear();
+        return;
+    }
+    // WATCH & RHYTHM BUILD -- BOUNCERS REFUSE STEEL (COMBAT-ACTION-SPEC.md
+    // section 6: "bouncers do not wade into steel"). The ejection ladder is
+    // a door policy for a bar fight; it does not walk a man with a cudgel
+    // into a lethal one. While the fight is lethal the responder holds the
+    // door -- the tile inside the threshold -- faces it, and the ladder
+    // stands where it stands until the fight is over. A bouncer who is
+    // ALREADY in it (the player swung at him) is a brawler and stepBrawl
+    // has him; the door is somebody else's.
+    if (lethalFightLive() &&
+        std::find(brawlers_.begin(), brawlers_.end(), responder->id()) == brawlers_.end()) {
+        responder->setActivity(Activity::Watching);
+        responder->setDestination(gull::kDoorX0, gull::kDoorY + 1, gull::kGroundBand);
+        responder->faceToward(playerX_, playerY_);
         return;
     }
 
@@ -1130,7 +1258,7 @@ std::vector<Fighter> Tavern::currentFight() const {
     std::vector<Fighter> fighters;
     Fighter player;
     player.actorId = kPlayerActorId;
-    player.weapon = playerWeapon_;
+    player.weapon = playerWeapon();
     player.intent = playerIntent_;
     player.hp = playerHp_;
     player.hpMax = playerHpMax_;
@@ -1173,6 +1301,7 @@ Tavern::PunchResult Tavern::playerPunchNearest() {
             return result;
         }
         result.swung = true;
+        raisePlayerHands();  // STANCE: a swing thrown is a swing thrown
         result.targetId = rat->id();
         result.targetName = rat->name();
         Fighter prey = rat->asFighter();
@@ -1181,7 +1310,7 @@ Tavern::PunchResult Tavern::playerPunchNearest() {
         // damage. Same draw, same order; see strike()'s own header.
         const std::int32_t swingTerm = fatigue_.termQ8();
         fatigue_.drain(kPunchFatiguePoints * kFatiguePointFine);
-        result.blow = strike(playerWeapon_, prey, drawForPlayerAction(),
+        result.blow = strike(playerWeapon(), prey, drawForPlayerAction(),
                              meleeDamageBonus(effectiveAttributes().value(AttributeId::Might)),
                              swingTerm);
         rat->setHealth(prey.hp, prey.hpMax);
@@ -1193,25 +1322,25 @@ Tavern::PunchResult Tavern::playerPunchNearest() {
         return result;
     }
     result.swung = true;
+    raisePlayerHands();  // STANCE: the legacy tap raises the hands like any swing
     result.targetId = target->id();
     result.targetName = target->name();
 
-    if (std::find(brawlers_.begin(), brawlers_.end(), target->id()) == brawlers_.end()) {
-        brawlers_.push_back(target->id());
-        std::sort(brawlers_.begin(), brawlers_.end());
-    }
+    joinBrawl(*target);
 
     // THE RULE, at the only moment it matters: before the blow lands.
     const std::vector<Fighter> fighters = currentFight();
     result.fight = classifyFight(fighters);
     if (!resolvesInWorld(result.fight)) {
-        // Not this room's fight. The world stops resolving it and says so; the
-        // client takes it to the dedicated combat screen.
+        // LEGACY REFUSAL. This tap-punch does not resolve a lethal fight -- the
+        // pre-veto behaviour, kept for the un-migrated call sites; the
+        // action-combat player-swing path (playerAttackUp) resolves lethal in
+        // the world. Here the swing is dropped and the escalation is latched.
         //
         // The house still minds, and the two things are separate: where the
-        // FIGHT is resolved is a rendering-and-rules question, and whether the
-        // bouncers come over is a door-policy question. Drawing a blade in the
-        // Gilded Gull answers both.
+        // FIGHT is resolved is a rules question, and whether the bouncers come
+        // over is a door-policy question. Drawing a blade in the Gilded Gull
+        // answers both.
         escalation_ = result.fight;
         // THE CONSUMER escalated() did not have in S2. A drawn blade in a
         // captains' house is not a private matter: the man it is pointed at
@@ -1223,7 +1352,6 @@ Tavern::PunchResult Tavern::playerPunchNearest() {
         return result;
     }
 
-    Fighter victim = target->asFighter();
     // FATIGUE BUILD: identical to the vermin swing above -- term first, cost
     // paid, MGT on the damage. The classify above already ruled this the
     // room's fight, so the cost lands only on a swing that was thrown. The
@@ -1233,10 +1361,13 @@ Tavern::PunchResult Tavern::playerPunchNearest() {
     // a rat but not a man, which no doctrine anywhere argued for.
     const std::int32_t swingTerm = fatigue_.termQ8();
     fatigue_.drain(kPunchFatiguePoints * kFatiguePointFine);
-    result.blow = strike(playerWeapon_, victim, drawForPlayerAction(),
-                         meleeDamageBonus(effectiveAttributes().value(AttributeId::Might)),
-                         swingTerm);
-    target->setHealth(victim.hp, victim.hpMax);
+    // WATCH & RHYTHM BUILD: the same resolver the action swing uses, so the
+    // legacy tap meets a guard and a wind-up the same way (a tap, never hard).
+    bool recoiled = false;
+    bool staggered = false;
+    result.blow = landPlayerBlow(*target, /*hard=*/false,
+                                 meleeDamageBonus(effectiveAttributes().value(AttributeId::Might)),
+                                 swingTerm, kSwingChargeQ8, recoiled, staggered);
     target->setActivity(result.blow.downed ? Activity::Downed : Activity::Brawling);
     target->faceToward(playerX_, playerY_);
     if (result.blow.downed) {
@@ -1255,6 +1386,714 @@ Tavern::PunchResult Tavern::playerPunchNearest() {
     return result;
 }
 
+void Tavern::joinBrawl(Actor& actor) {
+    if (std::find(brawlers_.begin(), brawlers_.end(), actor.id()) != brawlers_.end()) {
+        return;
+    }
+    brawlers_.push_back(actor.id());
+    std::sort(brawlers_.begin(), brawlers_.end());
+    // WATCH & RHYTHM BUILD: a blow on the watchman CLOSING on you is not a
+    // bar fight. He is a brawler now with Intent::Kill -- Lethal by B2 from
+    // the first exchange, so his blows can kill (and rise a nemesis, the
+    // ruling's own composition) and the player's on him are murder through
+    // slayActor, never "resisting". The owner's resolved decision, verbatim
+    // in the lane brief. Deference is untouched: a presented Wielder is never
+    // closed on, so this line is never reached for one.
+    const bool closingWatchman = watchStance_ == WatchStance::Closing && actor.id() == watchmanId_;
+    if (closingWatchman) {
+        actor.setIntent(Intent::Kill);
+    }
+    // BARKS LANE (feel/build): the man stepping in SAYS SO -- brawl.join out
+    // of content/raws/barks/combat_barks.json, through the same selector the
+    // house's warning uses, rotated on the second and the man so a crowd
+    // joining on one blow does not chorus. A rat says nothing, and the
+    // Closing watchman already has the halt in his mouth (lastDemand_).
+    // Presentation only: a string, unhashed, read by the client's say row.
+    if (actor.role() != ActorRole::Vermin && !closingWatchman) {
+        lastJoin_ = actor.name() + ": " +
+                    std::string(dialogue_.barks().line(
+                        dialogue_.barks().resolve({std::string("brawl.join")}),
+                        static_cast<std::int32_t>(tick_ % 1024) + actor.id()));
+    }
+    // Stagger the first swing (section 1.5): a fresh brawler waits actorId %
+    // kNpcSwingStaggerSteps steps before it swings, so a crowd joining on the
+    // same blow does not swing in lockstep.
+    actor.setNpcSwingTimer(actor.id() % kNpcSwingStaggerSteps);
+}
+
+const Actor* Tavern::sightlineTarget() const noexcept {
+    if (!playerKnown_) {
+        return nullptr;
+    }
+    // VETO 1: the first body the crosshair passes through. Project each body's
+    // offset onto the look-ray with the forward vector angle.hpp already owns;
+    // draw-free integer, no atan2, no sqrt (the S9 no-rolls law). A body is on
+    // the line iff it is ahead (0 < along <= reach) and within half a cell of
+    // the ray (|perp| <= kBodyHalfWidth, a DISTANCE not an angle); the target
+    // is the on-line body with the smallest `along`. No species preference --
+    // person or rat, whoever is on the line first (friendly fire is the aim's
+    // fault). Ties on `along` break on the lower id so two runs cannot disagree.
+    const std::int64_t fx = forward_x_q16(playerYaw_);
+    const std::int64_t fy = forward_y_q16(playerYaw_);
+    const Actor* best = nullptr;
+    std::int64_t bestAlong = static_cast<std::int64_t>(kMeleeReach) + 1;
+    for (const Actor& actor : actors_) {
+        if (!actor.present() || isFloored(actor.activity())) {
+            continue;
+        }
+        const std::int64_t dx = static_cast<std::int64_t>(actor.x()) - playerX_;
+        const std::int64_t dy = static_cast<std::int64_t>(actor.y()) - playerY_;
+        const std::int64_t along = (fx * dx + fy * dy) >> 16;
+        if (along <= 0 || along > kMeleeReach) {
+            continue;
+        }
+        const std::int64_t perp = (-fy * dx + fx * dy) >> 16;
+        if (perp > kBodyHalfWidth || perp < -kBodyHalfWidth) {
+            continue;
+        }
+        if (along < bestAlong) {
+            bestAlong = along;
+            best = &actor;
+        }
+    }
+    return best;
+}
+
+void Tavern::slayActor(Actor& target) {
+    // MURDER LAW, weighed BEFORE the body drops: a killing is witnessed when a
+    // CONSCIOUS bystander -- not the victim (dead men tell no tales), not
+    // anyone already on the floor -- noticed the player, the same three-clause
+    // notice rule every crime reads. Witnessed, it is instant paper
+    // (kMurderHeat is exactly the warrant line) and it marks the killer for the
+    // Condemned hook the next arrest reads; unwitnessed, the ward heard nothing
+    // and nothing rises. Routed beside noteCrime's six: no faction-mirror bump
+    // in v1 (murder is not guild work). The COURT that decides what
+    // condemnation means is the separate justice build.
+    // JUSTICE BUILD: COUNTED, not just found. Who saw it is the rope tier's
+    // own term at the bench (N SAW IT), so the loop runs the room rather than
+    // stopping at the first face. Same rule, same answer to "witnessed".
+    std::int32_t witnesses = 0;
+    for (const Actor& bystander : actors_) {
+        if (bystander.id() == target.id() || isFloored(bystander.activity())) {
+            continue;
+        }
+        if (noticeBy(bystander).seen) {
+            ++witnesses;
+        }
+    }
+    // A corpse is a Downed that never stands (Activity::Dead) -- advanceSecond
+    // never heals it, schedules never resume, nearestTo skips it, and it is
+    // never removed from the roster. Everyone can die (VETO 2); the caller has
+    // already ruled out a crowned Evictor blow, which only ever puts a man out.
+    target.setActivity(Activity::Dead);
+    dialogue_.ledger().record(target.id(), Deed::Slew);
+    spreadWitness(target.id(), Deed::Slew);
+    if (witnesses > 0) {
+        dialogue_.crimes().markMurderer(witnesses);
+    }
+}
+
+void Tavern::playerAttackDown() noexcept {
+    // A down-edge only starts a charge from IDLE. During CHARGING it is a
+    // no-op (already holding); during RECOVERY it is dropped, not buffered --
+    // no queue-fed instant hard swing off the tail of the last one.
+    if (combatState_ != PlayerCombatState::Idle) {
+        return;
+    }
+    // SENTENCES LANE: a hanged man arms no swing. The one world verb the
+    // room owns outright refuses here; the rest are refused where the body
+    // and the pages are, by whoever owns them.
+    if (dialogue_.crimes().executed()) {
+        return;
+    }
+    // WATCH & RHYTHM BUILD: a recoiling arm and a broken guard both refuse the
+    // press the same way recovery does -- dropped, not buffered.
+    if (recoilSteps_ > 0 || blockStaggerSteps_ > 0) {
+        return;
+    }
+    combatState_ = PlayerCombatState::Charging;
+    chargeSteps_ = 0;
+    // STANCE (section 3.2, raise rule 1): the down-edge from IDLE puts the
+    // hands up, and the SAME press is the charge already started above -- a
+    // tap from hands-down raises and swings, a hold raises and swings hard.
+    // One press, the owner's sentence. With the hands already up this only
+    // refills the lull.
+    raisePlayerHands();
+}
+
+void Tavern::cancelPlayerCharge() noexcept {
+    // The hand does one thing: a cast, a page, a conversation or a pick drops a
+    // raised charge with no cost and no swing. IDLE and RECOVERY are untouched.
+    if (combatState_ == PlayerCombatState::Charging) {
+        combatState_ = PlayerCombatState::Idle;
+        chargeSteps_ = 0;
+    }
+}
+
+void Tavern::raisePlayerHands() noexcept {
+    handsUp_ = true;
+    lowerTimer_ = kLowerHandsSteps;
+}
+
+void Tavern::lowerPlayerHands() noexcept {
+    handsUp_ = false;
+    lowerTimer_ = 0;
+}
+
+void Tavern::stepPlayerCombat() noexcept {
+    // WATCH & RHYTHM BUILD: the recoil and the block-stagger run down every
+    // step whatever the machine is doing; both gate the next press, and the
+    // block-stagger gates the guard (stepBrawl).
+    if (recoilSteps_ > 0) {
+        --recoilSteps_;
+    }
+    if (blockStaggerSteps_ > 0) {
+        --blockStaggerSteps_;
+    }
+    switch (combatState_) {
+        case PlayerCombatState::Charging:
+            // Holding is free and capped at the hard threshold: past it the tier
+            // does not change, so the counter stops there and the hash for any
+            // hold >= kHardSwingHoldSteps is one number.
+            if (chargeSteps_ < kHardSwingHoldSteps) {
+                ++chargeSteps_;
+            }
+            break;
+        case PlayerCombatState::Recovery:
+            if (--recoverySteps_ <= 0) {
+                recoverySteps_ = 0;
+                combatState_ = PlayerCombatState::Idle;
+            }
+            break;
+        case PlayerCombatState::Idle:
+            // STANCE (section 3.2, lower rule 2) -- THE LULL. The hands come
+            // down on their own after kLowerHandsSteps of IDLE with the guard
+            // not held and nobody swinging at the player; a step spent
+            // charging, recovering, guarding or in a live brawl does not count,
+            // and every raise refills the clock. Integer countdown, no draw:
+            // the 600th idle step lowers them and the 599th does not.
+            if (handsUp_ && !playerBlocking_ && brawlers_.empty()) {
+                if (lowerTimer_ > 0) {
+                    --lowerTimer_;
+                }
+                if (lowerTimer_ <= 0) {
+                    lowerPlayerHands();
+                    // STREET SENSES leg (b): THE LULL ENDS THE FIGHT. A street
+                    // fight has no brawler list to empty, so the one end it
+                    // has is the hands coming down on their own -- and the
+                    // hand means Subdue again (intent-by-verb's own reset,
+                    // tickBrawl's at the disengage; a no-op there, since that
+                    // reset already ran before the lull could).
+                    playerIntent_ = Intent::Subdue;
+                }
+            }
+            break;
+    }
+    // The live sightline flag, recomputed every step whatever the state -- the
+    // reticle brightens on a valid target even at rest.
+    sightlineFlag_ = sightlineTarget() != nullptr;
+}
+
+bool Tavern::armPlayerSwing(PlayerSwingResult& result, std::int32_t& chargeQ8,
+                            std::int32_t& swingTerm) {
+    if (combatState_ != PlayerCombatState::Charging) {
+        // A release with no charge behind it (an edge that arrived in recovery
+        // or idle) throws nothing.
+        return false;
+    }
+    const bool hard = chargeSteps_ >= kHardSwingHoldSteps;
+    result.hard = hard;
+    // Winded refuses the HARD swing -- the hand cannot commit it -- and says so
+    // once. A winded tap still swings (the fatigue whiff band is its penalty).
+    if (hard && fatigue_.winded()) {
+        result.refused = true;
+        combatState_ = PlayerCombatState::Idle;  // nothing thrown, no recovery
+        chargeSteps_ = 0;
+        return false;
+    }
+    // Committed. Enter recovery, and read the fatigue term BEFORE the wind is
+    // paid so the blow is powered by the wind it was thrown on (strike()'s own
+    // contract), then drain the cost on release.
+    chargeQ8 = hard ? kHardSwingChargeQ8 : kSwingChargeQ8;
+    const std::int32_t windCost =
+        (hard ? kHardSwingFatiguePoints : kPunchFatiguePoints) * kFatiguePointFine;
+    combatState_ = PlayerCombatState::Recovery;
+    recoverySteps_ = hard ? kHardSwingRecoverySteps : kSwingRecoverySteps;
+    chargeSteps_ = 0;
+    result.swung = true;
+    // STANCE: a swing THROWN refills the lull (the down-edge raised the hands;
+    // the release is the swing the lull rule counts from).
+    raisePlayerHands();
+    swingTerm = fatigue_.termQ8();
+    fatigue_.drain(windCost);
+    return true;
+}
+
+Tavern::PlayerSwingResult Tavern::playerAttackUp() {
+    PlayerSwingResult result;
+    std::int32_t chargeQ8 = kSwingChargeQ8;
+    std::int32_t swingTerm = kFatigueTermFullQ8;
+    // STREET SENSES leg (b): the head is shared with the street swing
+    // (armPlayerSwing) -- one charge tier, one refusal, one recovery, one wind
+    // cost, in the order they always ran. The sightline is draw-free and reads
+    // nothing the head writes, so casting it after the wind is paid changes no
+    // state and no number.
+    if (!armPlayerSwing(result, chargeQ8, swingTerm)) {
+        return result;
+    }
+    const bool hard = result.hard;
+    const Actor* found = sightlineTarget();
+    if (found == nullptr) {
+        // Swung at air: committed and paid, hit nobody. The row says NOBODY IN
+        // REACH; the wind is still spent, because the arm still swung.
+        return result;
+    }
+    result.targetId = found->id();
+    result.targetName = found->name();
+    const std::int32_t bonus =
+        meleeDamageBonus(effectiveAttributes().value(AttributeId::Might));
+
+    if (found->role() == ActorRole::Vermin) {
+        // A rat first on the line. No house opinion, no classify, no brawl --
+        // the same silence playerPunchNearest keeps for vermin; the crosshair
+        // simply found the rat (VETO 1: the species preference is retired, so
+        // the rat is hit because it was on the line, not because it is a rat).
+        Actor* rat = mutableActorById(found->id());
+        if (rat == nullptr) {
+            return result;
+        }
+        Fighter prey = rat->asFighter();
+        result.blow =
+            strike(playerWeapon(), prey, drawForPlayerAction(), bonus, swingTerm, chargeQ8);
+        rat->setHealth(prey.hp, prey.hpMax);
+        rat->setActivity(result.blow.downed ? Activity::Downed : Activity::Walking);
+        return result;
+    }
+
+    Actor* target = mutableActorById(found->id());
+    if (target == nullptr) {
+        return result;
+    }
+    // INTENT-BY-VERB (VETO 3): the first HARD swing in a fight means Harm.
+    // Upgrade only -- never step on a Kill a nemesis or a test already set --
+    // and reset to Subdue when the fight ends (see tickBrawl's disengage).
+    if (hard && playerIntent_ < Intent::Harm) {
+        playerIntent_ = Intent::Harm;
+    }
+    joinBrawl(*target);
+    const std::vector<Fighter> fighters = currentFight();
+    result.fight = classifyFight(fighters);
+    const bool lethal = result.fight == FightClass::Lethal;
+    result.lethal = lethal;
+    // The flip's social latch fires once (this was a refusal in the pre-veto
+    // model; now the blow lands and the room stands back).
+    if (lethal && !escalationSeen_) {
+        escalation_ = result.fight;
+        noteEscalation(target->id());
+    }
+    // WATCH & RHYTHM BUILD: the blow meets his guard and his wind-up here --
+    // same draw, same order (one drawForPlayerAction inside), the rhythm
+    // argued about the roll afterwards.
+    result.blow = landPlayerBlow(*target, hard, bonus, swingTerm, chargeQ8, result.recoiled,
+                                 result.staggered);
+    target->faceToward(playerX_, playerY_);
+    if (result.blow.downed) {
+        if (lethal && !result.blow.crowned) {
+            // A KILLING blow under lethal rules. A crowned Evictor blow is the
+            // one exception -- it was forged to put a man OUT, not open (it
+            // downs even here).
+            result.killed = true;
+            slayActor(*target);
+        } else {
+            target->setActivity(Activity::Downed);
+        }
+        // A rematch put down -- grudge down, rung/house/toll/charge all stand.
+        nemesis_.recordVictory(target->id());
+    } else {
+        target->setActivity(Activity::Brawling);
+    }
+    if (!result.killed) {
+        // A kill already recorded Deed::Slew; a landed non-kill is a Struck.
+        dialogue_.ledger().record(target->id(), Deed::Struck);
+        spreadWitness(target->id(), Deed::Struck);
+    }
+    if (talkingToId_ == target->id()) {
+        endConversation();
+    }
+    reportOffence(Offence::Brawled);
+    return result;
+}
+
+// ---------------------------------------------------------------------------
+// STREET SENSES leg (b) -- the swing on the other roster, and its answer
+// ---------------------------------------------------------------------------
+
+std::int64_t Tavern::playerSightlineAlong() const noexcept {
+    // sightlineTarget's own projection, answering the DISTANCE down the ray
+    // rather than the body, so the client can weigh this roster's target
+    // against the street's by the one number both rules produce.
+    if (!playerKnown_) {
+        return -1;
+    }
+    const std::int64_t fx = forward_x_q16(playerYaw_);
+    const std::int64_t fy = forward_y_q16(playerYaw_);
+    std::int64_t bestAlong = static_cast<std::int64_t>(kMeleeReach) + 1;
+    bool any = false;
+    for (const Actor& actor : actors_) {
+        if (!actor.present() || isFloored(actor.activity())) {
+            continue;
+        }
+        const std::int64_t dx = static_cast<std::int64_t>(actor.x()) - playerX_;
+        const std::int64_t dy = static_cast<std::int64_t>(actor.y()) - playerY_;
+        const std::int64_t along = (fx * dx + fy * dy) >> 16;
+        if (along <= 0 || along > kMeleeReach) {
+            continue;
+        }
+        const std::int64_t perp = (-fy * dx + fx * dy) >> 16;
+        if (perp > kBodyHalfWidth || perp < -kBodyHalfWidth) {
+            continue;
+        }
+        if (along < bestAlong) {
+            bestAlong = along;
+            any = true;
+        }
+    }
+    return any ? bestAlong : -1;
+}
+
+Tavern::PlayerSwingResult Tavern::playerAttackUpStreet(Fighter& sheet, std::int32_t wardId,
+                                                       std::string_view name,
+                                                       std::int32_t witnesses) {
+    PlayerSwingResult result;
+    std::int32_t chargeQ8 = kSwingChargeQ8;
+    std::int32_t swingTerm = kFatigueTermFullQ8;
+    // THE SAME HEAD as the roster swing -- one charge tier, one refusal, one
+    // recovery, one wind cost -- so a swing at a docker and a swing at a
+    // patron are one verb.
+    if (!armPlayerSwing(result, chargeQ8, swingTerm)) {
+        return result;
+    }
+    const bool hard = result.hard;
+    result.street = true;
+    result.targetId = wardId;
+    result.targetName = std::string(name);
+    const std::int32_t bonus =
+        meleeDamageBonus(effectiveAttributes().value(AttributeId::Might));
+
+    // INTENT-BY-VERB (VETO 3), the roster swing's own rule: the first HARD
+    // swing in a fight means Harm, upgrade only, reset when the fight ends.
+    if (hard && playerIntent_ < Intent::Harm) {
+        playerIntent_ = Intent::Harm;
+    }
+    // THE RULE, with this fighter IN the fight: the player, whoever on the
+    // roster is swinging, and the street body -- its id lifted clear of the
+    // roster's (kWardSpeakerIdBase) so no docker can be mistaken for a
+    // bouncer. classifyFight's own B1/B2/B3: fists and Subdue on a fresh man is
+    // a brawl; the player's steel, a Harm swing on a bloodied man, or a Kill
+    // intent flips it, exactly as in the Gull.
+    std::vector<Fighter> fighters = currentFight();
+    Fighter street = sheet;
+    street.actorId = kWardSpeakerIdBase + wardId;
+    fighters.push_back(street);
+    result.fight = classifyFight(fighters);
+    const bool lethal = result.fight == FightClass::Lethal;
+    result.lethal = lethal;
+    if (lethal && !escalationSeen_) {
+        // The flip's social latch, once per fight: the room within sight
+        // stands back and remembers the steel. No roster target to record it
+        // against (-1); the street body's own memory is the ledger row below.
+        escalation_ = result.fight;
+        noteEscalation(-1);
+    }
+    // THE ONE DRAW, at the same stream position the roster swing would have
+    // spent it -- drawForPlayerAction, then strike() on the sheet with the tier
+    // the hold read and the wind the arm had. No guard and no wind-up on a
+    // street body in v1: strike()'s own whiff, variance and crown bands, off
+    // this one roll, are the whole of it.
+    result.blow = strike(playerWeapon_, sheet, drawForPlayerAction(), bonus, swingTerm, chargeQ8);
+    if (result.blow.landed) {
+        if (result.blow.downed && lethal && !result.blow.crowned) {
+            // A KILLING BLOW on the open street. MURDER LAW, exactly
+            // slayActor's: the deed, the room's witness spread, and -- on the
+            // count the street took BEFORE the body dropped (the three-clause
+            // rule at the tile, the Watch included) -- instant paper and the
+            // Condemned hook. Unwitnessed, the ward heard nothing.
+            result.killed = true;
+            dialogue_.ledger().record(kWardSpeakerIdBase + wardId, Deed::Slew);
+            spreadWitness(kWardSpeakerIdBase + wardId, Deed::Slew);
+            if (witnesses > 0) {
+                dialogue_.crimes().markMurderer(witnesses);
+            }
+        } else {
+            dialogue_.ledger().record(kWardSpeakerIdBase + wardId, Deed::Struck);
+            spreadWitness(kWardSpeakerIdBase + wardId, Deed::Struck);
+        }
+    }
+    reportOffence(Offence::Brawled);
+    return result;
+}
+
+bool Tavern::takeStreetBlow(const Fighter& attacker, std::uint64_t roll) {
+    if (playerFloored_ || dialogue_.crimes().executed()) {
+        return false;
+    }
+    // THE CLASS picks the RULES, exactly as stepBrawl reads it: the player and
+    // this fighter. A fists-and-Subdue sailor is a brawl and the player floors
+    // at kPlayerBrawlFloor; the player's own steel, Harm on a bloodied man, or
+    // a Kill intent lifts the floor to zero.
+    std::vector<Fighter> fighters = currentFight();
+    fighters.push_back(attacker);
+    const bool lethal = classifyFight(fighters) == FightClass::Lethal;
+    const std::int32_t floor = lethal ? 0 : kPlayerBrawlFloor;
+    // THE HARD BAND, carved off the thrower's own roll on the same bits an
+    // NPC swing reads (kNpcHardRollShift / kNpcHardBand256): same-roll
+    // discipline, one draw per swing.
+    const bool hard = ((roll >> kNpcHardRollShift) & 0xFFU) < kNpcHardBand256;
+    Fighter blowTarget = fighters.front();
+    const Blow blow = strike(attacker.weapon, blowTarget, roll, 0, kFatigueTermFullQ8,
+                             hard ? kHardSwingChargeQ8 : kSwingChargeQ8);
+    if (!blow.landed) {
+        return false;
+    }
+    std::int32_t dmg = blow.damage;
+    // THE GUARD, stepBrawl's own clause: honoured while not broken, softening
+    // the blow (blockedDamage), training shieldwall, costing the catch wind, and
+    // a HARD swing caught here breaks it for kBlockStaggerSteps.
+    const bool guardHeld = playerBlocking_ && blockStaggerSteps_ <= 0;
+    if (guardHeld) {
+        dmg = blockedDamage(blow.damage, dialogue_.skills().level(kBlockSkill));
+        blowsBlocked_ = wrap_add(blowsBlocked_, 1);
+        dialogue_.skills().use(kBlockSkill);
+        fatigue_.drain(kBlockCatchFatiguePoints * kFatiguePointFine);
+        if (hard) {
+            blockStaggerSteps_ = kBlockStaggerSteps;
+        }
+    }
+    playerHp_ = std::max(floor, playerHp_ - dmg);
+    // STANCE (raise rule 3): a blow CAUGHT puts the hands up.
+    raisePlayerHands();
+    if (playerHp_ <= floor) {
+        // DOWN, on the street. The same defeat seam every beating routes
+        // through, with NO ROSTER WINNER: floored, the quay revive, the hands
+        // down, the intent reset -- and no rise. A docker who put you down
+        // does not found a guild in v1: the nemesis book keys on the roster,
+        // and a street winner's rise is named ceiling.
+        applyDefeat(-1);
+    }
+    return true;
+}
+
+void Tavern::stepBrawl() noexcept {
+    if (brawlers_.empty() || playerFloored_) {
+        return;
+    }
+    // THE CLASS RIGHT NOW picks the RULES, not whether the room swings.
+    //
+    // STANCE & ROOM BUILD -- THE ROOM FIGHTS BACK. Before this build every NPC
+    // blow was refused here unless the fight was a brawl, so a hard swing on a
+    // bloodied man, or steel out, made every body in the room stop swinging:
+    // the one fight the owner would test was a shooting gallery. Now the
+    // exchange resolves under BOTH rule sets. BRAWL: the player floors at
+    // kPlayerBrawlFloor exactly as shipped. LETHAL: the floor is lifted to
+    // zero and the blow that empties the player routes applyDefeat -- the
+    // same defeat the player's own lethal link backfire already routes
+    // (applySpellDose), and the death ceremony the client hangs off
+    // escalated(). Same-roll discipline untouched: the swing's draw is still
+    // the actor's own npcSwingSeq_, nothing new is drawn.
+    const std::vector<Fighter> fighters = currentFight();
+    const FightClass fight = classifyFight(fighters);
+    const bool lethal = fight == FightClass::Lethal;
+    if (lethal && !escalationSeen_) {
+        // The flip's social latch fires BEFORE the first lethal blow lands (the
+        // Deed::DrewSteel spread, the STEEL OUT line the client speaks on this
+        // edge), at step rate now that the blows are at step rate; tickBrawl
+        // keeps the same latch at 1 Hz for a fight nobody is swinging in.
+        escalation_ = fight;
+        noteEscalation(brawlers_.front());
+    }
+    const std::int32_t floor = lethal ? 0 : kPlayerBrawlFloor;
+    const Fighter playerFighter = fighters.front();
+    // WATCH & RHYTHM BUILD: the guard is honoured only while it is not
+    // BROKEN -- a hard swing caught by it block-staggers the player for
+    // kBlockStaggerSteps, during which the next blow lands unsoftened.
+    const bool guardHeld = playerBlocking_ && blockStaggerSteps_ <= 0;
+    // Routers who reached the street this step, struck off the list below
+    // (not inside the loop that walks it).
+    std::vector<std::int32_t> arrived;
+    for (const std::int32_t id : brawlers_) {
+        Actor* actor = mutableActorById(id);
+        if (actor == nullptr || !actor->present() || isFloored(actor->activity())) {
+            continue;
+        }
+        // ROUT. A bloodied non-professional under lethal rules has stopped
+        // swinging: he is walking out, purposefully, by the same route out the
+        // ejection shove uses (gull::kStreetX/Y), and he leaves the list the
+        // step he arrives. He stays a brawler until then -- a man with his
+        // back turned is still in the fight he is leaving.
+        if (actor->routing()) {
+            if (!gull::insideFootprint(actor->tileX(), actor->tileY()) && actor->atDestination()) {
+                arrived.push_back(id);
+            }
+            continue;
+        }
+        if (lethal && shouldRout(*actor)) {
+            actor->setRouting(true);
+            // BARKS LANE: a man breaking for the street says why.
+            lastFlee_ = crowdFleeLine(*actor);
+            actor->setNpcWindup(0);
+            actor->setNpcWindupHard(false);
+            actor->setNpcGuard(false);
+            actor->setActivity(Activity::Walking);
+            actor->setDestination(gull::kStreetX, gull::kStreetY, gull::kGroundBand);
+            continue;
+        }
+        // STAGGER. A man knocked off his rhythm neither closes nor swings nor
+        // guards for kStaggerSteps / kBlockStaggerSteps; his timer waits too.
+        if (actor->npcStagger() > 0) {
+            actor->setNpcStagger(actor->npcStagger() - 1);
+            continue;
+        }
+        const bool inReach = actor->distanceTo(playerX_, playerY_) <= kMeleeReach;
+        if (actor->npcWindup() > 0) {
+            // THE TELEGRAPH runs down, and THE SWING IS COMMITTED: a man who
+            // has started his wind-up finishes it whether or not you are
+            // still in front of him (Oblivion's own rule -- you step back and
+            // the swing whiffs; it is not cancelled). He keeps closing while
+            // it runs. A player hit inside it staggers him instead
+            // (landPlayerBlow); left alone, the blow lands on the roll the
+            // wind-up drew, at the tier the roll's hard band chose -- IF he
+            // is in reach on the landing step. Out of reach it is a swing at
+            // air and the roll is spent, exactly as a whiff spends one.
+            const std::int32_t left = actor->npcWindup() - 1;
+            actor->setNpcWindup(left);
+            if (!inReach) {
+                actor->setDestination(q8_tile(playerX_), q8_tile(playerY_), playerBand_);
+                actor->setActivity(Activity::Brawling);
+            } else {
+                actor->faceToward(playerX_, playerY_);
+            }
+            if (left > 0) {
+                continue;
+            }
+            const bool hard = actor->npcWindupHard();
+            actor->setNpcWindupHard(false);
+            if (!inReach) {
+                continue;
+            }
+            Fighter blowTarget = playerFighter;
+            const Blow blow = strike(actor->weapon(), blowTarget, actor->npcPendingRoll(), 0,
+                                     kFatigueTermFullQ8,
+                                     hard ? kHardSwingChargeQ8 : kSwingChargeQ8);
+            if (!blow.landed) {
+                continue;
+            }
+            std::int32_t dmg = blow.damage;
+            if (guardHeld) {
+                // THE GUARD: blockedDamage argues what a landed blow is worth,
+                // never whether it landed -- no second roll. Every softened
+                // blow trains shieldwall and costs the blocker wind (turtling
+                // empties the pool that powers the counterattack). A HARD
+                // swing caught here BREAKS the guard: softened this once, and
+                // block-staggered for kBlockStaggerSteps -- the Oblivion
+                // asymmetry, from the other side.
+                dmg = blockedDamage(blow.damage, dialogue_.skills().level(kBlockSkill));
+                blowsBlocked_ = wrap_add(blowsBlocked_, 1);
+                dialogue_.skills().use(kBlockSkill);
+                fatigue_.drain(kBlockCatchFatiguePoints * kFatiguePointFine);
+                if (hard) {
+                    blockStaggerSteps_ = kBlockStaggerSteps;
+                }
+            }
+            // KIT BUILD -- DEFENCE v1, THE ONE PLACE A BLOW LANDS ON THE
+            // BODY. What is worn turns a flat sum of DR off every landed
+            // blow AFTER the guard has argued (coat over arms, as the
+            // reference orders it), floored at one point through any coat --
+            // blockedDamage's own floor, for its own reason: armour that
+            // could null a blow outright is a wall of kit that turns the
+            // fight OFF. Pure integers, no draw: the same roll lands and the
+            // coat only argues what it is worth. HARNESS trains on a blow the
+            // kit softened, the shieldwall precedent. COMBAT-SPEC's coverage-
+            // weighted AC and per-part wear stay the v2 ceiling.
+            if (const std::int32_t turned = wornDr(); turned > 0 && dmg > 1) {
+                const std::int32_t kept = std::max(1, dmg - turned);
+                lastTurned_ = dmg - kept;
+                dmg = kept;
+                blowsTurned_ = wrap_add(blowsTurned_, 1);
+                dialogue_.skills().use(kHarnessSkill);
+            }
+            playerHp_ = std::max(floor, playerHp_ - dmg);
+            lastBlowBy_ = id;
+            // STANCE (raise rule 3): a blow CAUGHT -- guarded or not -- puts
+            // the hands up, so a player being punched has GUARD without
+            // pressing SWING.
+            raisePlayerHands();
+            if (lethal && playerHp_ <= 0) {
+                // A KILLING BLOW. The man who threw it is the one the epitaph
+                // names (applyDefeat reads lastBlowBy_), so nobody else in the
+                // crowd swings at the body this step.
+                break;
+            }
+            continue;
+        }
+        if (!inReach) {
+            // Out of reach: close via A*, and re-arm the timer for a quick
+            // re-check while the gap closes rather than swinging at air.
+            actor->setDestination(q8_tile(playerX_), q8_tile(playerY_), playerBand_);
+            actor->setActivity(Activity::Brawling);
+            if (actor->npcSwingTimer() > kNpcSwingRetrySteps) {
+                actor->setNpcSwingTimer(kNpcSwingRetrySteps);
+            }
+            continue;
+        }
+        actor->faceToward(playerX_, playerY_);
+        const std::int32_t timer = actor->npcSwingTimer();
+        if (timer > 0) {
+            actor->setNpcSwingTimer(timer - 1);
+            continue;
+        }
+        // The timer expired in reach: THE WIND-UP BEGINS. The roll is drawn
+        // NOW, re-keyed to this actor's own monotonic sequence
+        // (order-independent across the cadence change), kept on him, and
+        // the blow lands on it kNpcWindupSteps later -- one draw per swing,
+        // exactly as before. Two more bands are carved off the same roll
+        // before it is put away: whether his GUARD is up until his next swing
+        // (professionals keep the wider band), and whether this swing is
+        // thrown HARD (the longer tell, double the rolled damage). No new
+        // draw exists anywhere in this. THE CADENCE HOLDS: the tell is the
+        // last stretch of the interval, not added to it -- blow to blow is
+        // still kNpcSwingIntervalSteps (spec 1.5's 1.1 s), so the timer
+        // re-arms to the interval less the tell.
+        const std::uint64_t roll =
+            rng_.draw(static_cast<std::uint64_t>(id), actor->npcSwingSeq());
+        actor->bumpNpcSwingSeq();
+        actor->setNpcPendingRoll(roll);
+        const std::uint64_t guardBand =
+            isProfessional(*actor) ? kNpcProfessionalGuardBand256 : kNpcGuardBand256;
+        actor->setNpcGuard(((roll >> kNpcGuardRollShift) & 0xFFU) < guardBand);
+        const bool hard = ((roll >> kNpcHardRollShift) & 0xFFU) < kNpcHardBand256;
+        const std::int32_t tell = hard ? kNpcHardWindupSteps : kNpcWindupSteps;
+        actor->setNpcWindupHard(hard);
+        actor->setNpcWindup(tell);
+        actor->setNpcSwingTimer(kNpcSwingIntervalSteps - tell);
+    }
+    for (const std::int32_t id : arrived) {
+        // Off the list, on the street, and still routing until tickBrawl says
+        // the fight is over -- so the rota does not walk him straight back in.
+        brawlers_.erase(std::remove(brawlers_.begin(), brawlers_.end(), id), brawlers_.end());
+    }
+    if (!arrived.empty() && brawlers_.empty()) {
+        // The last man ran: the fight is over the way a disengage ends one,
+        // and the hand means Subdue again (intent-by-verb's own reset).
+        playerIntent_ = Intent::Subdue;
+    }
+    // Down. Under brawl the floor is the line, under lethal zero is; either way
+    // the defeat seam takes it from here -- the same applyDefeat every in-world
+    // beating routes through, and the same one the nemesis rise hangs off.
+    if (playerHp_ <= floor && !playerFloored_) {
+        applyDefeat(lastBlowBy_);
+    }
+}
+
 void Tavern::noteEscalation(std::int32_t targetId) {
     if (escalationSeen_) {
         return;
@@ -1265,92 +2104,232 @@ void Tavern::noteEscalation(std::int32_t targetId) {
     }
     spreadWitness(targetId, Deed::DrewSteel);
     endConversation();
+    // WATCH & RHYTHM BUILD: and the room stands back -- the one move, on this
+    // edge, that the rota then holds (applySchedules) for as long as the
+    // fight is lethal.
+    standBack();
 }
 
 void Tavern::tickBrawl() {
     if (brawlers_.empty()) {
+        // WATCH & RHYTHM BUILD: the rout ends with the fight. A man who made
+        // the street keeps no rota until nobody is swinging; then he is
+        // somebody with a stool to get back to, and the schedule has him.
+        for (Actor& actor : actors_) {
+            if (actor.routing()) {
+                actor.setRouting(false);
+            }
+        }
         return;
     }
+    // ACTION-COMBAT BUILD: the per-blow exchange moved to stepBrawl (per-step
+    // cadence). What stays at 1 Hz is what belongs at 1 Hz -- re-classify, the
+    // escalation latch, and the disengage.
+    //
     // Re-classify every second: a fight that was a brawl a moment ago stops
     // being one the instant somebody draws, escalates, or is beaten past the
     // bloodied line.
     const std::vector<Fighter> fighters = currentFight();
     const FightClass fight = classifyFight(fighters);
-    if (!resolvesInWorld(fight)) {
+    if (fight == FightClass::Lethal && !escalationSeen_) {
+        // The flip's social consequence fires once (Deed::DrewSteel, the
+        // witness spread, the ejection ladder). STANCE & ROOM BUILD: the blow
+        // exchange under lethal rules is stepBrawl's now (it latches this same
+        // edge at step rate before the first lethal blow); this 1 Hz latch
+        // stays for a fight nobody is swinging in, and the disengage below
+        // runs under lethal too -- a lethal fight ends when everybody is down
+        // or dead, or the player has left the house, exactly like a brawl.
         escalation_ = fight;
-        noteEscalation(brawlers_.empty() ? -1 : brawlers_.front());
-        return;
+        noteEscalation(brawlers_.front());
     }
 
-    std::int32_t drawIndex = 0;
-    for (const std::int32_t id : brawlers_) {
-        Actor* actor = mutableActorById(id);
-        if (actor == nullptr || !actor->present()) {
-            continue;
-        }
-        if (actor->activity() == Activity::Downed) {
-            continue;
-        }
-        if (actor->distanceTo(playerX_, playerY_) > kMeleeReach) {
-            // Out of reach: close, rather than swing at air.
-            actor->setDestination(q8_tile(playerX_), q8_tile(playerY_), playerBand_);
-            actor->setActivity(Activity::Brawling);
-            ++drawIndex;
-            continue;
-        }
-        const std::uint64_t roll = rng_.draw(static_cast<std::uint64_t>(id), drawIndex++);
-        Fighter playerFighter = fighters.front();
-        const Blow blow = strike(actor->weapon(), playerFighter, roll);
-        if (blow.landed) {
-            std::int32_t hpAfter = playerFighter.hp;
-            if (playerBlocking_) {
-                // THE GUARD. Same roll, same draw stream -- blockedDamage is a
-                // pure function arguing about what the landed blow is WORTH,
-                // never a second chance at whether it landed. Scaled by
-                // SHIELDWALL and never to zero (see brawl.hpp), and every blow
-                // it softens trains the skill -- Morrowind's own rule, taking
-                // a hit on raised arms is how a guard is learned.
-                const std::int32_t kept =
-                    blockedDamage(blow.damage, dialogue_.skills().level(kBlockSkill));
-                hpAfter = std::max(0, fighters.front().hp - kept);
-                blowsBlocked_ = wrap_add(blowsBlocked_, 1);
-                dialogue_.skills().use(kBlockSkill);
-            }
-            playerHp_ = std::max(kPlayerBrawlFloor, hpAfter);
-            // WHOSE FIST IT WAS. S8 turns being put down into a promotion for
-            // whoever did it, so the room has to know which of the men swinging
-            // at it landed the last one -- and it is the LAST, not the first,
-            // because a man who joins in at the end and finishes you is who the
-            // room saw standing over you.
-            lastBlowBy_ = id;
-        }
-        actor->faceToward(playerX_, playerY_);
-    }
-
-    if (playerHp_ <= kPlayerBrawlFloor && !playerFloored_) {
-        // Down. A brawl stops there -- see kPlayerBrawlFloor -- and what
-        // follows is not more fighting, it is being carried out.
-        applyDefeat(lastBlowBy_);
-        return;
-    }
-
-    // A fight nobody is left standing for is over.
+    // A fight nobody is left standing for is over. A corpse counts as down
+    // (isFloored), so a fight that ends in a killing disengages honestly.
     bool anyoneUp = false;
     for (const std::int32_t id : brawlers_) {
         const Actor* actor = actorById(id);
-        if (actor != nullptr && actor->present() && actor->activity() != Activity::Downed) {
+        if (actor != nullptr && actor->present() && !isFloored(actor->activity())) {
             anyoneUp = true;
         }
     }
     if (!anyoneUp || !playerInside()) {
         for (const std::int32_t id : brawlers_) {
-            if (Actor* actor = mutableActorById(id);
-                actor != nullptr && actor->activity() == Activity::Brawling) {
-                actor->setActivity(Activity::Walking);
+            if (Actor* actor = mutableActorById(id); actor != nullptr) {
+                if (actor->activity() == Activity::Brawling) {
+                    actor->setActivity(Activity::Walking);
+                }
+                // WATCH & RHYTHM BUILD: hands down, rhythm cleared. A man who
+                // walks away from a fight does not carry a wind-up into the
+                // next one.
+                actor->stagger(0, 0);
+                actor->setRouting(false);
             }
         }
         brawlers_.clear();
+        // INTENT-BY-VERB reset (VETO 3): the fight is over, the hand means
+        // Subdue again until the next hard swing says otherwise.
+        playerIntent_ = Intent::Subdue;
     }
+}
+
+// ---------------------------------------------------------------------------
+// WATCH & RHYTHM BUILD -- the rhythm, the room and the cause
+// ---------------------------------------------------------------------------
+
+bool Tavern::isProfessional(const Actor& actor) const noexcept {
+    if (actor.role() == ActorRole::Bouncer) {
+        return true;
+    }
+    // A watchman by the derived faction, never by a second table.
+    const std::int32_t garrison = dialogue_.factions().indexOf("watch");
+    return garrison >= 0 && factionOf(actor) == garrison;
+}
+
+bool Tavern::lethalFightLive() const noexcept {
+    if (brawlers_.empty()) {
+        return false;
+    }
+    const std::vector<Fighter> fighters = currentFight();
+    return classifyFight(fighters) == FightClass::Lethal;
+}
+
+bool Tavern::violenceInView() const noexcept {
+    if (lethalFightLive()) {
+        return true;
+    }
+    if (!handsUp_) {
+        // Hands down over a body somebody else left is not a cause; the
+        // corpse never leaves the roster, and a Watch that closed on whoever
+        // stood nearest it would close on the bartender every night.
+        return false;
+    }
+    if (playerWeapon() >= kFirstLethalWeapon) {
+        // STEEL UP. The stance bit is what the Watch reads (the whole reason
+        // the stance is sim state): a blade in a raised hand is cause on its
+        // own, before it is swung.
+        return true;
+    }
+    for (const Actor& actor : actors_) {
+        // HANDS UP OVER A CORPSE, within reach. Dead, not Downed: a man put
+        // on the floor of a bar fight is the house's business (B3 says a
+        // Subdue beating is still a brawl), and the Watch has no cause in it.
+        if (actor.present() && actor.role() != ActorRole::Vermin &&
+            actor.activity() == Activity::Dead &&
+            actor.distanceTo(playerX_, playerY_) <= kMeleeReach) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool Tavern::shouldRout(const Actor& actor) const noexcept {
+    return actor.role() != ActorRole::Vermin && !isProfessional(actor) &&
+           actor.intent() != Intent::Kill && isBloodied(actor.hp(), actor.hpMax());
+}
+
+void Tavern::standBack() {
+    if (!playerKnown_) {
+        return;
+    }
+    // BARKS LANE (feel/build): the first patron the edge sends back is the
+    // one who says it -- crowd.flee out of combat_barks.json, one line per
+    // edge, not a chorus. See lastFlee().
+    bool spoken = false;
+    for (Actor& actor : actors_) {
+        if (!actor.present() || isFloored(actor.activity()) ||
+            actor.role() == ActorRole::Vermin || actor.routing() || isProfessional(actor) ||
+            actor.band() != playerBand_) {
+            continue;
+        }
+        if (std::find(brawlers_.begin(), brawlers_.end(), actor.id()) != brawlers_.end()) {
+            continue;
+        }
+        if (actor.distanceTo(playerX_, playerY_) > kStandBackRadiusTiles * kSubOne) {
+            continue;
+        }
+        // Directly away, by the sign of each axis -- integer, no bearing --
+        // and the first standable tile inside the footprint on that line, the
+        // far tile first. Somebody standing ON the player goes east, along
+        // the bar; nobody stands still and nobody goes through a wall.
+        const std::int32_t dx = actor.x() - playerX_;
+        const std::int32_t dy = actor.y() - playerY_;
+        std::int32_t sx = dx > 0 ? 1 : (dx < 0 ? -1 : 0);
+        const std::int32_t sy = dy > 0 ? 1 : (dy < 0 ? -1 : 0);
+        if (sx == 0 && sy == 0) {
+            sx = 1;
+        }
+        for (std::int32_t n = kStandBackTiles; n >= 1; --n) {
+            const std::int32_t tx = actor.tileX() + sx * n;
+            const std::int32_t ty = actor.tileY() + sy * n;
+            if (!gull::insideFootprint(tx, ty)) {
+                continue;
+            }
+            if (tiles_ != nullptr && !tiles_->standable(tx, ty, actor.band())) {
+                continue;
+            }
+            actor.setDestination(tx, ty, actor.band());
+            actor.setActivity(Activity::Walking);
+            if (!spoken) {
+                spoken = true;
+                lastFlee_ = crowdFleeLine(actor);
+            }
+            break;
+        }
+    }
+}
+
+std::string Tavern::crowdFleeLine(const Actor& actor) const {
+    return actor.name() + ": " +
+           std::string(dialogue_.barks().line(
+               dialogue_.barks().resolve({std::string("crowd.flee")}),
+               static_cast<std::int32_t>(tick_ % 1024) + actor.id()));
+}
+
+Blow Tavern::landPlayerBlow(Actor& target, bool hard, std::int32_t bonus, std::int32_t swingTerm,
+                            std::int32_t chargeQ8, bool& recoiled, bool& staggered) {
+    recoiled = false;
+    staggered = false;
+    Fighter victim = target.asFighter();
+    const Fighter before = victim;
+    // THE ONE DRAW this blow makes, in the order it always made it.
+    Blow blow = strike(playerWeapon(), victim, drawForPlayerAction(), bonus, swingTerm, chargeQ8);
+    if (!blow.landed) {
+        return blow;
+    }
+    if (target.npcGuard()) {
+        // HIS GUARD CAUGHT IT. blockedDamage at level zero -- the NPC keeps no
+        // shieldwall ledger (rosterSkillOf reads a roster entry, not a
+        // ledger; training it would be a second table, so it is not done) --
+        // argues what the landed blow is worth, never whether it landed: no
+        // second roll. The blow's own bloodied/downed reading is re-derived
+        // from the softened number; a crowned Evictor blow still crowns.
+        const std::int32_t kept = blockedDamage(blow.damage, 0);
+        victim.hp = blow.crowned ? 0 : std::max(0, before.hp - kept);
+        blow.damage = kept;
+        blow.blocked = true;
+        blow.bloodied = !isBloodied(before) && isBloodied(victim);
+        blow.downed = isDowned(victim.hp);
+        if (hard) {
+            // A HARD swing BREAKS a guard: he is block-staggered.
+            if (!blow.downed) {
+                target.stagger(kBlockStaggerSteps, kNpcSwingIntervalSteps);
+            }
+            staggered = true;
+        } else {
+            // A normal swing into a guard RECOILS the arm that threw it.
+            recoilSteps_ = kRecoilSteps;
+            recoiled = true;
+        }
+    } else if (hard || target.npcWindup() > 0) {
+        // Open, and hit inside his wind-up (the pre-empt: the blow he was
+        // winding up is lost with the roll it drew) or hit HARD: staggered.
+        if (!blow.downed) {
+            target.stagger(kStaggerSteps, kNpcSwingIntervalSteps);
+        }
+        staggered = true;
+    }
+    target.setHealth(victim.hp, victim.hpMax);
+    return blow;
 }
 
 // ---------------------------------------------------------------------------
@@ -1373,19 +2352,43 @@ RiseWorld Tavern::riseWorld() noexcept {
 }
 
 void Tavern::applyDefeat(std::int32_t winnerId) {
+    // SENTENCES LANE -- THE TWO PLAYER-END PATHS NEVER MEET. A hanged man is
+    // not put on the floor: no defeat, no rise, no release for the quay. The
+    // rope is not a beating, and nothing on this path reads it.
+    if (dialogue_.crimes().executed()) {
+        return;
+    }
     playerFloored_ = true;
-    playerHp_ = kPlayerBrawlFloor;
+    // The brawl floor for a brawl KO and a scripted concession, unchanged; a
+    // LETHAL defeat arrives here at zero and stays there -- the player is dead
+    // until reviveAfterDefeat says otherwise, and the bar says so.
+    playerHp_ = std::min(playerHp_, kPlayerBrawlFloor);
+    // STANCE (lower rule 3): a defeat lowers the hands.
+    lowerPlayerHands();
     if (standing_ != Standing::Barred) {
         standing_ = Standing::BeingEjected;
     }
     for (const std::int32_t id : brawlers_) {
-        if (Actor* actor = mutableActorById(id);
-            actor != nullptr && actor->activity() == Activity::Brawling) {
-            actor->setActivity(Activity::Walking);
+        if (Actor* actor = mutableActorById(id); actor != nullptr) {
+            if (actor->activity() == Activity::Brawling) {
+                actor->setActivity(Activity::Walking);
+            }
+            // WATCH & RHYTHM BUILD: the fight is over; so is his rhythm.
+            actor->stagger(0, 0);
+            actor->setRouting(false);
         }
     }
     brawlers_.clear();
     lastBlowBy_ = -1;
+    // And the player's own clocks: a man on the floor is past recoiling.
+    recoilSteps_ = 0;
+    blockStaggerSteps_ = 0;
+    // INTENT-BY-VERB reset (VETO 3), the same one tickBrawl's disengage
+    // makes: the fight is over -- this way -- and the hand means Subdue again
+    // until the next hard swing says otherwise. Without it a man who died
+    // meaning Kill got up meaning Kill, and his next tap was a lethal fight
+    // from the first blow.
+    playerIntent_ = Intent::Subdue;
 
     const Actor* winner = actorById(winnerId);
     if (winner == nullptr || winner->role() == ActorRole::Vermin) {
@@ -1488,6 +2491,12 @@ bool Tavern::takeDefeatRelease() noexcept {
 }
 
 void Tavern::reviveAfterDefeat() {
+    // SENTENCES LANE -- THE ROPE DOES NOT REVIVE. The quay is the nemesis
+    // ruling's and only the nemesis ruling's; a run the bench ended is not
+    // woken on it. Refused outright, clock and body untouched.
+    if (dialogue_.crimes().executed()) {
+        return;
+    }
     // The hours are gone and so is a quarter of the purse. NOTHING the rival
     // gained comes back: he is still on the rung, his house is still founded,
     // its toll is still on the price of a mug and the roll still says who holds
@@ -1846,6 +2855,19 @@ Speaker Tavern::speakerFor(const Actor& actor) const {
     return speaker;
 }
 
+bool Tavern::holdsForTalk(const Actor& actor) const noexcept {
+    if (talkingToId_ != actor.id() || !dialogue_.isOpen()) {
+        return false;
+    }
+    const Activity doing = actor.activity();
+    if (doing != Activity::Drinking && doing != Activity::Working &&
+        doing != Activity::Walking) {
+        return false;
+    }
+    // A brawler wears Walking while he routs; the fight keeps him.
+    return std::find(brawlers_.begin(), brawlers_.end(), actor.id()) == brawlers_.end();
+}
+
 bool Tavern::talkTo() {
     const Actor* actor = nearestTo(playerX_, playerY_, 2 * kSubOne);
     if (actor == nullptr) {
@@ -1859,6 +2881,9 @@ bool Tavern::talkTo() {
         return false;
     }
     talkingToId_ = actor->id();
+    // STANCE (lower rule 3): a conversation opening lowers the hands -- the
+    // hand does one thing, and talking is not it.
+    lowerPlayerHands();
     if (Actor* turning = mutableActorById(actor->id()); turning != nullptr) {
         // They look at you while you talk to them. Cheap, and it is the whole
         // difference between a person and a prop.
@@ -1890,7 +2915,16 @@ void Tavern::spreadWitness(std::int32_t victimId, Deed deed) {
     if (!playerKnown_) {
         return;
     }
-    for (const Actor& actor : actors_) {
+    // VOICE LANE: THEY TURN TO LOOK. A blow, a blade, a killing turns every
+    // head that saw it -- talkTo's own "the whole difference between a person
+    // and a prop", for violence. Only violence: a bought drink or a lifted
+    // purse turns nobody, so the gate's own tavern driver (which buys and
+    // talks and never swings) hashes exactly as it did. And only a body with
+    // nowhere to be: one working, drinking or watching at its post. A walker
+    // keeps walking, the fight's own men, the house's ladder and the closing
+    // Watch have facings of their own, and the floor faces the floor.
+    const bool violence = deed == Deed::Struck || deed == Deed::DrewSteel || deed == Deed::Slew;
+    for (Actor& actor : actors_) {
         if (actor.id() == victimId) {
             continue;
         }
@@ -1898,6 +2932,11 @@ void Tavern::spreadWitness(std::int32_t victimId, Deed deed) {
             continue;
         }
         dialogue_.ledger().witness(actor.id(), deed);
+        if (violence && (actor.activity() == Activity::Working ||
+                         actor.activity() == Activity::Drinking ||
+                         actor.activity() == Activity::Watching)) {
+            actor.faceToward(playerX_, playerY_);
+        }
     }
 }
 
@@ -2177,7 +3216,12 @@ Notice Tavern::noticeBy(const Actor& actor) const noexcept {
     // The three refusals that are not a matter of degree. A rat is not a
     // witness, a man on the floor is not a witness, and somebody who is not in
     // the room at all is not a witness.
-    if (!actor.present() || actor.activity() == Activity::Downed ||
+    // WATCH & RHYTHM BUILD: "on the floor" is isFloored -- Downed OR Dead.
+    // Until this build a corpse could witness (and, for the Watch, SEE) --
+    // slayActor skipped floored bystanders itself, but tickWatch's
+    // canSeePlayer came through here and a killed watchman would have gone
+    // on closing. A dead man is not a witness.
+    if (!actor.present() || isFloored(actor.activity()) ||
         actor.role() == ActorRole::Vermin) {
         in.oblivious = true;
         return noticeOf(in);
@@ -2232,7 +3276,7 @@ std::int32_t Tavern::watchersInReach() const noexcept {
         // Deliberately not factored into a shared helper: noticeBy returns a
         // Notice and this returns a count, and a helper that returned "is this
         // one oblivious" would be a third place the range could drift.
-        if (!actor.present() || actor.activity() == Activity::Downed ||
+        if (!actor.present() || isFloored(actor.activity()) ||
             actor.role() == ActorRole::Vermin || actor.band() != playerBand_) {
             continue;
         }
@@ -2275,7 +3319,8 @@ Notice Tavern::worstNotice() const noexcept {
 }
 
 void Tavern::injurePlayer(std::int32_t amount) {
-    if (amount <= 0) {
+    // SENTENCES LANE: the bit is the corpse. No blow lands on a hanged man.
+    if (amount <= 0 || dialogue_.crimes().executed()) {
         return;
     }
     playerHp_ = std::max(kPlayerBrawlFloor, playerHp_ - amount);
@@ -2542,6 +3587,8 @@ Tavern::PickResult Tavern::beginPick() {
     }
     picking_.begin(strongboxLock(room), worldSeed_, dialogue_.skills().level(kThieverySkill));
     pickingRoom_ = room;
+    // STANCE (lower rule 3): the wire is in; the fists come down.
+    lowerPlayerHands();
     out.result = ServiceResult::Served;
     // picks_ is at least one here -- the arm above refuses an empty roll -- and
     // one is exactly the case a player hits on their last wire, which is when
@@ -2852,6 +3899,29 @@ Actor* Tavern::watchmanWatchingPlayer() noexcept {
 
 void Tavern::tickWatch() {
     CrimeLedger& crimes = dialogue_.crimes();
+    // SENTENCES LANE: the Watch has nobody to take. The rope closed the last
+    // file the ward had on this man.
+    if (crimes.executed()) {
+        return;
+    }
+    // DEFERENCE IS CANON AND ABSOLUTE (VETO / COMBAT-ACTION-SPEC.md section
+    // 4.4): the Watch never goes hostile to a PRESENTED WIELDER. No arrest, no
+    // closing on cause; a stance already closing is dropped and the officer
+    // stands down. Not reachable in current play -- nothing sets this flag yet
+    // (the player has no way to present as Wielder) -- so it lands as a sim
+    // rule with a test, honestly, against the day the Persona seam sets it.
+    if (playerPresentsAsWielder_) {
+        if (watchStance_ == WatchStance::Closing) {
+            if (Actor* officer = watchmanId_ < 0 ? nullptr : mutableActorById(watchmanId_);
+                officer != nullptr && officer->activity() == Activity::Warning) {
+                officer->setActivity(Activity::Watching);
+            }
+            watchStance_ = WatchStance::Idle;
+            watchmanId_ = -1;
+            watchCause_ = WatchCause::None;
+        }
+        return;
+    }
     // S6 SHIPPED THE OPPOSITE OF THIS AND IT WAS AN EXPLOIT. The condemned
     // branch used to return here -- stance idle, no watchman, no notice, no
     // arrest -- which made the ward's HARSHEST sentence its SAFEST state: two
@@ -2890,6 +3960,16 @@ void Tavern::tickWatch() {
             officer->setActivity(Activity::Watching);
             return;
         }
+        // WATCH & RHYTHM BUILD: HE IS IN IT NOW. A player blow on the closing
+        // watchman put him on the brawl list with Intent::Kill (joinBrawl);
+        // stepBrawl has his blows and he is not arresting anybody while he is
+        // being swung at. The chase does not time out on a man fighting you;
+        // it ends the way every fight ends -- somebody down, or the door --
+        // and the stance then resets by the two rules above.
+        if (std::find(brawlers_.begin(), brawlers_.end(), officer->id()) != brawlers_.end()) {
+            noticedAtTick_ = tick_;
+            return;
+        }
         officer->setActivity(Activity::Warning);
         officer->faceToward(playerX_, playerY_);
         if (officer->distanceTo(playerX_, playerY_) > kMeleeReach) {
@@ -2898,6 +3978,34 @@ void Tavern::tickWatch() {
         }
         applyArrest(*officer);
         return;
+    }
+
+    // WATCH & RHYTHM BUILD -- VIOLENCE FIRST, every second, no glance gate
+    // and no notice die. A sack is a thing you have to look at twice; a man
+    // with a blade out in a taproom is not. The cause is violenceInView()
+    // (a live lethal fight, steel up, hands up over a corpse -- never a
+    // brawl-class fist fight, which is the house's law) SEEN by a watchman
+    // under the same three-clause notice rule every crime reads
+    // (watchmanWatchingPlayer -> canSeePlayer). What follows is exactly the
+    // contraband path: Closing, the halt bark, arrest at reach through
+    // applyArrest. The deference gate above is untouched and absolute.
+    if (violenceInView()) {
+        if (Actor* officer = watchmanWatchingPlayer(); officer != nullptr) {
+            watchStance_ = WatchStance::Closing;
+            watchmanId_ = officer->id();
+            watchCause_ = WatchCause::Violence;
+            noticedAtTick_ = tick_;
+            // THE HALT. watch.halt is the owner-canon row (the Barks lane
+            // authors it); until it is on the sheet the chain falls through
+            // to watch.demand, exactly as every bark chain in this file does.
+            lastDemand_ = officer->name() + ": " +
+                          std::string(dialogue_.barks().line(
+                              dialogue_.barks().resolve(
+                                  {std::string("watch.halt"), std::string("watch.demand")}),
+                              static_cast<std::int32_t>(tick_ / kWatchLookSeconds)));
+            officer->setActivity(Activity::Warning);
+            return;
+        }
     }
 
     // Idle. He glances up every few seconds; he is off shift with a drink in
@@ -2949,64 +4057,297 @@ void Tavern::tickWatch() {
 }
 
 void Tavern::applyArrest(Actor& officer) {
+    // STREET SENSES leg (c): the body of the arrest is arrestPlayer, shared
+    // with the street Watch -- one seam, two officers. What is the room's
+    // alone is the officer's own activity.
+    arrestPlayer(officer.name(), watchCause_);
+    officer.setActivity(Activity::Watching);
+}
+
+void Tavern::arrestByStreetWatch(std::string_view officerName) {
+    // A watchman on the beats reached the player with a blow or a killing
+    // behind it (WardPopulation's Close, landed by the client). The same
+    // charge, the same seizure, the same hearing -- cause VIOLENCE, since the
+    // street's Watch only ever closes on what it saw.
+    if (dialogue_.crimes().executed() || dialogue_.crimes().hearingPending()) {
+        return;
+    }
+    arrestPlayer(officerName, WatchCause::Violence);
+}
+
+void Tavern::noteStreetOffence() {
+    // D5: an unsheathed blade with no blow, past the grace, is an Offence --
+    // heat the Watch heard, no paper by itself (ten is a sixth of a warrant).
+    dialogue_.crimes().addHeat(kSheatheOffenceHeat);
+}
+
+void Tavern::arrestPlayer(std::string_view officerName, WatchCause cause) {
     CrimeLedger& crimes = dialogue_.crimes();
     const Stash before = crimes.stash();
     const std::int32_t roofs = dialogue_.factions().indexOf("skyrunners");
     const bool skyrunner = dialogue_.standings().isMember(roofs);
 
-    const CrimeLedger::ArrestOutcome outcome =
-        crimes.arrest(skyrunner, playerCoin_, drawForPlayerAction());
-    playerCoin_ = std::max(0, playerCoin_ - outcome.fine);
-    dialogue_.setPlayerCoin(playerCoin_);
-    // A job whose goods are in the impound is a job you have lost. THIS is what
-    // makes an arrest cost more than a night: the coin was never the point.
-    const std::int32_t lost = dialogue_.contracts().seizeFor(before);
+    // JUSTICE BUILD. THE CHARGE SHEET FIRST, draw-free, off the ledger: what
+    // the paper asks for (the shipped ladder, the murder override with it),
+    // the worst line since the bench last heard you, and the three plea
+    // inputs the priest reads -- the tongue, what you gave at the Mission's
+    // door, and what the ward thinks of you -- captured now, because nothing
+    // between the arrest and the plea changes the charge.
+    const std::int32_t temple = dialogue_.factions().indexOf("temple");
+    const ChargeSheet sheet =
+        crimes.charge(skyrunner, dialogue_.skills().level(kHaggleSkill),
+                      temple >= 0 ? dialogue_.standings().standing(temple) : 0,
+                      dialogue_.ledger().reputation());
+    // THE ONE DRAW, spent here at the same stream position it always was.
+    // The nights read its low residue (heldHours); a denial at the bench
+    // reads a declared band above them (justice.hpp). No new draw, no new
+    // stream, whichever way the arrest resolves.
+    const std::uint64_t draw = drawForPlayerAction();
 
     lastArrest_ = ArrestReport{};
     lastArrest_.happened = true;
-    lastArrest_.sentence = outcome.sentence;
-    lastArrest_.cause = watchCause_;
-    lastArrest_.unitsSeized = outcome.unitsSeized;
-    lastArrest_.fine = outcome.fine;
-    lastArrest_.heldHours = outcome.heldHours;
-    lastArrest_.contractsLost = lost;
-    lastArrest_.officer = officer.name();
+    lastArrest_.sentence = sheet.tier;
+    lastArrest_.cause = cause;
+    lastArrest_.officer = std::string(officerName);
 
     const char* table = "watch.fined";
-    switch (outcome.sentence) {
-        case Sentence::Held:
-            table = "watch.held";
-            break;
-        case Sentence::Maimed:
-            table = "watch.maimed";
-            break;
-        case Sentence::Condemned:
-            table = "watch.condemned";
-            break;
-        default:
-            break;
+    if (sheet.tier == Sentence::Fined) {
+        // NO PAPER, SO NO CELL FOR YOU. Cull's search at the door is the
+        // pre-court fast path exactly as shipped: the jars to the impound, a
+        // charge for his evening, the heat untouched, and out.
+        const CrimeLedger::ArrestOutcome outcome = crimes.arrest(skyrunner, playerCoin_, draw);
+        playerCoin_ = std::max(0, playerCoin_ - outcome.fine);
+        dialogue_.setPlayerCoin(playerCoin_);
+        lastArrest_.unitsSeized = outcome.unitsSeized;
+        lastArrest_.fine = outcome.fine;
+        lastArrest_.heldHours = outcome.heldHours;
+    } else {
+        // WITH PAPER: the impound, and then the Mission. The sack is emptied
+        // here because seized cargo is Cull's job whatever the bench says; the
+        // fine, the nights and the record are the court's now, so none of
+        // them is written yet and the clock does not jump. The hearing opens
+        // on the ledger with the sheet, the seizure, the draw and the man who
+        // laid the paper; the plea is a stepped input and the sentence waits
+        // on it.
+        lastArrest_.unitsSeized = crimes.seizeAtArrest();
+        crimes.openHearing(sheet, lastArrest_.unitsSeized, draw, officerName);
+        switch (sheet.tier) {
+            case Sentence::Held:
+                table = "watch.held";
+                break;
+            case Sentence::Maimed:
+                table = "watch.maimed";
+                break;
+            case Sentence::Condemned:
+                table = "watch.condemned";
+                break;
+            default:
+                break;
+        }
     }
-    lastArrest_.line = officer.name() + ": " +
+    // A job whose goods are in the impound is a job you have lost. THIS is what
+    // makes an arrest cost more than a night: the coin was never the point.
+    lastArrest_.contractsLost = dialogue_.contracts().seizeFor(before);
+    // The officer's own line: the door's for a search, the walk to the bench
+    // for paper (the shipped watch.held/maimed/condemned rows already read as
+    // exactly that).
+    lastArrest_.line = std::string(officerName) + ": " +
                        std::string(dialogue_.barks().line(
                            dialogue_.barks().resolve({std::string(table)}),
-                           crimes.arrests() + outcome.unitsSeized));
+                           crimes.arrests() + lastArrest_.unitsSeized));
 
-    if (outcome.heldHours > 0) {
-        // The night goes by in the cell and nothing in it is simulated -- the
-        // same honest jump sleeping in a rented bed already makes.
-        skipHours(outcome.heldHours);
-    }
     // Whatever the house was minding is somebody else's problem now.
     standing_ = Standing::Welcome;
     brawlers_.clear();
+    // STANCE (lower rule 3): taken by the Watch, the hands come down.
+    lowerPlayerHands();
     respondingBouncerId_ = -1;
     watchStance_ = WatchStance::Idle;
     watchmanId_ = -1;
     watchCause_ = WatchCause::None;
-    officer.setActivity(Activity::Watching);
-    // And the body is turned loose on the Tarwalk. The room does not own it, so
+    // And the body is somebody else's to move: to the Tarwalk after a search,
+    // to the Mission's door with a hearing open. The room does not own it, so
     // it asks -- see takeArrestRelease.
     arrestRelease_ = true;
+}
+
+bool Tavern::hearingPending() const noexcept {
+    return dialogue_.crimes().hearingPending();
+}
+
+const HearingState& Tavern::hearing() const noexcept {
+    return dialogue_.crimes().hearing();
+}
+
+Arraignment Tavern::plead(Plea plea) {
+    CrimeLedger& crimes = dialogue_.crimes();
+    if (!crimes.hearing().awaitingPlea()) {
+        return Arraignment{};
+    }
+    const Arraignment answer = crimes.plead(plea);
+    if (answer.heard && answer.plea != Plea::NoPlea) {
+        // A plea is a haggle with your neck on the table. Daggerfall's
+        // Streetwise trains on the plea, win or lose; so does the ward's.
+        (void)dialogue_.skills().use(kHaggleSkill);
+    }
+    return answer;
+}
+
+bool Tavern::executed() const noexcept {
+    return dialogue_.crimes().executed();
+}
+
+const Tavern::SentenceReport& Tavern::serveSentence() {
+    CrimeLedger& crimes = dialogue_.crimes();
+    lastServed_ = SentenceReport{};
+    if (!crimes.hearing().judged() || crimes.executed()) {
+        // Nothing judged, or a man already hanged: refused, and the report
+        // says so (`served` false).
+        return lastServed_;
+    }
+    const HearingState& hearing = crimes.hearing();
+    lastServed_.terms = sentenceTerms(hearing, playerCoin_);
+    lastServed_.coinBefore = playerCoin_;
+    const SentenceTerms& terms = lastServed_.terms;
+    if (!terms.served) {
+        return lastServed_;
+    }
+    lastServed_.served = true;
+
+    if (terms.rope) {
+        // THE ROPE. THE ONE TRUE GAME OVER, and none of it is a defeat: no
+        // blow landed, no rise, no quay, no clock, no coin. The end is written
+        // from what is already on the record -- the place the ward hangs a
+        // man, the corpse the sheet was for or the ladder's own rope, and the
+        // clock face at the drop -- and then the bit is set. The drop itself
+        // is silent and the plate is presentation's; the room refuses the
+        // world from here on (see the executed() gates).
+        runEnd_ = RunEnd{};
+        runEnd_.ended = true;
+        runEnd_.place = std::string(kRopePlace);
+        runEnd_.blood = hearing.sheet.blood;
+        runEnd_.day = dayNumber();
+        runEnd_.secondOfDay = timeOfDay_;
+        if (hearing.sheet.blood) {
+            // The corpse is on the roster and the social ledger remembers who
+            // it was -- slainName(), the one rule the hearing page's reading
+            // of the charge shares with this plate.
+            runEnd_.reason = slainName();
+        }
+        if (runEnd_.reason.empty()) {
+            runEnd_.reason = std::string(kRopeForSecondRung);
+        }
+        lowerPlayerHands();
+        crimes.sentence(Judgment::TheRope, 0);
+        lastServed_.coinAfter = playerCoin_;
+        lastServed_.dayReleased = dayNumber();
+        lastServed_.timeReleased = timeOfDay_;
+        return lastServed_;
+    }
+
+    // COIN. The fine out of the purse, never more than was in it; the
+    // shortfall is already days in the terms.
+    playerCoin_ = std::max(0, playerCoin_ - terms.finePaid);
+    dialogue_.setPlayerCoin(playerCoin_);
+    // THE CLOCK. The shipped jump a sentence has always been -- whole days
+    // and the remainder -- with everything skipTo does on it: the heat cools
+    // through every second, the cellar restocks, the room re-seats, the
+    // holds run out. What the days do to the board, the roll and the
+    // calendar follows from dayNumber() moving: the next tick's refresh
+    // expires every taken job past its night, and whoever owns the ward's
+    // calendar runs it forward exactly as after a night in a rented bed.
+    if (terms.hours > 0) {
+        skipHours(terms.hours);
+    }
+    // STANDING. A conviction is a justice event: the roofs warm to whoever
+    // the Watch corrects, and the mirror the ladders declare halves it onto
+    // the Watch. The Flame remembers a lie, blesses the yard's work and
+    // remembers its mercy. The social ledger is untouched: sleeping a
+    // sentence off does not make anybody forget you robbed them.
+    const std::int32_t roofs = dialogue_.factions().indexOf("skyrunners");
+    const std::int32_t temple = dialogue_.factions().indexOf("temple");
+    if (terms.roofsDelta != 0 && roofs >= 0) {
+        dialogue_.standings().addStanding(roofs, terms.roofsDelta);
+    }
+    if (terms.templeDelta != 0 && temple >= 0) {
+        dialogue_.standings().addStanding(temple, terms.templeDelta);
+    }
+    // THE BODY. Hit points to max on any judgment that cost a day or more --
+    // the days did it, reviveAfterDefeat's own shape. A fine heals nothing.
+    if (terms.mends) {
+        playerHp_ = playerHpMax_;
+        playerFloored_ = false;
+    }
+    // THE RECORD, AFTER THE SKIP: the prior, the hand, the blood served or
+    // the face remembered, and the heat the ward keeps -- kHeatAfterSentence,
+    // live now because nothing cools it afterwards.
+    crimes.sentence(terms.judgment, terms.days);
+    lastServed_.coinAfter = playerCoin_;
+    lastServed_.dayReleased = dayNumber();
+    lastServed_.timeReleased = timeOfDay_;
+    // Turned loose. The body is somebody else's to move -- the Mission's door
+    // or the Tarwalk, by terms.releaseHere -- through the same release the
+    // arrest fired.
+    arrestRelease_ = true;
+    return lastServed_;
+}
+
+std::string Tavern::slainName() const {
+    // The corpse is on the roster (Activity::Dead, never removed) and the
+    // social ledger remembers who it was: the last man in roster order the
+    // player put down. BOTH clauses -- a witness to the killing carries
+    // Deed::Slew on his memory too (spreadWitness), and he is alive. Roster
+    // order is id order, deterministic and never reordered.
+    std::string name;
+    for (const Actor& actor : actors_) {
+        if (actor.activity() != Activity::Dead) {
+            continue;
+        }
+        const Memory* memory = dialogue_.ledger().memoryOf(actor.id());
+        if (memory != nullptr && memory->lastDeed == Deed::Slew) {
+            name = actor.name();
+        }
+    }
+    if (!name.empty()) {
+        return name;
+    }
+    // STREET SENSES leg (b): OR A CORPSE ON THE STREET. A street killing lands
+    // Deed::Slew on the ledger under kWardSpeakerIdBase + wardId
+    // (playerAttackUpStreet) and the corpse lies on the ward's roll, not this
+    // room's -- so the last such memory in id order names him, through the
+    // district's own baked identities (attachPeople). Same rule, same order,
+    // the other roster; the reading and the plate still cannot name two men.
+    if (wardPeople_ != nullptr) {
+        for (const Memory& memory : dialogue_.ledger().memories()) {
+            if (memory.actorId >= kWardSpeakerIdBase && memory.lastDeed == Deed::Slew) {
+                const WardActor* body = wardPeople_->byId(memory.actorId - kWardSpeakerIdBase);
+                if (body != nullptr && body->slain) {
+                    name = wardPeople_->identity(body->id).name;
+                }
+            }
+        }
+    }
+    return name;
+}
+
+bool Tavern::slainOnStreet() const noexcept {
+    // The corpse the blood is for is a WARD body, not one of the room's: no
+    // roster corpse carries Deed::Slew, and a ward memory does.
+    for (const Actor& actor : actors_) {
+        if (actor.activity() != Activity::Dead) {
+            continue;
+        }
+        const Memory* memory = dialogue_.ledger().memoryOf(actor.id());
+        if (memory != nullptr && memory->lastDeed == Deed::Slew) {
+            return false;
+        }
+    }
+    for (const Memory& memory : dialogue_.ledger().memories()) {
+        if (memory.actorId >= kWardSpeakerIdBase && memory.lastDeed == Deed::Slew) {
+            return true;
+        }
+    }
+    return false;
 }
 
 const Actor* Tavern::respondingWatchman() const noexcept {
@@ -3026,7 +4367,7 @@ bool Tavern::takeArrestRelease() noexcept {
 void Tavern::tickVermin() {
     for (Actor& actor : actors_) {
         if (actor.role() != ActorRole::Vermin || !actor.present() ||
-            actor.activity() == Activity::Downed) {
+            isFloored(actor.activity())) {
             continue;
         }
         if (!actor.atDestination()) {
@@ -3055,7 +4396,7 @@ const Actor* Tavern::nearestVerminTo(std::int32_t xQ8, std::int32_t yQ8,
     std::int32_t bestDistance = reachQ8 + 1;
     for (const Actor& actor : actors_) {
         if (actor.role() != ActorRole::Vermin || !actor.present() ||
-            actor.activity() == Activity::Downed) {
+            isFloored(actor.activity())) {
             continue;
         }
         const std::int32_t distance = actor.distanceTo(xQ8, yQ8);
@@ -3365,13 +4706,56 @@ const Spell* Tavern::slotSpell(std::int32_t slot) const noexcept {
         return nullptr;
     }
     const std::string& id = quickSlotIds_[static_cast<std::size_t>(slot)];
-    if (id.empty()) {
+    if (id.empty() || id.rfind(kItemSlotPrefix, 0) == 0) {
         return nullptr;
     }
     return dialogue_.grimoire().find(id);
 }
 
+std::int32_t Tavern::slotItemIndex(std::int32_t slot) const noexcept {
+    if (slot < 0 || slot >= kQuickSlotCount) {
+        return -1;
+    }
+    const std::string& id = quickSlotIds_[static_cast<std::size_t>(slot)];
+    if (id.rfind(kItemSlotPrefix, 0) != 0) {
+        return -1;
+    }
+    return items_.indexOf(std::string_view(id).substr(kItemSlotPrefix.size()));
+}
+
+const ItemDef* Tavern::slotItem(std::int32_t slot) const noexcept {
+    return items_.at(slotItemIndex(slot));
+}
+
+bool Tavern::bindItemToSlot(std::int32_t slot, std::int32_t index) {
+    if (slot < 0 || slot >= kQuickSlotCount) {
+        return false;
+    }
+    const ItemDef* item = items_.at(index);
+    // Only a thing the body could wear: a lantern on the number row would be
+    // a promise the key cannot keep, the grimoire's own rule for a slot.
+    if (item == nullptr || item->slot == ItemSlot::None || item->fixed || kit_.count(index) <= 0) {
+        return false;
+    }
+    quickSlotIds_[static_cast<std::size_t>(slot)] = std::string(kItemSlotPrefix) + item->id;
+    return true;
+}
+
 bool Tavern::equipSlot(std::int32_t slot) {
+    // KIT BUILD: an item slot WEARS the thing it names -- through wearItem,
+    // the one door the Character tile turns -- and a worn thing stays worn
+    // (pressing the slot of the cudgel already in your hand is not a way to
+    // put it down; the tile's own press is). Refused, like an empty slot,
+    // when the thing is no longer carried.
+    if (const std::int32_t index = slotItemIndex(slot); index >= 0) {
+        if (kit_.count(index) <= 0) {
+            return false;
+        }
+        if (kit_.isWorn(index)) {
+            return true;
+        }
+        return wearItem(index).result == ServiceResult::Served;
+    }
     const Spell* spell = slotSpell(slot);
     if (spell == nullptr) {
         return false;
@@ -3463,7 +4847,17 @@ Tavern::CastResult Tavern::playerCastEquipped() {
     }
     Actor* touched = nullptr;
     if (shape == TargetShape::Touch) {
-        const Actor* found = nearestTo(playerX_, playerY_, kMeleeReach);
+        // VETO 1: ONE TARGETING RULE, TWO VERBS. The touch-cast is the swing's
+        // twin on the sightline raycast -- the first body the crosshair passes
+        // through (sightlineTarget), not the nearest body by radius. The SIM
+        // slice shipped this on radial nearestTo with a deferral note, because
+        // the raycast reads playerYaw_ and nothing pushed the body's facing
+        // into the room yet; the presentation lane now pushes it every step
+        // (setPlayerYaw from syncTavernToBody), so the deferral is closed and
+        // the flip is the one line it was always going to be. Draw-free, as
+        // the swing's is: a cast still costs exactly the one draw its check
+        // takes, and nothing before it.
+        const Actor* found = sightlineTarget();
         if (found == nullptr) {
             out.line = "NOBODY IN REACH TO LINK.";
             return out;
@@ -3481,22 +4875,30 @@ Tavern::CastResult Tavern::playerCastEquipped() {
             harms = true;
         }
     }
-    if (touched != nullptr && harms) {
+    // The sightline has no species preference (VETO 1), so a rat first on the
+    // line is the body the link bridges -- and a stung rat carries none of an
+    // assault's consequences, the exact silence playerPunchNearest and
+    // playerAttackUp keep for vermin: no brawl list, no classify, no ledger, no
+    // offence, nobody told. The dose still lands (applySpellDose); the house
+    // has no opinion about it. `assault` is the person-shaped half of `harms`.
+    const bool assault =
+        touched != nullptr && harms && touched->role() != ActorRole::Vermin;
+    if (assault) {
         // A SCALD IS AN ASSAULT, whatever the hand was holding: the same
         // consequences a punch carries, in the same order playerPunchNearest
         // applies them -- join the fight, classify it BEFORE the harm lands,
-        // and refuse the room's own resolution when steel is out.
-        if (std::find(brawlers_.begin(), brawlers_.end(), touched->id()) == brawlers_.end()) {
-            brawlers_.push_back(touched->id());
-            std::sort(brawlers_.begin(), brawlers_.end());
-        }
+        // and (this legacy touch-cast path) refuse the room's resolution when
+        // steel is out, exactly as playerPunchNearest still does. The player's
+        // lethal KILL vector in v1 is the swing (playerAttackUp); the flip line
+        // is the veto-blessed literal.
+        joinBrawl(*touched);
         const std::vector<Fighter> fighters = currentFight();
         out.fight = classifyFight(fighters);
         if (!resolvesInWorld(out.fight)) {
             escalation_ = out.fight;
             noteEscalation(touched->id());
             reportOffence(Offence::Brawled);
-            out.line = "STEEL IS OUT. THIS IS NOT THE ROOM'S FIGHT ANY MORE.";
+            out.line = "STEEL OUT. THE ROOM STANDS BACK.";
             return out;
         }
     }
@@ -3602,7 +5004,7 @@ Tavern::CastResult Tavern::playerCastEquipped() {
     if (laysHold) {
         applyHeldEffects();
     }
-    if (touched != nullptr && harms) {
+    if (assault) {
         touched->setActivity(Activity::Brawling);
         touched->faceToward(playerX_, playerY_);
         dialogue_.ledger().record(touched->id(), Deed::Struck);
@@ -3621,25 +5023,40 @@ void Tavern::applySpellDose(std::int32_t targetId, std::int32_t magnitude) {
     if (magnitude == 0) {
         return;
     }
+    // ACTION-COMBAT BUILD: under LETHAL rules the vitality floor is LIFTED -- a
+    // killing link kills, the same way steel does. Under brawl it holds at
+    // kVitalityFloor: the public shelf cannot put a body on the ground, which
+    // is spells.json's own structural floor. Read once from the live fight.
+    const bool lethal = classifyFight(currentFight()) == FightClass::Lethal;
+    const std::int32_t floor = lethal ? 0 : kVitalityFloor;
     if (targetId < 0) {
-        // The player. The vitality floor holds here too, and it does NOT set
-        // playerFloored_: no crafting on the public shelf can put a body on
-        // the ground -- the floor is structural, spells.json's own words.
+        // The player.
         if (magnitude > 0) {
             playerHp_ = std::min(playerHpMax_, playerHp_ + magnitude);
         } else {
-            playerHp_ = std::max(kVitalityFloor, playerHp_ + magnitude);
+            playerHp_ = std::max(floor, playerHp_ + magnitude);
+            // A lethal link that empties the player routes the defeat seam the
+            // same as a beating does (the ceremony is the presentation lane's).
+            if (lethal && playerHp_ <= 0 && !playerFloored_) {
+                applyDefeat(lastBlowBy_);
+            }
         }
         return;
     }
     Actor* actor = mutableActorById(targetId);
-    if (actor == nullptr || !actor->present()) {
+    if (actor == nullptr || !actor->present() || actor->activity() == Activity::Dead) {
+        // A corpse takes no dose -- a trickle laid before the killing goes
+        // inert with the body.
         return;
     }
-    const std::int32_t hp =
-        std::clamp(actor->hp() + magnitude, kVitalityFloor, actor->hpMax());
-    // Never Downed by a dose, for the same structural reason as the floor.
+    const std::int32_t hp = std::clamp(actor->hp() + magnitude, floor, actor->hpMax());
     actor->setHealth(hp, actor->hpMax());
+    // A killing link kills: under lethal, a dose that empties a body slays it
+    // (Dead + Deed::Slew + murder-if-witnessed), the terminal state a blade
+    // leaves. Under brawl the floor above already refused to reach zero.
+    if (lethal && hp <= 0 && actor->activity() != Activity::Dead) {
+        slayActor(*actor);
+    }
 }
 
 void Tavern::tickSpellwork() {
@@ -3672,6 +5089,511 @@ void Tavern::tickSpellwork() {
 // ---------------------------------------------------------------------------
 // hashing
 // ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// KIT BUILD: the things on the body, on the floor, and on the dead
+// ---------------------------------------------------------------------------
+
+void Tavern::seedStands() {
+    ground_.clear();
+    for (const ItemStand& stand : items_.stands()) {
+        const std::int32_t index = items_.indexOf(stand.item);
+        if (index < 0) {
+            continue;
+        }
+        GroundItem entry;
+        entry.x = stand.x;
+        entry.y = stand.y;
+        entry.band = stand.band;
+        entry.item = index;
+        entry.count = stand.count;
+        entry.owned = stand.owned;
+        ground_.push_back(entry);
+    }
+}
+
+std::int32_t Tavern::loadDrams() const noexcept {
+    // The Kit, then the two stores the Kit only VIEWS: the sack (its own
+    // weights, contraband.hpp's) and the bale on the shoulder (its units at
+    // its good's weight), and the picks on their counter.
+    std::int32_t drams = kit_.weight(items_);
+    const CrimeLedger& crimes = dialogue_.crimes();
+    drams += crimes.stash().weight();
+    if (crimes.carryingBale()) {
+        drams += crimes.baleUnits() * contrabandWeight(crimes.baleGood());
+    }
+    if (const ItemDef* picks = items_.at(picksItem_); picks != nullptr) {
+        drams += picks_ * picks->drams;
+    }
+    return drams;
+}
+
+std::int32_t Tavern::loadBudget() const noexcept {
+    return loadCapDrams(effectiveAttributes().value(AttributeId::Might));
+}
+
+std::int32_t Tavern::loadSpeedQ8() const noexcept {
+    return loadSpeedScaleQ8(loadDrams(), loadBudget());
+}
+
+std::int32_t Tavern::wornDr() const noexcept {
+    return kit_.wornDr(items_);
+}
+
+const ItemDef* Tavern::heldItem() const noexcept {
+    return items_.at(kit_.worn(ItemSlot::Hand));
+}
+
+bool Tavern::loadRefuses(std::int32_t drams) const noexcept {
+    return drams > 0 && loadDrams() + drams > loadBudget();
+}
+
+void Tavern::putOnGround(std::int32_t item, std::int32_t count, bool owned) {
+    const std::int32_t x = q8_tile(playerX_);
+    const std::int32_t y = q8_tile(playerY_);
+    // An unowned stack of the same thing on this tile takes the unit; a
+    // second knife beside the first is one row on the floor, not two.
+    for (GroundItem& entry : ground_) {
+        if (entry.x == x && entry.y == y && entry.band == playerBand_ && entry.item == item &&
+            entry.owned == owned) {
+            entry.count += count;
+            return;
+        }
+    }
+    GroundItem entry;
+    entry.x = x;
+    entry.y = y;
+    entry.band = playerBand_;
+    entry.item = item;
+    entry.count = count;
+    entry.owned = owned;
+    ground_.push_back(entry);
+}
+
+std::int32_t Tavern::groundItemInReach() const noexcept {
+    if (!playerKnown_) {
+        return -1;
+    }
+    return groundItemInReachOf(playerX_, playerY_, playerBand_);
+}
+
+std::int32_t Tavern::groundItemInReachOf(std::int32_t xQ8, std::int32_t yQ8,
+                                         std::int32_t band) const noexcept {
+    std::int32_t best = -1;
+    std::int32_t bestDistance = 0;
+    for (std::size_t i = 0; i < ground_.size(); ++i) {
+        const GroundItem& entry = ground_[i];
+        if (entry.band != band) {
+            continue;
+        }
+        // The bale's own reach shape: Manhattan Q8 from the tile centre,
+        // inside kReachQ8.
+        const std::int32_t dx = q8_tile_centre(entry.x) - xQ8;
+        const std::int32_t dy = q8_tile_centre(entry.y) - yQ8;
+        const std::int32_t distance = (dx < 0 ? -dx : dx) + (dy < 0 ? -dy : dy);
+        if (distance > kReachQ8) {
+            continue;
+        }
+        if (best < 0 || distance < bestDistance) {
+            best = static_cast<std::int32_t>(i);
+            bestDistance = distance;
+        }
+    }
+    return best;
+}
+
+namespace {
+[[nodiscard]] std::string dramsWord(std::int32_t drams) {
+    return std::to_string(drams) + (drams == 1 ? " DRAM" : " DRAMS");
+}
+}  // namespace
+
+std::string Tavern::loadWord() const {
+    // The one visible budget, on the row that moved it: "199/240" -- the
+    // reference's own 266/300, said where the drams landed.
+    return std::to_string(loadDrams()) + "/" + std::to_string(loadBudget());
+}
+
+bool Tavern::giveItem(std::string_view id, std::int32_t count) {
+    // One unit of a registry row goes where it lives: the sack for a
+    // contraband row, the picks counter for the picks row, the Kit for the
+    // rest. False when the sack would not take it.
+    const std::int32_t index = items_.indexOf(id);
+    const ItemDef* item = items_.at(index);
+    if (item == nullptr || item->fixed || count <= 0) {
+        return false;
+    }
+    if (loadRefuses(item->drams * count)) {
+        return false;
+    }
+    if (!item->contraband.empty()) {
+        Contraband good = Contraband::Scalp;
+        if (!contrabandFromSymbol(item->contraband, good)) {
+            return false;
+        }
+        return dialogue_.crimes().stash().add(good, count) == count;
+    }
+    if (index == picksItem_) {
+        picks_ = wrap_add(picks_, count);
+        return true;
+    }
+    kit_.add(index, count);
+    return true;
+}
+
+CounterView Tavern::counterViewFor(std::string_view notableId, bool atCounter) const {
+    CounterView view;
+    const ShopCounter* counter = shops_.forKeeper(notableId);
+    if (counter == nullptr) {
+        return view;
+    }
+    view.keeps = true;
+    view.atCounter = atCounter;
+    view.name = counter->name;
+    for (const std::string& id : counter->sells) {
+        const ItemDef* item = items_.find(id);
+        if (item != nullptr) {
+            view.sells.push_back(CounterWare{item->id, item->name, item->royals});
+        }
+    }
+    view.buys = counter->buys();
+    if (view.buys) {
+        // What it would take: carried in the Kit, not worn (take it off
+        // first -- a sold hand would leave the brawl reading a weapon that is
+        // gone), worth something, and not on the counter's never list. The
+        // sack and the picks are not the Kit's and are never offered here:
+        // the sack is the fence's business.
+        for (std::size_t i = 0; i < items_.size(); ++i) {
+            const auto index = static_cast<std::int32_t>(i);
+            if (kit_.count(index) <= 0 || kit_.isWorn(index)) {
+                continue;
+            }
+            const ItemDef* item = items_.at(index);
+            if (item == nullptr || item->fixed || !item->contraband.empty() || item->royals <= 0) {
+                continue;
+            }
+            if (std::find(counter->neverBuys.begin(), counter->neverBuys.end(), item->id) !=
+                counter->neverBuys.end()) {
+                continue;
+            }
+            view.pawnable.push_back(
+                CounterWare{item->id, item->name, counterOffer(item->royals, counter->buysPercent)});
+        }
+    }
+    return view;
+}
+
+ServiceResult Tavern::buyFromCounter(std::string_view id, std::int32_t price, std::string& line) {
+    const ItemDef* item = items_.find(id);
+    if (item == nullptr || price <= 0) {
+        line = "NOT FOR SALE.";
+        return ServiceResult::Refused;
+    }
+    if (playerCoin_ < price) {
+        line = "YOUR PURSE WILL NOT COVER IT.";
+        return ServiceResult::NoCoin;
+    }
+    if (loadRefuses(item->drams)) {
+        line = "TOO MUCH ON YOU ALREADY. " + std::to_string(loadDrams()) + " OF " +
+               std::to_string(loadBudget()) + " DRAMS.";
+        return ServiceResult::Refused;
+    }
+    if (!giveItem(item->id, 1)) {
+        line = "NOT FOR SALE.";
+        return ServiceResult::Refused;
+    }
+    playerCoin_ -= price;
+    dialogue_.setPlayerCoin(playerCoin_);
+    line = "PAID " + std::to_string(price) + "C FOR THE " + item->name + ".";
+    return ServiceResult::Served;
+}
+
+ServiceResult Tavern::sellToCounter(std::string_view id, std::int32_t offer, std::string& line) {
+    const std::int32_t index = items_.indexOf(id);
+    const ItemDef* item = items_.at(index);
+    if (item == nullptr || offer <= 0 || kit_.count(index) <= 0) {
+        line = "YOU ARE NOT CARRYING IT.";
+        return ServiceResult::Refused;
+    }
+    if (kit_.isWorn(index)) {
+        line = "TAKE IT OFF FIRST.";
+        return ServiceResult::Refused;
+    }
+    if (kit_.take(index, 1) != 1) {
+        line = "YOU ARE NOT CARRYING IT.";
+        return ServiceResult::Refused;
+    }
+    playerCoin_ = wrap_add(playerCoin_, offer);
+    dialogue_.setPlayerCoin(playerCoin_);
+    line = "SOLD THE " + item->name + " FOR " + std::to_string(offer) + "C.";
+    return ServiceResult::Served;
+}
+
+Tavern::StealResult Tavern::takeGroundItem() {
+    return takeGroundItem(groundItemInReach());
+}
+
+Tavern::StealResult Tavern::takeGroundItem(std::int32_t at) {
+    StealResult out;
+    // groundItemInReachOf's own reach shape, asked of this one entry.
+    bool reached = playerKnown_ && at >= 0 && static_cast<std::size_t>(at) < ground_.size();
+    if (reached) {
+        const GroundItem& there = ground_[static_cast<std::size_t>(at)];
+        const std::int32_t dx = q8_tile_centre(there.x) - playerX_;
+        const std::int32_t dy = q8_tile_centre(there.y) - playerY_;
+        reached = there.band == playerBand_ && (dx < 0 ? -dx : dx) + (dy < 0 ? -dy : dy) <= kReachQ8;
+    }
+    if (!reached) {
+        out.result = ServiceResult::TooFar;
+        out.line = "NOTHING HERE TO TAKE.";
+        return out;
+    }
+    GroundItem& entry = ground_[static_cast<std::size_t>(at)];
+    const ItemDef* item = items_.at(entry.item);
+    if (item == nullptr) {
+        out.result = ServiceResult::TooFar;
+        out.line = "NOTHING HERE TO TAKE.";
+        return out;
+    }
+    if (item->fixed) {
+        out.result = ServiceResult::Refused;
+        out.line = "THE " + item->name + " DOES NOT TRAVEL.";
+        return out;
+    }
+    if (loadRefuses(item->drams)) {
+        out.result = ServiceResult::Refused;
+        out.line = "TOO MUCH ON YOU ALREADY. " + std::to_string(loadDrams()) + " OF " +
+                   std::to_string(loadBudget()) + " DRAMS.";
+        return out;
+    }
+    const std::string name = item->name;
+    const std::int32_t drams = item->drams;
+    const bool theirs = entry.owned;
+    if (!giveItem(item->id, 1)) {
+        // The one way giveItem still refuses past the load check: a full
+        // sack. Said in the sack's own words.
+        out.result = ServiceResult::Refused;
+        out.line = "THE SACK IS FULL.";
+        return out;
+    }
+    entry.count -= 1;
+    if (entry.count <= 0) {
+        ground_.erase(ground_.begin() + at);
+    }
+    out.result = ServiceResult::Served;
+    if (!theirs) {
+        out.line = "TAKEN - " + name + ". " + dramsWord(drams) + ". " + loadWord() + ".";
+        return out;
+    }
+    // SOMEBODY'S. The same three clauses a hand in a purse is judged by, and
+    // the same four things it moves: the ward's tally, the heat the Watch
+    // heard, the roofs' standing and, through the mirror, the garrison's.
+    // The stance never decides whether this is a crime -- only who noticed.
+    out.seen = witnessCount(kPlayerActorId) > 0;
+    dialogue_.noteCrime(Crime::Lift, out.seen);
+    if (out.seen) {
+        spreadWitness(kPlayerActorId, Deed::Robbed);
+        reportOffence(Offence::Stole);
+    }
+    out.line = "TAKEN - " + name + ". THEIRS" + (out.seen ? ", AND SEEN. " : ". NOBODY SAW. ") +
+               loadWord() + ".";
+    return out;
+}
+
+Tavern::StealResult Tavern::dropItem(std::int32_t index) {
+    StealResult out;
+    const ItemDef* item = items_.at(index);
+    if (item == nullptr || !playerKnown_) {
+        out.result = ServiceResult::Refused;
+        out.line = "NOTHING TO DROP.";
+        return out;
+    }
+    if (!item->contraband.empty() || index == picksItem_ || index == baleItem_) {
+        // The sack is the Watch's business and the bale is the snug's: neither
+        // is put down on a tile by this verb. handleBale puts a bale back.
+        out.result = ServiceResult::Refused;
+        out.line = "THAT STAYS ON YOU.";
+        return out;
+    }
+    if (kit_.count(index) <= 0) {
+        out.result = ServiceResult::Refused;
+        out.line = "NOTHING TO DROP.";
+        return out;
+    }
+    const bool wasHand = kit_.worn(ItemSlot::Hand) == index && kit_.count(index) == 1;
+    kit_.take(index, 1);
+    if (wasHand) {
+        // The hand goes back to fists, whatever the legacy byte last said.
+        playerWeapon_ = Weapon::Fists;
+    }
+    putOnGround(index, 1, false);
+    out.result = ServiceResult::Served;
+    out.line = "DROPPED - " + item->name + ".";
+    return out;
+}
+
+Tavern::StealResult Tavern::wearItem(std::int32_t index) {
+    StealResult out;
+    const ItemDef* item = items_.at(index);
+    if (item == nullptr || kit_.count(index) <= 0) {
+        out.result = ServiceResult::Refused;
+        out.line = "NOTHING TO WEAR.";
+        return out;
+    }
+    if (item->slot == ItemSlot::None || item->fixed) {
+        out.result = ServiceResult::Refused;
+        out.line = "THE " + item->name + " IS NOT WORN.";
+        return out;
+    }
+    if (kit_.isWorn(index)) {
+        kit_.bare(item->slot);
+        if (item->slot == ItemSlot::Hand) {
+            playerWeapon_ = Weapon::Fists;
+        }
+        out.result = ServiceResult::Served;
+        out.line = item->name + " - OFF.";
+        return out;
+    }
+    kit_.wear(items_, index);
+    if (item->slot == ItemSlot::Hand) {
+        // The Kit is the source now; the legacy byte falls back to fists so
+        // baring the hand later reads as fists and not as an old grant.
+        playerWeapon_ = Weapon::Fists;
+    }
+    out.result = ServiceResult::Served;
+    out.line = item->slot == ItemSlot::Hand ? "IN HAND - " + itemSheetLine(*item) + "."
+                                            : item->name + " - ON.";
+    return out;
+}
+
+void Tavern::bareSlot(ItemSlot slot) noexcept {
+    kit_.bare(slot);
+    if (slot == ItemSlot::Hand) {
+        playerWeapon_ = Weapon::Fists;
+    }
+}
+
+const Actor* Tavern::corpseInReach() const noexcept {
+    if (!playerKnown_) {
+        return nullptr;
+    }
+    return corpseInReachOf(playerX_, playerY_, playerBand_);
+}
+
+const Actor* Tavern::corpseInReachOf(std::int32_t xQ8, std::int32_t yQ8,
+                                     std::int32_t band) const noexcept {
+    const Actor* best = nullptr;
+    std::int32_t bestDistance = 0;
+    for (const Actor& actor : actors_) {
+        if (!actor.present() || actor.activity() != Activity::Dead || actor.band() != band) {
+            continue;
+        }
+        const std::int32_t distance = actor.distanceTo(xQ8, yQ8);
+        if (distance > kReachQ8) {
+            continue;
+        }
+        if (best == nullptr || distance < bestDistance) {
+            best = &actor;
+            bestDistance = distance;
+        }
+    }
+    return best;
+}
+
+const CorpseKit* Tavern::corpseKitFor(const Actor& actor) const noexcept {
+    if (const CorpseKit* named = items_.carriedBy(actor.name()); named != nullptr) {
+        return named;
+    }
+    return items_.carriedBy(actorRoleName(actor.role()));
+}
+
+std::uint32_t Tavern::corpseTaken(std::int32_t actorId) const noexcept {
+    for (const CorpseLoot& loot : corpseLoot_) {
+        if (loot.actorId == actorId) {
+            return loot.takenMask;
+        }
+    }
+    return 0;
+}
+
+std::vector<Tavern::CorpseRow> Tavern::corpseRows(std::int32_t actorId) const {
+    std::vector<CorpseRow> rows;
+    const Actor* actor = actorById(actorId);
+    if (actor == nullptr || actor->activity() != Activity::Dead) {
+        return rows;
+    }
+    const CorpseKit* kit = corpseKitFor(*actor);
+    if (kit == nullptr) {
+        return rows;
+    }
+    const std::uint32_t taken = corpseTaken(actorId);
+    for (std::size_t i = 0; i < kit->items.size() && i < 32; ++i) {
+        if ((taken & (1U << i)) != 0) {
+            continue;
+        }
+        const std::int32_t index = items_.indexOf(kit->items[i]);
+        if (index < 0) {
+            continue;
+        }
+        CorpseRow row;
+        row.item = index;
+        row.kitRow = static_cast<std::int32_t>(i);
+        rows.push_back(row);
+    }
+    return rows;
+}
+
+Tavern::StealResult Tavern::takeFromCorpse(std::int32_t actorId, std::int32_t kitRow) {
+    StealResult out;
+    const Actor* actor = actorById(actorId);
+    const CorpseKit* kit = actor != nullptr ? corpseKitFor(*actor) : nullptr;
+    if (actor == nullptr || actor->activity() != Activity::Dead || kit == nullptr || kitRow < 0 ||
+        static_cast<std::size_t>(kitRow) >= kit->items.size() || kitRow >= 32) {
+        out.result = ServiceResult::TooFar;
+        out.line = "NOTHING THERE.";
+        return out;
+    }
+    const std::uint32_t bit = 1U << static_cast<std::uint32_t>(kitRow);
+    if ((corpseTaken(actorId) & bit) != 0) {
+        out.result = ServiceResult::OutOfStock;
+        out.line = "ALREADY TAKEN.";
+        return out;
+    }
+    const ItemDef* item = items_.find(kit->items[static_cast<std::size_t>(kitRow)]);
+    if (item == nullptr) {
+        out.result = ServiceResult::TooFar;
+        out.line = "NOTHING THERE.";
+        return out;
+    }
+    if (loadRefuses(item->drams)) {
+        out.result = ServiceResult::Refused;
+        out.line = "TOO MUCH ON YOU ALREADY. " + std::to_string(loadDrams()) + " OF " +
+                   std::to_string(loadBudget()) + " DRAMS.";
+        return out;
+    }
+    if (!giveItem(item->id, 1)) {
+        out.result = ServiceResult::Refused;
+        out.line = "THE SACK IS FULL.";
+        return out;
+    }
+    bool found = false;
+    for (CorpseLoot& loot : corpseLoot_) {
+        if (loot.actorId == actorId) {
+            loot.takenMask |= bit;
+            found = true;
+            break;
+        }
+    }
+    if (!found) {
+        CorpseLoot loot;
+        loot.actorId = actorId;
+        loot.takenMask = bit;
+        corpseLoot_.push_back(loot);
+    }
+    out.result = ServiceResult::Served;
+    out.line = "TAKEN - " + item->name + ". " + dramsWord(item->drams) + ". " + loadWord() + ".";
+    return out;
+}
 
 void Tavern::hash_into(HashSink& sink) const {
     // Dense index order, which is id order: actors_ is never reordered.
@@ -3765,6 +5687,36 @@ void Tavern::hash_into(HashSink& sink) const {
     // gates compare live runs of THIS shape against itself.
     sink.put_byte(playerBlocking_ ? 1U : 0U);
     sink.put_int(static_cast<std::uint32_t>(blowsBlocked_));
+    // ACTION-COMBAT BUILD: the swing machine, the facing it casts along, and
+    // the deference bit. The charge tier decides what the next release does,
+    // the recovery lockout whether a press is heard, the yaw who a swing hits,
+    // and the deference bit what the Watch does -- state the twin-run gate
+    // compares or does not protect. This is the ONE declared tavern-baseline
+    // move (with the per-actor swing cadence hashed in Actor::hashInto); the
+    // population baseline never reaches this code.
+    sink.put_int(static_cast<std::uint32_t>(playerYaw_));
+    sink.put_byte(static_cast<std::uint32_t>(combatState_));
+    sink.put_int(static_cast<std::uint32_t>(chargeSteps_));
+    sink.put_int(static_cast<std::uint32_t>(recoverySteps_));
+    sink.put_byte(sightlineFlag_ ? 1U : 0U);
+    sink.put_byte(playerPresentsAsWielder_ ? 1U : 0U);
+    // STANCE & ROOM BUILD: fighting mode and its lull countdown, hashed the way
+    // stealth's stance_ is (stealth.cpp) and for the same reason -- the bit is
+    // what the room, the street and the Watch react to, and the countdown
+    // decides the step it flips back. DECLARED tavern/gate-workload baseline
+    // move (the first half of one move; the Watch & Rhythm lane lands the
+    // second half and re-blesses the number ONCE). The population baseline
+    // never reaches this code.
+    sink.put_byte(handsUp_ ? 1U : 0U);
+    sink.put_int(static_cast<std::uint32_t>(lowerTimer_));
+    // WATCH & RHYTHM BUILD: the player's recoil and block-stagger clocks --
+    // each gates the next press and the next softening. The SECOND HALF of
+    // the one declared tavern/gate-workload baseline move (stance +
+    // room-fights-back + watch-violence + rhythm), re-blessed ONCE at this
+    // lane's landing; see DECISIONS.md. The population baseline never
+    // reaches this code.
+    sink.put_int(static_cast<std::uint32_t>(recoilSteps_));
+    sink.put_int(static_cast<std::uint32_t>(blockStaggerSteps_));
     sink.put_int(static_cast<std::uint32_t>(equippedSpellId_.size()));
     for (const char character : equippedSpellId_) {
         sink.put_byte(static_cast<std::uint32_t>(static_cast<unsigned char>(character)));
@@ -3818,6 +5770,33 @@ void Tavern::hash_into(HashSink& sink) const {
         sink.put_int(static_cast<std::uint32_t>(hold.magnitude));
         sink.put_long(static_cast<std::uint64_t>(hold.expiresAt));
     }
+    // KIT BUILD: what is on the body (every count, every worn row), what is
+    // on the floor (the stands less what was taken, plus what was dropped),
+    // what has been taken off the dead, and the blows the kit has turned.
+    // What is on the body decides what the next blow does and how fast the
+    // legs go; what is on the floor decides what the next TAKE picks up --
+    // state the twin-run gate compares or does not protect. THE ONE DECLARED
+    // tavern/gate-workload baseline move of the Kit build, the S13 shape
+    // (the pinned codec goldens hash fixed byte specs, not this struct; the
+    // live gates compare THIS shape against itself); re-blessed ONCE at the
+    // lane's landing. The population baseline never reaches this code.
+    kit_.hashInto(sink);
+    sink.put_int(static_cast<std::uint32_t>(ground_.size()));
+    for (const GroundItem& entry : ground_) {
+        sink.put_int(static_cast<std::uint32_t>(entry.x));
+        sink.put_int(static_cast<std::uint32_t>(entry.y));
+        sink.put_int(static_cast<std::uint32_t>(entry.band));
+        sink.put_int(static_cast<std::uint32_t>(entry.item));
+        sink.put_int(static_cast<std::uint32_t>(entry.count));
+        sink.put_byte(entry.owned ? 1U : 0U);
+    }
+    sink.put_int(static_cast<std::uint32_t>(corpseLoot_.size()));
+    for (const CorpseLoot& loot : corpseLoot_) {
+        sink.put_int(static_cast<std::uint32_t>(loot.actorId));
+        sink.put_int(loot.takenMask);
+    }
+    sink.put_int(static_cast<std::uint32_t>(blowsTurned_));
+    sink.put_int(static_cast<std::uint32_t>(lastTurned_));
     nemesis_.hashInto(sink);
     dialogue_.hashInto(sink);
 }

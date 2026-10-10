@@ -469,10 +469,25 @@ struct DistrictMapState {
     std::string title;
     /// A bouncer's warning routed onto this page while it is up, the same
     /// contract the tiled Menu's journal tile carries. Empty draws nothing.
+    /// It outranks the header row while it lasts -- there is no separate
+    /// breadcrumb line to take any more (UI-EA-SPEC sec. 5, breadcrumb law).
     std::string alert;
     /// 0 (closed) .. 1 (open) -- the page's own EasedToggle, per the settled
     /// UI convention (DECISIONS.md rule 1).
     float openAmount = 1.0F;
+
+    // --- UI-EA-SPEC sec. 2: the Law of Earned Text -------------------------
+    /// TUTOR tier, 0 (rest) .. 1 (raised). At rest the nav band prints bare
+    /// keycaps and no verb words; raised, the verb words ride beside the caps
+    /// at this strength. Raised on page open, device change, unrecognized
+    /// press and idle -- the countdown helper is LANE HUD's, the wake signals
+    /// LANE FLOW's; this page only renders the value. Default 0: the at-rest
+    /// diet is what a hand-built state draws.
+    float tutor = 0.0F;
+    /// Contract (b): the commit beat. Armed (set toward 1) by the routing's
+    /// ImpactPulse at a commit press; this page renders drawCommitPulse over
+    /// its commit foot while it decays. Default 0 draws nothing.
+    float commitPulse = 0.0F;
 
     // --- the page's own cursor ---------------------------------------------
     /// Index into mapPlaces(). The cursor, and the subject of every tab.
@@ -498,17 +513,47 @@ struct DistrictMapState {
     // before these fields existed -- draws byte-identical frames.
     /// "ARROWS", or "D-PAD" with a pad in hand.
     std::string navMoveKeys = "ARROWS";
-    /// "TAB", or "LB RB" -- the bumpers are the pad's tab key on this page
-    /// (main.cpp routes PagePrev/PageNext to cycleDistrictMapTab).
+    /// "TAB", or "LT RT" -- the sub-tab grammar (controls.hpp's tabStep;
+    /// main.cpp routes it to cycleDistrictMapTab). Nine and the sticks put
+    /// the views on the triggers, Oblivion's own sub-tab pair.
     std::string navTabKeys = "TAB";
-    /// "+ -", or "RT LT" -- the triggers carry the zoom ladder on a pad
-    /// (main.cpp routes Cast/Block to adjustDistrictMapZoom).
+    /// "+ -", or "RS" -- the right stick carries the zoom ladder on a pad
+    /// (main.cpp's stickNav routes it as the raw `=` and `-`).
     std::string navZoomKeys = "+ -";
-    /// The key that shuts the page: Action::Map's own half for the device --
-    /// "M", or "SELECT".
+    /// "< >", or "LB RB" -- the PAGE grammar (pageStep): the map is a page
+    /// of NOTES and the bumpers leave it for its neighbours. EMPTY DRAWS
+    /// NOTHING, so a hand-built state keeps the old four-slot band.
+    std::string navPageKeys;
+    /// The key that shuts the page: "M" (Action::Map's keyboard half), or
+    /// the universal back "B" on a pad, which has no map button of its own.
     std::string navCloseKey = "M";
+    /// Whether the tab row prints its digits (`1 - OVERVIEW`). A keyboard's
+    /// digits pick a view outright; a pad has none and steps views on the
+    /// triggers, so its tab row prints the names alone.
+    bool showDigits = true;
     /// The commit verb's key: "ENTER", or "A".
     std::string commitKey = "ENTER";
+
+    // --- FAST TRAVEL (TRAVEL lane): the page's second commit ---------------
+    //
+    // THE DEFAULTS ARE EMPTY AND EMPTY DRAWS THE OLD PAGE EXACTLY -- the same
+    // defaults-are-old-literals rule the nav keys above follow, so every
+    // hand-built state (every test written before these fields existed) keeps
+    // its four-row detail chrome and draws byte-identical frames. A live
+    // Session always fills travelKey, so the live page always holds the row.
+
+    /// The TRAVEL verb's key: "T" on a keyboard (a raw map-page key, Tab/+/-'s
+    /// own precedent), "X" on a pad -- the grammar's one second-commit key
+    /// (controls.hpp's promptAltCommitKey).
+    std::string travelKey;
+    /// The verb's cost restatement -- "4 MIN" -- when the walk is honest.
+    /// Drawn in the number ink beside the verb, the commit-foot grammar's
+    /// "e - Establish (Cost: 200*)".
+    std::string travelCost;
+    /// The one-line reason travel is refused, in the city register, or empty.
+    /// It takes the verb's own row: state changes the verb -- a state label
+    /// where the action would be, never a greyed-out key.
+    std::string travelRefusal;
 };
 
 /// Where every part of the page landed. Exposed because a mouse, a test and the
@@ -518,17 +563,20 @@ struct MapPageLayout {
     PanelMetric metric{};
     PanelRect bounds{};
     PanelRect interior{};
+    /// THE ONE HEADER LINE (UI-EA-SPEC sec. 5, breadcrumb law): the tab row --
+    /// tabs, resource readout right -- IS the breadcrumb. The old separate
+    /// breadcrumb band and the SELECTED line under the plan are gone; their
+    /// rows went to the plan, and the selection is named ONCE, on the detail
+    /// pane's title row (`TARWALK - NE 12`).
     PanelRect headerBand{};
     PanelRect bodyBand{};
     PanelRect mapPane{};
     PanelRect detailPane{};
-    PanelRect selectionBand{};
     PanelRect navBand{};
     int tabRow = 0;
     int headerRow = 0;
     int bodyRow = 0;
     int bodyRows = 0;
-    int selectionRow = 0;
     int navRow = 0;
     int dividerCell = 0;
     std::vector<int> ruleRows;
@@ -543,6 +591,14 @@ struct MapPageLayout {
 
 [[nodiscard]] MapPageLayout mapPageLayout(int frameWidth, int frameHeight,
                                           const DistrictMapState& state);
+
+/// Which view tab sits under framebuffer pixel (px,py), or -1. The inverse of
+/// the tab row drawDistrictMap draws -- same band, same title, same four tabs,
+/// same readout, through panel.hpp's tabRowTabAt -- exactly the casebook's own
+/// casebookTabAtPixel pattern. FLOW lane, UI-EA-SPEC sec. 4 violation #8: the
+/// map's tab row took clicks and dropped them while the casebook's answered.
+[[nodiscard]] int mapTabAtPixel(const DistrictMapState& state, int frameWidth, int frameHeight,
+                                int px, int py);
 
 /// How many rows the scrolling tabs (People, Index) show at once at this size,
 /// and which screenful `state.selected`/`state.detailFirst` puts you on.

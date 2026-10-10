@@ -49,6 +49,15 @@ enum class WatchCause : std::uint8_t {
     Contraband = 2,
     /// Both, which is the difference between a fine and a cell.
     Both = 3,
+    /// WATCH & RHYTHM BUILD. He has seen VIOLENCE: a lethal-class fight with
+    /// the player in it, steel up in the player's hands, or the player's
+    /// hands up over a corpse -- inside his own sight, by the same
+    /// three-clause notice rule every crime reads. NEVER a bar fight: a
+    /// brawl-class fist fight is the house's law (COMBAT-ACTION-SPEC.md
+    /// section 6) and the Watch has no cause in it. What follows the halt is
+    /// exactly what follows a contraband notice today -- he closes, and
+    /// arrests at reach -- and the justice build owns what comes after.
+    Violence = 4,
 };
 
 [[nodiscard]] std::string_view watchCauseName(WatchCause cause) noexcept;
@@ -152,8 +161,11 @@ enum class Sentence : std::uint8_t {
     /// implied: no death is simulated, the body is not removed, and play
     /// continues. What the sentence does is make the state permanent and
     /// visible -- the ward has condemned you, everyone knows it, and no favour
-    /// clears it. The day this build has a combat screen and a death, this is
-    /// the hook it hangs on.
+    /// clears it. The action-combat build hangs a real death on this hook: a
+    /// witnessed murder marks the killer (CrimeLedger::markMurderer) and the
+    /// next arrest condemns. What condemnation then MEANS -- the Daggerfall
+    /// court, jail, the rope as a true game over -- is the separate justice
+    /// build; combat v1 lands the hook and stops.
     ///
     /// WHAT IT DOES TO THE LAW, said out loud because S6's version of this
     /// comment did not and the omission WAS the bug. Condemnation does not
@@ -187,6 +199,18 @@ inline constexpr std::int32_t kHeldHoursMax = 72;
 /// Permanent, and it is the only lasting statistical penalty in the game.
 inline constexpr std::int32_t kMaimedTakePercent = 50;
 
+/// ACTION-COMBAT BUILD. What a WITNESSED killing adds to the Watch's opinion of
+/// you. Sixty is not a coincidence: it is exactly kWarrantAt (crime.hpp), so a
+/// murder in front of a witness is instant paper -- the warrant threshold met
+/// in one act, no accumulation of small crimes needed. Unwitnessed, it raises
+/// nothing (heat is what the Watch HEARD). A murderer who is then taken is
+/// CONDEMNED, whatever the sentenceFor ladder would otherwise say -- see
+/// CrimeLedger::markMurderer / CrimeLedger::arrest. The COURT that decides what
+/// condemnation then means (the Daggerfall justice flow: jail, execution =
+/// game over) is a SEPARATE build after this one; combat v1 lands only this
+/// hook. See COMBAT-ACTION-SPEC.md sections 4.4 and 10.
+inline constexpr std::int32_t kMurderHeat = 60;
+
 /// VERIFICATION GAP (S6): THERE IS NO CELL. A sentence jumps the clock, empties
 /// the sack, takes the fine and puts the body back on the Tarwalk -- and
 /// nothing between those facts is simulated. No patrol looks for you outside
@@ -194,10 +218,19 @@ inline constexpr std::int32_t kMaimedTakePercent = 50;
 /// DECISIONS.md names for a second Skyrunner offence is a status bit. The
 /// consequence is real and the PLACE it happens in is not built.
 ///
+/// JUSTICE BUILD: THERE IS A BENCH. Sentence is now what the paper ASKS FOR
+/// -- the Watch's petition, this ladder verbatim -- and what an arrest with
+/// paper RESOLVES TO is the Flame's answer at the Mission: justice.hpp's
+/// Judgment, off a plea and the priest's weighing, with the rope as the
+/// game's one true end. The cell as a PLACE is still not built (named
+/// ceiling); a served sentence is still the clock jump.
+///
 /// The heat left after a night in a cell. NOT ZERO: the ward has not forgotten
 /// what you did, it has been paid for it. Below kWarrantLapsesAt so the paper
 /// goes with the sentence -- you cannot be wanted for the thing you have just
-/// served for.
+/// served for. JUSTICE BUILD: written by CrimeLedger::sentence, which the room
+/// calls AFTER the skip so the skip's cooling cannot take it to nothing --
+/// the constant was dead by ordering before.
 inline constexpr std::int32_t kHeatAfterSentence = 12;
 
 }  // namespace granadad::sim

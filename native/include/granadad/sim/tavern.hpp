@@ -44,6 +44,8 @@
 #include "granadad/sim/brawl.hpp"
 #include "granadad/sim/dialogue.hpp"
 #include "granadad/sim/engine.hpp"
+#include "granadad/sim/items.hpp"
+#include "granadad/sim/shops.hpp"
 // TASK #81. earnedLegend() reads what a Trade or a Wire rung buys back.
 #include "granadad/sim/legend.hpp"
 // S9. A lock is a thing in the room, and being unseen is a fact about the room:
@@ -434,9 +436,126 @@ inline constexpr std::int32_t kVerminUntil = hourOfDay(11);
 /// the player is put them on the floor and then out of it. Hit points stop
 /// here, the fight ends, and the bouncers carry on with the ejection.
 ///
-/// The player being knocked properly unconscious -- and everything that follows
-/// from it -- belongs with the dedicated combat screen, which S2 does not have.
+/// Under LETHAL rules this floor is lifted -- the player can reach zero and
+/// die, routing through the same applyDefeat/nemesis/quay-revive the brawl KO
+/// uses (COMBAT-ACTION-SPEC.md section 4.5). Both halves land now: the
+/// player-KILLS path (Tavern::playerAttackUp) and, STANCE & ROOM BUILD, the
+/// NPC-KILLS-player path -- stepBrawl resolves the room's blows under lethal
+/// rules with this floor lifted to zero, and a blow that empties the player
+/// routes applyDefeat exactly as a brawl KO does. Under BRAWL rules the floor
+/// is this constant, unchanged.
 inline constexpr std::int32_t kPlayerBrawlFloor = 1;
+
+// ---------------------------------------------------------------------------
+// ACTION-COMBAT BUILD: the swing state machine and the NPC swing cadence
+// ---------------------------------------------------------------------------
+//
+// The named integer constants of COMBAT-ACTION-SPEC.md sections 1.2 and 1.5,
+// all at the 60-steps-per-second spine. The swing charge tiers (kSwingChargeQ8
+// / kHardSwingChargeQ8) live in brawl.hpp beside strike(); the two new wind
+// costs (kHardSwingFatiguePoints / kBlockCatchFatiguePoints) in fatigue.hpp.
+
+/// The hold, in movement steps, at or above which a swing is a HARD swing.
+/// 250 ms. Equal by design to render::HoldToggle::kTapSteps (== 15) so every
+/// tap/hold boundary in the game is one number; the client ties them with a
+/// static_assert at file scope in main.cpp (sim cannot include render).
+inline constexpr std::int32_t kHardSwingHoldSteps = 15;
+/// The lockout after a swing / a hard swing, in steps. 600 ms and 900 ms;
+/// Attack edges during recovery are dropped, not buffered.
+inline constexpr std::int32_t kSwingRecoverySteps = 36;
+inline constexpr std::int32_t kHardSwingRecoverySteps = 54;
+/// How long the death ceremony holds its epitaph plate before the revive
+/// plate, in steps. 4.5 s, Barony's measured hold. The SIM only names it and
+/// routes the defeat; the plate itself is PRESENTATION's (section 4.5).
+inline constexpr std::int32_t kDeathHoldSteps = 270;
+
+/// A standing brawler's seconds between swings, as a step count: 1.1 s.
+inline constexpr std::int32_t kNpcSwingIntervalSteps = 66;
+/// The fight-join timer offset, actorId % this, so a crowd never metronomes.
+inline constexpr std::int32_t kNpcSwingStaggerSteps = 30;
+/// The re-arm when the swing timer expires out of reach: 0.2 s re-check while
+/// the actor is still closing the gap.
+inline constexpr std::int32_t kNpcSwingRetrySteps = 12;
+
+/// FIGHTING MODE (STANCE & ROOM BUILD, oblivion-roadmap.md section 3.2). The
+/// lull that lowers the hands on its own: this many movement steps -- 10 s --
+/// in IDLE with no swing thrown or caught, the guard not held and nobody
+/// swinging at the player. Counted down in stepPlayerCombat; every raise
+/// (a down-edge, a swing thrown, a guard held, a blow caught) refills it. Six
+/// hundred and not three hundred, because a brawl's lull is longer than five
+/// seconds.
+inline constexpr std::int32_t kLowerHandsSteps = 600;
+
+// ---------------------------------------------------------------------------
+// WATCH & RHYTHM BUILD: the rhythm bundle (oblivion-gap-combat.json change 5)
+// ---------------------------------------------------------------------------
+//
+// Oblivion's learnable rhythm is three asymmetric rules on top of
+// attack/block/hold, and every one of them is a step count on the 60-step
+// spine, integer, hashed, drawing nothing. The two bands are carved off the
+// NPC's OWN swing roll (the one stepBrawl already draws), read off bits no
+// other band claims -- the fatigue build's same-roll discipline, fifth and
+// sixth carvings. "No NPC blocking, no NPC hard swings" was the v1 ceiling
+// (COMBAT-ACTION-SPEC.md section 10); this build lifts it for the tavern
+// roster only, by exactly these numbers.
+
+/// A standing brawler's TELEGRAPH: the steps between his swing timer expiring
+/// in reach and the blow landing. 0.3 s -- long enough to read and answer
+/// with a tap (which staggers him instead), short enough that a crowd still
+/// lands blows. The roll is drawn at the START of the wind-up and kept.
+inline constexpr std::int32_t kNpcWindupSteps = 18;
+/// And the HARD swing's longer tell: 0.5 s, the Oblivion power-attack
+/// pull-back. Long on purpose -- a doubled blow you could not see coming
+/// would be a random event, not a rule.
+inline constexpr std::int32_t kNpcHardWindupSteps = 30;
+static_assert(kNpcHardWindupSteps < kNpcSwingIntervalSteps &&
+                  kNpcWindupSteps < kNpcHardWindupSteps,
+              "the tell is the last stretch of the swing interval, not added to it: blow to "
+              "blow stays kNpcSwingIntervalSteps, and a hard tell is the longer one");
+/// Steps a man STAGGERED by a pre-empting hit or a hard swing loses: no
+/// closing, no swing, no guard. 0.4 s, enough for one free tap and not two.
+inline constexpr std::int32_t kStaggerSteps = 24;
+/// Steps the player's arm RECOILS for when a normal swing is caught by an
+/// NPC guard. A full second, longer than the swing's own 36-step recovery on
+/// purpose -- shorter and it would be no recoil at all -- so a tap into a
+/// raised guard costs more than the tap. The Oblivion asymmetry, half one.
+inline constexpr std::int32_t kRecoilSteps = 60;
+/// Steps a GUARD is broken for when it catches a HARD swing: the blocker --
+/// player or NPC -- is block-staggered, his guard is down and his attack is
+/// refused. 0.5 s, the other half of the asymmetry: a hard swing is the
+/// answer to a turtle, and a block is the answer to a tap.
+inline constexpr std::int32_t kBlockStaggerSteps = 30;
+/// The GUARD band, in 256ths of the NPC's own swing roll (bits 40-47): the
+/// share of a patron's swings that leave his hands up until his next one.
+/// About one in five, so a bar fight is mostly open and a caught tap is a
+/// surprise, not a wall.
+inline constexpr std::uint64_t kNpcGuardBand256 = 48;
+/// A PROFESSIONAL's guard (a bouncer, a watchman): half his swings. A man
+/// hired to stand in doorways keeps his hands up; that is the whole reason a
+/// hard swing exists.
+inline constexpr std::uint64_t kNpcProfessionalGuardBand256 = 128;
+/// The bits of the NPC's own roll the guard band reads, and the HARD band
+/// beside it (bits 48-55): the share of an NPC's swings thrown HARD
+/// (kHardSwingChargeQ8, the longer tell). About one in six.
+inline constexpr int kNpcGuardRollShift = 40;
+inline constexpr int kNpcHardRollShift = 48;
+inline constexpr std::uint64_t kNpcHardBand256 = 40;
+/// PATRONS STAND BACK: on the escalation edge every non-brawler within this
+/// many tiles of the player steps kStandBackTiles tiles directly away (the
+/// first standable tile inside the footprint on that line). Three, the reach
+/// of a thrown stool; two, so the far cells clear without emptying the room.
+inline constexpr std::int32_t kStandBackRadiusTiles = 3;
+inline constexpr std::int32_t kStandBackTiles = 2;
+
+/// The player's swing machine, sim-owned and hashed. SWING and HARD resolve
+/// instantly on release (we have no viewmodel to animate; recovery carries the
+/// cadence), so the persistent states are the three below and the tier is read
+/// off the charge step count at release. See Tavern::stepPlayerCombat.
+enum class PlayerCombatState : std::uint8_t {
+    Idle = 0,
+    Charging = 1,
+    Recovery = 2,
+};
 
 /// THE CAST CHECK. A cast succeeds when a d100 draw lands under
 ///
@@ -512,6 +631,40 @@ public:
     /// reconstructed at draw time.
     void setPlayer(std::int32_t xQ8, std::int32_t yQ8, std::int32_t band) noexcept;
     void setPlayerCombat(Weapon weapon, Intent intent) noexcept;
+
+    /// Tells the room WHICH WAY the body is facing, Q16-BAM yaw, pushed every
+    /// step beside setPlayer. The sightline raycast (VETO 1) casts down it, so
+    /// it is authoritative facing the same way setPlayer's position is
+    /// authoritative -- and hashed for the same reason position is. A room the
+    /// client never tells stays at its default facing, which is what every
+    /// pre-combat capture and the workload do; targeting simply reads that.
+    void setPlayerYaw(Angle yaw) noexcept { playerYaw_ = yaw & (kTurnFull - 1); }
+    [[nodiscard]] Angle playerYaw() const noexcept { return playerYaw_; }
+
+    /// Arms the player by an authored weapon id -- kEvictorWeaponId is the
+    /// whole roster today -- and touches NOTHING else: intent stays where it
+    /// stands, because a case beat that hands a man a cudgel has no business
+    /// deciding what he means to do with it (setPlayerCombat couples the two
+    /// on purpose for the tests that stage whole fights; a reward beat must
+    /// not). Unknown ids refuse rather than disarm, so a case sheet that
+    /// misspells its own reward fails its test instead of quietly emptying
+    /// the player's hand. playerWeapon_ is already a hashed byte, so a grant
+    /// is twin-run-visible the second it lands, and identical in both runs
+    /// because the beat that calls it is.
+    ///
+    /// KIT BUILD: an id the item registry knows (kEvictorWeaponId is a row
+    /// of content/raws/items/items.json now) puts THE ITEM in the Kit and
+    /// wears it in the hand, through giveItem/wearItem -- so the sheet
+    /// prints it, the load weighs it and DROP can put it down. The enum
+    /// path survives for a registry that did not load.
+    bool grantPlayerWeapon(std::string_view weaponId) noexcept;
+    /// What the hand holds: the worn hand item's class when one is worn
+    /// (the Kit is the source; brawl.hpp's Weapon is its class column),
+    /// else the byte setPlayerCombat/grantPlayerWeapon set directly -- the
+    /// tests' and the drives' way of arming a hand with no item behind it.
+    [[nodiscard]] Weapon playerWeapon() const noexcept {
+        return kit_.worn(ItemSlot::Hand) >= 0 ? kit_.handClass(items_) : playerWeapon_;
+    }
 
     /// A shove the room wants applied to the player's body, in Q8, or (0,0).
     /// Read and CLEARED by the caller, which owns the body -- the tavern never
@@ -639,6 +792,15 @@ public:
 
     /// Opens a conversation with whoever is in reach. False when nobody is.
     bool talkTo();
+    /// VOICE LANE. Who the open conversation is with, by roster id, or -1.
+    /// Exposed for the walk-off close (whoever owns the body re-checks the
+    /// reach each step) and for the hold's own case; the Speaker's actorId
+    /// says the same thing while the director is open.
+    [[nodiscard]] std::int32_t talkingTo() const noexcept { return talkingToId_; }
+    /// VOICE LANE. Whether this actor is standing still for the talk: the
+    /// one the conversation is with, in a peaceable activity, not in the
+    /// fight. See stepMovement, where it is applied.
+    [[nodiscard]] bool holdsForTalk(const Actor& actor) const noexcept;
     /// Picks a topic. The reply's coin and offences are applied HERE, so the
     /// dialogue layer never has to know what a tavern is.
     Reply chooseTopic(std::size_t index);
@@ -684,6 +846,9 @@ public:
     StealResult crackStrongbox();
     /// Which of the four boxes have been emptied, as a bitmask. Hashed.
     [[nodiscard]] std::int32_t crackedBoxes() const noexcept { return crackedBoxes_; }
+    /// KIT BUILD. How many bales stand in the snug right now -- the 3D
+    /// world draws the sack while this is above zero. Hashed already.
+    [[nodiscard]] std::int32_t balesInSnug() const noexcept { return balesInSnug_; }
 
     // --- S9: stealth ---------------------------------------------------------
     //
@@ -880,9 +1045,17 @@ public:
     /// What an arrest came to.
     struct ArrestReport {
         bool happened = false;
+        /// WHAT THE PAPER ASKS FOR: the shipped ladder's answer, the murder
+        /// override with it. JUSTICE BUILD: with paper (Held / Maimed /
+        /// Condemned) this is the Watch's petition and the bench's answer is
+        /// the hearing's (Tavern::hearing); only a paperless search (Fined)
+        /// is settled here at the door.
         Sentence sentence = Sentence::None;
         WatchCause cause = WatchCause::None;
         std::int32_t unitsSeized = 0;
+        /// The door's fine and the cell's hours. Written ONLY for the
+        /// paperless search: with paper both are the court's, nothing is
+        /// served at the arrest, and these read zero.
         std::int32_t fine = 0;
         std::int32_t heldHours = 0;
         /// Contracts that died with the goods.
@@ -897,11 +1070,121 @@ public:
     [[nodiscard]] const Actor* respondingWatchman() const noexcept;
     /// What the last watchman to look at you said, or empty.
     [[nodiscard]] const std::string& lastDemand() const noexcept { return lastDemand_; }
+    /// BARKS LANE (feel/build). What the last man to step INTO a fight the
+    /// player started said as he did it -- `<name>: <brawl.join row>` -- or
+    /// empty. A rat says nothing; the Closing watchman keeps his own halt
+    /// (lastDemand). Presentation only: not hashed, never read by the sim.
+    [[nodiscard]] const std::string& lastJoin() const noexcept { return lastJoin_; }
+    /// BARKS LANE (feel/build). The last panic line the room threw --
+    /// `<name>: <crowd.flee row>` -- from the first patron sent back on the
+    /// escalation edge (standBack) or a bloodied man breaking for the street
+    /// (the rout), or empty. Presentation only, exactly like lastJoin.
+    [[nodiscard]] const std::string& lastFlee() const noexcept { return lastFlee_; }
     /// The last arrest, whether or not it has been read.
     [[nodiscard]] const ArrestReport& lastArrest() const noexcept { return lastArrest_; }
-    /// True once, after an arrest, so whoever owns the body can put it on the
-    /// street where the impound turns people loose. Read and CLEARED.
+    /// True once, after an arrest, so whoever owns the body can move it: to
+    /// the street where the impound turns people loose after a paperless
+    /// search, or -- JUSTICE BUILD -- to the Mission's door when the arrest
+    /// left a hearing open (hearingPending()), where the bench is waiting.
+    /// Read and CLEARED.
     [[nodiscard]] bool takeArrestRelease() noexcept;
+
+    // --- JUSTICE BUILD: the court ---------------------------------------------
+    //
+    // An arrest WITH PAPER no longer resolves to an inert sentence and a clock
+    // jump. The officer takes you to the Mission: applyArrest writes the
+    // charge sheet off the ledger (draw-free), empties the sack into the
+    // impound, spends its one draw where it always did, and opens a HEARING
+    // on the ledger (CrimeLedger::hearing, hashed and codec'd). The page that
+    // attends it is presentation's; the plea is a stepped input here; what a
+    // judgment then DOES (coin, clock, ledger, the rope) is the sentence's own
+    // step after this one. A paperless search (Sentence::Fined) is the shipped
+    // fast path at the door, untouched, and never reaches the bench.
+
+    /// A hearing is open: taken with paper and not yet sentenced. See
+    /// HearingState::stage for whether it awaits the plea or the sentence.
+    [[nodiscard]] bool hearingPending() const noexcept;
+    /// The hearing: the sheet, the officer who laid it, the arrest's draw,
+    /// and -- once pleaded -- the plea, the sum and the judgment.
+    [[nodiscard]] const HearingState& hearing() const noexcept;
+    /// THE PLEA. I DID IT (draw-free, never doubled, never spared) or I DID
+    /// NOT (the arrest draw's band, spared at the top, doubled below); a
+    /// commuted man before a rope bench gets only I HAVE NOTHING TO SAY. The
+    /// priest's weighing comes back line by line (justice.hpp) and is written
+    /// on the hearing. A plea is a haggle with your neck on the table: it
+    /// trains streetwise, win or lose. Refused -- `heard` false, nothing
+    /// changed -- when no hearing awaits one.
+    Arraignment plead(Plea plea);
+    /// THE ROPE was passed and carried out. The one true game over. While it
+    /// is set the room refuses what a corpse cannot do: no swing is armed, no
+    /// blow lands on the body, no defeat is applied and nothing revives
+    /// (SENTENCES LANE -- the gates on playerAttackDown, injurePlayer,
+    /// applyDefeat, reviveAfterDefeat and tickWatch). The plate over it is
+    /// presentation's.
+    [[nodiscard]] bool executed() const noexcept;
+
+    // --- SENTENCES LANE: what a judgment does ------------------------------
+    //
+    // THE SENTENCE IS THE ROOM'S TO SERVE, because the room owns the purse,
+    // the clock, the standings and the body; the record is the ledger's
+    // (CrimeLedger::sentence), written AFTER the skip so the heat it leaves is
+    // not cooled to nothing. Jail is the shipped skipHours widened through
+    // systems that exist -- see justice.hpp's sentence section. Turned loose,
+    // the body is somebody else's to move: the SAME takeArrestRelease() the
+    // arrest fires, fired again -- to the Mission's door for SPARED and FINED
+    // (SentenceTerms::releaseHere), the shipped Tarwalk for everything that
+    // cost a cell. THE ROPE fires no release at all: executed() is read
+    // beside the two release flags, and shares a line with neither.
+
+    /// What the last serveSentence() call did. `served` is false until there
+    /// has been one, and false again after a refused call (no judged hearing,
+    /// or the rope already passed): the report is the last call's answer.
+    struct SentenceReport {
+        bool served = false;
+        /// The integers, exactly as sentenceTerms() computed them off the
+        /// hearing and the purse it was paid from.
+        SentenceTerms terms;
+        /// The day and the clock face the sentence ended on. The Tarwalk's
+        /// line prints them: "TURNED LOOSE ON THE TARWALK. DAY 4. 23:40."
+        std::int32_t dayReleased = 0;
+        std::int32_t timeReleased = 0;
+        /// The purse before and after.
+        std::int32_t coinBefore = 0;
+        std::int32_t coinAfter = 0;
+    };
+
+    /// THE SENTENCE. Serves the judged hearing: the fine out of the purse, the
+    /// clock forward by the cell and the yard (skipHours, the shipped jump --
+    /// heat cools through it, every taken job past its night dies at the next
+    /// refresh, the days count), the roofs' and the Flame's regard moved, the
+    /// body mended over a day or more, then the ledger's own half
+    /// (CrimeLedger::sentence) and the release. THE ROPE: no clock, no coin,
+    /// no release -- executed_ is set, the run's end is written (runEnd) and
+    /// the room refuses the world from then on. A stepped input: refused --
+    /// `served` false, nothing changed -- when no hearing has been judged or
+    /// the rope has already passed. Whoever owns the ward's calendar runs it
+    /// to dayNumber() afterwards, exactly as after any other skip.
+    const SentenceReport& serveSentence();
+    /// The last serveSentence() call's answer, whether or not it has been read.
+    [[nodiscard]] const SentenceReport& lastServed() const noexcept { return lastServed_; }
+    /// The end of the run, once THE ROPE has been served: the place, the
+    /// reason and the dateline the plate reads. `ended` is false while the
+    /// player lives. runEnded() is executed() by another name, for the seam
+    /// beside quitRequested_ to read.
+    [[nodiscard]] const RunEnd& runEnd() const noexcept { return runEnd_; }
+    [[nodiscard]] bool runEnded() const noexcept { return executed(); }
+    /// HEARING PAGE LANE. Who the blood on the paper is FOR: the corpse on
+    /// the roster (Activity::Dead, never removed) whose memory carries
+    /// Deed::Slew -- the last such man in roster order, exactly the rule the
+    /// rope's own RunEnd reads at the drop, so the reading of the charge
+    /// ("THE WARD SAYS YOU PUT CANNIC DOWN...") and the plate ("FOR CANNIC.")
+    /// can never name two different men. Empty when no corpse of the
+    /// player's is on the roster. Pure, no draw, reads hashed state only.
+    [[nodiscard]] std::string slainName() const;
+    /// STREET SENSES leg (b). Whether the corpse the blood is for lies on the
+    /// STREET (a ward body, Deed::Slew under kWardSpeakerIdBase) rather than
+    /// on this room's boards -- so the reading says where. Pure, no draw.
+    [[nodiscard]] bool slainOnStreet() const noexcept;
 
     /// Which day of the world this is. Monotonic across midnight and across a
     /// night in a cell, because a deadline that wrapped with the wall clock
@@ -1043,9 +1326,11 @@ public:
     void reviveAfterDefeat();
 
     /// Puts the player on the floor at somebody's hands, with no fight around
-    /// it. The seam a dedicated combat screen will use when it has one, and the
-    /// seam a scripted proof uses now -- so the rise can be driven through
-    /// exactly the code a real beating drives.
+    /// it. The DEFEAT SEAM: the same applyDefeat a real in-world beating routes
+    /// through, exposed so a scripted proof can drive the rise through exactly
+    /// the code the game uses. (There is no combat screen -- lethal fights
+    /// resolve in the world now; this is a direct-defeat convenience, not a
+    /// venue.)
     void concedeTo(std::int32_t actorId);
 
     // --- trouble ------------------------------------------------------------
@@ -1116,10 +1401,12 @@ public:
     /// Tells the house the player did something. Idempotent within a second.
     void reportOffence(Offence offence);
 
-    /// The player throws a punch at whoever is in reach. Resolves IN WORLD when
-    /// classifyFight says brawl, and refuses -- raising escalation() -- when it
-    /// says lethal, because that is the combat screen's fight and not this
-    /// room's.
+    /// LEGACY. The player throws a tap-punch at the nearest body (radial, with
+    /// the rat preference). Resolves IN WORLD when classifyFight says brawl, and
+    /// still REFUSES -- raising escalation() -- when it says lethal, the
+    /// pre-veto behaviour kept for the un-migrated call sites. The action-combat
+    /// player-swing path is playerAttackUp(), which casts the sightline and
+    /// resolves lethal in the world.
     struct PunchResult {
         bool swung = false;
         FightClass fight = FightClass::Brawl;
@@ -1127,12 +1414,162 @@ public:
         std::int32_t targetId = -1;
         std::string targetName;
     };
+    /// LEGACY TAP, kept for the call sites that have not migrated to the
+    /// attackDown/attackUp state machine (Session::punch and the scripted
+    /// arcs). Radial-nearest with the rat-vs-person preference, and it REFUSES
+    /// to resolve a lethal fight -- the pre-veto model. The action-combat
+    /// player-swing path is playerAttackUp() below, which casts the sightline,
+    /// retires the species preference, and resolves lethal in the world; when
+    /// the presentation lane repoints Session::punch() to a tap of the new
+    /// verbs this becomes the last reader of the old shape.
     PunchResult playerPunchNearest();
 
-    /// Set when a fight in this room stopped being the world's business. The
-    /// client routes this to the dedicated first-person combat screen; until
-    /// that screen exists (S3+) the tavern simply stops resolving the fight and
-    /// says so, rather than quietly resolving a knife fight with fist rules.
+    // --- the swing (Attack, ACTION-COMBAT BUILD) -----------------------------
+    //
+    // The state machine of COMBAT-ACTION-SPEC.md section 1.2, sim-owned so the
+    // charge tier is deterministic by construction. INPUT reports the two edges
+    // (down starts the hold clock, release resolves) and the SIM owns the step
+    // counter, the sightline, the intent-by-verb, the wind, and the rules.
+
+    /// What one press-to-release of Attack resolved. `swung` is a committed
+    /// swing (the wind was paid), `refused` a hard swing the wind would not
+    /// buy (a winded tap still swings), `hard` the tier, `killed` a blow that
+    /// took the target to death under lethal rules. `fight` is the class the
+    /// blow resolved under; `blow`/`targetId`/`targetName` the hit itself.
+    struct PlayerSwingResult {
+        bool swung = false;
+        bool hard = false;
+        bool refused = false;
+        bool killed = false;
+        /// STREET SENSES leg (b): the swing landed on the OTHER roster
+        /// (playerAttackUpStreet) -- targetId is a ward id, not a roster id.
+        bool street = false;
+        /// And the class the blow resolved under, for the caller that applies
+        /// it to the street body (Lethal kills; Brawl floors).
+        bool lethal = false;
+        /// WATCH & RHYTHM BUILD: the target's guard caught it (blow.blocked),
+        /// and what that cost -- a normal swing recoiled the player's arm, a
+        /// hard swing broke the guard and staggered the man; a hit inside his
+        /// wind-up or any hard hit staggers him too.
+        bool recoiled = false;
+        bool staggered = false;
+        FightClass fight = FightClass::Brawl;
+        Blow blow;
+        std::int32_t targetId = -1;
+        std::string targetName;
+    };
+    /// Attack down-edge: from IDLE, start charging (the hold clock is the sim's
+    /// own step counter). A down-edge during CHARGING or RECOVERY is dropped --
+    /// no queue-buffered instant hards. Cancelled with no cost by a cast, a
+    /// page, talking or picking (the hand does one thing) via cancelPlayerCharge.
+    void playerAttackDown() noexcept;
+    /// Attack release-edge: resolve the swing. HARD iff the charge reached
+    /// kHardSwingHoldSteps; the sightline raycast picks the target (first body
+    /// on the look-ray, VETO 1); strike() runs with the tier's chargeQ8; the
+    /// first hard swing in a fight sets Intent::Harm (intent-by-verb); the
+    /// class is computed and lethal blows kill (Activity::Dead), floors lifted,
+    /// murder heat and the Condemned hook fire on a witnessed kill; the wind is
+    /// paid. A hard swing while winded is REFUSED (a refusal in the result, no
+    /// cost). Returns to RECOVERY. A release outside CHARGING is a no-op result.
+    PlayerSwingResult playerAttackUp();
+    /// STREET SENSES leg (b). THE SWING, ON A STREET BODY -- ONE RULE, TWO
+    /// ROSTERS. The client cast the street's ray with the same integer
+    /// projection (WardPopulation::sightlineTarget), found a body nearer along
+    /// it than anybody on this roster (playerSightlineAlong), and hands in its
+    /// sheet as a Fighter (kActorHealth, Fists, Subdue) with the witnesses the
+    /// street counted (WardPopulation::witnessesInSight, before the blow). The
+    /// head of the swing is playerAttackUp's exactly (armPlayerSwing: the
+    /// charge tier, the winded refusal, the recovery, the wind), the ONE roll
+    /// is drawForPlayerAction at the same stream position the roster swing
+    /// would have spent it, strike() resolves it on the sheet, classifyFight
+    /// with this fighter in the fight picks the rules (the Subdue floor and
+    /// the Lethal rules unchanged), intent-by-verb applies, the deed lands on
+    /// the social ledger under kWardSpeakerIdBase + wardId, the offence is
+    /// reported, and a KILLING (lethal, downed, not crowned) goes through the
+    /// murder law: Deed::Slew, and CrimeLedger::markMurderer(witnesses) when
+    /// anybody saw. `sheet.hp` comes back as what strike() left; the caller
+    /// applies it to the WardActor (WardPopulation::applyStreetBlow). The
+    /// tavern roster is never touched -- one person, one roster. `targetId`
+    /// in the result is the WARD id and `street` is set.
+    PlayerSwingResult playerAttackUpStreet(Fighter& sheet, std::int32_t wardId,
+                                           std::string_view name, std::int32_t witnesses);
+    /// STREET SENSES leg (b). The `along` (Q8, down the look-ray) of the body
+    /// on the line on THIS roster, or -1 for an empty line -- so the client can
+    /// pick the nearer of the Gull's target and the street's. Draw-free.
+    [[nodiscard]] std::int64_t playerSightlineAlong() const noexcept;
+    /// STREET SENSES leg (b). A BLOW THROWN AT THE PLAYER by a street body,
+    /// landed on the player's sheet through the Gull's own player-side rules
+    /// (stepBrawl's landing, in one place): strike() with the thrower's own
+    /// roll, the HARD band carved off it (kNpcHardBand256, the same bits an
+    /// NPC swing reads), the held guard softening it (blockedDamage, the
+    /// shieldwall use, the catch wind, a hard swing breaking the guard), the
+    /// floor by class (classifyFight over the player and this fighter -- a
+    /// fists-and-Subdue sailor is a brawl, the player's own steel or intent
+    /// flips it), the hands up, and the defeat seam (applyDefeat with no
+    /// roster winner: floored, the quay revive, NO rise -- a street winner's
+    /// nemesis rise is ceiling, the book keys on the roster). The client has
+    /// already checked reach. Returns whether it landed.
+    bool takeStreetBlow(const Fighter& attacker, std::uint64_t roll);
+    /// STREET SENSES leg (c). A WATCHMAN ON THE BEATS TOOK YOU AT REACH, with a
+    /// blow or a killing behind it (WardPopulation's Close, landed by the
+    /// client): the SAME seam the Gull's Cull uses -- arrestPlayer, cause
+    /// VIOLENCE -- so the charge, the seizure, the paperless fine or the
+    /// hearing (TAKEN TO THE MISSION, the page), the lost contracts and the
+    /// release are one path with two officers. Refused (nothing written) with
+    /// a hearing already open or after the rope.
+    void arrestByStreetWatch(std::string_view officerName);
+    /// STREET SENSES leg (c). D5: an unsheathed blade with no blow, past the
+    /// street Watch's grace, is an OFFENCE -- kSheatheOffenceHeat on the heat
+    /// the Watch keeps, no paper and no arrest by itself.
+    void noteStreetOffence();
+    /// Drops a charge with no swing and no cost -- what a cast, a page, a
+    /// conversation or a pick does to a raised hand. IDLE and RECOVERY are
+    /// untouched. Idempotent.
+    void cancelPlayerCharge() noexcept;
+    /// One movement step of the swing machine: increments the charge while
+    /// CHARGING, counts the recovery lockout down while RECOVERING, and
+    /// recomputes the live sightline-target flag every step so the reticle can
+    /// read it. Driven from stepMovement, once per movement step.
+    void stepPlayerCombat() noexcept;
+
+    /// True while the hand is free to start a swing (IDLE) -- not charging, not
+    /// in the recovery lockout.
+    [[nodiscard]] bool playerCombatIdle() const noexcept {
+        return combatState_ == PlayerCombatState::Idle;
+    }
+    /// Steps the current charge has held, 0 when not charging. The client draws
+    /// the reticle retracting across this toward kHardSwingHoldSteps.
+    [[nodiscard]] std::int32_t playerChargeSteps() const noexcept { return chargeSteps_; }
+    /// True while charging AND the hold has reached the hard threshold -- what
+    /// the reticle's warm accent and the HELD HARD row read.
+    [[nodiscard]] bool playerChargeHard() const noexcept {
+        return combatState_ == PlayerCombatState::Charging && chargeSteps_ >= kHardSwingHoldSteps;
+    }
+    /// Whether a body sits on the look-ray right now (recomputed each step).
+    /// The reticle brightens on it; a swing thrown with it false hits nobody.
+    [[nodiscard]] bool playerSightlineTarget() const noexcept { return sightlineFlag_; }
+    /// What the hand is holding. A thin accessor beside playerWeapon(), named
+    /// as the cross-lane contract names it.
+    [[nodiscard]] Weapon playerHeldWeapon() const noexcept { return playerWeapon(); }
+
+    /// DEFERENCE (VETO / section 4.4). Whether the player is PRESENTING as a
+    /// Wielder right now. When true the Watch never goes hostile to him -- no
+    /// arrest-close, no joining a fight against him. Not reachable in current
+    /// play (the player has no way to present as Wielder yet), so it lives as a
+    /// settable sim rule with a test, honestly, against the day the Persona
+    /// seam sets it. Hashed, since it changes what the Watch does.
+    void setPlayerPresentsAsWielder(bool presents) noexcept {
+        playerPresentsAsWielder_ = presents;
+    }
+    [[nodiscard]] bool playerPresentsAsWielder() const noexcept {
+        return playerPresentsAsWielder_;
+    }
+
+    /// Latched to Lethal at the moment a fight crosses the brawl line. There is
+    /// no combat screen to route to -- the fight keeps resolving in the world
+    /// under lethal rules -- so the client reads this for the flip's feedback
+    /// (the SwordDraw, the "STEEL OUT" line) rather than for a transition. The
+    /// escalation is a once-per-fight social latch, cleared by clearEscalation.
     [[nodiscard]] FightClass escalation() const noexcept { return escalation_; }
     [[nodiscard]] bool escalated() const noexcept { return escalation_ == FightClass::Lethal; }
     void clearEscalation() noexcept {
@@ -1150,12 +1587,79 @@ public:
     /// key changes, the same seam setPlayerMotion is. SIM STATE, hashed: a
     /// held guard changes what every landed blow in tickBrawl costs, so two
     /// runs that disagreed about it would be two different fights.
-    void setPlayerBlocking(bool blocking) noexcept { playerBlocking_ = blocking; }
+    /// STANCE & ROOM BUILD: a guard going down puts the hands UP (fists up
+    /// without violence -- rule 2 of the raise table); a guard coming back up
+    /// does NOT lower them (rule 4 of the lower table).
+    void setPlayerBlocking(bool blocking) noexcept {
+        playerBlocking_ = blocking;
+        if (blocking) {
+            raisePlayerHands();
+        }
+    }
     [[nodiscard]] bool playerBlocking() const noexcept { return playerBlocking_; }
     /// Every blow a guard has ever softened. MONOTONIC on purpose: the client
     /// pulses on the increase, so the sim never keeps read-and-clear feedback
     /// state the way takeDefeatRelease has to.
     [[nodiscard]] std::int32_t blowsBlocked() const noexcept { return blowsBlocked_; }
+
+    // --- the stance (FIGHTING MODE, STANCE & ROOM BUILD) --------------------
+    //
+    // The owner's sentence: "When I press LMB I want to enter fighting mode and
+    // hit whoever is in front of me." A SIM STATE, not a client flag
+    // (oblivion-roadmap.md section 3.2): hashed beside the swing machine, read
+    // by the HUD, by the reaction tiers and by the Watch, and by nothing that
+    // draws a roll. The stance and its timer draw nothing.
+    //
+    // HANDS COME UP when: (1) Attack goes down from IDLE -- the same press
+    // charges, so a tap raises and swings and a hold raises and swings hard,
+    // ONE press; (2) the guard goes down (setPlayerBlocking(true)); (3) an
+    // NPC blow lands on the player in stepBrawl -- without this a player being
+    // punched would have to press SWING before GUARD meant anything. Every one
+    // of those also refills the lull timer, as does a swing thrown.
+    //
+    // HANDS GO DOWN when: (1) USE with nothing in reach -- the client's LOWER
+    // HANDS slot of the interact walk calls lowerPlayerHands(); (2) the lull:
+    // kLowerHandsSteps in IDLE with the guard not held and brawlers_ empty;
+    // (3) the cancel list -- talking, picking, sleeping (any clock skip), an
+    // arrest, a defeat -- lowers them here in the sim, and the client lowers
+    // them for any page it opens; (4) a guard RELEASE does not lower them.
+
+    /// True while the hands are up -- fighting mode.
+    [[nodiscard]] bool playerHandsUp() const noexcept { return handsUp_; }
+    /// Steps of lull left before the hands come down on their own; 0 with the
+    /// hands down. Refilled to kLowerHandsSteps by every raise.
+    [[nodiscard]] std::int32_t playerLowerTimer() const noexcept { return lowerTimer_; }
+    /// Hands down, now. The LOWER HANDS verb, and the cancel list. Idempotent;
+    /// touches nothing else -- a live charge is cancelPlayerCharge's business.
+    void lowerPlayerHands() noexcept;
+
+    // --- the rhythm (WATCH & RHYTHM BUILD) ------------------------------------
+    //
+    // The player's two stagger clocks, hashed, integer, drawing nothing. While
+    // either runs an Attack down-edge is DROPPED (as in recovery); while the
+    // block-stagger runs the held guard is not honoured either -- the guard is
+    // broken, which is what a hard swing is for. See the kRecoilSteps and
+    // kBlockStaggerSteps headers for the asymmetry.
+    [[nodiscard]] std::int32_t playerRecoilSteps() const noexcept { return recoilSteps_; }
+    [[nodiscard]] std::int32_t playerBlockStaggerSteps() const noexcept {
+        return blockStaggerSteps_;
+    }
+    /// True while a lethal-class fight with the player in it is live: somebody
+    /// is on the brawl list and the classifier says Lethal. The one predicate
+    /// the bouncers (refuse steel), the rota (the room stands back), the rout
+    /// and the Watch's violence cause all read, so no caller re-derives it.
+    /// Draw-free.
+    [[nodiscard]] bool lethalFightLive() const noexcept;
+    /// What a watchman with sight would have cause to halt: a live lethal
+    /// fight, steel up in the player's hands, or the player's hands up over a
+    /// corpse within reach. NEVER a brawl-class fist fight, and never with the
+    /// hands down over a body somebody else left. Draw-free; the sight test is
+    /// the caller's (tickWatch asks canSeePlayer first).
+    [[nodiscard]] bool violenceInView() const noexcept;
+    /// Whether this actor is a professional the rhythm rules treat apart: a
+    /// bouncer, or a watchman by the derived faction. Professionals keep the
+    /// wider guard band, never stand back, and never rout.
+    [[nodiscard]] bool isProfessional(const Actor& actor) const noexcept;
 
     // --- the cast (Cast, one press) ------------------------------------------
 
@@ -1166,8 +1670,10 @@ public:
     struct CastResult {
         bool cast = false;
         std::string line;
-        /// Mirror of PunchResult::fight: a harmful link laid on a room where
-        /// steel is out is the combat screen's business, not this room's.
+        /// Mirror of PunchResult::fight: the class a harmful link resolved
+        /// under. This legacy touch-cast still refuses when steel is out (the
+        /// player's lethal vector is the swing); the flip is the room standing
+        /// back, not a screen taking over.
         FightClass fight = FightClass::Brawl;
         std::int32_t targetId = -1;
     };
@@ -1175,9 +1681,13 @@ public:
     /// grimoire, a link still cooling, an axis or target nothing can hold yet
     /// (temperature, another body's tuning, a forged tuning with no named
     /// string -- see the VERIFICATION GAP (S15) in the .cpp), the unbridged
-    /// link, an empty reach. A harmful touch on a person carries a punch's
+    /// link, an empty sightline. A touch bridges the FIRST BODY ON THE
+    /// LOOK-RAY (sightlineTarget -- VETO 1's one targeting rule, shared with
+    /// the swing: two verbs, one rule), person or rat, whoever the crosshair
+    /// passes through first. A harmful touch on a person carries a punch's
     /// own consequences -- the brawl list, the ledger, the offence -- because
-    /// a scald is an assault whatever the hand was holding. The cast check is
+    /// a scald is an assault whatever the hand was holding; a rat on the line
+    /// is touched in the silence a fist keeps for vermin. The cast check is
     /// linkcraft against spellDifficulty: skill raises the odds and never
     /// buys certainty. A WHILE_ACTIVE self tuning that opens lands as a live
     /// row on heldEffects() -- recast refreshes it whole -- and is felt
@@ -1261,7 +1771,177 @@ public:
     /// Equips whatever the slot holds, THROUGH equipSpellAt (grimoire order)
     /// so the two doors into the hand share one lock. False for an empty
     /// slot; the equipped id is untouched.
+    ///
+    /// KIT BUILD: a slot may hold an ITEM instead (bindItemToSlot); then
+    /// this WEARS it -- a hand item into the hand, a coat onto the back --
+    /// through the same wearItem door the Character tile turns. A slot is a
+    /// spell OR an item, never both; the id is tagged so the two cannot be
+    /// confused (kItemSlotPrefix).
     bool equipSlot(std::int32_t slot);
+
+    // --- THE KIT (KIT BUILD) -------------------------------------------------
+    //
+    // items.hpp's header says what the Kit is and why the sack stays outside
+    // it. What lives here is the ROOM'S half: the registry it reads, the
+    // player's Kit, what is lying on the tiles, what has been taken off the
+    // dead, the load rule against the sheet, and every verb -- TAKE, DROP,
+    // WEAR, BARE, SEARCH -- each reporting through the same StealResult the
+    // box and the bale report through, so the interact chain and the sheet
+    // read one shape.
+
+    /// The prefix a quick slot carries when it holds an item, not a crafting:
+    /// "item:cudgel". A crafting id never contains a colon.
+    static constexpr std::string_view kItemSlotPrefix = "item:";
+
+    [[nodiscard]] const ItemRegistry& items() const noexcept { return items_; }
+    [[nodiscard]] const Kit& kit() const noexcept { return kit_; }
+    /// Everything lying on a tile: the authored stands the raws seeded, less
+    /// what was taken, plus what was dropped. Hashed. Read by the crosshair,
+    /// the verbs and the 3D world (which draws it and never removes it).
+    [[nodiscard]] const std::vector<GroundItem>& groundItems() const noexcept { return ground_; }
+    [[nodiscard]] const std::vector<CorpseLoot>& corpseLoot() const noexcept {
+        return corpseLoot_;
+    }
+
+    /// Drams on the body: the Kit, the sack, the bale on the shoulder and
+    /// the picks. What the load rule weighs.
+    [[nodiscard]] std::int32_t loadDrams() const noexcept;
+    /// The budget, off the EFFECTIVE sheet's MIGHT (a held Might tuning
+    /// carries more, the same way it hits harder).
+    [[nodiscard]] std::int32_t loadBudget() const noexcept;
+    /// The legs' Q8 term under the load -- items.hpp's loadSpeedScaleQ8 over
+    /// the two numbers above. 256 unloaded.
+    [[nodiscard]] std::int32_t loadSpeedQ8() const noexcept;
+    /// "199/240": the load against the budget, as the TAKE rows say it.
+    [[nodiscard]] std::string loadWord() const;
+    /// Flat DR from what is worn. Defence v1.
+    [[nodiscard]] std::int32_t wornDr() const noexcept;
+    /// How many landed blows the kit has softened, and what the last one
+    /// lost to it -- the HUD's edge for "THE COAT TURNS 2", the blowsBlocked
+    /// shape. Both hashed.
+    [[nodiscard]] std::int32_t blowsTurned() const noexcept { return blowsTurned_; }
+    [[nodiscard]] std::int32_t lastTurned() const noexcept { return lastTurned_; }
+    /// The worn hand row's record, or nullptr for bare fists (or a class
+    /// set straight by setPlayerCombat with no item behind it).
+    [[nodiscard]] const ItemDef* heldItem() const noexcept;
+
+    /// The nearest thing on the ground within kReachQ8 on the player's own
+    /// band -- an index into groundItems(), or -1. Ties break on list order,
+    /// so two runs cannot disagree.
+    [[nodiscard]] std::int32_t groundItemInReach() const noexcept;
+    /// The same, asked from a point: the crosshair's read-only walk asks it
+    /// with the BODY's position (which may be a step ahead of the last
+    /// setPlayer), exactly as nearestTo is asked.
+    [[nodiscard]] std::int32_t groundItemInReachOf(std::int32_t xQ8, std::int32_t yQ8,
+                                                   std::int32_t band) const noexcept;
+    /// TAKE. Picks up the nearest ground item. Refused past the load ("TOO
+    /// MUCH ON YOU"), for a fixed thing, and out of reach (TooFar). Taking
+    /// somebody's is theft: the same three-clause witness rule, Crime::Lift,
+    /// Deed::Robbed, the house's own offence -- crouched or not, the STANCE
+    /// only moves who notices (stealth.hpp), never whether it is a crime.
+    StealResult takeGroundItem();
+    /// TAKE THAT ONE: the ground entry at `index` (the one the crosshair is
+    /// on, Session::groundItemUnderReticle), under exactly the same reach
+    /// -- kReachQ8 Manhattan from the player, the player's own band -- and
+    /// the same refusals. TooFar for an index out of the list or out of
+    /// reach. The bare takeGroundItem() is this on groundItemInReach().
+    StealResult takeGroundItem(std::int32_t index);
+    /// DROP one unit of a Kit row at the feet. A worn row is bared first.
+    StealResult dropItem(std::int32_t index);
+    /// WEAR a Kit row in its own slot, or BARE it if it is worn -- the one
+    /// press the Character tile makes on a row. Refused for a row with no
+    /// slot, a row not carried, and the fixed things.
+    StealResult wearItem(std::int32_t index);
+    /// Bares a slot outright (a drop, a seizure). Idempotent.
+    void bareSlot(ItemSlot slot) noexcept;
+    /// Puts `count` of an item into the Kit by id -- a case reward, a
+    /// purchase, a scripted grant. Refused (false) for an unknown id, a fixed
+    /// thing, or past the load. A sack row goes into the sack; a picks row
+    /// onto the picks counter.
+    bool giveItem(std::string_view id, std::int32_t count = 1);
+
+    // --- SHOPS (2026-10-09) -------------------------------------------------
+    //
+    // The three counters of content/raws/shops/shops.json, priced off the
+    // items' own royals. The shelf is the counter's and unlimited, so a sale
+    // moves the Kit and the purses and nothing else.
+
+    /// The shelf behind the counter this notable keeps, and what it would
+    /// take off you -- for DialogueDirector::setCounter, before the
+    /// conversation opens. `atCounter`: the keeper is standing at their post
+    /// (the caller knows where bodies are; this does not).
+    [[nodiscard]] CounterView counterViewFor(std::string_view notableId, bool atCounter) const;
+    /// Buys one of `id` for `price`: the purse, then the load rule (the same
+    /// numbers TAKE prints when it refuses). `line` is what the counter says,
+    /// served or not.
+    ServiceResult buyFromCounter(std::string_view id, std::int32_t price, std::string& line);
+    /// Sells one carried, unworn `id` for `offer`. The keeper's own purse is
+    /// the caller's to check and to debit (it is the ward's, not this
+    /// house's).
+    ServiceResult sellToCounter(std::string_view id, std::int32_t offer, std::string& line);
+    [[nodiscard]] const ShopRaws& shops() const noexcept { return shops_; }
+
+    /// A DEAD roster body within reach, or nullptr: the SEARCH subject.
+    /// Roster only -- the street's people carry nothing (D10).
+    [[nodiscard]] const Actor* corpseInReach() const noexcept;
+    /// The same, asked from a point (the crosshair's walk).
+    [[nodiscard]] const Actor* corpseInReachOf(std::int32_t xQ8, std::int32_t yQ8,
+                                               std::int32_t band) const noexcept;
+    /// One row of a corpse's kit still on it.
+    struct CorpseRow {
+        /// Registry index.
+        std::int32_t item = -1;
+        /// Its row in the corpse kit (the bit the taken mask sets).
+        std::int32_t kitRow = -1;
+    };
+    /// What a corpse still carries, in its authored order. Pure: the
+    /// authored kit for the name (then the role) less the taken mask.
+    [[nodiscard]] std::vector<CorpseRow> corpseRows(std::int32_t actorId) const;
+    /// TAKE row `kitRow` off a corpse. Refused past the load and for a row
+    /// already taken. Never a crime: the dead do not witness and nothing in
+    /// the ward's law names the taking (v1; the ceiling says so).
+    StealResult takeFromCorpse(std::int32_t actorId, std::int32_t kitRow);
+
+    /// Binds a Kit row to a quick slot as "item:<id>". False for a slot out
+    /// of range, a row not carried, or a row with no slot -- a slot can
+    /// never hold a thing the body could not wear, the grimoire's own rule.
+    bool bindItemToSlot(std::int32_t slot, std::int32_t index);
+    /// The item a slot holds, or nullptr (empty, or a crafting).
+    [[nodiscard]] const ItemDef* slotItem(std::int32_t slot) const noexcept;
+    /// The Kit row a slot holds, or -1.
+    [[nodiscard]] std::int32_t slotItemIndex(std::int32_t slot) const noexcept;
+
+private:
+    /// Puts the raws' stands on the ground at construction. Pure over the
+    /// registry: same raws, same list, same order.
+    void seedStands();
+    /// The corpse-kit key for a body: its name if the raws carry one, else
+    /// its role's word.
+    [[nodiscard]] const CorpseKit* corpseKitFor(const Actor& actor) const noexcept;
+    /// The taken mask for a corpse (0 when never searched).
+    [[nodiscard]] std::uint32_t corpseTaken(std::int32_t actorId) const noexcept;
+    /// Whether `drams` more would take the body past its budget.
+    [[nodiscard]] bool loadRefuses(std::int32_t drams) const noexcept;
+    /// Puts one thing on the floor at the player's own tile, merging into an
+    /// unowned stack of the same thing already there.
+    void putOnGround(std::int32_t item, std::int32_t count, bool owned);
+
+    ItemRegistry items_;
+    /// SHOPS: the ward's counters, pruned at load to the item ids and keepers
+    /// the raws actually have.
+    ShopRaws shops_;
+    /// Hashed (the one declared tavern move of the Kit build): what is on
+    /// the body decides what the next blow does, how fast the legs go and
+    /// what the Watch finds -- state the twin-run gate compares.
+    Kit kit_;
+    std::vector<GroundItem> ground_;
+    std::vector<CorpseLoot> corpseLoot_;
+    /// The registry rows the composed views read by name, resolved once.
+    std::int32_t picksItem_ = -1;
+    std::int32_t baleItem_ = -1;
+    /// Blows the worn kit softened, and the last one's loss. Hashed.
+    std::int32_t blowsTurned_ = 0;
+    std::int32_t lastTurned_ = 0;
 
 private:
     void buildRoster();
@@ -1277,11 +1957,28 @@ private:
     [[nodiscard]] bool canSeePlayer(const Actor& actor) const noexcept;
     /// The Watch puts its hands on you. One call site.
     void applyArrest(Actor& officer);
+    /// STREET SENSES leg (c). THE BODY OF THE ARREST, shared by the Gull's
+    /// officer (applyArrest) and the street's (arrestByStreetWatch): the
+    /// charge sheet, the one draw, the paperless fine or the seizure and the
+    /// hearing, the lost contracts, the officer's line, the room's resets,
+    /// and the release the client takes the body on. One seam, two officers.
+    void arrestPlayer(std::string_view officerName, WatchCause cause);
     /// The nearest downed vermin within reach, or nullptr.
     [[nodiscard]] Actor* downedVerminInReach() noexcept;
     /// The nearest rat on its feet within reach, or nullptr.
     [[nodiscard]] const Actor* nearestVerminTo(std::int32_t xQ8, std::int32_t yQ8,
                                                std::int32_t reachQ8) const noexcept;
+    /// THE SIGHTLINE RAYCAST (VETO 1). The first body the crosshair passes
+    /// through: over every present body on its feet -- person OR rat, no
+    /// species preference -- project the offset onto the look-ray via
+    /// forward_x_q16/forward_y_q16(playerYaw_); a body is on the line iff
+    /// 0 < along <= kMeleeReach and |perp| <= kBodyHalfWidth, and the target is
+    /// the on-line body with the smallest `along`. Draw-free integer, the S9
+    /// no-rolls law applied to targeting. Ties on `along` break on the lower id
+    /// so two runs cannot disagree. nullptr for an empty line. ONE RULE, TWO
+    /// VERBS: the swing (playerAttackUp) and the touch-cast
+    /// (playerCastEquipped) both target through here and nowhere else.
+    [[nodiscard]] const Actor* sightlineTarget() const noexcept;
     /// The actor id of the first rat. Roster order: every person, then every
     /// rat, so this plus an index is a rat's id and the bitmask has a home.
     [[nodiscard]] std::int32_t verminFirstId() const noexcept;
@@ -1302,6 +1999,51 @@ private:
     /// The authored skill level of a roster body, without building a Speaker.
     [[nodiscard]] std::int32_t rosterSkillOf(const Actor& actor) const noexcept;
     void tickBrawl();
+    /// ACTION-COMBAT BUILD. The per-step NPC swing cadence (section 1.5),
+    /// moved out of tickBrawl's 1 Hz exchange: per brawler, count the swing
+    /// timer down, close when out of reach, and on expiry within reach throw a
+    /// blow re-keyed to the actor's own npcSwingSeq_. Applies the guard, the
+    /// caught-blow wind, and the defeat check. Driven from stepMovement.
+    /// STANCE & ROOM BUILD -- THE ROOM FIGHTS BACK: the blows resolve under
+    /// BOTH rule sets now. Under BRAWL the player floors at kPlayerBrawlFloor
+    /// exactly as shipped; under LETHAL the floor is lifted to zero and the
+    /// blow that empties the player routes applyDefeat (the death ceremony
+    /// hangs off escalated() client-side). A landed blow also raises the
+    /// player's hands.
+    void stepBrawl() noexcept;
+    /// STANCE & ROOM BUILD. Hands up and the lull timer refilled -- the one
+    /// door into handsUp_ = true, so every raise rule refills the same clock.
+    void raisePlayerHands() noexcept;
+    /// WATCH & RHYTHM BUILD. Resolves one player blow against a roster actor:
+    /// strike() on the actor's sheet, then the NPC's side of the rhythm -- his
+    /// guard softens a landed blow (blockedDamage at level 0) and recoils the
+    /// player on a normal swing or breaks and staggers him on a hard one; a
+    /// hit inside his wind-up, or any hard hit, staggers him. Applies the
+    /// health and returns the blow; the caller sets the activity and the
+    /// deeds. `recoiled` / `staggered` report which rule fired.
+    Blow landPlayerBlow(Actor& target, bool hard, std::int32_t bonus, std::int32_t swingTerm,
+                        std::int32_t chargeQ8, bool& recoiled, bool& staggered);
+    /// STREET SENSES leg (b). THE HEAD OF EVERY PLAYER SWING, in one place so
+    /// the roster swing and the street swing share ONE charge tier, ONE winded
+    /// refusal, ONE recovery and ONE wind cost: from CHARGING, read the tier,
+    /// refuse a hard swing while winded (result.refused, nothing thrown),
+    /// enter recovery, mark the swing committed, raise the hands, read the
+    /// fatigue term and pay the wind. Fills `chargeQ8` and `swingTerm` for the
+    /// strike. Returns false with `result` filled when nothing is thrown (a
+    /// release with no charge, or the refusal).
+    bool armPlayerSwing(PlayerSwingResult& result, std::int32_t& chargeQ8,
+                        std::int32_t& swingTerm);
+    /// PATRONS STAND BACK, fired once on the escalation edge (noteEscalation):
+    /// every present non-brawler who is not a professional and is within
+    /// kStandBackRadiusTiles of the player is sent kStandBackTiles tiles
+    /// directly away, to the first standable tile inside the footprint on
+    /// that line. Deterministic, draw-free; the rota holds them there while
+    /// lethalFightLive().
+    void standBack();
+    /// A brawler under lethal rules who is bloodied, not a professional and
+    /// does not mean Kill breaks off for the street (gull::kStreetX/Y). He
+    /// stops swinging at once and leaves brawlers_ on arrival.
+    [[nodiscard]] bool shouldRout(const Actor& actor) const noexcept;
     void tickPatrons();
     /// Advances every trickle still delivering. One second per call.
     void tickSpellwork();
@@ -1334,6 +2076,18 @@ private:
     void applyReply(Reply& reply);
     /// What a drawn blade does to a room full of people, exactly once.
     void noteEscalation(std::int32_t targetId);
+    /// Adds `actor` to the brawl list (idempotent, kept sorted) and staggers
+    /// its first swing (npcSwingTimer_ = id % kNpcSwingStaggerSteps) so a crowd
+    /// joining at once never metronomes. The one door into brawlers_.
+    void joinBrawl(Actor& actor);
+    /// BARKS LANE: `<name>: <crowd.flee row>` for whoever is running.
+    [[nodiscard]] std::string crowdFleeLine(const Actor& actor) const;
+    /// ACTION-COMBAT BUILD. Kills a body: Activity::Dead (a Downed that never
+    /// stands), the victim's Deed::Slew, the witness spread, and -- WITNESSED
+    /// (the three-clause rule via witnessCount) -- the murder law's heat and
+    /// the Condemned arrest hook (CrimeLedger::markMurderer). Only the player
+    /// kills in v1, so this is only ever reached from a player blow or link.
+    void slayActor(Actor& target);
 
     // --- S8 -------------------------------------------------------------------
     /// THE ONE CALL SITE A DEFEAT GOES THROUGH, wherever the player went down.
@@ -1399,6 +2153,39 @@ private:
     // the guard and the cast -- first-person combat's own player state
     bool playerBlocking_ = false;
     std::int32_t blowsBlocked_ = 0;
+
+    // the swing machine and the sightline -- ACTION-COMBAT BUILD. All hashed
+    // (the declared tavern-baseline move): the charge tier decides what the
+    // next release does, the recovery lockout whether a press is even heard,
+    // the facing who a swing hits, and the deference bit what the Watch does --
+    // so two runs that disagreed about any of them would be two different
+    // fights. playerYaw_ is authoritative facing pushed from the body, exactly
+    // as playerX_/Y_ are authoritative position.
+    Angle playerYaw_ = 0;
+    PlayerCombatState combatState_ = PlayerCombatState::Idle;
+    std::int32_t chargeSteps_ = 0;
+    std::int32_t recoverySteps_ = 0;
+    /// Recomputed every stepPlayerCombat off position + yaw + roster; the
+    /// reticle reads it. Hashed with the rest for gate visibility.
+    bool sightlineFlag_ = false;
+    /// DEFERENCE: the player presents as a Wielder. Default false; no play path
+    /// sets it yet (section 4.4). Hashed -- it changes the Watch.
+    bool playerPresentsAsWielder_ = false;
+    /// STANCE & ROOM BUILD: fighting mode and its lull countdown. Both hashed
+    /// (part of the declared tavern/gate-workload baseline move this build
+    /// makes): the bit is what the room, the street and the Watch react to,
+    /// and the countdown decides the step it flips back, so two runs that
+    /// disagreed about either would be two different fights. See the public
+    /// stance block for the raise/lower table.
+    bool handsUp_ = false;
+    std::int32_t lowerTimer_ = 0;
+    /// WATCH & RHYTHM BUILD: the player's recoil (a normal swing caught by a
+    /// guard) and block-stagger (a hard swing caught by the player's guard)
+    /// clocks, in steps. Both hashed (the second half of the declared
+    /// tavern/gate-workload move): each decides whether the next press is
+    /// heard and whether the next blow is softened.
+    std::int32_t recoilSteps_ = 0;
+    std::int32_t blockStaggerSteps_ = 0;
     /// Empty means "nothing picked" and equippedSpell() defaults to the first
     /// known crafting. Kept as the ID rather than an index because the
     /// grimoire inserts in id order: learning a new crafting must never
@@ -1477,8 +2264,20 @@ private:
     std::int32_t watchmanId_ = -1;
     std::int64_t noticedAtTick_ = -1;
     std::string lastDemand_;
+    /// BARKS LANE: see lastJoin() / lastFlee(). Strings, unhashed, like
+    /// lastDemand_ and lastWarning_ -- what was SAID, never what happened.
+    std::string lastJoin_;
+    std::string lastFlee_;
     ArrestReport lastArrest_;
     bool arrestRelease_ = false;
+    /// SENTENCES LANE. Reports, like lastArrest_ and lastDefeat_: what the
+    /// last served judgment did, and the end of the run once the rope has
+    /// passed. Neither hashed nor codec'd, and neither needs to be -- every
+    /// fact in them is derived at the moment of serving from state that is
+    /// (the ledger's record, the purse, the clock, the standings), and the
+    /// end's own bit is CrimeLedger::executed_.
+    SentenceReport lastServed_;
+    RunEnd runEnd_;
     /// The second-of-day this room was constructed at, so dayNumber() can be
     /// monotonic without the wall clock's midnight in it.
     std::int32_t startedAt_ = 0;

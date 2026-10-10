@@ -385,15 +385,17 @@ private:
 // VERIFICATION GAPS (S8) -- what this file does NOT do
 // ---------------------------------------------------------------------------
 //
-// VERIFICATION GAP (S8): THERE IS NO COMBAT SCREEN, AND IT IS NOW LOAD-BEARING.
-// A nemesis means the player Harm from his first win, and brawl.hpp's third
-// clause says beating a BLOODIED man while meaning him Harm is not a bar fight
-// whatever is in your hands -- so every rematch escalates partway through and
-// the room correctly stops resolving it. The FIRST defeat can be taken in the
-// world and no other. Tavern::concedeTo is the seam
-// docs/design/COMBAT-SCREEN-SPEC.md's screen will call, and the scripted arc
-// uses it for the two defeats that finish the rise. That is a screen missing,
-// not a rule bent.
+// COMBAT IS IN THE WORLD NOW (action-combat build, COMBAT-ACTION-SPEC.md). A
+// nemesis means the player Harm from his first win, and brawl.hpp's third
+// clause says beating a BLOODIED man while meaning him Harm is Lethal whatever
+// is in your hands -- so every rematch turns lethal partway through. Under the
+// action model a lethal fight keeps resolving in the world under lethal rules
+// (blows kill, floors lifted): the player's own lethal blows land through
+// Tavern::playerAttackUp, and losing one routes the same applyDefeat this book
+// reads. Tavern::concedeTo remains the direct defeat seam a scripted proof
+// drives; the NPC side of a lethal rematch is still wired to the shipped
+// refuse-and-latch behaviour until the presentation lane repoints the scripted
+// arc onto the new verbs. A model changed, not a rule bent.
 //
 // VERIFICATION GAP (S8): HE HUNTS, HE DOES NOT AMBUSH. Past kHuntsAtGrudge a
 // rival crosses the room to wherever the player is and stands there. He never

@@ -611,7 +611,6 @@ TEST_CASE("the HUD hugs the edges and leaves the centre completely clear") {
     HudState hud;
     hud.health = 72;
     hud.yawBam = session.body().yaw();
-    hud.locationLabel = "TARWALK - QUAYSIDE";
     drawHud(dressed, hud);
 
     const CentreRect centre = hudCentreRect(320, 180);
@@ -654,7 +653,6 @@ TEST_CASE("every HUD row lit at once still leaves the centre clear") {
     full.fatigue = 80;
     full.fatigueMax = 160;
     full.yawBam = sim::kFacingWest;
-    full.locationLabel = "THE DOCKS - UPPER";
     full.timeOfDaySeconds = 21 * 3600 + 47 * 60;
     full.coin = 99999;
     full.standingLabel = "THE WARD WANTS YOU GONE";
@@ -663,6 +661,12 @@ TEST_CASE("every HUD row lit at once still leaves the centre clear") {
     // S13: the two rows the Cast/Block task added, at their own longest.
     full.spellLabel = "CAST  SET THE SHOULDERS (599S)";
     full.blockLabel = "GUARD UP";
+    // STANCE & ROOM BUILD: the fighting-mode row at its longest, lit beside
+    // the guard it can share the band with.
+    full.handsLabel = "THE EVICTOR UP";
+    // KIT BUILD: the turned-blow row, lit too -- the every-field proof had
+    // not been told about it.
+    full.turnLabel = "THE COAT TURNS 2";
     // HELD-EFFECTS BUILD: all four live-hold rows at once, at their own
     // longest -- the fullest top-right stack this game can produce.
     full.effectLabels = {"SET THE SHOULDERS 899S", "STEADY THE HAND 899S",
@@ -743,6 +747,70 @@ TEST_CASE("every HUD row lit at once still leaves the centre clear") {
     }
 }
 
+TEST_CASE("the turned-blow row draws beside a bouncer's warning and raised hands at every capture size") {
+    // KIT POLISH. docs/frames/kit/kit-dr-960x540.png was shot to show COAT
+    // TURNS 2 and never did. The bottom band at 960x540 is four minor slots
+    // deep (base 501, floor 422, step 16); the alert at full scale holds two,
+    // the KIT FIX PASS's spacer slot took the third, FISTS UP the fourth,
+    // and the turn row -- last of the three in the priority order -- was
+    // refused by BottomBand::take() one pixel over the exclusion floor.
+    // From 1080p up the band is only THREE slots deep, so the turn has to
+    // outrank the hands as well, or the same warning-plus-FISTS-UP pair eats
+    // it on every monitor. Both are fixed in hud.cpp (the spacer is a pixel
+    // pad now; the turn is taken ahead of the hands); this is the proof, at
+    // the sizes the Kit is shot at and the one it is played at.
+    HudState fight;
+    fight.health = 61;
+    fight.healthMax = 100;
+    fight.yawBam = sim::kFacingWest;
+    fight.alert = "OX GULLBANE: YOU HAVE HAD THE ONLY WORD YOU GET. THE DOOR.";
+    fight.handsLabel = "FISTS UP";
+    HudState turned = fight;
+    turned.turnLabel = "COAT TURNS 2";
+
+    // How many pixels two HUD states differ by, split at the exclusion
+    // rectangle's floor: the band below it, and everywhere else.
+    const auto inkBetween = [](const HudState& a, const HudState& b, int width, int height) {
+        Framebuffer left(width, height);
+        left.clear(Rgb{0.20F, 0.18F, 0.16F});
+        drawHud(left, a);
+        Framebuffer right(width, height);
+        right.clear(Rgb{0.20F, 0.18F, 0.16F});
+        drawHud(right, b);
+        const CentreRect centre = hudCentreRect(width, height);
+        std::pair<std::size_t, std::size_t> counts{0, 0};
+        for (int y = 0; y < height; ++y) {
+            for (int x = 0; x < width; ++x) {
+                if (left.pixels()[left.index(x, y)] == right.pixels()[right.index(x, y)]) {
+                    continue;
+                }
+                if (y >= centre.y1) {
+                    ++counts.first;
+                } else {
+                    ++counts.second;
+                }
+            }
+        }
+        return counts;
+    };
+
+    for (const auto& [width, height] : {std::pair{640, 360}, std::pair{960, 540},
+                                        std::pair{1280, 720}, std::pair{1920, 1080}}) {
+        const auto [band, elsewhere] = inkBetween(fight, turned, width, height);
+        INFO("at ", width, "x", height, " the turn row put ", band,
+             " pixels in the band and ", elsewhere, " outside it");
+        CHECK(band > 50);
+        CHECK(elsewhere == 0);
+    }
+    // And on the four-slot band the Kit is shot at, it cost the hands
+    // nothing: FISTS UP is still on the frame beside it.
+    HudState turnedHandsDown = turned;
+    turnedHandsDown.handsLabel = {};
+    const auto [handsInk, handsElsewhere] = inkBetween(turnedHandsDown, turned, 960, 540);
+    CHECK(handsInk > 50);
+    CHECK(handsElsewhere == 0);
+}
+
 TEST_CASE("a bottom-band or top-right label does not run off the frame at an off-16:9 window") {
     // THE SAME CLASS OF DEFECT the chargen sheet's clipLabel() had -- a hard
     // cut with no usable boundary, invisible to a suite that only ever
@@ -763,7 +831,11 @@ TEST_CASE("a bottom-band or top-right label does not run off the frame at an off
     // not 16:9 is a supported configuration this suite never exercised.
     //
     // At 220x640 the budget these rows should have -- width - 2*margin -- is
-    // well under what a 34-glyph label needs at this height's minor scale.
+    // well under what a 48-glyph label needs at this window's minor scale.
+    // (THE CELLS PASS: the register keys on the width as well as the height
+    // now, so a 220-wide window draws its reading rows at scale 1 where the
+    // height alone said 2; the label was 34 glyphs and no longer overflowed,
+    // which is the width rule doing its job, so the premise grew instead.)
     // Unclipped, a LEFT-anchored row (guildLabel) runs off the RIGHT edge
     // with no mark that anything was cut; a RIGHT-anchored one (rivalLabel,
     // and every row of the top-right stack) starts its draw at a negative x
@@ -772,10 +844,10 @@ TEST_CASE("a bottom-band or top-right label does not run off the frame at an off
     // "CONDEMNED  WANTED" reads before "HEAT 84").
     const int width = 220;
     const int height = 640;
-    const std::string longLabel(34, 'A');
+    const std::string longLabel(48, 'A');
 
     const int scale = hudScale(height);
-    const int minor = hudMinorScale(height);
+    const int minor = hudMinorScale(width, height);
     const int margin = 6 * scale;
     // The premise: this label genuinely does not fit the row's real budget,
     // or every check below is vacuous.
@@ -880,7 +952,6 @@ TEST_CASE("the HUD costs a fraction of the frame, and the fraction is pinned") {
     HudState full;
     full.health = 100;
     full.yawBam = sim::kFacingWest;
-    full.locationLabel = "THE DOCKS - UPPER";
     full.timeOfDaySeconds = 20 * 3600;
     full.coin = 4071;
     full.standingLabel = "THE WARD WANTS YOU GONE";
@@ -1089,6 +1160,13 @@ TEST_CASE("walking to the water's edge keeps the harbour in front of the eye") {
     config.spawnX = sim::docks::kQuayApproachX;
     config.spawnY = sim::docks::kQuayApproachY;
     config.spawnBand = sim::docks::kBandQuayside;
+    // THE WORLD, NOT THE HUD (VOICE LANE). The lower half of the frame is
+    // where the HUD's bottom band lives, and the street now talks: a docker
+    // passing within reach during the eight-second walk puts a plate and a
+    // row of text there, which is not the harbour. This is a claim about the
+    // renderer's water, so the HUD stands down for it -- exactly what
+    // --nohud is for.
+    config.hud = false;
     Session session(config);
     session.body().setYaw(sim::kFacingNorth);
     Framebuffer before(320, 180);
@@ -1503,7 +1581,7 @@ TEST_CASE("the aim prompt is the only thing in the play space, and it stays in i
         const int cy = height / 2;
         std::size_t textLeftOfCentre = 0;
         for (const auto& [x, y] : lit) {
-            if (y < cy - hudMinorScale(height) * 4 && x < cx) {
+            if (y < cy - hudMinorScale(width, height) * 4 && x < cx) {
                 ++textLeftOfCentre;
             }
         }

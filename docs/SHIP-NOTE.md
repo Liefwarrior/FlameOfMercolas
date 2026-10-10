@@ -1,282 +1,260 @@
 # Ship note — read this first
 
-**The three moves landed, and the tutorial reads right on both hands now.** The
-retry's four lanes merged clean (twelve builder commits + three merges + the
-integrator's compile/drive fixes) and every claim in their reports was
-re-verified here **by driving the built game and measuring the frames**, not by
-reading the reports back. J opens the journal, the seven silent pages answer the
-mouse, the B that closed the casebook no longer crouches, a pad player's first
-world screen is pad-worded before they touch anything, and the sheet's NAME row
-holds still while you type. The second authored case — **THE QUIET TENANT**, the
-courier's tutorial errand — plays end to end, teaches through device-aware
-prompts, and does not move the population baseline a bit.
+**EVICTION is real, and it was driven both ways.** The owner's third case —
+his own brief, working title EVICTION — ships on `content/raws/quests/
+eviction.json` + `eviction_letters.json` and the Session wiring that reads
+them. A priest of the Flame (Father Maell, the Mission's own, who authored the
+courier sheet) hires a good open hand off his evening table in the Gull to
+serve a **writ of distraint** on a compound flat in the evening once the family
+is home. **Participate** and the paper changes hands, nobody swings, and the
+Mission pays off the charity shelf in a tool fit for the work — **The Evictor**,
+oak and lead-wrapped, blunt, with a chance to knock a man cold with a blow to
+the crown. **Disrupt** and you carry the writ back to Maell whole; he does not
+call it mercy and does not send for the Watch, and the temple remembers whose
+nerve went. Both paths close the book; only one pays a weapon.
 
-**One seam found by driving, and closed this phase:** the courier case's two
-notice plates (`A MISSION SHEET … YOUR LETTERS`, `THE ERRAND IS PAID … YOUR
-CASEBOOK`) named the key with `keyName(primary[Menu])` — the raw keyboard slot —
-so a **pad** player being taught the game was told to press **J**, a key their
-pad has not got. The device-aware `promptLabel(…, promptDevice_)` the Bloodletter
-plate uses three lines away is the fix; both plates now read `D-PAD UP YOUR
-LETTERS` / `… CASEBOOK` on a pad and the unchanged `J …` on a keyboard.
-Render-only, keyboard-byte-identical, sim untouched. Photographed before and
-after: `docs/frames/parallel4/courier-plate-SEAM-keyboardworded.png` vs
-`…-FIXED-deviceaware.png`.
+The case sits on the deepest ruled machinery in the project (DECISIONS.md
+"Trojian tenure"; DOCKS-GAZETTEER §2.8): the Flame holds the plot, a Den Duke
+holds the charge, **rent is ground rent**, and **eviction is a priest's
+adjudicated distraint with six possible answers** — the writ names the fifth
+(a distraint) and says the other five were open. The word "lease" appears
+nowhere in the paper; the ward's own vocabulary — charge, ground penny,
+petition, distraint, pledged, bond — carries it, and a test pins the absence.
+Rooftop lodgers "go with the house" and are a flagged dead-end, exactly as
+§2.8 rules. The war lore is the owner's, spelled to canon: the **Mercian**
+shipments stopped when the **Dezdant** war with **Trojia** took the sea lanes,
+so the widow squeezes because she is squeezed.
 
-Gate: **green, both halves**, native digest `ae5a7d15…`.
-World hash: **`0x2646C1AAA2BA38DF`** — regenerated, rebaked, twin-gated, unmoved.
-Demo: **run twice, exit 0 both**, 5780 frames, body (150,63,z19) both. Demo
-frames: **22/22 byte-identical** to the committed set (the courier is off under
-`--demo`, so the fix cannot touch them).
+**The Evictor** (`sim::Weapon::Evictor`) sits on the brawl's legal side by the
+enum's own order, does cudgel-parity damage (7), and on a landed blow reads a
+24-of-256 head band off the SAME roll — in-band crowns the target to zero
+through the existing downed door, so the +1/s heal and the quarter-health
+stand-up run untouched. Sheet line **`THE EVICTOR 7-9 IMPACT`**; the character
+sheet grows **`IN HAND  THE EVICTOR 7-9 IMPACT`** once armed.
+
+> **Combat direction, new this day (DECISIONS.md, f5e440b):** the owner
+> scrapped the JRPG/paused-screen combat register for **Oblivion-style
+> real-time action** — a spell button, swing, block, hold-to-swing-hard. This
+> *vindicates* the Evictor's KO as built: the crown is a weighted draw on a
+> landed **swing**, not a called shot behind a menu — it drops straight into
+> the new action model with no aiming screen. A scout+design program is
+> chartered to settle how the brawl's legal/social classification composes
+> with in-world lethal combat; the Evictor's non-lethal crown is on the right
+> side of that line already.
+
+Gate: **green.** World hash **`0x2646C1AAA2BA38DF`** — regenerated, rebaked,
+twin-gated twice, unmoved. Base tip this ship: **`f5e440b`** (the owner's
+docs-only combat ruling landed mid-phase; native/ untouched, gate stamp still
+names the tree).
 
 ## Run it
 
 ```
-.\dist\granadad.exe --demo      # two minutes, plays itself, ends on a card
-.\dist\granadad.exe             # play it: DOWN DOWN ENTER, name, UP, ENTER, twelve ENTERs, UP, ENTER
-.\dist\granadad.exe --case      # drive THE QUIET TENANT end to end, headless, and print the errand's state
+.\dist\granadad.exe                       # play it; M for the map, T travels a named place
+.\dist\granadad.exe --eviction            # PARTICIPATE, end to end, headless (9 beats)
+.\dist\granadad.exe --eviction=refused    # DISRUPT, writ carried back (8 beats)
+.\dist\granadad.exe --eviction=writ       # shutter: the writ open on the Letters tile
+.\dist\granadad.exe --eviction=gate       # shutter: the Netters' gate lead read
+.\dist\granadad.exe --eviction=knock      # shutter: the door answered
+.\dist\granadad.exe --eviction=served     # shutter: paper changed hands
+.\dist\granadad.exe --case                # THE QUIET TENANT (courier) end to end
+.\dist\granadad.exe --map-overlay --travel="The Ropewalk"   # the travel probe
 ```
 
-In the world: **J** casebook (per the owner's "use J for journal"), **M** map,
-**E** talk, **ESC** pause, **F1** keys, **F2** rebind. On a pad the screen tells
-you itself — the prompts name the hand that is holding the machine and re-word
-live.
+Summary segment: `| evict beats=N/9 mask=… read=4/5 knocked=… served=… closed=…
+weapon=fists|armed letters=3`. Both drives are byte-identical run-to-run.
 
-> Still true: the creation window does not answer F12 (photograph creation
-> through `--creation=STEP` or `--padcreation`'s `shot:` beats), and `--demo`
-> swallows everything but ESC.
-
----
+**In the world:** hire Maell in the Gull (topic 8, THE MISSION'S WRIT — needs
+open hand ≥ 15, and it names the bar and your number if you are short); read
+the writ in your Letters (J, then the Letters tile); **M** the map, hover the
+**Netters' Compound** and **T** to travel; walk to the Marrow door on the
+Gullet lane and press interact to knock, again to serve; travel to the Mission
+and walk in to close and be paid. To SEE a knockout: once armed, brawl a Gull
+patron (attack key) and keep swinging — 24/256 of landed blows crown (~1 in 11).
 
 ## The gate, in full
 
-`docker compose run --rm --build build` was run twice this phase: once on a
-**fresh isolated worktree** at `C:\repositories\granadad-ship-7b1904e` (the four
-gitignored audio dirs real-copied, 374 files) at the merged HEAD `7b1904e`, and
-once in the **main repo** on the one-line fix. Both green; `verify-windows.ps1`
-green in the fresh worktree and (both before and after the fix) in the main repo.
-
 | half | where | result |
 |---|---|---|
-| `docker compose run --rm --build build` | fresh worktree @7b1904e | **exit 0** |
+| `docker compose run --rm --build build` | fresh worktree `granadad-ship-5b072dc` (four audio dirs real-copied, 374 files) | **exit 0**, stamp 2026-09-02T18:13:57Z |
 | `scripts\verify-windows.ps1` | fresh worktree | **=== PASS ===** |
-| `docker compose run --rm --build build` | main repo, with the fix | **exit 0** |
-| `scripts\verify-windows.ps1` | main repo, with the fix | **=== PASS ===** |
+| `scripts\verify-windows.ps1` | main repo dist/, re-run | **=== PASS ===** |
 
 ```
-merged revision:  7b1904e (18 past 3181e52: 12 lane + 3 merge + 2 integrator + 1 frames)
-ship fix:         1 commit on top (the courier plate device-aware seam)
-native/ digest:   ae5a7d15df07c580b88a577c3bb30d800bf60874b4cdf3974ece7eef8126f049 (with the fix)
-ctest cases:      995 (floor 537), 78 suites, 0 failed, ~146s
+native/ digest:   01f332514efbabac3c45e10edece315c18fe920404f9e4563b7ec2556aa27f57
+ctest cases:      1041 (floor 537), 0 failed
+comparators:      world-hash+sim 1791 bytes sha256 924F6EA6…B7B8468B, linux/gcc == mingw
 ```
-
-Comparators byte-for-byte identical linux/gcc vs mingw/windows, **and identical
-across the fix** (the fix is render-side, which no gate hashes):
-decoded world state 3884 bytes sha256 `97850DCB…C8B2179`; world hash + sim run
-1791 bytes sha256 `924F6EA6…B7B8468B` — the same values before and after the
-courier-plate fix. The four `dist\` binaries hashed main-repo vs fresh-worktree
-at the merged HEAD: **byte-identical, all four** (proven before the fix; the fix
-then rebuilt `dist\` in the main repo, which is now the certified set).
 
 ## The world hash did not move — regenerated, rebaked, twin-gated
 
 ```
 1. regenerate   python tools\scripts\gen_docks_surface.py
-                docks_surface.tmx sha256 CCEDA566…237B4D1C, tree clean (reproduced the committed TMX)
-2. rebake       gradlew :tools:run --args="import-map …docks_surface.tmx <tmp> --raws content/raws"
-                17,954-byte trojsav sha256 E47DA3AE…E474C2AC == content/maps/baked/docks_surface.trojsav
-                (baked with BOTH new quest JSONs present in content/raws — they do not enter the bake)
-3. twin-gate    dist\granadad-twin-gate.exe --population --population-hour 16 --ticks 7200
-                run twice: 0x2646C1AAA2BA38DF both runs, reports IDENTICAL, the two console
-                outputs byte-identical to each other. Re-run after the fix: same hash.
-4. content diff git diff --name-only 3181e52..HEAD -- content/maps content/art  ->  EMPTY
-                -- content/  ->  the two add-only quest JSONs and nothing else
+                docks_surface.tmx sha256 CCEDA566…237B4D1C, tree clean (reproduced)
+2. rebake       gradlew :tools:run --args="import-map <abs>.tmx <out-file> --raws <abs>\content\raws"
+                17,954 bytes sha256 E47DA3AE…E474C2AC == content/maps/baked/docks_surface.trojsav
+3. twin-gate    granadad-twin-gate.exe --population --population-hour 16 --ticks 7200
+                run twice: 0x2646C1AAA2BA38DF both, byte-identical; --tavern half identical too
+4. content diff git diff --name-only 31f092e..HEAD -- content/  ->  only the two new quest raws
 ```
 
-`content/raws/quests/mission_sheet.json` + `mission_sheet_letters.json` carry
-top-level `case`/`leads`/`letters`, never `stages`/`templates`, so every hashed
-loader skips them. No re-bless: the baseline never had a way to move.
+No tavern-hash constant was owed a re-bless (grepped: only mix64/salt golden
+vectors and seed literals; the Edged 3→4 renumber reaches no gate workload —
+verified). The evictor lane's own golden sweep is honestly counted: the sweep
+multiplier is even, so landed is exactly 3072/4096, not the naive 7-in-8.
 
-## The demo
+## Driving it, this phase — at 640x360
 
-```
-run 1 (@7b1904e)   5780 frame(s), (150,63,z19)   exit 0
-run 2 (@7b1904e)   5780 frame(s), (150,63,z19)   exit 0
-run 3 (with fix)   5780 frame(s), (150,63,z19)   exit 0
-```
+The full case both ways is photographed in `docs/frames/eviction1/` (the
+integrator's deterministic `--eviction` shutters): **ev1** the writ (Annis
+Netter, 130/260, "I gave the fifth"), **ev2** the gate lead, **ev3** the door
+answered, **ev4** the writ served, **ev5** "THE EVICTOR IS YOURS", **ev6** the
+disrupt yield, **ev7** the sheet reading **`IN HAND  THE EVICTOR 7-9 IMPACT`**
+with all three papers in the Letters pane.
 
-`--demo-capture`: **22/22 byte-identical** to `docs/frames/demo/`, both at the
-merged HEAD and with the fix. `creation-origin.png` reproduces byte-identical via
-`--creation=origin --scale=1` (the known `--demo-capture` shutter-race drop; the
-committed copy is the substitute). The Bloodletter demo route is intact.
+This phase drove the case **live in the windowed build with real keyboard and
+mouse** (SendInput + the game's own F12 shutter, fresh-default controls) —
+`docs/frames/ship-eviction/`: **se2** the hire off Maell with the brief's
+texture line on the row (*"A POOR FAMILY AND AN IMPOSSIBLE ASK. DO IT ANYWAY.
+ORDER KEPT IS WHY THE CITY IS SUFFERED TO STAND."*) and topic 8 flipping to
+GIVE THE WRIT BACK as the case goes live; **se3** the writ, fully authored;
+**se4** the four-pane menu (character / chart / letters / casebook); **se1/se5**
+the ward map with the Netters and the Mission as named travel targets; **se6**
+the arrival plate (*"WALKED TO THE NETTERS' COMPOUND. 20:01."*); **se7** the
+Netters' gate lead read (case → 2/3); **se8** the Marrow household present at
+the compound at dusk (Frieda Marrow, a household actor). Map travel is
+**hover-to-select then T** (a click faces-and-closes; only hover keeps the map
+open for the T verb).
 
-## Driving it, this phase — every claim photographed at 640x360
+**The windowed KO was not photographed live** and stands where the integrator
+left it: proven headlessly by the **4096-roll golden sweep** (every landed
+Evictor blow crowns iff bits 8-15 < 24, crown ⇒ down-at-zero, damage never
+leaves cudgel parity) and the **twin-room 30-swing trace** (replays draw for
+draw), both under the green gate, plus the armed sheet on **ev7**. Reaching an
+armed brawl by hand means a clean five-leg case run and a Gull patron in reach;
+the recipe above is exact, and any harness can arm in three lines
+(`session.tavern().grantPlayerWeapon(sim::kEvictorWeaponId)`) for a faster
+windowed swing. Flagged, honestly, as the one beat the window has not yet held.
 
-Frames in `docs/frames/parallel4/`. Driven through the **real windowed build**
-with real keyboard/mouse (`scripts\drive-windowed.ps1`, SendInput scancodes +
-client-area pointer) and the **virtual pad** (`--padcreation` + `--padscript`).
+## The brief, item by item (his 12)
 
-**The courier case, driven headless twice** (`--case`, the errand's own scripted
-line): `beats=8/8 mask=255 read=3/4 closed=yes carry=no`, the `| case …` summary
-segment **byte-identical across runs**, the two output PNGs byte-identical. Every
-beat looked at:
-- `case-sheet` — Maell's sheet open on the Letters tile (parchment, `handed`).
-- `case-gull` — casebook on THE QUIET TENANT, the door lead read, READ 1/3.
-- `case-night` — crouched/HIDDEN on the dark guest floor, the box lead read.
-- `case-down` — Finch on the boards, crosshair `FINCH — DOWN, AND COMING WITH
-  YOU / E - TAKE HIM UP`, message row device-aware. **The brawl line held:** the
-  drive carries fists, `mask=63` at the down shutter with `tenant=down` and no
-  Watch — nothing edged, subdue by the house's own law (`classifyFight`).
-- `case-done` — `THE ERRAND IS PAID … YOUR CASEBOOK`, book closed, at the
-  Mission back room.
+1. **Working title EVICTION** — kept, the case and its title.
+2. **The spark — show/participate/disrupt an eviction** — both paths built,
+   one close each, no soft-lock.
+3. **Who asks — a priest of the Flame** — Father Maell, the ward's only
+   priest and §2.8's required arbiter. *[veto: recast = one constant.]*
+4. **The ask — good open hand to evict from a compound flat** — the hire gates
+   on open hand ≥ 15, names the bar and your number if short.
+5. **Nearest compound** — C2 The Netters', nearest by the street (both doors
+   on Ropewynd); C3 Saltgate is nearer by ruler but an 80-tile climb. *[builder's
+   call, flagged.]*
+6. **Evening, once home** — 18:00–24:00, the rota's home hours; the door does
+   not answer outside them.
+7. **Systems — break-in & locks, brawl/subdue, dialogue, clock & travel** —
+   dialogue, clock and travel exercised fully; **break-in plays as the knock +
+   the served paper** (no compound door has a lock yet — a later sprint);
+   **subdue is provided-for, not exercised** (the good hand is hired so nobody
+   swings — the brief's own texture). *[both flagged; see MUST-NOTs below.]*
+8. **The leads — Mercian shipment failed, Dezdant war with Trojia** — hearable
+   in the gate lead and the three letters, spelled to canon. *(Note: Dezdant
+   is canon in docs/lore/, not COMBAT-SPEC as the brief's pointer said — the
+   spelling is correct regardless; the ambient rumor rows for histories.json /
+   rumors.json are authored but NOT pasted, owner-canon files.)*
+9. **Paper — the lease agreement** — mapped to the ward's real instruments:
+   the writ of distraint (handed), the widow's petition, the served notice.
+   "Lease" appears nowhere (test-pinned).
+10. **Texture — the impossible choice** — the heart of it, and it lands: Maell
+    speaks the brief's own line to your face at the hire, and the family is
+    four named-only heads three quarters behind on the penny.
+11. **Must / must-not (builder's call)** — decided and flagged: **must-not**
+    build the first door-lock in this lane; **must-not** cast a resisting body
+    at the door (punch can't reach ward population — a room-system misplacement);
+    **must** keep the roll unmutated (the distraint is adjudicated fact, not a
+    live `Ward::apply`); **must** close on both paths.
+12. **The payoff — The Evictor, blunt, head-KO** — built and granted through
+    the weapon lane's own seam; the KO is the whole forging.
 
-**As a pad player** (the tutorial read the owner asked for): `--padcreation`
-takes a character off the DOOR/PATH/PAST/SHEET screens (A picks a calling, twelve
-A's answer the biography, the 10x3 OSK spells the name, START commits, BEGIN);
-`--padscript` then drives the world. The first world frame, **pre-press**, reads
-`PICK A LEAD. A SHOWS YOU WHERE.` with foot `A - SHOW ME WHERE` and `A GO TO IT`
-— pad-worded with no world press, the device seeded from creation
-(`pad-world-prepress`). The courier hail then lands with the plate `A MISSION
-SHEET  D-PAD UP YOUR LETTERS` — **the seam this phase fixed**, now naming the
-pad's own key (`courier-plate-FIXED-deviceaware.png`; the pre-fix
-`…-SEAM-keyboardworded.png` shows the `J` it used to print).
+## Rulings awaiting the owner's veto — all built, all working
 
-**The mechanical items:**
-- **Pointer, the silent pages.** Photographed answering the mouse: pause (hover
-  inverts the row under the pointer, `WAIT` filled), the wait page (click a row →
-  the clock advances, `WAITED UNTIL 13:00`), the CONTROLS/keys page (hover moves
-  the fill **and the detail pane follows the pointer** to the RUN row —
-  `ptr-controls-hover`), the options page (SETTINGS click opens it), and the
-  casebook TAB row — clicking `THE CASE` swaps the detail pane with the list and
-  frame dead still (stable-geometry), the frame **byte-identical to the
-  committed `ptr-tab-thecase.png`**, and `LEADS` clicks back. The tiled Menu's
-  four tiles (`--character`) and the conversation topic list share the
-  `menuTileHitAtPixel` / `dialogueTopicAtPixel` inverses proven on their
-  siblings and green under `test_menu_view`/`test_tavern_render`.
-- **Regression:** a left-click on the open street with nothing up **punches**
-  (`NOBODY IN REACH` — the world verb, not swallowed): the pointer branch only
-  runs on `pointer_page_open` (`ptr-street-punch`).
-- **J opens the journal**, and the copy says J: a fresh-defaults windowed run
-  writes `bind menu J PAD_UP`, the keys page reads `MENU  J`, the opening hint
-  reads `J YOUR NOTES  < > MORE PAGES  E USE`, and pressing J closes the
-  auto-opened new-game casebook to that hint. (`E USE` is the honest fallback
-  under a cfg with no pad `interact` half — the other-hand rule.)
-- **The B seam, closed:** on a pad, one **B** closes the casebook to the street
-  with **no CROUCHED banner** (`pad-after-b-nocrouch`).
-- **The NAME wiggle, gone:** the pad OSK typed to 2 / 6 / 12 glyphs holds its
-  outer frame at exactly x[114..497] all three times (`pad-name12-nowiggle`); the
-  keyboard sheet is proven by the green `test_creation` cap-measure case and by
-  `creation-name.png` staying byte-identical.
+- **Casting/naming** (all recastable): priest = **Father Maell**; compound =
+  **C2 The Netters'**; petitioner = **Widow Annis Netter**; family = **Bram
+  Marrow "the Steady"**, an existing actor given a home for the first time
+  (household is "four heads", no wife/child named — three names = three more
+  vetoes). **[NEEDS: your blessing on Bram, or a different tenant.]**
+- **The Evictor copy** (none load-bearing): register name "the evictor"; sheet
+  `THE EVICTOR 7-9 IMPACT`; sheet row `IN HAND`; KO line `CAUGHT <NAME> ACROSS
+  THE CROWN. OUT COLD.`; grant id `the_evictor`. Damage 7 (cudgel parity — the
+  KO is the reward); raise to 8 = one number + one test string.
+- **The two closes** — participate pays the weapon; disrupt pays nothing and
+  moves temple regard down through the existing ledger (`WalkedOut`), not a
+  bespoke penalty.
+- **The rumor rows** — Mercian/Dezdant ambient entries for histories.json +
+  rumors.json authored in the lane reports but NOT pasted (owner-canon files);
+  knower list flagged.
 
-## Copy review — the case reads in the city register
+## Standing gaps (not this ship's to close)
 
-Every player-facing line of THE QUIET TENANT was read against the register
-(brief, urbane, salted, no AI-ish over-explaining). **It holds, and at its best
-it is very good.** The strongest lines earn their place: *the close* "THE MISSION
-HAS ITS MAN. THE FLAME KEEPS ITS OWN COUNSEL."; *the delivery* "MAELL DOES NOT
-THANK YOU FOR IT, AND DOES NOT PRETEND IT WAS NOT ASKED FOR."; *the brawl teach*
-"A BRAWL IS THE HOUSE'S OWN LAW, STEEL IS THE WATCH'S. THE BOUNCER ANSWERS THE
-FIRST SWING, SO ANSWER HIM FIRST."; *the follow-up* "MAELL DOES NOT WRITE TWICE."
-Maell's sheet ("I know what this sheet is. I have written it anyway…") takes the
-weight of the order in the author's own hand, exactly as the brief asked.
+- **open_hand is not trained by the brawl yet** (damage rides MGT): the hire
+  gate reads chargen-set levels only. The gate is real; the training path
+  behind it is the progression system's named gap.
+- **playerWeapon_ is not save-serialized** (hashed, not persisted): the grant
+  is per-run. If save/exit persistence lands, the case should re-fire the grant
+  off completed-case state.
+- **The subdue at the door and the compound door-lock** are specified, not
+  built — a Gull-roster actor at the Netters plus a punch-target widening, and
+  the district's first real lock. Both are their own sprints.
 
-The lines that teach a mechanic carry the most instructional load — "EVERY PROBE
-IS NOISE. … CROUCH, AND KEEP OFF THE LIT TILES." is the closest any line comes to
-a tutorial voice — but they stay imperative and in-fiction, and none clunk. No
-line reads as AI-ish or over-explained. **Nothing flagged for a rewrite.**
+## The verdict — three cases now, and the flywheel is turning
 
-## The canon choices stand, flagged for the owner's veto (unchanged)
+The standing bar is "clean and near ready for early access," and the standing
+blocker was **content alone**. This is the honest movement: **the third case is
+the first that is not a system demo.** The courier taught the clock and the
+break-in; travel taught reach; EVICTION is a *choice* — it leans on the deepest
+canon in the project (the tenure machinery, six-answer distraint, ground rent),
+it reuses the courier's own priest and door and pays continuity forward, and it
+ends two different ways with real consequences. It also lands a reusable
+reward: a weapon on the brawl's legal side with a clean KO the new action-combat
+ruling welcomes.
 
-The case lane chose from existing actors/buildings and flagged each; nothing here
-overrode them. For the owner to accept or veto:
-- **Courier = Onna**, **author = Father Maell**, **target = Finch** (the
-  Skyrunner on the Gull roster), **site = the Gilded Gull**, delivery at the
-  Mission back room. All existing.
-- **⚠ The one canon ADDITION:** the case resolves casebook.json's deliberately
-  ambiguous tarry-jek line ("A THIN FELLOW WALKED IN THROUGH A GAP NO MAN FITS")
-  as **Finch**, paid to open the Drowned Hold from inside. Clean fit, but it
-  *interprets* an open Bloodletter thread. Reject it and only the snug-stool
-  `found` line needs softening; the case still works.
-- **Gabri never appears** — "word has come from Gabri" is word, through the
-  Mission, from off-map; the sheet says outright it will not put down from where.
-  (Pre-existing tension the case lane raised and did not touch:
-  `bloodletter_letters.json`'s `gabri-dispatch` is written in-ward at the Drowned
-  Hold. Reconcile at your discretion.)
-
-## Honest leftovers (the case lane's own flags, still true)
-
-- **No carried-body render.** TAKE HIM UP sets a bale-shaped session flag (`FINCH
-  IN HAND` on the HUD) and the delivery closes on arrival; there is no
-  over-the-shoulder body drawn. Follow-up render work.
-- **No stay-down state.** A downed patron recovers at quarter health, so the
-  kidnap is honestly "put him down and take him up promptly" — the crosshair
-  prompts the instant he is down; dawdle and he rises and you re-subdue. Once
-  taken, the carry flag persists.
-- **No manual case-switcher.** The courier case takes over the active-case
-  surfaces until delivered, then the Bloodletter returns (`sheetCaseLive()`).
-  Correct for a focused tutorial; no third tab this pass.
-- `case-night`'s crosshair rests on the bouncer (`E - PICKPOCKET`) rather than
-  the box — a scripted-drive aim, not a bug; the box lead is read regardless
-  (READ 1/3 in `case-gull`).
-
----
-
-## The verdict: closer again — the first minutes now teach and pull — and still not near ready
-
-The standing verdict was "closer by a real step — still not near ready; the
-blocker moved to content and reach." This phase moved the blocker's near edge:
-there is now a **second authored case that is a real tutorial**, and it works.
-
-**A stranger's first sixty seconds, today:** creation on one measured grammar
-(door, calling, quiz, the sheet — the NAME wiggle now gone), then the world with
-the casebook waiting and the `J YOUR NOTES` hint. And roughly six seconds in, the
-courier: *"ONNA, AT YOUR ELBOW: PAPER FOR YOU, OUT OF THE MISSION."* — an
-inciting incident, in the register, that hands the newcomer a sheet and a reason.
-That is a genuinely better first minute than a lone Bloodletter waiting to be
-noticed.
-
-**The first thirty minutes, now:** the courier's errand is a guided line — read
-the sheet, find the Gull on the map, wait for the dark hours, cross the guest
-floor crouched, put Finch down with fists, carry him to the Mission — and each
-lead teaches one system in the ward's own words. It hands off to the Bloodletter,
-the twelve-lead investigation. So the arc is real: a short linear tutorial that
-opens into the sandbox's one open case. That is the shape an early-access opening
-wants.
-
-**But the bar is "clean and near ready for early access," and the honest
-distance is still content and reach.** Two authored cases — one four-lead
-tutorial, one twelve-lead investigation — is an evening, maybe two, and then the
-authored well is dry; the scripted lines (skyrun, nemesis, contract, burgle,
-roofs) are system demos, not narrative. The tutorial is linear and short and
-gives up its own last page early (the sheet names the delivery before you take
-him). No line clunks and no screen is broken — the **presentation debt is paid**
-— but a sandbox built for a season still holds an evening of authored play. **Not
-near ready.** The reason is no longer the screens or the prompts; it is that
-there is not enough game behind them yet.
-
-**The worst screen** is no longer a screen with a defect — the sheet's wiggle is
-gone, the Menu is on the register, every page answers the mouse. The least
-polished surface left is the **options overlay** (F2/SETTINGS): a bottom-strip
-HUD list rather than a full master/detail card like the CONTROLS page beside it —
-functional, in-register, but the one place the reference's card grammar is not
-fully spent.
+**Still not near ready, and the reason is unchanged: three authored cases is an
+evening, not a game.** But the shape of the answer is now visible — the machinery
+(reach, dialogue, clock, tenure, a casebook that reads as master/detail, a
+weapon system with room to grow) is carrying content that is *about* something,
+and a second and third case of this weight would start to fill the well rather
+than demonstrate the bucket. The flywheel is turning; it is not yet fast. Do not
+round up.
 
 ## The three things to do next
 
-1. **Authored content, in bulk — the whole remaining distance.** Not one more
-   case: a spread of them, and the reach to drain them over more than an evening.
-   Every screen and prompt is ready to carry it; nothing else is the blocker.
-2. **Finish the courier case's honest leftovers into real mechanics** — a
-   carried-body render for TAKE HIM UP, and a stay-down (or bound) state so a
-   kidnap is a haul across the district rather than a prompt-race. These are the
-   two places the tutorial teaches a verb the sim only half-simulates.
-3. **The options page onto the master/detail card**, to spend the reference's
-   grammar in the one surface that still runs a HUD strip — and, cheaply, a
-   camera dolly in the demo so the trailer moves.
+1. **More cases of this weight — still the whole remaining distance.** EVICTION
+   proves the content can be a choice and not a demo; the district needs a
+   spread of them pulling toward the Docks' agent-of-evil arc (DECISIONS.md,
+   districts-as-chapters). Nothing else blocks early access.
+2. **Answer the combat scout+design charter** (f5e440b): how the brawl's
+   legal/social classification composes with Oblivion-style in-world action,
+   the determinism model for real-time swings, and what "scrap" removes of
+   COMBAT-SCREEN-SPEC. The Evictor's crown is already on the right side of it.
+3. **Close the two flagged case gaps if the door should bite:** a resisting
+   body at the Marrow door (a roster actor + punch reaching ward population)
+   and the district's first compound lock — so break-in and subdue are
+   exercised, not provided-for. And wire open_hand to train by use so the
+   hire gate reads a lived skill, not only a chargen one.
 
 ## Still open, unchanged
 
-`--demo-capture` drops `creation-origin` (the shutter race; the `--creation`
-substitute is byte-exact); the creation window does not answer F12; the input
-router lives in `main.cpp`'s anonymous namespace, unlinkable by any suite; no
-camera motion in the demo; the 1920 sheet sits 1px left of its old centring
-(invisible, integrator-found, noted so nobody hunts it as drift).
+Fast travel and the courier case stand as last phase left them (travel is
+minutes not hours, the options page still on a HUD strip). **The zero-paces
+re-travel wart is closed, both halves, on the owner's ruling:** the map
+pane's HERE predicate (badge `<PLACE> - HERE`, the travel row asleep within
+two paces of the aim) got its missing half — `districtMapTravelPlan()` now
+answers `standingIn` on the same predicate, the pane's `paces <= 2` restated
+in the sim's integers as `d2 <= 6`, so the T press re-planning at your own
+door is inert instead of silently charging a minute to shuffle one step and
+re-fire the plate. Pinned by `test_travel`'s Counting-House drive, which
+also pins the defect's precondition (the arrival ring leaving the body
+outside the footprint); `kw6-mapafter`/`kw7-press` show the wart,
+`kw8-standing` the same scene on the fixed build. The windowed harness
+cannot drive keyboard character-creation blind
+(the pad path covers it); `--travel=NAME` and `--map-place=NAME` want the
+roster's exact mixed-case name. New this phase: `drive-windowed.ps1` learned the
+whole digit row (topic lists select up to 9; the hire is topic 8).

@@ -29,6 +29,7 @@
 #include <vector>
 
 #include "granadad/content/content_dir.hpp"
+#include "granadad/render/controls.hpp"
 #include "granadad/render/hud.hpp"
 #include "granadad/render/session.hpp"
 
@@ -299,13 +300,15 @@ TEST_CASE("the pause menu never opens over a conversation or a pick in progress"
     CHECK(session.talking());
 }
 
-TEST_CASE("the menu, the options it opens and the plain scene never fight over the middle of the screen") {
-    // THE SAME MEASUREMENT test_firstrun.cpp already runs for the casebook and
-    // the keys page, extended to the two ways into this one -- ESC's own menu,
-    // and the options page it opens. #77's own review found this exact class
-    // of defect on the options page nothing scripted ever opened; this is the
-    // regression guard for it happening again on the page ESC now opens by
-    // default.
+TEST_CASE("the pause stack draws as the composed card and genuinely covers the middle") {
+    // THE CLAIM FLIPPED, ON PURPOSE -- the same flip test_firstrun.cpp records
+    // for the casebook and the keys page. UI-EA-SPEC 1.7 (strip->card): pause
+    // and the options page it opens left the HUD strip for the composed
+    // master/detail card, the ship note's own standing item, so they now take
+    // the frame the way every composed page does. Nobody is standing in front
+    // of you while you read a menu of five verbs. The centre-clear rule is
+    // not weakened, only scoped: a live conversation, the HUD and the
+    // lockpicking overlay are still held to it by their own cases.
     render::SessionConfig config = fresh();
     render::Session session(config);
     session.stepMany(MoveInput{}, 4);
@@ -317,24 +320,36 @@ TEST_CASE("the menu, the options it opens and the plain scene never fight over t
 
     session.togglePause();
     REQUIRE(session.pauseOpen());
+    session.stepMany(MoveInput{}, 16);  // the card's own ease, fully open
     render::Framebuffer withPause(config.width, config.height);
     session.drawFrame(withPause);
 
     session.movePauseCursor(3);  // RESUME -> WAIT -> CONTROLS -> SETTINGS
     session.choosePause();
     REQUIRE(session.optionsOpen());
+    session.stepMany(MoveInput{}, 16);
     render::Framebuffer withSettings(config.width, config.height);
     session.drawFrame(withSettings);
 
     const render::CentreRect centre = render::hudCentreRect(config.width, config.height);
+    bool pauseDiffers = false;
+    bool settingsDiffer = false;
     for (int y = centre.y0; y < centre.y1; ++y) {
         for (int x = centre.x0; x < centre.x1; ++x) {
-            REQUIRE(withPause.pixels()[withPause.index(x, y)] ==
-                    plain.pixels()[plain.index(x, y)]);
-            REQUIRE(withSettings.pixels()[withSettings.index(x, y)] ==
-                    plain.pixels()[plain.index(x, y)]);
+            if (withPause.pixels()[withPause.index(x, y)] != plain.pixels()[plain.index(x, y)]) {
+                pauseDiffers = true;
+            }
+            if (withSettings.pixels()[withSettings.index(x, y)] !=
+                plain.pixels()[plain.index(x, y)]) {
+                settingsDiffer = true;
+            }
         }
     }
+    CHECK(pauseDiffers);
+    CHECK(settingsDiffer);
+    // And the two states draw DIFFERENT cards -- five verbs is not a bindings
+    // list.
+    CHECK(withPause.pixels() != withSettings.pixels());
 }
 
 TEST_CASE("--pause reaches the menu headlessly, for an environment that cannot drive a real window") {
@@ -416,12 +431,14 @@ TEST_CASE("WAIT passes the hours anywhere safe -- clock moved, calendar synced, 
     CHECK_FALSE(session.pauseOpen());
     CHECK(session.waitRefusal().empty());
 
-    // Twelve rows, one per hour ahead, each naming the hour it lands on.
+    // The whole clock now (UI-EA-SPEC 1.7 #38): twenty-four rows, one per
+    // hour ahead, in the dieted `N - NAME HH:00` form.
     const render::DialogueViewState view = session.dialogueView();
     CHECK(view.speaker == "WAIT");
-    REQUIRE(view.topics.size() == 12);
-    CHECK(view.topics[0] == "1 HOUR  TO 00:00  MIDNIGHT");
-    CHECK(view.topics[6] == "7 HOURS  TO 06:00  DAWN");
+    REQUIRE(view.topics.size() == 24);
+    CHECK(view.topics[0] == "1 - MIDNIGHT 00:00");
+    CHECK(view.topics[6] == "7 - DAWN 06:00");
+    CHECK(view.topics[23] == "24 - 23:00");
 
     // NOTHING MENDS -- the owner's ruling, checked against a real bruise.
     const std::int32_t whole = session.tavern().playerHp();
@@ -503,6 +520,13 @@ TEST_CASE("every word the pause menu can show is a sentence, not a diagnostic") 
     const auto mustRead = [](const std::string& text) {
         INFO("text: ", text);
         for (const char c : text) {
+            // A motif sentinel draws as a keycap motif through the panel
+            // text drawers (UI-EA-SPEC sec. 5) -- readable, not a
+            // diagnostic. The authored-prose sweep (test_copy) stays
+            // strict: world words never carry one.
+            if (render::isMotifSentinel(c)) {
+                continue;
+            }
             CHECK(render::isDrawableGlyph(c));
         }
         CHECK(text.find('_') == std::string::npos);
@@ -522,4 +546,128 @@ TEST_CASE("every word the pause menu can show is a sentence, not a diagnostic") 
     mustRead(view.speaker);
     mustRead(view.epithet);
     mustRead(view.line);
+}
+
+// ---------------------------------------------------------------------------
+// UI-EA-SPEC sec. 4 violation #4: back returns to the OPENER. FLOW lane.
+// ---------------------------------------------------------------------------
+
+TEST_CASE("violation #4: ESC from a page the pause menu opened returns to the pause menu") {
+    render::Session session = standing();
+    session.togglePause();
+    REQUIRE(session.pauseOpen());
+
+    // CONTROLS (row 2) opens the keys page and puts the menu down...
+    session.movePauseCursor(1);
+    session.movePauseCursor(1);
+    session.choosePause();
+    REQUIRE(session.keysOpen());
+    REQUIRE_FALSE(session.pauseOpen());
+
+    // ...and back walks back through the same door: the pause menu again,
+    // cursor still on CONTROLS, not the street.
+    session.closeConversation();
+    CHECK_FALSE(session.keysOpen());
+    CHECK(session.pauseOpen());
+    CHECK(session.pauseRows()[2] == "CONTROLS");
+
+    // A second back is one more layer: the street.
+    session.closeConversation();
+    CHECK_FALSE(session.pauseOpen());
+    CHECK_FALSE(session.keysOpen());
+
+    // SETTINGS (row 3): the identical shape.
+    session.togglePause();
+    for (int i = 0; i < 3; ++i) {
+        session.movePauseCursor(1);
+    }
+    session.choosePause();
+    REQUIRE(session.optionsOpen());
+    session.closeConversation();
+    CHECK(session.pauseOpen());
+    CHECK(session.pauseRows()[3] == "SETTINGS");
+    session.closeConversation();
+    CHECK_FALSE(session.pauseOpen());
+
+    // WAIT (row 1): the door swings back too.
+    session.togglePause();
+    session.movePauseCursor(1);
+    session.choosePause();
+    REQUIRE(session.waitOpen());
+    session.closeConversation();
+    CHECK(session.pauseOpen());
+    CHECK(session.pauseRows()[1] == "WAIT");
+    session.closeConversation();
+    CHECK_FALSE(session.pauseOpen());
+}
+
+TEST_CASE("violation #4: a page opened by its own shortcut still closes to the street") {
+    // F1/F2's route: toggleKeys()/toggleOptions() with no pause menu up.
+    // Back must NOT invent a pause menu that was never there.
+    render::Session session = standing();
+    session.toggleKeys();
+    REQUIRE(session.keysOpen());
+    session.closeConversation();
+    CHECK_FALSE(session.keysOpen());
+    CHECK_FALSE(session.pauseOpen());
+
+    session.toggleOptions();
+    REQUIRE(session.optionsOpen());
+    session.closeConversation();
+    CHECK_FALSE(session.optionsOpen());
+    CHECK_FALSE(session.pauseOpen());
+}
+
+TEST_CASE("violation #4: the keys<->options sibling swap carries the way home with it") {
+    // Pause -> SETTINGS -> (tab swap) keys page -> back: the pause menu.
+    // The pair reads as one tabbed surface, so switching tabs must not
+    // launder away where back leads.
+    render::Session session = standing();
+    session.togglePause();
+    for (int i = 0; i < 3; ++i) {
+        session.movePauseCursor(1);
+    }
+    session.choosePause();
+    REQUIRE(session.optionsOpen());
+    session.toggleKeys();  // the router's TAB swap lands here
+    REQUIRE(session.keysOpen());
+    REQUIRE_FALSE(session.optionsOpen());
+    session.closeConversation();
+    CHECK(session.pauseOpen());
+
+    // And the mirror: street -> F1 keys -> swap to options -> back -> street.
+    session.closeConversation();  // pause -> street
+    REQUIRE_FALSE(session.pauseOpen());
+    session.toggleKeys();
+    session.toggleOptions();  // the swap the other way
+    REQUIRE(session.optionsOpen());
+    session.closeConversation();
+    CHECK_FALSE(session.pauseOpen());
+    CHECK_FALSE(session.optionsOpen());
+}
+
+TEST_CASE("contract (b): the commit pulse arms on demand and decays to nothing") {
+    // FLOW arms it at commit routing (main.cpp); PAGES reads it back on the
+    // inverted fill. Here: the Session plumbing -- trigger, read, decay --
+    // over kPageEaseSteps of ordinary step() calls.
+    render::Session session = standing();
+    CHECK(session.commitPulseValue() == 0.0F);
+    session.armCommitPulse();
+    CHECK(session.commitPulseValue() == 1.0F);
+    for (int i = 0; i < granadad::render::kPageEaseSteps; ++i) {
+        CHECK(session.commitPulseValue() > 0.0F);
+        session.step(MoveInput{});
+    }
+    CHECK(session.commitPulseValue() == 0.0F);
+}
+
+TEST_CASE("contract (c): the tutor wake serial moves only when it is told to") {
+    render::Session session = standing();
+    const std::uint32_t before = session.tutorWakeSerial();
+    session.step(MoveInput{});
+    CHECK(session.tutorWakeSerial() == before);  // steps alone never wake
+    session.noteTutorWake();
+    CHECK(session.tutorWakeSerial() == before + 1);
+    session.noteTutorWake();
+    CHECK(session.tutorWakeSerial() == before + 2);
 }

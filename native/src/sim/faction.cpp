@@ -292,6 +292,11 @@ std::int32_t factionDeedWeight(Deed deed) noexcept {
         case Deed::SpokePolitely:
         case Deed::SpokeBluntly:
             return 0;
+        // ACTION-COMBAT BUILD: a killing is the heaviest thing a guild hears
+        // secondhand, below drawn steel and, like every row, smaller in
+        // magnitude than what it did to the person it was done to.
+        case Deed::Slew:
+            return -20;
     }
     return 0;
 }

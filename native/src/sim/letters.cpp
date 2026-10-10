@@ -45,6 +45,10 @@ std::filesystem::path missionSheetLetterRawsPath(const std::filesystem::path& co
     return contentDir / "raws" / "quests" / "mission_sheet_letters.json";
 }
 
+std::filesystem::path evictionLetterRawsPath(const std::filesystem::path& contentDir) {
+    return contentDir / "raws" / "quests" / "eviction_letters.json";
+}
+
 LetterRaws LetterRaws::load(const std::filesystem::path& contentDir) {
     return loadFile(letterRawsPath(contentDir));
 }

@@ -7,13 +7,26 @@
 // all, and it is why the docker gate can render a frame of the Docks on every
 // build.
 //
+// 3D BUILD (2026-09-10). THE WINDOW IS RAYLIB'S NOW. granadad-render3d-rl
+// owns the window, the GL context, the 3D pass and the composite; SDL stays
+// for exactly two things it is still best at -- the audio device and the
+// gamepad -- and is initialised with SDL_INIT_GAMEPAD alone, never VIDEO.
+// The keyboard and the mouse come out of raylib in a neutral vocabulary (HID
+// usage ids == SDL scancodes) and are pushed onto SDL's own event queue by
+// VideoBridge below, so the five thousand lines of input routing under it
+// -- the scancode table, route_menu_key, pressed()/released(), the pad
+// parity, the virtual pad harness -- keep reading the SDL_Event they always
+// read. See VideoBridge's header for what that buys and what it costs.
+//
 // Floats are legal in this file and its neighbours under src/client. They are
 // not legal anywhere under src/sim.
 
 #include <SDL3/SDL.h>
 
 #include <algorithm>
+#include <array>
 #include <chrono>
+#include <cmath>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -24,6 +37,7 @@
 #include <memory>
 #include <string>
 #include <string_view>
+#include <thread>
 #include <vector>
 
 #include "granadad/audio/backend_sdl.hpp"
@@ -31,6 +45,7 @@
 #include "granadad/content/world_reader.hpp"
 #include "granadad/sim/compound.hpp"
 #include "granadad/render/capture.hpp"
+#include "granadad/render/case_watch.hpp"
 #include "granadad/render/casebook_page.hpp"
 #include "granadad/render/controls.hpp"
 #include "granadad/render/creation.hpp"
@@ -38,23 +53,46 @@
 #include "granadad/render/dialogue_view.hpp"
 #include "granadad/render/framebuffer.hpp"
 #include "granadad/render/keys_page.hpp"
+#include "granadad/render/lighting.hpp"
 #include "granadad/render/map_view.hpp"
 #include "granadad/render/menu_view.hpp"
 #include "granadad/render/session.hpp"
 #include "granadad/render/step_pump.hpp"
+#include "granadad/render/world_renderer.hpp"
+#include "granadad/render3d/backend.hpp"
+#include "granadad/render3d/scene.hpp"
+#include "granadad/render3d/actor_instances.hpp"
+#include "granadad/render3d/ground_items.hpp"
+#include "granadad/render3d/viewmodel.hpp"
+#include "granadad/render3d/world_scene.hpp"
 #include "granadad/sim/angle.hpp"
 #include "granadad/sim/build_info.hpp"
 #include "granadad/sim/docks.hpp"
 #include "granadad/sim/engine.hpp"
 #include "granadad/sim/fixed.hpp"
 #include "granadad/sim/player.hpp"
+#include "granadad/sim/tavern.hpp"
 #include "granadad/sim/tile_query.hpp"
 #include "granadad/sim/ward_actors.hpp"
 
 namespace {
 
 namespace render = granadad::render;
+namespace render3d = granadad::render3d;
 namespace sim = granadad::sim;
+
+/// 3D BUILD. Whether a shift key is held, kept by VideoBridge off the edges
+/// raylib reports. It replaces SDL_GetModState(), which only ever knew the
+/// answer while SDL owned the keyboard.
+bool g_video_shift_held = false;
+
+// COMBAT. The hard-swing hold threshold (sim, deterministic movement steps) and
+// the tap/hold boundary the client's HoldToggle already uses are ONE number by
+// design -- the whole game reads a single tap/hold line. The sim header cannot
+// include render, so the two are tied here, at the one seam that includes both.
+static_assert(sim::kHardSwingHoldSteps == render::HoldToggle::kTapSteps,
+              "the hard-swing hold clock and the client tap/hold boundary must "
+              "be the same number of steps");
 
 void print_build_banner() {
     const sim::BuildInfo info = sim::build_info();
@@ -272,6 +310,40 @@ int run_audio_selftest() {
     }
     std::printf("audio-selftest: bed=%d footstep_sounded=%d\n",
                 static_cast<int>(audio->currentBed()), stepped ? 1 : 0);
+    // THE LOT PASS: the music director, driven the way run_client() drives
+    // it -- the zone set, update() per frame -- until its exploration loop
+    // actually starts, so "the real exe on this machine decoded the owner's
+    // loop and put a stereo voice on Bus::Music" is a stdout fact. Bounded:
+    // a checkout without content/art/lot/audio has no track to start and
+    // says so, which is a fact about the checkout, not a failure.
+    std::printf("audio-selftest: %s\n", audio->music().describe().c_str());
+    std::printf("audio-selftest: bank LOT files=%zu (missing %zu), Kenney missing=%zu\n",
+                audio->bank().lotFiles(), audio->bank().lotMissingFiles(),
+                audio->bank().missingFiles());
+    audio->music().setZone(granadad::audio::MusicZone::Docks);
+    const auto t0 = std::chrono::steady_clock::now();
+    int waitedMs = 0;
+    while (audio->music().playing() == granadad::audio::TrackId::None &&
+           waitedMs < 15000) {
+        audio->update(1.0F / 60.0F);
+        std::this_thread::sleep_for(std::chrono::milliseconds(16));
+        waitedMs = static_cast<int>(
+            std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::steady_clock::now() - t0)
+                .count());
+    }
+    const granadad::audio::TrackId playing = audio->music().playing();
+    if (playing != granadad::audio::TrackId::None) {
+        std::printf("audio-selftest: music exploration loop started: %s after %d ms "
+                    "(voice %u on Bus::Music, tracks held=%d)\n",
+                    std::string(granadad::audio::trackName(playing)).c_str(),
+                    waitedMs, static_cast<unsigned>(audio->music().voice()),
+                    audio->music().loadedTracks());
+    } else {
+        std::printf("audio-selftest: music: no track started in %d ms "
+                    "(LOT audio absent, or the loader found no file)\n",
+                    waitedMs);
+    }
     return 0;
 }
 
@@ -283,12 +355,34 @@ struct Options {
     render::SmokeRunConfig smoke;
     bool wantsSmoke = false;
     int windowScale = 2;
+    /// 3D BUILD. THE DEFAULT NOW: the world is drawn by the raylib backend
+    /// -- the Docks as chunk meshes (render3d/world_scene.hpp) -- and the
+    /// software frame is drawn WITHOUT its world pass, as a transparent
+    /// overlay over it. `--2d` turns it off: the software world rides inside
+    /// the overlay and the picture is the one this build showed before the
+    /// 3D programme; the window, the composite and the capture go through
+    /// raylib either way. `--3d` is still accepted and means the default.
+    bool video3d = true;
+    /// THE LOT PASS: --music-off. The MusicDirector loads and plays nothing;
+    /// every other sound stays. Audio-side only, never in the settings file
+    /// (a launch flag, like --nohud).
+    bool musicOff = false;
     /// Mouse look sensitivity, BAM per mouse count. Only used when NAMED: the
     /// settings file is the source of truth, and a command line that always
     /// overrode it would silently undo the options page on every launch.
     int sensitivity = 14;
     bool sensitivityGiven = false;
+    /// --fov=, the same shape: the settings file's fov is the source of
+    /// truth (the VIEW ANGLE slider saves it), and the command line only
+    /// overrides it for one launch when it was actually given. It used to
+    /// clobber the file's value with the default 90 on every launch.
+    bool fovGiven = false;
     bool invertY = false;
+    /// WEATHER. True when --weather=STATE named one. The client's default is
+    /// LIVE weather (smoke.session.liveWeather, set in parse); a named state
+    /// pins it. --demo and --case-watch keep the clear sky their committed
+    /// frames were shot under unless a state was named.
+    bool weatherGiven = false;
     /// Where the bindings live. Overridable so a capture, a case or a second
     /// player on the same machine can have their own.
     std::filesystem::path controlsFile;
@@ -316,6 +410,21 @@ struct Options {
     /// Where `--demo-capture=DIR` writes the route's own frames. Empty takes
     /// no pictures and is the ordinary way to watch it.
     std::filesystem::path demoShotDir;
+    /// CASE WATCH. Plays THE QUIET TENANT windowed at the demo's cadence --
+    /// the recorded --case drive, replayed one step per rendered frame. See
+    /// render/case_watch.hpp. Plain --case is untouched: this flag skips the
+    /// creation window and the smoke path both, and runs the client loop with
+    /// a CaseWatchDirector where --demo would put its DemoDirector.
+    bool caseWatch = false;
+    /// Where `--case-watch-capture=DIR` writes one PNG per landed beat.
+    std::filesystem::path caseWatchShotDir;
+    /// VERIFICATION ONLY. Where `--framedump=DIR` writes every presented frame
+    /// of a --demo/--case-watch run, numbered f<NNNNN>.png by the frame loop's
+    /// own counter. Empty dumps nothing and is the ordinary run. This exists
+    /// because a transition seam -- a cut, a fade, a plate easing in -- is a
+    /// claim about CONSECUTIVE frames, and the 40 ms cadence of a pad script's
+    /// shot: beats can step right over a one-frame defect.
+    std::filesystem::path frameDumpDir;
 };
 
 // ---------------------------------------------------------------------------
@@ -350,9 +459,27 @@ struct PadBeat {
     /// Stick beats: which axis, and which way past the deadzone.
     SDL_GamepadAxis axis = SDL_GAMEPAD_AXIS_LEFTX;
     Sint16 value = 0;
+    /// Where the axis goes back to on the release beat. A stick rests at 0; a
+    /// TRIGGER rests at the raw axis MINIMUM -- see kTriggerRest.
+    Sint16 rest = 0;
     int millis = 0;
     std::string name;
 };
+
+/// THE RAW REST VALUE OF A VIRTUAL TRIGGER, AND WHY IT IS NOT ZERO. SDL maps a
+/// joystick axis bound to a trigger from the axis's full signed range onto
+/// the trigger's 0..32767, so a raw 0 reads back as a HALF-PULLED trigger
+/// (about 16383 -- well past the shipped 12% deadzone). The virtual pad's
+/// axes attach at raw 0, and its trigger beats used to release to 0: both
+/// triggers therefore read PRESSED from the moment the pad attached, and a
+/// trigger beat's "release" never crossed back under the threshold at all.
+/// Under the old scheme (RT cast on its down edge, LT blocked while down)
+/// nobody looked; under nine and the sticks RT is SWING -- a HELD button
+/// whose release resolves the swing -- and the first LOWER HANDS capture
+/// came back with the charge row still up two seconds after the pull. The
+/// game's own trigger edge was right; the harness's idea of "at rest" was a
+/// half-pull. Raw minimum is a trigger fully released.
+constexpr Sint16 kTriggerRest = -32768;
 
 /// Parses "back,wait:400,down,down,shot:pad-map,a" into beats. Unknown words are
 /// reported and refuse the run rather than being skipped -- a capture that
@@ -374,14 +501,19 @@ struct PadBeat {
         const char* word;
         SDL_GamepadAxis axis;
         Sint16 value;
+        Sint16 rest;
     };
     // PAST kNavStickOn (18000) BY A MARGIN, so the latch in the frame loop is
     // being crossed and not grazed.
     static constexpr NamedStick kSticks[] = {
-        {"lsup", SDL_GAMEPAD_AXIS_LEFTY, -28000},
-        {"lsdown", SDL_GAMEPAD_AXIS_LEFTY, 28000},
-        {"lsleft", SDL_GAMEPAD_AXIS_LEFTX, -28000},
-        {"lsright", SDL_GAMEPAD_AXIS_LEFTX, 28000},
+        {"lsup", SDL_GAMEPAD_AXIS_LEFTY, -28000, 0},
+        {"lsdown", SDL_GAMEPAD_AXIS_LEFTY, 28000, 0},
+        {"lsleft", SDL_GAMEPAD_AXIS_LEFTX, -28000, 0},
+        {"lsright", SDL_GAMEPAD_AXIS_LEFTX, 28000, 0},
+        // The right stick's vertical, the ward map's zoom (nine and the
+        // sticks) -- the same latch the left stick's nav uses.
+        {"rsup", SDL_GAMEPAD_AXIS_RIGHTY, -28000, 0},
+        {"rsdown", SDL_GAMEPAD_AXIS_RIGHTY, 28000, 0},
         // THE TRIGGERS ARE AXES, NOT BUTTONS, and that is SDL's rule rather
         // than this harness's: S13's own note in the frame loop is that
         // SDL reports LT/RT through SDL_GAMEPAD_AXIS_*_TRIGGER and never as a
@@ -389,8 +521,9 @@ struct PadBeat {
         // polling. So they are driven here the way the game reads them --
         // well past the shipped triggerDeadzonePercent, and back to rest on
         // the release beat, which is the release edge.
-        {"lt", SDL_GAMEPAD_AXIS_LEFT_TRIGGER, 28000},
-        {"rt", SDL_GAMEPAD_AXIS_RIGHT_TRIGGER, 28000},
+        // A trigger's rest is the raw minimum, not 0 -- see kTriggerRest.
+        {"lt", SDL_GAMEPAD_AXIS_LEFT_TRIGGER, 28000, kTriggerRest},
+        {"rt", SDL_GAMEPAD_AXIS_RIGHT_TRIGGER, 28000, kTriggerRest},
     };
 
     std::size_t at = 0;
@@ -433,6 +566,7 @@ struct PadBeat {
                 beat.kind = PadBeat::Kind::Stick;
                 beat.axis = row.axis;
                 beat.value = row.value;
+                beat.rest = row.rest;
                 out.push_back(beat);
                 found = true;
                 break;
@@ -491,6 +625,13 @@ struct PadDriver {
             return false;
         }
         device = SDL_OpenJoystick(id);
+        // THE TRIGGERS ATTACH RELEASED, not half-pulled -- see kTriggerRest.
+        if (device != nullptr) {
+            (void)SDL_SetJoystickVirtualAxis(device, static_cast<int>(SDL_GAMEPAD_AXIS_LEFT_TRIGGER),
+                                             kTriggerRest);
+            (void)SDL_SetJoystickVirtualAxis(
+                device, static_cast<int>(SDL_GAMEPAD_AXIS_RIGHT_TRIGGER), kTriggerRest);
+        }
         std::printf("granadad: --padscript: virtual pad attached, %d beats\n",
                     static_cast<int>(beats.size()));
         // FLUSHED, EVERY LINE. A harness whose progress is invisible until it
@@ -567,7 +708,7 @@ struct PadDriver {
             if (beat.kind == PadBeat::Kind::Button) {
                 pushButton(beat.button, false);
             } else if (beat.kind == PadBeat::Kind::Stick) {
-                (void)SDL_SetJoystickVirtualAxis(device, static_cast<int>(beat.axis), 0);
+                (void)SDL_SetJoystickVirtualAxis(device, static_cast<int>(beat.axis), beat.rest);
             }
             held = false;
             ++at;
@@ -630,7 +771,15 @@ void print_usage() {
     std::printf(
         "usage: granadad [options]\n"
         "  --smoke=N            run N movement steps, then capture and exit\n"
-        "  --screenshot=PATH    write the captured frame as a PNG (implies no window)\n"
+        "  --screenshot=PATH    write the captured frame as a PNG. Composited\n"
+        "                       through the 3D backend: the shipped build opens\n"
+        "                       a window for the shutter and closes it; the\n"
+        "                       headless (rlsw) build opens none\n"
+        "  --2d                 draw the world with the software raycaster inside\n"
+        "                       the overlay instead of the 3D chunk meshes (the\n"
+        "                       picture this build showed before the 3D programme)\n"
+        "  --3d                 the default: the Docks as 3D geometry through the\n"
+        "                       raylib backend, the terminal HUD composited over it\n"
         "  --width=N            internal render width  (default 640)\n"
         "  --height=N           internal render height (default 360)\n"
         "  --scale=N            window / capture upscale, nearest neighbor (default 2)\n"
@@ -640,11 +789,23 @@ void print_usage() {
         "                       scripted line sets its own hour when this is not\n"
         "                       given -- --skyrun wants 22, when Finch is in\n"
         "                       the snug -- and never overrides one that is\n"
+        "  --weather=STATE      clear, overcast, fog or wind, pinned at full.\n"
+        "                       Without it the sky is the LIVE weather for the\n"
+        "                       seed, the day and the hour (fog off the water\n"
+        "                       at dawn, dusk and night, a lid of cloud, a\n"
+        "                       blow), easing in and out over the hours. The\n"
+        "                       summary line prints weather=STATE N.NN either\n"
+        "                       way. Render-only: the sim never reads it.\n"
+        "                       --demo and --case-watch stay clear unless one\n"
+        "                       is named.\n"
         "  --fov=DEG            horizontal field of view (default 90)\n"
         "  --spawn=X,Y,Z        spawn tile (default the authored Tarwalk spawn)\n"
         "  --yaw=DEG            spawn facing, 0 = north (default 0)\n"
+        "  --pitch=DEG          spawn look pitch, positive up, clamped like the\n"
+        "                       mouse (default 0): shoot down at a doorstep or\n"
+        "                       up at a roof line without touching the mouse\n"
         "  --sensitivity=N      mouse look, BAM per count (default 14). The\n"
-        "                       OPTIONS page (F2) has a slider for this and\n"
+        "                       SETTINGS page (PAUSE) has a slider for this and\n"
         "                       it is what survives between runs -- this only\n"
         "                       overrides it for one launch\n"
         "  --invert-y           invert the look axis for one launch\n"
@@ -682,10 +843,24 @@ void print_usage() {
         "                       PASS; implies --map-overlay\n"
         "  --map-tab=VIEW       overview, people, index or legend\n"
         "  --map-zoom=N         rungs in from the whole ward, 0..3\n"
+        "  --travel=NAME        press the ward map's TRAVEL verb on an\n"
+        "                       authored place: the clock advances by the\n"
+        "                       walk's real cost and the body arrives -- or\n"
+        "                       the refusal is printed, in its exact words,\n"
+        "                       in the summary's | travel segment\n"
         "  --case-lead=ID       THE CASEBOOK PASS: open the casebook page with\n"
         "                       its cursor on this casebook.json lead id\n"
         "                       (weighhouse-ledger)\n"
-        "  --case-tab=VIEW      leads or case\n"
+        "  --case-tab=VIEW      leads, case or cases (the CASES shelf)\n"
+        "  --follow=ID          THE PULL PACK: open the casebook page, put the\n"
+        "                       cursor on the lead by its casebook.json id and\n"
+        "                       press FOLLOW (F), leaving the book up. Runs\n"
+        "                       after the trail flags, so --trail=mission can\n"
+        "                       have opened the lead first\n"
+        "  --follow-end=street  ...then put the book down, so the shutter is the\n"
+        "                       compass ribbon carrying the lead\n"
+        "  --follow-walk=N      ...and walk N steps forward first, so the paces\n"
+        "                       on the ribbon are a picture of movement\n"
         "  --case-route         press the casebook's commit verb, which routes\n"
         "                       the highlighted lead onto the ward map. The\n"
         "                       only headless path to a picture of the route\n"
@@ -709,18 +884,29 @@ void print_usage() {
         "  --sprint=N           VERIFICATION ONLY: hold forward+sprint for N\n"
         "                       real steps before the shutter -- the fatigue\n"
         "                       bar's mid/empty states and the winded refusal\n"
-        "  --punch              VERIFICATION ONLY: retry the punch key until\n"
-        "                       one lands, before the shutter goes\n"
-        "  --block              VERIFICATION ONLY: start a brawl, raise the\n"
-        "                       guard, hold it until a blow is softened\n"
+        "  --punch              VERIFICATION ONLY: walk up to the nearest\n"
+        "                       person, put them on the crosshair and tap\n"
+        "                       the punch key until one lands, before the\n"
+        "                       shutter goes\n"
+        "  --charge=N           VERIFICATION ONLY: walk up to the nearest\n"
+        "                       person as --punch does, press the attack\n"
+        "                       key DOWN and hold it N steps without letting\n"
+        "                       go, so the hard swing's wind-up (under the\n"
+        "                       hold threshold) or the held hard tier (at or\n"
+        "                       past it) is on the frame. Pair with\n"
+        "                       --settle-steps=0 for an exact count\n"
+        "  --block[=N]          VERIFICATION ONLY: pick that same fight, raise\n"
+        "                       the guard, hold it until N blows are softened\n"
+        "                       (default 1; 5 earns shieldwall's first level\n"
+        "                       and the SHIELDWALL RISES TO 1 toast mid-fight)\n"
         "  --cast               VERIFICATION ONLY: press the cast key once\n"
         "                       (pair with --flame to have a spell to cast)\n"
         "  --held=ID[,ID]       VERIFICATION ONLY: equip each crafting by id\n"
         "                       and cast until its link opens, waiting out\n"
         "                       cooldowns -- photographs live holds with\n"
         "                       their clocks. Pair with --flame\n"
-        "  --grimoire           VERIFICATION ONLY: open the Grimoire page (the\n"
-        "                       same page a tap of the QuickWheel key opens)\n"
+        "  --grimoire           VERIFICATION ONLY: open the Grimoire page (a\n"
+        "                       page of NOTES, one bumper past the ward map)\n"
         "                       before the shutter goes; pair with --flame so\n"
         "                       the list has craftings on it\n"
         "  --wait               VERIFICATION ONLY: open the Wait page through\n"
@@ -734,7 +920,20 @@ void print_usage() {
         "                       own giver out in the ward, talk, and take the\n"
         "                       errand off them. END `offer` stops with the\n"
         "                       giver's row on the open list; `taken` (the\n"
-        "                       default) presses it and checks the journal\n"
+        "                       default) presses it and checks the journal;\n"
+        "                       `shelf` opens the casebook's CASES shelf on\n"
+        "                       the errand's row (who, where, what it pays);\n"
+        "                       `settled` takes a word errand, walks to the\n"
+        "                       one it is for and passes it, and is paid;\n"
+        "                       `ask` asks a stranger WHO NEEDS A HAND?\n"
+        "  --tone=REGISTER      VERIFICATION ONLY: with --street or --talk,\n"
+        "                       press the conversation's TONE row until it\n"
+        "                       reads polite, normal or blunt\n"
+        "  --shop[=END]         VERIFICATION ONLY: find Brann at his chandlery\n"
+        "                       counter, SEE THE WARES and buy a lantern, then\n"
+        "                       sell it back across Fenner's pawn. END is\n"
+        "                       wares, bought (pair with --character to see\n"
+        "                       it in the Kit), pawn or sold (the default)\n"
         "  --quickbar           VERIFICATION ONLY: bind the first crafting to\n"
         "                       slot 3 through the Grimoire page, close it and\n"
         "                       press the number, so the bottom-centre strip\n"
@@ -746,7 +945,8 @@ void print_usage() {
         "                       controller plugged in. Beats: a b x y back\n"
         "                       start lb rb up down left right (buttons),\n"
         "                       lsup lsdown lsleft lsright (a left-stick push\n"
-        "                       past the deadzone and back), lt rt (the\n"
+        "                       past the deadzone and back), rsup rsdown (the\n"
+        "                       right stick, the ward map's zoom), lt rt (the\n"
         "                       triggers, which SDL reports as axes and not\n"
         "                       as buttons), wait:MS, shot:NAME. An unknown\n"
         "                       beat REFUSES THE WHOLE SCRIPT rather than\n"
@@ -769,6 +969,15 @@ void print_usage() {
         "  --demo-capture=DIR   the same route, writing a PNG of each of its\n"
         "                       named shots into DIR, so a trailer or a\n"
         "                       screenshot set falls out of the same run\n"
+        "  --framedump=DIR      VERIFICATION ONLY: write EVERY presented frame\n"
+        "                       into DIR as f<NNNNN>.png -- consecutive frames,\n"
+        "                       so a transition (a cut, a fade, a plate easing\n"
+        "                       in, a page opening) can be read frame by frame\n"
+        "                       instead of argued about. Works in the ordinary\n"
+        "                       windowed session as well as under --demo and\n"
+        "                       --case-watch; keep the run short. The shot is\n"
+        "                       the framebuffer after the overlays, exactly\n"
+        "                       what the window presented\n"
         "  --creation[=STEP]    capture the character-creation flow with no\n"
         "                       window and no world. STEP is origin (default),\n"
         "                       calling (the nine-trade roster), quiz (question\n"
@@ -777,19 +986,19 @@ void print_usage() {
         "                       review (a taken calling converged on the\n"
         "                       customize screen), customize (CUSTOM, a few\n"
         "                       points spent), devin or gabri (fixed sheets)\n"
-        "  --settle             run a scripted overlay's open animation to\n"
-        "                       completion before the shutter, instead of\n"
-        "                       capturing the frame it opened on (this is\n"
-        "                       now the DEFAULT for a screenshot -- see\n"
-        "                       --no-settle)\n"
+        "  --settle             run to the AT-REST frame before the shutter\n"
+        "                       (the default for a screenshot): ~4s of\n"
+        "                       zero-input steps, past the page's open ease\n"
+        "                       AND the tutor bands' page-open raise easing\n"
+        "                       back down -- the frame the word budgets bind\n"
         "  --no-settle          capture the overlay's opening bump instead\n"
-        "                       of its settled, fully-open frame -- only\n"
-        "                       useful for proving the transition itself\n"
-        "                       does not flash on its first drawn frame\n"
-        "  --settle-steps=N     VERIFICATION ONLY: run exactly N zero-input\n"
-        "                       steps before the shutter instead of 16-or-0,\n"
-        "                       so a mid-transition frame of the panel/menu\n"
-        "                       eases can actually be photographed\n"
+        "                       of its settled at-rest frame -- only useful\n"
+        "                       for proving the transition itself does not\n"
+        "                       flash on its first drawn frame\n"
+        "  --settle-steps=N     run exactly N zero-input steps before the\n"
+        "                       shutter instead of the at-rest default: 0\n"
+        "                       photographs the raised state, a small N a\n"
+        "                       mid-transition frame of the panel eases\n"
         "  --refocus=TILE       VERIFICATION ONLY: after --character/--map has\n"
         "                       been given --settle-steps to genuinely finish\n"
         "                       opening, switch the tiled Menu's focus to TILE\n"
@@ -828,11 +1037,59 @@ void print_usage() {
         "  --skyrun[=WHERE]     play the Skyrunner line -- sign on, two purses, a\n"
         "                       box, the roof, the alley, the fence, a lean and a\n"
         "                       bale past the Watch. WHERE is talk or away\n"
+        "  --watch-halt[=WHERE] draw steel in the Gull in Watchman Cull's sight\n"
+        "                       and stand there: the halt, the arrest at reach,\n"
+        "                       the street. WHERE is halt or street\n"
+        "  --voice[=WHERE]      the street speaking without the talk key, stopped\n"
+        "                       the step the row holds it. WHERE is pass (a body\n"
+        "                       passing you on the Tarwalk), overheard (two bodies\n"
+        "                       talking to each other), farewell (the goodbye on\n"
+        "                       LEAVE), moved (the worded reaction to a reply),\n"
+        "                       react (a witness to a tap in the Gull) or watch\n"
+        "                       (Cull's readback as he closes after the halt)\n"
+        "  --street-assault[=WHERE]\n"
+        "                       stand in the crowd on the Tarwalk at 16:00.\n"
+        "                       WHERE empty: raise steel, the street scatters\n"
+        "                       (pair with --settle-steps=N, 0/180/360). blow: a\n"
+        "                       fist lands on a docker. down: taps until he is on\n"
+        "                       the floor. up: and six seconds on, back on his\n"
+        "                       feet, bloodied, running. kill: steel, hard swings,\n"
+        "                       a corpse and WANTED FOR BLOOD. hearing: the\n"
+        "                       killing, then Cull at ten, the rope hearing page\n"
+        "                       reading the street's own witness count. watch-halt:\n"
+        "                       a fist within a watchman's sight, HALT on his own\n"
+        "                       row. watch-sheathe: steel within his sight, SHEATHE\n"
+        "                       IT. watch-offence: the same held past its grace\n"
+        "  --court[=WHERE]      lift in Cull's sight until WANTED, be taken to the\n"
+        "                       Mission's bench. WHERE is wanted, cull (his line, his\n"
+        "                       hand on you), taken (the plate), page, paper, armed,\n"
+        "                       plea, deny, hand (the Skyrunners' oath first), serve,\n"
+        "                       bloodtag, ropepage, rope or newman (--flame first to\n"
+        "                       have what you gave at the door weighed)\n"
+        "  --kit[=WHERE]        play the Kit: name and take the coil on the\n"
+        "                       Tarwalk, lift the house's lantern, knife and\n"
+        "                       coat (THEIRS) at four, open the Character tile\n"
+        "                       on the carried rows, wear the coat and the\n"
+        "                       knife, slot the knife, take Ox's blow on the\n"
+        "                       coat, put him down and search him, load up to\n"
+        "                       the budget, put the coil down and look at it.\n"
+        "                       WHERE is take, theirs, sheet, equip, slot, dr,\n"
+        "                       search, load, drop or empty for the whole line\n"
+        "  --rung=TRACK         raise a Legend rung on TRACK through the real\n"
+        "                       verbs and stop on the plate, fully up. TRACK\n"
+        "                       is wire (a guest's box cracked at two), roofs\n"
+        "                       (the lead and the alley leapt), flame (the\n"
+        "                       Mission's two leads read), trade (the ward's\n"
+        "                       bounty paid) or law (the Watch stood drinks).\n"
+        "                       Pair with --settle-steps=0 for the plate at\n"
+        "                       its first held frame\n"
         "  --nemesis[=WHERE]    lose a fist fight to a named laborer three\n"
         "                       times and watch him rise: a rung, a guild\n"
         "                       with members in it, a permanent cut of the\n"
         "                       ward's prices and his name on the compound\n"
-        "                       roll as a Den Duke. WHERE is talk or away\n"
+        "                       roll as a Den Duke. WHERE is talk, away or\n"
+        "                       death (stop on the boards of the rematch, the\n"
+        "                       death ceremony still playing over the revive)\n"
         "  --contract[=WHERE]   play the ward's own bounty -- take it off the\n"
         "                       Watch, get the Flame's mark, hunt the taproom\n"
         "                       and get paid. WHERE is talk, away or held\n"
@@ -848,6 +1105,18 @@ void print_usage() {
         "                       UP and the Mission's back room. WHERE is\n"
         "                       sheet, gull, night, down, or empty for the\n"
         "                       whole errand delivered\n"
+        "  --case-watch[=WHERE] WATCH the same errand: the identical --case\n"
+        "                       drive, recorded and replayed in a window at\n"
+        "                       the demo's own cadence -- one simulation step\n"
+        "                       per rendered frame on the demo's frame\n"
+        "                       deadline -- with captions, so a human can sit\n"
+        "                       through what --case proves. Same route, same\n"
+        "                       beats, same end state, about three minutes;\n"
+        "                       the wait to two is a cut, the demo's own\n"
+        "                       clock rule. ESC leaves. WHERE as --case\n"
+        "  --case-watch-capture=DIR\n"
+        "                       the same watch run, writing one PNG per\n"
+        "                       landed beat into DIR\n"
         "  --world=NAME         baked world to load (default docks_surface)\n"
         "  --ward[=DAYS]        run the ward's compounds -- courtyard farms,\n"
         "                       ground rents, bonds and the priest's hearings\n"
@@ -885,6 +1154,8 @@ void print_usage() {
         "                       prints the count (0 included) and every name,\n"
         "                       so a controller's presence can be proved from\n"
         "                       a script without a human pressing a button\n"
+        "  --music-off          no music: the director loads and plays no\n"
+        "                       track; footsteps, beds and combat stay\n"
         "  --audio-selftest     open the real SDL audio engine, no window --\n"
         "                       prints whether a device opened (no device is\n"
         "                       a fact, not a failure: the game runs silent)\n"
@@ -893,20 +1164,30 @@ void print_usage() {
         "                       from a script without ears\n"
         "  --version            print the build banner and exit\n"
         "\n"
-        "IN THE GAME: WASD moves, the mouse looks, SHIFT sprints, CTRL\n"
-        "crouches (both HOLD and TAP), SPACE jumps, E talks, M opens the\n"
-        "ward map, J opens your casebook, F1 lists every key and F2\n"
-        "rebinds them.\n"
+        "IN THE GAME: NINE VERBS AND THE STICKS. WASD moves and the mouse\n"
+        "looks. MOUSE1 SWINGS (hands down, one press brings them up and\n"
+        "hits whoever is in front of you; hold it to swing hard), MOUSE2\n"
+        "GUARDS, C CASTS, E USES whatever is in reach, CTRL SNEAKS (hold\n"
+        "or tap), SPACE JUMPS, SHIFT RUNS, J opens your NOTES (sheet,\n"
+        "chart, letters, casebook, and past them the ward map and the\n"
+        "grimoire on [ and ]), ESC PAUSES. M is the ward map's own key.\n"
+        "On a pad: RT swings, LT guards, RB casts, A uses, B sneaks, Y\n"
+        "jumps, the stick runs, D-pad up is NOTES, START pauses, SELECT\n"
+        "waits, D-pad left/right step the quick bar. LB/RB page, LT/RT\n"
+        "tab, B backs out of every page.\n"
         "\n"
-        "WALK INTO A LEDGE TO CLIMB IT. There is no climb key to learn --\n"
-        "though V still works if you would rather line a leap up yourself.\n"
-        "The keys are IN the game and every one of them is rebindable; this\n"
-        "page is a convenience and not the reference.\n");
+        "WALK INTO A LEDGE TO CLIMB IT. There is no climb key to learn.\n"
+        "The keys are IN the game (PAUSE, CONTROLS) and every one of them\n"
+        "is rebindable; this page is a convenience and not the reference.\n");
 }
 
 [[nodiscard]] Options parse(int argc, char** argv, bool& stop, int& exitCode) {
     Options options;
     options.smoke.session.timeOfDay = 20 * 3600;
+    // WEATHER: ON IN THE CLIENT, off in SessionConfig -- openingPage's own
+    // pattern. The windowed game and every capture draw the live sky for
+    // the seed, the day and the hour; --weather=STATE pins one instead.
+    options.smoke.session.liveWeather = true;
     stop = false;
     exitCode = 0;
 
@@ -987,23 +1268,46 @@ void print_usage() {
             // Named, so a scripted line does not set its own clock over the
             // top of it. See render::scriptedStartHour.
             options.smoke.session.timeOfDayGiven = true;
+        } else if (starts_with(arg, "--weather=", &value)) {
+            // WEATHER: a named state pins the sky at full for the whole run,
+            // deterministically -- a fog asked for is the same fog twice.
+            render::WeatherKind kind = render::WeatherKind::Clear;
+            if (!render::parseWeatherKind(value, kind)) {
+                std::printf("granadad: --weather wants clear, overcast, fog or wind\n");
+                stop = true;
+                exitCode = 2;
+                return options;
+            }
+            options.smoke.session.liveWeather = false;
+            options.smoke.session.weather = kind;
+            options.weatherGiven = true;
         } else if (starts_with(arg, "--fov=", &value)) {
             options.smoke.session.fovDegrees = std::clamp(std::atoi(value), 40, 130);
+            options.fovGiven = true;
         } else if (starts_with(arg, "--yaw=", &value)) {
             options.smoke.session.spawnYaw = sim::angle_from_degrees(std::atoi(value));
             options.smoke.session.spawnYawGiven = true;
+        } else if (starts_with(arg, "--pitch=", &value)) {
+            options.smoke.session.spawnPitch = sim::angle_from_degrees(std::atoi(value));
+            options.smoke.session.spawnPitchGiven = true;
         } else if (starts_with(arg, "--sensitivity=", &value)) {
             options.sensitivity =
                 std::clamp(std::atoi(value), render::kMinSensitivity, render::kMaxSensitivity);
             options.sensitivityGiven = true;
         } else if (std::strcmp(arg, "--invert-y") == 0) {
             options.invertY = true;
+        } else if (std::strcmp(arg, "--3d") == 0) {
+            options.video3d = true;
+        } else if (std::strcmp(arg, "--2d") == 0) {
+            options.video3d = false;
         } else if (starts_with(arg, "--controls=", &value)) {
             options.controlsFile = value;
         } else if (starts_with(arg, "--clock=", &value)) {
             options.smoke.session.clockScale = std::clamp(std::atoi(value), 1, 3600);
         } else if (std::strcmp(arg, "--hold") == 0) {
             options.smoke.walk = false;
+        } else if (std::strcmp(arg, "--music-off") == 0) {
+            options.musicOff = true;
         } else if (std::strcmp(arg, "--nohud") == 0) {
             options.smoke.session.hud = false;
             options.smoke.stamp = false;
@@ -1046,6 +1350,7 @@ void print_usage() {
             options.smoke.caseLead = value;
             options.wantsSmoke = true;
         } else if (starts_with(arg, "--case-tab=", &value)) {
+            // THE PULL PACK: `cases` is the third view, the shelf.
             options.smoke.caseTab = value;
             options.wantsSmoke = true;
         } else if (std::strcmp(arg, "--case-route") == 0) {
@@ -1054,6 +1359,12 @@ void print_usage() {
         } else if (starts_with(arg, "--map-zoom=", &value)) {
             options.smoke.mapZoom = std::atoi(value);
             options.smoke.mapOverlay = true;
+            options.wantsSmoke = true;
+        } else if (starts_with(arg, "--travel=", &value)) {
+            // FAST TRAVEL (TRAVEL lane). See SmokeRunConfig::travelTo: the
+            // ward map's TRAVEL verb pressed on an authored place, the
+            // summary's own `| travel` segment carrying the whole claim.
+            options.smoke.travelTo = value;
             options.wantsSmoke = true;
         } else if (starts_with(arg, "--face=", &value)) {
             // THE CROSSHAIR PASS. See SmokeRunConfig::face's own header: the
@@ -1080,9 +1391,28 @@ void print_usage() {
             // VERIFICATION ONLY. See SmokeRunConfig::punch's own header.
             options.smoke.punch = true;
             options.wantsSmoke = true;
+        } else if (starts_with(arg, "--charge=", &value)) {
+            // VERIFICATION ONLY. See SmokeRunConfig::chargeSteps' own header.
+            options.smoke.chargeSteps = std::max(0, std::atoi(value));
+            options.wantsSmoke = true;
         } else if (std::strcmp(arg, "--block") == 0) {
             // VERIFICATION ONLY. See SmokeRunConfig::block's own header.
             options.smoke.block = true;
+            options.wantsSmoke = true;
+        } else if (starts_with(arg, "--block=", &value)) {
+            // THE PULL PACK. See SmokeRunConfig::blockBlows' own header.
+            options.smoke.block = true;
+            options.smoke.blockBlows = std::max(1, std::atoi(value));
+            options.wantsSmoke = true;
+        } else if (starts_with(arg, "--follow=", &value)) {
+            // THE PULL PACK. See SmokeRunConfig::follow's own header.
+            options.smoke.follow = value;
+            options.wantsSmoke = true;
+        } else if (starts_with(arg, "--follow-end=", &value)) {
+            options.smoke.followEnd = value;
+            options.wantsSmoke = true;
+        } else if (starts_with(arg, "--follow-walk=", &value)) {
+            options.smoke.followWalk = std::max(0, std::atoi(value));
             options.wantsSmoke = true;
         } else if (std::strcmp(arg, "--cast") == 0) {
             // VERIFICATION ONLY. See SmokeRunConfig::cast's own header.
@@ -1103,6 +1433,17 @@ void print_usage() {
         } else if (std::strcmp(arg, "--petition") == 0) {
             // VERIFICATION ONLY. See SmokeRunConfig::petition's own header.
             options.smoke.petition = true;
+            options.wantsSmoke = true;
+        } else if (starts_with(arg, "--tone=", &value)) {
+            // VERIFICATION ONLY. See SmokeRunConfig::tone.
+            options.smoke.tone = value;
+        } else if (std::strcmp(arg, "--shop") == 0) {
+            // VERIFICATION ONLY. See SmokeRunConfig::shop.
+            options.smoke.shop = true;
+            options.wantsSmoke = true;
+        } else if (starts_with(arg, "--shop=", &value)) {
+            options.smoke.shop = true;
+            options.smoke.shopEnd = value;
             options.wantsSmoke = true;
         } else if (std::strcmp(arg, "--radiant") == 0) {
             // VERIFICATION ONLY. See SmokeRunConfig::radiant's own header.
@@ -1131,6 +1472,8 @@ void print_usage() {
         } else if (starts_with(arg, "--demo=", &value)) {
             options.demo = true;
             options.demoSection = value;
+        } else if (starts_with(arg, "--framedump=", &value)) {
+            options.frameDumpDir = value;
         } else if (starts_with(arg, "--demo-capture=", &value)) {
             options.demo = true;
             options.demoShotDir = value;
@@ -1204,6 +1547,46 @@ void print_usage() {
             options.smoke.roofs = true;
             options.smoke.roofsEnd = value;
             options.wantsSmoke = true;
+        } else if (std::strcmp(arg, "--voice") == 0) {
+            // VOICE LANE. See SmokeRunConfig::voice.
+            options.smoke.voice = true;
+            options.wantsSmoke = true;
+        } else if (starts_with(arg, "--voice=", &value)) {
+            options.smoke.voice = true;
+            options.smoke.voiceEnd = value;
+            options.wantsSmoke = true;
+        } else if (std::strcmp(arg, "--watch-halt") == 0) {
+            // BARKS LANE (feel/build). See SmokeRunConfig::watchHalt.
+            options.smoke.watchHalt = true;
+            options.wantsSmoke = true;
+        } else if (starts_with(arg, "--watch-halt=", &value)) {
+            options.smoke.watchHalt = true;
+            options.smoke.watchHaltEnd = value;
+        } else if (std::strcmp(arg, "--street-assault") == 0) {
+            // STREET SENSES (9a completion). See SmokeRunConfig::streetAssault.
+            options.smoke.streetAssault = true;
+            options.wantsSmoke = true;
+        } else if (starts_with(arg, "--street-assault=", &value)) {
+            options.smoke.streetAssault = true;
+            options.smoke.streetAssaultWhere = value;
+            options.wantsSmoke = true;
+        } else if (std::strcmp(arg, "--court") == 0) {
+            // JUSTICE BUILD (HEARING PAGE LANE). See SmokeRunConfig::court.
+            options.smoke.court = true;
+        } else if (starts_with(arg, "--court=", &value)) {
+            options.smoke.court = true;
+            options.smoke.courtEnd = value;
+        } else if (std::strcmp(arg, "--kit") == 0) {
+            // KIT BUILD. See SmokeRunConfig::kit.
+            options.smoke.kit = true;
+        } else if (starts_with(arg, "--kit=", &value)) {
+            options.smoke.kit = true;
+            options.smoke.kitEnd = value;
+            options.wantsSmoke = true;
+        } else if (starts_with(arg, "--rung=", &value)) {
+            // THE RUNG PLATE. See SmokeRunConfig::rung.
+            options.smoke.rung = value;
+            options.wantsSmoke = true;
         } else if (std::strcmp(arg, "--nemesis") == 0) {
             options.smoke.nemesis = true;
             options.wantsSmoke = true;
@@ -1234,6 +1617,31 @@ void print_usage() {
             options.smoke.caseRun = true;
             options.smoke.caseEnd = value;
             options.wantsSmoke = true;
+        } else if (std::strcmp(arg, "--eviction") == 0) {
+            // EVICTION CASE (lane: eviction). The owner's third case,
+            // participate path end to end -- see SmokeRunConfig::evictionRun.
+            options.smoke.evictionRun = true;
+            options.wantsSmoke = true;
+        } else if (starts_with(arg, "--eviction=", &value)) {
+            // --eviction=refused is the disrupt path; the rest are shutters.
+            options.smoke.evictionRun = true;
+            options.smoke.evictionEnd = value;
+            options.wantsSmoke = true;
+        } else if (std::strcmp(arg, "--case-watch") == 0) {
+            // CASE WATCH. caseRun is set WITHOUT wantsSmoke: the drive is
+            // recorded inside the client (recordCaseDrive reads the same
+            // smoke config the harness would), and main() routes to the
+            // windowed loop, never to runSmoke.
+            options.caseWatch = true;
+            options.smoke.caseRun = true;
+        } else if (starts_with(arg, "--case-watch=", &value)) {
+            options.caseWatch = true;
+            options.smoke.caseRun = true;
+            options.smoke.caseEnd = value;
+        } else if (starts_with(arg, "--case-watch-capture=", &value)) {
+            options.caseWatch = true;
+            options.smoke.caseRun = true;
+            options.caseWatchShotDir = value;
         } else if (std::strcmp(arg, "--skyrun") == 0) {
             options.smoke.skyrun = true;
             options.wantsSmoke = true;
@@ -1347,6 +1755,22 @@ void print_usage() {
     // options page is listening for a key to bind, the remap also stands
     // down, so PadEast itself can still be bound.
     const render::Action action = session.controls().actionFor(key);
+    // UI-EA-SPEC sec. 4 violation #3: THE PAGE-TOGGLE KEY ALWAYS TOGGLES.
+    // PadUp opens the tiled Menu (Action::Menu's pad default) and was then
+    // eaten as list movement inside it -- so the key that opened the page
+    // could never close it, breaking "the key that opened a page closes it"
+    // for the one surface a pad opens most. While the Menu surface is up,
+    // a PadUp that IS the Menu binding falls straight through to pressed(),
+    // whose Action::Menu case is the toggle that closes it. In-page
+    // cursor-up rides the left stick (the stickNav block synthesizes raw
+    // arrow keys now) and the other three D-pad directions stay list
+    // movement everywhere; on pages PadUp did NOT open -- the map, the
+    // pause family -- it stays cursor-up too, because there it is not the
+    // toggle of anything on screen.
+    if (key == render::Key::PadUp && action == render::Action::Menu &&
+        (session.casebookOpen() || session.casebookPageOpen())) {
+        return false;
+    }
     // The five list movements, in the vocabulary of intent. Arrows always work
     // as well, bound or not, because a list is the one place arrow keys are
     // unambiguous.
@@ -1361,16 +1785,42 @@ void print_usage() {
     // LEAD. Every one of those bands was advertising a verb the pad could not
     // perform. A page is the one place the D-pad is as unambiguous as an arrow
     // key, so it is read the same way and outranks its own binding there --
-    // which is what takes PadUp off Menu for as long as a list is up.
+    // which is what takes PadUp off Menu for as long as a NON-Menu list is up
+    // (the violation-#3 rule above carves out the Menu surface itself).
+    // THE WHEEL WALKS A LIST -- and ONLY the wheel: QuickNext/QuickPrev carry
+    // the pad's D-pad right/left as their second half now (nine and the
+    // sticks), and on a page those two are sideways list movement, raw,
+    // three lines down. Without the device gate a D-pad right would read as
+    // "down" here first and win.
+    const bool wheelPrev = action == render::Action::QuickPrev && !render::keyIsPad(key);
+    const bool wheelNext = action == render::Action::QuickNext && !render::keyIsPad(key);
     const bool up = key == render::Key::Up || key == render::Key::PadUp ||
-                    action == render::Action::Forward || action == render::Action::QuickPrev;
+                    action == render::Action::Forward || wheelPrev;
     const bool downward = key == render::Key::Down || key == render::Key::PadDown ||
-                          action == render::Action::Back || action == render::Action::QuickNext;
+                          action == render::Action::Back || wheelNext;
     const bool leftward = key == render::Key::Left || key == render::Key::PadLeft ||
                           action == render::Action::StrafeLeft;
     const bool rightward = key == render::Key::Right || key == render::Key::PadRight ||
                            action == render::Action::StrafeRight;
     const bool confirm = key == render::Key::Enter || action == render::Action::Interact;
+    // NINE AND THE STICKS: the two sideways steps of the page grammar, RAW,
+    // ahead of any binding -- LB/RB and `[` `]` turn the PAGE (the six pages
+    // of NOTES), LT/RT and TAB step the SUB-TABS inside one page. Read here
+    // for the same reason the arrows and the D-pad are: a page owns the
+    // input while it is up, so the bumpers can be free to CAST in the world
+    // and the triggers to SWING and GUARD, and still be Oblivion's tab keys
+    // the moment a page comes up. render::pageStep/tabStep are the one rule
+    // every nav band prints (promptPageKeys/promptTabKeys).
+    const int page = render::pageStep(key);
+    const int tab = render::tabStep(key);
+    // WHAT A PAGE LETS THROUGH TO pressed() WHEN ITS OWN BRANCH DECLINES A
+    // KEY. Every branch below ends in this instead of a bare `return false`:
+    // the documented fall-throughs (render::pageFallThrough -- Pause, Menu,
+    // Map, Wait, Screenshot, and SWING across a counter) still reach the
+    // world; every other verb is SWALLOWED while a page owns the input. The
+    // leak this closes: the D-pad's left and right are QuickPrev/QuickNext,
+    // and a sideways press on the pause menu used to reach the quick bar.
+    const auto declined = [&]() { return !render::pageFallThrough(action, session.talking()); };
     // The printed number beside a row. Ten of them, and the tenth turns the page
     // -- see kTopicPageSize.
     const int slotBase = static_cast<int>(render::Action::QuickSlot1);
@@ -1393,6 +1843,9 @@ void print_usage() {
             return true;
         }
         if (confirm) {
+            // Contract (b): the commit beat -- RESUME, a door row, the
+            // quit-arm and the quit-confirm all answer with it.
+            session.armCommitPulse();
             session.choosePause();
             return true;
         }
@@ -1412,14 +1865,55 @@ void print_usage() {
             // the menu, which is what it used to do before this branch existed.
             return true;
         }
+        // NINE AND THE STICKS: A SUB-TAB STEP ON A PAGE WITH NO TABS IS
+        // SWALLOWED, the digit-0 rule above. The triggers are SWING and GUARD
+        // in the world; a pull that reached pressed() from here would put
+        // the menu down and throw a punch at whoever is in front of you --
+        // the exact class of surprise sec. 4 exists to kill. Same on the
+        // wait page, the grimoire and the tiled Menu below.
+        // AND THE PAGE STEP, for the same reason: RB is CAST in the world, and
+        // a bumper that reached pressed() from a page that has no pages would
+        // put the page down and cast the readied crafting at whoever is in
+        // front of you. Every page that is not in the NOTES ring swallows it.
+        if (tab != 0 || page != 0) {
+            return true;
+        }
         // ESCAPE FALLS THROUGH ON PURPOSE, same as the options page below: the
         // key that opened this closes it, and closeConversation() already
         // knows to disarm QUIT on the first press rather than leaving the page
         // entirely.
-        return false;
+        return declined();
+    }
+
+    // JUSTICE BUILD (HEARING PAGE LANE). THE BENCH. Below the pause branch on
+    // purpose: PAUSE is the one page allowed over the court, and while it is
+    // up its own rows read the keys. Otherwise the page takes EVERY key
+    // (Session::routeCourtKey is the whole grammar -- arrows and the D-pad,
+    // the printed digits, ENTER/A, ESC/B for the paper and an armed plea) and
+    // declines only Pause/Escape-with-nothing-to-back-out-of, which falls
+    // through to pressed()'s Action::Pause and opens the pause menu over it.
+    // No world verb can reach the body from the bench; this is the build's
+    // declared un-backable modal (JUSTICE-SPEC 6.3).
+    if (session.inCustody()) {
+        return session.routeCourtKey(key);
     }
 
     if (session.optionsOpen()) {
+        // UI-EA-SPEC sec. 4 violation #2: KEYS AND OPTIONS ARE SIBLING TABS,
+        // stepped on TAB and the bumpers like every other tabbed pair --
+        // they were only ever reachable from each other by the F-keys, which
+        // no foot could honestly print for a pad. Two siblings, so either
+        // direction lands the other one. The pause-return note travels with
+        // the swap: toggleKeys/toggleOptions re-derive it from pauseReturn_
+        // (see Session::pageOpenedFromPause_'s own header).
+        if (tab != 0) {
+            session.armCommitPulse();  // rule 2: a tab step answers instantly
+            session.toggleKeys();
+            return true;
+        }
+        if (page != 0) {
+            return true;  // not a page of NOTES -- swallowed, see the pause branch
+        }
         if (up) {
             session.moveOptionCursor(-1);
             return true;
@@ -1437,6 +1931,9 @@ void print_usage() {
             return true;
         }
         if (confirm) {
+            // Contract (b): the commit beat -- a slider nudge or the REBIND
+            // arm, both of them ENTER doing something.
+            session.armCommitPulse();
             session.chooseOption();
             return true;
         }
@@ -1450,7 +1947,7 @@ void print_usage() {
         }
         // ESCAPE AND F2 FALL THROUGH on purpose, so the key that opened the
         // page always closes it and Menu always backs out of it.
-        return false;
+        return declined();
     }
 
     if (session.grimoireOpen()) {
@@ -1459,6 +1956,22 @@ void print_usage() {
         // own slider shape, and the reason a pad can bind at all), the
         // printed number or ENTER readies one, 0 pages a long list. ESC
         // falls through, so the key that closes every page closes this one.
+        //
+        // NINE AND THE STICKS: A PAGE OF NOTES. The QuickWheel tap that used
+        // to open this is cut; the bumpers page here from the ward map and
+        // on round to the sheet -- Session::menuPageNext/Prev own the ring.
+        if (page != 0) {
+            session.armCommitPulse();
+            if (page > 0) {
+                session.menuPageNext();
+            } else {
+                session.menuPagePrev();
+            }
+            return true;
+        }
+        if (tab != 0) {
+            return true;  // no sub-tabs here -- swallowed, see the pause branch
+        }
         if (up) {
             session.moveGrimoireCursor(-1);
             return true;
@@ -1476,6 +1989,7 @@ void print_usage() {
             return true;
         }
         if (numbered) {
+            session.armCommitPulse();  // contract (b): readying a crafting
             session.chooseGrimoireRow(slot);
             return true;
         }
@@ -1484,11 +1998,12 @@ void print_usage() {
             return true;
         }
         if (confirm) {
+            session.armCommitPulse();
             session.chooseGrimoireRow(session.grimoireCursor() -
                                       session.grimoirePage() * render::kTopicPageSize);
             return true;
         }
-        return false;
+        return declined();
     }
 
     if (session.waitOpen()) {
@@ -1496,6 +2011,9 @@ void print_usage() {
         // printed number or ENTER passes them (or is refused out loud), 0
         // pages the list. ESC falls through, so the key that closes every
         // page closes this one.
+        if (tab != 0 || page != 0) {
+            return true;  // no sub-tabs, not a page of NOTES -- swallowed, see the pause branch
+        }
         if (up) {
             session.moveWaitCursor(-1);
             return true;
@@ -1505,6 +2023,7 @@ void print_usage() {
             return true;
         }
         if (numbered) {
+            session.armCommitPulse();  // contract (b): passing hours commits
             session.chooseWaitRow(slot);
             return true;
         }
@@ -1513,11 +2032,12 @@ void print_usage() {
             return true;
         }
         if (confirm) {
+            session.armCommitPulse();
             session.chooseWaitRow(session.waitCursor() -
                                   session.waitPage() * render::kTopicPageSize);
             return true;
         }
-        return false;
+        return declined();
     }
 
     if (session.districtMapOpen()) {
@@ -1546,28 +2066,29 @@ void print_usage() {
             session.moveDistrictMapCursor(render::MapStep::East);
             return true;
         }
-        if (key == render::Key::Tab) {
-            // TAB CYCLES THE VIEWS while the map is up, and does NOT open the
-            // casebook underneath it. The key that means "the next tab" on
-            // every other tabbed surface in the world means it here too, and a
-            // page that let its own tab key fall through to a different page
-            // would be the split-brain bug toggleOptions' comment describes.
-            session.cycleDistrictMapTab(1);
+        // NINE AND THE STICKS: OBLIVION'S OWN MAP GRAMMAR. The four views
+        // step on the SUB-TAB keys -- TAB on a keyboard (as it always did:
+        // the key that means "the next tab" on every tabbed surface means it
+        // here too, and does NOT open the casebook underneath), LT/RT on a
+        // pad. The PAGE keys -- `[` `]`, LB/RB -- leave the map for its
+        // neighbours in NOTES (the casebook behind it, the grimoire ahead),
+        // because on a pad the ward map IS a page of NOTES and spends no
+        // button of its own. The triggers used to zoom here; the zoom rides
+        // `=` `-` and the right stick now (the stickNav block below routes
+        // the stick as those two raw keys), so nothing on this page wears
+        // another mode's clothes.
+        if (tab != 0) {
+            session.armCommitPulse();  // rule 2: a tab step answers instantly
+            session.cycleDistrictMapTab(tab);
             return true;
         }
-        // THE PARITY PASS: THE BUMPERS ARE THE PAD'S TAB KEY. Tab above is a
-        // keyboard key and the pad's Tab (PadUp, Action::Menu) is now the
-        // cursor's own UP -- so without this the four views the tab row prints
-        // were reachable by keyboard and mouse and by no pad button at all.
-        // PagePrev/PageNext is where "the next page of this thing" already
-        // lives, LB/RB is where a thumb expects a tab, and `[`/`]` come along
-        // for free on the keyboard side.
-        if (action == render::Action::PageNext) {
-            session.cycleDistrictMapTab(1);
-            return true;
-        }
-        if (action == render::Action::PagePrev) {
-            session.cycleDistrictMapTab(-1);
+        if (page != 0) {
+            session.armCommitPulse();
+            if (page > 0) {
+                session.menuPageNext();
+            } else {
+                session.menuPagePrev();
+            }
             return true;
         }
         if (key == render::Key::Equals) {
@@ -1578,24 +2099,25 @@ void print_usage() {
             session.adjustDistrictMapZoom(-1);
             return true;
         }
-        // THE ZOOM LADDER, ON THE TRIGGERS. Same argument as the bumpers: `=`
-        // and `-` are keyboard keys, and the owner's own complaint about this
-        // page -- "hard to figure out where the place you're looking for is" --
-        // was answered by a zoom a pad could not reach. Cast/Block are the two
-        // pad keys a full-screen map has no other use for (S13 gave them RT and
-        // LT), and this is the same "a verb wearing a different mode's clothes"
-        // the haggle branch below already spends PageNext on.
-        if (action == render::Action::Cast) {
-            session.adjustDistrictMapZoom(1);
-            return true;
-        }
-        if (action == render::Action::Block) {
-            session.adjustDistrictMapZoom(-1);
+        // FAST TRAVEL (TRAVEL lane). The page's second commit, on the one
+        // second-commit key the grammar keeps: T on a keyboard (a raw
+        // map-page key exactly as Tab/=/- are -- it outranks T's world
+        // binding, WAIT, while the map is up, the way every raw page key
+        // outranks the world), X on a pad -- the face button the nine leave
+        // free everywhere. NOT Interact: A is FACE IT, the existing commit.
+        // The verb row at the detail foot names whichever half is in the
+        // player's hands (promptAltCommitKey). Refusals are the Session's to
+        // say, out loud, with the page staying up.
+        if (render::isAltCommitKey(key)) {
+            // Contract (b): the commit beat, armed at commit routing.
+            session.armCommitPulse();
+            session.travelDistrictMapSelection();
             return true;
         }
         if (confirm) {
             // The commit verb at the foot of the detail pane: turn to face the
-            // selection and put the map away.
+            // selection and put the map away. Contract (b): the commit beat.
+            session.armCommitPulse();
             session.faceDistrictMapSelection();
             return true;
         }
@@ -1604,13 +2126,23 @@ void print_usage() {
             // `1` through `4`; the rest are swallowed rather than routed, for
             // the pause branch's own reason -- a number pressed over a
             // full-screen page must not reach the quick bar behind it.
+            // Transition rule 2: a LANDING tab step answers with the pulse --
+            // a dead digit (5-9, which setDistrictMapTab refuses) must not
+            // beat for a press that did nothing.
+            if (slot < render::kMapTabCount) {
+                session.armCommitPulse();
+            }
             session.setDistrictMapTab(slot);
             return true;
         }
         if (pageKey) {
+            // UI-EA-SPEC sec. 4 violation #6: `0` = MORE where a list pages.
+            // The People and Index tabs page (mapDetailScroll); when PAGES
+            // lands the ten-row roster paging (budgets #22/#23) this routes
+            // `0` to the detail page-turn. Inert-but-swallowed until then.
             return true;
         }
-        return false;
+        return declined();
     }
 
     if (session.picking()) {
@@ -1635,10 +2167,21 @@ void print_usage() {
             session.forceLock();
             return true;
         }
-        return false;
+        if (tab != 0 || page != 0) {
+            return true;  // the wire has no pages -- swallowed, see the pause branch
+        }
+        return declined();
     }
 
     if (session.talking()) {
+        // NINE AND THE STICKS: a conversation has no pages and no sub-tabs;
+        // the bumpers and triggers are swallowed here rather than reaching
+        // CAST, SWING and GUARD through pressed() and putting the counter
+        // down with a spell or a punch. The forge and the haggle below take
+        // their own keys first and inherit this for the rest.
+        if (tab != 0 || page != 0) {
+            return true;
+        }
         if (session.forging()) {
             // The workbench takes the keyboard the way the counter does. Up and
             // down walk the five fields, left and right change the one under the
@@ -1670,7 +2213,7 @@ void print_usage() {
             return true;  // nothing else reaches the world through a workbench
         }
         if (session.haggling()) {
-            const int stride = (SDL_GetModState() & SDL_KMOD_SHIFT) != 0 ? 5 : 1;
+            const int stride = g_video_shift_held ? 5 : 1;
             if (leftward || downward) {
                 session.adjustOffer(-stride);
                 return true;
@@ -1685,28 +2228,20 @@ void print_usage() {
             }
             // #85. Lift RETIRED into Interact, which this branch already
             // spends on `confirm` (making YOUR OWN offer) -- the two cannot
-            // share a key inside one haggle. PageNext is free here (nothing
-            // in a haggle pages anything) and reused for "take the number on
-            // the table", the same "a verb wearing a different mode's
-            // clothes" pattern route_menu_key already uses throughout --
-            // Forward/Back become movePick in the lockpicking branch above,
-            // for instance.
-            if (action == render::Action::PageNext) {
+            // share a key inside one haggle. "Take the number on the table"
+            // is the page's SECOND COMMIT, and nine and the sticks gives
+            // every second commit one home: T on a keyboard (the band has
+            // advertised "T - TAKE THEIR PRICE" since the haggle shipped),
+            // X on a pad (the face button the nine leave free; RB is CAST
+            // now and casts nothing across a counter). A raw page key
+            // outranks T's world binding, WAIT, exactly as TAB outranks
+            // nothing and the arrows outrank Forward: the page owns the
+            // input while it is up.
+            if (render::isAltCommitKey(key)) {
                 session.takeAskingPrice();
                 return true;
             }
-            // SHIP NOTE MOVE 3, in passing: the band has advertised
-            // "T - TAKE THEIR PRICE" since the haggle shipped, and T was
-            // never routed -- only PageNext above was. The advertised key
-            // now does the advertised thing; PageNext stays for the pad's
-            // RB, which is what the band prints with a pad in hand. Same
-            // yield rule as F1/F2/F3: a verb somebody BINDS to T outranks
-            // the convenience.
-            if (key == render::Key::T && action == render::Action::Count) {
-                session.takeAskingPrice();
-                return true;
-            }
-            return false;
+            return declined();
         }
         if (up) {
             session.moveTopicCursor(-1);
@@ -1731,7 +2266,7 @@ void print_usage() {
             session.interact();
             return true;
         }
-        return false;
+        return declined();
     }
 
     if (session.casebookPageOpen()) {
@@ -1739,18 +2274,16 @@ void print_usage() {
         // every one of its verbs has to reach it -- the cursor, the two views,
         // the printed digits and the commit.
         //
-        // LEFT AND RIGHT STEP THE VIEWS, AND THAT IS A CONFLICT WRITTEN DOWN
-        // RATHER THAN FUDGED. Every other tabbed surface in this build steps
-        // its tabs with TAB; when this page was drawn TAB was Action::Menu,
-        // the key that OPENED it, and "the key that opened it closes it" is a
-        // rule this build keeps everywhere. Menu lives on J now (the owner's
-        // own "use J for journal") and Tab is unbound, but the arrows stay:
-        // they are honest on both devices where a freed Tab is not, the pad
-        // already speaks them, and re-teaching this one page a key the rest
-        // of the flow never mentions would be churn. So the views move on the
-        // arrows the single-column list does not use, the tabs print no
-        // hotkey (casebook_page.hpp on why), and the nav band along the foot
-        // says LEFT RIGHT out loud.
+        // UI-EA-SPEC sec. 4 violation #1: THE TABS STEP ON TAB AND THE
+        // BUMPERS NOW, the same grammar as the map -- one tab key across
+        // every tabbed surface, which is the whole point of a grammar. TAB
+        // was Action::Menu when this page was drawn and the arrows were the
+        // stopgap; Menu lives on J now and TAB is free, so the stopgap
+        // retires. LEFT/RIGHT are FREED for in-view movement -- taken and
+        // held inert here until the detail pane grows its paging (PAGES
+        // lane, budget #27/#28), because letting them fall through would
+        // close the page and turn the player, which is the exact class of
+        // surprise sec. 4 exists to kill.
         if (up) {
             session.moveCasebookCursor(-1);
             return true;
@@ -1759,12 +2292,37 @@ void print_usage() {
             session.moveCasebookCursor(1);
             return true;
         }
-        if (leftward) {
-            session.cycleCasebookTab(-1);
+        // NINE AND THE STICKS: THE JOURNAL TILE IS THIS PAGE (casebookPageOpen
+        // is the tiled Menu focused on the Journal), so it is a page of the
+        // ring like the other three tiles -- the page step walks on to the
+        // ward map from here. Ahead of the sub-tab step, which stays the
+        // page's own LEADS / THE CASE. Without this a bumper here fell
+        // through to the world and CAST, which is the exact "a verb wearing
+        // another mode's clothes" the grammar exists to end.
+        if (page != 0) {
+            session.armCommitPulse();
+            if (page > 0) {
+                session.menuPageNext();
+            } else {
+                session.menuPagePrev();
+            }
             return true;
         }
-        if (rightward) {
-            session.cycleCasebookTab(1);
+        if (tab != 0) {
+            session.armCommitPulse();  // rule 2: a tab step answers instantly
+            session.cycleCasebookTab(tab);
+            return true;
+        }
+        // NINE AND THE STICKS: LEFT/RIGHT STEP THE TWO VIEWS TOO. The foot
+        // has printed the left/right arrowheads beside CASE / LEADS since the
+        // casebook pass, and the press sat "reserved" and inert underneath
+        // it -- a band advertising a verb the router did not take, the exact
+        // drift the grammar exists to kill. Two views, one sideways step: the
+        // D-pad and the arrows do what the foot says, the sub-tab keys above
+        // do the same from the other thumb.
+        if (leftward || rightward) {
+            session.armCommitPulse();
+            session.cycleCasebookTab(rightward ? 1 : -1);
             return true;
         }
         if (numbered) {
@@ -1777,22 +2335,100 @@ void print_usage() {
         if (confirm) {
             // The commit verb at the foot of the detail pane. State chooses
             // which one it is -- see Session::commitCasebookLead.
+            // Contract (b): the commit beat.
+            session.armCommitPulse();
             session.commitCasebookLead();
             return true;
         }
+        // THE PULL PACK: FOLLOW. F is a raw page key exactly as the map's T
+        // is, and Attack is the pad's own half of the verb -- X (PadWest),
+        // the one face button unclaimed on this page (A is the commit, B
+        // backs out) -- the map's travel precedent to the letter, keyIsPad
+        // gate included: Attack's keyboard binding is MouseLeft, and a
+        // left-click on the book is already the pointer's select-then-commit.
+        // A verb somebody BINDS to F outranks the convenience (the T rule).
+        if ((key == render::Key::F && action == render::Action::Count) ||
+            (render::keyIsPad(key) && action == render::Action::Attack)) {
+            session.armCommitPulse();
+            session.followCasebookSelection();
+            return true;
+        }
         if (pageKey) {
-            // SWALLOWED, NOT ROUTED, the pause branch's own reason: the list
-            // follows its cursor rather than turning pages, so `0` has nothing
-            // to do here and must not reach the quick bar behind the page.
+            // UI-EA-SPEC sec. 4 violation #6: `0` IS MORE WHERE A LIST PAGES,
+            // INERT ELSEWHERE -- never BACK. Today the lead list follows its
+            // cursor, so `0` is inert here; the moment PAGES lands the
+            // eight-row paging (budget #27) this branch routes it to the
+            // page-turn, and the foot prints `0` again. Swallowed either way:
+            // a digit over a full page must not reach the quick bar.
             return true;
         }
         // Anything else falls through to the ordinary bindings, and every verb
         // down there puts the page away first.
-        return false;
+        return declined();
     }
 
     if (session.casebookOpen() || session.keysOpen() || session.characterOpen() ||
         session.mapOpen() || session.lettersOpen()) {
+        // UI-EA-SPEC sec. 4 violation #2, the other half: from the keys page,
+        // TAB and the triggers step to the sibling Options page (the sub-tab
+        // grammar). Scoped to keysOpen -- on the tiled Menu the PAGE keys
+        // step tile focus, below.
+        if (session.keysOpen() && tab != 0) {
+            session.armCommitPulse();  // rule 2
+            session.toggleOptions();
+            return true;
+        }
+        // KIT BUILD. THE CHARACTER TILE'S THREE PRESSES OVER A CARRIED ROW,
+        // and only there: LEFT/RIGHT walk the row's quick slot (the
+        // Grimoire's own cycle, D-pad-reachable for the same reason), and X
+        // -- the keyboard's own unbound X, or the pad's X, which is the
+        // Attack binding wearing the tile's clothes exactly as PageNext
+        // wears the haggle's -- DROPS it at the feet. ENTER already wears it
+        // through chooseTopic. A sheet row takes none of these, so the
+        // tiled Menu's own bumper/tab grammar (below) is untouched
+        // everywhere else. Checked first and ahead of the ring, since it
+        // reads leftward/rightward/X rather than page/tab and only claims
+        // them while a kit row is actually highlighted.
+        // CONTROLS LANE: the X prompt on this tile is the one to re-key if
+        // the pad's X leaves Attack.
+        if (session.casebookOpen() && session.menuFocus() == render::kMenuFocusCharacter &&
+            session.highlightedKitRow().has_value()) {
+            if (leftward) {
+                session.adjustKitSlot(-1);
+                return true;
+            }
+            if (rightward) {
+                session.adjustKitSlot(1);
+                return true;
+            }
+            if ((key == render::Key::X && action == render::Action::Count) ||
+                action == render::Action::Attack) {
+                session.armCommitPulse();  // contract (b): a drop commits
+                session.dropHighlightedKitRow();
+                return true;
+            }
+        }
+        // NINE AND THE STICKS: THE RING. LB/RB and `[` `]` step the tiles --
+        // sheet, chart, letters, casebook -- and on past the last of them to
+        // the ward map and the grimoire, Session::menuPageNext/Prev's own
+        // order. This used to be pressed()'s PagePrev/PageNext dispatch; the
+        // two are raw page grammar now and the router is where page grammar
+        // lives. The keys page has no tiles to step and is not in the ring.
+        if (page != 0) {
+            if (session.keysOpen()) {
+                return true;  // the keys page is not a page of NOTES -- swallowed
+            }
+            session.armCommitPulse();
+            if (page > 0) {
+                session.menuPageNext();
+            } else {
+                session.menuPagePrev();
+            }
+            return true;
+        }
+        if (tab != 0) {
+            return true;  // the tiles have no sub-tabs -- swallowed, see the pause branch
+        }
         if (up) {
             session.moveTopicCursor(-1);
             return true;
@@ -1810,12 +2446,22 @@ void print_usage() {
             return true;
         }
         if (confirm) {
-            session.chooseTopic(static_cast<std::size_t>(session.topicCursor()));
+            // KIT POLISH: THE ROW THE PLAYER IS LOOKING AT, not the
+            // conversation's cursor. topicCursor() is topicCursor_, the
+            // field the arrows move while somebody is TALKING; the tiles
+            // keep their own (moveTopicCursor routes by focus), so under a
+            // tile that number is whatever the last conversation left --
+            // 0 in a fresh session, the last topic picked otherwise. The
+            // Character tile never noticed (its press acts on its own
+            // cursor and ignores the index); the Letters tile opened
+            // letter number topicCursor_ instead of the highlighted one,
+            // and nothing at all once that number was past the shelf.
+            session.chooseTopic(static_cast<std::size_t>(session.menuCursor()));
             return true;
         }
         // Anything else falls through to the ordinary bindings, and every verb
         // down there puts the page away first.
-        return false;
+        return declined();
     }
     return false;
 }
@@ -1855,8 +2501,11 @@ void print_usage() {
 /// a cursor on screen" are the same question, and two hand-kept copies of that
 /// list is the drift session.hpp's own menuOpen() comment warns about.
 [[nodiscard]] bool pointer_page_open(const render::Session& session) {
+    // JUSTICE BUILD: the hearing page, the rope's plate and the end rows own
+    // the input the way every page does -- the pointer comes back over the
+    // bench, and the pad's B is Escape there (pageBackRemap).
     return session.menuOpen() || session.pauseOpen() || session.talking() ||
-           session.waitOpen() || session.picking();
+           session.waitOpen() || session.picking() || session.inCustody();
 }
 
 /// A hover or a click at framebuffer pixel (px, py). `click` commits; a hover
@@ -1876,6 +2525,19 @@ bool session_pointer(render::Session& session, int frameWidth, int frameHeight, 
         if (!layout.usable) {
             return false;
         }
+        // UI-EA-SPEC sec. 4 violation #8: THE TAB ROW ANSWERS CLICKS NOW,
+        // through the same setDistrictMapTab a digit presses -- the casebook's
+        // own pattern, which this page took-and-dropped while its sibling
+        // answered. Click-only, like the casebook's: a pointer crossing the
+        // frame must not flip the detail pane.
+        const int tab = render::mapTabAtPixel(plan, frameWidth, frameHeight, px, py);
+        if (tab >= 0) {
+            if (click && tab != static_cast<int>(plan.tab)) {
+                session.armCommitPulse();  // rule 2: a tab step answers
+                session.setDistrictMapTab(tab);
+            }
+            return true;
+        }
         const int at = render::mapPlaceAtPixel(layout.viewport, px, py);
         if (at < 0) {
             // OFF THE PLAN IS NOT A MISS THAT FALLS THROUGH. A click on the
@@ -1894,9 +2556,35 @@ bool session_pointer(render::Session& session, int frameWidth, int frameHeight, 
             // page prints and what ENTER and PadSouth already do: turn to face
             // it and put the map away. A click is a select-then-confirm, so a
             // player who only wants to look moves the pointer and does not
-            // press.
+            // press. Contract (b): the commit beat.
+            session.armCommitPulse();
             session.faceDistrictMapSelection();
         }
+        return true;
+    }
+    if (session.courtOpen() && !session.pauseOpen()) {
+        // JUSTICE BUILD. THE BENCH: hearingRowAtPixel is the exact inverse of
+        // what drawHearingPage drew. Hover moves the same cursor the keys
+        // move (and disarms an armed plea, as moving it always does); a click
+        // is the same press ENTER makes on the row -- which ARMS a plea on
+        // the first click and confirms it on the second, so a stray click
+        // cannot plead either. Off the rows is still a click ON THE PAGE:
+        // taken and dropped, never a punch through the court.
+        const render::HearingPageState page = session.hearingPageState();
+        const int at = render::hearingRowAtPixel(page, frameWidth, frameHeight, px, py);
+        if (at >= 0) {
+            if (at != page.cursor) {
+                session.moveCourtCursor(at - page.cursor);
+            }
+            if (click) {
+                session.chooseCourtRow();
+            }
+        }
+        return true;
+    }
+    if (session.inCustody() && !session.pauseOpen()) {
+        // The plate and the end rows: the pointer is taken and dropped; the
+        // two rows are the keys' and the pad's.
         return true;
     }
     if (session.keysOpen()) {
@@ -1925,6 +2613,7 @@ bool session_pointer(render::Session& session, int frameWidth, int frameHeight, 
         const int tab = render::casebookTabAtPixel(page, frameWidth, frameHeight, px, py);
         if (tab >= 0) {
             if (click && tab != static_cast<int>(page.tab)) {
+                session.armCommitPulse();  // rule 2: a tab step answers
                 session.cycleCasebookTab(tab - static_cast<int>(page.tab));
             }
             return true;
@@ -1933,8 +2622,20 @@ bool session_pointer(render::Session& session, int frameWidth, int frameHeight, 
         if (at < 0) {
             return true;
         }
+        if (page.tab == render::CasebookTab::Cases) {
+            // THE PULL PACK: the pointer on a LEAD while the shelf is up is
+            // the pointer asking for the leads -- step the view back first,
+            // so the click commits the lead it landed on and not the shelf
+            // row the keyboard cursor happened to be resting on.
+            if (!click) {
+                return true;
+            }
+            session.cycleCasebookTab(static_cast<int>(render::CasebookTab::Leads) -
+                                     static_cast<int>(page.tab));
+        }
         session.setCasebookCursor(at);
         if (click) {
+            session.armCommitPulse();  // contract (b): the commit beat
             session.commitCasebookLead();
         }
         return true;
@@ -2008,14 +2709,62 @@ bool session_pointer(render::Session& session, int frameWidth, int frameHeight, 
         }
         return true;
     }
-    if (session.pauseOpen() || session.optionsOpen() || session.grimoireOpen() ||
-        session.waitOpen() || session.talking()) {
-        // FIVE PAGES, ONE WIDGET, ONE HIT-TEST. The pause menu, the options
-        // page, the grimoire, the wait page and a live conversation all draw
-        // their list through drawDialogue's bottom band, so
-        // dialogueTopicAtPixel is the mouse for all five -- the same economy
-        // that made them one drawing. The branch order below is dialogueView's
-        // own dispatch order, so the cursor moved is the cursor drawn.
+    if (session.stripCardOpen()) {
+        // UI-EA-SPEC 1.7, joined at integration: the pause stack (pause,
+        // wait, options, grimoire) draws as PAGES' composed card now, so the
+        // pointer inverts THAT composition -- creationPageHitTest off the
+        // same stripCard() the frame drew -- not the old strip-band geometry,
+        // which no longer matches anything on screen. The verbs mirror the
+        // keyboard router above, exactly: hover walks the cursor by delta,
+        // a click is select-then-confirm with the commit beat, and a click
+        // on the BACK keycap is the ESC it prints. The card's unselectable
+        // `+N` row reports no hit; `0` still turns the page.
+        const render::CreationPage card = session.stripCard();
+        const render::CreationHit hit =
+            render::creationPageHitTest(card, frameWidth, frameHeight, px, py);
+        if (hit.zone == render::CreationHit::Zone::Back) {
+            if (click) {
+                session.closeConversation();
+            }
+            return true;
+        }
+        if (hit.zone == render::CreationHit::Zone::Row) {
+            const int delta = hit.index - card.cursor;
+            if (delta != 0) {
+                if (session.waitOpen()) {
+                    session.moveWaitCursor(delta);
+                } else if (session.pauseOpen()) {
+                    session.movePauseCursor(delta);
+                } else if (session.grimoireOpen()) {
+                    session.moveGrimoireCursor(delta);
+                } else {
+                    session.moveOptionCursor(delta);
+                }
+            }
+            if (click) {
+                session.armCommitPulse();  // contract (b): the commit beat
+                if (session.waitOpen()) {
+                    session.chooseWaitRow(session.waitCursor() -
+                                          session.waitPage() * render::kTopicPageSize);
+                } else if (session.pauseOpen()) {
+                    session.choosePause();
+                } else if (session.grimoireOpen()) {
+                    session.chooseGrimoireRow(session.grimoireCursor() -
+                                              session.grimoirePage() * render::kTopicPageSize);
+                } else {
+                    session.chooseOption();
+                }
+            }
+        }
+        // On the page is on the page: a miss must not swing a fist through
+        // the card.
+        return true;
+    }
+    if (session.talking()) {
+        // ONE PAGE LEFT ON THE WIDGET: a live conversation still draws its
+        // list through drawDialogue's bottom band, so dialogueTopicAtPixel
+        // is its mouse. The pause stack that used to share this branch now
+        // draws as the composed card and is inverted above.
         const render::DialogueViewState view = session.dialogueView();
         if (view.haggling || view.forging || view.letter) {
             // The counter, the workbench and an open letter stay modal for
@@ -2063,6 +2812,9 @@ bool session_pointer(render::Session& session, int frameWidth, int frameHeight, 
             // A CLICK IS SELECT-THEN-CONFIRM (the map's own rule): the commit
             // is each page's ENTER -- pass the hours, ready the crafting,
             // fire the pause row, nudge or arm the option, say the thing.
+            // Contract (b): the commit beat, the same arm the keyboard's
+            // confirm gets.
+            session.armCommitPulse();
             if (session.waitOpen()) {
                 session.chooseWaitRow(hit.slot);
             } else if (session.grimoireOpen()) {
@@ -2503,22 +3255,38 @@ bool creation_input(render::CreationFlow& flow, render::Key key) {
     const render::CreationStep step = flow.step();
 
     if (step == render::CreationStep::Origin) {
+        // UI-EA-SPEC sec. 4 violation #7: ESC AT THE DOOR ARMS BEFORE IT
+        // LEAVES. One slip of the universal back key used to close the whole
+        // window unarmed -- the exact "eats your evening once and is never
+        // trusted again" the in-world quit already asks twice about. First
+        // ESC arms (the page prints `ESC AGAIN - LEAVE` off flow.quitArmed(),
+        // PAGES' row copy); a second in a row leaves; any other press is a
+        // change of mind and disarms, the pause menu's own movePauseCursor
+        // manners.
         switch (verb) {
             case CreationVerb::Up:
+                flow.disarmQuit();
                 flow.moveOriginCursor(-1);
                 return true;
             case CreationVerb::Down:
+                flow.disarmQuit();
                 flow.moveOriginCursor(1);
                 return true;
             case CreationVerb::Confirm:
+                flow.disarmQuit();
                 flow.chooseOrigin();
                 return true;
             case CreationVerb::Cancel:
+                if (!flow.quitArmed()) {
+                    flow.armQuit();
+                    return true;
+                }
                 return false;
             default:
                 break;
         }
         if (digit > 0 && digit <= static_cast<int>(render::originTemplates().size())) {
+            flow.disarmQuit();
             flow.setOriginCursor(digit - 1);
             flow.chooseOrigin();
         }
@@ -2982,68 +3750,369 @@ int run_creation_capture(const Options& options) {
 }
 
 // ---------------------------------------------------------------------------
+// 3D BUILD: THE WINDOW IS RAYLIB'S; THE LOOP STILL SPEAKS SDL EVENTS
+// ---------------------------------------------------------------------------
+//
+// WHAT CHANGED. raylib (granadad-render3d-rl) owns the window and the GL
+// context now, because the 3D pass has to be drawn INTO the window and SDL's
+// 2D renderer cannot host it. SDL is therefore never initialised with VIDEO
+// in this file any more -- it keeps the audio device and the gamepad, both of
+// which work with SDL_INIT_GAMEPAD alone (the gamepad selftest has always
+// done exactly that).
+//
+// WHAT DID NOT CHANGE, AND WHY. Every line under the event loops below reads
+// an SDL_Event: the scancode table, route_menu_key, pressed()/released(), the
+// pad parity pass, the virtual-pad harness that pushes its own button edges
+// with SDL_PushEvent. That code was proven page by page and frame by frame,
+// and rewriting it onto a second input vocabulary in the toolchain lane would
+// be a week of re-proving for no new feature. So the bridge does the one
+// translation that exists anyway -- raylib reports keys as PHYSICAL keys in
+// GLFW's US-layout tokens, the adapter turns those into USB HID usage ids,
+// and a HID usage id IS an SDL scancode -- and hands the loop what it already
+// speaks: SDL_EVENT_KEY_DOWN/UP with a scancode, MOUSE_MOTION with relative
+// counts, MOUSE_BUTTON_DOWN/UP and MOUSE_WHEEL with the pointer already in
+// FRAMEBUFFER pixels (what SDL_ConvertEventToRenderCoordinates used to do),
+// and QUIT. SDL_PushEvent needs no video subsystem; the queue is the event
+// subsystem's, which SDL_INIT_GAMEPAD implies.
+//
+// The two things the loop used to POLL rather than receive -- the held-key
+// array (SDL_GetKeyboardState) and the mouse button mask (SDL_GetMouseState)
+// -- are kept here off the same edges, because without VIDEO those two calls
+// answer for a keyboard SDL no longer reads.
+struct VideoBridge {
+    std::array<bool, SDL_SCANCODE_COUNT> held{};
+    Uint32 mouseMask = 0;
+
+    /// Reads a frame of raylib input and pushes it as SDL events. Once per
+    /// frame, right before the SDL_PollEvent loop drains them.
+    void pump(render3d::Backend& video, int frameWidth, int frameHeight) {
+        const render3d::InputFrame in = video.poll();
+        const render3d::OverlayPlacement placement =
+            video.overlayPlacement(frameWidth, frameHeight);
+        const Uint64 now = SDL_GetTicksNS();
+
+        if (in.closeRequested) {
+            SDL_Event out{};
+            out.type = SDL_EVENT_QUIT;
+            out.common.timestamp = now;
+            (void)SDL_PushEvent(&out);
+        }
+        for (const render3d::KeyEdge& key : in.keys) {
+            if (key.hid >= held.size()) {
+                continue;
+            }
+            if (!key.repeat) {
+                held[key.hid] = key.down;
+            }
+            g_video_shift_held = held[SDL_SCANCODE_LSHIFT] || held[SDL_SCANCODE_RSHIFT];
+            SDL_Event out{};
+            out.type = key.down ? SDL_EVENT_KEY_DOWN : SDL_EVENT_KEY_UP;
+            out.key.timestamp = now;
+            out.key.scancode = static_cast<SDL_Scancode>(key.hid);
+            out.key.down = key.down;
+            out.key.repeat = key.repeat;
+            out.key.mod = static_cast<SDL_Keymod>(g_video_shift_held ? SDL_KMOD_SHIFT : SDL_KMOD_NONE);
+            (void)SDL_PushEvent(&out);
+        }
+        for (const render3d::MouseButtonEdge& button : in.buttons) {
+            const Uint32 bit = SDL_BUTTON_MASK(button.button);
+            if (button.down) {
+                mouseMask |= bit;
+            } else {
+                mouseMask &= ~bit;
+            }
+            SDL_Event out{};
+            out.type = button.down ? SDL_EVENT_MOUSE_BUTTON_DOWN : SDL_EVENT_MOUSE_BUTTON_UP;
+            out.button.timestamp = now;
+            out.button.button = button.button;
+            out.button.down = button.down;
+            out.button.clicks = 1;
+            out.button.x = static_cast<float>(placement.toFrameX(button.x));
+            out.button.y = static_cast<float>(placement.toFrameY(button.y));
+            (void)SDL_PushEvent(&out);
+        }
+        if (in.mouseDeltaX != 0.0F || in.mouseDeltaY != 0.0F) {
+            SDL_Event out{};
+            out.type = SDL_EVENT_MOUSE_MOTION;
+            out.motion.timestamp = now;
+            out.motion.state = mouseMask;
+            out.motion.x = static_cast<float>(placement.toFrameX(in.mouseX));
+            out.motion.y = static_cast<float>(placement.toFrameY(in.mouseY));
+            // Raw window counts, exactly what SDL's relative mode delivered:
+            // MouseSettings::yawFor turns them into BAM downstream.
+            out.motion.xrel = in.mouseDeltaX;
+            out.motion.yrel = in.mouseDeltaY;
+            (void)SDL_PushEvent(&out);
+        }
+        if (in.wheelY != 0.0F) {
+            SDL_Event out{};
+            out.type = SDL_EVENT_MOUSE_WHEEL;
+            out.wheel.timestamp = now;
+            out.wheel.x = 0.0F;
+            out.wheel.y = in.wheelY;
+            (void)SDL_PushEvent(&out);
+        }
+    }
+};
+
+/// 3D BUILD. THE DOCKS, PLACED FOR A SESSION: the session's own tiles meshed
+/// by chunk (built once, on the first frame), lit from its own clock, its
+/// baked lamps and the Gull's own hearth and candles, the sky dome on the
+/// eye, and the camera from the session's own Camera -- Session::camera(),
+/// the body's Q8 position and BAM facing through Camera::fromBody, combat
+/// impulses included. The rig borrows the session's tiles, atlas and lamp
+/// field, so it must not outlive the session it was first refreshed with
+/// -- it never does: one rig per run_client / shutter.
+/// A LANE. Where the skinned rigs live when the licensed export has been
+/// run: content/art/lot-3d/characters (gitignored; absent on a fresh
+/// checkout and in the docker gate, and the adapter falls back to the
+/// placeholder figures per rig without a word).
+[[nodiscard]] std::string rig_model_dir() {
+    return (granadad::content::contentDir() / "art" / "lot-3d" / "characters").string();
+}
+
+/// V LANE. Where the static weapon exports live (the mace and the dagger
+/// hung on the viewmodel's Hand_R when they exist): content/art/lot-3d/
+/// static, same licence, same gitignore, same silent fallback.
+[[nodiscard]] std::string weapon_model_dir() {
+    return (granadad::content::contentDir() / "art" / "lot-3d" / "static").string();
+}
+
+/// S LANE. Where the static building pieces live -- the same export tree
+/// the weapons come from; the catalogue names "<pack>/<prefab>.gltf" under
+/// it. Same licence, same gitignore, same silent fallback (the chunk mesh).
+[[nodiscard]] std::string static_model_dir() { return weapon_model_dir(); }
+
+struct SceneRig {
+    render3d::SceneDescription scene;
+    std::unique_ptr<render3d::WorldScene> world;
+    /// S LANE. The piece catalogue (content/raws/world3d/docks-pieces.json)
+    /// loaded once per rig; the world scene borrows it. Absent or malformed
+    /// -> empty -> no pieces, the district exactly as before the lane.
+    render3d::StaticCatalogue catalogue;
+
+    void refresh(const render::Session& session, float aspect) {
+        if (world == nullptr) {
+            catalogue = render3d::StaticCatalogue::load(
+                render3d::staticCataloguePath(granadad::content::contentDir()));
+            if (!catalogue.error().empty()) {
+                std::printf("granadad: render3d: piece catalogue: %s -- the chunk mesh stands\n",
+                            catalogue.error().c_str());
+            }
+            for (const std::string& warning : catalogue.warnings()) {
+                std::printf("granadad: render3d: piece catalogue: %s\n", warning.c_str());
+            }
+            world = std::make_unique<render3d::WorldScene>(
+                session.tiles(), session.atlas(), &session.renderer().glow(), &catalogue,
+                &session.renderer().lamps());
+        }
+        render3d::WorldSceneParams params;
+        params.timeOfDaySeconds = session.timeOfDay();
+        // WEATHER: the session's sky -- live off the seed, the day and the
+        // clock, or pinned by --weather. Render-only; the sim never sees it.
+        params.weather = session.weather();
+        params.dynamicLamps = session.tavernLights();
+        world->refresh(scene, session.camera(), aspect, params);
+        // KIT BUILD: the things on the tiles -- the room's hashed ground
+        // list, the four strongboxes and the snug's bale -- as Item pieces
+        // off the same catalogue, appended after the placed pieces (whose
+        // table they index). Per frame, off sim state, never written back:
+        // TAKE removes a thing in the sim and the next frame has one fewer.
+        {
+            const std::vector<render3d::StaticInstance> things = render3d::groundItemInstances(
+                session, catalogue, session.camera(), 40.0F, world->pool(), &world->spill());
+            scene.statics.insert(scene.statics.end(), things.begin(), things.end());
+            // And a lantern on a table burns like one on a wall: its halo,
+            // drawn last with every other (the adapter defers kDrawHalo).
+            const std::vector<render3d::StaticInstance> glows =
+                render3d::groundItemHalos(session, catalogue, session.camera(), 40.0F);
+            scene.statics.insert(scene.statics.end(), glows.begin(), glows.end());
+        }
+        // A LANE: the people. Sixteen placeholder rigs put once (the adapter
+        // swaps in the glb by name where it has one), and the instances
+        // rewritten every frame off the roster with wardSprites' own slide.
+        render3d::putActorRigs(scene);
+        // The bodies stand in the same pool the walls and cobbles wear
+        // (WorldScene::pool), so a figure beside a lantern at night is lit
+        // by that lantern and not drawn in its daylight coat.
+        render3d::ActorSceneParams actorParams;
+        actorParams.pool = world->pool();
+        actorParams.spill = &world->spill();
+        scene.actors = render3d::actorInstances(session, session.camera(), actorParams);
+        // V LANE: the player's own hands. The placeholder parts put once
+        // (the adapter swaps in the arms glb by name where it has one), the
+        // pose rewritten every frame off Session::viewmodel() -- the machine
+        // step() runs beside the sim, so a scripted swing photographs the
+        // same frame on every machine.
+        render3d::putViewmodelMeshes(scene);
+        scene.viewmodel = render3d::viewmodelInstance(session);
+    }
+};
+
+/// 3D BUILD. ONE FRAME THROUGH THE BACKEND: clear to the sky, the 3D pass
+/// when --3d is on, the software frame as the overlay, present -- and, when
+/// asked, the finished frame read back before the swap.
+render3d::SceneStats present_frame(render3d::Backend& video, const Options& options,
+                                   SceneRig& rig, const render::Session& session,
+                                   const render::Framebuffer& overlay,
+                                   render::Framebuffer* capture) {
+    const float aspect = static_cast<float>(std::max(1, video.width())) /
+                         static_cast<float>(std::max(1, video.height()));
+    rig.refresh(session, aspect);
+    render3d::SceneStats stats;
+    if (options.video3d) {
+        video.beginFrame(rig.scene.clearColour);
+        stats = video.drawScene(rig.scene);
+    } else {
+        video.beginFrame(render3d::Rgba8{0, 0, 0, 255});
+    }
+    video.drawOverlay(overlay);
+    video.endFrame(capture);
+    return stats;
+}
+
+/// 3D BUILD. THE SMOKE PATH'S SHUTTER: runSmoke drove the session and drew
+/// its software frame; this composites that frame through the backend the
+/// window uses and writes what the window would have shown. On the shipped
+/// build that opens a real window for the length of one frame -- which is
+/// exactly what scripts/verify-windows.ps1 wants proved on the host -- and on
+/// the headless build it opens none.
+[[nodiscard]] bool shutter_through_backend(const Options& options, const render::Session& session,
+                                           const render::Framebuffer& software) {
+    render3d::BackendConfig config;
+    config.width = software.width();
+    config.height = software.height();
+    config.windowScale = options.smoke.captureScale;
+    config.resizable = false;
+    config.vsync = false;
+    config.modelDir = rig_model_dir();
+    config.weaponDir = weapon_model_dir();
+    config.staticDir = static_model_dir();
+    std::unique_ptr<render3d::Backend> video = render3d::Backend::open(config);
+    if (video == nullptr) {
+        std::printf("granadad: the 3D backend could not open for the shutter\n");
+        return false;
+    }
+    render::Framebuffer overlay = software;
+    if (options.video3d) {
+        (void)session.drawFrame(overlay, render::Session::FramePasses{.world = false});
+    }
+    SceneRig rig;
+    render::Framebuffer shot(1, 1);
+    const render3d::SceneStats stats =
+        present_frame(*video, options, rig, session, overlay, &shot);
+    // The headless build's frame is the framebuffer's own size; the window
+    // build already presented at the capture scale.
+    const bool needsUpscale =
+        shot.width() == software.width() && options.smoke.captureScale > 1;
+    const render::Framebuffer output =
+        needsUpscale ? render::upscaleNearest(shot, options.smoke.captureScale) : shot;
+    const bool ok = render::writePng(output, options.smoke.screenshot);
+    // THE SCENE HASH IS PRINTED ON PURPOSE: it is the whole SceneDescription
+    // (chunks, sky, the crowd, the hands, the camera) folded to one number,
+    // so two separate processes of the same scripted drive prove the 3D
+    // frame's INPUT twin-runs identical across processes -- the frame's
+    // bytes are never hashed on a GPU, the description is.
+    std::printf("granadad: 3d shutter -- %s backend, %dx%d, %zu instance(s), %zu triangle(s), "
+                "%zu piece(s) of %zu placed (%zu drawn, %zu piece file(s)), "
+                "%zu bod%s (%zu skinned, %zu rig file(s)), hands %s/%s %s %zu part(s)%s%s, "
+                "scene 0x%016llX%s\n",
+                video->kind() == render3d::VideoKind::Software ? "rlsw" : "gpu", output.width(),
+                output.height(), stats.instancesDrawn, stats.trianglesDrawn,
+                rig.scene.statics.size(), rig.world != nullptr ? rig.world->stats().piecesPlaced : std::size_t{0},
+                stats.staticsDrawn, stats.staticModelsLoaded, stats.actorsDrawn,
+                stats.actorsDrawn == 1 ? "y" : "ies", stats.actorsSkinned, stats.rigModelsLoaded,
+                render3d::viewmodelKindName(
+                    static_cast<render3d::ViewmodelKind>(rig.scene.viewmodel.kind))
+                    .data(),
+                render::viewmodelStateName(rig.scene.viewmodel.state).data(),
+                session.viewmodel().handsUp ? "up" : "down", stats.viewmodelPartsDrawn,
+                stats.viewmodelSkinned ? " (skinned glb)" : "",
+                stats.viewmodelWeaponLoaded ? " (weapon file)" : "",
+                static_cast<unsigned long long>(render3d::sceneHash(rig.scene)),
+                options.video3d ? " (the Docks in 3D under the HUD)"
+                                : " (software world in the overlay: --2d)");
+    // THE BODIES IN FRAME, by rig: the nearest of each look to the eye and
+    // its tile, so a frame of a townswoman, a wastrel or an urchin can be
+    // composed from the shutter's own report rather than by walking the
+    // ward blind. Description-side, nothing drawn.
+    {
+        const render3d::Vec3 eye = rig.scene.camera.position;
+        std::string report;
+        for (std::uint32_t r = 0; r < render3d::kActorRigCount; ++r) {
+            const std::string_view file = render3d::actorRigFile(static_cast<std::uint8_t>(r));
+            if (file.empty()) {
+                continue;
+            }
+            const render3d::ActorInstance* nearest = nullptr;
+            float best = 0.0F;
+            int count = 0;
+            for (const render3d::ActorInstance& body : rig.scene.actors) {
+                if (body.rig != r) {
+                    continue;
+                }
+                ++count;
+                const float dx = body.instance.position.x - eye.x;
+                const float dz = body.instance.position.z - eye.z;
+                const float d = dx * dx + dz * dz;
+                if (nearest == nullptr || d < best) {
+                    nearest = &body;
+                    best = d;
+                }
+            }
+            if (nearest == nullptr) {
+                continue;
+            }
+            char line[160];
+            (void)std::snprintf(line, sizeof(line), " %.*s x%d nearest (%d,%d) at %.1f;",
+                                static_cast<int>(file.size()), file.data(), count,
+                                static_cast<int>(std::floor(nearest->instance.position.x)),
+                                static_cast<int>(std::floor(nearest->instance.position.z)),
+                                static_cast<double>(std::sqrt(best)));
+            report += line;
+        }
+        std::printf("granadad: 3d bodies by rig --%s\n", report.empty() ? " none" : report.c_str());
+    }
+    return ok;
+}
+
+// ---------------------------------------------------------------------------
 // #80: the origin-select/customize flow, in its own small window
 // ---------------------------------------------------------------------------
 //
-// ITS OWN WINDOW RATHER THAN A RESTRUCTURED run_client(). No Session and no
+// ITS OWN LOOP RATHER THAN A RESTRUCTURED run_client(). No Session and no
 // world exist yet at this point in the boot sequence -- this screen has to
-// run BEFORE either -- and the alternative (hoisting run_client's own forty
-// lines of SDL setup above the Session construction they currently follow)
-// touches code every other page in this build was proven against. A second,
-// self-contained SDL_Init/window/renderer/texture that tears itself down
-// before run_client's own setup runs is a few lines longer and a great deal
-// safer to review, and it costs nothing at runtime a player would notice:
-// SDL_QuitSubSystem below balances the SDL_Init here, so run_client's own
-// SDL_Init(VIDEO | GAMEPAD) right after this returns is an ordinary fresh
-// init and not a double-init of anything.
+// run BEFORE either -- and the alternative (hoisting run_client's own setup
+// above the Session construction it currently follows) touches code every
+// other page in this build was proven against.
+//
+// 3D BUILD: ONE WINDOW FOR THE WHOLE LAUNCH. This used to open its own SDL
+// window and tear it down before run_client opened the world's; the raylib
+// window is opened once in main() and handed to both, so the creation->world
+// cut is a veil over one window instead of a window swap. The pad still gets
+// its own SDL_Init/QuitSubSystem pair here, exactly as before, so the virtual
+// pad harness sees the same lifetime it always did.
 //
 // Returns an UNCONFIRMED CreationResult if the player closed the window --
 // main() treats that exactly like closing the game, not like starting one.
-render::CreationResult run_creation_window(const Options& options) {
+/// JUSTICE BUILD (HEARING PAGE LANE). run_client's answer when the run ended
+/// on the rope and the player chose A NEW MAN: main() reads it and goes back
+/// to the creation window rather than exiting. Distinct from 0 (closed) and
+/// 1 (a failure), and never returned to the shell -- main() consumes it.
+constexpr int kRunClientNewMan = 3;
+
+render::CreationResult run_creation_window(const Options& options, render3d::Backend& video) {
     render::CreationFlow flow(granadad::content::contentDir());
 
-    if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMEPAD)) {
+    if (!SDL_Init(SDL_INIT_GAMEPAD)) {
         std::printf("SDL_Init (creation) failed: %s\n", SDL_GetError());
         return {};
     }
-    // DON'T STEAL FOCUS ON LAUNCH. SDL's own default is to activate a window
-    // the moment SDL_ShowWindow (which SDL_CreateWindow calls internally)
-    // shows it -- which is exactly the OS's ordinary activate-on-show
-    // behaviour for a foreground-launched process, and exactly what Eli asked
-    // not to have happen. This is the FIRST window a real launch opens (see
-    // main()'s own call order), so the hint has to be set here too, not only
-    // in run_client() below -- setting it on only the second window would
-    // leave THIS one still stealing focus the moment it appears. Set to "0"
-    // BEFORE SDL_CreateWindow, per SDL's own documented contract; it does
-    // nothing to ordinary click-to-focus, which the OS still grants normally.
-    SDL_SetHint(SDL_HINT_WINDOW_ACTIVATE_WHEN_SHOWN, "0");
     const int width = options.smoke.session.width;
     const int height = options.smoke.session.height;
-    SDL_Window* window =
-        SDL_CreateWindow("Granadad: The Darkstreets", width * options.windowScale,
-                         height * options.windowScale, SDL_WINDOW_RESIZABLE);
-    if (window == nullptr) {
-        std::printf("SDL_CreateWindow (creation) failed: %s\n", SDL_GetError());
-        SDL_QuitSubSystem(SDL_INIT_GAMEPAD);
-        SDL_QuitSubSystem(SDL_INIT_VIDEO);
-        return {};
-    }
-    SDL_Renderer* renderer = SDL_CreateRenderer(window, nullptr);
-    if (renderer == nullptr) {
-        std::printf("SDL_CreateRenderer (creation) failed: %s\n", SDL_GetError());
-        SDL_DestroyWindow(window);
-        SDL_QuitSubSystem(SDL_INIT_GAMEPAD);
-        SDL_QuitSubSystem(SDL_INIT_VIDEO);
-        return {};
-    }
-    SDL_SetRenderLogicalPresentation(renderer, width, height,
-                                     SDL_LOGICAL_PRESENTATION_INTEGER_SCALE);
-    SDL_SetRenderVSync(renderer, 1);
-    SDL_Texture* texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ABGR8888,
-                                             SDL_TEXTUREACCESS_STREAMING, width, height);
-    if (texture != nullptr) {
-        SDL_SetTextureScaleMode(texture, SDL_SCALEMODE_NEAREST);
-    }
+    VideoBridge bridge;
+    // A pointer, not mouselook: this screen is lists and a name field.
+    video.setRelativeMouse(false);
 
     // #93. A PAD THAT IS PLUGGED IN SHOULD JUST WORK, on the FIRST screen of
     // the game and not only after it. Opened here and hot-plugged below, the
@@ -3071,6 +4140,16 @@ render::CreationResult run_creation_window(const Options& options) {
     render::Framebuffer frame(width, height);
     bool cancelled = false;
 
+    // UI-EA-SPEC sec. 3 rule 3: BOOT IS A WORLD SEAM AND WEARS THE VEIL. The
+    // first dozen frames of the first window ease up from black instead of
+    // slamming the door screen on -- the same vocabulary the travel dip and
+    // the creation->world cut below speak, windowed-only so no headless
+    // capture is touched. Counted in frames of this window's own loop
+    // (vsync'd; the reel path is already clamped to 60), not steps: there is
+    // no step pump on this screen and nothing here is captured.
+    constexpr int kCreationVeilFrames = 12;
+    int bootVeilFrame = kCreationVeilFrames;
+
     // THE PARITY PASS. THE CHARACTER SCREEN IS THE FIRST SURFACE A PLAYER
     // TOUCHES, and a windowed launch opens it before the world -- so a pad
     // script aimed at the world would never reach the world without one aimed
@@ -3091,6 +4170,9 @@ render::CreationResult run_creation_window(const Options& options) {
 
     while (!flow.done() && !cancelled) {
         SDL_Event event;
+        // 3D BUILD: raylib's keys and pointer onto SDL's queue, ahead of the
+        // drain -- see VideoBridge.
+        bridge.pump(video, width, height);
         while (SDL_PollEvent(&event)) {
             if (event.type == SDL_EVENT_QUIT) {
                 cancelled = true;
@@ -3149,12 +4231,12 @@ render::CreationResult run_creation_window(const Options& options) {
                 }
                 case SDL_EVENT_MOUSE_MOTION:
                 case SDL_EVENT_MOUSE_BUTTON_DOWN: {
-                    // INTO FRAMEBUFFER PIXELS FIRST. The window is presented
-                    // with SDL_SetRenderLogicalPresentation at an integer
-                    // scale, so a window coordinate is not a frame coordinate;
-                    // SDL's own conversion is the only correct way across every
-                    // scale and every letterbox.
-                    SDL_ConvertEventToRenderCoordinates(renderer, &event);
+                    // ALREADY IN FRAMEBUFFER PIXELS. The window presents the
+                    // frame at an integer scale with a letterbox, so a window
+                    // coordinate is not a frame coordinate; VideoBridge
+                    // converts through the backend's own placement before the
+                    // event is queued (what SDL_ConvertEventToRenderCoordinates
+                    // did when SDL owned the window).
                     const bool click = event.type == SDL_EVENT_MOUSE_BUTTON_DOWN;
                     if (click) {
                         // A click is a press; bare motion deliberately is
@@ -3234,13 +4316,19 @@ render::CreationResult run_creation_window(const Options& options) {
                 --shotIn;
             }
         }
-        if (texture != nullptr) {
-            SDL_UpdateTexture(texture, nullptr, frame.pixels().data(), width * 4);
-            SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
-            SDL_RenderClear(renderer);
-            SDL_RenderTexture(renderer, texture, nullptr, nullptr);
-            SDL_RenderPresent(renderer);
+        // The boot veil, applied AFTER the reel's shutter reads the frame --
+        // committed reel PNGs are veil-free by construction (and the shutter
+        // waits 40 frames regardless).
+        if (bootVeilFrame > 0) {
+            --bootVeilFrame;
+            frame.fillRect(0, 0, frame.width(), frame.height(), render::Rgb{0.0F, 0.0F, 0.0F},
+                           static_cast<float>(bootVeilFrame) /
+                               static_cast<float>(kCreationVeilFrames));
         }
+        // No 3D pass on this screen: the sheet is the whole frame, opaque.
+        video.beginFrame(render3d::Rgba8{0, 0, 0, 255});
+        video.drawOverlay(frame);
+        video.endFrame();
         if (reel.active) {
             // The same 60 Hz floor the world loop keeps while the demo is up,
             // and for the same reason: the reel's pacing is counted in frames,
@@ -3264,19 +4352,38 @@ render::CreationResult run_creation_window(const Options& options) {
         }
     }
 
+    // UI-EA-SPEC sec. 3 rule 3: CREATION->WORLD IS DRESSED. Black falls over
+    // the finished sheet BEFORE the world's session is built -- so the moment
+    // that follows reads as one deliberate cut to black, not as the app
+    // restarting -- and run_client dresses the other side, easing the world
+    // up from black through the travel dip's own machinery
+    // (Session::dressInstantCut). Windowed-only, played only on a COMPLETED
+    // flow: a cancel (the armed door quit) still leaves plainly.
+    if (flow.done() && !cancelled) {
+        for (int i = 1; i <= kCreationVeilFrames; ++i) {
+            render::drawCreation(frame, flow);
+            frame.fillRect(0, 0, frame.width(), frame.height(), render::Rgb{0.0F, 0.0F, 0.0F},
+                           static_cast<float>(i) / static_cast<float>(kCreationVeilFrames));
+            video.beginFrame(render3d::Rgba8{0, 0, 0, 255});
+            video.drawOverlay(frame);
+            video.endFrame();
+            // The input this frame brought in is drained, not acted on: the
+            // flow is done and nothing here reads it, but a queue left full
+            // would hand run_client a stale click.
+            bridge.pump(video, width, height);
+            SDL_Event drained;
+            while (SDL_PollEvent(&drained)) {
+            }
+        }
+    }
+
     const render::CreationResult result = flow.done() ? flow.result() : render::CreationResult{};
 
     creationPad.detach();
     if (pad != nullptr) {
         SDL_CloseGamepad(pad);
     }
-    if (texture != nullptr) {
-        SDL_DestroyTexture(texture);
-    }
-    SDL_DestroyRenderer(renderer);
-    SDL_DestroyWindow(window);
     SDL_QuitSubSystem(SDL_INIT_GAMEPAD);
-    SDL_QuitSubSystem(SDL_INIT_VIDEO);
     return result;
 }
 
@@ -3284,7 +4391,8 @@ render::CreationResult run_creation_window(const Options& options) {
 // the window
 // ---------------------------------------------------------------------------
 
-int run_client(const Options& options, const render::CreationResult& chosen) {
+int run_client(const Options& options, const render::CreationResult& chosen,
+               render3d::Backend& video) {
     // A NEW GAME OPENS ON THE CASE, AND AT DAWN.
     //
     // The window path -- and only the window path. A scripted capture and two
@@ -3297,20 +4405,55 @@ int run_client(const Options& options, const render::CreationResult& chosen) {
     // `--time` still wins, because an hour the player asked for is an hour they
     // meant.
     render::SessionConfig start = options.smoke.session;
-    start.openingPage = true;
-    // COURIER CASE (lane: case). The windowed game gets the courier; the demo
-    // does NOT -- its route and its committed frames predate the sheet, and a
-    // hail landing mid-reel would move street frames the ship note proves
-    // byte-identical. Same off-by-default-on-in-the-client pattern as
-    // openingPage, one line up.
-    start.courier = !options.demo;
-    if (!start.timeOfDayGiven) {
-        start.timeOfDay = 8 * 3600;
+    // WEATHER: the demo's route and the case watch's replay have committed
+    // frames shot under the clear sky, and a fog easing in mid-reel would
+    // move them -- the courier's own rule, one block down. Both keep the
+    // clear sky unless --weather named one.
+    if ((options.demo || options.caseWatch) && !options.weatherGiven) {
+        start.liveWeather = false;
+        start.weather = render::WeatherKind::Clear;
+    }
+    if (options.caseWatch) {
+        // CASE WATCH: THE HARNESS'S OWN SESSION, not the client's. The watch
+        // replays the recorded --case drive onto this session, and the replay
+        // is only the drive's twin if the two were born identical -- so no
+        // opening page, no courier config (the tape hails on its own, exactly
+        // as runCaseLine does), and the scripted line's own hour unless the
+        // caller named one. Everything below that would touch simulation
+        // state (the chargen sheet, the biography) is skipped the same way.
+        if (!start.timeOfDayGiven) {
+            const int scriptedHour = render::scriptedStartHour(options.smoke);
+            if (scriptedHour >= 0) {
+                start.timeOfDay = scriptedHour * 3600;
+            }
+        }
+    } else {
+        start.openingPage = true;
+        // COURIER CASE (lane: case). The windowed game gets the courier; the
+        // demo does NOT -- its route and its committed frames predate the
+        // sheet, and a hail landing mid-reel would move street frames the ship
+        // note proves byte-identical. Same off-by-default-on-in-the-client
+        // pattern as openingPage, one line up.
+        start.courier = !options.demo;
+        if (!start.timeOfDayGiven) {
+            start.timeOfDay = 8 * 3600;
+        }
     }
     render::Session session(start);
     if (!session.body().spawnedLegally()) {
         std::printf("granadad: spawn tile is not standable -- check --spawn\n");
         return 1;
+    }
+
+    // UI-EA-SPEC sec. 3 rule 3: THE WORLD EASES UP FROM BLACK AT BOOT -- the
+    // other half of the dressed creation->world cut (the creation window let
+    // black fall before its teardown; this window rises from it), through
+    // the travel dip's own machinery so boot, travel and the case-watch seam
+    // all speak one veil. NOT under --demo or --case-watch: their committed
+    // frames and byte-stable replays predate the veil, and a boot dip would
+    // move every early frame of both. Their guards stay green untouched.
+    if (!options.demo && !options.caseWatch) {
+        session.dressInstantCut();
     }
 
     // #84. THE SEAM #80 NAMED, CLOSED. run_creation_window() built a real
@@ -3342,7 +4485,10 @@ int run_client(const Options& options, const render::CreationResult& chosen) {
     // hands the whole sheet to the room and the body together --
     // Session::applyPlayerAttributes. CHARGEN'S ATTRIBUTE SPENDING MATTERS
     // FROM THIS BOOT ON.
-    {
+    // CASE WATCH SKIPS THE WHOLE SHEET: the harness applies no chargen, so the
+    // watch must not either -- a Wielder who punches harder than the drive's
+    // default sheet would put Finch down on a different blow.
+    if (!options.caseWatch) {
         sim::SkillTrack& playerSkills = session.tavern().dialogue().skills();
         sim::AttributeBlock sheet;
         if (chosen.companion.loaded()) {
@@ -3387,7 +4533,10 @@ int run_client(const Options& options, const render::CreationResult& chosen) {
     // effect is applied exactly once from the engine's own base values, which
     // is what keeps the whole application idempotent per boot -- the
     // accumulator itself is pure (chargen_raws.hpp).
-    {
+    // (Skipped under --case-watch with the sheet above, and for the same
+    // reason -- though a default-constructed ChargenEffects is a no-op in
+    // every branch anyway, per its own header.)
+    if (!options.caseWatch) {
         const sim::ChargenEffects& fx = chosen.effects;
         sim::DialogueDirector& talk = session.tavern().dialogue();
         sim::SkillTrack& playerSkills = talk.skills();
@@ -3469,7 +4618,14 @@ int run_client(const Options& options, const render::CreationResult& chosen) {
     if (options.invertY) {
         controls.mouse.invertY = true;
     }
-    controls.fovDegrees = start.fovDegrees;
+    // THE FILE'S FOV SURVIVES A RELAUNCH. Only an explicit --fov= overrides
+    // it, for this launch; the slider's saved value is otherwise what the
+    // camera reads. (start.fovDegrees is the option's default, 90, whenever
+    // nobody passed --fov=, and writing that over the file every boot was
+    // the VIEW ANGLE slider "saving" into a value nothing ever read back.)
+    if (options.fovGiven) {
+        controls.fovDegrees = start.fovDegrees;
+    }
     controls.sanitise();
     session.setControls(controls);
     // SHIP NOTE SEAM #2, CLOSED: THE FEET READ THE HAND FROM THE DOOR. The
@@ -3487,21 +4643,14 @@ int run_client(const Options& options, const render::CreationResult& chosen) {
                 session.atlas().fromAuthoredArt() ? "content/art/custom" : "procedural fallback");
     std::printf("granadad: controls from %s\n", controlsFile.string().c_str());
 
-    // SDL_INIT_GAMEPAD as well as VIDEO. A pad that is plugged in should just
-    // work; asking a player to turn one on in a menu is a 2006 courtesy.
-    if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMEPAD)) {
+    // SDL_INIT_GAMEPAD, and ONLY that. A pad that is plugged in should just
+    // work; asking a player to turn one on in a menu is a 2006 courtesy. 3D
+    // BUILD: no VIDEO -- the window is raylib's (see VideoBridge) and SDL's
+    // video subsystem would open a second one nobody draws into.
+    if (!SDL_Init(SDL_INIT_GAMEPAD)) {
         std::printf("SDL_Init failed: %s\n", SDL_GetError());
         return 1;
     }
-    // DON'T STEAL FOCUS ON LAUNCH. See the identical call and comment in
-    // run_creation_window() above -- this is the SECOND window a real launch
-    // opens. Set again here rather than trusted to carry over: SDL does not
-    // document SDL_SetHint as scoped to a subsystem's lifetime, but this file
-    // does not lean on that either way -- run_creation_window() fully quits
-    // SDL_INIT_VIDEO and this function calls SDL_Init from scratch, so
-    // stating the hint again at the one call site that actually needs it is
-    // one line and removes the question entirely.
-    SDL_SetHint(SDL_HINT_WINDOW_ACTIVATE_WHEN_SHOWN, "0");
 
     // THE AUDIO WIRING PASS. Once, after SDL_Init, exactly as
     // audio_engine.hpp's plan states (createSdlAudioEngine does its own
@@ -3523,56 +4672,36 @@ int run_client(const Options& options, const render::CreationResult& chosen) {
         std::printf("granadad: audio %s\n",
                     audio->deviceOpen() ? "device open (48kHz float stereo)"
                                         : "no output device -- running silent");
+        // THE LOT PASS: the director's one start line -- which pairs, which
+        // layout -- so a verifier reading stdout can know what the music is
+        // doing without ears, the same reasoning the device line states.
+        if (options.musicOff) {
+            audio->music().setEnabled(false);
+        }
+        std::printf("granadad: %s\n", audio->music().describe().c_str());
         session.setAudio(audio.get());
     } else {
         std::printf("granadad: audio engine unavailable -- running silent\n");
     }
 
-    const int windowW = start.width * options.windowScale;
-    const int windowH = start.height * options.windowScale;
-    SDL_Window* window =
-        SDL_CreateWindow("Granadad: The Darkstreets", windowW, windowH, SDL_WINDOW_RESIZABLE);
-    // The two failure paths below open no window worth keeping, but they DO
-    // run after the engine exists -- so they take the same order the normal
-    // shutdown does. Detach, drop the engine, then let SDL go.
-    if (window == nullptr) {
-        std::printf("SDL_CreateWindow failed: %s\n", SDL_GetError());
-        session.setAudio(nullptr);
-        audio.reset();
-        SDL_Quit();
-        return 1;
-    }
-    SDL_Renderer* renderer = SDL_CreateRenderer(window, nullptr);
-    if (renderer == nullptr) {
-        std::printf("SDL_CreateRenderer failed: %s\n", SDL_GetError());
-        SDL_DestroyWindow(window);
-        session.setAudio(nullptr);
-        audio.reset();
-        SDL_Quit();
-        return 1;
-    }
-    // Nearest neighbour, always. The chunkiness is the art direction.
-    SDL_SetRenderLogicalPresentation(renderer, options.smoke.session.width,
-                                     options.smoke.session.height,
-                                     SDL_LOGICAL_PRESENTATION_INTEGER_SCALE);
-    // VSYNC ON. Without it the renderer free-runs, which burns a core to draw
-    // frames the monitor throws away AND -- the part that matters for feel --
-    // hands the compositor torn frames. The step pump already decouples the
-    // simulation from the frame rate, so this costs nothing in latency that the
-    // display was not going to cost anyway.
-    SDL_SetRenderVSync(renderer, 1);
-
-    SDL_Texture* texture =
-        SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ABGR8888, SDL_TEXTUREACCESS_STREAMING,
-                          options.smoke.session.width, options.smoke.session.height);
-    if (texture != nullptr) {
-        SDL_SetTextureScaleMode(texture, SDL_SCALEMODE_NEAREST);
-    }
+    // 3D BUILD. The window was opened in main() and handed in; it presents
+    // at the largest integer scale that fits (nearest neighbour, always --
+    // the chunkiness is the art direction) with vsync on, exactly the two
+    // properties the SDL renderer used to be configured for here. The
+    // bridge is what turns its keys and pointer into the SDL events the
+    // loop below reads; the rig is the 3D scene under the overlay.
+    VideoBridge bridge;
+    SceneRig rig;
+    std::printf("granadad: video %s backend, %dx%d window%s\n",
+                video.kind() == render3d::VideoKind::Software ? "rlsw" : "gpu", video.width(),
+                video.height(), options.video3d ? ", 3D world" : ", --2d software world");
 
     render::Framebuffer frame(options.smoke.session.width, options.smoke.session.height);
+    /// F12 was pressed: the next presented frame is read back and written.
+    bool screenshotPending = false;
 
     bool mouseLook = true;
-    SDL_SetWindowRelativeMouseMode(window, true);
+    video.setRelativeMouse(true);
     // THE PARITY PASS. THE POINTER COMES BACK WHEN A PAGE IS UP, and this is
     // the whole of the mechanism: one bool that says which of the two mouse
     // modes the window is in, flipped at the top of the frame off
@@ -3665,6 +4794,35 @@ int run_client(const Options& options, const render::CreationResult& chosen) {
         (void)std::fflush(stdout);
     }
 
+    // --- CASE WATCH --------------------------------------------------------
+    //
+    // See render/case_watch.hpp. The same three demo rules hold and nothing
+    // changes when it is off: the cadence is fixed (one step per frame, from
+    // the tape), the player's hands are off it (ESC alone still works, the
+    // same swallow as the demo's), and the tape owns MoveInput. The drive is
+    // recorded HERE, headless, before the first frame -- the identical
+    // runCaseLine the --case harness runs -- and the loop below replays it.
+    std::unique_ptr<render::CaseWatchDirector> watch;
+    if (options.caseWatch) {
+        watch = std::make_unique<render::CaseWatchDirector>(
+            render::recordCaseDrive(options.smoke), options.caseWatchShotDir);
+        mouseLook = false;
+        const render::CaseWatchDrive& drive = watch->drive();
+        std::printf(
+            "granadad: WATCH -- THE QUIET TENANT: drive recorded, %zu op(s), %d step(s), "
+            "beats=%d/%d mask=%d\n",
+            drive.ops.size(), static_cast<int>(drive.stepCount), static_cast<int>(drive.beats),
+            static_cast<int>(drive.beatsWanted), static_cast<int>(drive.mask));
+        std::printf("granadad: WATCH -- %d frame(s) planned at 60/s (~%d s). ESC leaves.\n",
+                    static_cast<int>(watch->plannedFrames()),
+                    static_cast<int>(watch->plannedFrames() / 60));
+        if (!options.caseWatchShotDir.empty()) {
+            std::printf("granadad: WATCH -- beat frames to %s\n",
+                        options.caseWatchShotDir.string().c_str());
+        }
+        (void)std::fflush(stdout);
+    }
+
     // The body advances on a fixed 60 Hz cadence whatever the frame rate does,
     // so what the simulation sees is a whole number of identical steps and a
     // slow machine plays the same game as a fast one. StepPump owns that, and
@@ -3678,24 +4836,27 @@ int run_client(const Options& options, const render::CreationResult& chosen) {
     // and crouch should latch and the argument has no winner, so the same key
     // does both: a tap latches, a hold holds. render::HoldToggle owns the rule
     // and tests/test_controls.cpp owns the proof.
-    render::HoldToggle sprint;
+    // NINE AND THE STICKS: RUN IS A PLAIN HOLD. The tap-to-walk toggle is
+    // cut (a pad picks its gait off the stick's magnitude, and SNEAK is the
+    // quiet stance every theft resolves off), so sprint no longer needs a
+    // HoldToggle's tap/hold judgement -- down is running, up is not. Crouch
+    // keeps the HoldToggle: tap latches, hold holds.
+    bool sprintHeld = false;
     render::HoldToggle crouch;
     std::int64_t stepClock = 0;
     int quickSlot = 0;
-    // #85. THE QUICK WHEEL. Plain held-down state, not a HoldToggle: there is
-    // no tap-vs-hold ambiguity to resolve here the way Sprint/Crouch have --
-    // it is open for exactly as long as QuickWheel is down and never latches.
-    //
-    // SPELLS BUILD: A TAP OF IT IS THE GRIMOIRE PAGE NOW. Held, the key is
-    // still the wheel, exactly as above; released within HoldToggle's own
-    // kTapSteps without ever stepping a slot, the press plainly was not FOR
-    // the wheel -- it used to do nothing at all -- and the one key that
-    // means "craftings" opens the list page instead. No new binding, no new
-    // Menu tile, per the owner's ruling. The two trackers below are what
-    // tells the taps apart.
-    bool quickWheelOpen = false;
-    std::int64_t quickWheelDownAt = 0;
-    bool quickWheelStepped = false;
+    // COMBAT. THE ATTACK-ARMED SELF-GUARD, a plain held bool. Attack
+    // is now a down-edge/release-edge pair: the down edge starts the sim's hold
+    // clock, the release edge resolves the swing. But every UP edge in this loop
+    // reaches released() DIRECTLY, bypassing route_menu_key -- so a press the
+    // district-map fast-travel branch or a lockpick or pointerLive already ate
+    // still emits a release. This flag is set ONLY inside the world pressed()
+    // Attack branch below; released() resolves a swing only when it is set, and
+    // clears it. A page-consumed press never set it, so its release is inert --
+    // no phantom world swing. Unlike the wheel, there is no press-step timestamp
+    // to keep: the SIM owns the charge counter (it advances every movement step
+    // and the tier is measured room-side), so the client only guards the edges.
+    bool attackHeld = false;
     // S13. THE TRIGGERS' OWN EDGE STATE. SDL reports LT/RT as AXES, never as
     // button events, so kPadTable can never produce them; the poll after the
     // stick section synthesizes pressed()/released() on threshold crossings
@@ -3704,12 +4865,29 @@ int run_client(const Options& options, const render::CreationResult& chosen) {
     // quiet behind a menu): livePad reading null is an ordinary release edge.
     bool leftTriggerDown = false;
     bool rightTriggerDown = false;
+    // THE B SEAM, BOTH EDGES. The down edge of PadEast is remapped to Escape
+    // while a page is up (pageBackRemap); this remembers that it was, so the
+    // UP edge is released as Escape too and never reaches Crouch's release
+    // -- which ran setCrouched() and put the page the Escape had just backed
+    // out to straight back down. See render::PadBackEdge.
+    render::PadBackEdge padBack;
     // THE PARITY PASS. The left stick's own latch state while a page owns the
-    // input -- see the stickNav block in the frame loop.
+    // input -- see the stickNav block in the frame loop. The third is the
+    // RIGHT stick's vertical latch, the ward map's zoom (nine and the sticks:
+    // the triggers are the map's sub-tabs now, so the zoom went to the stick
+    // nobody else reads under a page).
     bool navStickVertical = false;
     bool navStickHorizontal = false;
+    bool navStickZoom = false;
+    // UI-EA-SPEC sec. 2, contract (c): the device edge. noteInputDevice()
+    // is called on every press and is deliberately quiet about whether the
+    // hand actually CHANGED; the tutor bands want the change alone, so the
+    // loop keeps yesterday's answer and wakes them on the flip.
+    render::InputDevice lastPromptDevice = session.promptDevice();
 
     bool running = true;
+    /// JUSTICE BUILD: the end rows' A NEW MAN, read beside quitRequested.
+    bool newMan = false;
     std::int64_t frames = 0;
     /// The demo's next frame deadline. See the throttle at the foot of the loop.
     Uint64 demoDeadlineNs = 0;
@@ -3731,7 +4909,7 @@ int run_client(const Options& options, const render::CreationResult& chosen) {
             if (wantPointer != pointerLive || wantRelative != relativeMouse) {
                 pointerLive = wantPointer;
                 relativeMouse = wantRelative;
-                SDL_SetWindowRelativeMouseMode(window, relativeMouse);
+                video.setRelativeMouse(relativeMouse);
             }
         }
         // WHAT A KEY DOES, in one place, whatever pressed it. Called from the
@@ -3745,36 +4923,18 @@ int run_client(const Options& options, const render::CreationResult& chosen) {
             // any binding lookup, because the whole point of "press a key" is
             // that the key's current meaning does not matter.
             if (session.awaitingKey()) {
-                session.bindAwaited(key == render::Key::Escape ? render::Key::None : key);
-                if (key != render::Key::Escape) {
+                // ESC cancels, and so do the pad's B and START -- the universal
+                // back and the pause button, which the settings page says out
+                // loud ("PRESS A KEY. B CANCELS.") and which can therefore not
+                // be bound to anything, exactly as ESC cannot. A grammar key
+                // that could be captured into a verb would strand the grammar.
+                const bool cancel = key == render::Key::Escape || key == render::Key::PadEast ||
+                                    key == render::Key::PadStart;
+                session.bindAwaited(cancel ? render::Key::None : key);
+                if (!cancel) {
                     (void)render::saveControls(session.controls(), controlsFile);
                 }
                 return;
-            }
-            // #85. THE QUICK WHEEL'S OWN DIRECTIONS, AHEAD OF THE ORDINARY
-            // BINDING LOOKUP -- the same reason route_menu_key's up/downward/
-            // etc. read raw keys as well as actions: while the wheel is open
-            // the D-pad (or arrows, on a keyboard) IS the wheel, whatever
-            // either one happens to be bound to otherwise. See controls.hpp's
-            // own note on why this is a STEPPER and not a true radial: no
-            // stick-angle primitive exists to build one off, and the D-pad is
-            // the direction source that is already wired as four discrete
-            // buttons.
-            if (quickWheelOpen) {
-                if (key == render::Key::PadUp || key == render::Key::Up ||
-                    key == render::Key::PadRight || key == render::Key::Right) {
-                    quickWheelStepped = true;
-                    quickSlot = (quickSlot + 1) % 10;
-                    session.selectQuickSlot(quickSlot);
-                    return;
-                }
-                if (key == render::Key::PadDown || key == render::Key::Down ||
-                    key == render::Key::PadLeft || key == render::Key::Left) {
-                    quickWheelStepped = true;
-                    quickSlot = (quickSlot + 9) % 10;
-                    session.selectQuickSlot(quickSlot);
-                    return;
-                }
             }
             const render::Action action = session.controls().actionFor(key);
             switch (action) {
@@ -3784,10 +4944,17 @@ int run_client(const Options& options, const render::CreationResult& chosen) {
                 case render::Action::Interact:
                     session.interact();
                     return;
-                // #85. Was Punch, renamed to say what it will still be doing
-                // once armed combat exists: swinging whatever is in the hand.
+                // COMBAT. Attack is a DOWN-EDGE now, not a one-shot. It arms the
+                // self-guard and starts the sim's hold clock via
+                // Session::attackDown(); the swing itself resolves on the
+                // release edge (see released()). The tier -- tap (Subdue) or
+                // hard (Intent::Harm) -- is measured room-side across the hold,
+                // so the client resolves nothing here. Set the armed flag ONLY
+                // on this world path so a page-consumed press fires no phantom
+                // swing on its release.
                 case render::Action::Attack:
-                    session.punch();
+                    attackHeld = true;
+                    session.attackDown();
                     return;
                 // #85. Was Jump + Traverse + DropDown. session.vertical() is
                 // the rule: climb (mantle-or-leap) first, a drop if there is
@@ -3799,52 +4966,39 @@ int run_client(const Options& options, const render::CreationResult& chosen) {
                     crouch.press(stepClock);
                     session.setCrouched(crouch.active());
                     return;
-                // #85. Was Sprint + Walk, one HoldToggle now -- see
-                // controls.hpp's own note and the `held.sprint`/`held.walk`
-                // derivation below, where the two are read back apart.
+                // NINE AND THE STICKS: RUN is a plain hold -- see sprintHeld.
                 case render::Action::Sprint:
-                    sprint.press(stepClock);
+                    sprintHeld = true;
                     return;
                 // #85. ONE SCREEN, PAGES. Was Journal + Keys + Character +
-                // Map + Letters + Options.
+                // Map + Letters + Options. The pages step on the raw bumpers
+                // and brackets inside route_menu_key now (the ring), so there
+                // is no PagePrev/PageNext case here any more.
                 case render::Action::Menu:
                     session.toggleMenu();
                     return;
-                case render::Action::PagePrev:
-                    session.menuPagePrev();
-                    return;
-                case render::Action::PageNext:
-                    session.menuPageNext();
-                    return;
-                // #85. HELD. The D-pad/arrow interception that steps the
-                // quick bar while this is down lives ABOVE this switch, in
-                // `pressed`'s own early return -- see the comment there.
-                case render::Action::QuickWheel:
-                    quickWheelOpen = true;
-                    // SPELLS BUILD: the strip comes up the moment the wheel
-                    // does, and the release decides tap-or-hold -- see the
-                    // trackers' own note above.
-                    quickWheelDownAt = stepClock;
-                    quickWheelStepped = false;
-                    session.showQuickBar();
-                    return;
                 // S13. THE COMBAT PAIR. Cast is an ordinary press, exactly
-                // like Attack; Block is HELD, the QuickWheel's plain-bool
-                // shape rather than a HoldToggle -- a latched guard is a
-                // footgun in a fight, and Session::setBlocking's own header
-                // says where the hold actually becomes the room's fact.
+                // like Attack; Block is HELD, a plain bool rather than a
+                // HoldToggle -- a latched guard is a footgun in a fight, and
+                // Session::setBlocking's own header says where the hold
+                // actually becomes the room's fact.
                 case render::Action::Cast:
                     session.castEquipped();
                     return;
                 case render::Action::Block:
                     session.setBlocking(true);
                     return;
-                // CORE ACTION #13. THE WARD MAP -- the owner's own ask: "a map
-                // that they can press M to see... and select on controller".
-                // The same key closes it; ESC closes it through the Pause
-                // branch below (districtMapOpen is part of menuOpen()).
+                // THE TENTH. THE WARD MAP -- the owner's own ask: "a map that
+                // they can press M to see". The same key closes it; ESC (and
+                // B) closes it through the Pause branch below (districtMapOpen
+                // is part of menuOpen()). A pad reaches it as a page of NOTES.
                 case render::Action::Map:
                     session.toggleDistrictMap();
+                    return;
+                // WAIT. Oblivion's own T and SELECT; the pause menu's WAIT row
+                // is the same door. toggleWait() closes it when it is up.
+                case render::Action::Wait:
+                    session.toggleWait();
                     return;
                 case render::Action::QuickNext:
                     quickSlot = (quickSlot + 1) % 10;
@@ -3854,16 +5008,15 @@ int run_client(const Options& options, const render::CreationResult& chosen) {
                     quickSlot = (quickSlot + 9) % 10;
                     session.selectQuickSlot(quickSlot);
                     return;
-                case render::Action::Screenshot: {
-                    const render::Framebuffer output =
-                        render::upscaleNearest(frame, options.windowScale);
-                    if (render::writePng(output, "granadad-screenshot.png")) {
-                        std::printf("granadad: wrote granadad-screenshot.png\n");
-                    } else {
-                        std::printf("granadad: FAILED to write granadad-screenshot.png\n");
-                    }
+                case render::Action::Screenshot:
+                    // 3D BUILD. THE SHUTTER CAPTURES THE COMPOSITED FRAME: the
+                    // 3D world under the HUD, read back off the backend when
+                    // this frame is presented (present_frame's capture), the
+                    // same picture --screenshot writes -- not the software
+                    // overlay alone, which was the old F12 and showed a HUD
+                    // over a black world.
+                    screenshotPending = true;
                     return;
-                }
                 // #85. RENAMED FROM Menu, unchanged body: the system panic/
                 // save/quit screen, deliberately apart from the new Menu
                 // above -- see controls.hpp's own note on why that reads as
@@ -3900,6 +5053,15 @@ int run_client(const Options& options, const render::CreationResult& chosen) {
                 quickSlot = slotIndex;
                 session.selectQuickSlot(quickSlot);
             }
+            // UI-EA-SPEC sec. 2, contract (c): AN UNRECOGNIZED PRESS IS THE
+            // REQUEST FOR HELP. A key that resolved to no action and was
+            // wanted by no page reached the end of everything and did
+            // nothing -- the one moment a quiet HUD earns its silence back
+            // by raising the tutor bands. Session::noteTutorWake() is the
+            // edge; HUD's band helpers hold and ease on their own clocks.
+            if (action == render::Action::Count) {
+                session.noteTutorWake();
+            }
         };
 
         const auto released = [&](render::Key key) {
@@ -3908,22 +5070,20 @@ int run_client(const Options& options, const render::CreationResult& chosen) {
                 crouch.release(stepClock);
                 session.setCrouched(crouch.active());
             } else if (action == render::Action::Sprint) {
-                sprint.release(stepClock);
-            } else if (action == render::Action::QuickWheel) {
-                // #85. CLOSES THE WHEEL. Nothing else to do: selectQuickSlot
-                // already committed live as the D-pad stepped it, the same
-                // way QuickNext/QuickPrev always applied immediately -- there
-                // is no separate "confirm" beyond letting go.
-                quickWheelOpen = false;
-                // SPELLS BUILD: unless the press was a TAP -- down and up
-                // inside HoldToggle's own kTapSteps with no slot stepped --
-                // in which case it was never a wheel at all, and the Grimoire
-                // page is what it asked for. toggleGrimoire() guards itself
-                // (inert while talking or picking), so a tap mid-conversation
-                // stays inert exactly like every other page toggle.
-                if (!quickWheelStepped &&
-                    stepClock - quickWheelDownAt <= render::HoldToggle::kTapSteps) {
-                    session.toggleGrimoire();
+                sprintHeld = false;
+            } else if (action == render::Action::Attack) {
+                // COMBAT. RESOLVES THE SWING on the release edge -- hard iff the
+                // hold reached kHardSwingHoldSteps, measured room-side. GUARDED
+                // by attackHeld, which the world pressed() Attack branch is the
+                // only place to set: this released() is reached DIRECTLY on
+                // every up edge (bypassing route_menu_key), so a press eaten by
+                // the district-map fast-travel branch, a lockpick, or a
+                // pointerLive-consumed MouseLeft never armed it, and its release
+                // does nothing here. Disarm on the way out so the next press
+                // starts clean.
+                if (attackHeld) {
+                    attackHeld = false;
+                    session.attackUp();
                 }
             } else if (action == render::Action::Block) {
                 // S13. LOWERS THE GUARD. Held means blocking, up means not,
@@ -3932,12 +5092,16 @@ int run_client(const Options& options, const render::CreationResult& chosen) {
             }
         };
 
+        // 3D BUILD: raylib's keys and pointer onto SDL's queue, ahead of the
+        // drain -- see VideoBridge. The pad's own events are already there.
+        bridge.pump(video, frame.width(), frame.height());
         while (SDL_PollEvent(&event)) {
             // THE DEMO OWNS THE INPUT, and this is the one place that has to
             // say so -- ahead of every handler, so nothing below can be reached
             // by accident. The close button and ESCAPE still work, because an
             // unattended route the watcher cannot stop is worse than no route.
-            if (demo != nullptr) {
+            // CASE WATCH keeps the identical rule for the identical reason.
+            if (demo != nullptr || watch != nullptr) {
                 if (event.type == SDL_EVENT_QUIT ||
                     (event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat &&
                      event.key.scancode == SDL_SCANCODE_ESCAPE)) {
@@ -3980,9 +5144,8 @@ int run_client(const Options& options, const render::CreationResult& chosen) {
                         SDL_GetGamepadID(pad) == event.gdevice.which) {
                         SDL_CloseGamepad(pad);
                         pad = nullptr;
-                        sprint.clear();
+                        sprintHeld = false;
                         crouch.clear();
-                        quickWheelOpen = false;
                     }
                     int count = 0;
                     SDL_JoystickID* liveIds = SDL_GetGamepads(&count);
@@ -4005,7 +5168,7 @@ int run_client(const Options& options, const render::CreationResult& chosen) {
                     // is listening for a key: a rebinding must capture the
                     // real PadEast. See render::pageBackRemap and
                     // route_menu_key's own header.
-                    const render::Key key = render::pageBackRemap(
+                    const render::Key key = padBack.down(
                         key_of_pad_button(event.gbutton.button),
                         pointer_page_open(session) && !session.awaitingKey());
                     if (!route_menu_key(session, key)) {
@@ -4014,7 +5177,9 @@ int run_client(const Options& options, const render::CreationResult& chosen) {
                     break;
                 }
                 case SDL_EVENT_GAMEPAD_BUTTON_UP:
-                    released(key_of_pad_button(event.gbutton.button));
+                    // The release of a remapped B is Escape's release (which
+                    // nothing listens for), never Crouch's -- see padBack.
+                    released(padBack.up(key_of_pad_button(event.gbutton.button)));
                     break;
                 case SDL_EVENT_KEY_DOWN: {
                     const render::Key key = key_of_scancode(event.key.scancode);
@@ -4029,52 +5194,13 @@ int run_client(const Options& options, const render::CreationResult& chosen) {
                         (void)route_menu_key(session, key);
                         break;
                     }
-                    // THE JOURNAL TOOK TAB AT #85 (it is on J now, the
-                    // owner's own convention call), so freeing the mouse
-                    // moved to F3 -- see the keys page. A player who wants
-                    // their cursor back is almost always a player who wants
-                    // to alt-tab, and alt-tab already works.
-                    //
-                    // AND IT YIELDS TO A BINDING. F3 is unbound by default, so
-                    // this is free; the moment somebody binds a verb to it, the
-                    // verb wins and the window keeps the mouse. A hard-coded key
-                    // that quietly outranks the rebinding screen is the exact
-                    // shape of bug the rest of this task was about.
-                    if (key == render::Key::F3 &&
-                        session.controls().actionFor(key) == render::Action::Count) {
-                        // FLIPS THE INTENT, NOT THE WINDOW. The top of the
-                        // frame owns the one SDL_SetWindowRelativeMouseMode
-                        // call now, so F3 and an open page cannot each set the
-                        // mode and disagree about which of them was last.
-                        mouseLook = !mouseLook;
-                        break;
-                    }
-                    // F1 AND F2 WERE ADVERTISED AND UNBOUND. --help says "F1
-                    // lists every key and F2 rebinds them" and the ship note
-                    // repeats it; a live verifier pressed F1 twice and got
-                    // nothing, and could not tell a dropped keystroke from a
-                    // real gap. It was a real gap: #85 folded the keys page
-                    // into the pause menu's CONTROLS row and retired the
-                    // Action that used to carry it, and nothing was left
-                    // holding the F-key the documentation kept promising.
-                    // Session::toggleKeys()/toggleOptions() were still there
-                    // and still reachable from the pause menu -- only the
-                    // shortcut had gone.
-                    //
-                    // SAME YIELD RULE AS F3, and for the same reason: these are
-                    // hard-coded convenience keys, so a verb bound to F1 by the
-                    // rebinding screen has to outrank them or the rebinding
-                    // screen is a liar.
-                    if ((key == render::Key::F1 || key == render::Key::F2) &&
-                        session.controls().actionFor(key) == render::Action::Count &&
-                        !session.awaitingKey()) {
-                        if (key == render::Key::F1) {
-                            session.toggleKeys();
-                        } else {
-                            session.toggleOptions();
-                        }
-                        break;
-                    }
+                    // NINE AND THE STICKS: NOTHING IS HARD-CODED HERE ANY
+                    // MORE. F3's free-mouse toggle is cut (alt-tab already
+                    // gives the cursor back, and every page brings it out on
+                    // its own -- see pointerLive); F1/F2 are cut with the
+                    // KeysPage/OptionsPage actions (the pause menu's CONTROLS
+                    // and SETTINGS rows are the door on both devices). Every
+                    // key goes router first, then the binding table.
                     if (route_menu_key(session, key)) {
                         break;
                     }
@@ -4106,7 +5232,8 @@ int run_client(const Options& options, const render::CreationResult& chosen) {
                         if (event.button.button != SDL_BUTTON_LEFT) {
                             break;
                         }
-                        SDL_ConvertEventToRenderCoordinates(renderer, &event);
+                        // Already in framebuffer pixels -- VideoBridge
+                        // converted through the backend's placement.
                         if (session_pointer(session, frame.width(), frame.height(),
                                             static_cast<int>(event.button.x),
                                             static_cast<int>(event.button.y), true)) {
@@ -4152,8 +5279,8 @@ int run_client(const Options& options, const render::CreationResult& chosen) {
                         // plan was drawn through. Dozens of those per frame is
                         // a hang, and it was one. The pointer can only be in
                         // one place when the frame is drawn, so only the last
-                        // position of the batch can matter.
-                        SDL_ConvertEventToRenderCoordinates(renderer, &event);
+                        // position of the batch can matter. (Framebuffer
+                        // pixels already -- see VideoBridge.)
                         pointerX = static_cast<int>(event.motion.x);
                         pointerY = static_cast<int>(event.motion.y);
                         pointerMoved = true;
@@ -4188,6 +5315,15 @@ int run_client(const Options& options, const render::CreationResult& chosen) {
             }
         }
 
+        // UI-EA-SPEC sec. 2, contract (c): THE HAND CHANGED, WAKE THE TUTORS.
+        // Once per frame, off the edge alone -- the labels already re-worded
+        // themselves live (promptDevice is read at draw time); this is the
+        // accompanying "here is what your new hand does" moment.
+        if (session.promptDevice() != lastPromptDevice) {
+            lastPromptDevice = session.promptDevice();
+            session.noteTutorWake();
+        }
+
         // Held keys move the body — unless somebody is talking to you, in which
         // case the movement keys are walking a list and must not also walk you
         // out of the room.
@@ -4217,11 +5353,14 @@ int run_client(const Options& options, const render::CreationResult& chosen) {
         // and in every toggle*()), so this only widens the gap for that exact
         // window and closes again the moment anything else happens.
         const bool listening =
-            demo != nullptr || session.talking() || session.picking() ||
+            demo != nullptr || watch != nullptr || session.talking() || session.picking() ||
             (session.menuOpen() && !session.firstRun()) || session.pauseOpen() ||
-            session.waitOpen();
-        const bool* keys = listening ? nullptr : SDL_GetKeyboardState(nullptr);
-        const Uint32 mouseButtons = listening ? 0U : SDL_GetMouseState(nullptr, nullptr);
+            session.waitOpen() || session.inCustody();
+        // 3D BUILD: the held state is the bridge's, kept off the same edges
+        // the events came from -- SDL_GetKeyboardState/SDL_GetMouseState
+        // answer for a keyboard SDL no longer reads.
+        const bool* keys = listening ? nullptr : bridge.held.data();
+        const Uint32 mouseButtons = listening ? 0U : bridge.mouseMask;
         SDL_Gamepad* livePad = listening ? nullptr : pad;
         const render::ControlSettings& controls_now = session.controls();
         if (keys != nullptr) {
@@ -4246,17 +5385,13 @@ int run_client(const Options& options, const render::CreationResult& chosen) {
             if (down(render::Action::TurnLeft)) {
                 held.turn -= 1;
             }
-            // #85. PACE, OFF ONE HoldToggle NOW -- was Sprint + Walk, two
-            // separate actions. latched() is the tap-toggled WALK; active()
-            // that is NOT latched is the momentary SPRINT -- and the two can
-            // never both read true, by construction: HoldToggle::press()
-            // cancels a latch the instant a new press starts (see its own
-            // header), so the very press that would otherwise make both true
-            // in the same step is the one press activeNow() reports as NOT
-            // held for. See controls.hpp's Sprint entry for the fuller
-            // version of this note.
-            held.walk = sprint.latched();
-            held.sprint = sprint.active() && !sprint.latched();
+            // NINE AND THE STICKS: PACE IS A HOLD. Down is sprinting, up is
+            // the ordinary jog; the tap-to-walk toggle is cut (see
+            // sprintHeld's own note). A pad still picks its gait off the
+            // stick's magnitude below, which is where the slow walk lives on
+            // a controller.
+            held.walk = false;
+            held.sprint = sprintHeld;
         }
 
         // --- the pad --------------------------------------------------------
@@ -4302,8 +5437,10 @@ int run_client(const Options& options, const render::CreationResult& chosen) {
         // gives PadSettings::triggerDeadzonePercent -- persisted, sanitised
         // and parsed since the pad-readiness pass, read by nothing until now
         // -- its one reader. An edge, not a level, so a held trigger behaves
-        // exactly like any held key: Block=LT stays down for as long as the
-        // finger does, Cast=RT fires once per pull. Runs OUTSIDE the
+        // exactly like any held key: GUARD=LT stays down for as long as the
+        // finger does, SWING=RT charges from its down edge and resolves on
+        // its release (nine and the sticks: the two hands on the two
+        // triggers, the owner's Oblivion pair). Runs OUTSIDE the
         // `livePad != nullptr` stick block on purpose -- a pad unplugged
         // mid-pull reads as an ordinary release edge instead of a stuck guard.
         //
@@ -4369,9 +5506,15 @@ int run_client(const Options& options, const render::CreationResult& chosen) {
         // frame rate, which is unusable -- the character screen learned that
         // first and this is the same lesson, not a second guess at it.
         //
-        // THROUGH route_menu_key, AS THE D-PAD KEY IT STANDS FOR. Not through a
-        // parallel set of Session calls: a verb that exists for the stick and
-        // not for the D-pad is exactly the drift this whole pass is about.
+        // THROUGH route_menu_key, AS THE ARROW KEY IT STANDS FOR. Not through
+        // a parallel set of Session calls: a verb that exists for the stick
+        // and not for the arrows is exactly the drift this whole pass is
+        // about. ARROWS, NOT THE D-PAD KEYS, since violation #3: a raw arrow
+        // is pure list movement on every page and can never resolve through a
+        // binding, while a synthesized PadUp would hit the Menu surface's
+        // toggle-reserved rule and a leaned stick would close the page it was
+        // trying to scroll. The D-pad's own physical presses still arrive as
+        // themselves.
         if (pad != nullptr && listening) {
             constexpr Sint16 kNavStickOn = 18000;
             constexpr Sint16 kNavStickOff = 9000;
@@ -4386,16 +5529,30 @@ int run_client(const Options& options, const render::CreationResult& chosen) {
                     latched = false;
                 }
             };
-            stickNav(navStickVertical, SDL_GAMEPAD_AXIS_LEFTY, render::Key::PadUp,
-                     render::Key::PadDown);
-            stickNav(navStickHorizontal, SDL_GAMEPAD_AXIS_LEFTX, render::Key::PadLeft,
-                     render::Key::PadRight);
+            stickNav(navStickVertical, SDL_GAMEPAD_AXIS_LEFTY, render::Key::Up,
+                     render::Key::Down);
+            stickNav(navStickHorizontal, SDL_GAMEPAD_AXIS_LEFTX, render::Key::Left,
+                     render::Key::Right);
+            // NINE AND THE STICKS: THE RIGHT STICK ZOOMS THE WARD MAP. The
+            // triggers are the map's sub-tabs now (Oblivion's own LT/RT), so
+            // the zoom ladder rides the one stick nothing reads under a page
+            // -- up is in, down is out, the same latch, routed as the `=` and
+            // `-` the map branch already reads raw. Only while the map is up:
+            // no other page has a zoom, and a leaned right stick over the
+            // casebook must not arrive at the map already latched.
+            if (session.districtMapOpen()) {
+                stickNav(navStickZoom, SDL_GAMEPAD_AXIS_RIGHTY, render::Key::Equals,
+                         render::Key::Minus);
+            } else {
+                navStickZoom = false;
+            }
         } else {
             // CLEARED THE MOMENT THE PAGE CLOSES, so a stick still leaned when
             // the map goes away does not arrive at the next page already
             // latched and swallow its first push.
             navStickVertical = false;
             navStickHorizontal = false;
+            navStickZoom = false;
         }
 
         held.crouch = crouch.active();
@@ -4405,6 +5562,18 @@ int run_client(const Options& options, const render::CreationResult& chosen) {
         // place that reads it -- one frame after the confirming press, so the
         // menu's own last frame still draws before the window goes.
         if (session.quitRequested()) {
+            running = false;
+        }
+        // JUSTICE BUILD (HEARING PAGE LANE). THE ROPE'S OTHER ROW. A NEW MAN
+        // ends this window's loop the same way QUIT does -- one frame after
+        // the confirming press, so the plate's own last frame still draws --
+        // and run_client answers main() with kRunClientNewMan, which loops
+        // back to the creation window for a fresh run. LEAVE sets
+        // quitRequested itself and takes the quit path above. There is no
+        // save, so there is nothing to erase and nothing to load.
+        if (session.runEnded() &&
+            session.runEndReason() == render::Session::RunEndChoice::NewMan) {
+            newMan = true;
             running = false;
         }
 
@@ -4420,6 +5589,21 @@ int run_client(const Options& options, const render::CreationResult& chosen) {
                 running = false;
             }
         }
+        // THE WATCH'S OWN TICK, at the demo's station and under the demo's
+        // contract -- with one difference the tape forces: a frame may step
+        // the simulation ZERO times (a hold showing a plate, a card) or once
+        // (a recorded step), never more, so the replayed session sees exactly
+        // the drive's steps and nothing the watcher's eye was given costs a
+        // byte of simulation.
+        std::int32_t watchSteps = 0;
+        if (watch != nullptr) {
+            const render::CaseWatchDirector::Tick tick = watch->advance(session);
+            held = tick.move;
+            watchSteps = tick.steps;
+            if (!tick.running) {
+                running = false;
+            }
+        }
 
         const Clock::time_point now = Clock::now();
         const double frameSeconds = std::chrono::duration<double>(now - last).count();
@@ -4427,10 +5611,14 @@ int run_client(const Options& options, const render::CreationResult& chosen) {
         // ONE STEP PER FRAME WHILE THE DEMO IS UP. See the director's
         // declaration: this is the whole of the demo's determinism, and it
         // costs the ordinary game nothing because the branch is never taken.
-        const std::int32_t steps = demo != nullptr ? 1 : pump.advance(frameSeconds);
+        // The watch takes the same gate with its 0-or-1 count, above.
+        const std::int32_t steps = demo != nullptr    ? 1
+                                   : watch != nullptr ? watchSteps
+                                                      : pump.advance(frameSeconds);
         for (std::int32_t i = 0; i < steps; ++i) {
             ++stepClock;
-            session.step(demo != nullptr ? held : pump.nextStepInput(held));
+            session.step(demo != nullptr || watch != nullptr ? held
+                                                             : pump.nextStepInput(held));
         }
 
         // AUDIO, PER FRAME, per the plan: the clock for the beds' day/night
@@ -4440,6 +5628,9 @@ int run_client(const Options& options, const render::CreationResult& chosen) {
         // the hour the beds shape to is the hour the steps just reached.
         if (audio != nullptr) {
             audio->setTimeOfDay(session.timeOfDay());
+            // WEATHER: and the wind, the same one-way wire -- a blustering
+            // period lifts the wind bed, a still fog drops it.
+            audio->setWind(session.weather().windGain());
             audio->update(static_cast<float>(frameSeconds));
         }
 
@@ -4452,7 +5643,22 @@ int run_client(const Options& options, const render::CreationResult& chosen) {
         if (demo != nullptr) {
             session.setHudStandDown(demo->cardOwnsFrame());
         }
-        session.drawFrame(frame);
+        if (watch != nullptr) {
+            session.setHudStandDown(watch->cardOwnsFrame());
+            // THE WATCHER'S EYE, after the step and before the draw: the
+            // tape's raw yaw whips compass-to-compass step to step (the
+            // drive's walker steers by trying facings), which the replay's
+            // one-step-per-frame cadence turned into a 60 Hz strobe through
+            // the near wall -- the owner's "teleporting through walls ...
+            // double vision". The sim has already stepped under the tape's
+            // own yaw; this eases only what is about to be DRAWN. See
+            // CaseWatchDirector::composeView.
+            watch->composeView(session);
+        }
+        // 3D BUILD: with the world in the backend's own 3D pass, this frame
+        // is the OVERLAY -- drawn without the software world pass, on a
+        // transparent ground; --2d keeps the raycaster's world in it.
+        session.drawFrame(frame, render::Session::FramePasses{.world = !options.video3d});
         // THE CARD AND THE CAPTION GO ON LAST, over the finished frame, and
         // the shutter goes after them -- so what a capture holds is exactly
         // what the window presented, furniture included.
@@ -4460,15 +5666,48 @@ int run_client(const Options& options, const render::CreationResult& chosen) {
             demo->drawOverlay(frame, session);
             demo->shutter(frame);
         }
+        if (watch != nullptr) {
+            watch->drawOverlay(frame, session);
+            watch->shutter(frame);
+        }
+        // THE FRAME DUMP, LAST -- after every overlay and both shutters, so
+        // what lands on disk is exactly what the window is about to present.
+        // UI-EA-SPEC ship checklist (FLOW): NO LONGER SCRIPTED-RUNS-ONLY.
+        // The transition grammar's evidence -- the boot veil rising, a page
+        // easing open, a back-to-opener swap, the commit beat -- lives in
+        // the ORDINARY windowed session, which the demo and the watch never
+        // drive. The flag is still explicit opt-in, still VERIFICATION ONLY
+        // (an hour of play would write two hundred thousand PNGs -- point it
+        // at a scratch dir and keep the run short), and a run that never
+        // passes it is byte-for-byte untouched.
+        if (!options.frameDumpDir.empty()) {
+            std::error_code frameDumpEc;
+            std::filesystem::create_directories(options.frameDumpDir, frameDumpEc);
+            char frameName[16];
+            (void)std::snprintf(frameName, sizeof(frameName), "f%05lld.png",
+                                static_cast<long long>(frames));
+            (void)render::writePng(frame, (options.frameDumpDir / frameName).string());
+        }
         ++frames;
 
-        if (texture != nullptr) {
-            SDL_UpdateTexture(texture, nullptr, frame.pixels().data(),
-                              options.smoke.session.width * 4);
-            SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
-            SDL_RenderClear(renderer);
-            SDL_RenderTexture(renderer, texture, nullptr, nullptr);
-            SDL_RenderPresent(renderer);
+        // 3D BUILD: the frame goes out through the backend -- the 3D pass
+        // under --3d, then this frame as the overlay, then the swap -- and,
+        // on the frame after F12, read back before the swap and written.
+        if (screenshotPending) {
+            screenshotPending = false;
+            render::Framebuffer shot(1, 1);
+            (void)present_frame(video, options, rig, session, frame, &shot);
+            const bool needsUpscale = shot.width() == frame.width() && options.windowScale > 1;
+            const render::Framebuffer output =
+                needsUpscale ? render::upscaleNearest(shot, options.windowScale) : shot;
+            if (render::writePng(output, "granadad-screenshot.png")) {
+                std::printf("granadad: wrote granadad-screenshot.png (%dx%d, the 3D frame under the HUD)\n",
+                            output.width(), output.height());
+            } else {
+                std::printf("granadad: FAILED to write granadad-screenshot.png\n");
+            }
+        } else {
+            (void)present_frame(video, options, rig, session, frame, nullptr);
         }
 
         // PACED FOR AN EYE, NOT FOR A BENCHMARK. VSync alone is whatever the
@@ -4486,7 +5725,7 @@ int run_client(const Options& options, const render::CreationResult& chosen) {
         // an undersleep instead of banking it. A frame that genuinely overran
         // resets the deadline rather than trying to claw the time back, which
         // is what stops a hitch turning into a sprint.
-        if (demo != nullptr) {
+        if (demo != nullptr || watch != nullptr) {
             constexpr Uint64 kBudgetNs = 1'000'000'000ULL / 60ULL;
             const Uint64 nowNs = SDL_GetTicksNS();
             demoDeadlineNs = demoDeadlineNs == 0 || nowNs > demoDeadlineNs + kBudgetNs
@@ -4518,15 +5757,33 @@ int run_client(const Options& options, const render::CreationResult& chosen) {
                 static_cast<long long>(frames), session.body().tileX(), session.body().tileY(),
                 session.body().band());
 
+    // THE WATCH'S VERDICT, while the session still stands. The summary line
+    // carries the same fields the --case harness prints, read off the REPLAYED
+    // session; the twin line says whether the replay ended exactly where the
+    // recorded drive did -- and a divergence is an exit 1, because a watch
+    // that shows something other than what --case proves is not a watch.
+    int watchExit = 0;
+    if (watch != nullptr) {
+        if (watch->finished()) {
+            std::printf("granadad: WATCH -- %s\n", watch->endSummary(session).c_str());
+            if (watch->twinMatched(session)) {
+                std::printf("granadad: WATCH -- replay matched the drive, step for step\n");
+            } else {
+                std::printf(
+                    "granadad: WATCH -- REPLAY DIVERGED FROM THE DRIVE -- what was watched is "
+                    "not what --case proves\n");
+                watchExit = 1;
+            }
+        } else {
+            std::printf("granadad: WATCH -- stopped early (ESC or close), nothing owed\n");
+        }
+    }
+
     if (pad != nullptr) {
         SDL_CloseGamepad(pad);
     }
     padDriver.detach();
-    if (texture != nullptr) {
-        SDL_DestroyTexture(texture);
-    }
-    SDL_DestroyRenderer(renderer);
-    SDL_DestroyWindow(window);
+    // The window itself is main()'s and closes after this returns.
 
     // THE ENGINE GOES BEFORE SDL DOES, and this is the contract setAudio()'s
     // own header in session.hpp states -- "main.cpp detaches (setAudio(nullptr))
@@ -4551,7 +5808,10 @@ int run_client(const Options& options, const render::CreationResult& chosen) {
     session.setAudio(nullptr);
     audio.reset();
     SDL_Quit();
-    return 0;
+    if (newMan && watchExit == 0) {
+        return kRunClientNewMan;
+    }
+    return watchExit;
 }
 
 
@@ -4571,8 +5831,56 @@ int main(int argc, char** argv) {
         if (options.wantsCreation) {
             return run_creation_capture(options);
         }
+        // CASE WATCH, ahead of the smoke branch on purpose: `--case-watch` on
+        // its own never sets wantsSmoke, and a command line carrying both
+        // flags plainly wants the watchable one. Straight into the client with
+        // an unconfirmed CreationResult -- the watch drives the HARNESS'S
+        // session (default sheet, the scripted hour), so the creation window
+        // and the chargen application are both deliberately skipped; run_client
+        // guards every chargen touch behind !caseWatch for exactly this.
+        // 3D BUILD. ONE WINDOW FOR THE WHOLE LAUNCH, opened here and handed
+        // to the creation screen and the world in turn -- see VideoBridge
+        // and run_creation_window's header. Opened lazily, after the
+        // headless branches above, so a capture or a report still opens
+        // nothing.
+        const auto open_video = [&options]() {
+            render3d::BackendConfig config;
+            config.width = options.smoke.session.width;
+            config.height = options.smoke.session.height;
+            config.windowScale = options.windowScale;
+            config.modelDir = rig_model_dir();
+            config.weaponDir = weapon_model_dir();
+            config.staticDir = static_model_dir();
+            std::unique_ptr<render3d::Backend> video = render3d::Backend::open(config);
+            if (video == nullptr) {
+                std::printf("granadad: could not open the window -- closing.\n");
+            }
+            return video;
+        };
+        if (options.caseWatch) {
+            std::unique_ptr<render3d::Backend> video = open_video();
+            if (video == nullptr) {
+                return 1;
+            }
+            return run_client(options, render::CreationResult{}, *video);
+        }
         if (options.wantsSmoke) {
-            const render::SmokeRunResult result = render::runSmoke(options.smoke);
+            render::SmokeRunConfig smoke = options.smoke;
+            // An EXPLICIT --controls= reaches the headless path too, so a
+            // capture can be taken under a rebound table; the default file
+            // beside the exe is deliberately NOT read here, which is what
+            // keeps every shipped frame byte-stable against a player's own
+            // bindings. Same for --fov=: given, it rides the config.
+            smoke.controlsFile = options.controlsFile;
+            if (!smoke.screenshot.empty()) {
+                // 3D BUILD: the capture is composited through the backend the
+                // window uses, so the PNG is the picture the window shows.
+                smoke.shutter = [&options](const render::Session& session,
+                                           const render::Framebuffer& software) {
+                    return shutter_through_backend(options, session, software);
+                };
+            }
+            const render::SmokeRunResult result = render::runSmoke(smoke);
             std::printf("granadad: %s\n", result.summary.c_str());
             if (!options.smoke.screenshot.empty()) {
                 // The PNG and the RUN are two different verdicts, and S5 keeps
@@ -4612,18 +5920,37 @@ int main(int argc, char** argv) {
         // line -- a capture or a test wants a frame of the Docks (or, now,
         // of the creation flow via --creation), never a frame of one menu
         // blocking another.
-        const render::CreationResult chosen = run_creation_window(options);
-        if (!chosen.confirmed) {
-            std::printf("granadad: no character was made -- closing.\n");
-            return 0;
+        std::unique_ptr<render3d::Backend> video = open_video();
+        if (video == nullptr) {
+            return 1;
         }
-        std::printf("granadad: playing as %s (%s)\n", chosen.name.c_str(),
-                    chosen.originId.c_str());
-        // #84 CLOSED THE SEAM #80 LEFT HERE. `chosen` used to stop being read
-        // the moment this function returned -- see run_client()'s own header
-        // for where the sheet is actually applied now, and why the attribute
-        // bonus pool still is not.
-        return run_client(options, chosen);
+        // JUSTICE BUILD (HEARING PAGE LANE). THE RUN'S END LOOPS BACK TO THE
+        // ORIGIN SCREEN. run_creation_window() and run_client() each init and
+        // quit their own SDL pad subsystem and destroy their own Session on
+        // return (the seam #84 proved); the one raylib window (3D BUILD) is
+        // main()'s and outlives both, so A NEW MAN -- the rope's fresh-run
+        // row -- is this loop and nothing else: the client answers
+        // kRunClientNewMan, the creation window opens again over the same
+        // window, and a new sheet starts a new run with a clean ledger. Every
+        // other answer is the shell's.
+        for (;;) {
+            const render::CreationResult chosen = run_creation_window(options, *video);
+            if (!chosen.confirmed) {
+                std::printf("granadad: no character was made -- closing.\n");
+                return 0;
+            }
+            std::printf("granadad: playing as %s (%s)\n", chosen.name.c_str(),
+                        chosen.originId.c_str());
+            // #84 CLOSED THE SEAM #80 LEFT HERE. `chosen` used to stop being
+            // read the moment this function returned -- see run_client()'s own
+            // header for where the sheet is actually applied now, and why the
+            // attribute bonus pool still is not.
+            const int code = run_client(options, chosen, *video);
+            if (code != kRunClientNewMan) {
+                return code;
+            }
+            std::printf("granadad: hanged -- a new man.\n");
+        }
     } catch (const std::exception& error) {
         std::printf("granadad: %s\n", error.what());
         std::printf("granadad: content directory is %s (set %s to move it)\n",

@@ -141,7 +141,17 @@ add_library(granadad-sim STATIC
     # S6 -- the goods, the law that takes them off you, and the radiant work
     # that is the reason to be carrying them in the first place.
     src/sim/contraband.cpp
+    # KIT BUILD -- the item record and what is on the body: the registry off
+    # content/raws/items/items.json (the spellbook's tolerant loader shape),
+    # the Kit (the Stash's dense-count pattern, hashed, byte-encodable), the
+    # ground list's codec and the load rule. Listed BEFORE tavern.cpp because
+    # the taproom is what owns a Kit, the stands and the corpse kits.
+    src/sim/items.cpp
     src/sim/watch.cpp
+    # JUSTICE BUILD -- the court: the plea, the priest's weighing and the
+    # judgment, rules only, beside watch.cpp (what the paper asks for) and
+    # read by crime.cpp (what the record keeps).
+    src/sim/justice.cpp
     src/sim/contract.cpp
     # S9 -- being unseen, and the lock. stealth.cpp is the first integer light
     # model on this side of the line; lockpick.cpp is a lock whose pins are a
@@ -219,6 +229,7 @@ add_library(granadad-sim STATIC
     # last because it depends on ward_actors.hpp's WardPopulation, the last
     # thing this library builds.
     src/sim/radiant_quest.cpp
+    src/sim/shops.cpp
 )
 target_include_directories(granadad-sim PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
 
@@ -326,6 +337,7 @@ add_library(granadad-render STATIC
     # table of beats and the playhead that walks it, driving the session
     # through the same public calls a keyboard makes. See the header on why it
     # is here and not another --smoke flag.
+    src/render/case_watch.cpp
     src/render/demo.cpp
     src/render/session.cpp
     src/render/step_pump.cpp
@@ -333,6 +345,12 @@ add_library(granadad-render STATIC
     # Task #83 -- the steps-based ease every panel's open/close and the HUD's
     # own alert row now animate through, instead of popping. See the header.
     src/render/anim.cpp
+    # 3D BUILD, V LANE -- the viewmodel machine: what the player's own hands
+    # are doing, stepped by Session once per movement step off the combat
+    # sim's getters. Lives here (not in render3d) so a --screenshot after a
+    # scripted punch photographs the same frame of the swing everywhere;
+    # render3d/viewmodel.hpp draws it. See the header.
+    src/render/viewmodel_machine.cpp
     # #78 -- the people, as pixels the owner drew. content/art/sprites is
     # twenty-five 16x16 actor figures in the MERCOLAS-24 palette with a tag
     # vocabulary already authored against the Java actor types; this reads the
@@ -348,6 +366,28 @@ add_library(granadad-render STATIC
     # This is the surface the owner's playthrough stalled on: three leads opened
     # at the Weighhouse and nothing on the screen said so. See the header.
     src/render/casebook_page.cpp
+    # THE PULL PACK -- the street says where next: the followed lead's line
+    # and the named-place ticks on the compass ribbon, the skill-up toast,
+    # the book-change watcher. Render state only, never hashed; the marker
+    # doctrine (owner ruling D8) kept by construction. See the header.
+    src/render/pull.cpp
+    # THE RUNG PLATE (roadmap 21b) -- a Legend rung rising gets its moment:
+    # the watch that diffs the five rungs once a step (the toast's own
+    # shape), the plate's text off the authored sheet, and the plate itself
+    # in the terminal register, centred high. Render state, never hashed.
+    src/render/rung_plate.cpp
+    # JUSTICE BUILD (HEARING PAGE LANE) -- the Flame's bench as a page: the
+    # paper laid, the charge off the ledger, the three rows, the priest's
+    # weighing in the reference's own four-line check block, the judgment
+    # badge, the sentence in numbers. Draws into the Framebuffer like every
+    # other page, so the 3D overlay composites it unchanged. See the header.
+    src/render/hearing_page.cpp
+    # VOICE LANE (lane/voice) -- the one voice channel: a subtitle emitter
+    # over events the sim already emits (a witness's memory moving, a body
+    # within reach, a Closing watchman, the goodbye), read-only and draw-free,
+    # stepped by Session once per movement step and drawn on the HUD's voice
+    # row. See the header on the cooldowns and the honest street bound.
+    src/render/street_voice.cpp
 )
 target_include_directories(granadad-render PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
 # GRANADAD_CONTENT_DIR_DEFAULT arrives through granadad-content.
@@ -393,12 +433,16 @@ add_library(granadad-audio STATIC
     src/audio/mixer.cpp
     src/audio/decode_vorbis.cpp
     src/audio/sound_bank.cpp
+    src/audio/music_director.cpp
     src/audio/audio_engine.cpp
     src/audio/backend_null.cpp
 )
 target_include_directories(granadad-audio PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
 # GRANADAD_CONTENT_DIR_DEFAULT arrives through granadad-content.
-target_link_libraries(granadad-audio PUBLIC granadad-content stb::stb)
+# Threads: the MusicDirector decodes a two-minute loop off the game thread
+# (std::async); the mixer's mutex already wanted pthread on older glibc.
+find_package(Threads REQUIRED)
+target_link_libraries(granadad-audio PUBLIC granadad-content stb::stb Threads::Threads)
 granadad_apply_determinism(granadad-audio)
 
 # The audio smoke probe — bake_lamps' pattern: a dev tool, run by hand.
@@ -432,19 +476,114 @@ if(GRANADAD_BUILD_CLIENT)
 endif()
 
 # ---------------------------------------------------------------------------
-# client-observer — the SDL3 window and nothing else.
+# granadad-render3d-core — the 3D scene, as pure C++. Floats are legal here.
+#
+# 3D BUILD. Everything the 3D renderer draws comes through ONE struct, the
+# SceneDescription (include/granadad/render3d/scene.hpp): meshes as plain
+# vertex arrays, textures as plain RGBA bytes, instances as (mesh, transform,
+# tint), a camera and a clear colour. This library BUILDS that struct as a
+# pure function of Session state -- the chunk mesher, the actor instancer,
+# the viewmodel state machine, the starter scene -- and hashes it (FNV-1a
+# over its canonical byte image), and it never sees raylib.h. That is the
+# renderer's determinism claim: a GPU frame is never hashed, the description
+# is, and two sessions driven by the same script must produce identical scene
+# bytes. Built and tested in the sim-only host check like everything else.
+#
+# Links granadad-render (PUBLIC: render::Camera, the day curve, bandSurface)
+# and through it the sim -- read-only. Nothing here writes to a sim struct.
+# ---------------------------------------------------------------------------
+add_library(granadad-render3d-core STATIC
+    # The description, its hash, and the camera adapter.
+    src/render3d/scene.cpp
+    # A lit ground plane and a cube: the first thing the 3D path drew, the
+    # reference the frame tests render, and the worked example of how a lane
+    # fills a SceneDescription.
+    src/render3d/starter_scene.cpp
+    # The three lanes' contracts, each shipped as a stub with the ids, the
+    # coordinate mapping and the version rules fixed so the lanes can build
+    # against them in parallel: chunk meshes (W), actor instances (A), the
+    # viewmodel machine (V).
+    src/render3d/chunk_mesher.cpp
+    # ONE TEST, TWO READERS: which wall cells flank a door opening. The
+    # placer stands the slim jamb beam on them, the mesher leaves their
+    # ground-storey box out under the head. Pure over the tile bytes.
+    src/render3d/door_jambs.cpp
+    # The world lane: the Docks as a scene -- chunk geometries built once,
+    # recoloured on the minute, instanced near the eye, the sky dome, the
+    # camera from the body.
+    src/render3d/world_scene.cpp
+    # The S lane: the Synty building kit placed from the tile map -- the
+    # catalogue (content/raws/world3d/docks-pieces.json) and the rules that
+    # turn wall faces, door gaps, floors, water, lamps and a tile hash into
+    # StaticInstances beside the chunks. Pure over the tile bytes; the
+    # adapter draws the glTF files, or nothing where they are absent.
+    src/render3d/static_pieces.cpp
+    # KIT BUILD: the things on the tiles -- the room's hashed ground list
+    # and its two fixtures as Item pieces off the catalogue's `items` table,
+    # per frame, never written back.
+    src/render3d/ground_items.cpp
+    src/render3d/actor_instances.cpp
+    src/render3d/viewmodel.cpp
+)
+target_include_directories(granadad-render3d-core PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
+target_link_libraries(granadad-render3d-core PUBLIC granadad-render)
+granadad_apply_determinism(granadad-render3d-core)
+
+# ---------------------------------------------------------------------------
+# granadad-render3d-rl — the raylib adapter. EXACTLY ONE translation unit in
+# the whole project includes raylib.h, and it is this library's one source.
+#
+# raylib is PRIVATE: its headers, its global-namespace names (Rectangle,
+# Camera, CloseWindow...) and its PUBLIC platform defines stop here. The
+# client and the tests see include/granadad/render3d/backend.hpp and nothing
+# of raylib's. Built in BOTH configures -- on the Memory platform with the
+# software rasterizer for the host check, on Desktop/GL 3.3 for the .exe --
+# so the frame tests can draw a real 3D frame headless on every build. The
+# HUD keeps drawing into its render::Framebuffer; this composites it over the
+# 3D frame as a point-filtered, integer-scaled overlay texture, which is what
+# keeps the eighteen pixel-exact HUD/page test files byte-identical.
+# ---------------------------------------------------------------------------
+add_library(granadad-render3d-rl STATIC src/render3d/rl_backend.cpp)
+target_link_libraries(granadad-render3d-rl
+    PUBLIC granadad-render3d-core
+    PRIVATE raylib)
+granadad_apply_determinism(granadad-render3d-rl)
+
+# ---------------------------------------------------------------------------
+# client — the window. 3D BUILD: raylib owns the window, the GL context, the
+# 3D pass and the composite (granadad-render3d-rl); SDL stays for the audio
+# device and the gamepad, and is never initialised with VIDEO any more.
 # ---------------------------------------------------------------------------
 if(GRANADAD_BUILD_CLIENT)
     add_executable(granadad src/client/main.cpp)
     # granadad-audio-sdl per audio_engine.hpp's wiring plan: the client is the
-    # ONE target that reaches a real sound device.
+    # ONE target that reaches a real sound device. granadad-render3d-rl for
+    # video; ${GRANADAD_SDL_TARGET} for the gamepad and the event queue the
+    # input routing still reads (see VideoBridge in main.cpp).
     target_link_libraries(granadad
-        PRIVATE granadad-render granadad-audio-sdl ${GRANADAD_SDL_TARGET})
+        PRIVATE granadad-render granadad-render3d-rl granadad-audio-sdl ${GRANADAD_SDL_TARGET})
     granadad_apply_determinism(granadad)
     # Console subsystem stays on — the sim prints, and we want stdout to work
     # when the game is launched from a terminal on Windows.
     granadad_static_runtime(granadad)
 endif()
+
+# ---------------------------------------------------------------------------
+# the workbench (2026-10-09) -- a Unity-shaped editor over the live ward: six
+# panes over one render::Session, driven through the game's own public verbs,
+# in a window or headless (--script, --serve) for agent workflows. The library
+# has no window in it, so the suite links it on every build; the executable
+# opens its window through the same raylib backend as the game, and on the
+# Memory build answers only --script and --serve. See workbench.hpp.
+# ---------------------------------------------------------------------------
+add_library(granadad-workbench STATIC src/workbench/workbench.cpp)
+target_link_libraries(granadad-workbench PUBLIC granadad-render)
+granadad_apply_determinism(granadad-workbench)
+add_executable(granadad-workbench-app src/workbench/main.cpp)
+set_target_properties(granadad-workbench-app PROPERTIES OUTPUT_NAME granadad-workbench)
+target_link_libraries(granadad-workbench-app PRIVATE granadad-workbench granadad-render3d-rl)
+granadad_apply_determinism(granadad-workbench-app)
+granadad_static_runtime(granadad-workbench-app)
 
 # ---------------------------------------------------------------------------
 # tests
@@ -469,6 +608,42 @@ if(GRANADAD_BUILD_TESTS)
         tests/test_player.cpp
         tests/test_fatigue.cpp
         tests/test_tavern.cpp
+        # ACTION-COMBAT BUILD -- the swing state machine as a table, the
+        # sightline raycast on-line table, the charge tiers, lethal death and
+        # the corpse conventions, the murder hook, intent-by-verb, and the
+        # Watch's deference to a presented Wielder.
+        tests/test_combat_action.cpp
+        # STANCE & ROOM BUILD -- fighting mode as a table (every raise and
+        # lower rule), the one-press tap-from-hands-down, the 600-step lull at
+        # its exact edge, the LOWER HANDS slot of the interact walk proved
+        # against its own prompt, the FISTS UP row, and the twin-run of a
+        # scripted raise/lower/re-raise on the tavern hash.
+        tests/test_stance.cpp
+        # WATCH & RHYTHM BUILD -- WatchCause::Violence as a table (seen
+        # lethal fight -> Closing + halt + arrest; unseen -> nothing; a brawl
+        # -> nothing; a presented Wielder -> never), the blow on the closing
+        # watchman (Kill intent, murder), the wind-up / stagger / recoil /
+        # block-stagger timings, the guard and hard bands same-roll off the
+        # NPC's pending roll, stand-back, bouncers refusing steel, the rout,
+        # and a scripted fight twin-run.
+        tests/test_watch_rhythm.cpp
+        # JUSTICE BUILD (TAG & COURT) -- the criminal tag as a table (WANTED /
+        # WANTED FOR BLOOD / CONDEMNED / MAIMED, each cleared by its own road
+        # and the blood only by the bench), the charge sheet written draw-free
+        # off a seeded ledger, weighArraignment held to weighPetition's shape
+        # (the base, the caps, the band off the arrest's ONE draw, the lines),
+        # I DID IT identical under every draw, I DID NOT moving by exactly the
+        # band and doubled below it, a witnessed murder never SPARED, the rope
+        # tier only where ruled, the hand sparable at the fine's line, mercy
+        # once, the v5 codec round trip, an arrest with paper opening a
+        # hearing with NO clock jump while the door's search stays the shipped
+        # fast path, the plea as a stepped input, a scripted arrest-and-plea
+        # twin-run, and the two player-end paths asserted apart both ways.
+        tests/test_court.cpp
+        # JUSTICE BUILD (HEARING PAGE LANE): the hearing page pixel-exact and
+        # word-exact, the register grammar on keyboard and pad, the rope's
+        # plate and the end rows, A NEW MAN reaching the creation screen.
+        tests/test_hearing_page.cpp
         tests/test_lamps.cpp
         tests/test_atlas.cpp
         tests/test_render.cpp
@@ -492,6 +667,11 @@ if(GRANADAD_BUILD_TESTS)
         # common value column, panes holding their height, and the controls page
         # composed at every window size the game runs at.
         tests/test_panel.cpp
+        # UI-EA-SPEC -- the word diet, pinned: the census's own token rule
+        # (whitespace-delimited, alphanumeric-bearing, keycap sentinels count
+        # zero) run over each dieted page's at-rest model, each surface held
+        # under its ceiling so a stray sentence cannot creep back in unseen.
+        tests/test_word_diet.cpp
         # Task #83 -- the steps-based ease every panel's open/close and the
         # HUD's own alert row animate through.
         tests/test_anim.cpp
@@ -536,6 +716,30 @@ if(GRANADAD_BUILD_TESTS)
         # sim's blood oath keeps, applied to a session-scripted case.
         tests/test_mission_sheet.cpp
         tests/test_case_line.cpp
+        # EVICTION -- the owner's third authored case. The raws' own invariants
+        # (zero starts, TWO closes for participate/disrupt, the four
+        # investigation leads reachable from the hire and the two closes from
+        # their scripted beats, sites standable in the baked Docks, the gate on
+        # C2's own ground, the lease agreement rendered in the roll's
+        # vocabulary and never as a dwelling-lease), and both paths driven end
+        # to end through the same verbs a keypress makes, twice, to
+        # byte-identical books -- with the open-hand hire gate proved to refuse
+        # below its bar and pass at it.
+        tests/test_eviction.cpp
+        tests/test_eviction_line.cpp
+        # CASE WATCH -- the errand made watchable: the recorded drive is the
+        # harness's own route (twice, to the op), the replay reproduces the
+        # drive's end state exactly with zero extra simulation steps, and the
+        # planned runtime sits in the demo's neighbourhood.
+        tests/test_case_watch.cpp
+        # FAST TRAVEL -- the ward map's second commit verb. The cost math
+        # (route length at the shipped walking pace, in integers), each
+        # refusal predicate (carrying the courier's man, the Watch closing,
+        # the wait page's own safe-spot list), a travel taken advancing the
+        # clock by exactly its restated minutes, and two identical travels
+        # ending byte-identical -- the twin-run discipline the sim's blood
+        # oath keeps, applied to a session-scripted feature.
+        tests/test_travel.cpp
         tests/test_firstrun.cpp
         # The pause menu ESC opens when nothing else has already claimed the
         # keyboard -- RESUME, SETTINGS and a QUIT that asks twice, replacing
@@ -551,6 +755,18 @@ if(GRANADAD_BUILD_TESTS)
         # casebook and the keys page already prove, and drawn from counters
         # that were being computed and thrown away every frame before it.
         tests/test_character.cpp
+        # KIT BUILD -- the item record: the raws load and every hand item's
+        # span is its class's, the Kit's codec by id and its hash coverage,
+        # the load budget and the slowdown, THE EVICTOR through the Kit, a
+        # quick slot that is a spell OR an item, TAKE / DROP / WEAR through
+        # the room, THEIRS as a witnessed lift, the corpse search list, and
+        # defence v1's flat DR floored at one.
+        tests/test_kit.cpp
+        # KIT BUILD, the screen half -- the crosshair naming a thing on the
+        # ground with THEIRS before the press, a named lead outranking it,
+        # the corpse's SEARCH list on the Grimoire widget, the load slowing
+        # the legs at the one movement seam, the hands row naming the item.
+        tests/test_kit_page.cpp
         # #82 -- THE DISTRICT MAP. Daggerfall's own travel map, scaled to one
         # district: known ground, open leads (each with a bearing and a range
         # from where the player is standing) and who among the named will
@@ -579,6 +795,28 @@ if(GRANADAD_BUILD_TESTS)
         # the geometry asserted in pixels, because this HUD's two shipped
         # collisions were both found in a PNG by a person.
         tests/test_place_plate.cpp
+        # UI-EA (LANE HUD) -- THE LAW OF EARNED TEXT. The at-rest street HUD's
+        # word budget pinned by counting tokens (the census's own law), each
+        # reference row's wake edge and 2.5s sleep, the rest state a fresh
+        # session actually settles into, and the Q-hold tutor toast's
+        # two-showings-then-retired life. The diet cannot regress silently.
+        tests/test_hud_diet.cpp
+        # THE PULL PACK -- the followed lead is provably outside every hash
+        # (tavern and world byte-identical with and without one), the ribbon
+        # line reads the page's own bearing, the toast fires on a real level
+        # and queues behind itself, the watcher announces the two silent
+        # hears and a stage, the shelf fronts a book, the strip is pinned at
+        # 320x180 and 1920x1080, and the doctrine holds (never a person,
+        # never a clue, nothing on the plan).
+        tests/test_pull.cpp
+        # THE RUNG PLATE -- the watch seeds silently and reports a rise per
+        # track (never a fall), every legend.* key resolves for every track
+        # and rung and draws whole at 320x180, the plate holds and sleeps,
+        # queues behind itself, outranks the toast, is dismissed by a page
+        # and by a bouncer's warning and waits behind them, moves neither
+        # the room's nor the ward's digest, stays out of the reticle's fence
+        # at three sizes, and --rung= lands its two beats on all five tracks.
+        tests/test_rung_plate.cpp
         # And every scripted line the demo advertises, accepted -- see the file
         # header for the sprint --skyrun spent landing 2 of 9 beats with nothing
         # in the suite to notice.
@@ -593,6 +831,7 @@ if(GRANADAD_BUILD_TESTS)
         # the off-shift branch, and a small set of expectations each naming a
         # place, an hour and a reason.
         tests/test_ward_actors.cpp
+        tests/test_workbench.cpp
         # #79 -- AND WHETHER THE WARD CAN BE SPOKEN TO. Who the roster is
         # standing at the owner's authored sites, that the name over a
         # conversation came out of the owner's pools, that three trades do not
@@ -611,6 +850,37 @@ if(GRANADAD_BUILD_TESTS)
         # sprint arriving at, and a soak that watches the mouse count actually
         # fall and come back.
         tests/test_ward_hunt.cpp
+        # STREET PANIC BUILD (feel/build, 9a) -- AND WHETHER THE STREET RUNS
+        # FROM A KNIFE. The alarm against the three-clause witness rule,
+        # computed independently (same band, in range, line of sight); the
+        # walled, the other-band, the far and the Watch all untouched; the
+        # panic lasting as long as its severity says and no longer; the
+        # frightened alone paying the panic rate; and the population's
+        # twin-run byte-identical after an alarm -- the one declared
+        # population baseline move of the Oblivion-feel program.
+        tests/test_street_panic.cpp
+        # VOICE LANE (lane/voice) -- AND WHETHER THE STREET SPEAKS. Every
+        # authored row against the register and the diction rule, the chain
+        # falling the right way, the pick pure and the emitter moving neither
+        # hash, LEAVE carrying a goodbye and the walk-off throwing one after
+        # you, the hold for the talk, the worded reaction never a number, the
+        # pass cooldown, and the six --voice endings landing every beat.
+        tests/test_street_voice.cpp
+        # STREET SENSES leg (b) -- A BODY TO HIT. The street's ray is the
+        # Gull's ray (the same integer projection, computed independently);
+        # a struck docker goes down and gets up; a struck sailor swings back
+        # and a struck serf routs; a street blow scatters the crowd; a street
+        # kill is murder with the witnesses counted, through the client's
+        # own attack path; the population twin-runs byte-identical under it.
+        tests/test_street_bodies.cpp
+        # STREET SENSES leg (c) -- THE WATCH ON THE BEATS GETS EYES. A
+        # watchman who sees a blow closes on it and arrests at reach through
+        # the Gull's own seam; steel alone is a demand with a grace, and only
+        # an ignored one becomes an offence, never an arrest by itself; a
+        # presented Wielder is never given cause and standing one down stands
+        # every closing watchman down; the population twin-runs
+        # byte-identical under all three.
+        tests/test_street_watch.cpp
         # #80 -- THE ORIGIN-SELECT AND CUSTOMIZE FLOW. Three cards, a name
         # field, and a real sim::Chargen sheet hosted rather than reinvented
         # -- see creation.hpp's own header on why this reuses
@@ -665,11 +935,54 @@ if(GRANADAD_BUILD_TESTS)
         # the vendored Kenney tree wherever it exists, and graceful silence
         # where it does not.
         tests/test_audio_engine.cpp
+        # 3D BUILD -- THE SCENE DESCRIPTION AS THE THING THAT GETS HASHED.
+        # Identical state hashes identically, any byte moved is a different
+        # hash, the frame convention every lane builds against (north -Z,
+        # east +X, up +Y), the mesh id spaces that keep the lanes apart, and
+        # the viewmodel machine's integer clock. No raylib, no window, no
+        # licensed asset: the starter scene is procedural.
+        tests/test_scene3d.cpp
+        # 3D BUILD -- THE 3D FRAME, ASSERTED ON ITS PIXELS, HEADLESS. A real
+        # frame of a lit plane and a cube drawn through raylib's software
+        # rasterizer inside the test suite -- no window, no GPU, no display
+        # server -- with the pixels checked: non-trivial, the sky where the
+        # sky is, the ground where the ground is, the lit face brighter than
+        # the shaded one, and the same description drawn twice byte-identical.
+        # Under a GPU build (the .exe's own test binary) the frame cases skip
+        # rather than open a window; the overlay-alpha cases run everywhere.
+        tests/test_render3d.cpp
+        # 3D BUILD -- THE WORLD LANE. The chunk mesher over the real Docks:
+        # the mesh is a deterministic function of the tile map (built twice,
+        # same bytes, same scene hash), a wall cell emits its four sides and
+        # a floor in a street emits none, shared faces between neighbours
+        # are dropped, the light recolours without moving a vertex, and the
+        # world scene instances only the chunks near the eye. Procedural
+        # atlas: no art tree required.
+        tests/test_chunk_mesher.cpp
+        # 3D BUILD -- THE VIEWMODEL + HUD LANE. The player's own hands follow
+        # the combat sim's state through Session (charge, hard hold, the
+        # swing at the resolved tier, the guard, the cast, the flinch), the
+        # posed parts are described and hashed, the terminal HUD composites
+        # over the 3D frame BYTE-IDENTICALLY where it is opaque (rlsw), the
+        # raised fists draw over the Docks and in front of a wall the body
+        # stands against, and the washes are overlay pixels. Placeholder
+        # arms: no licensed glb required.
+        tests/test_viewmodel.cpp
+        # WEATHER, RENDER-ONLY (roadmap D15). The four skies as a pure
+        # function of (seed, day, clock): the shipped seed's first days pinned
+        # period by period and swept for four hundred, the clear sky proved
+        # the old sky byte for byte at every minute, a session pinned to fog,
+        # overcast or wind stepping to the clear run's tavern and population
+        # digests while its frame moves, two sessions under one fog drawing
+        # one frame, the veil in the description and in the rlsw frame twice
+        # over, the summary's weather= field, and the wind bed's one-way wire.
+        tests/test_weather.cpp
     )
 
     add_executable(granadad-tests tests/test_main.cpp ${GRANADAD_TEST_SOURCES})
     target_link_libraries(granadad-tests
-        PRIVATE granadad-gate granadad-render granadad-audio doctest::doctest)
+        PRIVATE granadad-gate granadad-render granadad-render3d-rl granadad-audio
+                granadad-workbench doctest::doctest)
 
     # GRANADAD_CONTENT_DIR_DEFAULT and _CRT_SECURE_NO_WARNINGS arrive through
     # granadad-gate's PUBLIC compile definitions. tests/test_world_hash.cpp
@@ -849,6 +1162,8 @@ endif()
 # is the determinism proof, and its --fingerprint report is the sim-side half of
 # the cross-toolchain comparison scripts/verify-windows.ps1 completes.
 install(TARGETS granadad-twin-gate RUNTIME DESTINATION .)
+# The workbench beside the game in dist/, so the owner's Windows build carries it.
+install(TARGETS granadad-workbench-app RUNTIME DESTINATION .)
 
 # The lamp baker ships for one reason: content/maps/src is not in the build
 # context, so the only place the bake can actually be RE-DERIVED from the

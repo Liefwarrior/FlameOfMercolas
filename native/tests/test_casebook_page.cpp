@@ -106,16 +106,19 @@ TEST_CASE("three leads open at the Weighhouse and the frame says so, once") {
     REQUIRE(session.casebook().readCount() == before + 1);
 
     // THE NOTICE. It names the count and the key, and it is not the corner row.
+    // UI-EA (LANE HUD): the notice grammar is the spec's own "3 NEW LEADS - J"
+    // -- news, dash, keycap. "YOUR CASEBOOK" died in the diet: the key IS the
+    // pointer.
     CHECK(session.casePlateWanted());
     const std::string plate(session.casePlateLabel());
     INFO("plate: ", plate);
-    CHECK(plate.find("3 NEW LEADS") != std::string::npos);
-    CHECK(plate.find("CASEBOOK") != std::string::npos);
+    CHECK(plate.find("3 NEW LEADS - ") == 0);
+    CHECK(plate.find("CASEBOOK") == std::string::npos);
     // The key it names is the REAL bound key for the Menu action, not a letter
     // this file typed in.
     const std::string menuKey(
         keyName(session.controls().primary[static_cast<std::size_t>(Action::Menu)]));
-    CHECK(plate.find(menuKey) != std::string::npos);
+    CHECK(plate == "3 NEW LEADS - " + menuKey);
 
     // AND IT GOES. Three seconds of steps and the notice is down.
     session.stepMany(sim::MoveInput{}, 200);
@@ -144,8 +147,11 @@ TEST_CASE("the lead-opened plate names the key in the hand holding the machine")
     REQUIRE(session.casePlateWanted());
     const std::string plate(session.casePlateLabel());
     INFO("plate: ", plate);
-    CHECK(plate.find("D-PAD UP YOUR CASEBOOK") != std::string::npos);
-    CHECK(plate.find("J YOUR CASEBOOK") == std::string::npos);
+    // UI-EA: LANE HUD's dieted notice grammar carrying LANE FLOW's motif key
+    // -- the pad's D-PAD UP prints as the cross+up sentinels (sec. 5), so the
+    // whole plate is the news, a dash, and two glyphs that count zero words.
+    CHECK(plate == "3 NEW LEADS - \x06\x02");
+    CHECK(plate.find("YOUR CASEBOOK") == std::string::npos);
 }
 
 TEST_CASE("a lead that opens nothing new announces nothing") {
@@ -340,7 +346,7 @@ TEST_CASE("the page holds its geometry while the cursor walks the book") {
     // the rule and the global nav band, and the left border column runs the
     // whole height; none of them has anything to do with which lead is picked,
     // and a list whose furniture shifts as you arrow through it feels broken.
-    const PanelMetric metric = panelMetric(height);
+    const PanelMetric metric = panelMetric(width, height);
     const int rows = metric.rowsIn(height);
     const int cells = metric.cellsIn(width);
     const int originX = (width - metric.widthOf(cells)) / 2;
@@ -412,14 +418,20 @@ TEST_CASE("no row of the book is clipped at any window the game runs at") {
         // down them.
         CHECK(geo.columns == 1);
         // The key column, one cell of gap, and the widest label and value both
-        // whole. THE BIGGEST WINDOW IS THE NARROWEST IN CELLS (hudMinorScale
-        // steps up with height), so 1920x1080 is the size this can fail at.
+        // whole. 1280x720 is the narrowest of these in cells now (85 across;
+        // 1920x1080 was, at 76, under the old height/180 - 1 register), so it
+        // is the size this can fail at.
         CHECK(geo.labelCells >= static_cast<int>(widestLabel));
         CHECK(geo.valueCells >= static_cast<int>(widestValue));
-        // And the whole book fits one screenful without a page turn.
+        // THE CLAIM MOVED WITH THE DIET (UI-EA-SPEC 1.5 #27): the book PAGES
+        // at eight rows + `+N` now, so a walked case's list legitimately
+        // turns a page -- what holds at every window is the eight-row law
+        // itself, not one screenful.
         CasebookPageState paged = page;
         const CasebookPageScroll scroll = casebookPageScroll(paged, size[0], size[1]);
-        CHECK(scroll.screens == 1);
+        const int count = static_cast<int>(page.rows.size());
+        CHECK(scroll.screens == std::max(1, (count + scroll.perScreen - 1) / scroll.perScreen));
+        CHECK(scroll.perScreen <= 8);
     }
 }
 
@@ -502,7 +514,11 @@ TEST_CASE("the two views swap the detail pane and nothing else") {
     CHECK(session.casebookTab() == CasebookTab::Case);
     Framebuffer theCase(960, 540);
     drawCasebookPage(theCase, session.casebookPageState());
-    // Wraps back.
+    // THE PULL PACK: a third view, the CASES shelf, and then the wrap.
+    session.cycleCasebookTab(1);
+    CHECK(session.casebookTab() == CasebookTab::Cases);
+    Framebuffer shelf(960, 540);
+    drawCasebookPage(shelf, session.casebookPageState());
     session.cycleCasebookTab(1);
     CHECK(session.casebookTab() == CasebookTab::Leads);
 
@@ -529,6 +545,39 @@ TEST_CASE("the two views swap the detail pane and nothing else") {
         }
     }
     CHECK(movedInDetail > 200);
+    // THE SHELF KEEPS THE SAME LIST TOO -- the same rows in the same cells
+    // -- but with NO ROW FILLED: on the shelf its own highlight is the one
+    // armed cursor, so the only pixels that move in the list are the
+    // highlighted row's own fill (the first row: the cursor is on it).
+    std::size_t shelfMovedOutsideCursorRow = 0;
+    std::size_t shelfMovedInCursorRow = 0;
+    std::size_t shelfMovedInDetail = 0;
+    // The fill carries a hairline of its accent one scaled pixel above and
+    // below the row (drawInvertedFill's own eye candy), so the band is the
+    // row plus that hairline each side.
+    const int cursorRowY0 = geo.master.y - geo.metric.scale;
+    const int cursorRowY1 = geo.master.y + geo.metric.cellH() + geo.metric.scale;
+    for (int y = geo.master.y; y < geo.master.y + geo.master.h; ++y) {
+        for (int x = geo.master.x; x < geo.master.x + geo.master.w; ++x) {
+            if (leads.pixels()[leads.index(x, y)] != shelf.pixels()[shelf.index(x, y)]) {
+                if (y >= cursorRowY0 && y < cursorRowY1) {
+                    ++shelfMovedInCursorRow;
+                } else {
+                    ++shelfMovedOutsideCursorRow;
+                }
+            }
+        }
+    }
+    for (int y = geo.detail.y; y < geo.detail.y + geo.detail.h; ++y) {
+        for (int x = geo.detail.x; x < geo.detail.x + geo.detail.w; ++x) {
+            if (leads.pixels()[leads.index(x, y)] != shelf.pixels()[shelf.index(x, y)]) {
+                ++shelfMovedInDetail;
+            }
+        }
+    }
+    CHECK(shelfMovedOutsideCursorRow == 0);
+    CHECK(shelfMovedInCursorRow > 0);
+    CHECK(shelfMovedInDetail > 200);
 }
 
 TEST_CASE("the composed casebook is what the Menu draws on its Journal tile") {
@@ -581,7 +630,7 @@ TEST_CASE("the lead-opened notice keeps the middle of the screen clear, and outr
         both.placePlate = "THE GILDED GULL - ROOMS";
         both.placePlateFade = 1.0F;
         both.placePlateDrift = -1.0F;
-        both.casePlate = "3 NEW LEADS  J YOUR CASEBOOK";
+        both.casePlate = "3 NEW LEADS - J";
         both.casePlateFade = 1.0F;
         // AT THE LOWEST POINT ITS OWN DRIFT CAN PUT IT -- the one instant it
         // comes closest to the play space.
@@ -632,9 +681,9 @@ TEST_CASE("the nav band always names the key that closes the book") {
     // that spends a second row, and this is a defect a screenshot found: the
     // nav list's widest key is "LEFT RIGHT" and drawOptionList sizes every
     // column off the widest entry, so four columns want eighty-six cells --
-    // which 960x540 has and 1920x1080 does not, because hudMinorScale steps up
-    // with height and THE BIGGEST WINDOW IS THE NARROWEST IN CELLS. The one-row
-    // band dropped the fourth entry silently, and the fourth entry is CLOSE.
+    // which 960x540 has and 1280x720 does not (nor did 1920x1080 under the
+    // old height/180 - 1 register; it deals 94 now). The one-row band dropped
+    // the fourth entry silently, and the fourth entry is CLOSE.
     Session session(configAt("mission-backroom"));
     session.stepMany(sim::MoveInput{}, 2);
     session.examine();
@@ -643,15 +692,39 @@ TEST_CASE("the nav band always names the key that closes the book") {
 
     for (const auto& size : {std::pair{320, 180}, std::pair{640, 360}, std::pair{960, 540},
                              std::pair{1280, 720}, std::pair{1920, 1080}}) {
-        // BOTH VIEWS, because the second entry's label changes with the tab and
-        // a wider label is a narrower column.
-        for (const CasebookTab tab : {CasebookTab::Leads, CasebookTab::Case}) {
+        // ALL THREE VIEWS, because the second and third entries' labels
+        // change with the tab and a wider label is a narrower column. SIX
+        // entries since the PULL PACK merged with NINE AND THE STICKS: LEAD,
+        // the next view, the commit, FOLLOW, NOTES, CLOSE.
+        for (const CasebookTab tab : {CasebookTab::Leads, CasebookTab::Case, CasebookTab::Cases}) {
             page.tab = tab;
             const CasebookPageMetrics geo = casebookPageMetrics(page, size.first, size.second);
             INFO("at ", size.first, "x", size.second, " nav rows ", geo.navRows, " shown ",
                  geo.navShown, "/", geo.navEntries);
             REQUIRE(geo.usable);
-            CHECK(geo.navEntries == 4);
+            // NINE AND THE STICKS: the ring's keys ride the foot of every
+            // page of it, on both hands -- plus the PULL PACK's own FOLLOW
+            // slot, riding along on every view too.
+            CHECK(geo.navEntries == 6);
+            CHECK(geo.navShown == geo.navEntries);
+        }
+    }
+
+    // And with a pad in hand, LB RB NOTES, the same rule: every entry shown,
+    // at every size, the second row spent where one will not hold six.
+    session.noteInputDevice(InputDevice::Pad);
+    CasebookPageState padPage = session.casebookPageState();
+    REQUIRE(padPage.navPageKeys == "LB RB");
+    REQUIRE(padPage.closeKey == "B");
+    for (const auto& size : {std::pair{320, 180}, std::pair{640, 360}, std::pair{960, 540},
+                             std::pair{1280, 720}, std::pair{1920, 1080}}) {
+        for (const CasebookTab tab : {CasebookTab::Leads, CasebookTab::Case}) {
+            padPage.tab = tab;
+            const CasebookPageMetrics geo = casebookPageMetrics(padPage, size.first, size.second);
+            INFO("pad at ", size.first, "x", size.second, " nav rows ", geo.navRows, " shown ",
+                 geo.navShown, "/", geo.navEntries);
+            REQUIRE(geo.usable);
+            CHECK(geo.navEntries == 6);
             CHECK(geo.navShown == geo.navEntries);
         }
     }
@@ -659,8 +732,9 @@ TEST_CASE("the nav band always names the key that closes the book") {
 
 TEST_CASE("a lead never silently reports fewer things than it opened") {
     // THIS PASS'S OWN DEFECT, ONE PANE DEEPER, AND A CAPTURE FOUND IT. At
-    // 1920x1080 the detail pane holds fewer ROWS than at 960x540 -- hudMinorScale
-    // steps up with height -- the clue and its paragraph wrapped to eight lines,
+    // 1920x1080 the detail pane held fewer ROWS than at 960x540 -- 30 against
+    // 38 under the old height/180 - 1 register; it is 960x540's own grid now --
+    // the clue and its paragraph wrapped to eight lines,
     // and drawProse stopped at the bottom of the rect: `OPENED THE LEDGER` was
     // simply not drawn. A lead that opened three things reporting two is exactly
     // what the owner's playthrough ran into, said quietly instead of not at all.
@@ -696,18 +770,14 @@ TEST_CASE("a lead never silently reports fewer things than it opened") {
 // moment the words would be a lie
 // ===========================================================================
 
-TEST_CASE("a book with room left in it says so, and a finished one stops saying it") {
-    // THE SECOND SURFACE A STRANGER MEETS. A new game opens the world with this
-    // page already up, holding ONE lead against a pane held at twenty rows --
-    // and, before this pass, nineteen rows of stipple under it. A stipple says
-    // "left on purpose", which is the right thing to say about a twelve-row
-    // book in a thirty-row pane and the wrong thing to say about a one-row one:
-    // it reads as a list that failed to load.
-    //
-    // NOTHING BUT THE SENTENCE MOVES. With the LEADS tab up, `known`, `total`
-    // and `closed` reach no other drawing on this page (the CASE tab's own
-    // readout is the only other reader of them), so a pixel diff between the
-    // waiting state and the finished one IS the sentence and nothing else.
+TEST_CASE("the fresh book spends no words on its own remaining room") {
+    // UI-EA-SPEC 1.5 #26, prose 14 -> 0: the fourteen-word waiting sentence is
+    // RETIRED. The Law of Earned Text says the book's unfilled room is not
+    // news -- the stipple already says "left on purpose" -- and the fresh
+    // book's detail pane hands a stranger the case's own hook instead. So the
+    // waiting book, the book with every lead already heard, and the walked-out
+    // book draw the LEADS view byte-identically: `known`, `total` and `closed`
+    // reach no drawing on this tab any more.
     Session session(configAt("mission-backroom"));
     session.stepMany(sim::MoveInput{}, 2);
     CasebookPageState page = session.casebookPageState();
@@ -721,59 +791,44 @@ TEST_CASE("a book with room left in it says so, and a finished one stops saying 
     REQUIRE(page.known == 1);
     REQUIRE(page.total > page.known);
     REQUIRE_FALSE(page.closed);
+    // AND THE FRESH DETAIL PANE IS THE CASE BRIEF: nothing has been read yet,
+    // so the hook is what the pane spends its prose on.
+    REQUIRE(page.read == 0);
+    REQUIRE_FALSE(page.hook.empty());
 
     for (const auto& size : {std::pair{320, 180}, std::pair{640, 360}, std::pair{960, 540},
                              std::pair{1920, 1080}}) {
         Framebuffer waiting(size.first, size.second);
         drawCasebookPage(waiting, page);
 
-        // EVERY LEAD ALREADY IN THE BOOK: there is nothing left to open, so the
-        // sentence would be promising something the file cannot deliver.
         CasebookPageState full = page;
         full.known = full.total;
         Framebuffer quiet(size.first, size.second);
         drawCasebookPage(quiet, full);
 
-        // AND THE TRAIL WALKED OUT: same silence, by the other gate.
         CasebookPageState shut = page;
         shut.closed = true;
         Framebuffer done(size.first, size.second);
         drawCasebookPage(done, shut);
 
+        INFO("at ", size.first, "x", size.second);
+        // ONE FRAME, THREE STATES: no sentence about room left, under any of
+        // the three gates that used to word it.
+        CHECK(quiet.pixels() == waiting.pixels());
+        CHECK(done.pixels() == waiting.pixels());
+
+        // AND THE HOOK IS REALLY THE THING THE FRESH PANE DRAWS: a fresh book
+        // with a hook differs from the same book with the hook blanked --
+        // the twenty-word case brief is load-bearing, not incidental.
+        CasebookPageState hookless = page;
+        hookless.hook.clear();
+        Framebuffer bare(size.first, size.second);
+        drawCasebookPage(bare, hookless);
         const CasebookPageMetrics geo = casebookPageMetrics(page, size.first, size.second);
         REQUIRE(geo.usable);
-        std::size_t differing = 0;
-        int minX = size.first;
-        int maxX = 0;
-        int minY = size.second;
-        int maxY = 0;
-        for (int y = 0; y < size.second; ++y) {
-            for (int x = 0; x < size.first; ++x) {
-                const std::size_t at = waiting.index(x, y);
-                if (waiting.pixels()[at] == quiet.pixels()[at]) {
-                    continue;
-                }
-                ++differing;
-                minX = std::min(minX, x);
-                maxX = std::max(maxX, x);
-                minY = std::min(minY, y);
-                maxY = std::max(maxY, y);
-            }
+        if (geo.split) {
+            CHECK(bare.pixels() != waiting.pixels());
         }
-        INFO("at ", size.first, "x", size.second, " differing ", differing, " box (", minX, ",",
-             minY, ")..(", maxX, ",", maxY, ") master x ", geo.master.x, " w ", geo.master.w,
-             " y ", geo.master.y);
-        // THE SENTENCE IS DRAWN.
-        CHECK(differing > 0);
-        // AND NOWHERE BUT THE MASTER PANE, under the row the one lead took: it
-        // is allowed to spend room the list did not want and nothing else.
-        CHECK(minX >= geo.master.x);
-        CHECK(maxX < geo.master.x + geo.master.w);
-        CHECK(minY >= geo.master.y + geo.metric.cellH());
-        CHECK(maxY < geo.master.y + geo.master.h);
-        // The two silences are the SAME frame -- one suppression, two reasons,
-        // not two different drawings that happen to both look empty.
-        CHECK(done.pixels() == quiet.pixels());
     }
 }
 
@@ -898,6 +953,7 @@ TEST_CASE("the tab row answers the mouse: LEADS and THE CASE are findable, order
 
     int leadsX = -1;
     int caseX = -1;
+    int shelfX = -1;
     int rowY = -1;
     for (int py = 0; py < geo.master.y; py += 2) {
         for (int px = 0; px < 960; px += 2) {
@@ -917,11 +973,16 @@ TEST_CASE("the tab row answers the mouse: LEADS and THE CASE are findable, order
             if (at == 1 && caseX < 0) {
                 caseX = px;
             }
+            if (at == 2 && shelfX < 0) {
+                shelfX = px;
+            }
         }
     }
     REQUIRE(leadsX >= 0);
     REQUIRE(caseX >= 0);
+    REQUIRE(shelfX >= 0);
     CHECK(leadsX < caseX);
+    CHECK(caseX < shelfX);
     CHECK(rowY < geo.master.y);
     // The master list still answers as itself -- the tab row took nothing
     // from the lead hit-test.
@@ -940,7 +1001,7 @@ TEST_CASE("the commit verbs and GO TO IT wear the state's confirm key, not a har
     session.stepMany(sim::MoveInput{}, 2);
     session.examine();
     CasebookPageState page = session.casebookPageState();
-    REQUIRE(page.commitKey == "ENTER");  // keyboard session: the exact old literal
+    REQUIRE(page.commitKey == "\x01");  // keyboard session: the return motif, sec. 5
 
     // GATE FIX: the book was never toggled open, so the session's panel anim
     // reads 0 and both draws were pure black -- open the page by hand the way

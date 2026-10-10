@@ -1,6 +1,14 @@
 # Granadad: The Darkstreets — reproducible build of the native C++ game.
 #
+#   .\scripts\gate.ps1               <- scripts/gate.sh off Windows
+#
+# which is
+#
 #   docker compose run --rm --build build
+#
+# with GRANADAD_REVISION set to the commit being built, so the stamp names it
+# (see THE STAMP NAMES THE COMMIT below). Type the compose command by hand and
+# it builds exactly the same; the stamp just says `unknown`.
 #
 # It compiles the C++ in a pinned container and drops the finished binaries in
 # ./dist. Then, on Windows, natively:
@@ -70,18 +78,61 @@
 # game reads at runtime, from the repo, on your machine. See .dockerignore.
 #
 # Nothing here writes to content/. It is copied in read-only and never mounted.
+#
+# ---------------------------------------------------------------------------
+# ONE IMAGE PER WORKTREE
+# ---------------------------------------------------------------------------
+# This file used to pin `image: granadad-build:latest`. Every worktree under
+# C:\repositories -- about thirty of them -- built and tagged that one name,
+# so two gates running from two trees raced on it: whichever finished last
+# owned the tag, and a `run` could start an image compiled from the OTHER
+# tree. Not slowness. A wrong answer, with a green exit code on it. It
+# happened, six lanes deep, in one week.
+#
+# So the image is named after the compose project, which defaults to the
+# directory this file sits in: fom-kit builds granadad-build-fom-kit,
+# flameofmercolas-mvp builds granadad-build-flameofmercolas-mvp. Compose
+# exposes the resolved project name as COMPOSE_PROJECT_NAME for interpolation,
+# so there is nothing to set and nothing to remember. `build` and `guard`
+# still share the one image. Layers are content-addressed, so thirty tags
+# cost thirty tiny artifact images and nothing else.
+#
+# The BuildKit cache mounts (/deps and /build-cache, sharing=locked) are keyed
+# by their mount target, not by the tag, so they stay shared across every
+# tree. That is the compile cache and sharing it is the point. It also means
+# two gates still take turns on it: one machine, one compile at a time. That
+# is honest, and it was always so.
+#
+# ---------------------------------------------------------------------------
+# THE STAMP NAMES THE COMMIT
+# ---------------------------------------------------------------------------
+# `revision:` in dist/GATE-STAMP.txt comes from the GRANADAD_REVISION build
+# arg and from nowhere else, because .git is not in the build context (see
+# .dockerignore) and the container has no way to ask. It used to default to
+# "docker", which reads like an answer, and to a stale hash whenever somebody
+# had once set the variable by hand. A reviewer was misled by it and had to
+# redo the digest check to find out which tree they were holding.
+#
+# Now scripts/gate.ps1 (and gate.sh) set it from `git rev-parse --short HEAD`,
+# with -dirty appended when a tracked file differs from HEAD -- the same rule
+# `git describe --dirty` uses -- and the bare compose command stamps `unknown`.
+# A changed revision re-runs the build stage, so a gate through the wrapper
+# always executes for a new commit instead of replaying a cached green; the
+# cache mounts keep that incremental.
 
 x-granadad: &granadad
   build:
     context: .
     dockerfile: docker/build.Dockerfile
     args:
-      # Stamped into the binary so `granadad.exe --version` names the commit
-      # it came from. Set GRANADAD_REVISION in your environment (or a .env
-      # file) to record the real SHA; otherwise it just says "docker".
-      GRANADAD_REVISION: ${GRANADAD_REVISION:-docker}
+      # Stamped into the binary (`granadad.exe --version`) and into
+      # dist/GATE-STAMP.txt. scripts/gate.ps1 sets it to the commit; by hand
+      # it is whatever GRANADAD_REVISION is in your environment, or `unknown`.
+      # See THE STAMP NAMES THE COMMIT above.
+      GRANADAD_REVISION: ${GRANADAD_REVISION:-unknown}
       BUILD_TYPE: ${BUILD_TYPE:-RelWithDebInfo}
-  image: granadad-build:latest
+  # Per worktree, on purpose. See ONE IMAGE PER WORKTREE above.
+  image: granadad-build-${COMPOSE_PROJECT_NAME}
   # One-shot build step, not a service: never restart it, and never let a
   # retry paper over a red exit.
   restart: "no"

@@ -1,0 +1,59 @@
+{
+  "id": "eviction_letters",
+  "letters": [
+    {
+      "id": "the-writ-of-distraint",
+      "lead": "writ-in-hand",
+      "handed": true,
+      "from": "Father Maell, of the Mission of the Flame",
+      "to": "Put into the hand the Mission hired, to be carried to the door it names",
+      "dateline": "Written at the Mission of the Flame, on petition-day",
+      "salutation": "",
+      "body": [
+        "This is a writ of distraint and I will not pretend it is anything gentler. Widow Annis Netter, who holds the charge on the ground called the Netters', petitioned the Flame against the household of Bram Marrow, a condo of her east wing: four heads, one hundred and thirty pennies behind on a ground penny of two hundred and sixty the quarter, three quarters running.",
+        "I weighed it as the Flame requires. For the household: nine years on that ground and never once short before this one, and four heads, and no man of them ever bonded or broken a bond. Against: the count, the quarters, and the widow's own paper - her charge is pledged at Fenner's window, and a widow squeezed is a widow who must squeeze. Six answers were open to me. A dismissal, a stay, an abatement, a bond ordered, a distraint, or her own charge revoked. I gave the fifth. Her offering sat on the Mission's step while I weighed, and bought nothing, as it never does.",
+        "You will ask why not the gentler four, since everyone does. Because the quay has stopped paying the whole wing, not one door of it. The Mercian shipments have not come since the Dezdant war with Trojia took the lanes, and they will not come next quarter either. A stay defers what a dead quay cannot pay; an abatement starves the widow into Fenner's hands and puts forty families under a pawnbroker. I will not do a kind thing to one door at the price of the whole court. Order kept is why this city is suffered to stand. I believe that, and I will say it to your face.",
+        "So: go in the evening, once they are home from the quay - a door served empty is a door served on children's bedding, and I will not have it. Knock. Serve the paper into the man's own hand, and see the household out of the house. I asked for hands schooled in the open hand for one reason, which is that good hands make bad ones unnecessary: nothing edged, nothing broken, nobody marked. The house passes to the widow. The roof passes with it - the lodgers over them were never parties, and that is the ugliest clause in a law I serve anyway.",
+        "If your nerve goes, bring me the writ back whole and unserved, and say so plainly. I will not curse you for it, and I will not pay you for it, and the paper will find harder hands by the week's end. If it is served, bring it back signed and the Mission pays - not in Royals. In a tool fit for the work you were hired for.",
+        "The family may curse the Flame at the threshold. Let them. It is the last thing the law leaves a man to keep."
+      ],
+      "closing": "Serve it, or bring it back whole.",
+      "signature": "Maell"
+    },
+    {
+      "id": "the-widows-petition",
+      "lead": "netters-gate",
+      "handed": false,
+      "from": "Widow Annis Netter, head of the Netters'",
+      "to": "To Father Maell, charter priest of the ground called the Netters', at the Mission",
+      "dateline": "Written at the Netters' mansion, over the courtyard",
+      "salutation": "Father,",
+      "body": [
+        "I petition the Flame against the household of Bram Marrow, of my east wing, one hundred and thirty pennies behind and three quarters running, and I want it written somewhere that I hate doing it.",
+        "You know my paper. The charge on this ground is pledged at Fenner's, and Fenner's window does not have bad quarters. If my pennies stop, the pledge falls due, and then it is not one household out of a house - it is forty households on ground held by a pawnbroker, and you have seen what his terrace roofs look like. I have carried the Marrows two quarters out of my own strongbox already. I cannot carry a third. The quay is not paying anyone since the Mercian bottoms stopped coming - they say the Dezdant war with Trojia has the sea lanes, as if a war I cannot spell has reached into my courtyard, which it has.",
+        "I offered terms before I asked for the ground back, as the law wants: a bond, twice. The Steady would not sell his years, and I will not pretend I would have, in his place. So weigh it, Father. Weigh him kindly and me honestly, and whatever answer the Flame gives, give it fast. Slow mercy is the only kind I cannot afford."
+      ],
+      "closing": "On the roll and under it,",
+      "signature": "Annis Netter"
+    },
+    {
+      "id": "the-served-notice",
+      "lead": "family-door",
+      "handed": false,
+      "from": "The roll of the Flame, for the ground called the Netters'",
+      "to": "To the household of Bram Marrow, condo of the east wing, ground floor",
+      "dateline": "Under the seal of the Mission of the Flame",
+      "salutation": "",
+      "body": [
+        "Be it known and entered on the roll: the ground under your house is held in charge by Widow Annis Netter of the Flame, and the ground penny upon it, two hundred and sixty the quarter, stands unpaid in the amount of one hundred and thirty, three quarters running.",
+        "Petition against your household was brought by the holder of the charge and heard at the Mission on petition-day, as the law provides. The Flame weighed the tenant, the years kept, the heads, and the holder's conduct, and answers: DISTRAINT. The house passes to the holder of the charge. The household is roofed, keeping its years and its goods and losing the house, and shall quit the dwelling upon service of this writ.",
+        "The roof-deck lettings above the said house, being lettings from the house and not from the ground, pass with the house. Those lodging there hold nothing under this writ and are parties to nothing, and shall quit with it.",
+        "A thing is true in Granadad when it is on the roll. This is on the roll."
+      ],
+      "closing": "Sealed and signed for the Flame,",
+      "signature": "Maell, charter priest"
+    }
+  ],
+  "provenance": "EVICTION CASE. The brief's own rule 9 is 'the lease agreement should be involved', and this file is that rule rendered in the ward's actual instruments - because section 2.8 of the gazetteer rules there IS no dwelling-lease in this city: a condo family OWNS its house outright and owes the ground penny on the earth under it, and the canon-grounding paragraph says the novel 'names no landlord, tenant, lease, freehold or duke'. So the lease agreement arrives as the three papers the tenure actually produces, FLAGGED AS A MAPPING FOR THE OWNER'S VETO: the priest's writ (the hearing's sealed output, handed to the player at the hire the way the mission sheet was handed), the Duke's petition (the widow's own hand, readable once the gate lead is followed - the read-not-received gate the Bloodletter letters keep), and the served notice (the roll's extract in the register's own voice, readable once the door lead is followed). Every number in all three is either the raws' own (ground penny 260, compounds.json C2) or authored to sit legally on the sim's constants (arrears 130 over kPetitionAt 120; a bond offered twice before petition, which is the law's own 'offered terms' requirement and the sim's kBondOfferedAt threshold crossed at 55). The six outcomes are named in the writ exactly as section 2.8 lists them, fifth given; the offering-buys-nothing line is the sim's own proven property (test_compound drives the same case at two offerings and requires the same verdict). Mercian and Dezdant spellings follow COMBAT-SPEC.md and MATERIALS-CANON.md; 'the Dezdant war with Trojia' is the owner's phrasing used as given. The texture rule is served straight: Maell states the owner's second half - order kept is why the city is suffered to stand - in his own hand and believes it; the widow hates the petition and brings it anyway; nobody in the ward apologises.",
+  "notes": "Three documents and not five: the writ is the case's engine, the petition is its cause, the notice is its teeth, and inventing a reply from the Marrows would be authoring a voice the game cannot yet stand at a door (the roll's households have no walking bodies - the same honesty note the case file carries). `handed` is true on the writ alone: it is post the player was SENT, readable the moment the hire lead is heard, exactly the mission sheet's contract. The other two keep the read-not-received gate. Maell's voice is his letters' voice (bloodletter_letters.json, mission_sheet_letters.json): plain declarative sentences, the conscience stated once and not wrung - 'the ugliest clause in a law I serve anyway'. The widow's voice is her notables.json bio: sells at the Dawnstalls herself, knows every first wage and first lie, counts what she cannot afford. No calendar date anywhere, per the house dateline style; no key names; no arcane counts - MAGIC-CANON's six-never-seven rule has nothing to touch here."
+}

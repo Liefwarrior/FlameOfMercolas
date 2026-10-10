@@ -178,6 +178,86 @@ void substitute(std::string& text, std::string_view token, std::string_view valu
     }
 }
 
+/// ERRANDS A HUMAN CAN FINISH. Every label docks::placeLabelAt can answer
+/// with, in the two seats a brief puts a place in -- see PlacePhrase. The
+/// articles follow the gazetteer and the README's own prose: "the Tarwalk",
+/// "the Ropewynd", but "Saltgate Rise" and "Gallows Row" bare. The band
+/// fallbacks are not names anybody says aloud, so they read as where a body
+/// would describe standing.
+struct PlacePhraseRow {
+    std::string_view label;
+    std::string_view bare;
+    std::string_view at;
+};
+
+constexpr PlacePhraseRow kPlacePhrases[] = {
+    {"THE GILDED GULL", "the Gilded Gull", "in the Gilded Gull"},
+    {"THE GILDED GULL - ROOMS", "the rooms over the Gilded Gull",
+     "in the rooms over the Gilded Gull"},
+    {"TARWALK", "the Tarwalk", "on the Tarwalk"},
+    {"ROPEWYND", "the Ropewynd", "on the Ropewynd"},
+    {"ROPEWYND - THE DIRT END", "the dirt end of the Ropewynd", "at the dirt end of the Ropewynd"},
+    {"SALTGATE RISE", "Saltgate Rise", "on Saltgate Rise"},
+    {"GALLOWS ROW", "Gallows Row", "on Gallows Row"},
+    {"THE LONG PIERS", "the Long Piers", "out on the Long Piers"},
+    {"THE DOCKS - QUAYSIDE", "the quayside", "down on the quayside"},
+    {"THE DOCKS - MID SLOPE", "the lanes up the slope", "in the lanes up the slope"},
+    {"THE DOCKS - UPPER", "the upper ward", "in the upper ward"},
+    {"UNDER THE PIERS", "the footings under the piers", "down under the piers"},
+    {"THE DOCKS", "the Docks", "somewhere in the Docks"},
+};
+
+/// The word immediately before `at` in `text`, lower-cased -- empty when the
+/// token follows punctuation ("{giver}, {giverPlace},") or opens the text.
+[[nodiscard]] std::string wordBefore(const std::string& text, std::size_t at) {
+    std::size_t end = at;
+    while (end > 0 && text[end - 1] == ' ') {
+        --end;
+    }
+    std::size_t begin = end;
+    while (begin > 0 && std::isalpha(static_cast<unsigned char>(text[begin - 1])) != 0) {
+        --begin;
+    }
+    return lowerAscii(std::string_view(text).substr(begin, end - begin));
+}
+
+/// The seat a place token sits in, read off the word in front of it. A
+/// preposition, or a verb that takes the place as its object ("leaving the
+/// Tarwalk"), wants the bare noun; a verb of sending wants "to" and the
+/// noun; anything else -- a verb of standing, an aside between commas --
+/// wants the whole locative.
+[[nodiscard]] std::string placeForSeat(const std::string& before, const PlacePhrase& place) {
+    static constexpr std::string_view kTakesBare[] = {
+        "near",   "to",     "of",      "before", "from",    "past",   "toward", "towards",
+        "by",     "at",     "in",      "on",     "into",    "onto",   "round",  "around",
+        "behind", "beyond", "across",  "along",  "through", "outside", "inside", "under",
+        "over",   "leave",  "leaving", "left",   "reach",   "reached", "quit",   "quitting",
+    };
+    static constexpr std::string_view kTakesTo[] = {"sent", "send", "gone", "went", "headed"};
+    for (const std::string_view word : kTakesBare) {
+        if (before == word) {
+            return place.bare;
+        }
+    }
+    for (const std::string_view word : kTakesTo) {
+        if (before == word) {
+            return "to " + place.bare;
+        }
+    }
+    return place.at;
+}
+
+/// Replaces every occurrence of a place token, each in the shape its own
+/// seat wants -- one template can use a place both ways.
+void substitutePlace(std::string& text, std::string_view token, const PlacePhrase& place) {
+    std::size_t at = text.find(token);
+    while (at != std::string::npos) {
+        const std::string value = placeForSeat(wordBefore(text, at), place);
+        text.replace(at, token.size(), value);
+        at = text.find(token, at + value.size());
+    }
+}
+
 /// The salt every board draw hangs off. Named, never positional -- renaming
 /// this re-rolls every board there has ever been. See rng.hpp's own note on
 /// stream_salt.
@@ -191,6 +271,40 @@ void put_string(HashSink& sink, std::string_view text) {
 }
 
 }  // namespace
+
+// ---------------------------------------------------------------------------
+// the brief's English
+// ---------------------------------------------------------------------------
+
+PlacePhrase radiantPlacePhrase(std::string_view label) {
+    for (const PlacePhraseRow& row : kPlacePhrases) {
+        if (row.label == label) {
+            return PlacePhrase{std::string(row.bare), std::string(row.at)};
+        }
+    }
+    PlacePhrase out;
+    out.bare = placeProse(label);
+    out.at = "at " + out.bare;
+    return out;
+}
+
+std::string composeRadiantBrief(std::string_view templ, std::string_view giverName,
+                                std::string_view giverPlaceLabel, std::string_view targetName,
+                                std::string_view targetPlaceLabel, std::int32_t units,
+                                std::string_view good) {
+    // EVERY PROPER NOUN IN THE OUTPUT IS SOMEBODY OR SOMEWHERE REAL. The
+    // places go in FIRST, while the word in front of each token is still the
+    // template's own -- a name substituted ahead of them could end in a
+    // word ("Old Cobb Near") that reads as a preposition.
+    std::string brief(templ);
+    substitutePlace(brief, "{giverPlace}", radiantPlacePhrase(giverPlaceLabel));
+    substitutePlace(brief, "{targetPlace}", radiantPlacePhrase(targetPlaceLabel));
+    substitute(brief, "{giver}", giverName);
+    substitute(brief, "{target}", targetName);
+    substitute(brief, "{units}", std::to_string(units));
+    substitute(brief, "{good}", good);
+    return brief;
+}
 
 // ---------------------------------------------------------------------------
 // the vocabulary
@@ -549,17 +663,14 @@ void RadiantBoard::refresh(std::int32_t day, std::uint64_t worldSeed, const Radi
         // EVERY PROPER NOUN IN THE OUTPUT IS SOMEBODY OR SOMEWHERE REAL. The
         // template says "{giver}, {giverPlace}, wants {units} {good}"; what
         // goes in is a name this board just drew off the live roster and a
-        // place that body is actually standing in right now.
-        std::string brief = tmpl.brief;
-        substitute(brief, "{giver}", row.giverName);
-        substitute(brief, "{giverPlace}", placeProse(row.giverPlace));
-        substitute(brief, "{target}", row.targetName);
-        substitute(brief, "{targetPlace}", placeProse(row.targetPlace));
-        substitute(brief, "{units}", std::to_string(units));
-        substitute(brief, "{good}",
-                  tmpl.kind == RadiantKind::Fetch ? lowerAscii(contrabandLabelFor(good, units))
-                                                  : std::string{});
-        row.brief = std::move(brief);
+        // place that body is actually standing in right now -- each place in
+        // the shape its seat in the sentence wants (composeRadiantBrief).
+        // The brief is not hashed (see hashInto), so its English can be
+        // mended without moving a baseline.
+        row.brief = composeRadiantBrief(
+            tmpl.brief, row.giverName, row.giverPlace, row.targetName, row.targetPlace, units,
+            tmpl.kind == RadiantKind::Fetch ? lowerAscii(contrabandLabelFor(good, units))
+                                            : std::string{});
 
         rows_.push_back(std::move(row));
     }

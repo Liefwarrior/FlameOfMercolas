@@ -306,24 +306,29 @@ std::string clipLabel(const std::string& label, std::size_t room) {
 }
 
 std::vector<TopicRow> topicRowsFor(const std::vector<std::string>& topics, int page, int cursor,
-                                   int capacity) {
+                                   int capacity, bool showDigits) {
     const int total = static_cast<int>(topics.size());
     const int pages = topicPageCount(topics.size());
     const int shown = std::clamp(page, 0, pages - 1);
     const int first = shown * kTopicPageSize;
     const int last = std::min(total, first + kTopicPageSize);
 
+    // NINE AND THE STICKS: no digit column with a pad in hand -- the pad
+    // walks the list and confirms; a printed `6` beside a topic is a key it
+    // does not have. The MORE row keeps its place and loses its `0`.
+    const auto keycap = [showDigits](int digit) {
+        return showDigits ? std::to_string(digit) + " " : std::string();
+    };
+    const std::string more =
+        keycap(0) + "MORE (" + std::to_string(shown + 1) + "/" + std::to_string(pages) + ")";
     std::vector<TopicRow> rows;
     rows.reserve(static_cast<std::size_t>(kTopicPageSize + 1));
     for (int i = first; i < last; ++i) {
-        rows.push_back(TopicRow{std::to_string(i - first + 1) + " " +
-                                    topics[static_cast<std::size_t>(i)],
+        rows.push_back(TopicRow{keycap(i - first + 1) + topics[static_cast<std::size_t>(i)],
                                 i == cursor});
     }
     if (pages > 1) {
-        rows.push_back(
-            TopicRow{"0 MORE (" + std::to_string(shown + 1) + "/" + std::to_string(pages) + ")",
-                     false});
+        rows.push_back(TopicRow{more, false});
     }
     // A band too short to print the whole page would otherwise drop rows in
     // silence, which is the exact failure the paging replaced. If it ever
@@ -331,8 +336,7 @@ std::vector<TopicRow> topicRowsFor(const std::vector<std::string>& topics, int p
     // there is more of it.
     if (capacity >= 1 && static_cast<int>(rows.size()) > capacity) {
         rows.resize(static_cast<std::size_t>(capacity));
-        rows.back().label =
-            "0 MORE (" + std::to_string(shown + 1) + "/" + std::to_string(pages) + ")";
+        rows.back().label = more;
         rows.back().picked = false;
     }
     return rows;
@@ -342,7 +346,7 @@ std::vector<TopicRow> topicRowsFor(const std::vector<std::string>& topics, int p
 // sight. See the header on the declaration for why it is public.
 TopicLayout dialogueTopicLayout(const DialogueViewState& state, int width, int height) {
     TopicLayout layout;
-    const PanelMetric metric = panelMetric(height);
+    const PanelMetric metric = panelMetric(width, height);
     const BandGeometry geometry = bandGeometryFor(metric, width, height);
     if (!geometry.usable) {
         return layout;
@@ -358,7 +362,7 @@ TopicLayout dialogueTopicLayout(const DialogueViewState& state, int width, int h
     // appears or goes, and "nothing jumps as the cursor moves" is the rule
     // this vocabulary exists to keep.
     std::vector<TopicRow> printed =
-        topicRowsFor(state.topics, state.page, state.cursor, kTopicPageSize + 1);
+        topicRowsFor(state.topics, state.page, state.cursor, kTopicPageSize + 1, state.showDigits);
     for (const TopicRow& topicRow : printed) {
         layout.options.push_back(topicOption(topicRow.label, accent));
     }
@@ -402,7 +406,7 @@ TopicLayout dialogueTopicLayout(const DialogueViewState& state, int width, int h
     }
     const int capacity = layout.plan.columns * layout.plan.rows;
     if (capacity >= 1 && capacity < static_cast<int>(printed.size())) {
-        printed = topicRowsFor(state.topics, state.page, state.cursor, capacity);
+        printed = topicRowsFor(state.topics, state.page, state.cursor, capacity, state.showDigits);
         layout.options.clear();
         for (const TopicRow& topicRow : printed) {
             PanelOption option = topicOption(topicRow.label, accent);
@@ -443,7 +447,7 @@ TopicListGeometry dialogueTopicListGeometry(const DialogueViewState& state, int 
         // than the topic list in the band. A pointer there gets "modal".
         return out;
     }
-    const PanelMetric metric = panelMetric(height);
+    const PanelMetric metric = panelMetric(width, height);
     out.metric = metric;
     const BandGeometry geometry = bandGeometryFor(metric, width, height);
     if (!geometry.usable) {
@@ -565,7 +569,7 @@ void drawDialogue(Framebuffer& target, const DialogueViewState& state) {
     if (fade <= 0.0F) {
         return;
     }
-    const PanelMetric metric = panelMetric(target.height());
+    const PanelMetric metric = panelMetric(target.width(), target.height());
     const CentreRect centre = hudCentreRect(target.width(), target.height());
     const Rgb accent = state.attitude.empty() ? kTopicPicked : attitudeInk(state.attitude);
 
@@ -577,7 +581,7 @@ void drawDialogue(Framebuffer& target, const DialogueViewState& state) {
     // purse's and stays theirs: a spoken line running under a two-digit hour
     // is unreadable and looks like a bug. ASKED, NOT GUESSED -- the HUD knows
     // how wide its own stack is.
-    const int reservedRight = hudTopRightReserve(target.height());
+    const int reservedRight = hudTopRightReserve(target.width(), target.height());
     const int topCells = std::max(4, metric.cellsIn(target.width() - reservedRight));
     const int topTextCells = std::max(1, topCells - 2);
     const int topRowsAvail = metric.rowsIn(centre.y0);
@@ -742,14 +746,11 @@ void drawDialogue(Framebuffer& target, const DialogueViewState& state) {
         // rule now: the list no longer cuts anything, so there is nothing left
         // for a restatement to rescue.
         //
-        // Only for a real conversation. On the pause menu, the controls page,
-        // the grimoire and the casebook -- the other pages this one widget is
-        // -- `epithet` is already the instruction and it is already on screen
-        // in the top band, so this side stays empty rather than saying the
-        // same thing twice at the other end of the frame.
-        if (!state.attitude.empty() && !state.speaker.empty()) {
-            header.subject = "WHAT YOU SAY TO " + state.speaker;
-        }
+        // THE TYPE-LABEL IS DEAD (UI-EA-SPEC 1.3, sec. 5): the top band
+        // already names who you are talking to, and "WHAT YOU SAY TO <NAME>"
+        // was the header saying it a second time six words longer. The band
+        // is options over a named speaker; that IS the explanation. The rule
+        // stays bare unless an abbreviated row needs spelling out below.
         const int pages = topicPageCount(state.topics.size());
         if (pages > 1) {
             header.readout = "PAGE " + std::to_string(std::clamp(state.page, 0, pages - 1) + 1) +

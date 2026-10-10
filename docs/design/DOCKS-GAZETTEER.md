@@ -20,6 +20,10 @@ The Docks are the wettest, lowest hem of those suburbs **(placeholder — ward i
 
 **What ships bring:** grain, timber, wine, cloth, salt, foreign luxuries, foreign passengers — and, once, whatever this story is about **(placeholder cargo list; canon shows only that fresh salmon reaches the palace kitchens, L2351)**. **What ships take:** Trojian steel, worked goods, soldiers' pay flowing back out to a fifteen-year war (Gunthred launched it fifteen years prior, WB §5, L1220). **Why the empire watches its harbor:** tariffs are the visible hand of the off-map city — the posted rates at the customs house explain the whole smuggling economy without rendering another district **(tariff regime placeholder; passports as state control documents are canon, L2410)** — and because the deeper fear is doctrinal: "no bloodletter can enter the Trojian territory" (L2422). The border is theological. The harbor is the border. That is why a Wielder investigating the waterline is the most natural opening this setting can stage.
 
+**The rollout and the arc (Eli, 2026-09-02).** The city ships in districts as chapters — "all expansions or chapters", Skyrim scope with no base game. Each district's cases lead to the agent of evil behind that district's unrest, the chapter ends in a big climax, and then the player is allowed to travel onward; and *"each district [has] its own agent of evil with the Bloodletter being the leader of them all."* For the Docks this composes with §5's opening investigation — the case already hunts what crossed the sea. Whether the thing at the heart of the Docks is the Bloodletter itself or its local agent is **(deliberately unresolved — needs an Eli ruling before the climax is authored)**. Diction (Eli, same day): *"Very few people know what a bloodletter is"* — the term belongs to priests and the well-studied only; everyone else speaks of it by effect or rumor. The casebook case that carries the name was opened through the Mission, which is why its paper may say the word; a dockhand would not.
+
+**The economy split (Eli, 2026-09-02).** The wharf carries about 75% of Granadad's GDP — most, not all. The rest moves overland: caravans on the roads, and traders traveling by drake-back **(drakes as pack/riding animals are owner-granted canon; this sentence is their entire lore so far — invent nothing further without a ruling)**.
+
 ---
 
 ## 2. District geography
@@ -162,6 +166,8 @@ points and water.
 ---
 
 ### 2.8 The charge and the bond — Trojian tenure (DECISIONS.md, Eli 2026-07-29)
+
+**AMENDED 2026-09-02 (Eli): the duke↔house-owner agreement is called a COVENANT** — the Den Duke owns the land and makes covenants with house-owners to build and farm on it, meant to run indefinitely; the ground penny is the covenant's rent. "Charge" retires from player-facing speech (this section's heading stays for history). **Resolved same day (Eli, verbatim):** *"the Flame holds the plot in trust....FOR the Den Dukes. The mission has lawyers and administrators and keep safe all the covenants."* The trust runs in the dukes' favor. The Mission is the ward's covenant registry — lawyers and administrators keeping every local covenant safe — and the central **HALL OF COVENANTS** is a named future location in another district (Eli, same day): off-map context for this chapter, buildable when its district ships. **Clarified moments later**, Eli verbatim: *"Now the Flame still is the top dog, they just use the DEN DUKES so that they don't have to do the work of landlording the compounds."* So the trust-for-dukes is delegation, not surrender: the Flame remains supreme, and the Den Dukes are its working landlords — the layer that spares the Flame the labor of running compounds. And the working analogy, Eli verbatim: *"The DEN DUKES are like property management companies."*
 
 The ground of Granadad is not property. It is a **charge**: a trust the Priests of the
 Flame hold for historical and legal preservation, and let out. Three tiers, and nobody
@@ -967,6 +973,7 @@ Three z-levels under the east end, each ~one 32×32 chunk footprint expanding do
 - **Consumes:** timber (into Harl's, from off-map by sea), hemp (Ropewalk), grain/oil (Brann's, Eel-Pots), coin (the daily wage loop: quay → pay-out → taverns/Rows/Fenner's, a closed circulator the macro layer can run whole).
 - **Interface flows (off-map):** imports up Saltgate Rise to the Inner City; tariff skim at the Weighhouse; smuggler leakage bypassing it (Merle's, the gray ledgers) priced ~10% under official (dossier pattern, placeholder rate).
 - Chunk summaries carry these as the ECON section's site list **(mapping to ARCHITECTURE §9 ECON placeholder)**.
+- **Overland share (Eli, 2026-09-02):** the wharf is ~75% of GDP; the remainder arrives overland by caravan and by drake-back trader **(no overland trade sites on the Docks map — narrative context, entering play only through the off-map interface flows above)**.
 
 ### 7.2 Light profile (the luminous-on-black star)
 

@@ -70,7 +70,9 @@ FROM toolchain AS build
 # to go red at all, so the shell that gets it is the shell that has it.
 SHELL ["/bin/bash", "-c"]
 
-ARG GRANADAD_REVISION=docker
+# `unknown` when nobody says: the stamp must not print a word that reads like
+# an answer. scripts/gate.ps1 passes the real commit; see docker-compose.yml.
+ARG GRANADAD_REVISION=unknown
 ARG BUILD_TYPE=RelWithDebInfo
 
 WORKDIR /src
@@ -306,11 +308,21 @@ RUN --mount=type=cache,target=/deps,sharing=locked \
     # A cross-compiled .exe cannot be executed here, so correctness is proven on
     # a host build of the same sources. The client is skipped: no SDL needed to
     # test deterministic integer math, and skipping it keeps this pass quick.
+    #
+    # 3D BUILD: raylib IS built here, on its Memory platform with its software
+    # rasterizer (PLATFORM / OPENGL_VERSION are raylib's own option names, see
+    # native/cmake/Dependencies.cmake). No window, no GPU, no X server: a real
+    # 3D frame is drawn into memory inside the test suite and its pixels are
+    # asserted on every build, the way the software renderer's frames have
+    # been since S1. This container has no X11 or GL packages and must never
+    # need them; the Desktop platform would want both.
     cmake -S /src/native -B /build-cache/hostcheck -G Ninja \
         -DCMAKE_BUILD_TYPE=Debug \
         -DGRANADAD_BUILD_CLIENT=OFF \
         -DGRANADAD_BUILD_TESTS=ON \
         -DGRANADAD_WERROR=ON \
+        -DPLATFORM=Memory \
+        -DOPENGL_VERSION=Software \
         -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
         -DGRANADAD_REVISION="${GRANADAD_REVISION}"; \
     cmake --build /build-cache/hostcheck; \
@@ -359,6 +371,43 @@ RUN --mount=type=cache,target=/deps,sharing=locked \
            echo "       being judged by -Werror. See granadad_mark_headers_system."; \
            exit 1;; esac; \
     echo "ok: determinism codegen reaches miniz; -Werror reaches only our code"; \
+    \
+    # 3D BUILD: the same question asked of raylib, the other way round. It is
+    # renderer-side and never reaches simulation state, so it gets NONE of the
+    # determinism codegen flags and none of our -Werror (its own
+    # -Werror=pointer-arith is its business and is matched around, not
+    # against); and the ONE translation unit of ours that includes raylib.h
+    # compiles with -Werror and sees raylib through -isystem, so raymath.h's
+    # inline float math is not judged by our -Wconversion. Off the actual
+    # command lines, as above.
+    echo "=== flags: raylib gets no determinism flags; the raylib TU is ours ==="; \
+    raylib_line="$(grep '"command"' "$cc_json" | grep 'raylib-src/src/rcore\.c' | head -1)"; \
+    rl_tu="$(grep '"command"' "$cc_json" | grep 'render3d/rl_backend\.cpp' | head -1)"; \
+    test -n "$raylib_line" || { echo "FATAL: raylib's rcore.c is not in compile_commands.json — is raylib still built from source?"; exit 1; }; \
+    test -n "$rl_tu" || { echo "FATAL: src/render3d/rl_backend.cpp is not in compile_commands.json"; exit 1; }; \
+    echo "--- theirs (raylib rcore.c)"; \
+    echo "$raylib_line" | tr ' ' '\n' | grep -E '^-(f|W|std|D)' | sort | tr '\n' ' '; echo; \
+    for flag in -fwrapv -ffp-contract=off -fno-fast-math " -Werror " -Wconversion; do \
+        case "$raylib_line" in *"$flag"*) \
+            echo "FATAL: raylib compiles with $flag. It is renderer-side, gets no"; \
+            echo "       determinism codegen and no -Werror of ours. See the raylib"; \
+            echo "       block in native/cmake/Dependencies.cmake."; exit 1;; \
+            *) ;; esac; \
+    done; \
+    case "$raylib_line" in *"-DPLATFORM_MEMORY"*) ;; \
+        *) echo "FATAL: the host check's raylib is not on the Memory platform, so"; \
+           echo "       the 3D frame tests would need a window here. Pass"; \
+           echo "       -DPLATFORM=Memory -DOPENGL_VERSION=Software."; exit 1;; esac; \
+    case "$raylib_line" in *"-DSUPPORT_MODULE_RAUDIO=0"*) ;; \
+        *) echo "FATAL: raylib is compiling its audio module. granadad-audio owns"; \
+           echo "       sound; see Dependencies.cmake."; exit 1;; esac; \
+    case "$rl_tu" in *" -Werror "*|*" -Werror") ;; \
+        *) echo "FATAL: the raylib translation unit compiles without -Werror."; exit 1;; esac; \
+    case "$rl_tu" in *"-isystem"*"raylib-src"*) ;; \
+        *) echo "FATAL: rl_backend.cpp does not see raylib through -isystem, so"; \
+           echo "       raylib's headers are being judged by our -Werror. See"; \
+           echo "       granadad_mark_headers_system(raylib)."; exit 1;; esac; \
+    echo "ok: raylib compiles with its own flags on PLATFORM_MEMORY, no audio; the raylib TU is ours"; \
     \
     # ----------------------------------------------------------------------
     # No unordered containers. Checked by grep, and that is not laziness.
@@ -1049,6 +1098,118 @@ RUN --mount=type=cache,target=/deps,sharing=locked \
     done; \
     echo "ok: the casebook pass's cases are all registered"; \
     \
+    # 3D BUILD, the toolchain lane. Three claims the whole 3D programme rests
+    # on, each a case that goes red on its own: a real 3D frame is drawn
+    # HEADLESS in this container through raylib's software rasterizer and its
+    # pixels are checked (the S1 discipline, carried into 3D); the same scene
+    # drawn twice is byte-identical, which is the in-process frame claim the
+    # software renderer always made; and the SceneDescription -- the thing
+    # that IS hashed, since a GPU frame never is -- hashes identically for
+    # identical state. A build that quietly dropped the raylib libraries would
+    # lose all three at once, and this is where it would say so.
+    for case in \
+        "a 3D frame of a lit plane and a cube renders headless through rlsw" \
+        "the same 3D scene renders byte-identical twice" \
+        "a SceneDescription hashes identically for identical state" \
+        ; do \
+        case "$ctest_list" in *"$case"*) ;; *) false;; esac \
+            || { echo "FATAL: the case \"$case\" is not registered."; \
+                 echo "       It is what the 3D toolchain is judged on: a frame"; \
+                 echo "       drawn headless, drawn again byte for byte, and a"; \
+                 echo "       scene whose bytes are the determinism claim."; \
+                 exit 1; }; \
+    done; \
+    echo "ok: the 3D toolchain's cases are all registered"; \
+    \
+    # 3D BUILD, the world lane. The Docks as geometry: the chunk mesh is a
+    # deterministic function of the tile bytes (built twice, same bytes,
+    # same scene hash), a WALL emits wall quads and a FLOOR in a street does
+    # not (the wall-vs-floor fact the 2D/3D agreement rests on), and the real
+    # district renders headless through rlsw to a frame with a world in it.
+    for case in \
+        "the Docks mesh is a deterministic function of the tile map" \
+        "a wall tile produces wall quads and a floor tile does not" \
+        "the Docks render to a 3D frame with a world in it" \
+        ; do \
+        case "$ctest_list" in *"$case"*) ;; *) false;; esac \
+            || { echo "FATAL: the case \"$case\" is not registered."; \
+                 echo "       It is what the 3D world lane is judged on: the"; \
+                 echo "       tile map meshed deterministically, walls that are"; \
+                 echo "       walls, and the Docks drawn headless in 3D."; \
+                 exit 1; }; \
+    done; \
+    echo "ok: the 3D world lane's cases are all registered"; \
+    \
+    # 3D BUILD, the actors lane. The people in the 3D pass: a body is
+    # instanced where the simulation says it stands (the ward's slide, the
+    # Gull's Q8, the facing, the clip off the Activity), two sessions driven
+    # by the same script describe the same crowd byte for byte (the scene
+    # hash now covers the actor list), and the ward's people render headless
+    # as figures in the frame -- through the placeholder rigs, since the
+    # licensed glb files are never in this container.
+    for case in \
+        "an actor is drawn where the simulation says the actor is" \
+        "the scene description twin-runs identical" \
+        "the ward's people render as figures in the 3D frame" \
+        ; do \
+        case "$ctest_list" in *"$case"*) ;; *) false;; esac \
+            || { echo "FATAL: the case \"$case\" is not registered."; \
+                 echo "       It is what the 3D actors lane is judged on: a"; \
+                 echo "       body where the sim put it, a crowd that twin-runs,"; \
+                 echo "       and people drawn headless in the 3D frame."; \
+                 exit 1; }; \
+    done; \
+    echo "ok: the 3D actors lane's cases are all registered"; \
+    \
+    # 3D BUILD, the viewmodel + HUD lane. The player's own hands follow the
+    # combat state machine off the sim's public getters (idle, the charge
+    # scrubbed by the hold, the hard tier, the swing at the tier the room
+    # resolved, the guard, the cast, the flinch) and are described and
+    # hashed; the terminal HUD composites over the 3D frame byte for byte
+    # where it is opaque -- the eighteen pixel-exact HUD/page files keep
+    # their bytes AND the composite keeps them; and the raised fists render
+    # headless over the Docks, in front of a wall the body stands against.
+    for case in \
+        "the viewmodel clip follows the combat state machine" \
+        "the HUD overlay composites byte-identically over a 3D frame" \
+        "the raised fists render over the Docks and in front of the nearest wall" \
+        ; do \
+        case "$ctest_list" in *"$case"*) ;; *) false;; esac \
+            || { echo "FATAL: the case \"$case\" is not registered."; \
+                 echo "       It is what the 3D viewmodel lane is judged on:"; \
+                 echo "       hands that follow the fight, a HUD composited"; \
+                 echo "       byte for byte, and fists drawn headless over it."; \
+                 exit 1; }; \
+    done; \
+    echo "ok: the 3D viewmodel lane's cases are all registered"; \
+    \
+    # 3D BUILD, the static pieces lane. The Synty building kit placed from
+    # the tile map: a corner tile gets the corner piece, a door gap gets the
+    # door frame, the real Docks placed twice describe and hash the same,
+    # and -- the placeholder rule -- a description full of pieces drawn by
+    # a backend with no licensed file is the chunk mesh's own frame, byte
+    # for byte. None of it needs content/art/lot-3d/, which this container
+    # never has; the catalogue it needs is content/raws/world3d/.
+    test -f /src/content/raws/world3d/docks-pieces.json \
+        || { echo "FATAL: /src/content/raws/world3d/docks-pieces.json is missing from"; \
+             echo "       the build context. .dockerignore must re-admit"; \
+             echo "       content/raws/** or the static pieces lane places nothing"; \
+             echo "       and its cases prove the placeholder against nothing."; exit 1; }; \
+    for case in \
+        "a wall tile with two open neighbours places a corner piece" \
+        "a door tile places the door frame" \
+        "placement is a deterministic function of the tile map" \
+        "a missing piece falls back to the placeholder and the scene still renders" \
+        ; do \
+        case "$ctest_list" in *"$case"*) ;; *) false;; esac \
+            || { echo "FATAL: the case \"$case\" is not registered."; \
+                 echo "       It is what the 3D static pieces lane is judged on:"; \
+                 echo "       corners and doors off the tile grid, placements that"; \
+                 echo "       twin-run, and the chunk standing where a file is absent."; \
+                 exit 1; }; \
+    done; \
+    echo "ok: the 3D static pieces lane's cases are all registered"; \
+    \
     # ---------------------------------------------------------------------
     # AND THE SUITE RUNS IN PARALLEL, WHICH IS NOT A SUBSTITUTE FOR ANYTHING.
     # ---------------------------------------------------------------------
@@ -1299,6 +1460,12 @@ RUN --mount=type=cache,target=/deps,sharing=locked \
     rm -rf /tmp/standalone-linux; \
     \
     echo "=== cross-compile: Windows x86-64 .exe ==="; \
+    # 3D BUILD: raylib on its Desktop platform -- a GLFW window and an OpenGL
+    # 3.3 context, the .exe a player runs. GLFW's Win32 backend and the GL
+    # loader pull opengl32/gdi32/winmm, all system DLLs, so the self-contained
+    # binary check below still holds. The 3D frame tests SKIP in this binary
+    # (no window inside a test suite); the GPU frame is proved on the host by
+    # scripts/verify-windows.ps1's real --screenshot, never by a hash.
     cmake -S /src/native -B /build-cache/win -G Ninja \
         -DCMAKE_TOOLCHAIN_FILE=/src/native/cmake/toolchain-mingw-w64.cmake \
         -DCMAKE_BUILD_TYPE="${BUILD_TYPE}" \
@@ -1306,6 +1473,8 @@ RUN --mount=type=cache,target=/deps,sharing=locked \
         -DGRANADAD_BUILD_CLIENT=ON \
         -DGRANADAD_BUILD_TESTS=ON \
         -DGRANADAD_WERROR=ON \
+        -DPLATFORM=Desktop \
+        -DOPENGL_VERSION=3.3 \
         -DGRANADAD_REVISION="${GRANADAD_REVISION}"; \
     cmake --build /build-cache/win; \
     cmake --install /build-cache/win; \

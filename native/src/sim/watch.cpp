@@ -14,6 +14,8 @@ std::string_view watchCauseName(WatchCause cause) noexcept {
             return "contraband";
         case WatchCause::Both:
             return "warrant and goods";
+        case WatchCause::Violence:
+            return "violence";
     }
     return "?";
 }
