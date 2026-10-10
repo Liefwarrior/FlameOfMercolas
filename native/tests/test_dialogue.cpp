@@ -1955,3 +1955,45 @@ TEST_CASE("Watchman Cull's own demand is his on the row, and his goodbye stands 
     CHECK(session.voice().lastOn(render::VoiceChannel::Farewell).name == who);
     CHECK(session.messageStepsLeft() == 0);
 }
+
+TEST_CASE("the TONE row is the dial's door: it turns normal, polite, blunt and back, and says so") {
+    // THE TONE DIAL (2026-10-09). The engine above had every test and no
+    // door: nothing a player pressed reached setTone. The row is on every
+    // root list, shows the register you are IN, and one press turns it.
+    DialogueDirector director = DialogueDirector::load(content::contentDir());
+    const Speaker docker = dockerNamed(21, "Tam Sallow");
+    REQUIRE(director.open(docker, hourOfDay(21)));
+    const auto toneRow = [&director] {
+        for (std::size_t i = 0; i < director.topics().size(); ++i) {
+            if (director.topics()[i].kind == TopicKind::Tone) {
+                return static_cast<std::int32_t>(i);
+            }
+        }
+        return -1;
+    };
+    std::int32_t row = toneRow();
+    REQUIRE(row >= 0);
+    // Just above the way out.
+    CHECK(director.topics()[static_cast<std::size_t>(row) + 1].kind == TopicKind::Leave);
+    CHECK(director.topics()[static_cast<std::size_t>(row)].label == "TONE: NORMAL");
+    CHECK(director.tone() == Tone::Normal);
+
+    const char* const reports[] = {"YOU MIND YOUR MANNERS.", "YOU DROP THE COURTESIES.",
+                                   "YOU SPEAK PLAINLY."};
+    const Tone turns[] = {Tone::Polite, Tone::Blunt, Tone::Normal};
+    const char* const labels[] = {"TONE: POLITE", "TONE: BLUNT", "TONE: NORMAL"};
+    for (int i = 0; i < 3; ++i) {
+        INFO(i);
+        const Reply turned = director.choose(static_cast<std::size_t>(toneRow()));
+        CHECK(turned.ok);
+        CHECK(turned.report);
+        CHECK(turned.line == reports[i]);
+        CHECK(director.tone() == turns[i]);
+        row = toneRow();
+        REQUIRE(row >= 0);
+        CHECK(director.topics()[static_cast<std::size_t>(row)].label == labels[i]);
+        // Turning the dial is talk, not trade: no coin, and the list stays up.
+        CHECK(turned.coinDelta == 0);
+        CHECK(director.isOpen());
+    }
+}

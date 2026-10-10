@@ -226,7 +226,30 @@ struct CasebookShelfRow {
     bool fronted = false;
     /// Holds the lead the compass carries.
     bool followed = false;
+
+    /// ERRANDS A HUMAN CAN FINISH (2026-10-09). A taken radiant errand --
+    /// neither a book nor a questline, and read-only like a questline. Its
+    /// three facts are who settles it, where that body was when the job was
+    /// posted, and what it pays; the drawing words the three below.
+    bool errand = false;
+    /// "SAY IT TO" for a deliver, "BRING IT TO" for a fetch.
+    std::string whoLabel;
+    /// The settling party's name, shouted: "KESSA INKWATER".
+    std::string who;
+    /// Where they were, as a locative, shouted: "ON THE TARWALK".
+    std::string where;
+    /// "8C ON ARRIVAL", "36C".
+    std::string pays;
 };
+
+/// ERRANDS A HUMAN CAN FINISH. What an errand row's foot says, and what the
+/// shelf's commit and FOLLOW answer on one: the shelf keeps where a body was
+/// when the job was posted, and the ward map's PEOPLE view names who is
+/// standing on that ground now. No compass, no tracker. Worded in the
+/// ward's register rather than the menu's (the scorer's one note on the
+/// first draft, which said "PEOPLE TAB"), and shorter than the questline
+/// row's own "A LINE, NOT A BOOK." line, so it fits where that one does.
+inline constexpr std::string_view kErrandFindLine = "THE MAP NAMES WHO STANDS THERE NOW.";
 
 /// Everything the page draws. A closed page draws nothing at all.
 struct CasebookPageState {

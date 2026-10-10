@@ -1,0 +1,31 @@
+{
+  "id": "shops",
+  "notes": [
+    "Added 2026-10-09 (the Liefwarrior three-role session). The ward's counters that sell a docker's things and the one that buys them back, on the gazetteer's own sites and the notables already bound to them: K08 Brann's Chandlery, K28 the Slop-Chest, K15 Fenner's Pawn.",
+    "PLACEHOLDER STOCK AND RATE, flagged for the owner: each counter's shelf is read off its gazetteer line (ship stores -- lamp oil, cordage; sailors' clothing; a pawnbroker's shelf of what was never redeemed), and Fenner paying half of a thing's worth is a number nobody has ruled on.",
+    "Prices are each item's authored royals (items.json) through the counter's guild term -- no second price list. Stock is the COUNTER's, never the keeper's body (DECISIONS 2026-09-12: a ward body carries nothing). Unlimited in this first version.",
+    "Every keeper must be a notables.json id and every item an items.json id; a row naming anything else is dropped at load, by name."
+  ],
+  "counters": [
+    {
+      "id": "branns",
+      "keeper": "brann",
+      "name": "Brann's Chandlery",
+      "sells": ["lantern", "rope", "knife", "boat_hook", "bottle"]
+    },
+    {
+      "id": "slopchest",
+      "keeper": "neddry",
+      "name": "the Slop-Chest",
+      "sells": ["coat", "hood", "boots", "purse"]
+    },
+    {
+      "id": "fenners",
+      "keeper": "fenner",
+      "name": "Fenner's Pawn",
+      "sells": ["cudgel", "dagger", "cutlass", "mace"],
+      "buysPercent": 50,
+      "neverBuys": ["the_evictor", "letter", "bale", "strongbox"]
+    }
+  ]
+}

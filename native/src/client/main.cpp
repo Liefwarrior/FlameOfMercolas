@@ -920,7 +920,20 @@ void print_usage() {
         "                       own giver out in the ward, talk, and take the\n"
         "                       errand off them. END `offer` stops with the\n"
         "                       giver's row on the open list; `taken` (the\n"
-        "                       default) presses it and checks the journal\n"
+        "                       default) presses it and checks the journal;\n"
+        "                       `shelf` opens the casebook's CASES shelf on\n"
+        "                       the errand's row (who, where, what it pays);\n"
+        "                       `settled` takes a word errand, walks to the\n"
+        "                       one it is for and passes it, and is paid;\n"
+        "                       `ask` asks a stranger WHO NEEDS A HAND?\n"
+        "  --tone=REGISTER      VERIFICATION ONLY: with --street or --talk,\n"
+        "                       press the conversation's TONE row until it\n"
+        "                       reads polite, normal or blunt\n"
+        "  --shop[=END]         VERIFICATION ONLY: find Brann at his chandlery\n"
+        "                       counter, SEE THE WARES and buy a lantern, then\n"
+        "                       sell it back across Fenner's pawn. END is\n"
+        "                       wares, bought (pair with --character to see\n"
+        "                       it in the Kit), pawn or sold (the default)\n"
         "  --quickbar           VERIFICATION ONLY: bind the first crafting to\n"
         "                       slot 3 through the Grimoire page, close it and\n"
         "                       press the number, so the bottom-centre strip\n"
@@ -1420,6 +1433,17 @@ void print_usage() {
         } else if (std::strcmp(arg, "--petition") == 0) {
             // VERIFICATION ONLY. See SmokeRunConfig::petition's own header.
             options.smoke.petition = true;
+            options.wantsSmoke = true;
+        } else if (starts_with(arg, "--tone=", &value)) {
+            // VERIFICATION ONLY. See SmokeRunConfig::tone.
+            options.smoke.tone = value;
+        } else if (std::strcmp(arg, "--shop") == 0) {
+            // VERIFICATION ONLY. See SmokeRunConfig::shop.
+            options.smoke.shop = true;
+            options.wantsSmoke = true;
+        } else if (starts_with(arg, "--shop=", &value)) {
+            options.smoke.shop = true;
+            options.smoke.shopEnd = value;
             options.wantsSmoke = true;
         } else if (std::strcmp(arg, "--radiant") == 0) {
             // VERIFICATION ONLY. See SmokeRunConfig::radiant's own header.

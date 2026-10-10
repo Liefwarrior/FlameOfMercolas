@@ -286,6 +286,40 @@ enum class TopicKind : std::uint8_t {
     /// deed table already prices that. Intent-only like TakeWrit; the
     /// session closes the book. APPENDED at 32, same reason.
     YieldWrit = 32,
+    /// ERRANDS A HUMAN CAN FINISH (2026-10-09). "WHO NEEDS A HAND?" -- in the
+    /// TELL ME ABOUT tree's A QUEST branch, on anybody's list while the
+    /// radiant board has an offer up that is not their own. The answer names
+    /// one live giver, where they were when the board was posted, and what
+    /// they want done; which one is a pure draw of (speaker, board day) so
+    /// the same person names the same errand all day. People TELL the
+    /// Wielder things (DOCKS-GAZETTEER 5.3): no roll, no deed, nothing
+    /// moved -- the board's four givers among six hundred were otherwise
+    /// found only by talking to strangers at random. APPENDED at 33, for
+    /// the reason on Buy.
+    AskErrand = 33,
+    /// SHOPS (2026-10-09). SEE THE WARES -- on a counter keeper's root list
+    /// (sim/shops.hpp). Opens the shelf as its own level of the list, the way
+    /// TELL ME ABOUT opens the tree. APPENDED at 34, for the reason on Buy.
+    Wares = 34,
+    /// One row of the shelf: payload is the price, arg the items.json id. An
+    /// INTENT, the Buy contract: the director checks the purse, whoever owns
+    /// the Kit (Tavern) hands the thing over or refuses it. APPENDED at 35.
+    BuyItem = 35,
+    /// PAWN SOMETHING -- on a counter that buys. Opens the carried rows it
+    /// will take, each at its offer. APPENDED at 36.
+    Pawn = 36,
+    /// One carried row sold: payload the offer, arg the id. An intent, like
+    /// BuyItem; the keeper's own purse has to cover it. APPENDED at 37.
+    SellItem = 37,
+    /// THE TONE DIAL (2026-10-09). "TONE: NORMAL" on every root list, just
+    /// above SAY NO MORE: choosing it turns the register NORMAL -> POLITE ->
+    /// BLUNT -> NORMAL through setTone -- the engine #82 built and tested and
+    /// left with no door. The label always shows the register you are IN.
+    /// POLITE and BLUNT move the attitude gates by kToneGateShift (an offer a
+    /// cool stranger would not make, made; one a warm one would, withheld),
+    /// pick the .polite/.blunt line wherever one is authored, and say which
+    /// deed listening was. No roll. APPENDED at 38.
+    Tone = 38,
 };
 
 [[nodiscard]] std::string_view topicKindName(TopicKind kind) noexcept;
@@ -372,6 +406,40 @@ enum class DialogueMenu : std::uint8_t {
     Thing = 4,
     Work = 5,
     Quest = 6,
+    /// SHOPS: the shelf of a counter (BuyItem rows), and what it will take
+    /// off you (SellItem rows). Back from either goes to the root.
+    Wares = 7,
+    Pawn = 8,
+};
+
+/// SHOPS (2026-10-09). One row of a counter, as the conversation shows it.
+struct CounterWare {
+    /// items.json id.
+    std::string itemId;
+    /// The sheet's own name for it: "LANTERN".
+    std::string name;
+    /// SELLS: the thing's authored worth, before the guild term. PAWNABLE:
+    /// what this counter pays for one, already worked out.
+    std::int32_t royals = 0;
+};
+
+/// SHOPS. What the speaker's counter offers, assembled by whoever owns the
+/// Kit and the shelf (Tavern::counterViewFor) and handed to the director
+/// before the conversation opens -- the director has no idea what a Kit is,
+/// the setPlayerCoin pattern. Derived every time; nothing here is state.
+struct CounterView {
+    /// The speaker keeps a counter at all.
+    bool keeps = false;
+    /// ...and is standing at it. A keeper met in the street says so.
+    bool atCounter = false;
+    /// "Brann's Chandlery".
+    std::string name;
+    std::vector<CounterWare> sells;
+    /// The counter buys (Fenner's).
+    bool buys = false;
+    /// What it would take off you right now: carried, not worn, worth
+    /// something, and not on its never list.
+    std::vector<CounterWare> pawnable;
 };
 
 /// What choosing a topic produced.
@@ -406,6 +474,9 @@ struct Reply {
     /// not know what a cellar is. Whoever owns the counter resolves it and
     /// fills in the line and the coin.
     bool wantsPurchase = false;
+    /// SHOPS: BuyItem/SellItem's thing and the coin it changes hands for.
+    std::string itemId;
+    std::int32_t itemPrice = 0;
     /// A questline moved. What the journal just wrote, or empty -- so the HUD
     /// can say "the journal is longer" without reading the journal.
     std::string journalLine;
@@ -516,6 +587,20 @@ public:
 
     [[nodiscard]] RadiantBoard& radiant() noexcept { return radiant_; }
     [[nodiscard]] const RadiantBoard& radiant() const noexcept { return radiant_; }
+    /// SHOPS (2026-10-09). The counter the NEXT open() -- and every rebuild
+    /// after it -- shows; see CounterView. Cleared by close().
+    void setCounter(CounterView view);
+    [[nodiscard]] const CounterView& counter() const noexcept { return counter_; }
+    /// Rebuilds whatever level of the list is up -- for a caller that moved
+    /// something the list reads (a purchase settled across the counter).
+    void refreshTopics();
+    /// What this counter asks for a thing worth `royals`, through the
+    /// speaker's guild term. Zero when no conversation is open.
+    [[nodiscard]] std::int32_t counterPriceFor(std::int32_t royals) const noexcept;
+    /// ERRANDS A HUMAN CAN FINISH (2026-10-09). The offered errand this
+    /// speaker names when asked WHO NEEDS A HAND? -- see TopicKind::AskErrand
+    /// -- or null when the board has nothing up that is not their own.
+    [[nodiscard]] const RadiantObjective* errandToName() const;
     /// The authored templates, or an empty set when the raws were not found.
     [[nodiscard]] const RadiantRaws& radiantRaws() const noexcept { return *radiantRaws_; }
     /// Posts a day's errands off the live ward. Called by whoever owns the
@@ -685,6 +770,9 @@ private:
     /// buildTopics()'s own active-stage loop shows at the root, MINUS
     /// Oath/Teach/Forge, which stay verbs and never appear here.
     void buildQuestTopics();
+    /// SHOPS: the shelf, and what the counter would take off you.
+    void buildWaresTopics();
+    void buildPawnTopics();
     /// Appends the "(BACK)" topic every non-root level ends on.
     void pushBack();
     /// Rebuilds whichever level menu_ currently names. The single call site
@@ -784,6 +872,8 @@ private:
     /// RADIANT BUILD. Shared for contractRaws_'s exact reason: the director
     /// is built by a factory that returns by value.
     std::shared_ptr<const RadiantRaws> radiantRaws_;
+    /// SHOPS: the speaker's counter, if any. Derived, never hashed.
+    CounterView counter_;
     RadiantBoard radiant_;
     ForgeBench bench_;
     /// Which authored line the bench was opened for, and at which stage. Held

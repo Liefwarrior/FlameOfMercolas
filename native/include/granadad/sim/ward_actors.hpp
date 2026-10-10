@@ -1168,12 +1168,33 @@ public:
     /// standing next to, whatever their (x, y) says.
     [[nodiscard]] const WardActor* nearestTo(std::int32_t x, std::int32_t y, std::int32_t band,
                                              std::int32_t reachTiles) const noexcept;
+    /// ERRANDS A HUMAN CAN FINISH (2026-10-09). The body IN FRONT of an eye
+    /// at (xQ8, yQ8) looking along `yaw`, within `reachTiles` (Chebyshev,
+    /// same band -- nearestTo's own reach), or nullptr when nobody stands in
+    /// the sixty-degree cone either side of the look. What "E talks to
+    /// anybody standing in front of you" (the README's own sentence) means
+    /// in a crowd: nearestTo answered with whoever was closest whatever the
+    /// eye was on, so a priest with three of the sick at her elbow could not
+    /// be addressed from any tile a body can stand on.
+    ///
+    /// The best-aligned body wins -- the smallest angle off the look, by
+    /// exact integer comparison (dot^2 * len'^2 against dot'^2 * len^2, no
+    /// square root) -- then the nearer, then the lower id. A body on the
+    /// eye's own tile counts as dead ahead. Integer throughout: it decides
+    /// which conversation opens, and that is simulation state.
+    [[nodiscard]] const WardActor* inFrontOf(std::int32_t xQ8, std::int32_t yQ8,
+                                             std::int32_t band, Angle yaw,
+                                             std::int32_t reachTiles) const noexcept;
     /// The body with this id, or nullptr. Ids are dense and assigned in bake
     /// order, so this is an index check and not a search.
     [[nodiscard]] const WardActor* byId(std::int32_t actorId) const noexcept;
     /// Takes coin off somebody. Answers what actually came out, which is never
     /// more than they had.
     [[nodiscard]] std::int32_t takeCoinFrom(std::int32_t actorId, std::int32_t coin) noexcept;
+    /// SHOPS (2026-10-09). takeCoinFrom's mirror: coin a body is PAID out of
+    /// the player's purse (a purchase across their counter), minted into the
+    /// ward's ledger the way a robbery's is sunk out of it.
+    void payCoinTo(std::int32_t actorId, std::int32_t coin) noexcept;
     /// Turns a body to look at a point. They look at you while you talk to
     /// them, which is the whole difference between a person and a prop.
     void faceToward(std::int32_t actorId, std::int32_t x, std::int32_t y) noexcept;

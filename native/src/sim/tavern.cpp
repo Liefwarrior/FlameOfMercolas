@@ -385,6 +385,16 @@ Tavern::Tavern(const TileQuery& tiles, std::int32_t timeOfDaySeconds, std::uint6
     // sheet prints IN HAND FISTS, and the game boots exactly as before.
     items_ = ItemRegistry::load(contentDir);
     kit_.resize(items_.size());
+    // SHOPS (2026-10-09). The counters, every shelf row checked against the
+    // registry -- a fixed thing, a sack good or an id items.json does not have
+    // is dropped -- and every keeper against notables.json, by name.
+    shops_ = ShopRaws::load(contentDir);
+    shops_.prune(
+        [this](const std::string& id) {
+            const ItemDef* item = items_.find(id);
+            return item != nullptr && !item->fixed && item->contraband.empty() && item->royals > 0;
+        },
+        [this](const std::string& keeper) { return dialogue_.notables().find(keeper) != nullptr; });
     picksItem_ = items_.indexOf("picks");
     baleItem_ = items_.indexOf("bale");
     seedStands();
@@ -5229,6 +5239,94 @@ bool Tavern::giveItem(std::string_view id, std::int32_t count) {
     }
     kit_.add(index, count);
     return true;
+}
+
+CounterView Tavern::counterViewFor(std::string_view notableId, bool atCounter) const {
+    CounterView view;
+    const ShopCounter* counter = shops_.forKeeper(notableId);
+    if (counter == nullptr) {
+        return view;
+    }
+    view.keeps = true;
+    view.atCounter = atCounter;
+    view.name = counter->name;
+    for (const std::string& id : counter->sells) {
+        const ItemDef* item = items_.find(id);
+        if (item != nullptr) {
+            view.sells.push_back(CounterWare{item->id, item->name, item->royals});
+        }
+    }
+    view.buys = counter->buys();
+    if (view.buys) {
+        // What it would take: carried in the Kit, not worn (take it off
+        // first -- a sold hand would leave the brawl reading a weapon that is
+        // gone), worth something, and not on the counter's never list. The
+        // sack and the picks are not the Kit's and are never offered here:
+        // the sack is the fence's business.
+        for (std::size_t i = 0; i < items_.size(); ++i) {
+            const auto index = static_cast<std::int32_t>(i);
+            if (kit_.count(index) <= 0 || kit_.isWorn(index)) {
+                continue;
+            }
+            const ItemDef* item = items_.at(index);
+            if (item == nullptr || item->fixed || !item->contraband.empty() || item->royals <= 0) {
+                continue;
+            }
+            if (std::find(counter->neverBuys.begin(), counter->neverBuys.end(), item->id) !=
+                counter->neverBuys.end()) {
+                continue;
+            }
+            view.pawnable.push_back(
+                CounterWare{item->id, item->name, counterOffer(item->royals, counter->buysPercent)});
+        }
+    }
+    return view;
+}
+
+ServiceResult Tavern::buyFromCounter(std::string_view id, std::int32_t price, std::string& line) {
+    const ItemDef* item = items_.find(id);
+    if (item == nullptr || price <= 0) {
+        line = "NOT FOR SALE.";
+        return ServiceResult::Refused;
+    }
+    if (playerCoin_ < price) {
+        line = "YOUR PURSE WILL NOT COVER IT.";
+        return ServiceResult::NoCoin;
+    }
+    if (loadRefuses(item->drams)) {
+        line = "TOO MUCH ON YOU ALREADY. " + std::to_string(loadDrams()) + " OF " +
+               std::to_string(loadBudget()) + " DRAMS.";
+        return ServiceResult::Refused;
+    }
+    if (!giveItem(item->id, 1)) {
+        line = "NOT FOR SALE.";
+        return ServiceResult::Refused;
+    }
+    playerCoin_ -= price;
+    dialogue_.setPlayerCoin(playerCoin_);
+    line = "PAID " + std::to_string(price) + "C FOR THE " + item->name + ".";
+    return ServiceResult::Served;
+}
+
+ServiceResult Tavern::sellToCounter(std::string_view id, std::int32_t offer, std::string& line) {
+    const std::int32_t index = items_.indexOf(id);
+    const ItemDef* item = items_.at(index);
+    if (item == nullptr || offer <= 0 || kit_.count(index) <= 0) {
+        line = "YOU ARE NOT CARRYING IT.";
+        return ServiceResult::Refused;
+    }
+    if (kit_.isWorn(index)) {
+        line = "TAKE IT OFF FIRST.";
+        return ServiceResult::Refused;
+    }
+    if (kit_.take(index, 1) != 1) {
+        line = "YOU ARE NOT CARRYING IT.";
+        return ServiceResult::Refused;
+    }
+    playerCoin_ = wrap_add(playerCoin_, offer);
+    dialogue_.setPlayerCoin(playerCoin_);
+    line = "SOLD THE " + item->name + " FOR " + std::to_string(offer) + "C.";
+    return ServiceResult::Served;
 }
 
 Tavern::StealResult Tavern::takeGroundItem() {

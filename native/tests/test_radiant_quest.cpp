@@ -29,6 +29,7 @@
 
 #include <doctest/doctest.h>
 
+#include <algorithm>
 #include <cctype>
 #include <filesystem>
 #include <fstream>
@@ -840,4 +841,214 @@ TEST_CASE("errands are the giver's alone: strangers, the Gull's fourteen, and a 
     talk.setTone(Tone::Normal);
     CHECK(topicIndexOf(talk, TopicKind::TakeRadiant, row.id) >= 0);
     talk.close();
+}
+
+// ===========================================================================
+// ERRANDS A HUMAN CAN FINISH (2026-10-09): the brief's English
+// ===========================================================================
+
+namespace {
+
+/// Every label docks::placeLabelAt can answer with: the authored places and
+/// the band fallbacks, the latter asked of the bands the ward actually uses.
+std::vector<std::string> everyPlaceLabel() {
+    std::vector<std::string> labels;
+    for (std::size_t i = 0; i < docks::kPlaceCount; ++i) {
+        labels.emplace_back(docks::kPlaces[i].name);
+    }
+    for (const std::int32_t band : {docks::kBandQuayside, docks::kBandMidSlope, docks::kBandUpper,
+                                    docks::kBandQuayside - 1, docks::kBandUpper + 5}) {
+        labels.emplace_back(docks::bandFallbackLabel(band));
+    }
+    std::sort(labels.begin(), labels.end());
+    labels.erase(std::unique(labels.begin(), labels.end()), labels.end());
+    return labels;
+}
+
+std::string lower(std::string text) {
+    for (char& c : text) {
+        c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    }
+    return text;
+}
+
+}  // namespace
+
+TEST_CASE("every label the ward can name has its own two shapes, never the HUD's shout") {
+    // Pinned whole: the prose IS the feature, and a label added to kPlaces
+    // without a row here fails the coverage check below rather than falling
+    // back to title case in a sentence nobody proofread.
+    struct Want {
+        const char* label;
+        const char* bare;
+        const char* at;
+    };
+    const Want wants[] = {
+        {"THE GILDED GULL", "the Gilded Gull", "in the Gilded Gull"},
+        {"THE GILDED GULL - ROOMS", "the rooms over the Gilded Gull",
+         "in the rooms over the Gilded Gull"},
+        {"TARWALK", "the Tarwalk", "on the Tarwalk"},
+        {"ROPEWYND", "the Ropewynd", "on the Ropewynd"},
+        {"ROPEWYND - THE DIRT END", "the dirt end of the Ropewynd",
+         "at the dirt end of the Ropewynd"},
+        {"SALTGATE RISE", "Saltgate Rise", "on Saltgate Rise"},
+        {"GALLOWS ROW", "Gallows Row", "on Gallows Row"},
+        {"THE LONG PIERS", "the Long Piers", "out on the Long Piers"},
+        {"THE DOCKS - QUAYSIDE", "the quayside", "down on the quayside"},
+        {"THE DOCKS - MID SLOPE", "the lanes up the slope", "in the lanes up the slope"},
+        {"THE DOCKS - UPPER", "the upper ward", "in the upper ward"},
+        {"UNDER THE PIERS", "the footings under the piers", "down under the piers"},
+        {"THE DOCKS", "the Docks", "somewhere in the Docks"},
+    };
+    for (const Want& want : wants) {
+        INFO(want.label);
+        const PlacePhrase place = radiantPlacePhrase(want.label);
+        CHECK(place.bare == want.bare);
+        CHECK(place.at == want.at);
+    }
+    // COVERAGE: every label placeLabelAt can actually answer with has a row.
+    for (const std::string& label : everyPlaceLabel()) {
+        INFO(label);
+        bool pinned = false;
+        for (const Want& want : wants) {
+            pinned = pinned || label == want.label;
+        }
+        CHECK(pinned);
+    }
+    // A label outside the closed set still reads as English.
+    const PlacePhrase odd = radiantPlacePhrase("THE WEIGHHOUSE");
+    CHECK(odd.bare == "the Weighhouse");
+    CHECK(odd.at == "at the Weighhouse");
+}
+
+TEST_CASE("every authored brief reads as English in every place the ward can name") {
+    // The bug this pins, verbatim off a capture: "Old Cobb keeps the kennel
+    // the Docks - Mid Slope". Every template in every shipped file, composed
+    // against every place label in both seats, must come out with no token,
+    // no HUD dash, and no preposition stacked on a locative.
+    REQUIRE(raws().loaded());
+    const std::vector<std::string> labels = everyPlaceLabel();
+    const char* const stacked[] = {"near on ",  "near in ",   "near at ",  "near out on ",
+                                   "near down ", "to on ",    "to in ",    "to at ",
+                                   "of on ",    "of in ",     "of at ",    "before on ",
+                                   "before in ", "leaving on ", "leaving in ", "sent on ",
+                                   "sent in ",  "seen near on ", "  ",     " ,"};
+    std::size_t composed = 0;
+    for (const RadiantTemplate& tmpl : raws().templates()) {
+        for (const std::string& giverPlace : labels) {
+            for (const std::string& targetPlace : labels) {
+                const std::string brief =
+                    composeRadiantBrief(tmpl.brief, "Old Cobb", giverPlace, "Kessa Inkwater",
+                                        targetPlace, 3, tmpl.kind == RadiantKind::Fetch ? "dust" : "");
+                INFO(tmpl.id << " | " << giverPlace << " | " << targetPlace << " | " << brief);
+                CHECK(brief.find('{') == std::string::npos);
+                CHECK(brief.find(" - ") == std::string::npos);
+                const std::string folded = lower(brief);
+                for (const char* bad : stacked) {
+                    CHECK(folded.find(bad) == std::string::npos);
+                }
+                // "the the" is the other way a place goes in twice.
+                CHECK(folded.find("the the ") == std::string::npos);
+                ++composed;
+            }
+        }
+    }
+    CHECK(composed > 0);
+}
+
+TEST_CASE("the kennel brief that shipped broken reads as a sentence now") {
+    const RadiantTemplate* kennel = templateNamed("fetch_kennel_arrears");
+    REQUIRE(kennel != nullptr);
+    CHECK(composeRadiantBrief(kennel->brief, "Old Cobb", "THE DOCKS - MID SLOPE",
+                              "Kessa Inkwater", "TARWALK", 3, "dust") ==
+          "Old Cobb keeps the kennel in the lanes up the slope, and the kennel is behind on 3 "
+          "dust. Kessa Inkwater, on the Tarwalk, has been asked before and has not answered.");
+    // The same place in both seats of one sentence: bare after "near",
+    // locative standing alone.
+    const RadiantTemplate* word = templateNamed("deliver_counter_word");
+    REQUIRE(word != nullptr);
+    const std::string brief = composeRadiantBrief(word->brief, "Old Cobb", "SALTGATE RISE",
+                                                  "Kessa Inkwater", "SALTGATE RISE", 0, "");
+    CHECK(brief.find("Old Cobb, on Saltgate Rise,") != std::string::npos);
+    CHECK(brief.find("near Saltgate Rise") != std::string::npos);
+}
+
+TEST_CASE("a sending verb takes its place with 'to', a leaving verb takes it bare") {
+    CHECK(composeRadiantBrief("{giver} has been sent {giverPlace} tonight.", "Finch", "TARWALK",
+                              "", "", 0, "") == "Finch has been sent to the Tarwalk tonight.");
+    CHECK(composeRadiantBrief("{giver} cannot be seen leaving {giverPlace}.", "Finch",
+                              "THE GILDED GULL", "", "", 0, "") ==
+          "Finch cannot be seen leaving the Gilded Gull.");
+    CHECK(composeRadiantBrief("{target}, last seen {targetPlace}, waits.", "", "", "Onna",
+                              "THE LONG PIERS", 0, "") ==
+          "Onna, last seen out on the Long Piers, waits.");
+}
+
+TEST_CASE("anybody in the ward can say who needs a hand, and naming it moves nothing") {
+    // ERRANDS A HUMAN CAN FINISH (2026-10-09). The board's givers are four
+    // bodies among six hundred; the A QUEST branch is where a stranger tells
+    // you which one is asking, and where.
+    const WardPopulation& ward = testfix::wardAt(8, 0);
+    granadad::sim::DialogueDirector talk = directorWithErrands(ward, 3);
+    REQUIRE_FALSE(talk.radiant().objectives().empty());
+    // A body who gives nothing today.
+    std::int32_t asked = -1;
+    for (const WardActor& actor : ward.actors()) {
+        bool gives = false;
+        for (const RadiantObjective& row : talk.radiant().objectives()) {
+            gives = gives || row.giverActorId == actor.id || row.targetActorId == actor.id;
+        }
+        if (!gives && isPerson(actor.type)) {
+            asked = actor.id;
+            break;
+        }
+    }
+    REQUIRE(asked >= 0);
+    REQUIRE(talk.open(wardSpeaker(ward, asked, talk), hourOfDay(8)));
+    // Through the tree's own doors: TELL ME ABOUT, then A QUEST.
+    std::int32_t ask = -1;
+    for (std::size_t i = 0; i < talk.topics().size(); ++i) {
+        if (talk.topics()[i].kind == TopicKind::Ask) {
+            ask = static_cast<std::int32_t>(i);
+        }
+    }
+    REQUIRE(ask >= 0);
+    (void)talk.choose(static_cast<std::size_t>(ask));
+    std::int32_t questBranch = -1;
+    for (std::size_t i = 0; i < talk.topics().size(); ++i) {
+        if (talk.topics()[i].kind == TopicKind::Category && talk.topics()[i].arg == kAskQuest) {
+            questBranch = static_cast<std::int32_t>(i);
+        }
+    }
+    REQUIRE(questBranch >= 0);
+    (void)talk.choose(static_cast<std::size_t>(questBranch));
+    const std::int32_t hand = topicIndexOf(talk, TopicKind::AskErrand, 0);
+    REQUIRE(hand >= 0);
+    CHECK(talk.topics()[static_cast<std::size_t>(hand)].label == "WHO NEEDS A HAND?");
+
+    const RadiantObjective* named = talk.errandToName();
+    REQUIRE(named != nullptr);
+    CHECK(named->state == RadiantState::Offered);
+    const std::string giver = [&] {
+        std::string out = named->giverName;
+        for (char& c : out) {
+            c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+        }
+        return out;
+    }();
+    HashSink before(4242);
+    talk.hashInto(before);
+    const Reply answer = talk.choose(static_cast<std::size_t>(hand));
+    INFO(answer.line);
+    CHECK(answer.ok);
+    CHECK(answer.line.find(giver + ", ") == 0);
+    CHECK(answer.line.find("WANTS SOMEBODY TO") != std::string::npos);
+    CHECK(answer.line.find(" - ") == std::string::npos);
+    CHECK(answer.coinDelta == 0);
+    // Asking is free and changes nothing the gate can see.
+    HashSink after(4242);
+    talk.hashInto(after);
+    CHECK(before.finished() == after.finished());
+    // The same person names the same errand all day.
+    CHECK(talk.errandToName() == named);
 }

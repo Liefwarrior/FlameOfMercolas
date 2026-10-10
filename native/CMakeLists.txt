@@ -229,6 +229,7 @@ add_library(granadad-sim STATIC
     # last because it depends on ward_actors.hpp's WardPopulation, the last
     # thing this library builds.
     src/sim/radiant_quest.cpp
+    src/sim/shops.cpp
 )
 target_include_directories(granadad-sim PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
 
@@ -568,6 +569,23 @@ if(GRANADAD_BUILD_CLIENT)
 endif()
 
 # ---------------------------------------------------------------------------
+# the workbench (2026-10-09) -- a Unity-shaped editor over the live ward: six
+# panes over one render::Session, driven through the game's own public verbs,
+# in a window or headless (--script, --serve) for agent workflows. The library
+# has no window in it, so the suite links it on every build; the executable
+# opens its window through the same raylib backend as the game, and on the
+# Memory build answers only --script and --serve. See workbench.hpp.
+# ---------------------------------------------------------------------------
+add_library(granadad-workbench STATIC src/workbench/workbench.cpp)
+target_link_libraries(granadad-workbench PUBLIC granadad-render)
+granadad_apply_determinism(granadad-workbench)
+add_executable(granadad-workbench-app src/workbench/main.cpp)
+set_target_properties(granadad-workbench-app PROPERTIES OUTPUT_NAME granadad-workbench)
+target_link_libraries(granadad-workbench-app PRIVATE granadad-workbench granadad-render3d-rl)
+granadad_apply_determinism(granadad-workbench-app)
+granadad_static_runtime(granadad-workbench-app)
+
+# ---------------------------------------------------------------------------
 # tests
 # ---------------------------------------------------------------------------
 if(GRANADAD_BUILD_TESTS)
@@ -813,6 +831,7 @@ if(GRANADAD_BUILD_TESTS)
         # the off-shift branch, and a small set of expectations each naming a
         # place, an hour and a reason.
         tests/test_ward_actors.cpp
+        tests/test_workbench.cpp
         # #79 -- AND WHETHER THE WARD CAN BE SPOKEN TO. Who the roster is
         # standing at the owner's authored sites, that the name over a
         # conversation came out of the owner's pools, that three trades do not
@@ -962,7 +981,8 @@ if(GRANADAD_BUILD_TESTS)
 
     add_executable(granadad-tests tests/test_main.cpp ${GRANADAD_TEST_SOURCES})
     target_link_libraries(granadad-tests
-        PRIVATE granadad-gate granadad-render granadad-render3d-rl granadad-audio doctest::doctest)
+        PRIVATE granadad-gate granadad-render granadad-render3d-rl granadad-audio
+                granadad-workbench doctest::doctest)
 
     # GRANADAD_CONTENT_DIR_DEFAULT and _CRT_SECURE_NO_WARNINGS arrive through
     # granadad-gate's PUBLIC compile definitions. tests/test_world_hash.cpp
@@ -1142,6 +1162,8 @@ endif()
 # is the determinism proof, and its --fingerprint report is the sim-side half of
 # the cross-toolchain comparison scripts/verify-windows.ps1 completes.
 install(TARGETS granadad-twin-gate RUNTIME DESTINATION .)
+# The workbench beside the game in dist/, so the owner's Windows build carries it.
+install(TARGETS granadad-workbench-app RUNTIME DESTINATION .)
 
 # The lamp baker ships for one reason: content/maps/src is not in the build
 # context, so the only place the bake can actually be RE-DERIVED from the

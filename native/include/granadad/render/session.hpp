@@ -2201,11 +2201,43 @@ public:
     /// proof that re-derived the rows itself would be proving its own copy.
     [[nodiscard]] std::vector<std::string> journalWorkRows() const;
 
+    /// ERRANDS A HUMAN CAN FINISH (2026-10-09). Who E would address right
+    /// now, from where the body stands and looks -- the private
+    /// wardAddressee() rule, public so a scripted line asks the press's own
+    /// question rather than a copy of it.
+    [[nodiscard]] const sim::WardActor* wardAddresseeNow() const;
+    /// SHOPS (2026-10-09). Whether a ward body is working its own counter --
+    /// the private wardAtCounter() rule, public for the scripted shop line.
+    [[nodiscard]] bool wardAtCounterNow(const sim::WardActor& who) const noexcept;
+    /// THE WORKBENCH (2026-10-09). Finishes every render-only ease at once --
+    /// the panel, the alert, the speech's typewriter -- so a frame drawn with
+    /// the world PAUSED shows the conversation that was just opened rather
+    /// than its first transparent frame. None of it is a fact about the world
+    /// (see panelAnim_'s own note): the hash cannot see this, and the
+    /// simulation is not stepped.
+    void settleOverlaysForInspection() noexcept;
+
 private:
     /// How close you have to be to address somebody on the street. Two tiles,
     /// which is the same reach Tavern::talkTo uses across a taproom -- one rule
     /// for "within arm's length and a word", not two.
     static constexpr std::int32_t kWardTalkReachTiles = 2;
+    /// ERRANDS A HUMAN CAN FINISH (2026-10-09). The street body E addresses
+    /// from where the body stands and looks: in front first
+    /// (WardPopulation::inFrontOf), nearest only when nobody is in front.
+    /// talkToWard and the crosshair's TALK prompt both ask this, so the
+    /// prompt never names somebody other than who answers.
+    [[nodiscard]] const sim::WardActor* wardAddressee() const;
+    /// SHOPS (2026-10-09). How far from their post a keeper still counts as
+    /// behind the counter: the room it stands in, give or take.
+    static constexpr std::int32_t kCounterReachTiles = 4;
+    /// The ward body is standing at its own post (the bake's anchor), on its
+    /// band, within kCounterReachTiles -- a keeper working their counter.
+    [[nodiscard]] bool wardAtCounter(const sim::WardActor& who) const noexcept;
+    /// Settles a BuyItem/SellItem intent across a ward counter: the Kit and
+    /// the player's purse through Tavern, the keeper's purse through the
+    /// ward's own ledger, the lists rebuilt.
+    void settleCounterReply(sim::Reply& reply);
     /// And how far a crime carries on an open street. The taproom's own witness
     /// range is eight tiles; a quay has no walls to shorten it and no reason to
     /// lengthen it.
@@ -4052,8 +4084,31 @@ struct SmokeRunConfig {
     /// Where the line stops for the shutter. "offer" opens the conversation
     /// and leaves the giver's own TAKE row on the visible list (one beat);
     /// "taken" -- the default -- presses it and proves the board moved and
-    /// the journal shows the errand (three beats).
+    /// the journal shows the errand (three beats). ERRANDS A HUMAN CAN
+    /// FINISH: "shelf" then opens the casebook on its CASES shelf with the
+    /// cursor on the errand's own row (four beats); "settled" takes a DELIVER
+    /// errand, finds the shelf row, walks to the target on the district's
+    /// own router, opens the conversation, passes the word and checks the
+    /// board and the purse (seven beats). "ask" stops on a stranger's answer
+    /// to TELL ME ABOUT, A QUEST, WHO NEEDS A HAND? (two beats).
     std::string radiantEnd = "taken";
+
+    /// SHOPS (2026-10-09), VERIFICATION ONLY: find Brann at his chandlery
+    /// counter (walking the clock an hour at a time until his day has him
+    /// there), SEE THE WARES, buy a lantern; then Fenner at his pawn, PAWN
+    /// SOMETHING, sell it back. The purse is topped up first if a fresh one
+    /// cannot cover a lantern, and the summary says by how much.
+    bool shop = false;
+    /// "wares" stops on Brann's shelf (two beats), "bought" after the
+    /// purchase with the talk closed so --character can photograph the Kit
+    /// (three), "pawn" on Fenner's list (five), "sold" -- the default -- the
+    /// whole round trip (six).
+    std::string shopEnd = "sold";
+
+    /// THE TONE DIAL (2026-10-09), VERIFICATION ONLY: once a conversation is
+    /// open (--street, --talk), press its TONE row until the register reads
+    /// this ("polite", "normal", "blunt"), the way a player would. One beat.
+    std::string tone;
 
     /// DISTRICT PHASE D, VERIFICATION ONLY: WALK ACROSS A NAMED BOUNDARY, so
     /// the threshold plate is actually on the frame when the shutter goes.
@@ -4203,6 +4258,59 @@ struct RadiantLineResult {
     bool taken = false;
     /// journalWorkRows() carries the errand's row.
     bool journal = false;
+
+    // --- ERRANDS A HUMAN CAN FINISH (2026-10-09) -----------------------------
+    /// "shelf" and "settled": the casebook page's CASES shelf, opened the
+    /// way J opens it, carries the errand as its own row with who, where and
+    /// what it pays -- the notes a player reads after the alert has faded.
+    bool shelf = false;
+    /// "settled": the errand's settling body, re-found where they stand NOW.
+    bool reached = false;
+    /// The body got there on its own feet -- the district's own router on
+    /// the band it was on. False when the target stood on another band and
+    /// the line had to place the body instead; printed, never hidden.
+    bool walked = false;
+    /// The conversation opened on the target and the PASS THE WORD row was
+    /// on the list.
+    bool passed = false;
+    /// The board row reads Paid and the purse moved by exactly its pay.
+    bool settled = false;
+    std::string target;
+    std::int32_t pay = 0;
+    /// "ask": a stranger who gives nothing today was asked WHO NEEDS A
+    /// HAND? through the tree's own doors, and named a live giver.
+    bool asked = false;
+    std::string answer;
+};
+
+/// SHOPS (2026-10-09). What a `--shop` run actually did: a lantern bought
+/// across Brann's counter and sold back across Fenner's, through the verbs a
+/// player presses, with both purses and the Kit read before and after.
+struct ShopLineResult {
+    /// Brann found at his own counter, answerable, and the talk opened on him.
+    bool chandler = false;
+    /// SEE THE WARES put the shelf up, with the lantern on it.
+    bool wares = false;
+    /// Bought: the Kit carries one more lantern, the purse fell by exactly the
+    /// price, and Brann's purse rose by it.
+    bool bought = false;
+    std::int32_t price = 0;
+    /// Fenner found at his counter and the talk opened on him.
+    bool pawnbroker = false;
+    /// PAWN SOMETHING listed the lantern.
+    bool pawnList = false;
+    /// Sold: one lantern fewer, the purse up by exactly the offer, Fenner's
+    /// down by it.
+    bool sold = false;
+    std::int32_t offer = 0;
+    /// The purse the line started with, and what capture plumbing put in it
+    /// first (said out loud: a fresh character's purse is the biography's).
+    std::int32_t coinStart = 0;
+    std::int32_t granted = 0;
+    std::int32_t coinEnd = 0;
+    /// What the counters said, last.
+    std::string boughtLine;
+    std::string soldLine;
 };
 
 /// TIME-AND-TENURE BUILD. What a `--petition` run actually did, so a case can
@@ -4380,6 +4488,8 @@ struct SmokeRunResult {
     /// RADIANT BUILD: what a --radiant run found and did, printed in the
     /// summary for the identical reason.
     RadiantLineResult radiantResult;
+    /// SHOPS: what a --shop run did.
+    ShopLineResult shopResult;
     /// DISTRICT PHASE D: what a --threshold run walked and whether the plate
     /// actually fired, printed in the summary for the identical reason. A
     /// screenshot of a plate that is not there looks exactly like a screenshot
@@ -4493,6 +4603,10 @@ StreetLineResult runStreetLine(Session& session, const std::string& who, int top
 /// reason: a case can drive it and read the ward's Safety directly.
 StreetLineResult runStreetAssault(Session& session, const std::string& where);
 
+/// SHOPS (2026-10-09). Plays the shop line -- see SmokeRunConfig::shop.
+/// Exposed for runStreetLine's reason: a case asserts the Kit and the purses.
+ShopLineResult runShopLine(Session& session, const std::string& end);
+
 /// TIME-AND-TENURE BUILD. Plays the leasehold petition end to end -- see
 /// SmokeRunConfig::petition. Exposed for exactly runStreetLine's reason: the
 /// evidence that a vacant charge can be petitioned for in conversation is a
@@ -4506,8 +4620,10 @@ PetitionLineResult runPetitionLine(Session& session, bool grantCoin);
 /// Exposed for exactly runStreetLine's reason: the evidence that TASK #81's
 /// generator is reachable is a topic on a real list, a board row that moved
 /// and a journal that shows it, and a case asserts those directly.
-/// `takeIt` false stops with the offer on the open list (the "offer" end).
-RadiantLineResult runRadiantLine(Session& session, bool takeIt);
+/// `end` is SmokeRunConfig::radiantEnd: "offer" stops with the offer on the
+/// open list, "taken" after the press, "shelf" on the casebook's own row
+/// for it, "settled" with the word passed and paid.
+RadiantLineResult runRadiantLine(Session& session, const std::string& end);
 
 /// DISTRICT PHASE D. Walks the body across one authored place boundary -- see
 /// SmokeRunConfig::threshold. Exposed for exactly runStreetLine's reason: the

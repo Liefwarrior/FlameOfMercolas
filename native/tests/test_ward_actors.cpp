@@ -876,3 +876,85 @@ TEST_CASE("every actor's home and its work anchor are mutually reachable") {
             worstOk, " nodes");
     CHECK(failed == 0);
 }
+
+TEST_CASE("E addresses the body in front of the eye; nearest only answers when nobody is") {
+    // ERRANDS A HUMAN CAN FINISH (2026-10-09). The talk key used to ask
+    // nearestTo alone, so in a crowd the closest body answered whatever the
+    // eye was on -- Onna at the Mission's night pot could not be addressed
+    // from any tile a body can stand on (--radiant=settled now proves she
+    // can). Pinned here on the real roster, on a body standing alone.
+    const sim::WardPopulation& ward = wardAt(8, 0);
+    const sim::WardActor* alone = nullptr;
+    for (const sim::WardActor& actor : ward.actors()) {
+        if (!actor.visible()) {
+            continue;
+        }
+        bool crowded = false;
+        for (const sim::WardActor& other : ward.actors()) {
+            if (&other == &actor || !other.visible() || other.band != actor.band) {
+                continue;
+            }
+            if (std::max(std::abs(other.x - actor.x), std::abs(other.y - actor.y)) <= 4) {
+                crowded = true;
+                break;
+            }
+        }
+        if (!crowded) {
+            alone = &actor;
+            break;
+        }
+    }
+    REQUIRE(alone != nullptr);
+    // The eye one tile EAST of them.
+    const std::int32_t eyeX = sim::q8_tile_centre(alone->x + 1);
+    const std::int32_t eyeY = sim::q8_tile_centre(alone->y);
+    // Looking at them: they answer.
+    const sim::WardActor* ahead =
+        ward.inFrontOf(eyeX, eyeY, alone->band, sim::kFacingWest, 2);
+    REQUIRE(ahead != nullptr);
+    CHECK(ahead->id == alone->id);
+    // Looking away, or square across them: nobody is in front.
+    CHECK(ward.inFrontOf(eyeX, eyeY, alone->band, sim::kFacingEast, 2) == nullptr);
+    CHECK(ward.inFrontOf(eyeX, eyeY, alone->band, sim::kFacingNorth, 2) == nullptr);
+    CHECK(ward.inFrontOf(eyeX, eyeY, alone->band, sim::kFacingSouth, 2) == nullptr);
+    // ...which is when nearestTo still answers, as it always did.
+    const sim::WardActor* nearest = ward.nearestTo(alone->x + 1, alone->y, alone->band, 2);
+    REQUIRE(nearest != nullptr);
+    CHECK(nearest->id == alone->id);
+    // On their own tile, any facing: dead ahead.
+    const sim::WardActor* underfoot = ward.inFrontOf(sim::q8_tile_centre(alone->x),
+                                                     sim::q8_tile_centre(alone->y), alone->band,
+                                                     sim::kFacingNorth, 2);
+    REQUIRE(underfoot != nullptr);
+    CHECK(underfoot->id == alone->id);
+    // Out of reach is out of reach, in front or not.
+    CHECK(ward.inFrontOf(sim::q8_tile_centre(alone->x + 3), eyeY, alone->band,
+                         sim::kFacingWest, 2) == nullptr);
+}
+
+TEST_CASE("coin paid into a ward purse is minted, coin taken out is sunk, and the ledger holds") {
+    // SHOPS (2026-10-09). A purchase across a counter pays the keeper out of
+    // the player's purse, which is not one of the ward's: minted, the mirror
+    // of a robbery's sink, so minted - sunk == held across the boundary.
+    auto run = privateWard(8);
+    sim::WardPopulation& ward = run->people();
+    const auto held = [&ward] {
+        std::int64_t sum = 0;
+        for (const sim::WardActor& actor : ward.actors()) {
+            sum += actor.coin;
+        }
+        return sum;
+    };
+    const auto balance = [&ward] {
+        return ward.ledger().coinMinted - ward.ledger().coinSunk;
+    };
+    REQUIRE(balance() == held());
+    const std::int32_t keeper = ward.actors().front().id;
+    ward.payCoinTo(keeper, 9);
+    CHECK(balance() == held());
+    CHECK(ward.takeCoinFrom(keeper, 4) == 4);
+    CHECK(balance() == held());
+    ward.payCoinTo(keeper, 0);
+    ward.payCoinTo(-1, 5);
+    CHECK(balance() == held());
+}

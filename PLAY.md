@@ -269,7 +269,10 @@ existed — asking here is not a shortcut, it is the identical entry point
 asked a second way. **(BACK)** steps up one level; it never closes the
 conversation, `SAY NO MORE` still owns that.
 
-**One rough edge in this same screen, worth calling out directly:** topic
+**~~One rough edge in this same screen~~ -- fixed on the wip branch, re-verified
+2026-10-09:** the conversation surface no longer clips a topic label at all (it
+picks its column count from the longest label it holds; `clipLabel()` survives only
+on the tiled Menu panels). What this paragraph used to say: topic
 labels that overrun their column get hard-cut mid-word and a bare `.`
 appended as a "there's more" mark — `clipLabel()` in
 `native/src/render/dialogue_view.cpp`, a deliberate choice over a
@@ -282,20 +285,26 @@ screen's own `TELL ME ABOUT...` ellipsis, so a real "more text" mark and a
 "this word got cut off" mark currently look identical. The column-budget
 logic can stay; the marker itself is the part worth revisiting.
 
-**What "tone" is, and the honest state of it:** the Daggerfall reference
-material this build is measured against has a POLITE / NORMAL / BLUNT
-selector sitting beside the topic list, visibly changing what an NPC says
-back. Granadad has the identical mechanic **in the simulation** —
-`DialogueDirector::setTone()`/`tone()`, and `barks.json` lines can be
-authored under a `.polite` or `.blunt` suffix that the register reads before
-falling back to the normal line. **It has no key bound to it and no topic row
-that reaches it.** I checked the controls table (`Action` enum,
-`controls.cpp`), the client's key handling, and every test file that touches
-`setTone()` — all of it is `native/tests/test_dialogue.cpp`, unit tests
-against the sim layer directly. Nothing in `session.cpp` or `main.cpp`
-calls it. So: the tone *engine* exists and is tested: the tone *dial* is not
-in the game yet. If you go looking for it expecting a Daggerfall-style
-toggle, you will not find one — that is a gap, not something you are missing.
+**Tone -- POLITE / NORMAL / BLUNT (playable since 2026-10-09).** Every root
+list ends **TONE: NORMAL**, just above SAY NO MORE. Press it and the register
+turns -- NORMAL, POLITE, BLUNT, NORMAL -- with the row always showing the one
+you are in, and a line saying what you did (*"YOU MIND YOUR MANNERS."*,
+*"YOU DROP THE COURTESIES."*). It is Daggerfall's selector, through the
+mechanic this build already had in the simulation (`DialogueDirector::setTone`):
+
+- **It moves the gates, with no roll.** POLITE reads the person as a step
+  warmer than they are, BLUNT a step cooler -- so politeness can get a
+  stranger who is cool on you to offer an errand, and bluntness withholds one
+  a neutral stranger would have offered. The list rebuilds the moment you
+  turn the dial.
+- **It moves the words** wherever a `.polite`/`.blunt` line is authored (a
+  handful today: greetings and the contract brokers' lines), and the plain
+  line everywhere else.
+- **It counts as how you listened** -- the deed your conversation leaves on
+  their memory of you.
+
+The register stays where you left it from one conversation to the next.
+`--street=hand --tone=blunt` photographs it.
 
 ---
 
@@ -332,33 +341,90 @@ just reading the code: it took the job, delivered it, got paid — `open=4
 taken=0 paid=1 lost=0 earned=12`. It works end to end, tonight, in this
 build.
 
-### What exists but you cannot reach: the radiant board
+### The ward's own errands: the radiant board (playable since 2026-10-09)
 
-This morning's later commits (`ddaa368` through `369ae59`) built a second,
-newer generator — `RadiantBoard`, `content/raws/quests/radiant_quests_flame.json`
-and `radiant_quests_skyrunner.json` — and it is a genuinely bigger idea than
-the contract board: instead of drawing from forty-two authored notables, it
-draws its cast from the **whole live ward**, resolving where a body is
-*actually standing right now* rather than a site baked into a raw file once.
-Eleven templates, real fetch/deliver objectives, real names, real places, all
-unit-tested (`test_radiant_quest.cpp`, `test_radiant_variety.cpp` — the
-variety suite genuinely catches a rigged draw; I did not just trust it, a
-sibling verification session mutated the draw to always pick index 0 and
-watched those tests go red on it).
+*(This section used to say the radiant board had no door. The RADIANT BUILD
+wired it on the wip branch; the 2026-10-09 session made it something a human
+can finish. Status: **BUILT** for word errands end to end; **PARTIAL** for
+fetch errands -- see the last paragraph.)*
 
-**None of it is wired to anything a player can press.** I grepped the whole
-of `native/src` and `native/include` for `RadiantBoard`, `RadiantRaws` and
-`RadiantObjective`: every hit is inside `radiant_quest.cpp`/`.hpp`
-themselves. `session.cpp`, `session.hpp` and `main.cpp` never mention
-"radiant" at all — no key, no topic, no HUD line. Even `--help`'s long list
-of scripted-capture flags, which has one for literally every other system in
-this build (`--flame`, `--roofs`, `--skyrun`, `--nemesis`, `--contract`,
-`--burgle`, `--trail`), has no `--radiant`. It is a complete, tested engine
-and content pack sitting on a shelf with no door built into the room it is
-in. If you go looking for "Skyrunner contraband runs" or "the Mission's own
-errands" in the actual game tonight, they are not there — the sentences are
-written, the objectives resolve against real bodies, and nothing hands
-either to a player.
+Four people somewhere in the ward want something done each day -- drawn off
+the **whole live roster**, not the Gull's fixed cast, with every name and
+place real. How to find and finish one, the way `--radiant=settled` does it:
+
+1. **Ask anybody.** `E` on anyone, `1` TELL ME ABOUT, then **A QUEST**, then
+   **WHO NEEDS A HAND?** They name one of today's givers and where they were
+   when the board went up: *"PETRA KEDGE, IN THE LANES UP THE SLOPE, WANTS
+   SOMEBODY TO CARRY WORD TO ONNA."* Different people name different
+   errands; the same person names the same one all day.
+2. **Find the giver.** `M`, select the ground they named, and the
+   **PEOPLE** tab lists everybody standing there now, by name and trade.
+3. **Take it.** Their topic list carries the errand (*CARRY WORD TO ONNA*).
+   The brief reads as a sentence -- *"Find Onna, last seen near the
+   quayside, and tell them there is no time to walk it twice."*
+4. **It stays in your notes.** `J`, then the **CASES** tab: the errand sits
+   under your books and questlines with **SAY IT TO** / **BRING IT TO**,
+   **LAST SEEN** and **PAYS**.
+5. **Settle it.** A word errand pays at its *target*: find them, `E`, **PASS
+   THE WORD FROM ...**, and the coin crosses the table. A fetch pays at its
+   giver when the sack holds the goods: **HAND OVER 3 DUST**.
+
+**`E` talks to whoever is in front of you** -- in a crowd, look at the one
+you mean. It used to answer with whoever stood nearest whatever you faced,
+and Onna at the Mission's night pot, with the sick at her elbow, could not be
+addressed from any tile a body can stand on. The crosshair's TALK prompt
+names the same person the press will.
+
+**PARTIAL -- fetch errands.** A fetch brief says the target "keeps" the
+goods, but by the Kit ruling (DECISIONS 71) a ward body carries and yields
+nothing, so nobody hands them over: the goods come from the ward's own
+sources -- the snug's bale, a guest's strongbox, a rat for a scalp. Whether a
+fetch target should hand them over when asked is flagged for the owner in
+`docs/SESSION-2026-10-09.md`.
+
+```
+granadad --radiant=settled --screenshot=x.png   # take, read the shelf, find, pass, paid
+granadad --radiant=shelf --screenshot=x.png     # the CASES shelf on the errand's row
+```
+
+### Buying and selling: three counters (since 2026-10-09)
+
+*(Status: **BUILT**, placeholder stock -- see the end of this section.)*
+
+Every thing in the Kit has a worth in royals, and three counters in the ward
+now deal in them -- the gazetteer's own sites, kept by the notables already
+bound to them:
+
+- **Brann's Chandlery** (Brann, the chandler) -- ship stores: a lantern, rope,
+  a knife, a boat-hook, a bottle.
+- **The Slop-Chest** (Slops Neddry) -- sailors' clothing: a coat, a hood,
+  boots, a purse.
+- **Fenner's Pawn** (Fenner, the pawnbroker) -- what was never redeemed: a
+  cudgel, a dagger, a cutlass, a mace. **And the one counter that buys**:
+  PAWN SOMETHING lists what he would take off you, at half its worth.
+
+Find them on the ward map (`M`, the index, or the PEOPLE tab on their
+ground), `E` the keeper while they are working their counter, and choose
+**SEE THE WARES**. Each row is priced -- the item's authored worth through
+the counter's guild term, the same term a mug of ale pays; your haggling
+skill does not move it (S3's law: skill decides the price of ale and only
+that). Buying puts the thing in your Kit (`J`, the Character tile) and
+refuses past your load with TAKE's own numbers. Met in the street at night,
+a keeper offers the shelf and tells you to come by the counter.
+
+**The purses are real.** What you pay goes into the keeper's own purse in
+the ward's ledger; what Fenner pays comes out of his, and a short pawnbroker
+says so: *"FENNER HAS NOT GOT IT TODAY."* Worn things are not for sale --
+take it off first. Fenner never buys a case's own reward.
+
+**Placeholder, flagged for the owner:** which counter sells what, and
+Fenner's half, are read off the gazetteer's lines rather than ruled
+(`content/raws/shops/shops.json` says so in its own notes).
+
+```
+granadad --shop --screenshot=x.png             # buy at Brann's, sell at Fenner's
+granadad --shop=wares --screenshot=x.png       # Brann's shelf
+```
 
 ---
 
@@ -430,8 +496,9 @@ Reproduce any of it:
    again after dark and ask again. The line changes.
 3. **Walk the trail** (§3) — it is still the best fifteen minutes in the
    build.
-4. **Talk to Cull, then Finch, then Maell** — the one complete faction-work
-   loop that actually exists right now (§5).
+4. **Talk to Cull, then Finch, then Maell** — the contract board's
+   faction-work loop (§5) -- **and then ask a stranger WHO NEEDS A HAND?**,
+   the ward's own errands, finishable end to end since 2026-10-09.
 5. **Press `M`.** The whole district, top-down, with every signed door and
    way named on the ground — find the Mission of the Flame by reading the
    map, then walk there. (The *investigation's* map — bearings and ranges to
@@ -458,25 +525,22 @@ this build where "ask for work, do the work, get paid" is a complete loop.
 
 ### What is thin or missing
 
-**The tone selector is vapor.** It is real code, real tests, and zero
-reachability. If Eli specifically wants the Daggerfall-style POLITE/BLUNT
-toggle, it needs one topic row or one key — the hard part (the register
-itself, and authored `.polite`/`.blunt` lines) is already built.
+**~~The tone selector is vapor~~ -- no longer (2026-10-09).** It is the TONE
+row on every root list; see section 4.
 
-**The radiant board is the same story, at a much bigger scale.** A whole
-second quest generator, built against the live ward instead of forty-two
-fixed names, fully tested, with zero way in. This is worth more attention
-than the tone gap — it's a sprint's worth of engine work with nothing
-downstream of it yet.
+**~~The radiant board is the same story~~ -- no longer (2026-10-09).** The
+second quest generator is reachable and finishable now: ask anybody WHO
+NEEDS A HAND?, take the errand, read it on the CASES shelf, settle it -- see
+section 5. Fetch errands are still PARTIAL (the goods come from the ward's
+sources, not the target's pocket).
 
-**Topic labels truncate mid-word** and read as typos rather than style — see
-§4's callout. Small, but it lands squarely on "no shitty English anywhere,"
-so it's worth a real fix, not a shrug.
+**~~Topic labels truncate mid-word~~** -- fixed on the conversation surface
+(section 4).
 
-**Interiors are still brown boxes**, the long game is still mostly a
-scoreboard, there is still no combat screen and no starter dungeon — none of
-that changed this morning; see the git history for the fuller list if you
-want it.
+**Still thin (2026-10-09):** there is **no save or load** -- a night's play ends
+with the window; the long game is still more scoreboard than world; there is
+no starter dungeon. (Combat is no longer a missing screen: it is real-time,
+in the world, since 2026-09-10.)
 
 ### The honest verdict
 
@@ -486,9 +550,8 @@ you done the quest yet," and it reuses everything this build already earned
 rather than reinventing a UI for itself. Character creation is a genuine,
 well-written front door.
 
-The thing to be careful of is the gap between "built" and "playable." Two
-real systems — tone, and the whole radiant board — exist, are tested, and
-currently do nothing for a player holding a keyboard. That is not a
-criticism of the work; both are exactly as far along as an engine layer is
-supposed to get before its interface. It is a note for whoever plans the
-next session: the wiring is the next job, not more content.
+The thing to be careful of is the gap between "built" and "playable." The two
+systems this paragraph used to name -- tone, and the whole radiant board --
+were wired and made finishable on 2026-10-09, and the Kit got a market the
+same day. The gap that is left is the biggest one: nothing a night of play
+does survives the window closing. Save and load is the next job.

@@ -450,6 +450,112 @@ TEST_CASE("--radiant=offer stops with the giver's row on the open list, one beat
     CHECK(played.talking);
 }
 
+TEST_CASE("--radiant=shelf puts the taken errand on the CASES shelf with who, where and the pay") {
+    // ERRANDS A HUMAN CAN FINISH (2026-10-09). The brief used to be spoken
+    // once on the alert row and gone; the shelf is where it stays.
+    render::SmokeRunConfig run;
+    run.radiant = true;
+    run.radiantEnd = "shelf";
+    const render::SmokeRunResult played = play(run);
+    INFO(played.summary);
+    CHECK(played.ok);
+    CHECK_FALSE(played.scriptFellShort());
+    CHECK(played.radiantResult.taken);
+    CHECK(played.radiantResult.shelf);
+    // And the brief reads as a sentence: no HUD label shouted into it.
+    CHECK(played.radiantResult.brief.find(" - ") == std::string::npos);
+    CHECK(played.radiantResult.brief.find("THE DOCKS") == std::string::npos);
+}
+
+TEST_CASE("--radiant=ask: a stranger asked WHO NEEDS A HAND? names a live giver") {
+    // ERRANDS A HUMAN CAN FINISH (2026-10-09). How a player finds the board's
+    // four givers among six hundred: by asking, through the tree's own doors.
+    render::SmokeRunConfig run;
+    run.radiant = true;
+    run.radiantEnd = "ask";
+    const render::SmokeRunResult played = play(run);
+    INFO(played.summary);
+    CHECK(played.ok);
+    CHECK_FALSE(played.scriptFellShort());
+    CHECK(played.radiantResult.opened);
+    CHECK(played.radiantResult.asked);
+    CHECK(played.radiantResult.answer.find(" - ") == std::string::npos);
+    CHECK(played.talking);
+}
+
+TEST_CASE("--radiant=settled finishes a word errand: found in a crowd, passed, and paid") {
+    // ERRANDS A HUMAN CAN FINISH (2026-10-09). The whole loop a player walks:
+    // take it, read where on the shelf, find the body, pass the word, be
+    // paid. The target this world draws is Onna at the Mission's night pot,
+    // with three of the sick nearer than she is to every tile a body can
+    // stand on -- the case the talk key's old nearest-only rule could never
+    // finish. `walked` is printed and not owed: the line does not climb.
+    render::SmokeRunConfig run;
+    run.radiant = true;
+    run.radiantEnd = "settled";
+    const render::SmokeRunResult played = play(run);
+    INFO(played.summary);
+    CHECK(played.ok);
+    CHECK_FALSE(played.scriptFellShort());
+    CHECK(played.radiantResult.shelf);
+    CHECK(played.radiantResult.reached);
+    CHECK(played.radiantResult.passed);
+    CHECK(played.radiantResult.settled);
+    CHECK(played.radiantResult.pay > 0);
+    CHECK_FALSE(played.radiantResult.target.empty());
+}
+
+TEST_CASE("--tone=blunt presses a street conversation's TONE row until it reads BLUNT") {
+    // THE TONE DIAL (2026-10-09): the row a player presses, from the street.
+    render::SmokeRunConfig run;
+    run.street = true;
+    run.streetWho = "hand";
+    run.tone = "blunt";
+    const render::SmokeRunResult played = play(run);
+    INFO(played.summary);
+    CHECK(played.ok);
+    CHECK_FALSE(played.scriptFellShort());
+    CHECK(played.summary.find("| tone=BLUNT") != std::string::npos);
+    CHECK(played.talking);
+}
+
+TEST_CASE("--shop buys a lantern across Brann's counter and sells it back across Fenner's") {
+    // SHOPS (2026-10-09). The round trip a player makes with a coin in their
+    // purse: the Kit and both keepers' purses read before and after each
+    // press, exact.
+    render::SmokeRunConfig run;
+    run.shop = true;
+    const render::SmokeRunResult played = play(run);
+    INFO(played.summary);
+    CHECK(played.ok);
+    CHECK_FALSE(played.scriptFellShort());
+    const render::ShopLineResult& shop = played.shopResult;
+    CHECK(shop.chandler);
+    CHECK(shop.wares);
+    CHECK(shop.bought);
+    CHECK(shop.pawnbroker);
+    CHECK(shop.pawnList);
+    CHECK(shop.sold);
+    CHECK(shop.price > 0);
+    CHECK(shop.offer > 0);
+    CHECK(shop.offer < shop.price);
+    CHECK(shop.coinEnd == shop.coinStart + shop.granted - shop.price + shop.offer);
+    CHECK(shop.boughtLine == "PAID " + std::to_string(shop.price) + "C FOR THE LANTERN.");
+}
+
+TEST_CASE("--shop=wares stops on Brann's shelf, the talk still open") {
+    render::SmokeRunConfig run;
+    run.shop = true;
+    run.shopEnd = "wares";
+    const render::SmokeRunResult played = play(run);
+    INFO(played.summary);
+    CHECK(played.ok);
+    CHECK_FALSE(played.scriptFellShort());
+    CHECK(played.shopResult.wares);
+    CHECK_FALSE(played.shopResult.bought);
+    CHECK(played.talking);
+}
+
 TEST_CASE("--kit lands all ten of its beats: named, taken, dropped, THEIRS, the sheet, worn, slotted, the coat's turn, the search, the load") {
     // KIT BUILD. The whole line, through the real verbs -- see runKitLine.
     render::SmokeRunConfig run;

@@ -3585,6 +3585,12 @@ void Session::followCasebookSelection() {
         }
         const int at = std::clamp(caseShelfCursor_, 0, static_cast<int>(shelf.size()) - 1);
         const CasebookShelfRow& row = shelf[static_cast<std::size_t>(at)];
+        if (row.errand) {
+            // ERRANDS A HUMAN CAN FINISH. Nothing tracks a body live -- the
+            // shelf says where they were; the ward map says who is there now.
+            notePage(std::string(kErrandFindLine));
+            return;
+        }
         if (!row.book || row.bookId < 0 || row.bookId >= kCaseBookCount) {
             notePage("A LINE, NOT A BOOK. THE JOURNAL HAS IT.");
             return;
@@ -3705,6 +3711,40 @@ std::vector<CasebookShelfRow> Session::casebookShelfRows() const {
             if (at >= 0 && at < total) {
                 row.next = line.stages[static_cast<std::size_t>(at)].label;
             }
+        }
+        rows.push_back(std::move(row));
+    }
+    // ERRANDS A HUMAN CAN FINISH (2026-10-09). THEN EVERY TAKEN ERRAND, read-
+    // only like a questline: who settles it, where they were when the job
+    // was posted, what it pays. The brief that said all of this used to be
+    // spoken once on the alert row and gone; a player who walked off with
+    // CARRY WORD TO KESSA INKWATER had a name and six hundred people to ask.
+    // A fetch names its GIVER -- the goods come from the ward's own sources
+    // (the snug, a strongbox, a rat), never out of a WardActor's pocket.
+    for (const sim::RadiantObjective& errand : talk.radiant().objectives()) {
+        if (!errand.live()) {
+            continue;
+        }
+        CasebookShelfRow row;
+        row.errand = true;
+        row.pays = std::to_string(errand.pay) + "C";
+        if (errand.isFetch()) {
+            const std::int32_t have = talk.crimes().stash().count(errand.good);
+            row.title = errand.verb + " " + std::to_string(errand.units) + " " +
+                        std::string(sim::contrabandLabelFor(errand.good, errand.units));
+            row.tally = std::to_string(std::min(have, errand.units)) + "/" +
+                        std::to_string(errand.units);
+            row.state = "HAVE " + row.tally;
+            row.whoLabel = "BRING IT TO";
+            row.who = upperAscii(errand.giverName);
+            row.where = upperAscii(sim::radiantPlacePhrase(errand.giverPlace).at);
+        } else {
+            row.title = errand.verb + " TO " + upperAscii(errand.targetName);
+            row.state = "ERRAND";
+            row.whoLabel = "SAY IT TO";
+            row.who = upperAscii(errand.targetName);
+            row.where = upperAscii(sim::radiantPlacePhrase(errand.targetPlace).at);
+            row.pays += " ON ARRIVAL";
         }
         rows.push_back(std::move(row));
     }
@@ -4299,7 +4339,8 @@ void Session::commitCasebookLead() {
         const int at = std::clamp(caseShelfCursor_, 0, static_cast<int>(shelf.size()) - 1);
         const CasebookShelfRow& row = shelf[static_cast<std::size_t>(at)];
         if (!row.book || row.bookId < 0 || row.bookId >= kCaseBookCount) {
-            notePage("A LINE, NOT A BOOK. THE JOURNAL HAS IT.");
+            notePage(row.errand ? std::string(kErrandFindLine)
+                                : std::string("A LINE, NOT A BOOK. THE JOURNAL HAS IT."));
             if (audio_ != nullptr) {
                 audio_->playOneShot(audio::SoundId::UiError);
             }
@@ -5987,6 +6028,78 @@ bool Session::haggling() const noexcept {
     return tavern_->dialogue().isHaggling();
 }
 
+const sim::WardActor* Session::wardAddresseeNow() const { return wardAddressee(); }
+
+bool Session::wardAtCounterNow(const sim::WardActor& who) const noexcept {
+    return wardAtCounter(who);
+}
+
+bool Session::wardAtCounter(const sim::WardActor& who) const noexcept {
+    // SHOPS. At the post the bake gave them, give or take the room it stands
+    // in: a keeper is behind the counter while they are working it, and met
+    // anywhere else -- the street at midnight, their own doorway -- says so.
+    return who.band == who.anchorBand && std::abs(who.x - who.anchorX) <= kCounterReachTiles &&
+           std::abs(who.y - who.anchorY) <= kCounterReachTiles;
+}
+
+void Session::settleCounterReply(sim::Reply& reply) {
+    // SHOPS (2026-10-09). The director said who wants what for how much; the
+    // Kit's owner says whether it fits, and the keeper's own purse -- the
+    // ward's -- takes the coin or pays it.
+    sim::DialogueDirector& talk = tavern_->dialogue();
+    const sim::WardActor* keeper = people_->byId(wardTalkId_);
+    if (keeper == nullptr) {
+        return;
+    }
+    std::string line;
+    if (reply.kind == sim::TopicKind::BuyItem) {
+        const sim::ServiceResult sold =
+            tavern_->buyFromCounter(reply.itemId, reply.itemPrice, line);
+        if (sold == sim::ServiceResult::Served) {
+            people_->payCoinTo(wardTalkId_, reply.itemPrice);
+        }
+        reply.ok = sold == sim::ServiceResult::Served;
+    } else {
+        // A pawnbroker pays out of his own purse, and a short one is short.
+        if (keeper->coin < reply.itemPrice) {
+            line = upperAscii(people_->identity(wardTalkId_).name) + " HAS NOT GOT IT TODAY.";
+            reply.ok = false;
+        } else {
+            const sim::ServiceResult bought =
+                tavern_->sellToCounter(reply.itemId, reply.itemPrice, line);
+            if (bought == sim::ServiceResult::Served) {
+                (void)people_->takeCoinFrom(wardTalkId_, reply.itemPrice);
+            }
+            reply.ok = bought == sim::ServiceResult::Served;
+        }
+    }
+    reply.line = line;
+    reply.report = true;
+    reply.coinDelta = 0;
+    // The shelf and the pawn list read the Kit and the purse: rebuild them.
+    talk.setPlayerCoin(tavern_->playerCoin());
+    talk.setCounter(tavern_->counterViewFor(talk.speaker().notableId, wardAtCounter(*keeper)));
+    talk.refreshTopics();
+    if (audio_ != nullptr) {
+        audio_->playOneShot(reply.ok ? audio::SoundId::UiConfirm : audio::SoundId::UiError);
+    }
+}
+
+const sim::WardActor* Session::wardAddressee() const {
+    // ERRANDS A HUMAN CAN FINISH (2026-10-09). Whoever E would address from
+    // here: the body IN FRONT of the eye within talk reach, and only when
+    // nobody stands in front, the nearest -- so a crowd at the Mission's
+    // night pot no longer decides who you are talking to. The crosshair's
+    // TALK prompt asks this same question, so the name it prints before the
+    // press is the one that answers it.
+    if (const sim::WardActor* ahead = people_->inFrontOf(
+            body_->x(), body_->y(), body_->band(), body_->yaw(), kWardTalkReachTiles);
+        ahead != nullptr) {
+        return ahead;
+    }
+    return people_->nearestTo(body_->tileX(), body_->tileY(), body_->band(), kWardTalkReachTiles);
+}
+
 bool Session::talkToWard() {
     // #79. THE OTHER SIX HUNDRED AND FORTY-SEVEN.
     //
@@ -5995,8 +6108,7 @@ bool Session::talkToWard() {
     // out here nobody does. Everything below is the SAME director, the same
     // authored tables and the same fallback chain -- only the Speaker is built
     // from a body in the street instead of from a body on a stool.
-    const sim::WardActor* who = people_->nearestTo(body_->tileX(), body_->tileY(),
-                                                   body_->band(), kWardTalkReachTiles);
+    const sim::WardActor* who = wardAddressee();
     if (who == nullptr) {
         return false;
     }
@@ -6004,7 +6116,11 @@ bool Session::talkToWard() {
     talk.setPlayerCoin(tavern_->playerCoin());
     const sim::Speaker speaker = sim::wardSpeakerFor(
         *who, people_->identity(who->id), talk.notables(), talk.factions(), talk.barks());
+    // SHOPS (2026-10-09). If they keep a counter, the shelf behind it -- open
+    // only while they stand at their own post.
+    talk.setCounter(tavern_->counterViewFor(speaker.notableId, wardAtCounter(*who)));
     if (!talk.open(speaker, tavern_->timeOfDay())) {
+        talk.setCounter(sim::CounterView{});
         return false;
     }
     wardTalkId_ = who->id;
@@ -6480,9 +6596,7 @@ Session::InteractTarget Session::resolveInteract() const {
         if (InteractTarget thing; groundTargetFor(thing)) {
             return thing;
         }
-        if (const sim::WardActor* outside = people_->nearestTo(
-                body_->tileX(), body_->tileY(), body_->band(), kWardTalkReachTiles);
-            outside != nullptr) {
+        if (const sim::WardActor* outside = wardAddressee(); outside != nullptr) {
             out.verb = "TALK";
             // #79's own point, on the HUD at last: the ward HAS names. A body
             // the bake never named is "SOMEBODY", which is the ward map's own
@@ -7205,6 +7319,10 @@ sim::Reply Session::chooseWardTopic(std::size_t index) {
         if (reply.closes || !talk.isOpen()) {
             wardTalkId_ = -1;
         }
+        return reply;
+    }
+    if (reply.kind == sim::TopicKind::BuyItem || reply.kind == sim::TopicKind::SellItem) {
+        settleCounterReply(reply);
         return reply;
     }
 
@@ -10935,6 +11053,16 @@ void Session::endTalk(bool walkedOff) {
     reactionLine_.clear();
     reactionSteps_ = 0;
     syncPanelAnim();
+}
+
+void Session::settleOverlaysForInspection() noexcept {
+    syncPanelAnim();
+    panelAnim_.snapTo(panelAnim_.target());
+    alertAnim_.snapTo(alertAnim_.target());
+    if (tavern_->dialogue().isOpen()) {
+        lastSpokenLine_ = tavern_->dialogue().lastLine();
+        speechAgeSteps_ = kSpeechRevealSteps;
+    }
 }
 
 void Session::syncPanelAnim() noexcept {
@@ -17223,6 +17351,33 @@ struct StreetTrade {
 /// reach than the key uses would confirm nothing.
 constexpr std::int32_t kStreetReachTiles = 2;
 
+/// ERRANDS A HUMAN CAN FINISH (2026-10-09). The facing every placement in
+/// this file has always turned the body to: the dominant axis toward the
+/// body it means to address.
+[[nodiscard]] sim::Angle cardinalToward(std::int32_t toX, std::int32_t toY) noexcept {
+    if (std::abs(toX) >= std::abs(toY)) {
+        return toX > 0 ? sim::kFacingEast : sim::kFacingWest;
+    }
+    return toY > 0 ? sim::kFacingSouth : sim::kFacingNorth;
+}
+
+/// Who the talk key would address from the centre of (sx, sy) looking along
+/// `yaw` -- Session::wardAddressee's own rule (in front first, nearest only
+/// when nobody is in front), asked of a stand tile BEFORE the body is put on
+/// it, so a scan cannot pick a tile the press would answer from somebody
+/// else.
+[[nodiscard]] const sim::WardActor* addresseeFrom(Session& session, std::int32_t sx,
+                                                  std::int32_t sy, std::int32_t band,
+                                                  sim::Angle yaw) {
+    if (const sim::WardActor* ahead =
+            session.people().inFrontOf(sim::q8_tile_centre(sx), sim::q8_tile_centre(sy), band,
+                                       yaw, kStreetReachTiles);
+        ahead != nullptr) {
+        return ahead;
+    }
+    return session.people().nearestTo(sx, sy, band, kStreetReachTiles);
+}
+
 constexpr StreetTrade kStreetTrades[] = {
     {"hand", sim::WardType::Serf},        {"watch", sim::WardType::MilitiaWatch},
     {"priest", sim::WardType::PriestOfTheFlame},
@@ -17373,6 +17528,13 @@ StreetLineResult runStreetLine(Session& session, const std::string& who, int top
                         const sim::WardActor* answers =
                             session.people().nearestTo(sx, sy, actor.band, kStreetReachTiles);
                         if (answers == nullptr || answers->id != actor.id) {
+                            continue;
+                        }
+                        // And the talk key's own rule, from the facing the
+                        // placement below will turn to (see addresseeFrom).
+                        const sim::WardActor* addressed = addresseeFrom(
+                            session, sx, sy, actor.band, cardinalToward(actor.x - sx, actor.y - sy));
+                        if (addressed == nullptr || addressed->id != actor.id) {
                             continue;
                         }
                         if (!cameraSightClear(session.tiles(), sim::q8_tile_centre(sx),
@@ -18021,6 +18183,11 @@ PetitionLineResult runPetitionLine(Session& session, bool grantCoin) {
                     if (answers == nullptr || answers->id != actor.id) {
                         continue;
                     }
+                    const sim::WardActor* addressed = addresseeFrom(
+                        session, sx, sy, actor.band, cardinalToward(actor.x - sx, actor.y - sy));
+                    if (addressed == nullptr || addressed->id != actor.id) {
+                        continue;
+                    }
                     target = &actor;
                     plotId = ground;
                     standX = sx;
@@ -18105,8 +18272,91 @@ PetitionLineResult runPetitionLine(Session& session, bool grantCoin) {
     return out;
 }
 
-RadiantLineResult runRadiantLine(Session& session, bool takeIt) {
+RadiantLineResult runRadiantLine(Session& session, const std::string& end) {
     RadiantLineResult out;
+    if (end == "ask") {
+        // ERRANDS A HUMAN CAN FINISH (2026-10-09). THE FIRST THING A PLAYER
+        // DOES: ask a stranger. Somebody on their feet who neither gives nor
+        // receives an errand today, answerable where they stand, asked
+        // through TELL ME ABOUT and A QUEST the way the keys walk it.
+        const auto inTheBoard = [&session](std::int32_t id) {
+            for (const sim::RadiantObjective& row :
+                 session.tavern().dialogue().radiant().objectives()) {
+                if (row.giverActorId == id || row.targetActorId == id) {
+                    return true;
+                }
+            }
+            return false;
+        };
+        const sim::WardActor* stranger = nullptr;
+        std::int32_t standX = 0;
+        std::int32_t standY = 0;
+        for (const sim::WardActor& actor : session.people().actors()) {
+            if (stranger != nullptr) {
+                break;
+            }
+            if (!actor.visible() || !sim::isPerson(actor.type) || inTheBoard(actor.id)) {
+                continue;
+            }
+            if (actor.x >= sim::gull::kFootprintX0 - 4 && actor.x <= sim::gull::kFootprintX1 + 4 &&
+                actor.y >= sim::gull::kFootprintY0 - 6 && actor.y <= sim::gull::kFootprintY1 + 4) {
+                continue;
+            }
+            for (std::int32_t oy = -kStreetReachTiles; oy <= kStreetReachTiles && !stranger; ++oy) {
+                for (std::int32_t ox = -kStreetReachTiles; ox <= kStreetReachTiles && !stranger;
+                     ++ox) {
+                    const std::int32_t sx = actor.x + ox;
+                    const std::int32_t sy = actor.y + oy;
+                    if ((ox == 0 && oy == 0) || !session.tiles().standable(sx, sy, actor.band)) {
+                        continue;
+                    }
+                    const sim::WardActor* addressed = addresseeFrom(
+                        session, sx, sy, actor.band, cardinalToward(actor.x - sx, actor.y - sy));
+                    if (addressed != nullptr && addressed->id == actor.id) {
+                        stranger = &actor;
+                        standX = sx;
+                        standY = sy;
+                    }
+                }
+            }
+        }
+        if (stranger == nullptr) {
+            return out;
+        }
+        const std::int32_t strangerId = stranger->id;
+        session.placeBodyAt(standX, standY, stranger->band);
+        session.body().setYaw(cardinalToward(stranger->x - standX, stranger->y - standY));
+        session.stepMany(sim::MoveInput{}, 1);
+        session.interact();
+        out.opened = session.talking() && session.wardTalkingTo() == strangerId;
+        if (!out.opened) {
+            return out;
+        }
+        const auto pickKind = [&session](sim::TopicKind kind, std::string_view arg) {
+            const std::vector<sim::Topic>& topics = session.tavern().dialogue().topics();
+            for (std::size_t i = 0; i < topics.size(); ++i) {
+                if (topics[i].kind == kind && (arg.empty() || topics[i].arg == arg)) {
+                    session.chooseTopic(i);
+                    return true;
+                }
+            }
+            return false;
+        };
+        if (pickKind(sim::TopicKind::Ask, {}) &&
+            pickKind(sim::TopicKind::Category, sim::kAskQuest) &&
+            pickKind(sim::TopicKind::AskErrand, {})) {
+            out.answer = session.tavern().dialogue().lastLine();
+            out.asked = out.answer.find("WANTS SOMEBODY TO") != std::string::npos;
+        }
+        // Left talking: the answer on the conversation surface is the shutter.
+        return out;
+    }
+    const bool takeIt = end != "offer";
+    // ERRANDS A HUMAN CAN FINISH: the settled end wants a DELIVER -- the one
+    // errand a body can walk start to finish without first robbing somebody
+    // for the goods (a fetch's goods come from the snug, a strongbox or a
+    // rat; --skyrun and --burgle already prove those sources).
+    const bool wantDeliver = end == "settled";
 
     // 1. AN OFFERED ERRAND WHOSE GIVER ANSWERS FROM WHERE THEY NOW STAND.
     // The board bound its nouns at posting time; the giver has been living
@@ -18124,6 +18374,9 @@ RadiantLineResult runRadiantLine(Session& session, bool takeIt) {
         for (const sim::RadiantObjective& offer :
              session.tavern().dialogue().radiant().objectives()) {
             if (offer.state != sim::RadiantState::Offered) {
+                continue;
+            }
+            if (wantDeliver && offer.isFetch()) {
                 continue;
             }
             const sim::WardActor* body = session.people().byId(offer.giverActorId);
@@ -18147,6 +18400,11 @@ RadiantLineResult runRadiantLine(Session& session, bool takeIt) {
                     const sim::WardActor* answers =
                         session.people().nearestTo(sx, sy, body->band, kStreetReachTiles);
                     if (answers == nullptr || answers->id != body->id) {
+                        continue;
+                    }
+                    const sim::WardActor* addressed = addresseeFrom(
+                        session, sx, sy, body->band, cardinalToward(body->x - sx, body->y - sy));
+                    if (addressed == nullptr || addressed->id != body->id) {
                         continue;
                     }
                     giver = body;
@@ -18239,6 +18497,293 @@ RadiantLineResult runRadiantLine(Session& session, bool takeIt) {
     // conversation still holding the keys. The "offer" end above returns
     // with the list up because the list IS its photograph.
     session.closeConversation();
+    if (end != "shelf" && end != "settled") {
+        return out;
+    }
+
+    // ERRANDS A HUMAN CAN FINISH (2026-10-09). From here the row is held BY
+    // VALUE: the walk below steps the ward, and a step across midnight
+    // rebuilds the board's vector under any pointer into it.
+    const sim::RadiantObjective errand = *row;
+    out.target = errand.targetName;
+    out.pay = errand.pay;
+
+    // 5. THE NOTES, opened the way J opens them, turned to the CASES shelf
+    // the way the tab key turns it, and the cursor walked the way the arrows
+    // walk it until the errand's own row is under it -- with who settles
+    // it, where they were and what it pays on the facts.
+    session.toggleCasebook();
+    for (int turns = 0; turns < 4 && session.casebookTab() != CasebookTab::Cases; ++turns) {
+        session.cycleCasebookTab(1);
+    }
+    const std::string wantTitle = errand.isFetch()
+                                      ? std::string()
+                                      : errand.verb + " TO " + upperAscii(errand.targetName);
+    const std::string wantWho =
+        upperAscii(errand.isFetch() ? errand.giverName : errand.targetName);
+    {
+        const std::size_t rows = session.casebookPageState().shelf.size();
+        for (std::size_t walked = 0; walked < rows && !out.shelf; ++walked) {
+            const CasebookPageState page = session.casebookPageState();
+            if (!page.shelf.empty()) {
+                const int at =
+                    std::clamp(page.shelfCursor, 0, static_cast<int>(page.shelf.size()) - 1);
+                const CasebookShelfRow& shown = page.shelf[static_cast<std::size_t>(at)];
+                out.shelf = shown.errand && shown.who == wantWho && !shown.where.empty() &&
+                            (wantTitle.empty() || shown.title == wantTitle);
+            }
+            if (!out.shelf) {
+                session.moveCasebookCursor(1);
+            }
+        }
+    }
+    if (end == "shelf") {
+        // The page stays up: the shelf row IS this end's photograph.
+        return out;
+    }
+    session.toggleCasebook();
+
+    // 6. THE TARGET, WHERE THEY STAND NOW. The shelf says where they were
+    // when the job was posted; the body has lived its day since, so the walk
+    // re-finds them each round, the way a player asks the street. Walked on
+    // the district's own router when they share a band; PLACED (and printed
+    // walked=no) when they do not -- this line does not climb, the trail's
+    // own stated limit.
+    const std::int32_t coinBefore = session.tavern().playerCoin();
+    for (int round = 0; round < 8 && !out.reached; ++round) {
+        const sim::WardActor* body = session.people().byId(errand.targetActorId);
+        if (body == nullptr || !body->visible()) {
+            session.skipToHour((session.timeOfDay() / 3600 + 1) % 24);
+            session.stepMany(sim::MoveInput{}, 1);
+            continue;
+        }
+        std::int32_t standX = 0;
+        std::int32_t standY = 0;
+        bool stand = false;
+        for (std::int32_t oy = -kStreetReachTiles; oy <= kStreetReachTiles && !stand; ++oy) {
+            for (std::int32_t ox = -kStreetReachTiles; ox <= kStreetReachTiles && !stand; ++ox) {
+                if (ox == 0 && oy == 0) {
+                    continue;
+                }
+                const std::int32_t sx = body->x + ox;
+                const std::int32_t sy = body->y + oy;
+                if (!session.tiles().standable(sx, sy, body->band)) {
+                    continue;
+                }
+                const sim::WardActor* answers = addresseeFrom(
+                    session, sx, sy, body->band, cardinalToward(body->x - sx, body->y - sy));
+                if (answers != nullptr && answers->id == body->id) {
+                    standX = sx;
+                    standY = sy;
+                    stand = true;
+                }
+            }
+        }
+        if (!stand) {
+            session.stepMany(sim::MoveInput{}, 30);
+            continue;
+        }
+        bool onFoot = false;
+        if (body->band == session.body().band()) {
+            onFoot = walkAcrossDistrict(session, standX, standY);
+        }
+        if (!onFoot) {
+            session.placeBodyAt(standX, standY, body->band);
+            session.stepMany(sim::MoveInput{}, 1);
+        }
+        // The walk took time and the target kept theirs: ask again who
+        // answers from where the body actually stands.
+        body = session.people().byId(errand.targetActorId);
+        if (body == nullptr) {
+            continue;
+        }
+        session.body().setYaw(cardinalToward(body->x - session.body().tileX(),
+                                             body->y - session.body().tileY()));
+        session.stepMany(sim::MoveInput{}, 1);
+        body = session.people().byId(errand.targetActorId);
+        const sim::WardActor* answers = session.wardAddresseeNow();
+        if (body == nullptr || answers == nullptr || answers->id != body->id) {
+            continue;
+        }
+        out.reached = true;
+        out.walked = onFoot;
+    }
+    if (!out.reached) {
+        return out;
+    }
+
+    // 7. THE GAME: the real interact, the target's own list, the press.
+    session.interact();
+    if (!session.talking() || session.wardTalkingTo() != errand.targetActorId) {
+        return out;
+    }
+    const std::vector<sim::Topic>& settleTopics = session.tavern().dialogue().topics();
+    std::int32_t settleIndex = -1;
+    for (std::size_t i = 0; i < settleTopics.size(); ++i) {
+        if (settleTopics[i].kind == sim::TopicKind::SettleRadiant &&
+            settleTopics[i].payload == errand.id) {
+            settleIndex = static_cast<std::int32_t>(i);
+            break;
+        }
+    }
+    out.passed = settleIndex >= 0;
+    if (!out.passed) {
+        return out;
+    }
+    session.chooseTopic(static_cast<std::size_t>(settleIndex));
+    const sim::RadiantObjective* paid = session.tavern().dialogue().radiant().find(errand.id);
+    out.settled = paid != nullptr && paid->state == sim::RadiantState::Paid &&
+                  session.tavern().playerCoin() - coinBefore == errand.pay;
+    // Left talking: the target's own answer on the alert row is the shutter.
+    return out;
+}
+
+namespace {
+
+/// SHOPS. Puts the body before `notableId` while they are working their
+/// counter: the clock is walked an hour at a time until their day has them
+/// at their post and some stand tile answers them by the talk key's own rule,
+/// then the body is PLACED there (runStreetLine's one placement) facing them,
+/// and the real interact opens the talk. True when it opened on them.
+bool talkToKeeperAtCounter(Session& session, std::string_view notableId) {
+    for (int hourStep = 0; hourStep < 24; ++hourStep) {
+        if (hourStep > 0) {
+            session.skipToHour((session.timeOfDay() / 3600 + 1) % 24);
+            session.stepMany(sim::MoveInput{}, 1);
+        }
+        const sim::WardActor* keeper = nullptr;
+        for (const sim::WardActor& actor : session.people().actors()) {
+            if (actor.visible() && session.people().identity(actor.id).notableId == notableId) {
+                keeper = &actor;
+                break;
+            }
+        }
+        if (keeper == nullptr || !session.wardAtCounterNow(*keeper)) {
+            continue;
+        }
+        for (std::int32_t oy = -kStreetReachTiles; oy <= kStreetReachTiles; ++oy) {
+            for (std::int32_t ox = -kStreetReachTiles; ox <= kStreetReachTiles; ++ox) {
+                const std::int32_t sx = keeper->x + ox;
+                const std::int32_t sy = keeper->y + oy;
+                if ((ox == 0 && oy == 0) || !session.tiles().standable(sx, sy, keeper->band)) {
+                    continue;
+                }
+                const sim::Angle look = cardinalToward(keeper->x - sx, keeper->y - sy);
+                const sim::WardActor* addressed = addresseeFrom(session, sx, sy, keeper->band, look);
+                if (addressed == nullptr || addressed->id != keeper->id) {
+                    continue;
+                }
+                const std::int32_t keeperId = keeper->id;
+                session.placeBodyAt(sx, sy, keeper->band);
+                session.body().setYaw(look);
+                session.stepMany(sim::MoveInput{}, 1);
+                session.interact();
+                return session.talking() && session.wardTalkingTo() == keeperId;
+            }
+        }
+    }
+    return false;
+}
+
+/// SHOPS. Chooses the first topic of `kind` (and `arg`, when given) on the open
+/// list, the way a number key would. True when one was there.
+bool chooseFirst(Session& session, sim::TopicKind kind, std::string_view arg = {}) {
+    const std::vector<sim::Topic>& topics = session.tavern().dialogue().topics();
+    for (std::size_t i = 0; i < topics.size(); ++i) {
+        if (topics[i].kind == kind && (arg.empty() || topics[i].arg == arg)) {
+            session.chooseTopic(i);
+            return true;
+        }
+    }
+    return false;
+}
+
+}  // namespace
+
+ShopLineResult runShopLine(Session& session, const std::string& end) {
+    ShopLineResult out;
+    constexpr std::string_view kWant = "lantern";
+    const std::int32_t lantern = session.tavern().items().indexOf(kWant);
+    if (lantern < 0) {
+        return out;
+    }
+    out.coinStart = session.tavern().playerCoin();
+
+    // 1. BRANN, AT HIS COUNTER, AND HIS SHELF.
+    out.chandler = talkToKeeperAtCounter(session, "brann");
+    if (!out.chandler) {
+        return out;
+    }
+    const std::int32_t brannId = session.wardTalkingTo();
+    out.wares = chooseFirst(session, sim::TopicKind::Wares);
+    std::int32_t price = 0;
+    for (const sim::Topic& topic : session.tavern().dialogue().topics()) {
+        if (topic.kind == sim::TopicKind::BuyItem && topic.arg == kWant) {
+            price = topic.payload;
+        }
+    }
+    out.wares = out.wares && price > 0;
+    out.price = price;
+    if (!out.wares || end == "wares") {
+        return out;
+    }
+
+    // 2. THE PURSE -- capture plumbing, said out loud in the summary: a fresh
+    // character's purse is whatever the biography gave, and this line is about
+    // the counter, not the biography.
+    if (session.tavern().playerCoin() < price) {
+        out.granted = price - session.tavern().playerCoin();
+        session.tavern().setPlayerCoin(price);
+    }
+
+    // 3. BUY IT. The Kit, the purse and Brann's purse, before and after.
+    const std::int32_t carried = session.tavern().kit().count(lantern);
+    const std::int32_t coin = session.tavern().playerCoin();
+    const std::int32_t brannCoin = session.people().byId(brannId)->coin;
+    (void)chooseFirst(session, sim::TopicKind::BuyItem, kWant);
+    out.boughtLine = session.lastMessage();
+    out.bought = session.tavern().kit().count(lantern) == carried + 1 &&
+                 session.tavern().playerCoin() == coin - price &&
+                 session.people().byId(brannId)->coin == brannCoin + price;
+    if (!out.bought || end == "bought") {
+        session.closeConversation();
+        out.coinEnd = session.tavern().playerCoin();
+        return out;
+    }
+    session.closeConversation();
+
+    // 4. FENNER, AT HIS PAWN, AND WHAT HE WOULD TAKE.
+    out.pawnbroker = talkToKeeperAtCounter(session, "fenner");
+    if (!out.pawnbroker) {
+        out.coinEnd = session.tavern().playerCoin();
+        return out;
+    }
+    const std::int32_t fennerId = session.wardTalkingTo();
+    (void)chooseFirst(session, sim::TopicKind::Pawn);
+    std::int32_t offer = 0;
+    for (const sim::Topic& topic : session.tavern().dialogue().topics()) {
+        if (topic.kind == sim::TopicKind::SellItem && topic.arg == kWant) {
+            offer = topic.payload;
+        }
+    }
+    out.pawnList = offer > 0;
+    out.offer = offer;
+    if (!out.pawnList || end == "pawn") {
+        out.coinEnd = session.tavern().playerCoin();
+        return out;
+    }
+
+    // 5. SELL IT BACK.
+    const std::int32_t held = session.tavern().kit().count(lantern);
+    const std::int32_t before = session.tavern().playerCoin();
+    const std::int32_t fennerCoin = session.people().byId(fennerId)->coin;
+    (void)chooseFirst(session, sim::TopicKind::SellItem, kWant);
+    out.soldLine = session.lastMessage();
+    out.sold = session.tavern().kit().count(lantern) == held - 1 &&
+               session.tavern().playerCoin() == before + offer &&
+               session.people().byId(fennerId)->coin == fennerCoin - offer;
+    out.coinEnd = session.tavern().playerCoin();
+    // Left talking: Fenner's list, one lantern lighter, is the shutter.
     return out;
 }
 
@@ -18564,6 +19109,32 @@ SmokeRunResult runSmoke(const SmokeRunConfig& config) {
         result.streetKey = street.barkKey;
     }
 
+    if (!config.tone.empty()) {
+        // THE TONE DIAL. The row a player presses, pressed until the register
+        // reads what was asked -- at most three presses, the dial's length.
+        result.scriptedWanted += 1;
+        // toneName answers in capitals; the flag is typed however it is typed.
+        const std::string want = upperAscii(config.tone);
+        bool landed = false;
+        for (int press = 0; press < 3 && session.talking() && !landed; ++press) {
+            std::string now(sim::toneName(session.tavern().dialogue().tone()));
+            landed = now == want;
+            if (landed) {
+                break;
+            }
+            const std::vector<sim::Topic>& topics = session.tavern().dialogue().topics();
+            for (std::size_t i = 0; i < topics.size(); ++i) {
+                if (topics[i].kind == sim::TopicKind::Tone) {
+                    session.chooseTopic(i);
+                    break;
+                }
+            }
+            landed = std::string(sim::toneName(session.tavern().dialogue().tone())) == want;
+        }
+        result.scriptedLanded += landed ? 1 : 0;
+        result.talking = session.talking();
+    }
+
     if (config.flame) {
         result.flameStages = runFlameLine(session, config.flameEnd);
         result.talking = session.talking();
@@ -18586,15 +19157,49 @@ SmokeRunResult runSmoke(const SmokeRunConfig& config) {
                                  (result.petitionResult.becameDuke ? 1 : 0);
     }
 
+    if (config.shop) {
+        // SHOPS. See SmokeRunConfig::shop: the beats each end owes.
+        result.shopResult = runShopLine(session, config.shopEnd);
+        result.talking = session.talking();
+        const ShopLineResult& shop = result.shopResult;
+        const int wanted = config.shopEnd == "wares"    ? 2
+                           : config.shopEnd == "bought" ? 3
+                           : config.shopEnd == "pawn"   ? 5
+                                                        : 6;
+        const int landed = (shop.chandler ? 1 : 0) + (shop.wares ? 1 : 0) +
+                           (shop.bought ? 1 : 0) + (shop.pawnbroker ? 1 : 0) +
+                           (shop.pawnList ? 1 : 0) + (shop.sold ? 1 : 0);
+        result.scriptedWanted += wanted;
+        result.scriptedLanded += std::min(wanted, landed);
+    }
+
     if (config.radiant) {
         // RADIANT BUILD. See SmokeRunConfig::radiant. The "offer" end owes
         // one beat (the giver's own row on the visible list, conversation
         // left open for the shutter); "taken" owes three -- offered, the
         // board moved, the journal shows it.
         const bool takeIt = config.radiantEnd != "offer";
-        result.radiantResult = runRadiantLine(session, takeIt);
+        result.radiantResult = runRadiantLine(session, config.radiantEnd);
         result.talking = session.talking();
-        if (takeIt) {
+        const RadiantLineResult& job = result.radiantResult;
+        if (config.radiantEnd == "ask") {
+            result.scriptedWanted += 2;
+            result.scriptedLanded += (job.opened ? 1 : 0) + (job.asked ? 1 : 0);
+        } else if (config.radiantEnd == "settled") {
+            // ERRANDS A HUMAN CAN FINISH: offered, taken, the journal, the
+            // shelf, the target reached, the word passed, the board and the
+            // purse agreeing it was paid. `walked` is printed, not owed: a
+            // target on another band is placed beside, said so.
+            result.scriptedWanted += 7;
+            result.scriptedLanded += (job.offered ? 1 : 0) + (job.taken ? 1 : 0) +
+                                     (job.journal ? 1 : 0) + (job.shelf ? 1 : 0) +
+                                     (job.reached ? 1 : 0) + (job.passed ? 1 : 0) +
+                                     (job.settled ? 1 : 0);
+        } else if (config.radiantEnd == "shelf") {
+            result.scriptedWanted += 4;
+            result.scriptedLanded += (job.offered ? 1 : 0) + (job.taken ? 1 : 0) +
+                                     (job.journal ? 1 : 0) + (job.shelf ? 1 : 0);
+        } else if (takeIt) {
             result.scriptedWanted += 3;
             result.scriptedLanded += (result.radiantResult.offered ? 1 : 0) +
                                      (result.radiantResult.taken ? 1 : 0) +
@@ -19385,6 +19990,20 @@ SmokeRunResult runSmoke(const SmokeRunConfig& config) {
                 << " answer=\"" << pet.petitionLine << "\""
                 << " duke=" << (pet.becameDuke ? "yes" : "no");
     }
+    if (!config.tone.empty()) {
+        summary << " | tone=" << sim::toneName(session.tavern().dialogue().tone());
+    }
+    if (config.shop) {
+        const ShopLineResult& shop = result.shopResult;
+        summary << " | shop chandler=" << (shop.chandler ? "yes" : "no")
+                << " wares=" << (shop.wares ? "yes" : "no") << " price=" << shop.price
+                << " bought=" << (shop.bought ? "yes" : "no")
+                << " pawnbroker=" << (shop.pawnbroker ? "yes" : "no")
+                << " listed=" << (shop.pawnList ? "yes" : "no") << " offer=" << shop.offer
+                << " sold=" << (shop.sold ? "yes" : "no") << " coin=" << shop.coinStart << "->"
+                << shop.coinEnd << " granted=" << shop.granted << " bought_line=\""
+                << shop.boughtLine << "\" sold_line=\"" << shop.soldLine << "\"";
+    }
     if (config.radiant) {
         // RADIANT BUILD: which errand, whose word it is, and whether the
         // BOARD says it moved -- the claim is a reachable generator, so the
@@ -19395,8 +20014,22 @@ SmokeRunResult runSmoke(const SmokeRunConfig& config) {
                 << " opened=" << (job.opened ? "yes" : "no")
                 << " offered=" << (job.offered ? "yes" : "no")
                 << " taken=" << (job.taken ? "yes" : "no")
-                << " journal=" << (job.journal ? "yes" : "no")
-                << " brief=\"" << job.brief << "\"";
+                << " journal=" << (job.journal ? "yes" : "no");
+        if (config.radiantEnd == "shelf" || config.radiantEnd == "settled") {
+            summary << " shelf=" << (job.shelf ? "yes" : "no");
+        }
+        if (config.radiantEnd == "settled") {
+            summary << " target=\"" << job.target << "\""
+                    << " reached=" << (job.reached ? "yes" : "no")
+                    << " walked=" << (job.walked ? "yes" : "no")
+                    << " passed=" << (job.passed ? "yes" : "no")
+                    << " settled=" << (job.settled ? "yes" : "no") << " pay=" << job.pay;
+        }
+        if (config.radiantEnd == "ask") {
+            summary << " asked=" << (job.asked ? "yes" : "no") << " answer=\"" << job.answer
+                    << "\"";
+        }
+        summary << " brief=\"" << job.brief << "\"";
     }
     if (!config.threshold.empty()) {
         // DISTRICT PHASE D: WHICH BOUNDARY, WHICH WAY, AND WHETHER THE PLATE
