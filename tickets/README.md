@@ -3,7 +3,7 @@
 A streamlined, file-based ticketing system for one agent and one owner working
 through the repo to a release. **Plain files and git -- no tool, no service, no
 database.** One file per ticket; **the folder a ticket sits in is its state.**
-This file is the spec. `docs/STEAM-LAUNCH-PROMPT.md` carries the same text; if the
+This file is the spec. `docs/GOLD-MASTER-PROMPT.md` carries the same text; if the
 two ever differ, this file wins and the other is corrected.
 
 ## Layout
@@ -16,7 +16,7 @@ tickets/
   MILESTONES.md   the milestone ladder: each milestone's goal and exit criteria
   open/           filed, not started
   doing/          in progress -- AT MOST ONE FILE (one agent, work-in-progress limit 1)
-  blocked/        waiting on somebody else: the owner, Valve, a ruling, hardware
+  blocked/        waiting on somebody else: the owner, a ruling, hardware
   done/           finished (or closed as won't-do), with evidence
 ```
 
@@ -46,10 +46,10 @@ resolution:
 
 | Field | Values |
 |---|---|
-| `milestone` | `M0` ... `M9`, as defined in `MILESTONES.md` |
-| `priority` | `P0` blocks launch - `P1` launch quality - `P2` nice to have - `P3` after launch |
-| `type` | `feature` `bug` `content` `copy` `art` `audio` `perf` `infra` `steam` `store` `legal` `brand` `playtest` `decision` `docs` |
-| `owner` | `agent` (the session does it) - `eli` (only the owner can) - `valve` (waiting on Steam) |
+| `milestone` | `M0` ... `M7`, as defined in `MILESTONES.md` |
+| `priority` | `P0` blocks gold - `P1` gold quality - `P2` nice to have - `P3` after gold |
+| `type` | `feature` `bug` `content` `copy` `art` `audio` `perf` `infra` `legal` `brand` `playtest` `decision` `docs` |
+| `owner` | `agent` (the session does it) - `eli` (only the owner can) |
 | `size` | `S` under an hour - `M` one sitting - `L` too big: **must be split before it can move to `doing/`** |
 | `depends` | ids that must be in `done/` first; `[]` for none |
 | `resolution` | empty until closed; then `done`, `wontfix`, or `duplicate T-0017` |
@@ -135,7 +135,7 @@ the override is written into NOW.md with the date.
   regression test or a scripted line that fails before the fix and passes after.
 - **`L` is not a size, it is a signal**: split it into `S`/`M` tickets with `depends`
   between them, close the `L` as `duplicate` of the first, move on.
-- **No estimates beyond S/M/L, no points, no sprints, no assignees beyond the three
+- **No estimates beyond S/M/L, no points, no sprints, no assignees beyond the two
   owners.** The milestone ladder is the schedule.
 - **Viewing the board needs nothing but a shell:** `ls tickets/*/` is the whole board;
   `grep -l 'milestone: M1' tickets/open/*` is a milestone; `grep -l 'owner: eli' -r
@@ -152,8 +152,7 @@ enough on its own to resume:
 doing:      T-0042 Save and load a night's play -- step 3/5: the ward's codec written, tests green
 last commit: abc1234 (pushed) on <branch>
 next:       T-0043, T-0047, T-0051
-waiting on eli:   T-0009 (the climax), T-0012 (Steam Direct fee -- the 30-day clock)
-waiting on valve: --
+waiting on eli:   T-0009 (the climax), T-0012 (playtest: the Kit and the sheet)
 milestone:  M1 -- 4 of 11 done
 gate stamp: owed since def5678 (last stamped: 9910bec)
 standing permissions: "merge milestone PRs to main" -- Eli, 2026-10-12

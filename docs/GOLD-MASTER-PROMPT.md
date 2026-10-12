@@ -1,8 +1,9 @@
-# SESSION PROMPT -- Granadad: The Darkstreets, Chapter One: The Docks -> Steam
+# SESSION PROMPT -- Granadad: The Darkstreets, Chapter One: The Docks -> one .exe, gone gold
 
 **How to use this document.** Give it to the session that will carry the game to
-launch -- paste it whole, or say *"read `docs/STEAM-LAUNCH-PROMPT.md` and work the
-board."* That one session runs **from here to the day the game is on sale on Steam**.
+the end -- paste it whole, or say *"read `docs/GOLD-MASTER-PROMPT.md` and work the
+board."* That one session runs **from here to the day the game goes gold: one `.exe`
+that is the whole game.**
 It is one agent, working through a file-based board in the repo (`tickets/`), with the
 owner, **Eli (Liefwarrior)**, making the calls only the owner can make.
 
@@ -15,7 +16,7 @@ owner, **Eli (Liefwarrior)**, making the calls only the owner can make.
   `tickets/NOW.md`.
 - One ticket in `tickets/doing/` at a time.
 
-**One session to launch means the session will be compacted many times.** Nothing that
+**One session to gold means the session will be compacted many times.** Nothing that
 matters may live only in context. The board (`tickets/`), `tickets/NOW.md` and the git
 history are the memory. After any compaction or restart: read `tickets/NOW.md`, then
 `tickets/README.md`, then the ticket in `tickets/doing/`, and carry on.
@@ -38,10 +39,25 @@ document:
 > "currently the systems in place don't really feel like they've come together in any
 > meaningful way. Mostly the inventory screen and RPG systems. I would really like it
 > to be measured against TES 4 Oblivion as the gold standard for what I'm going for"
+>
+> "listen I don't care about all the steam tasks, I measure completion by one .exe
+> being a complete experience. I want it to be oldschool in that way."
+
+**Done is one .exe.** The finished thing is a single file: copied onto a Windows PC that
+has never seen this project and double-clicked, it is the whole game, title to
+credits. No installer, no launcher, no store, no account, no internet, nothing beside
+it. Old-school: finished when it goes gold, waiting on no patch, server or storefront.
+The pipeline already exists -- `scripts\package-standalone.ps1` appends the content pack
+to the gate's stripped exe as `dist\granadad-standalone.exe`, and
+`scripts\verify-standalone.ps1` proves it runs from an empty folder with the same world
+hash as the repo build. **From M0 on, every owner playtest is played on that file,
+copied into an empty folder** -- never the repo build -- so what is judged is what
+ships.
 
 **Branding is deferred** (Eli, 2026-10-12: *"But don't do that branding now."*). No
 brand ticket -- splash, logo, names, credits line, channel tie-ins -- is filed until Eli
-opens it; M5 asks once. The bar applies now; the brand comes later.
+opens it; it is asked once, when the credits are authored (M5). The bar applies now;
+the brand comes later.
 
 **The yardstick: *The Elder Scrolls IV: Oblivion*.** Every system a player touches is
 measured side by side with the same thing in Oblivion: the inventory screen, the
@@ -139,7 +155,7 @@ this, not from the docs' optimism.
 | 5 | `ARCHITECTURE.md` sections 0 - 0.2.1 | BUILT / PARTIAL / NOT BUILT -- trust markers, not prose |
 | 6 | `native/README.md` | builds, every scripted-capture flag, what the gate covers |
 | 7 | `docs/SESSION-2026-10-09.md` | the last session: what shipped, the open owner flags, the build recipe for a Linux container |
-| 8 | `docs/WORKBENCH.md` | `granadad-workbench`: the editor over the live ward |
+| 8 | `docs/WORKBENCH.md`; `scripts/package-standalone.ps1`, `scripts/verify-standalone.ps1` (their headers) | the editor over the live ward; how the one exe is made and proven |
 | 9 | `docs/design/ELDER-SCROLLS-REFERENCE.md`, `docs/design/PROGRESSION-SPEC.md`, `docs/frames/kit/README.md` | the series' mechanics already researched; skills and attributes; the Kit against Oblivion, frame by frame |
 | 10 | `docs/design/DOCKS-GAZETTEER.md`, `docs/design/PLAYTEST-LOG.md` | the setting bible; every verdict so far |
 | 11 | `git log --oneline -40` | where the tree actually is |
@@ -152,8 +168,9 @@ against the code and fix whichever lies.
 
 **Where you are running decides how you prove things.**
 - **On Eli's Windows machine** (`C:\repositories\...`, docker available): the gate is
-  `scripts\gate.ps1` then `scripts\verify-windows.ps1`, both green, reports identical.
-  Run them before closing any ticket that touched `native/`.
+  `scripts\gate.ps1`, then `scripts\verify-windows.ps1`, then
+  `scripts\verify-standalone.ps1`, all green, reports identical. Run them before closing
+  any ticket that touched `native/` or `content/`.
 - **In a Linux cloud container**: the docker gate cannot run (the image build's apt
   needs plain HTTP; `verify-windows.ps1` needs Windows). Prove work with the recipe in
   `docs/SESSION-2026-10-09.md`: a native host-check build (raylib `PLATFORM=Memory`,
@@ -167,72 +184,59 @@ against the code and fix whichever lies.
 
 ---
 
-## Part III -- What "launched" means
+## Part III -- What "done" means: one .exe, gone gold
 
-**Launched** = *Granadad: The Darkstreets -- Chapter One: The Docks* is on sale on Steam
-for Windows x64, and every item below is true. These are the release criteria;
-`tickets/MILESTONES.md` turns them into exit criteria.
+**Done** = **`dist\granadad-standalone.exe`, copied alone onto a Windows PC that has
+never seen this project and double-clicked, is the whole game** -- and every item below
+is true. These are the completion criteria; `tickets/MILESTONES.md` turns them into
+exit criteria.
 
 1. **The bar, passed.** Every milestone a player sees closed by Eli's own playtest and
    a relative test (Part I). Nothing in reach that is on the cringe list.
 2. **The yardstick, met.** Every row of `docs/OBLIVION-BENCHMARK.md` reads *holds up*,
    *our way on purpose* (with the ruling cited), or *cut*; Oblivion's loop runs end to
    end in the Docks.
-3. **A night you can keep.** Save and load, automatic and manual, crash-safe,
-   versioned; a title screen with Continue / New Game / Settings / Credits / Quit;
-   settings that persist. Saves and settings live in the user's profile, never beside
-   the exe.
-4. **A chapter with an ending.** Every case in the Docks pulls toward its agent of evil
-   and the chapter ends in a big climax (the ruling's own words), then an ending, the
-   credits and an honest "the city goes on" close. Every case kept in the release is
-   completable on foot, proven by a scripted line.
-5. **Ship quality.** A stated minimum spec met at a stated frame time; load time
-   stated; no crash in a scripted soak; a crash writes a log to the user's profile and
-   says where; controller play end to end; **no shitty English anywhere**.
+3. **One file, nothing else.** No installer, no launcher, no runtime or DLL to install,
+   nothing beside it, no internet, no account, no store. It writes only what a game
+   must -- saves, settings, a crash log and its own content cache -- where Eli rules
+   they live. `scripts\verify-standalone.ps1` green on the gold build.
+4. **A complete experience.** A title screen; New Game into character creation; the
+   chapter, every case kept in it pulling toward its agent of evil; the big climax (the
+   ruling's own words); an ending; the credits (Liefwarrior, every third-party
+   licence, and the brand when Eli opens it); an honest "the city goes on" close.
+   Every case kept in the release is completable on foot, proven by a scripted line.
+5. **A night you can keep.** Save and load, automatic and manual, crash-safe,
+   versioned; Continue / New Game / Load / Settings / Credits / Quit; settings that
+   persist.
 6. **Kind to a newcomer.** Readable text at sofa distance with a text-size setting;
    subtitles for any spoken line; rebindable keys (they exist); invert look and
-   sensitivity; taught by prompts in the world, never by a wall of text.
-7. **Shippable assets.** Every shipped file has a licence class that permits
-   distribution in a commercial game (`docs/asset-manifest-lot.md`,
+   sensitivity; taught by prompts in the world, never by a wall of text. **The manual
+   is in the game** -- there is nothing else in the box: a book off the title screen
+   for the controls, the screens and the ways of the ward.
+7. **Ship quality.** A stated minimum spec met at a stated frame time; load time stated,
+   the first launch's unpack included; no crash in a scripted soak; a crash writes a
+   log and says where; a standard gamepad end to end; **no shitty English anywhere**.
+8. **Shippable assets.** Every file inside the exe has a licence class that permits
+   distributing it in a game (`docs/asset-manifest-lot.md`,
    `docs/design/ASSET-PIPELINE-SPEC.md`); licensed raw files are never committed to this
-   public repo; the 3D art the game draws is in the build that ships.
-8. **The brand, when Eli opens it** -- built only from files Eli supplies, in the form
-   Eli rules.
-9. **Steam plumbing.** The app, its Windows depot, SteamPipe build scripts in `steam/`,
-   Steam Cloud for saves (Auto-Cloud needs no SDK), the Steam Input action manifest.
-   Achievements and any Steamworks SDK integration only if Eli rules them in.
-10. **A store page and a trailer that sell it.** Capsules and library art at Valve's
-    current sizes; screenshots from the game at the bar; a trailer Eli cuts and premieres
-    wherever Eli chooses; descriptions in the ward's own register; tags; system
-    requirements; the content survey answered by Eli; a price set by Eli. A **Coming
-    Soon** page public for at least two weeks before release.
-11. **Valve's gates passed.** Store page review and build review approved; the
-    new-developer waiting period after the app fee has elapsed; Eli presses Release.
+   public repo; the 3D art the game draws is inside the one exe.
+9. **Gone gold.** A version number on the title screen; a tagged commit; the gold exe's
+   SHA-256 recorded in `docs/GOLD-LOG.md`; the gate, `verify-windows.ps1` and
+   `verify-standalone.ps1` green on it; Eli plays it start to credits from an empty
+   folder on a clean machine (or a fresh Windows user account) and declares it gold.
+
+**Out of scope:** Steam and every other storefront -- store pages, store SDKs,
+achievements, cloud saves, trailers, fees. If Eli wants distribution later, that is a
+separate plan built on top of the gold exe.
 
 ---
 
-## Part IV -- The calendar (the bar is the long pole, not Valve)
+## Part IV -- No calendar
 
-As of Valve's Steam Direct page (re-verify with a web search when the fee ticket is
-filed -- these move):
-
-- **App fee:** $100 per app, recouped after $1,000 adjusted gross revenue.
-- **Waiting period:** **30 days** between paying the app fee and being allowed to
-  release (some 2025 developer accounts report 21 -- confirm the current figure).
-- **Coming Soon:** the store page must be public for **at least two weeks** before
-  release.
-- **Reviews:** store page review and build review take **1-5 days** each.
-
-Every one of those is short next to the work the bar asks for. So:
-- **The fee is not paid at the start.** The fee ticket is filed for Eli when M4 closes
-  (the first hour passes the relative test); the waiting period then runs while M5 and
-  M6 are worked.
-- **The Coming Soon page goes up only when everything on it passes the bar** -- never
-  earlier, however many wishlists it would gather.
-- **The release date is proposed only when M6 closes** (the chapter whole, at the bar),
-  computed backwards: release <- build review (5 days) <- RC <- Coming Soon (>= 14 days
-  earlier) <- store page review (5 days). It goes into MILESTONES.md and moves only with
-  Eli's word. **There is no date before then, and the agent never invents one.**
+There is no deadline and no release date. **The game is done when the exe is.** The
+agent never invents a date; if Eli sets one, it goes into MILESTONES.md and moves only
+with Eli's word. What paces the work is the board's next-ticket rule and Eli's
+playtests.
 
 ---
 
@@ -242,9 +246,10 @@ The session's first job (M0) is to turn this ladder into `tickets/MILESTONES.md`
 board of tickets. Every seeded item below is a claim to **re-verify against the tree**
 before filing -- the last session found half its seeded backlog already done.
 
-### M0 -- Ground truth, the bar, the yardstick, and eyes
-*Goal: the board exists, the bar and the yardstick are written down, the agent can see
-the real game, and the owner's blocking questions are asked.*
+### M0 -- Ground truth: the bar, the yardstick, the one exe, and eyes
+*Goal: the board exists, the bar and the yardstick are written down, the one exe is
+audited, the agent can see the real game, and the owner's blocking questions are
+asked.*
 - Write `tickets/MILESTONES.md`, `tickets/NOW.md`; file every ticket below that survives
   re-verification.
 - `docs/QUALITY-BAR.md`: Part I's cringe list, plus everything the cringe audit finds.
@@ -271,12 +276,20 @@ the real game, and the owner's blocking questions are asked.*
   that cannot work, write `scripts/showcase.ps1`: one command Eli runs on Windows that
   writes a fixed set of real frames to `docs/frames/showcase/` for the agent to read,
   run at every milestone close.
+- **The one-exe audit (P0).** Run `granadad-standalone.exe` from an empty folder (or
+  read the frame `verify-standalone.ps1` writes) and list what it carries and what it
+  does not -- the 3D art above all: is the art the game draws inside the pack, and how
+  does licensed art get in without its raw files ever touching this public repo? Also
+  anything that still reads a file beside the exe (the bindings file does today). Each
+  gap is a ticket.
 - **One command to play the latest build** (`scripts/play-latest.ps1`: pull, gate,
-  launch), so an owner playtest costs a minute to start, not twenty.
+  pack the standalone, copy it to an empty folder, launch), so an owner playtest costs
+  a minute to start, not twenty.
 - Triage sweep into tickets: the open owner flags in `docs/SESSION-2026-10-09.md`; every
   PARTIAL / NOT BUILT row in ARCHITECTURE 0.2.1; every `open:` line in PLAYTEST-LOG.md;
   PLAY.md section 8's thin list; `grep -rn "\[NEEDS" docs/`.
-- **Owner ticket (`owner: eli`):** run the gate on Windows at the `main` tip.
+- **Owner ticket (`owner: eli`):** run the gate, `verify-windows.ps1` and
+  `verify-standalone.ps1` on Windows at the `main` tip.
 - **Decision tickets (P0), seeded:**
   - **Rulings the yardstick questions** -- raised after the benchmark is written, each
     with Oblivion's case, the ruling's case, and a recommendation. At least: the Kit on
@@ -294,8 +307,8 @@ the real game, and the owner's blocking questions are asked.*
     (cellars -> outfall -> drowned crypt), or does the climax stay on the surface?
   - **The content line for this release**, given the relatives bar. The standing rule is
     "suggestive and atmospheric by default; anything more explicit is the owner's
-    ruling." Steam's content survey later needs exact answers: violence, gore, sexual
-    content, drugs (the dust, the flower).
+    ruling." Exact answers are needed for violence, gore, sexual content and drugs (the
+    dust, the flower).
   - **Save/load: which road.** Encode every system's state (six encode today; the ward,
     the Gull, the books, the boards do not), or save the deterministic input log and
     replay it on load (the workbench's scenes prove replay to the bit for their own
@@ -306,8 +319,13 @@ the real game, and the owner's blocking questions are asked.*
     goods -- all placeholders in `content/raws/shops/shops.json`.
   - **E on the one in front, and the tone row's wording** -- confirm the 2026-10-09
     changes.
-  - **Achievements / Steamworks SDK: in or out** (recommend out for Chapter One), **a
-    demo / Steam Next Fest: in or out**, **price**.
+  - **Where the exe writes.** Saves, settings and the crash log beside the exe
+    (portable and old-school: the folder is the install), in the user's profile (the
+    Windows way), or beside the exe with the profile as the fallback when the folder is
+    read-only? (Recommend the last.)
+  - **The content cache.** The standalone unpacks its content to
+    `%LOCALAPPDATA%\Granadad\` on first launch. Acceptable inside "one file", or should
+    the game read its pack straight out of the exe?
 - **The diction audit** (DECISIONS 2026-09-02): "bloodletter" only in the mouths of
   priests and the well-studied. Audit all copy -- the casebook title included -- and file
   each violation as a ticket for Eli's review; do not silently rewrite.
@@ -343,8 +361,9 @@ side with Oblivion.* After the yardstick rulings:
 ### M2 -- The first ten minutes, at the bar
 *Goal: from double-click to the first lead taken, a non-gamer is charmed, not
 confused.*
-- The route: launch -> title screen -> character creation -> the first scene -> the
-  first conversation -> the first lead -> the first thing worn or wielded.
+- The route: double-click the exe -> title screen -> character creation -> the first
+  scene -> the first conversation -> the first lead -> the first thing worn or wielded.
+  The first launch shows life within a second, unpack included.
 - Real art and lighting on everything that route shows; **no placeholder box anywhere
   on it.**
 - Sound on everything that route shows: music, rooms, footsteps, the interface.
@@ -367,7 +386,7 @@ confused.*
 - The title screen's Continue and Load; a pause menu at the bar.
 - Settings that persist: display (fullscreen / windowed / borderless, resolution, vsync,
   HUD and text scale), audio (master / music / effects / voices), the existing mouse and
-  bindings. Stored in the user's profile; the bindings file moves there too (it sits
+  bindings. Stored where Eli rules (M0); the bindings file moves with them (it sits
   beside the exe today).
 - `--save-roundtrip` scripted line: play, save, quit, load, compare hash; exits non-zero
   on mismatch.
@@ -380,27 +399,12 @@ bar, all feeding M1's loop.*
 - Fights that read, weigh and feel fair, next to Oblivion's.
 - Exit: Eli plays an hour and wants a second; the relative test on a ten-minute stretch
   from inside the hour.
-- **On close: the Steam Direct fee ticket is filed for Eli** (Part IV).
 
-### M5 -- The store page and Coming Soon
-*Goal: a page Eli can point at with pride.*
-- **The brand question is asked here, once** -- splash, names, credits line, logo files,
-  the channel -- and nothing brand-related is built before Eli answers.
-- Eli pays the fee and finishes onboarding (identity, tax, bank); the app is created.
-- Capsules and library art at Valve's current sizes (verify live in the Steamworks docs
-  -- do not trust remembered pixel counts). Screenshots from scripted captures of the M2
-  and M4 routes, real art, at the bar.
-- Short and long descriptions in the ward's register; tags; the content survey (Eli
-  answers).
-- `docs/presskit/`: fact sheet, screenshots, logo, the owner's own description.
-- **The announcement trailer:** the agent writes the shot list and a capture script per
-  shot; Eli cuts it in DaVinci Resolve and premieres it where Eli chooses.
-- Eli submits the page for review; Coming Soon goes public only on Eli's word. Record
-  the date -- the two-week clock starts.
-
-### M6 -- The chapter is whole, at the bar
+### M5 -- The chapter is whole, at the bar
 *Goal: start to credits, every case kept in the release finishable, all of it at the
 bar.* After the climax, descent and errand rulings:
+- **The brand question is asked here, once** (splash, credits line, logo files), and
+  nothing brand-related is built before Eli answers.
 - The climax authored and wired, every case pulling toward it; the ending; the credits
   (Liefwarrior, every third-party licence, and the brand as Eli ruled it); the "city
   goes on" close.
@@ -410,39 +414,34 @@ bar.* After the climax, descent and errand rulings:
 - Fetch errands and shops per their rulings.
 - Every case, questline, contract and errand kind kept in the release proven completable
   by a scripted line.
-- Exit: Eli plays start to credits; the relative test on the climax; the release date
-  proposed (Part IV).
+- Exit: Eli plays start to credits, on the standalone exe; the relative test on the
+  climax.
 
-### M7 -- Ship quality
+### M6 -- Ship quality
 *Goal: a stranger's machine runs it well.*
 - Minimum and recommended spec stated; a frame-time and load-time budget measured on
   Eli's hardware and held.
-- The licence audit of every shipped asset; packaging decided (the standalone packer, or
-  a loose-file depot).
-- Crash log to the user's profile, with a plain message on next launch; a long scripted
+- The licence audit of every asset inside the exe.
+- A crash log where Eli ruled, with a plain message on next launch; a long scripted
   soak with no crash; both twin-run gates green.
-- Audio mix pass; HUD legibility at 1280x800 (the Steam Deck's size) and 4K; controller
-  end to end; Steam Deck through Proton (if Eli has one) against Valve's Deck criteria;
-  Part III item 6 complete.
+- Audio mix pass; HUD legibility from 1280x720 to 4K; a standard gamepad end to end;
+  Part III item 6 complete, the manual in the game included.
 - The copy pass: every player-facing string read out loud; the diction audit closed.
 - A bug bash: every defect a ticket; every P0/P1 bug closed.
 
-### M8 -- Steam plumbing, release candidate and launch
-*Goal: on sale, and proud of it.*
-- App and depot ids (from Eli's partner account) recorded in `steam/`; never any
-  credential in the repo.
-- SteamPipe scripts (`steam/app_build_<appid>.vdf`, `steam/depot_build_<depotid>.vdf`)
-  pointing at the gate's `dist/` output; a `scripts/steam-upload.ps1` that Eli runs
-  under the owner's own `steamcmd` login.
-- Steam Cloud via Auto-Cloud on the save directory; the Steam Input action manifest
-  wired; launch options; no DRM unless Eli rules otherwise.
-- RC: version bumped, gate + `verify-windows.ps1` green and identical, uploaded to a beta
-  branch, a full playthrough on Eli's machine, then build review.
-- The launch trailer: shot list and capture scripts from the agent, the cut from Eli.
-- A launch-day checklist; a day-one hotfix procedure (branch, fix, gate, upload)
-  rehearsed once on the beta branch.
-- Eli presses Release. The agent writes the launch log, then switches to a post-launch
-  triage loop on the same board (milestone `M9`).
+### M7 -- Gone gold
+*Goal: one file, the whole game, finished.*
+- A version number on the title screen.
+- Every P0 and P1 ticket closed, or cut from reach with the reason in its Log.
+- The release candidate: the gate, `verify-windows.ps1` and `verify-standalone.ps1`
+  green and identical; `package-standalone.ps1` run; the exe's SHA-256 recorded.
+- **The gold run:** Eli copies that one file onto a clean machine (or a fresh Windows
+  user account), into an empty folder, double-clicks it, and plays start to credits;
+  the relative test on the whole thing.
+- Gold: the commit tagged `v1.0`; the SHA-256, every milestone summary and Eli's words
+  declaring it gold (verbatim) in `docs/GOLD-LOG.md`.
+- After gold the board stays: anything found later is a ticket for a 1.1, only if Eli
+  wants one.
 
 ---
 
@@ -479,7 +478,7 @@ bar.* After the climax, descent and errand rulings:
      sentence of evidence. Ships when **G >= 8**, **H >= 7** (where a benchmark row
      applies), D >= 5, no axis is 0, and the weighted mean (A, B, C, F doubled) is >= 7.
      Where G or H depends on what the agent cannot see (Part I, "Who judges what"), it
-     reads **"owed"** and the milestone's owner playtest settles it. Infra/Steam/legal
+     reads **"owed"** and the milestone's owner playtest settles it. Infra/legal
      tickets are scored on D and E only. A failing score sends the ticket back to step 4 with the card in its
      Log.
    - **CUSTOMER** -- two players, for player-facing tickets, one line each appended to
@@ -501,8 +500,9 @@ bar.* After the climax, descent and errand rulings:
 ### The owner playtest (every milestone close, and whenever Eli asks)
 - A `type: playtest`, `owner: eli` ticket: what to play, in what order, what to watch
   for, how long (minutes, not hours), and -- where a benchmark row applies -- the
-  Oblivion moment to compare it with; for M2, M4 and M6, the relative test too. It
-  includes running the gate, so the build Eli plays is the stamped one.
+  Oblivion moment to compare it with; for M2, M4, M5 and M7, the relative test too. It
+  includes running the gate and `package-standalone.ps1`: Eli plays the standalone exe
+  from an empty folder, so what is judged is what ships.
 - Eli's verdict is transcribed **verbatim** into PLAYTEST-LOG.md with the date. Every
   complaint becomes a ticket before anything else happens. A "no" re-opens the
   milestone; it is never argued with.
@@ -510,7 +510,7 @@ bar.* After the climax, descent and errand rulings:
 ### Milestone close
 - Every exit criterion in MILESTONES.md ticked -- for player-facing milestones, the last
   one is always Eli's verdict.
-- A milestone summary appended to `docs/LAUNCH-LOG.md` (what shipped, scorecards, every
+- A milestone summary appended to `docs/GOLD-LOG.md` (what shipped, scorecards, every
   verdict, what was cut and why, the re-ranked board).
 - A pull request to `main` with the milestone's summary. **Merge it only with Eli's
   word** -- a standing permission Eli gives in the session counts; record it in NOW.md.
@@ -519,7 +519,6 @@ bar.* After the climax, descent and errand rulings:
 - Waiting on Eli: the ticket goes to `blocked/` with a decision ticket that asks one
   crisp question with options and a recommendation; pick the next open ticket. Never sit
   idle on a blocked ticket and never decide for the owner.
-- Waiting on Valve: `owner: valve`, `blocked/`, the date it was submitted in Log.
 - A check failing for reasons outside the ticket: a bug ticket, a note in NOW.md, keep
   going on what is unblocked.
 - The bar looks out of reach for something: say so plainly in a decision ticket -- cut
@@ -543,21 +542,16 @@ bar.* After the climax, descent and errand rulings:
 
 ## Part VII -- What only Eli can do (always `owner: eli` tickets)
 
-- **Play the builds and judge them** -- with Oblivion as the yardstick -- and run the
-  relative tests: the only gate a player-facing milestone has.
+- **Play the builds and judge them** -- the standalone exe, from an empty folder, with
+  Oblivion as the yardstick -- and run the relative tests: the only gate a
+  player-facing milestone has.
+- Running `scripts\gate.ps1`, `scripts\verify-windows.ps1` and
+  `scripts\verify-standalone.ps1` on Windows when the session cannot; playtests on real
+  hardware.
+- **The gold run, and declaring gold** (M7).
 - The Brutal Magllini Time brand, **when Eli opens it** (deferred, 2026-10-12): the logo
-  files, the colours, the names, where it appears, the channel's part in the launch.
-- Cut the trailers in DaVinci Resolve from the agent's shot lists and captures.
-- Pay the Steam Direct fee (when M4 closes); identity, tax and bank onboarding; create
-  the app.
-- Every action in the Steamworks partner site: the store page submission, the content
-  survey, pricing, the Coming Soon toggle, build review submission, **the Release
-  button**.
-- Uploads under Eli's own `steamcmd` login (the agent writes the scripts, never holds
-  the credentials).
-- Running `scripts\gate.ps1` and `scripts\verify-windows.ps1` on Windows when the
-  session cannot; playtests on real hardware (Eli's PC, a Steam Deck if there is one).
-- Every ruling: story, scope, content line, price, dates.
+  files, the colours, the names, where it appears.
+- Every ruling: story, scope, content line, where the exe writes, dates if any.
 - Anything involving money, legal agreements or Eli's accounts.
 
 ---
@@ -584,19 +578,22 @@ bar.* After the climax, descent and errand rulings:
 9. **Do not rename anything for "Mercolas Engine."** Marketing name only.
 10. **Never commit, push or build over Eli's live work.** Check the tree first.
 11. **No shitty English anywhere.** On-screen copy is the product.
-12. **Never put a credential, token, key, password or partner-site secret in the repo**,
+12. **Never put a credential, token, key or password in the repo**,
     in a ticket, in a commit message, or in a log. Never commit a licensed raw asset to
     this public repo (`git ls-files content/art/lot*` must stay empty).
-13. **Never spend money, accept an agreement, submit to Valve, change a store setting,
-    publish anything or press Release on Eli's behalf.** Prepare it; Eli does it.
-14. **Nothing goes public below the bar** -- no store page, screenshot, trailer, clip or
-    build -- and nothing goes public at all without Eli's word.
+13. **Never spend money, accept an agreement, or publish or send anything on Eli's
+    behalf.** Prepare it; Eli does it.
+14. **Nothing goes public below the bar** -- no build, screenshot or clip -- and nothing
+    goes public at all without Eli's word.
 15. **No brand work until Eli opens it; then never draw, trace or approximate the
     Brutal Magllini Time logo** -- only the files Eli supplies.
 16. **Never report the bar or the yardstick as met on the agent's own judgement.**
     Only Eli's verdict closes a player-facing milestone.
-17. **Single agent; no worktrees unless Eli says so in this session.**
-18. **Commits carry Eli's name as author** (Liefwarrior), as every commit in this repo
+17. **The deliverable is one file.** Never land a change that needs anything beside the
+    exe -- an installer, a runtime, a DLL, a data folder, a network connection, an
+    account. `verify-standalone.ps1` is the proof.
+18. **Single agent; no worktrees unless Eli says so in this session.**
+19. **Commits carry Eli's name as author** (Liefwarrior), as every commit in this repo
     does.
 
 ---
@@ -620,7 +617,7 @@ tickets/
   MILESTONES.md   the milestone ladder: each milestone's goal and exit criteria
   open/           filed, not started
   doing/          in progress -- AT MOST ONE FILE (one agent, work-in-progress limit 1)
-  blocked/        waiting on somebody else: the owner, Valve, a ruling, hardware
+  blocked/        waiting on somebody else: the owner, a ruling, hardware
   done/           finished (or closed as won't-do), with evidence
 ```
 
@@ -650,10 +647,10 @@ resolution:
 
 | Field | Values |
 |---|---|
-| `milestone` | `M0` ... `M9`, as defined in `MILESTONES.md` |
-| `priority` | `P0` blocks launch - `P1` launch quality - `P2` nice to have - `P3` after launch |
-| `type` | `feature` `bug` `content` `copy` `art` `audio` `perf` `infra` `steam` `store` `legal` `brand` `playtest` `decision` `docs` |
-| `owner` | `agent` (the session does it) - `eli` (only the owner can) - `valve` (waiting on Steam) |
+| `milestone` | `M0` ... `M7`, as defined in `MILESTONES.md` |
+| `priority` | `P0` blocks gold - `P1` gold quality - `P2` nice to have - `P3` after gold |
+| `type` | `feature` `bug` `content` `copy` `art` `audio` `perf` `infra` `legal` `brand` `playtest` `decision` `docs` |
+| `owner` | `agent` (the session does it) - `eli` (only the owner can) |
 | `size` | `S` under an hour - `M` one sitting - `L` too big: **must be split before it can move to `doing/`** |
 | `depends` | ids that must be in `done/` first; `[]` for none |
 | `resolution` | empty until closed; then `done`, `wontfix`, or `duplicate T-0017` |
@@ -739,7 +736,7 @@ the override is written into NOW.md with the date.
   regression test or a scripted line that fails before the fix and passes after.
 - **`L` is not a size, it is a signal**: split it into `S`/`M` tickets with `depends`
   between them, close the `L` as `duplicate` of the first, move on.
-- **No estimates beyond S/M/L, no points, no sprints, no assignees beyond the three
+- **No estimates beyond S/M/L, no points, no sprints, no assignees beyond the two
   owners.** The milestone ladder is the schedule.
 - **Viewing the board needs nothing but a shell:** `ls tickets/*/` is the whole board;
   `grep -l 'milestone: M1' tickets/open/*` is a milestone; `grep -l 'owner: eli' -r
@@ -756,8 +753,7 @@ enough on its own to resume:
 doing:      T-0042 Save and load a night's play -- step 3/5: the ward's codec written, tests green
 last commit: abc1234 (pushed) on <branch>
 next:       T-0043, T-0047, T-0051
-waiting on eli:   T-0009 (the climax), T-0012 (Steam Direct fee -- the 30-day clock)
-waiting on valve: --
+waiting on eli:   T-0009 (the climax), T-0012 (playtest: the Kit and the sheet)
 milestone:  M1 -- 4 of 11 done
 gate stamp: owed since def5678 (last stamped: 9910bec)
 standing permissions: "merge milestone PRs to main" -- Eli, 2026-10-12
