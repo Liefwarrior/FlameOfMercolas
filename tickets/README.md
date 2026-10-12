@@ -46,9 +46,9 @@ resolution:
 
 | Field | Values |
 |---|---|
-| `milestone` | `M0` ... `M6`, as defined in `MILESTONES.md` |
+| `milestone` | `M0` ... `M9`, as defined in `MILESTONES.md` |
 | `priority` | `P0` blocks launch - `P1` launch quality - `P2` nice to have - `P3` after launch |
-| `type` | `feature` `bug` `content` `copy` `art` `audio` `perf` `infra` `steam` `store` `legal` `decision` `docs` |
+| `type` | `feature` `bug` `content` `copy` `art` `audio` `perf` `infra` `steam` `store` `legal` `brand` `playtest` `decision` `docs` |
 | `owner` | `agent` (the session does it) - `eli` (only the owner can) - `valve` (waiting on Steam) |
 | `size` | `S` under an hour - `M` one sitting - `L` too big: **must be split before it can move to `doing/`** |
 | `depends` | ids that must be in `done/` first; `[]` for none |
@@ -90,6 +90,15 @@ When answered: the Answer is filled in verbatim, the ruling is appended to
 `docs/design/DECISIONS.md` in that file's own table format (quoting the owner, never
 paraphrasing), the ticket moves to `done/` with `resolution: done`, and every ticket it
 unblocks gets a Log line.
+
+### Playtest tickets
+
+`type: playtest`, `owner: eli`, filed into `blocked/` when the build is ready. The body
+says what to play, in what order, for how long, what to watch for, and -- where one
+applies -- the Oblivion moment to hold it against. When Eli reports back, the verdict
+goes **verbatim** into `docs/design/PLAYTEST-LOG.md` and the ticket's Log, every
+complaint becomes a new ticket before anything else happens, and the ticket moves to
+`done/`. A "no" re-opens the milestone it was closing.
 
 ## Moving tickets
 

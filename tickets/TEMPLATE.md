@@ -16,6 +16,7 @@ resolution:
 
 ## Done when
 - [ ] 
+- [ ] Player-facing: audited against `docs/QUALITY-BAR.md`; its `docs/OBLIVION-BENCHMARK.md` row cited and updated where one applies.
 - [ ] Docs updated with honest status markers (BUILT / PARTIAL / NOT BUILT) where behaviour changed.
 
 ## Plan
