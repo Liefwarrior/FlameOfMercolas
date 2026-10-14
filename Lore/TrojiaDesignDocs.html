@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Project Setup Advice</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            line-height: 1.6;
+            margin: 20px;
+            color: #333;
+        }
+        h1, h2 {
+            color: #0056b3;
+        }
+        ul {
+            list-style-type: disc;
+            margin-left: 20px;
+        }
+        code {
+            background-color: #f4f4f4;
+            padding: 2px 4px;
+            border-radius: 4px;
+        }
+        pre {
+            background-color: #f4f4f4;
+            padding: 10px;
+            border-radius: 4px;
+            overflow-x: auto;
+        }
+    </style>
+</head>
+<body>
+    <h1>Project Setup Advice for "Lord of Trojia" Game MVP</h1>
+    <p>As a senior software engineer with experience in enterprise systems, you'll find many transferable skills in game development, such as version control, project management, and tool familiarity. Below is a step-by-step guide to setting up a GitHub repository, Unity project, and roadmap/ticketing system using Trello. This setup assumes you're working solo initially but scales for collaboration.</p>
+
+    <h2>1. Setting Up a GitHub Repository</h2>
+    <p>GitHub is ideal for version control, issue tracking, and collaboration. Use it to manage your code, assets, and project boards.</p>
+    <ul>
+        <li><strong>Create a New Repository:</strong>
+            <ul>
+                <li>Log in to GitHub (or create an account at <a href="https://github.com">github.com</a>).</li>
+                <li>Click "New" to create a repository. Name it something like "LordOfTrojia-MVP".</li>
+                <li>Make it private (for a passion project) or public. Add a README.md file with a project overview, e.g., "Vertical slice MVP for a roguelike game based on the novel 'Lord of Trojia'."</li>
+                <li>Initialize with a .gitignore for Unity (search for "Unity .gitignore" template).</li>
+            </ul>
+        </li>
+        <li><strong>Clone and Structure the Repo:</strong>
+            <ul>
+                <li>Install Git if not already (download from <a href="https://git-scm.com">git-scm.com</a>).</li>
+                <li>Clone the repo: <code>git clone https://github.com/yourusername/LordOfTrojia-MVP.git</code></li>
+                <li>Create folders: Assets/, Scripts/, Scenes/, Prefabs/, Documentation/ (for design docs), and Roadmap/ (for exported Trello boards).</li>
+            </ul>
+        </li>
+        <li><strong>Use GitHub Projects for Kanban:</strong>
+            <ul>
+                <li>In your repo, go to "Projects" tab and create a new project board.</li>
+                <li>Add columns: Backlog, To Do, In Progress, Review, Done.</li>
+                <li>Link issues or create cards for tasks like "Set up Unity scene" or "Implement basic combat mechanic."</li>
+                <li>Enable automation: Cards move automatically based on pull requests or issue status.</li>
+            </ul>
+        </li>
+        <li><strong>Best Practices:</strong>
+            <ul>
+                <li>Commit often: Use messages like "Initial Unity project setup".</li>
+                <li>Branch for features: <code>git checkout -b feature/basic-combat</code></li>
+                <li>Push regularly: <code>git push origin main</code></li>
+                <li>Integrate with Unity: Use Git LFS for large assets (install via GitHub docs).</li>
+            </ul>
+        </li>
+    </ul>
+
+    <h2>2. Setting Up Unity</h2>
+    <p>Unity is a powerful, free engine for 2D/3D games. Focus on a vertical slice: one dungeon floor demonstrating core roguelike/Zelda mechanics.</p>
+    <ul>
+        <li><strong>Download and Install Unity:</strong>
+            <ul>
+                <li>Go to <a href="https://unity.com">unity.com</a>, download Unity Hub (manages versions).</li>
+                <li>Install Unity 2022 LTS (Long Term Support) for stability.</li>
+                <li>Add modules: 2D (for sprites/tiles), Universal Render Pipeline (for performance).</li>
+            </ul>
+        </li>
+        <li><strong>Create the Project:</strong>
+            <ul>
+                <li>In Unity Hub, create a new 2D project named "LordOfTrojiaMVP".</li>
+                <li>Set up version control: In Unity Editor, go to Edit > Project Settings > Version Control > Mode: Visible Meta Files; Asset Serialization: Force Text.</li>
+                <li>Import assets: Free Unity Asset Store packs for fantasy tilesets (e.g., "Fantasy Dungeon Tileset"), character sprites, and UI (e.g., "Roguelike UI Pack"). Use book/map for inspiration (e.g., import map image as reference).</li>
+            </ul>
+        </li>
+        <li><strong>Basic Project Structure:</strong>
+            <ul>
+                <li>Create scenes: MainMenu, DungeonFloor1 (vertical slice).</li>
+                <li>Folders: Assets/Scripts (PlayerController.cs, CombatSystem.cs), Assets/Sprites, Assets/Prefabs (enemies, items), Assets/Scenes.</li>
+                <li>Set up camera: Orthographic for 2D top-down view, like Zelda.</li>
+                <li>Tilemap: Use Unity's Tilemap system for procedural roguelike floors (Zelda-style rooms).</li>
+            </ul>
+        </li>
+        <li><strong>Initial Development Steps:</strong>
+            <ul>
+                <li>Player character: Based on Eric (lance combat, magic). Script movement, fixed movesets (e.g., thrust, sweep).</li>
+                <li>Core loop: Enter room, solve puzzle/combat, progress (Zelda-like).</li>
+                <li>Roguelike elements: Permadeath/restart, random enemy placement.</li>
+                <li>Test: Build and run often, commit to GitHub.</li>
+            </ul>
+        </li>
+    </ul>
+
+    <h2>3. Setting Up Roadmap/Ticketing with Trello</h2>
+    <p>Trello is a free, visual tool for managing tasks. Use it for your project roadmap and ticketing.</p>
+    <ul>
+        <li><strong>Create a Trello Account and Board:</strong>
+            <ul>
+                <li>Sign up at <a href="https://trello.com">trello.com</a>.</li>
+                <li>Create a board: "Lord of Trojia MVP Roadmap".</li>
+                <li>Make it private or share with collaborators later.</li>
+            </ul>
+        </li>
+        <li><strong>Structure the Board:</strong>
+            <ul>
+                <li>Lists: Backlog (ideas), Sprint 1 (Vertical Slice), In Progress, Testing/Review, Done.</li>
+                <li>Cards: Add tasks like "Research roguelike mechanics (Absolum/Zelda)" or "Implement player combat script".</li>
+                <li>Labels: Color-code (e.g., red=High Priority, green=Unity Setup, blue=Gameplay).</li>
+                <li>Checklists: For subtasks (e.g., under "Unity Setup": Download Hub, Create Project).</li>
+                <li>Due Dates: Set milestones (e.g., Week 1: Basic Unity setup; Week 4: Playable vertical slice).</li>
+            </ul>
+        </li>
+        <li><strong>Integration and Best Practices:</strong>
+            <ul>
+                <li>Link to GitHub: Use Trello Power-Ups for GitHub integration (attach commits/issues).</li>
+                <li>Daily Stand-ups: Review board solo (What did I do? What will I do? Blockers?).</li>
+                <li>Export: Save as PDF/JSON for GitHub repo (Roadmap/ folder).</li>
+                <li>Agile-like: Use for sprints (2-4 weeks), prioritize MVP features (core loop, one dungeon).</li>
+            </ul>
+        </li>
+    </ul>
+
+    <p>This setup provides a solid foundation. Track progress daily, adjust as needed. As a passion project, focus on enjoyment—iterate on the vertical
