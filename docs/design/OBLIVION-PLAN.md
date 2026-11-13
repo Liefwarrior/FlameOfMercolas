@@ -10,6 +10,15 @@ Author: the planning agent for Liefwarrior/Uncbox#19, from the owner's brief of
 Repo state audited: `main` at `364006b3` (2026-10-14). Nothing was built or run for
 this plan; where something was executed, section 12 says exactly what.
 
+**Revision 2026-11-13 (owner answers to section 11, items 1, 3, 4, 6, 7, 8).** The
+owner answered six of the ten questions in section 11 on Uncbox#20. They are recorded as
+rulings in section 1 (items 7-12) and applied where each one bites: sections 3.2, 4.1,
+4.5, 6.3, 7, 8.1, 8.8, 9, 10.2 and 11. Items 2 (raylib), 5 (carried torch), 9 (day
+length) and 10 (order adjustments) were not answered; section 11 keeps them open, with
+the defaults this plan already assumes. One answer, item 6 (the word budget), reads
+the opposite way round from the pairing the plan proposed; it is applied as written and
+flagged in 8.1 for the owner to confirm.
+
 ---
 
 ## 0. Read this first
@@ -55,9 +64,10 @@ are already filed as Uncbox issues #21-#35.
 6. **The phase order in #21-#35 mostly stands.** I propose four adjustments, each
    argued in section 9 and listed in section 11 for you to accept or refuse.
 
-**Decisions I need from you** are collected in section 11; none blocks approving the
-rest. The biggest two: whether the Java parity reference may go, and the audio gap
-(a clean checkout is silent because the audio files are gitignored).
+**Decisions I still need from you** are collected in section 11; none blocks approving
+the rest. Six were answered on 2026-11-13 (section 1, items 7-12). What remains: the
+word-budget confirmation (8.1), the carried torch, the day length, and the four order
+adjustments.
 
 ---
 
@@ -90,6 +100,29 @@ From the owner's brief and its update. Quoted rules are binding on every phase.
    five legend tracks. This plan proposes no change.
 6. **Planning only.** The next phase starts when the owner comments `@liefwarrior-bot
    go` on its issue, as the issues already say.
+
+**Owner answers of 2026-11-13** (Uncbox#20, to the questions in section 11). Binding on
+every phase:
+
+7. **The Java parity reference is dropped.** The Java build is no longer the behavioural
+   reference for the C++ game. What stays is only what a live consumer needs: the
+   `.trojsav` writer, the `import-map` importer and the golden-vector generator, until
+   C++ replacements exist (section 4.1). Everything else Java is removed in phase 1b.
+8. **Audio may be self-generated**, and it must be good: high quality, not slop. A
+   generated sound set under `content/audio/` is accepted; a clip that does not hold
+   up when listened to does not ship (section 7, item 5).
+9. **The sim's light field decides stealth. Shadows are cosmetic.** A sun or moon shadow
+   never hides the player from anybody (section 6.3).
+10. **The word-count cut applies to authored prose only, not to UI chrome.** Recorded as
+    written; see 8.1 item 5, which flags that this reverses the pairing the plan
+    proposed and asks the owner to confirm.
+11. **One dungeon.** The plan builds a single dungeon in phase 15. The owner does not
+    know the phrase "the trail goes down" or a quest by that name, so the plan no longer
+    treats it as authored design: it is one line of lead text in
+    `content/raws/quests/casebook.json:174` whose provenance is not recorded, and nothing
+    here depends on it (section 8.8).
+12. **No hunger and no thirst.** Not built, not planned, not a later decision. Rest and
+    healing stay as they are (sleep, revive, spell).
 
 ---
 
@@ -179,12 +212,12 @@ extracts the shared types, phase 7 does the rest).
 | 5a | Fight | BUILT | Real-time swing, guard, charge, stagger (`sim/tavern.cpp`); `test_combat_action`, `test_stance`, `test_fatigue`. | Opponents are people, rats and cats; no ranged weapons. |
 | 5b | NPC AI | BUILT | Pathing, Watch halt and arrest, street panic; `test_street_panic`. | A deferred route-replan oscillation (DECISIONS 2026-09-26). |
 | 5c | Defeat, rope, nemesis | BUILT | `applyDefeat`, `sim/justice.cpp`, `sim/nemesis.cpp`; `test_court`, `test_nemesis`. | None. |
-| 7 | Rest | PARTIAL | Sleep and rent only in the Gull (`Tavern::rentRoom`, `sleepUntil`); WAIT is global. | No other bed; no player hunger or thirst; healing only by sleep, revive or spell. |
+| 7 | Rest | PARTIAL | Sleep and rent only in the Gull (`Tavern::rentRoom`, `sleepUntil`); WAIT is global. | No other bed; healing only by sleep, revive or spell. Player hunger and thirst are deliberately absent (ruling 12). |
 | 8 | Progress | BUILT | 20 use-trained skills (`SkillTrack::use`, `sim/social.cpp`), fixed attributes, 5 legend tracks x 4 rungs (`sim/legend.cpp`). **No character level exists.** | None (ruling 5). |
 | 9 | **Save / load** | **MISSING** | The client's only file write is the controls file; `main.cpp:5573`: "There is no save." Byte `encode`/`decode` codecs exist for seven subsystems (social ledger, factions, nemesis, crime ledger, contraband sack, kit, ground items) and nothing writes them. The ward population, the Gull, the casebook, the clock and `SkillTrack` have no encoder. Java `WorldSaver` is still the only `.trojsav` writer. | A whole-state save (section 8.7). |
 | 10a | **Ending** | PARTIAL | The last lead `drowned-hold` sets `closed_` (`sim/casebook.cpp:358`): a CLOSED row, a stinger, +30 Flame legend. | No epilogue, credits, win state; play just continues. |
 | 10b | Game over | BUILT | The rope; "A NEW MAN". | None. |
-| 10c | "The trail goes down" | MISSING | The last lead points into an undercellar; three sealed dungeon seams in the map, nothing behind them. | A short dungeon, or an honest end. |
+| 10c | The dungeon | MISSING | The last lead's text points downward (`content/raws/quests/casebook.json:174`; the owner does not recognise that line, ruling 11); three sealed dungeon seams in the map, nothing behind them. | One dungeon (ruling 11, section 8.8). |
 
 The eight systems the update names, with file references:
 
@@ -260,11 +293,11 @@ module.
 | `tools/scripts/*.py` (6) | 7.4k lines | `gen_docks_signs.py` writes live `native/include/granadad/sim/docks_signs_generated.hpp`; `gen_docks_surface.py` writes the `.tmx`; the others write `content/art/{custom,sprites,faces}`, which native loads (`render/atlas.cpp`, `actor_sheet.cpp`, Dockerfile `COPY` lines 94, 100) | **KEEP** |
 | `tools/lot-pipeline/` (24 files) | 5.9k lines | stages licensed art into gitignored `content/art/lot*`; the only record of what that tree holds | **KEEP**; its `unity/` subfolder is "blocked on the Unity licence" per its own README → **AFTER** the owner kills that lane |
 | `tools/palette/` (11 files) | 655 lines + 293 test | `gen-palette` only; `content/maps/src/materials.tsx` is already committed | **AFTER**: owner confirms the palette is never regenerated |
-| sim-core `actor/**` except the two golden files (about 82 files; with `type`, `job`, `spell`, `quest`, `faction` about 13k + 7.8k lines) | | Nothing automated. Referenced as "the behavioural reference" in C++ comments (`ward_actors.hpp:16,104,399`, `compound.hpp:165,504,757`), `native/README.md:5`, the four skills, ARCHITECTURE.md | **AFTER**: (1) the owner rules the Java build is no longer a parity reference; (2) the two actor files `GoldenVectors` imports move next to it or stay |
-| sim-core `event/` (24), `progression/` (18), `engine/` except SystemId (12), `bark`, `bubble`, `world/{Walkability,ActiveSet,site/*}` | 62 files, 3.8k lines | nothing outside sim-core | **AFTER** (same) |
-| sim-core tests | 132 files, 21.5k lines | Gradle only; no CI runs them | **AFTER** (same) |
-| Gradle plumbing: `gradlew`, `gradlew.bat`, `gradle/` (wrapper jar 60 KB), `build.gradle.kts`, `settings.gradle.kts`, `gradle.properties` | small | skills, ARCHITECTURE §2, README | **AFTER** the Java tree goes |
-| `.claude/skills/` (4 files, 44 KB) | | every one says "Run `./gradlew.bat build`" and edits `sim-core`; not referenced by Docker (only `.claude/worktrees` is, in `.gitignore:34`, `.dockerignore:5`, Dockerfile:182) | **AFTER** with the Java tree; keep the `.gitignore` worktrees line |
+| sim-core `actor/**` except the two golden files (about 82 files; with `type`, `job`, `spell`, `quest`, `faction` about 13k + 7.8k lines) | | Nothing automated. Referenced as "the behavioural reference" in C++ comments (`ward_actors.hpp:16,104,399`, `compound.hpp:165,504,757`), `native/README.md:5`, the four skills, ARCHITECTURE.md | **REMOVE in phase 1b**: condition (1) is met, the owner dropped the Java parity reference on 2026-11-13 (ruling 7); condition (2) remains: the two actor files `GoldenVectors` imports move next to it or stay |
+| sim-core `event/` (24), `progression/` (18), `engine/` except SystemId (12), `bark`, `bubble`, `world/{Walkability,ActiveSet,site/*}` | 62 files, 3.8k lines | nothing outside sim-core | **REMOVE in phase 1b** (same) |
+| sim-core tests | 132 files, 21.5k lines | Gradle only; no CI runs them | **REMOVE in phase 1b** (same) |
+| Gradle plumbing: `gradlew`, `gradlew.bat`, `gradle/` (wrapper jar 60 KB), `build.gradle.kts`, `settings.gradle.kts`, `gradle.properties` | small | skills, ARCHITECTURE §2, README | **REMOVE in phase 1b** with the Java tree, except what the kept slice still needs to build: `tools/golden/generate.ps1` calls plain `javac`, so only the Gradle `tools` module (`import-map`) needs the wrapper until the importer is replaced (the PR checks this before deleting `gradlew`) |
+| `.claude/skills/` (4 files, 44 KB) | | every one says "Run `./gradlew.bat build`" and edits `sim-core`; not referenced by Docker (only `.claude/worktrees` is, in `.gitignore:34`, `.dockerignore:5`, Dockerfile:182) | **REMOVE in phase 1b** with the Java tree; keep the `.gitignore` worktrees line |
 
 Totals: sim-core main 259 files / 32.5k lines, tests 132 / 21.5k, `tools/src` 68 / 7.3k.
 About 25k lines (189 files) of sim-core main and all its tests are unreachable from the
@@ -343,9 +376,14 @@ Phase 1 (#21) is one PR containing only the SAFE rows: the 18 folders and 63 loo
 of orphaned screenshots (about 14 MB), the two capture scripts, the nine dead
 functions, the seven dead PLAY.md links, and the text corrections of 4.3 that do not
 depend on later phases. Everything marked AFTER is a later, smaller PR the owner
-can release one by one; the Java removal in particular waits for your ruling
-(section 11, decision 1). No behaviour changes; the proof is the existing tests plus
-the twin-run gate, unchanged.
+can release one by one. The Java removal is **phase 1b**, a separate PR under #21 and
+no longer waiting on a ruling (ruling 7, 2026-11-13): it deletes the unreachable
+sim-core, its tests, the Gradle plumbing that nothing live needs and the four
+`.claude` skills, keeps the 47-file golden/`import-map` slice, and fixes the text that
+calls Java the behavioural reference (`native/README.md:5`, the C++ comments cited in
+4.1, ARCHITECTURE.md §2). It also starts only on `go`. No behaviour changes; the proof
+is the existing tests plus the twin-run gate, unchanged, and the golden header
+regenerates byte-identical.
 
 ---
 
@@ -506,10 +544,10 @@ through one integer rule. That stays the only authority.
   function the sim's integer field uses (`render/lighting.hpp`). A test evaluates the
   C++ reference of the shader function against the sim field at a grid of points and
   pins the agreement, so what the player sees lit and what stealth reads stay one idea.
-- **Shadows are cosmetic.** A sun shadow does not hide the player from the Watch; the
-  sim's light field knows nothing of it. This is a design consequence the owner should
-  accept explicitly (section 11, decision 4); the plan does not make shadows a stealth
-  input.
+- **Shadows are cosmetic** (ruling 9, confirmed 2026-11-13). The sim's integer light
+  field decides stealth; a sun or moon shadow does not hide the player from the Watch
+  and the sim knows nothing of it. The HUD help and the phase 5 PR say so in one line,
+  so a player does not assume a dark patch is cover.
 - Projectiles, spell effects and light spells (phase 11) are decided in the sim; the
   renderer receives the resulting positions in the next description.
 
@@ -607,7 +645,7 @@ Per-pixel, forward, one lit pass, no deferred buffers. This is the 2006 model.
 - **Player-carried torch**: ships as a render-only light in phase 5. If it is ever to
   change who can see the player, the sim must grow a light source, which moves hashed
   state and needs a declared baseline move (`docs/BASELINE-WORLD-HASH.md`); that is a
-  gameplay decision for the owner (section 11, decision 5), not part of this plan.
+  gameplay decision for the owner (section 11, decision 5, still open), not part of this plan.
 
 ### 6.7 Sky and fog
 
@@ -703,10 +741,21 @@ file under a new folder (`content/art/oblivion/`); nothing existing is edited.
    pelvis, head with a small painted face texture, limbs, hands and feet as bevelled
    boxes), built from a parameter set, plus equipment meshes (blade, club, dagger, coat,
    cap) built the same way. This is "simple low-poly people" with no licence question.
-5. **Audio.** Not a renderer item, but the same hole: the files are gitignored. The plan
-   proposes a small CC0 or self-generated set under `content/audio/` (footsteps, doors,
-   hits, ambience beds, a few stingers) so a clean checkout is not silent. Third-party
-   audio needs the owner's provenance call (section 11, decision 3).
+5. **Audio.** Not a renderer item, but the same hole: the files are gitignored. The owner
+   has ruled that self-generated audio is fine and that quality matters (ruling 8: high
+   quality, not slop). The plan therefore adds a set under `content/audio/` (footsteps,
+   doors, hits, ambience beds, a few stingers) so a clean checkout is not silent, with
+   these rules: it is synthesised by a committed, deterministic generator script (the
+   `content/art/` generators in `tools/scripts/` are the precedent), so every file is
+   reproducible and its provenance is the script; each sound has several variants with
+   seeded variation so repeats do not read as a loop; levels are normalised and every
+   file is reviewed by ear by the owner before the next one is built on it, the way
+   the first materials PR is (item 3). A sound that does not pass is dropped, not
+   shipped as a placeholder. Third-party audio still needs a recorded licence; none is
+   planned. Where it lands is phase 15 or earlier, the phase 6 footsteps being the
+   natural first batch. The audio itself cannot be judged on this Linux machine without
+   a listening device, so each batch is listed as needing the owner's ears (section
+   10.1).
 6. **Optional.** If the owner supplies or licenses real assets later they slot in through
    the existing catalogue and raylib's glTF loader.
 
@@ -744,12 +793,22 @@ packs.
    registers' rules bind: master/detail strip cards; the centre of the screen stays
    empty under every open page (`test_hud_diet` enforces it by pixel diff); every
    visible choice has a key; the J notes ring pages on the bumpers and brackets.
-5. **The word budget is a conflict to resolve, not ignore.** `docs/design/UI-EA-SPEC.md`
-   binds a 50% word cut (global cap 1,785 words across the census surfaces) and the
-   owner's brief now asks for wiki-like, polished dialogue text. These are compatible
-   only if the budget is read as a limit on *chrome* (labels, instructions, hints) and
-   not on authored prose. The plan assumes that reading and asks the owner to confirm it
-   (section 11, decision 6). Authored prose goes in the detail pane, never in labels.
+5. **The word budget** (ruled 2026-11-13). `docs/design/UI-EA-SPEC.md` binds a 50%
+   word cut (global cap 1,785 words across the census surfaces). The owner's answer is:
+   *"Word-count cut applies to authored prose only, not UI chrome."* Applied as
+   written: labels, instructions, hints, key legends and headings are **not** word-capped
+   by this plan's screens, and the cut is a discipline on authored prose, meaning
+   dialogue replies, topic entries and journal text: a reply says one thing, in few
+   words, and hands the rest to its keywords, which is also what Morrowind's wiki style
+   wants (short answers that link outward). Two consequences to check before phase 12:
+   (a) UI-EA-SPEC itself exempts "world words" (letter prose, actor speech, lead body,
+   question and answer text, line 224) and cuts chrome, the opposite pairing; (b) the
+   spec's pixel-diff test (`test_hud_diet`) pins chrome words, and phase 12 would either
+   keep those pins as they are or drop them. **I read the answer literally and ask the
+   owner to confirm it** (section 11, decision 6), because if it was meant as "chrome is
+   limited, prose is not", the dialogue budget in 8.6 changes from "short replies" to
+   "as long as the entry needs" and nothing else moves. Until confirmed, new dialogue
+   text is written short and the existing HUD pins stay untouched.
 6. **Every screen works on keyboard and pad**, with the existing action vocabulary
    (`render/controls.cpp`), and is photographed by a scripted `--flag` through the real
    verbs, like the existing ones.
@@ -943,13 +1002,19 @@ robust afterwards.
 
 An **ending** (10a): closing the case triggers an epilogue page (what the ward does
 next, by the legend tracks and the nemesis state, authored text, no new mechanic), then
-"continue in the district" or a new game; the credits are a plain page. The **undercellar**
-(10c) is either a short authored dungeon behind one of the three sealed seams or an
-honest end card, the owner's call (section 11, decision 7). Also the audit's loose
+"continue in the district" or a new game; the credits are a plain page. The **dungeon**
+(10c) is **one** dungeon behind one of the three sealed seams (ruling 11). Its premise,
+rooms and text are not taken from "the trail goes down", which the owner does not
+recognise; they are authored from canon (the novel in `LordOfTrojia-MVP` always wins,
+and the text carries provenance like every other new file), and the plan asks for the
+owner's brief for it before phase 15 starts, because its story is not something this
+plan may invent. Mechanically it is the same tile simulation on one more map, so it
+needs no new system: a baked map cannot be produced without the Java importer (still
+kept, ruling 7), and its door, light and enemy rules are the existing ones. Also the audit's loose
 ends: the two band-18 leads proven reachable by a walking test; rentable beds beyond the
 Gull; door open and close with the existing `DoorOpen/Close` sounds; settings for
 volume, music and difficulty; a day-length setting (the 24-hour real-time day, 2d);
-player hunger as a decision, not a default (section 11, decision 8); the stale
+no hunger or thirst, by ruling 12 (nothing to build); the stale
 `README`/`PLAY` key tables and screenshots refreshed; and a scripted full playthrough
 `--playthrough` that plays creation to ending to save and load and photographs each
 beat.
@@ -976,7 +1041,7 @@ whether a baseline moves); WIN = needs the owner on Windows (section 10).
 
 | # | Issue | Phase | One-sentence scope | Proof beyond the standard | Flags |
 |---|---|---|---|---|---|
-| 1 | #21 | Cleanup | The SAFE rows of section 4.5 only. | Tests and twin run unchanged; a script lists every removed path with its grep evidence in the PR. | none |
+| 1 | #21 | Cleanup | The SAFE rows of section 4.5 only; then **1b**, the Java removal of 4.1, as its own PR. | Tests and twin run unchanged; a script lists every removed path with its grep evidence in the PR. | none |
 | 2 | #22 | Split `session.cpp` | Section 5: the member files, `render/scripted/`, the shared-types extraction. | Byte-identical captures across every scripted line; the suite with no test edits. | none |
 | 3 | #23 | GPU renderer foundation | 3a headless GL on llvmpipe (6.2) and the gate changes; 3b the shader pipeline, normals in the description, `render3d/rl/` split, the DECISIONS amendment. | Golden-image tests with tolerance; the readback ban grep; same-scene before and after. | WIN |
 | 4 | #24 | World geometry and materials | Section 6.5 and the material generator of section 7. | Mesh determinism tests; the scene hash moves on purpose; the standard set from the same viewpoints. | WIN |
@@ -998,8 +1063,8 @@ whether a baseline moves); WIN = needs the owner on Windows (section 10).
 `scripts/capture-parallel2.ps1`, nine functions in `render/` and `workbench/`, `PLAY.md`'s
 seven links, README and native/README text fixes that do not depend on later phases.
 *Not* in it: the Java tree, the `.claude` skills and the doc archive moves, which are
-separate small PRs under the same issue once the owner rules (section 11, decision 1);
-nothing under `content/`. Risk: a function the grep missed; mitigation: the build and the
+separate small PRs under the same issue: **1b removes the Java tree** (ruled 2026-11-13,
+section 4.5), and the doc archive moves follow; nothing under `content/`. Risk: a function the grep missed; mitigation: the build and the
 full suite, and a re-grep inside the PR.
 
 **2. Split `session.cpp`.** As section 5. Risk: a merge conflict with anything else
@@ -1044,7 +1109,8 @@ is the largest sim addition and is called out in its PR as a declared baseline m
 stays proven on every later build.
 
 **15. Full loop and polish.** Section 8.8. This is where the audit's remaining holes close
-and the whole loop is played by a script on both toolchains.
+and the whole loop is played by a script on both toolchains. It includes one dungeon (its
+brief comes from the owner, 8.8) and the generated audio if it has not landed earlier (7.5).
 
 ### Why this order, and where the code argues for changes
 
@@ -1082,7 +1148,8 @@ be built, run or judged here, and each PR will say so:
    that touches sim state (8-15).
 4. **Input and window behaviour**: mouse-look feel at the real sensitivity, raw input,
    gamepad (SDL3), fullscreen and alt-tab, DPI.
-5. **Audio on a real device** (the SDL3 backend; llvmpipe has no sound).
+5. **Audio on a real device** (the SDL3 backend; llvmpipe has no sound), and **how the
+   generated sounds actually sound**: quality is the owner's ear, not a test.
 6. **Save files across toolchains**: a save written by the Windows build and loaded by
    the Linux test build (byte identity) is proved by the gate on both, and by one manual
    Windows save and load by the owner.
@@ -1103,36 +1170,46 @@ be built, run or judged here, and each PR will say so:
 | **Save format churn** | Phases 8-13 add sections | Per-phase codecs (8.1), a versioned container, a section-level version byte. |
 | **Content volume**: dialogue is prose, authored in canon | The owner's canon voice cannot be faked; a thin slice reads thin | A vertical slice plus a linter; the owner steers the rest. All text carries provenance. |
 | **Art without art**: procedural textures and people can look cheap | The 2006 look depends on texture and light | Look target is tolerant of low-poly; real assets slot in through the existing catalogue; the owner judges the first materials PR before more is built on it. |
-| **Word-diet conflict** (UI-EA-SPEC) | Wiki-like text vs 50% fewer words | Section 8.1 item 5, owner decision 6. |
-| **Shadows do not hide the player** | A player may assume they do | Cosmetic by ruling 2; stated in the HUD help and the PR; decision 4. |
+| **Word-diet reading** (UI-EA-SPEC) | The answer applies the cut to prose, UI-EA-SPEC applied it to chrome | Section 8.1 item 5; the owner confirms (decision 6); until then prose is short and HUD pins untouched. |
+| **Shadows do not hide the player** | A player may assume they do | Cosmetic by ruling 9; stated in the HUD help and the PR. |
+| **Generated audio sounds cheap** | The owner asked for high quality, not slop | Deterministic generator, variants, the owner's ear on each batch, a failing clip is dropped (7.5). |
+| **The dungeon has no brief** | Its story is not the plan's to invent | The owner supplies a brief before phase 15; it is authored from canon with provenance. |
 | **Distance and size**: the district is 256x192 | Low; draw whole under fog | LOD ring in 6.5. |
-| **Silent checkout**: audio files absent | The "complete loop" is mute | Section 7, item 5; decision 3. |
+| **Silent checkout**: audio files absent | The "complete loop" is mute | Section 7, item 5 (ruling 8). |
 | **A clean build was not run for this plan** | The audit is by reading | Each phase proves itself with the gate; the plan's numbers (line counts, case counts) are re-read at phase start. |
 
 ---
 
-## 11. Decisions I need, and adjustments to the issue list
+## 11. Decisions, answered and open
 
 None of these blocks approving the plan; each is needed by the phase named.
 
-1. **May the Java parity reference go?** (phase 1b, after phase 1.) If yes, the unreachable
-   sim-core, its tests, Gradle and the `.claude` skills are removed, keeping the 47 files
-   the golden generator and `import-map` use. If no, they stay and only the SAFE rows go.
-   The README's three claims about the Java tree hold today (section 4.1).
-2. **Raylib as the adapter** (phase 3): the update permits it. I read that as final.
-3. **Audio provenance** (phase 15 or earlier): may I add a small CC0 or self-generated set
-   under `content/audio/`, since the audio files are gitignored and a clean checkout is silent?
-4. **Shadows are cosmetic** (phase 5): the sim's integer light field, not the shadow map,
-   decides stealth. Accept?
+### 11.1 Answered by the owner, 2026-11-13 (Uncbox#20)
+
+| # | Question | Answer | Where applied |
+|---|---|---|---|
+| 1 | May the Java parity reference go? | **Yes, it can be dropped.** | Ruling 7; 4.1, 4.5, phase 1b |
+| 3 | Audio provenance | **Self-generated is fine; high quality, not slop.** | Ruling 8; 7.5, 10.1, 10.2 |
+| 4 | Shadows cosmetic, the sim's light field decides stealth? | **Yes.** | Ruling 9; 6.3 |
+| 6 | Word budget (UI-EA-SPEC's 50% cut) | **"Applies to authored prose only, not UI chrome."** Applied as written, flagged below. | Ruling 10; 8.1 item 5 |
+| 7 | "The trail goes down" | **One dungeon. The owner does not know that phrase or a quest by that name.** | Ruling 11; 8.8 |
+| 8 | Player hunger and thirst | **No.** | Ruling 12; 3.2 row 7, 8.8 |
+
+### 11.2 Still open
+
+2. **Raylib as the adapter** (phase 3): the update permits it and the answers did not
+   object. I keep reading that as final.
 5. **A player-carried torch** (phase 5 renders it; its stealth effect is a sim change that
-   moves baselines). Render-only first, then decide?
-6. **Word budget** (UI-EA-SPEC's 50% cut): applies to chrome and not to authored prose?
-7. **"The trail goes down"** (phase 15): build a short dungeon behind one of the three
-   sealed seams, or end with an honest epilogue and no dungeon?
-8. **Player hunger and thirst** (phase 15 or never): not in the issue list, the north star
-   does not require it; it is in the audit as MISSING. Include, or leave out on purpose?
+   moves baselines). Render-only first, then decide? Default if unanswered: render-only.
+6. **Confirm the word-budget reading** (8.1 item 5). The answer as written applies the
+   cut to authored prose and exempts chrome, which is the reverse of what UI-EA-SPEC and
+   the plan's proposal assumed. If that is what you meant, nothing more is needed; if
+   you meant that chrome stays limited and prose is free, say so and 8.1 and 8.6 flip.
+7. **The dungeon's brief** (phase 15, before it starts): where it is, what it is for and
+   what canon it comes from. Without a brief it is not built and phase 15 ends the
+   case with the existing close state plus the epilogue page.
 9. **Day length** (phase 15): the default clock is real-time, a 24-hour day. Keep, or ship a
-   faster default?
+   faster default? Default if unanswered: keep, with the setting.
 10. **Order adjustments** (section 9): (a) shared-type extraction into phase 2; (b) each of
     phases 8-13 ships its own save codec; (c) phases 3, 4, 5, 6 and 12 may each be two PRs;
     (d) title screen with Continue in 14, ending in 15. Say "as filed" and I will keep the
@@ -1159,3 +1236,6 @@ Honest record, so nothing here is claimed beyond it.
   other and are treated as stale.
 - **Screenshots** referenced as "before" baselines (`docs/frames/3d-world-synty`,
   `3d-slice-one`) were viewed, not regenerated.
+- **Revision 2026-11-13:** a documentation edit only. Nothing was built or run for it. It
+  records the owner's six answers; the file references it adds (`casebook.json:174`,
+  `native/README.md:5`) were checked by reading the files at `main` `978b3848`.
