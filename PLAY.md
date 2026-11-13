@@ -4,23 +4,20 @@ How to start it, how to build a character, what topic/tone dialogue is, how
 to find and finish a piece of faction work, and an honest account of what is
 fun and what is not.
 
-Written against `0.10.0`, commit `dc47aab` — the build that adds character
+Written against `0.10.0`, commit `dc47aab` — the build that added character
 creation (Devin, Gabri, or your own) *wired into your actual playable
 skills*, the "TELL ME ABOUT" topic tree, the district map, and the second
-and third radiant-quest content packs.
+and third radiant-quest content packs. It has not been rewritten for every
+build since: `granadad.exe --version` names the build you have.
 
 ---
 
-## 0. `dist\granadad.exe` is current and gate-certified
+## 0. `dist\granadad.exe` is whatever your last gate run built
 
-As of this pass, `dist\GATE-STAMP.txt` reads 679 ctest cases (floor 537),
-timestamped minutes ago — a genuine `docker compose run --rm --build build`
-+ `scripts\verify-windows.ps1` green, not a cross-compile with `ctest`
-skipped. The `native/tests/test_casebook.cpp:635` spawn-location bug that
-blocked every publish earlier tonight is fixed (commit `1eaa12d`) and the
-chargen-to-`SkillTrack` seam §2 used to have to caveat about is closed
-(commit `dc47aab`) — both landed, both are in the binary in `dist\` right
-now. Rebuild yourself any time with:
+`dist\` is not in git. `dist\GATE-STAMP.txt` names the commit and the number of
+ctest cases of the last gate run on your machine; this document no longer
+quotes either, because the numbers it used to carry (commit `dc47aab`, 679
+cases) went stale as soon as the next commit landed. Rebuild any time with:
 
 ```
 powershell -ExecutionPolicy Bypass -File .\scripts\gate.ps1
@@ -31,11 +28,12 @@ powershell -ExecutionPolicy Bypass -File .\scripts\verify-windows.ps1
 on stamped into `dist\GATE-STAMP.txt`; the bare compose command works too and
 stamps `unknown`.)
 
-The screenshots in section 7 were captured earlier tonight from an
-uncertified cross-compile of an in-progress commit (`369ae59`); every system
-they show is unchanged since, but if you want frames from the exact
-certified binary described above, they are one `--screenshot=` flag away —
-see the repro commands at the end of §7.
+The screenshots in this document live in `docs/frames/`. They were captured
+by earlier builds, before the 3D world became the default view on 2026-09-11,
+so the world they show is the older software-drawn one; the HUD and the
+screens around it are the ones the game still draws. Each is one
+`--screenshot=` flag away on your own build — see the repro commands at the
+end of §7.
 
 ---
 
@@ -65,7 +63,7 @@ Five rows, one screen, UP/DOWN to move and ENTER to pick. The top three are
 the Daggerfall flow's own doors — make your own; the bottom two are quick
 starts:
 
-![A NAME FOR YOURSELF: take a calling, answer for yourself, walk your own path — or Gabri and Devin as quick starts](docs/frames/s14-chargen-origin.png)
+![A NAME FOR YOURSELF: take a calling, answer for yourself, walk your own path — or Gabri and Devin as quick starts](docs/frames/chargen/after-origin-960.png)
 
 **TAKE A CALLING** lists the ward's nine trades — Dockhand, Deckhand, Watch
 Runner, Netter, Mudlark, Roof-Tenant, Almsbearer, Stallkeep, Copy-Clerk, each
@@ -73,21 +71,21 @@ a full pre-authored Primary/Major/Minor sheet out of
 `content/raws/chargen/callings.json`, previewed whole in the middle of the
 screen while you hover it:
 
-![The nine-trade roster, Netter hovered, its whole sheet previewed](docs/frames/s14-chargen-calling.png)
+![The nine-trade roster, Netter hovered, its whole sheet previewed](docs/frames/chargen/after-calling-960.png)
 
 **ANSWER FOR YOURSELF** is the ward's ten questions — second person, three
 defensible answers each, answer order shuffled per question so the axes can't
 be pattern-marked. Three identity meters (HAND / MUDLARK / DISCIPLE) fill as
 answers land, and the hovered answer is always spelled out in full mid-screen:
 
-![Question five of ten, the meters at a mid-quiz tally](docs/frames/s14-chargen-quiz.png)
+![Question five of ten, the meters at a mid-quiz tally](docs/frames/chargen/after-quiz-960.png)
 
 Ten answers become a verdict card — the tally in the header, the offered
 trade's whole sheet previewed under it. **The verdict is never a trap**:
 `TAKE THE CALLING` or `ANOTHER TRADE`, which drops you on the roster to pick
 by eye instead:
 
-![The ward's verdict: HAND 5 MUDLARK 3 DISCIPLE 2 — Deckhand, take it or choose another](docs/frames/s14-chargen-verdict.png)
+![The ward's verdict: HAND 5 MUDLARK 3 DISCIPLE 2 — Deckhand, take it or choose another](docs/frames/chargen/after-verdict-960.png)
 
 Either way you then answer for your past — **the twelve-question biography**
 (`content/raws/chargen/biography.json`), each answer moving real levers:
@@ -95,14 +93,14 @@ skill deltas, the starting purse, faction standing (zero-sum, enforced at
 load), seeded dispositions with named notables, starting heat, hpMax. The
 first question also offers `A PAST AT RANDOM`, Daggerfall's own option:
 
-![B4 — the Watch knows your face because…](docs/frames/s14-chargen-background.png)
+![B4 — the Watch knows your face because…](docs/frames/chargen/after-background-960.png)
 
 All three doors converge on the same review screen with the result
 pre-designated — and everything the sheet can't hold (coin, heat, standings,
 seeds, hpMax) rides `CreationResult::effects` to the boot seam and is applied
 once through the engine's own setters:
 
-![The convergence: a taken Netter reviewed on the customize screen](docs/frames/s14-chargen-review.png)
+![The convergence: a taken Netter reviewed on the customize screen](docs/frames/chargen/after-review-960.png)
 
 **DEVIN and GABRI are Eli's own BG3/Divinity: Original Sin 2-style origin
 templates** — fixed, hand-authored characters, not something you spend points
@@ -129,7 +127,7 @@ live in the sim; the advantage shop that would move it is priced in
 `docs/design/CHARGEN-DAGGERFALL-DRAFT.md` §5 and awaits sign-off, so the
 points stay honestly at zero):
 
-![The custom builder: slots, points, and the dagger readout](docs/frames/s14-chargen-custom.png)
+![The custom builder: slots and points](docs/frames/chargen/after-customize-960.png)
 
 `NAME` (type it — letters, spaces, hyphens, apostrophes, sixteen glyphs), then
 `LOOK` (LEFT/RIGHT cycles eleven of the ward's own sprite types — the same
@@ -444,21 +442,21 @@ The centre of the screen stays empty with every one of the overlay pages up
 
 ---
 
-## 7. Frames from this morning's build
+## 7. Frames
 
-All captured from the binary described in §0 — a real, uncached compile of
-current source, played rather than described:
+All from `docs/frames/`, captured by earlier builds (see §0 for what that means
+for the world behind the HUD), played rather than described:
 
 | | |
 |---|---|
 | `s10-11-morning.png` | the Tarwalk at eight, opening on the case |
-| `s14-chargen-origin.png` | the five rows: three Daggerfall doors, two quick starts |
-| `s14-chargen-calling.png` | the nine-trade roster, a whole sheet previewed |
-| `s14-chargen-quiz.png` | question five, the meters mid-tally |
-| `s14-chargen-verdict.png` | the tally's verdict card — take it, or another trade |
-| `s14-chargen-background.png` | the biography, question four of twelve |
-| `s14-chargen-review.png` | the convergence: a taken calling on the review screen |
-| `s14-chargen-custom.png` | the point-bought sheet, with the dagger readout |
+| `chargen/after-origin-960.png` | the five rows: three Daggerfall doors, two quick starts |
+| `chargen/after-calling-960.png` | the nine-trade roster, a whole sheet previewed |
+| `chargen/after-quiz-960.png` | question five, the meters mid-tally |
+| `chargen/after-verdict-960.png` | the tally's verdict card — take it, or another trade |
+| `chargen/after-background-960.png` | the biography, question four of twelve |
+| `chargen/after-review-960.png` | the convergence: a taken calling on the review screen |
+| `chargen/after-customize-960.png` | the point-bought sheet, slots and points |
 | `s10-14-chargen-devin.png` | Devin's fixed sheet, read-only, paged |
 | `s10-15-topic-root.png` | a real street conversation — TELL ME ABOUT is topic 1 |
 | `s10-16-topic-branches.png` | the five branches: place / person / thing / work / quest |
