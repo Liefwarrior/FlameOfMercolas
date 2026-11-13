@@ -79,9 +79,6 @@ public:
     [[nodiscard]] const ActorSprite& forType(sim::WardType type,
                                              std::uint32_t variantKey) const noexcept;
 
-    /// How many variants a type has. Zero means the fallback is in use for it.
-    [[nodiscard]] std::size_t variantsFor(sim::WardType type) const noexcept;
-
 private:
     void buildFallback();
 
@@ -90,16 +87,5 @@ private:
     std::vector<std::vector<std::size_t>> byType_;
     bool fromAuthoredArt_ = false;
 };
-
-/// The tag query each ward type answers to, as authored in
-/// content/art/sprites/sprite-index.json's `actorQueries` block.
-///
-/// SIXTEEN TYPES AGAINST ELEVEN AUTHORED QUERIES, and the extra five are the
-/// ones the owner's complaint named. An urchin queries the vagrant's tags with
-/// `ragged` required, so it is drawn as the smallest hooded figure on the
-/// sheet; a thief queries them too and is scaled down and darkened rather than
-/// given art nobody drew. Inventing sprite ids that are not in the index would
-/// be this build authoring art, which it does not do.
-[[nodiscard]] std::string_view actorSheetQuery(sim::WardType type) noexcept;
 
 }  // namespace granadad::render

@@ -165,7 +165,6 @@ private:
     std::string runOne(std::string_view line, bool logged);
     void stepWorld(int steps);
     bool selectByName(Selection::Kind kind, std::string_view text);
-    void clampCursor();
 
     void drawToolbar(render::Framebuffer& target, const render::PanelRect& pane) const;
     void drawHierarchy(render::Framebuffer& target, const render::PanelRect& pane) const;

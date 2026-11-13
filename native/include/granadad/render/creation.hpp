@@ -329,12 +329,6 @@ public:
     /// 1 the instant an answer lands, easing to 0 over ~8 steps -- the one
     /// restrained ImpactPulse the answer-commit gets (DECISIONS.md rule 3).
     [[nodiscard]] float commitPulse() const noexcept { return commitPulse_.value(); }
-    /// The screen's own centre furniture, unwrapped: the hovered calling's
-    /// (or the verdict's) full sheet preview on Calling/verdict, the hovered
-    /// answer's full text on Quiz/Background -- the words the topic grid's
-    /// eighteen-glyph column can only ever clip, drawn whole in the one
-    /// region this screen has no world or face to keep clear for.
-    [[nodiscard]] std::vector<std::string> centreLines() const;
 
     // --- customize --------------------------------------------------------
 
@@ -652,9 +646,6 @@ private:
     /// The last biography answer just landed: accumulate the effects (pure,
     /// sim::accumulateBiography) and converge on Customize.
     void finishBiography() noexcept;
-    /// The full sheet preview centreLines() builds for one calling.
-    [[nodiscard]] std::vector<std::string> sheetPreview(
-        const sim::CallingTemplate& calling) const;
 
     // --- the composed page, step by step ---------------------------------
     //
@@ -697,13 +688,8 @@ private:
         const std::array<std::int32_t, sim::kChargenAxisCount>& counts) const;
     /// What the past has cost so far, for the header readout.
     [[nodiscard]] std::string pagePastReadout() const;
-    /// The same, spelled out as bullets on the review pane.
-    [[nodiscard]] std::vector<PanelLine> pagePastLines() const;
     /// The slot counts and the point pool, for the header readout.
     [[nodiscard]] std::string pageSheetReadout() const;
-    /// Which tiers still have room, restated under the commit verb so a
-    /// refusal is never a mystery.
-    [[nodiscard]] std::string pageSlotCost() const;
 
     sim::SkillTrack skills_;
     sim::Chargen chargen_;
