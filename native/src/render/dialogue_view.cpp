@@ -163,27 +163,6 @@ struct BandGeometry {
 
 }  // namespace
 
-// THE PICKED ROW'S HIGHLIGHT: a soft band under the label and a bright
-// hairline where the cursor arrow sits.
-//
-// NO LONGER USED BY drawDialogue, AND THAT IS THIS PASS'S SECOND FINDING.
-// UI-REFERENCE-TERMINAL.md forbids the arrow by name -- "Selection is an
-// inverted highlight ... Not an arrow, not a bracket" -- and the conversation
-// panel's verifier photographed exactly that: a `>` printed beside the picked
-// topic. The topic list now selects with drawInvertedFill in the speaker's own
-// attitude accent, which is the spec's idiom, so this shape survives only for
-// menu_view.cpp's four tiled panels, which are a different surface and were
-// not in this pass's scope. See the header on the .hpp declaration.
-//
-// BREATHES GENTLY WITH `phase`, and 0 draws it at rest.
-void drawPickHighlight(Framebuffer& target, int x, int y, int rowStep, int glyphAdvance, int scale,
-                       int labelWidth, int roomWidth, float phase) {
-    const float breathe = 0.5F + 0.5F * std::sin(phase * 6.0F);
-    const int width = std::max(glyphAdvance, std::min(roomWidth, labelWidth + 2 * glyphAdvance));
-    target.fillRect(x - glyphAdvance, y - scale, width, rowStep, kTopicPicked, 0.10F + 0.07F * breathe);
-    target.fillRect(x - glyphAdvance, y - scale, scale, rowStep, kTopicPicked, 0.85F);
-}
-
 int topicPageCount(std::size_t topics) noexcept {
     if (topics == 0) {
         return 1;

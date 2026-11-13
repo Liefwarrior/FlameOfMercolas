@@ -27,6 +27,11 @@ namespace {
 /// as a table rather than read out of the file, because the MAPPING from this
 /// build's sixteen types to the index's eleven queries is this build's decision
 /// and belongs in this build's source; the tags themselves are the owner's.
+/// An urchin queries the vagrant's tags with `ragged` required, so it is drawn
+/// as the smallest hooded figure on the sheet; a thief queries them too and is
+/// scaled down and darkened rather than given art nobody drew. Inventing sprite
+/// ids that are not in the index would be this build authoring art, which it
+/// does not do.
 struct Query {
     sim::WardType type;
     const char* tags;
@@ -157,15 +162,6 @@ void measure(ActorSprite& sprite) {
 }
 
 }  // namespace
-
-std::string_view actorSheetQuery(sim::WardType type) noexcept {
-    for (const Query& query : kQueries) {
-        if (query.type == type) {
-            return query.tags;
-        }
-    }
-    return "actor,humanoid,laborer";
-}
 
 void ActorSheet::buildFallback() {
     // Colours picked to be told apart at a glance and in lamplight, which is
@@ -333,10 +329,6 @@ const ActorSprite& ActorSheet::forType(sim::WardType type,
     const std::vector<std::size_t>& options = byType_[static_cast<std::size_t>(type)];
     const std::size_t pick = options.empty() ? 0 : variantKey % options.size();
     return sprites_[options.empty() ? 0 : options[pick]];
-}
-
-std::size_t ActorSheet::variantsFor(sim::WardType type) const noexcept {
-    return byType_[static_cast<std::size_t>(type)].size();
 }
 
 }  // namespace granadad::render

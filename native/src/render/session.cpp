@@ -1571,10 +1571,6 @@ void Session::setControls(const ControlSettings& settings) {
     // there is no second copy to forget to update.
 }
 
-void Session::setFov(int degrees) {
-    controls_.fovDegrees = degrees < kMinFov ? kMinFov : (degrees > kMaxFov ? kMaxFov : degrees);
-}
-
 namespace {
 
 /// WHICH FAMILY A VERB BELONGS TO, and therefore what colour its row is on the

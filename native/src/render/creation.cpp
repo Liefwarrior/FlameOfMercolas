@@ -596,87 +596,6 @@ std::string CreationFlow::statusLine() const {
           std::to_string(chargen_.attributePointsRemaining()) + " LEFT" + dagger;
 }
 
-std::vector<std::string> CreationFlow::sheetPreview(const sim::CallingTemplate& calling) const {
-    // The roster's own sheet preview: the three tiers by display name, then
-    // the spent attributes -- the numbers the review screen will show, shown
-    // BEFORE the pick, which is the whole reason a roster can be "picked by
-    // eye". Display names off the loaded SkillTrack, the same source every
-    // customize row already reads; a name the track cannot find falls back
-    // to the id, which loaded content never needs.
-    const auto tierLine = [this](const char* label, const std::vector<std::string>& ids) {
-        std::string line(label);
-        for (std::size_t i = 0; i < ids.size(); ++i) {
-            const sim::SkillTrack::Entry* entry = skills_.find(ids[i]);
-            line += (i == 0 ? " " : ", ");
-            line += entry != nullptr ? entry->displayName : ids[i];
-        }
-        return line;
-    };
-    std::vector<std::string> lines;
-    lines.push_back(tierLine("PRIMARY", calling.primary));
-    lines.push_back(tierLine("MAJOR", calling.major));
-    lines.push_back(tierLine("MINOR", calling.minor));
-    std::string spend;
-    for (std::size_t i = 0; i < sim::kAttributeCount; ++i) {
-        const auto attribute = static_cast<sim::AttributeId>(i);
-        if (i > 0) {
-            spend += "  ";
-        }
-        spend += std::string(sim::attributeAbbrev(attribute)) + " " +
-                 std::to_string(sim::kAttributeBase + calling.attributeSpend[i]);
-    }
-    lines.push_back(spend);
-    return lines;
-}
-
-std::vector<std::string> CreationFlow::centreLines() const {
-    if (step_ == CreationStep::Calling) {
-        const std::vector<sim::CallingTemplate>& roster = callings_.callings();
-        if (choiceCursor_ >= 0 && choiceCursor_ < static_cast<int>(roster.size())) {
-            return sheetPreview(roster[static_cast<std::size_t>(choiceCursor_)]);
-        }
-        return {};
-    }
-    if (step_ == CreationStep::Quiz) {
-        if (verdict_.has_value()) {
-            // The verdict card previews the sheet it is offering -- the same
-            // block the roster shows, so accept-or-decline is an informed
-            // choice and not a leap.
-            if (const sim::CallingTemplate* calling = callings_.find(verdict_->calling)) {
-                return sheetPreview(*calling);
-            }
-            return {};
-        }
-        const std::size_t at = quizAnswers_.size();
-        if (at >= quiz_.questions().size()) {
-            return {};
-        }
-        const sim::QuizQuestion& question = quiz_.questions()[at];
-        const std::array<int, 3> order = quizDisplayOrder(static_cast<int>(at));
-        if (choiceCursor_ < 0 || choiceCursor_ >= 3) {
-            return {};
-        }
-        const int authored = order[static_cast<std::size_t>(choiceCursor_)];
-        return {question.answers[static_cast<std::size_t>(authored)].text};
-    }
-    if (step_ == CreationStep::Background) {
-        const std::size_t at = bioAnswers_.size();
-        if (at >= biography_.questions().size()) {
-            return {};
-        }
-        const sim::BiographyQuestion& question = biography_.questions()[at];
-        if (at == 0 && choiceCursor_ == static_cast<int>(question.answers.size())) {
-            return {"Answer nothing more. The remaining questions answer themselves."};
-        }
-        if (choiceCursor_ < 0 ||
-            choiceCursor_ >= static_cast<int>(question.answers.size())) {
-            return {};
-        }
-        return {question.answers[static_cast<std::size_t>(choiceCursor_)].text};
-    }
-    return {};
-}
-
 void CreationFlow::moveCustomizeCursor(int delta) noexcept {
     if (editingName_) {
         // Typing owns the keyboard -- arrows do not walk the list while a
@@ -2049,65 +1968,6 @@ std::string CreationFlow::pagePastReadout() const {
     return out;
 }
 
-std::vector<PanelLine> CreationFlow::pagePastLines() const {
-    const sim::ChargenEffects so = effectsSoFar();
-    std::vector<PanelLine> out;
-    const auto number = [&out](const std::string& body) {
-        PanelLine line;
-        line.bullet = Bullet::Dot;
-        line.body = body;
-        line.bodyInk = InkRole::Number;
-        out.push_back(std::move(line));
-    };
-    // Bare signed numbers (UI-EA-SPEC sec. 5): the caption clauses are gone,
-    // the figures are not.
-    if (so.coinDelta != 0) {
-        number(signed32(so.coinDelta) + " COIN");
-    }
-    if (so.heat != 0) {
-        number(signed32(so.heat) + " HEAT");
-    }
-    if (so.hpMaxDelta != 0) {
-        number(signed32(so.hpMaxDelta) + " HEALTH");
-    }
-    if (!so.skillDeltas.empty()) {
-        PanelLine line;
-        line.bullet = Bullet::Dot;
-        line.name = "SKILLS MOVED";
-        line.nameInk = panelInk().accent;
-        line.bodyInk = InkRole::Number;
-        for (std::size_t i = 0; i < so.skillDeltas.size(); ++i) {
-            const sim::SkillTrack::Entry* entry = skills_.find(so.skillDeltas[i].first);
-            if (i > 0) {
-                line.body += ", ";
-            }
-            line.body += (entry != nullptr ? entry->displayName : so.skillDeltas[i].first) + " " +
-                         signed32(so.skillDeltas[i].second);
-        }
-        out.push_back(std::move(line));
-    }
-    for (const std::pair<std::string, std::int32_t>& standing : so.factionStandings) {
-        if (standing.second == 0) {
-            continue;
-        }
-        PanelLine line;
-        line.bullet = Bullet::Ring;
-        const sim::Faction* faction = factions_.find(standing.first);
-        line.name = faction != nullptr ? faction->displayName : standing.first;
-        line.nameInk = panelInk().accent;
-        line.body = signed32(standing.second) + " STANDING";
-        line.bodyInk = InkRole::Number;
-        out.push_back(std::move(line));
-    }
-    if (out.empty()) {
-        PanelLine line;
-        line.body = bioDone_ ? "NOTHING THE LEDGER CAN SEE." : "NO PAST YET.";
-        line.bodyInk = InkRole::Dim;
-        out.push_back(std::move(line));
-    }
-    return out;
-}
-
 std::string CreationFlow::pageSheetReadout() const {
     if (chosenCompanion() != nullptr) {
         return "A FIXED SHEET";
@@ -2119,19 +1979,6 @@ std::string CreationFlow::pageSheetReadout() const {
            std::to_string(chargen_.slotsFilled(sim::SkillDesignation::Minor)) + "/" +
            std::to_string(sim::kMinorSkillSlots) + "  PTS " +
            std::to_string(chargen_.attributePointsRemaining());
-}
-
-std::string CreationFlow::pageSlotCost() const {
-    // The restatement under the verb is why a refusal is never a mystery:
-    // designate() refuses the instant a tier is full, and this says which tiers
-    // still have room BEFORE the key is pressed.
-    const auto room = [this](const char* label, sim::SkillDesignation which, std::int32_t slots) {
-        return std::string(label) + " " + std::to_string(slots - chargen_.slotsFilled(which)) +
-               " LEFT";
-    };
-    return "(" + room("PRI", sim::SkillDesignation::Primary, sim::kPrimarySkillSlots) + ", " +
-           room("MAJ", sim::SkillDesignation::Major, sim::kMajorSkillSlots) + ", " +
-           room("MIN", sim::SkillDesignation::Minor, sim::kMinorSkillSlots) + ")";
 }
 
 void drawCreation(Framebuffer& target, const CreationFlow& flow) {
