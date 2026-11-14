@@ -197,6 +197,7 @@ constexpr std::int32_t kStreetReachTiles = 2;
 [[nodiscard]] int runCourtLine(Session& session, const std::string& ending);
 [[nodiscard]] int runBurgleLine(Session& session, const std::string& ending);
 [[nodiscard]] int runCaseLine(Session& session, const std::string& ending);
+[[nodiscard]] int runEvictionLine(Session& session, const std::string& ending);
 
 }  // namespace scripted
 
