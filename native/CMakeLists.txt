@@ -579,7 +579,16 @@ granadad_apply_determinism(granadad-render3d-core)
 # 3D frame as a point-filtered, integer-scaled overlay texture, which is what
 # keeps the eighteen pixel-exact HUD/page test files byte-identical.
 # ---------------------------------------------------------------------------
-add_library(granadad-render3d-rl STATIC src/render3d/rl_backend.cpp)
+add_library(granadad-render3d-rl STATIC
+    src/render3d/rl/context.cpp
+    src/render3d/rl/resources.cpp
+    src/render3d/rl/shaders.cpp
+    src/render3d/rl/models.cpp
+    src/render3d/rl/pieces.cpp
+    src/render3d/rl/passes.cpp
+    src/render3d/rl/viewmodel_pass.cpp
+    src/render3d/rl/capture.cpp
+    src/render3d/rl/input.cpp)
 target_link_libraries(granadad-render3d-rl
     PUBLIC granadad-render3d-core
     PRIVATE raylib)
