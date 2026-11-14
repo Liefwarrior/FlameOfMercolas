@@ -358,6 +358,7 @@ add_library(granadad-render STATIC
     src/render/scripted/roofs_skyrun.cpp
     src/render/scripted/rung.cpp
     src/render/scripted/shop.cpp
+    src/render/scripted/smoke.cpp
     src/render/scripted/street.cpp
     src/render/scripted/threshold_petition.cpp
     src/render/scripted/trail.cpp
