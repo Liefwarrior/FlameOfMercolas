@@ -357,6 +357,7 @@ add_library(granadad-render STATIC
     src/render/scripted/radiant.cpp
     src/render/scripted/roofs_skyrun.cpp
     src/render/scripted/rung.cpp
+    src/render/scripted/shop.cpp
     src/render/step_pump.cpp
     src/render/stb_impl.cpp
     # Task #83 -- the steps-based ease every panel's open/close and the HUD's
