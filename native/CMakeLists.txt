@@ -346,6 +346,7 @@ add_library(granadad-render STATIC
     # the scripted --flag capture drivers live under render/scripted/.
     src/render/session.cpp
     src/render/scripted/burgle.cpp
+    src/render/scripted/case.cpp
     src/render/scripted/common.cpp
     src/render/step_pump.cpp
     src/render/stb_impl.cpp

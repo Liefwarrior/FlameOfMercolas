@@ -194,6 +194,7 @@ constexpr std::int32_t kStreetReachTiles = 2;
 
 // The drivers runSmoke dispatches to; each is defined in the file named for its line.
 [[nodiscard]] int runBurgleLine(Session& session, const std::string& ending);
+[[nodiscard]] int runCaseLine(Session& session, const std::string& ending);
 
 }  // namespace scripted
 
