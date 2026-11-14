@@ -348,6 +348,7 @@ add_library(granadad-render STATIC
     src/render/scripted/burgle.cpp
     src/render/scripted/case.cpp
     src/render/scripted/common.cpp
+    src/render/scripted/contract.cpp
     src/render/step_pump.cpp
     src/render/stb_impl.cpp
     # Task #83 -- the steps-based ease every panel's open/close and the HUD's
