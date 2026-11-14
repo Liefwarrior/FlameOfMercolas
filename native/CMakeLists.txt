@@ -342,6 +342,8 @@ add_library(granadad-render STATIC
     # is here and not another --smoke flag.
     src/render/case_watch.cpp
     src/render/demo.cpp
+    # Session is ONE class defined across these files (see session_internal.hpp);
+    # the scripted --flag capture drivers live under render/scripted/.
     src/render/session.cpp
     src/render/step_pump.cpp
     src/render/stb_impl.cpp

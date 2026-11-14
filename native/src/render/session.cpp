@@ -27,23 +27,11 @@
 #include "granadad/sim/path_finder.hpp"
 #include "granadad/sim/stealth.hpp"
 
+#include "session_internal.hpp"
+
 namespace granadad::render {
 
 namespace {
-
-constexpr float kPi = 3.14159265358979323846F;
-
-/// CASE WATCH. Holds Session::watchDepth_ raised for one recorded verb's own
-/// body, so a verb a verb calls internally (interact()'s closing examine(),
-/// a step-pump courier) records nothing -- the replay's own top-level call
-/// will make those again. See setWatchRecorder in session.hpp.
-struct WatchDepthGuard {
-    int& depth;
-    explicit WatchDepthGuard(int& d) noexcept : depth(d) { ++depth; }
-    ~WatchDepthGuard() noexcept { --depth; }
-    WatchDepthGuard(const WatchDepthGuard&) = delete;
-    WatchDepthGuard& operator=(const WatchDepthGuard&) = delete;
-};
 
 [[nodiscard]] SessionConfig resolved(const SessionConfig& in) {
     SessionConfig out = in;
@@ -111,6 +99,8 @@ namespace {
 /// need to read.
 constexpr float kBackShade = 0.55F;
 
+}  // namespace
+
 /// WHICH DRAWN FIGURE A TAVERN ROLE WEARS.
 ///
 /// #78 REPLACED THE ELLIPSE STACK, and it is worth recording what it replaced
@@ -131,8 +121,6 @@ constexpr float kBackShade = 0.55F;
 ///
 /// So the taproom's fourteen are drawn out of the same sheet the ward's six
 /// hundred are, and there is ONE look for a person in this game rather than two.
-}  // namespace
-
 sim::WardType figureForRole(sim::ActorRole role, std::int32_t id) noexcept {
     switch (role) {
         case sim::ActorRole::Bartender:
@@ -163,76 +151,6 @@ sim::WardType figureForRole(sim::ActorRole role, std::int32_t id) noexcept {
 
 namespace {
 
-
-/// TASK #82. "DAY 2 08:14" out of a Casebook::heardAt() value -- the
-/// dateline a detective's log actually carries. NEGATIVE (never yet heard)
-/// prints nothing rather than "DAY 0 00:00", which would read as a real
-/// timestamp for an entry that has none.
-///
-/// DAY ONE, NOT DAY ZERO. sim::kSecondsPerDay divides the count exactly the
-/// way the ward's own compound.cpp already does; +1 is the one translation
-/// from a zero-based count to the ordinal a player reads ("the first day"),
-/// applied here and nowhere inside the simulation, which never counts days
-/// at all -- see Casebook::heardAt's own comment on why the raw value is
-/// deliberately not day-and-hour already.
-[[nodiscard]] std::string formatCaseDay(std::int64_t heardAtSeconds) {
-    if (heardAtSeconds < 0) {
-        return {};
-    }
-    const std::int64_t day = heardAtSeconds / sim::kSecondsPerDay + 1;
-    const int hour = static_cast<int>((heardAtSeconds / 3600) % 24);
-    const int minute = static_cast<int>((heardAtSeconds / 60) % 60);
-    std::string out = "DAY " + std::to_string(day) + " ";
-    if (hour < 10) {
-        out += '0';
-    }
-    out += std::to_string(hour);
-    out += ':';
-    if (minute < 10) {
-        out += '0';
-    }
-    out += std::to_string(minute);
-    return out;
-}
-
-// ---------------------------------------------------------------------------
-// the tiled Menu's four panels (plus the keys page and a live conversation)
-// share one cursor/page navigation shape, wrapped or paged over a list whose
-// length changes every call -- the SAME three or four lines were repeated
-// once per list. Pulled out once, here: the per-list state still lives on
-// Session (characterCursor_/mapCursor_/lettersCursor_/caseCursor_/
-// topicCursor_ and their *Page_ twins), these just take it by reference so
-// each call site stays one line instead of a paragraph.
-// ---------------------------------------------------------------------------
-
-/// Wraps `cursor` by `delta` into [0, count) and sets `page` to the page it
-/// falls on -- moveTopicCursor()'s own shape, once per list this widget can
-/// be navigating. `count` of zero parks both at zero rather than dividing by
-/// it (unreachable for every list this build has today, since none of them
-/// can ever be empty while its own overlay is open, but a caller has no way
-/// to prove that from here).
-void wrapCursorAndPage(int& cursor, int& page, int delta, int count) noexcept {
-    if (count <= 0) {
-        cursor = 0;
-        page = 0;
-        return;
-    }
-    cursor = ((cursor + delta) % count + count) % count;
-    page = topicPageOf(cursor);
-}
-
-/// Steps `page` forward one and puts `cursor` on its first row --
-/// nextTopicPage()'s own shape. A single page is a no-op: the row already
-/// showing has nowhere else to turn to.
-void advancePage(int& page, int& cursor, std::size_t total) noexcept {
-    const int pages = topicPageCount(total);
-    if (pages <= 1) {
-        return;
-    }
-    page = (page + 1) % pages;
-    cursor = std::min(static_cast<int>(total) - 1, page * kTopicPageSize);
-}
-
 /// Puts `cursor` on the row this number key names, if that row is actually on
 /// the page showing -- chooseVisibleTopic()'s own shape. Out of range is a
 /// no-op, the same as every list on this surface gives a number with nothing
@@ -242,45 +160,6 @@ void pickCursorIfVisible(int& cursor, int page, int slot, std::size_t total) noe
     if (index < static_cast<int>(total)) {
         cursor = index;
     }
-}
-
-/// SPELLS BUILD: moved up from the HUD-line helpers' own anonymous namespace
-/// below, unchanged -- the Grimoire page and the quick bar (earlier in this
-/// file) speak the same upper-case menu furniture the HUD lines do.
-[[nodiscard]] std::string upperAscii(std::string_view text) {
-    std::string out;
-    out.reserve(text.size());
-    for (const char c : text) {
-        out.push_back(c >= 'a' && c <= 'z' ? static_cast<char>(c - 'a' + 'A') : c);
-    }
-    return out;
-}
-
-/// SHIP NOTE MOVE 3. The opening hint, GENERATED from the live bindings in
-/// the live device's vocabulary -- which closes the S3 verification gap the
-/// constructor stated out loud (a hand-written "TAB YOUR NOTES..." that went
-/// stale the moment Menu was rebound off Tab).
-///
-/// UI-EA (LANE HUD): LIVE VERBS ONLY, AND FEWER OF THEM. The old band sold
-/// "< > MORE PAGES" on the street, where PagePrev/PageNext do nothing at all
-/// (flow map violation #11 -- a dead control advertised in the first ten
-/// seconds of play). The tutor tier names the three verbs a stranger can
-/// actually press where they stand: the notes, the map, the hand. Keycap
-/// then verb, no filler words -- "J NOTES  M MAP  E USE" on the shipped
-/// keyboard, the pad's own buttons the moment a pad speaks.
-[[nodiscard]] std::string openingHintLine(const ControlSettings& controls, InputDevice device) {
-    // NINE AND THE STICKS: the hand joins the band -- the owner's own
-    // sentence is "press LMB and hit whoever is in front of me", so SWING is
-    // one of the first things a stranger reads. The keyboard keeps M MAP (the
-    // owner's own direct shortcut); a pad has no map button -- the map is a
-    // page of NOTES there -- so the pad band does not advertise one.
-    std::string out = std::string(promptLabel(controls, Action::Menu, device)) + " NOTES  ";
-    if (device != InputDevice::Pad) {
-        out += std::string(promptLabel(controls, Action::Map, device)) + " MAP  ";
-    }
-    out += std::string(promptLabel(controls, Action::Interact, device)) + " USE  " +
-           std::string(promptLabel(controls, Action::Attack, device)) + " SWING";
-    return out;
 }
 
 }  // namespace
@@ -1156,7 +1035,6 @@ void Session::armCasePlate(std::string news) {
     syncPanelAnim();
 }
 
-
 /// PUTS THE NOTES AND THE KEY LIST DOWN. Called by every verb that acts on the
 /// world, so a player who presses a game key with a menu up gets the game and
 /// not a silent refusal -- and so the opening page can never be in the way of
@@ -1180,6 +1058,8 @@ void Session::dismissOverlays() noexcept {
     syncPanelAnim();
 }
 
+namespace {
+
 // ---------------------------------------------------------------------------
 // COURIER CASE: the quiet tenant
 // ---------------------------------------------------------------------------
@@ -1192,16 +1072,16 @@ void Session::dismissOverlays() noexcept {
 // it. Determinism is the scripted line's business: --case runs the errand
 // through walkAcrossDistrict and the ordinary verbs, and test_case_line runs
 // it twice and requires identical books.
-
-namespace {
 /// Six seconds of world-steps between the opening page going down and Onna's
 /// hail, and the same again before the follow-up line: long enough that the
 /// street exists first, short enough that the sheet IS the first thing that
 /// happens to a new player.
 constexpr int kCourierDelaySteps = 6 * granadad::sim::kStepsPerSecond;
+
 /// How close TAKE HIM UP reaches, in tiles -- a body you are standing over,
 /// the same arm's length the punch that put him down was thrown at.
 constexpr std::int32_t kTakeReachTiles = 2;
+
 }  // namespace
 
 void Session::courierDeliverNow() {
@@ -1316,11 +1196,11 @@ void Session::stepSheetCase() {
     }
 }
 
+namespace {
+
 // ---------------------------------------------------------------------------
 // EVICTION CASE: the writ, the door, and the two ways it closes
 // ---------------------------------------------------------------------------
-
-namespace {
 /// The evening the door will answer a knock -- the rota's own home hours.
 /// Serfs are on the quay to six and walk home after (ward_actors.cpp Anchor
 /// window 07:00-18:00; ReturnHome night term at 22:00), so from six the
@@ -1328,10 +1208,13 @@ namespace {
 /// answers instead of the door -- the brief's "once people are home" made a
 /// gate rather than a suggestion.
 constexpr int kEvictHomeFromHour = 18;
+
 constexpr int kEvictHomeUntilHour = 24;
+
 /// How close the door verbs reach: the family-door lead's own look range, an
 /// arm's length from the wood, the same measure every lead is stood at.
 constexpr std::int32_t kEvictDoorReachTiles = sim::kLookRangeTiles;
+
 }  // namespace
 
 void Session::syncEvictionTopics() {
@@ -2552,41 +2435,7 @@ void Session::faceDistrictMapSelection() {
     syncPanelAnim();
 }
 
-// ---------------------------------------------------------------------------
-// FAST TRAVEL (TRAVEL lane) -- the ward map's second commit verb
-// ---------------------------------------------------------------------------
-
 namespace {
-
-/// The nearest standable cell to (x, y) on `band`, searched in a fixed
-/// widening square so the answer is a pure function of the request -- the
-/// demo's own arrival rule (demo.cpp's nearestStandable), restated here
-/// because a travel lands a body the same way a Cut beat lands one: on real
-/// ground, never inside geometry. False when nothing within eight tiles will
-/// hold a body, which is a refusal and not a fudge.
-[[nodiscard]] bool travelStandable(const sim::TileQuery& tiles, std::int32_t x, std::int32_t y,
-                                   std::int32_t band, std::int32_t* outX, std::int32_t* outY) {
-    if (tiles.standable(x, y, band)) {
-        *outX = x;
-        *outY = y;
-        return true;
-    }
-    for (std::int32_t ring = 1; ring <= 8; ++ring) {
-        for (std::int32_t dy = -ring; dy <= ring; ++dy) {
-            for (std::int32_t dx = -ring; dx <= ring; ++dx) {
-                if (dx != ring && dx != -ring && dy != ring && dy != -ring) {
-                    continue;
-                }
-                if (tiles.standable(x + dx, y + dy, band)) {
-                    *outX = x + dx;
-                    *outY = y + dy;
-                    return true;
-                }
-            }
-        }
-    }
-    return false;
-}
 
 /// The HERE clause's reach: squared tile distance from the body to the
 /// selection's aim point, at or under which a travel plan says standingIn
@@ -2596,16 +2445,6 @@ namespace {
 /// this integer and the pane's float read are the same predicate, stated
 /// once each side of the render/plan line. Change one, change both.
 constexpr std::int64_t kTravelHerePacesSq = 6;
-
-/// "02:14" -- the clock as the arrival line speaks it. The wait page says
-/// whole hours because it deals in them; a walk lands mid-hour and says so.
-[[nodiscard]] std::string travelClockText(int secondOfDay) {
-    const int hour = ((secondOfDay / 3600) % 24 + 24) % 24;
-    const int minute = (secondOfDay / 60) % 60;
-    std::string text = (hour < 10 ? "0" : "") + std::to_string(hour) + ":";
-    text += (minute < 10 ? "0" : "") + std::to_string(minute);
-    return text;
-}
 
 }  // namespace
 
@@ -3157,12 +2996,11 @@ void Session::adjustGrimoireSlot(int delta) {
                   : upperAscii(spell.displayName) + " -- NO SLOT.");
 }
 
+namespace {
+
 // ---------------------------------------------------------------------------
 // TIME-AND-TENURE BUILD: the Wait page
 // ---------------------------------------------------------------------------
-
-namespace {
-
 /// One row per hour ahead, round the WHOLE clock (UI-EA-SPEC 1.7 #38:
 /// 12 -> 24). Any named hour is reachable in one pick from anywhere -- the
 /// same skipSeconds machinery per row, rows offered only, no sim change.
@@ -3424,6 +3262,8 @@ void Session::toggleLetters() {
     toggleMenuFocused(kMenuFocusLetters);
 }
 
+namespace {
+
 // ---------------------------------------------------------------------------
 // THE CASEBOOK PASS: the book as a composed master/detail page, and the route
 // out of it to where a lead actually is
@@ -3433,9 +3273,6 @@ void Session::toggleLetters() {
 // below is pure UI state plus two handoffs -- examine() (the look key's own
 // call) and the ward map's own cursor -- so nothing here can move the world
 // hash and nothing here is a second way to do anything.
-
-namespace {
-
 /// SHOUTED, because every authored string on this surface already is and a
 /// notable's name is the one that is not.
 [[nodiscard]] std::string shoutName(std::string_view text) {
@@ -4837,12 +4674,15 @@ void Session::settleDefeat() {
 }
 
 namespace {
+
 /// ACTION-COMBAT BUILD (section 4.5). The two eases that bracket the death
 /// ceremony's held epitaph: the frame dips to black over kDeathDipInSteps and
 /// eases back over kDeathFadeOutSteps, with the sim's kDeathHoldSteps hush
 /// between. The eases are one page-ease each; the HOLD is the sim's own number.
 constexpr std::int32_t kDeathDipInSteps = kPageEaseSteps;
+
 constexpr std::int32_t kDeathFadeOutSteps = kPageEaseSteps;
+
 }  // namespace
 
 void Session::armDeathCeremony() {
@@ -8223,16 +8063,19 @@ CreationPage Session::stripCard() const {
     return out;
 }
 
+namespace {
+
 /// A landed blow of this many hit points or fewer is a GRAZE -- the light
 /// audio band. Fists tap for 3-5 at the base sheet, so this catches the
 /// glancing end of a bare-handed swing and lets a solid or hard blow land
 /// medium instead. Splits the plan's single PunchMedium by band (section 5,
 /// channel 4); presentation-only, no sim number depends on it.
-namespace {
 constexpr std::int32_t kGrazeDamageBand = 4;
+
 /// BARKS LANE: the gain of the graze that stands in for a found-body whiff
 /// (attackUp). Quieter than any landed blow, so the ear ranks it below one.
 constexpr float kFoundBodyWhiffGain = 0.35F;
+
 }  // namespace
 
 void Session::attackDown() {
@@ -8538,6 +8381,8 @@ const sim::Tavern::SentenceReport& Session::serveSentence() {
     return served;
 }
 
+namespace {
+
 // ---------------------------------------------------------------------------
 // JUSTICE BUILD (HEARING PAGE LANE): the court, the rope, the end
 // ---------------------------------------------------------------------------
@@ -8548,9 +8393,6 @@ const sim::Tavern::SentenceReport& Session::serveSentence() {
 // as the clock and the coin, tavern().runEnd() as the end. Nothing here rolls,
 // nothing here decides; this file reads the record, draws it in the terminal
 // register, and turns keypresses into the two stepped inputs the sim owns.
-
-namespace {
-
 /// The count words the reading uses: "TWO LIFTS", "THREE SAW IT". One is the
 /// article ("A LIFT"), so it is the caller's; past twelve the figure is the
 /// word, as the census's own tallies are.
@@ -9476,12 +9318,13 @@ bool Session::routeCourtKey(Key key) {
     return true;
 }
 
-// --- the rope -----------------------------------------------------------------
-
 namespace {
+
+// --- the rope -----------------------------------------------------------------
 /// The dip before the plate: one page-ease, the death ceremony's own. The
 /// HOLD is the sim's number (kDeathHoldSteps); there is no fade-out.
 constexpr std::int32_t kRopeDipInSteps = kPageEaseSteps;
+
 }  // namespace
 
 void Session::armRopeCeremony() {
@@ -9506,10 +9349,12 @@ void Session::armRopeCeremony() {
 }
 
 namespace {
+
 /// The two end rows, bare. No save row: no save exists, so there is nothing
 /// to load and the run is genuinely over. The day a save lands, "1 - THE
 /// LAST SAVE" goes first.
 constexpr std::string_view kRopeRowLabels[] = {"1 - A NEW MAN", "2 - LEAVE"};
+
 }  // namespace
 
 std::vector<std::string> Session::ropeRows() const {
@@ -12601,6 +12446,7 @@ constexpr sim::TileBox kCaptureRegion{
     std::min(sim::gull::kStreetY - 2, sim::docks::kSpawnTileY - 1),
     sim::gull::kGroundBand,
     sim::gull::kFootprintX1 + 40, sim::gull::kFootprintY1 + 1, sim::gull::kUpperBand};
+
 static_assert(kCaptureRegion.x0 <= sim::docks::kSpawnTileX &&
                   sim::docks::kSpawnTileX <= kCaptureRegion.x1 &&
                   kCaptureRegion.y0 <= sim::docks::kSpawnTileY &&
@@ -13522,6 +13368,7 @@ void comeDownstairs(Session& session) {
 
 /// How many beats runContractLine tries to land.
 constexpr std::int32_t kContractBeats = 6;
+
 /// And how many the `held` ending stops after -- taken and sanctioned, the
 /// job still live. See the ending's own note inside runContractLine.
 constexpr std::int32_t kContractHeldBeats = 2;
@@ -13755,6 +13602,7 @@ std::int32_t gNemesisBeatMask = 0;
 /// in his hand (each with the death ceremony over the revive), the blade and
 /// the Kill three wins put in his hands, a house, and a charge on the roll.
 constexpr std::int32_t kNemesisBeats = 7;
+
 /// 3D SLICE ONE (ship lane). What `--nemesis=death` owes: it stops ON PURPOSE
 /// on the boards of the rematch (beats 1-3), the death ceremony still
 /// playing, so three is the whole of what that ending can land.
@@ -13774,6 +13622,7 @@ constexpr std::int32_t kNemesisDeathBeats = 3;
 ///   5. Turned loose on the Tarwalk with the arrest line on the row.
 /// "halt" ends the drive at beat 3 so a capture holds the halt itself.
 constexpr std::int32_t kWatchHaltBeats = 5;
+
 /// What `--watch-halt=halt` owes: it stops the step he starts Closing.
 constexpr std::int32_t kWatchHaltStopBeats = 3;
 
@@ -13914,7 +13763,6 @@ std::string gWatchHaltNote;
     return landed;
 }
 
-
 // ---------------------------------------------------------------------------
 // VOICE LANE: the one voice channel, photographed
 // ---------------------------------------------------------------------------
@@ -14003,6 +13851,7 @@ void lookAtFace(Session& session, std::int32_t xQ8, std::int32_t yQ8, sim::WardT
 /// linking the layout -- and kept generous, because a longer name is a
 /// wider plate.
 constexpr double kPlateHalfWidths = 0.46;
+
 /// And how far off the middle a composed subject may stand, as a fraction
 /// of the half-frame ANGLE: a sixth of the way out is the thirds a
 /// photographer would use, and past a bit over half is a body heading for
@@ -14011,6 +13860,7 @@ constexpr double kPlateHalfWidths = 0.46;
 /// most of the way out of a 70-degree one, and the first draft of this
 /// pushed the overheard trio clean off a --fov=70 frame.
 constexpr double kSubjectOffMin = 0.22;
+
 constexpr double kSubjectOffMax = 0.56;
 
 /// A body's own half-width in radians at that distance -- 0.4 of a tile
@@ -14297,6 +14147,7 @@ void faceThePair(Session& session, bool mayWalk) {
 [[nodiscard]] bool bodiesDrawnWithin(const Session& session, std::int32_t x, std::int32_t y,
                                      std::int32_t band, std::int32_t radius,
                                      std::int32_t exceptId) noexcept;
+
 [[nodiscard]] bool underOpenSky(const sim::TileQuery& tiles, std::int32_t x, std::int32_t y,
                                 std::int32_t band) noexcept;
 
@@ -15475,15 +15326,25 @@ void lookLevel(Session& session) {
 /// court then waits for Cull through the wait page's own jump, exactly as
 /// the rope line does after its killing.
 constexpr std::int32_t kCourtBeats = 3;
+
 constexpr std::int32_t kCourtCullBeats = 2;
+
 constexpr std::int32_t kCourtTakenBeats = 3;
+
 constexpr std::int32_t kCourtPaperBeats = 4;
+
 constexpr std::int32_t kCourtArmedBeats = 4;
+
 constexpr std::int32_t kCourtPleaBeats = 4;
+
 constexpr std::int32_t kCourtServeBeats = 5;
+
 constexpr std::int32_t kCourtBloodTagBeats = 1;
+
 constexpr std::int32_t kCourtRopePageBeats = 4;
+
 constexpr std::int32_t kCourtRopeBeats = 5;
+
 constexpr std::int32_t kCourtNewManBeats = 7;
 
 [[nodiscard]] std::int32_t courtBeatsFor(const std::string& ending) {
@@ -15997,12 +15858,15 @@ constexpr std::int32_t kBurgleBeats = 7;
 /// many -- the S4 review's whole complaint about scripted lines that report a
 /// number and nothing else.
 std::int32_t gBurgleBeatMask = 0;
+
 /// COURIER CASE. Which of the errand's beats the last --case run landed, one
 /// bit each in order -- the burglary's own count-plus-mask discipline.
 std::int32_t gCaseBeatMask = 0;
+
 /// And how many people were awake, upright, on this floor and in range when
 /// beat 2 was judged. Zero means the beat proved nothing -- see the note there.
 std::int32_t gBurgleWatchers = 0;
+
 /// Probes made on the SECOND box by `--burgle=lock`, so the case that proves
 /// that frame is a live attempt can say so with a number instead of a picture.
 std::int32_t gLockEndingProbes = 0;
@@ -16175,7 +16039,9 @@ int workTheWire(Session& session, std::int32_t stopAtPins = -1,
 /// authored data and the number of leads is a property of casebook.json, so a
 /// hard-coded target here would be a second source of truth for the same thing.
 std::int32_t gTrailRead = 0;
+
 std::int32_t gTrailWalked = 0;
+
 std::int32_t gTrailUnreached = 0;
 
 /// WALKS THE BLOODLETTER TRAIL, through the same two calls a keyboard makes.
@@ -16730,6 +16596,7 @@ std::int32_t gEvictBeatMask = 0;
 /// the walk back to the Mission with the writ -- The Evictor in hand and the
 /// book closed. Nine.
 constexpr std::int32_t kEvictBeats = 9;
+
 /// The DISRUPT path owes fewer: everything up to and including the knock (six
 /// beats), then the walk-back-unserved to Maell and the yield -- eight, and
 /// no weapon.
@@ -17324,14 +17191,9 @@ constexpr std::int32_t kRungBeats = 2;
     return out;
 }
 
-}  // namespace
-
 // ---------------------------------------------------------------------------
 // #79 -- the street
 // ---------------------------------------------------------------------------
-
-namespace {
-
 /// The trades a `--street` run knows how to ask for. Named the way a person
 /// would say them out loud, not the way the enum spells them: "watch", not
 /// "MilitiaWatch", and "hand" for the six hundred rope-and-crate bodies the
