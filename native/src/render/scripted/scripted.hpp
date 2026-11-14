@@ -195,6 +195,7 @@ constexpr std::int32_t kStreetReachTiles = 2;
 // The drivers runSmoke dispatches to; each is defined in the file named for its line.
 [[nodiscard]] int runFlameLine(Session& session, const std::string& ending);
 [[nodiscard]] bool runHeldCast(Session& session, const std::string& spellId);
+[[nodiscard]] int runRoofLine(Session& session, const std::string& ending);
 [[nodiscard]] int runContractLine(Session& session, const std::string& ending);
 [[nodiscard]] int runNemesisLine(Session& session, const std::string& ending);
 [[nodiscard]] int runWatchHaltLine(Session& session, const std::string& ending);
@@ -203,6 +204,7 @@ constexpr std::int32_t kStreetReachTiles = 2;
 [[nodiscard]] int runBurgleLine(Session& session, const std::string& ending);
 [[nodiscard]] int runCaseLine(Session& session, const std::string& ending);
 [[nodiscard]] int runEvictionLine(Session& session, const std::string& ending);
+[[nodiscard]] int runSkyrunLine(Session& session, const std::string& ending);
 
 }  // namespace scripted
 
