@@ -192,6 +192,8 @@ constexpr std::int32_t kStreetReachTiles = 2;
                                                   std::int32_t sy, std::int32_t band,
                                                   sim::Angle yaw);
 
+// The drivers runSmoke dispatches to; each is defined in the file named for its line.
+[[nodiscard]] int runBurgleLine(Session& session, const std::string& ending);
 
 }  // namespace scripted
 
