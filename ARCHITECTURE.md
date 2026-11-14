@@ -320,7 +320,8 @@ thing being built. `native/` is. Its status, kept honest as the rewrite goes:
 | Twin-run determinism gate | **BUILT** (M1), extended S2 with a second entry that registers the tavern | `native/src/gate/` |
 | Sub-tile Q8 player body, collision, the climb rule | **BUILT** (S1), corrected twice since: doorway lintels (S2) and falling through walls (S5) | `native/src/sim/player.cpp` |
 | **Roof traversal** — mantle, leap and drop, all integer, none of them rolling | **BUILT** (S5) — reachable-from-spawn 17,054 -> 24,960, and the roof-slum plane at z22 goes from ZERO reachable cells to 1,664 | `native/src/sim/player.cpp`, `native/src/sim/tile_query.cpp` |
-| Software first-person renderer, lamp bake, HUD | **BUILT** (S1) | `native/src/render/` |
+| Software first-person renderer, lamp bake, HUD | **BUILT** (S1); the world pass is **SUPERSEDED** as the default view by render3d (2026-09-11), kept behind `--2d` until phase 7 | `native/src/render/` |
+| **3D renderer** — chunk meshes from the tile data, depth buffer, true pitch, perspective-correct textures, GLSL scene and post shaders, headless frames on Mesa llvmpipe | **BUILT** (3D programme; shader pipeline and llvmpipe headless are phase 3 of `docs/design/OBLIVION-PLAN.md`) | `native/src/render3d/`, `native/src/render3d/rl/` |
 | Content-directory resolution (env → the exe's own tree → configure-time) | **BUILT** (S2) — S1 shipped an .exe that could not find its own worlds | `native/content/src/content_dir.cpp` |
 | **Actors** — identity, roles, daily schedules, tile-stepped movement with Q8 sub-tile position | **BUILT** (S2), for one building's worth | `native/src/sim/actor.cpp` |
 | **Region pathing** — bounded breadth-first, deterministic, no corner-cutting | **BUILT** (S2) | `native/src/sim/region_path.cpp` |
@@ -450,6 +451,10 @@ the conversation layer, and it is the price of a mug of ale.
 
 ## 2. Gradle module layout
 
+> **SUPERSEDED 2026-11-12.** This section describes the Java build, which no longer exists as a
+> live tree; `native/` is the game. The current layout is in `native/README.md` and the renderer's
+> in `docs/design/OBLIVION-PLAN.md` section 6. Kept for history.
+
 > **STATUS: BUILT**, with two annotations. The five modules exist with these dependency
 > relationships and these purity constraints, and the ArchUnit purity suite is real
 > (`ArchitecturePurityTest`: `SIM_CORE_STAYS_PURE`, `NO_HASH_CONTAINER_FIELDS`,
@@ -479,6 +484,9 @@ content         no code. raws/, maps/, scenarios/ (+ golden.v1.json files). Vali
 ---
 
 ## 3. Package map (key types, one line each)
+
+> **SUPERSEDED 2026-11-12.** The Java packages below are not built; the C++ tree is in
+> `native/README.md`. Kept for history.
 
 > **STATUS: 40% fiction.** Five of the twelve `com.trojia.sim.*` packages below do not exist.
 > Two more are a registry or a facade only. And the map is missing the four packages that are
@@ -1056,6 +1064,9 @@ Appearance bucket = color-stop ordinal (0..3), served by `AppearanceQuery`; art 
 ---
 
 ## 11.1 The twin-run gate (determinism, enforced)
+
+> **SUPERSEDED 2026-11-12 as to its mechanism.** The Gradle task below is gone; the gate is
+> `granadad-twin-gate` in `native/src/gate/`, run by `scripts/gate.ps1` / `gate.sh`.
 
 > ## STATUS: BUILT — accurate in every detail, verified line by line.
 > The task, the `dependsOn(twinRunGate)` on `:client-observer:check`, the
