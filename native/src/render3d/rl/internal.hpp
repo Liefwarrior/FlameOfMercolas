@@ -16,6 +16,7 @@
 //   pieces.cpp     drawing a static building piece (S lane)
 //   passes.cpp     the 3D pass of a SceneDescription: instances, bodies
 //   viewmodel_pass.cpp   the player's hands (V lane)
+//   offscreen.cpp  the offscreen scene target and the post pass
 //   capture.cpp    the one place a frame is read back
 //   input.cpp      keys, mouse and the HID vocabulary
 
@@ -44,10 +45,15 @@
 
 namespace granadad::render3d::rl {
 
-#if defined(PLATFORM_MEMORY)
-constexpr bool kHeadless = true;
+/// Whether this build's raylib platform can open a context with no window and
+/// no display server. Only the SDL platform can: SDL's `offscreen` video
+/// driver creates a desktop GL 3.3 core context through EGL, which on a box
+/// with no GPU is Mesa's llvmpipe. The shipped .exe's GLFW platform cannot, and
+/// does not need to.
+#if defined(PLATFORM_DESKTOP_SDL)
+constexpr bool kHeadlessCapable = true;
 #else
-constexpr bool kHeadless = false;
+constexpr bool kHeadlessCapable = false;
 #endif
 
 struct CachedMesh {
@@ -98,8 +104,7 @@ struct StaticModel {
     /// the chunk mesh puts behind it.
     std::vector<bool> glass;
     /// Which meshes were rebuilt with the glass ramp in their vertex
-    /// colours (applyGlass): those draw through tinted(), so the software
-    /// path folds the pane tint into the ramp as the GL path multiplies it.
+    /// colours (applyGlass): the pane tint multiplies the ramp in the shader.
     std::vector<bool> ramped;
     /// Whether a catalogue glass cut has been applied to this model. The
     /// cache is by file and two rows can share one (the hung lantern and
@@ -196,6 +201,11 @@ using namespace rl;
 
 struct Backend::Impl {
     BackendConfig config;
+    /// The context was opened on the offscreen driver (BackendConfig::headless):
+    /// no window, no input, no pacing.
+    bool headless = false;
+    /// GL_RENDERER of the context ("llvmpipe (LLVM 21.1.8, 256 bits)").
+    std::string renderer;
     std::map<std::uint32_t, CachedMesh> meshes;
     std::map<std::uint32_t, CachedTexture> textures;
     /// Rig models by FILE NAME; a null entry is a file that was looked for
@@ -231,6 +241,27 @@ struct Backend::Impl {
     int blendMode = -1;
 
     void ensureBlendShader();
+    /// THE SCENE SHADER (every mesh the description names) and the POST PASS
+    /// that puts the offscreen scene on the window, with their uniform
+    /// slots; id 0 = it did not compile and raylib's default stands in.
+    Shader scene{};
+    Shader post{};
+    bool sceneTried = false;
+    int sceneLightMix = -1;
+    int sceneSun = -1;
+    int sceneSunColour = -1;
+    int sceneAmbient = -1;
+    int sceneFogDensity = -1;
+    int sceneFogColour = -1;
+    int postExposure = -1;
+    int postVignette = -1;
+    /// The shading of the scene being drawn, kept for the post pass.
+    SceneShading shadingNow{};
+    /// THE OFFSCREEN SCENE: the 3D pass draws into this (colour + a 24-bit
+    /// depth renderbuffer) at the window's render size, and resolveScene puts
+    /// it on the window through the post shader before the HUD goes over it.
+    RenderTexture2D target{};
+    bool sceneOpen = false;
     Material material{};
     bool materialLoaded = false;
     /// THE HALO'S FAN (scene.hpp haloFanMesh): one unit disc, uploaded the
@@ -250,26 +281,21 @@ struct Backend::Impl {
     int overlayWidth = 0;
     int overlayHeight = 0;
     bool relativeMouse = false;
-    /// The colour array a tinted instance is drawn with on the OpenGL 1.1
-    /// path; reused across draws so a tinted crowd allocates nothing per frame.
-    std::vector<unsigned char> tintScratch;
-
     void ensureMaterial();
+
+    /// Loads the scene and post shaders the first time (shaders.cpp).
+    void ensureSceneShader();
+    /// Uploads the description's shading uniforms to the scene shader.
+    void applyShading(const SceneShading& shading);
+    /// Makes the offscreen target exactly `w` x `h` (offscreen.cpp).
+    void ensureTarget(int w, int h);
+    /// Closes the offscreen pass, if one is open, and draws it over the
+    /// window through the post shader (offscreen.cpp).
+    void resolveScene();
 
     void ensureHaloFan();
 
     void ensurePaneRamp();
-
-    /// THE TINT, ON BOTH PATHS. The GL 3.3 default shader multiplies the
-    /// vertex colour by the material's diffuse colour. The OpenGL 1.1 path --
-    /// which the software rasterizer is; rlgl defines GRAPHICS_API_OPENGL_11
-    /// for it -- does not: a colour array replaces the current colour, so the
-    /// material colour DrawMesh sets is ignored the moment a mesh carries
-    /// colours, and every mesh of ours does. So on that path the tint is
-    /// folded into a scratch copy of the colour array per draw, in integers
-    /// with rounding, which is the arithmetic the shader does in floats. A
-    /// white tint -- the common case -- costs a compare and nothing else.
-    Mesh tinted(const Mesh& mesh, const Rgba8& tint);
 
     /// The model for a rig, loading it the first time it is asked for.
     /// Null when there is none: the caller draws the placeholder.
@@ -310,7 +336,7 @@ struct Backend::Impl {
     /// relightPieces.
     ///
     /// Drawn through the backend's OWN default material and no shader: a
-    /// glow is light, it does not wear the quad's atlas, and the rlsw frame
+    /// glow is light, it does not wear the quad's atlas, and the headless frame
     /// and the GL frame come out the same disc. Two-sided, because a
     /// billboard is light from either face. Depth-TESTED and never written,
     /// the rule the halo has had since it stopped being a bar.
@@ -322,7 +348,7 @@ struct Backend::Impl {
     /// thin wall it stands in for -- through the piece's own transform, in
     /// the pane tint the world scene decided. Through the backend's own
     /// default material and no shader: the ramp is in the vertex colours,
-    /// so the rlsw frame and the GL frame come out the same glass.
+    /// so the headless frame and the GL frame come out the same glass.
     /// Opaque and depth-written, drawn both sides (a pane seen from the
     /// room is the same pane).
     void drawPaneRamp(const Matrix& transform, const PieceTints& tints, SceneStats& stats);

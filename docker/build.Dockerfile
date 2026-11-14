@@ -45,7 +45,21 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         xz-utils \
         gcc-mingw-w64-x86-64-posix \
         g++-mingw-w64-x86-64-posix \
+        libegl1 \
+        libegl-mesa0 \
+        libgl1-mesa-dri \
     && rm -rf /var/lib/apt/lists/*
+
+# The Mesa RUNTIME and nothing else: the host check's 3D frame tests open a GL
+# 3.3 core context with no display server and no GPU, on SDL's `offscreen`
+# video driver, and Mesa's llvmpipe draws it on the CPU (phase 3 of
+# docs/design/OBLIVION-PLAN.md; before it the frames came from raylib's rlsw,
+# which runs no shader). libegl1 is the loader SDL dlopens, libegl-mesa0 the
+# EGL driver, libgl1-mesa-dri the llvmpipe/swrast gallium driver. No -dev
+# package, no X11, no Wayland, no Xvfb: nothing is compiled or linked against
+# system GL (native/cmake/Dependencies.cmake says how raylib is told so). Mesa
+# and LLVM move low bits between versions, which is why a frame is compared
+# with a tolerance (native/tests/support/golden.hpp) and never by hash.
 
 # Debian ships two mingw threading models under the same unsuffixed name. The
 # win32 one has no std::thread, std::mutex or std::condition_variable at all —
@@ -309,20 +323,21 @@ RUN --mount=type=cache,target=/deps,sharing=locked \
     # a host build of the same sources. The client is skipped: no SDL needed to
     # test deterministic integer math, and skipping it keeps this pass quick.
     #
-    # 3D BUILD: raylib IS built here, on its Memory platform with its software
-    # rasterizer (PLATFORM / OPENGL_VERSION are raylib's own option names, see
-    # native/cmake/Dependencies.cmake). No window, no GPU, no X server: a real
-    # 3D frame is drawn into memory inside the test suite and its pixels are
-    # asserted on every build, the way the software renderer's frames have
-    # been since S1. This container has no X11 or GL packages and must never
+    # 3D BUILD: raylib IS built here, on its SDL platform (PLATFORM /
+    # OPENGL_VERSION are raylib's own option names, see
+    # native/cmake/Dependencies.cmake) and SDL is built with it, with no video
+    # driver but `offscreen`. No window, no GPU, no X server: a real 3D frame
+    # is drawn by Mesa's llvmpipe inside the test suite, through the same GL
+    # 3.3 shaders the .exe runs, and its pixels are asserted on every build.
+    # This container has no X11 or GL development packages and must never
     # need them; the Desktop platform would want both.
     cmake -S /src/native -B /build-cache/hostcheck -G Ninja \
         -DCMAKE_BUILD_TYPE=Debug \
         -DGRANADAD_BUILD_CLIENT=OFF \
         -DGRANADAD_BUILD_TESTS=ON \
         -DGRANADAD_WERROR=ON \
-        -DPLATFORM=Memory \
-        -DOPENGL_VERSION=Software \
+        -DPLATFORM=SDL \
+        -DOPENGL_VERSION=3.3 \
         -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
         -DGRANADAD_REVISION="${GRANADAD_REVISION}"; \
     cmake --build /build-cache/hostcheck; \
@@ -376,15 +391,15 @@ RUN --mount=type=cache,target=/deps,sharing=locked \
     # renderer-side and never reaches simulation state, so it gets NONE of the
     # determinism codegen flags and none of our -Werror (its own
     # -Werror=pointer-arith is its business and is matched around, not
-    # against); and the ONE translation unit of ours that includes raylib.h
+    # against); and the translation units of ours that include raylib.h (all under render3d/rl/)
     # compiles with -Werror and sees raylib through -isystem, so raymath.h's
     # inline float math is not judged by our -Wconversion. Off the actual
     # command lines, as above.
     echo "=== flags: raylib gets no determinism flags; the raylib TU is ours ==="; \
     raylib_line="$(grep '"command"' "$cc_json" | grep 'raylib-src/src/rcore\.c' | head -1)"; \
-    rl_tu="$(grep '"command"' "$cc_json" | grep 'render3d/rl_backend\.cpp' | head -1)"; \
+    rl_tu="$(grep '"command"' "$cc_json" | grep 'render3d/rl/context\.cpp' | head -1)"; \
     test -n "$raylib_line" || { echo "FATAL: raylib's rcore.c is not in compile_commands.json — is raylib still built from source?"; exit 1; }; \
-    test -n "$rl_tu" || { echo "FATAL: src/render3d/rl_backend.cpp is not in compile_commands.json"; exit 1; }; \
+    test -n "$rl_tu" || { echo "FATAL: src/render3d/rl/context.cpp is not in compile_commands.json"; exit 1; }; \
     echo "--- theirs (raylib rcore.c)"; \
     echo "$raylib_line" | tr ' ' '\n' | grep -E '^-(f|W|std|D)' | sort | tr '\n' ' '; echo; \
     for flag in -fwrapv -ffp-contract=off -fno-fast-math " -Werror " -Wconversion; do \
@@ -394,20 +409,20 @@ RUN --mount=type=cache,target=/deps,sharing=locked \
             echo "       block in native/cmake/Dependencies.cmake."; exit 1;; \
             *) ;; esac; \
     done; \
-    case "$raylib_line" in *"-DPLATFORM_MEMORY"*) ;; \
-        *) echo "FATAL: the host check's raylib is not on the Memory platform, so"; \
-           echo "       the 3D frame tests would need a window here. Pass"; \
-           echo "       -DPLATFORM=Memory -DOPENGL_VERSION=Software."; exit 1;; esac; \
+    case "$raylib_line" in *"-DPLATFORM_DESKTOP_SDL"*) ;; \
+        *) echo "FATAL: the host check's raylib is not on the SDL platform, so"; \
+           echo "       the 3D frame tests have no headless GL context. Pass"; \
+           echo "       -DPLATFORM=SDL -DOPENGL_VERSION=3.3."; exit 1;; esac; \
     case "$raylib_line" in *"-DSUPPORT_MODULE_RAUDIO=0"*) ;; \
         *) echo "FATAL: raylib is compiling its audio module. granadad-audio owns"; \
            echo "       sound; see Dependencies.cmake."; exit 1;; esac; \
     case "$rl_tu" in *" -Werror "*|*" -Werror") ;; \
         *) echo "FATAL: the raylib translation unit compiles without -Werror."; exit 1;; esac; \
     case "$rl_tu" in *"-isystem"*"raylib-src"*) ;; \
-        *) echo "FATAL: rl_backend.cpp does not see raylib through -isystem, so"; \
+        *) echo "FATAL: render3d/rl/*.cpp does not see raylib through -isystem, so"; \
            echo "       raylib's headers are being judged by our -Werror. See"; \
            echo "       granadad_mark_headers_system(raylib)."; exit 1;; esac; \
-    echo "ok: raylib compiles with its own flags on PLATFORM_MEMORY, no audio; the raylib TU is ours"; \
+    echo "ok: raylib compiles with its own flags on PLATFORM_DESKTOP_SDL, no audio; the raylib TUs are ours"; \
     \
     # ----------------------------------------------------------------------
     # No unordered containers. Checked by grep, and that is not laziness.
@@ -1100,7 +1115,7 @@ RUN --mount=type=cache,target=/deps,sharing=locked \
     \
     # 3D BUILD, the toolchain lane. Three claims the whole 3D programme rests
     # on, each a case that goes red on its own: a real 3D frame is drawn
-    # HEADLESS in this container through raylib's software rasterizer and its
+    # HEADLESS in this container on Mesa's llvmpipe and its
     # pixels are checked (the S1 discipline, carried into 3D); the same scene
     # drawn twice is byte-identical, which is the in-process frame claim the
     # software renderer always made; and the SceneDescription -- the thing
@@ -1108,7 +1123,7 @@ RUN --mount=type=cache,target=/deps,sharing=locked \
     # identical state. A build that quietly dropped the raylib libraries would
     # lose all three at once, and this is where it would say so.
     for case in \
-        "a 3D frame of a lit plane and a cube renders headless through rlsw" \
+        "a 3D frame of a lit plane and a cube renders headless on llvmpipe" \
         "the same 3D scene renders byte-identical twice" \
         "a SceneDescription hashes identically for identical state" \
         ; do \
@@ -1121,11 +1136,20 @@ RUN --mount=type=cache,target=/deps,sharing=locked \
     done; \
     echo "ok: the 3D toolchain's cases are all registered"; \
     \
+    # THE GPU ONLY DRAWS. The ctest entry that greps native/ for a pixel, depth
+    # or query readback outside render3d/rl/capture.cpp must exist: a frame
+    # leaving the GPU anywhere else is how rendering starts deciding gameplay.
+    case "$ctest_list" in *"granadad-no-gpu-readback"*) ;; \
+        *) echo "FATAL: the ctest entry granadad-no-gpu-readback is not registered."; \
+           echo "       It is the grep that keeps the GPU from deciding gameplay."; \
+           exit 1;; esac; \
+    echo "ok: the GPU readback ban is registered"; \
+    \
     # 3D BUILD, the world lane. The Docks as geometry: the chunk mesh is a
     # deterministic function of the tile bytes (built twice, same bytes,
     # same scene hash), a WALL emits wall quads and a FLOOR in a street does
     # not (the wall-vs-floor fact the 2D/3D agreement rests on), and the real
-    # district renders headless through rlsw to a frame with a world in it.
+    # district renders headless on llvmpipe to a frame with a world in it.
     for case in \
         "the Docks mesh is a deterministic function of the tile map" \
         "a wall tile produces wall quads and a floor tile does not" \

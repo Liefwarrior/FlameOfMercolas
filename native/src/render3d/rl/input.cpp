@@ -65,9 +65,11 @@ InputFrame Backend::poll() {
     in.closeRequested = WindowShouldClose();
     in.windowWidth = GetScreenWidth();
     in.windowHeight = GetScreenHeight();
-#if defined(PLATFORM_MEMORY)
-    in.focused = true;
-#else
+    if (impl_->headless) {
+        // A headless context has no keyboard, no mouse and no focus to lose.
+        in.focused = true;
+        return in;
+    }
     in.focused = IsWindowFocused();
     for (const KeyRow& row : kKeyTable) {
         if (IsKeyPressed(row.key)) {
@@ -97,13 +99,12 @@ InputFrame Backend::poll() {
     in.mouseDeltaX = delta.x;
     in.mouseDeltaY = delta.y;
     in.wheelY = GetMouseWheelMove();
-#endif
     return in;
 }
 
 void Backend::setRelativeMouse(bool relative) {
     Impl& impl = *impl_;
-    if (impl.relativeMouse == relative) {
+    if (impl.headless || impl.relativeMouse == relative) {
         return;
     }
     impl.relativeMouse = relative;

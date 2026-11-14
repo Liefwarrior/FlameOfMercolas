@@ -17,12 +17,22 @@ Mesh uploadMesh(const MeshData& data) {
     mesh.vertices = rlAlloc<float>(vertexCount * 3);
     std::memcpy(mesh.vertices, data.positions.data(), vertexCount * 3 * sizeof(float));
 
-    // Always present, so both paths see the same attribute set: the GL 3.3
-    // default shader samples texture0 (a 1x1 white) at these coordinates and
-    // rlsw does the same in immediate mode.
+    // Always present: the shader samples texture0 (a 1x1 white when the
+    // instance is untextured) at these coordinates.
     mesh.texcoords = rlAlloc<float>(vertexCount * 2);
     if (data.texcoords.size() == vertexCount * 2) {
         std::memcpy(mesh.texcoords, data.texcoords.data(), vertexCount * 2 * sizeof(float));
+    }
+
+    // Normals for the scene shader (attribute 2, vertexNormal); absent means
+    // up, which the shader's pass-through default never reads.
+    mesh.normals = rlAlloc<float>(vertexCount * 3);
+    if (data.normals.size() == vertexCount * 3) {
+        std::memcpy(mesh.normals, data.normals.data(), vertexCount * 3 * sizeof(float));
+    } else {
+        for (std::size_t v = 0; v < vertexCount; ++v) {
+            mesh.normals[v * 3 + 1] = 1.0F;
+        }
     }
 
     mesh.colors = rlAlloc<unsigned char>(vertexCount * 4);
@@ -55,7 +65,11 @@ Texture2D uploadTexture(const TextureData& data) {
 
 void Backend::Impl::ensureMaterial() {
     if (!materialLoaded) {
-        material = LoadMaterialDefault();
+        ensureSceneShader();
+    material = LoadMaterialDefault();
+    if (scene.id != 0) {
+        material.shader = scene;
+    }
         defaultTexture = material.maps[MATERIAL_MAP_DIFFUSE].texture;
         materialLoaded = true;
     }
@@ -73,28 +87,6 @@ void Backend::Impl::ensurePaneRamp() {
         paneRamp = uploadMesh(paneRampMesh());
         paneRampReady = true;
     }
-}
-
-Mesh Backend::Impl::tinted(const Mesh& mesh, const Rgba8& tint) {
-#if defined(GRAPHICS_API_OPENGL_11)
-    if (mesh.colors != nullptr && mesh.vertexCount > 0 &&
-        (tint.r != 255 || tint.g != 255 || tint.b != 255 || tint.a != 255)) {
-        const std::size_t count = static_cast<std::size_t>(mesh.vertexCount) * 4U;
-        tintScratch.resize(count);
-        const unsigned char factors[4] = {tint.r, tint.g, tint.b, tint.a};
-        for (std::size_t i = 0; i < count; ++i) {
-            const unsigned int product = static_cast<unsigned int>(mesh.colors[i]) *
-                                         static_cast<unsigned int>(factors[i & 3U]);
-            tintScratch[i] = static_cast<unsigned char>((product + 127U) / 255U);
-        }
-        Mesh copy = mesh;
-        copy.colors = tintScratch.data();
-        return copy;
-    }
-#else
-    (void)tint;
-#endif
-    return mesh;
 }
 
 void Backend::Impl::release() {
@@ -143,11 +135,28 @@ void Backend::Impl::release() {
         UnloadShader(blend);
         blend = Shader{};
     }
+    if (scene.id != 0) {
+        UnloadShader(scene);
+        scene = Shader{};
+    }
+    if (post.id != 0) {
+        UnloadShader(post);
+        post = Shader{};
+    }
+    sceneTried = false;
+    if (target.id != 0) {
+        UnloadRenderTexture(target);
+        target = RenderTexture2D{};
+    }
+    sceneOpen = false;
     if (materialLoaded) {
         // First, while its diffuse map is rlgl's own 1x1 (drawScene puts
         // it back after every pass): UnloadMaterial frees any map whose
         // id is not the default, and ours are freed below, once.
         material.maps[MATERIAL_MAP_DIFFUSE].texture = defaultTexture;
+        // Our shaders are unloaded below, once: UnloadMaterial would free
+        // the scene shader it holds.
+        material.shader = Shader{rlGetShaderIdDefault(), rlGetShaderLocsDefault()};
         UnloadMaterial(material);
         materialLoaded = false;
     }

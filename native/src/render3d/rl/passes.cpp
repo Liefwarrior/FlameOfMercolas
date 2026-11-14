@@ -20,7 +20,7 @@ bool Backend::Impl::drawMeshWith(std::uint32_t meshId, std::uint32_t textureId, 
             material.maps[MATERIAL_MAP_DIFFUSE].texture = texture->second.texture;
         }
     }
-    DrawMesh(tinted(mesh->second.mesh, tint), material, transform);
+    DrawMesh(mesh->second.mesh, material, transform);
     ++stats.instancesDrawn;
     stats.trianglesDrawn += static_cast<std::size_t>(mesh->second.mesh.triangleCount);
     return true;
@@ -82,6 +82,7 @@ SceneStats Backend::drawScene(const SceneDescription& scene) {
     SceneStats stats;
     Impl& impl = *impl_;
     impl.ensureMaterial();
+    impl.applyShading(scene.shading);
 
     // Uploads first, outside the 3D pass: a mesh whose version moved is
     // replaced whole (a recolour is a re-upload; cheap at chunk size).
@@ -204,6 +205,7 @@ SceneStats Backend::drawScene(const SceneDescription& scene) {
 
 void Backend::drawOverlay(const render::Framebuffer& overlay) {
     Impl& impl = *impl_;
+    impl.resolveScene();
     const int width = overlay.width();
     const int height = overlay.height();
     if (impl.overlay.id == 0 || impl.overlayWidth != width || impl.overlayHeight != height) {

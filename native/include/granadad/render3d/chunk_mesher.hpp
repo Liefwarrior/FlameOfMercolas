@@ -237,6 +237,9 @@ struct ChunkGeometry {
     std::uint32_t rebuildCount = 0;
     std::vector<float> positions;
     std::vector<float> texcoords;
+    /// Per vertex: the face's unit normal, cut from its corners (the quad is
+    /// counter-clockwise seen from the side the face looks to).
+    std::vector<float> normals;
     std::vector<std::uint16_t> indices;
     /// Per vertex: the cell the face belongs to (light is read there).
     std::vector<std::int32_t> cells;

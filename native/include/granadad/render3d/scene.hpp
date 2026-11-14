@@ -15,7 +15,7 @@
 // sceneHash() takes an FNV-1a over its canonical byte image, so two sessions
 // driven by the same script must produce identical scene bytes -- the 3D
 // equivalent of `CHECK(a.pixels() == b.pixels())`, float-only-from-integers,
-// and it runs with no renderer at all. The software rasterizer (rlsw) then
+// and it runs with no renderer at all. The software rasterizer (llvmpipe) then
 // draws the SAME description in the docker gate and its pixels are compared
 // byte for byte in-process; the GPU build is proved by stats and by a
 // similarity report, never by a hash. See docs/3d (the renderer plan) for the
@@ -101,9 +101,15 @@ struct MeshData {
     std::vector<float> positions;
     /// uv per vertex. Empty means "all zero" (untextured).
     std::vector<float> texcoords;
-    /// rgba per vertex -- THIS IS THE LIGHTING. Vertex colours, no shaders:
-    /// what makes the rlsw frame and the GPU frame the same picture. Empty
-    /// means white.
+    /// Unit normal (xyz) per vertex, in the mesh's own space. The shader's
+    /// per-pixel light reads it; the vertex-colour look does not need it, so
+    /// empty is allowed and means "up" (0, 1, 0). Hashed with the rest.
+    std::vector<float> normals;
+    /// rgba per vertex -- the baked light. Until the lighting phase this is
+    /// still THE LIGHTING: the scene shader multiplies it in and adds nothing
+    /// (SceneShading below is a pass-through by default), so the headless
+    /// llvmpipe frame and the GPU frame are the same picture. Empty means
+    /// white.
     std::vector<std::uint8_t> colours;
     /// Three per triangle.
     std::vector<std::uint16_t> indices;
@@ -134,8 +140,7 @@ struct Instance {
     /// Radians, clockwise from above, 0 faces north (-Z).
     float yaw = 0.0F;
     float scale = 1.0F;
-    /// Multiplies the vertex colours. Fog and distance dimming live here on
-    /// the rlsw path, where there is no shader to do it.
+    /// Multiplies the vertex colours.
     Rgba8 tint;
 };
 
@@ -416,7 +421,7 @@ inline constexpr std::uint8_t kDrawFaced = 3;
 inline constexpr std::uint8_t kDrawPaneRamp = 4;
 
 /// THE HALO IS GEOMETRY, NOT A SHADER. It used to be the flame's quad with a
-/// radial alpha in the GL 3.3 blend shader -- which rlsw has not got, so the
+/// radial alpha in the GL 3.3 blend shader -- which the old rlsw rasterizer had not got, so the
 /// headless twin drew the same lamp as a flat pale RECTANGLE with corners in
 /// it, and the shipped exe and the gate disagreed about the brightest thing
 /// on the street. The critic called it "a quad, not a flame" and was reading
@@ -450,6 +455,13 @@ inline constexpr int kHaloFanRings = 12;
 /// and at 0.16 of a 1.5 m disc it stood past the glass on the plaster.
 inline constexpr float kHaloCoreFraction = 0.10F;
 
+/// Fills `mesh.normals` from its triangles: each vertex gets the normalised sum
+/// of the (area-weighted) normals of the triangles that use it, counter-
+/// clockwise front faces. Exact for the hard-edged quads every mesh here is
+/// built from (their corners are not shared between faces); a pure function of
+/// the positions and indices, so the scene hash stays a function of the state.
+void fillNormals(MeshData& mesh);
+
 [[nodiscard]] MeshData haloFanMesh();
 
 /// THE PANE IS A RAMP, NOT A DECAL. A lit window used to be two stacked
@@ -473,8 +485,38 @@ inline constexpr Rgba8 kPaneRampHead{158, 122, 97, 255};
 
 [[nodiscard]] MeshData paneRampMesh();
 
+/// THE SCENE SHADER'S AND THE POST PASS'S UNIFORMS. Every default is a
+/// PASS-THROUGH: with a default SceneShading the shader returns texture x tint x
+/// vertex colour and the post pass returns the scene as it is, which is
+/// exactly the fixed-function look the frame had before the shader pipeline
+/// (phase 3 of docs/design/OBLIVION-PLAN.md), so that phase is reviewable as a
+/// refactor. Effects arrive by setting these (phase 5), and every one is part
+/// of the scene hash.
+///
+/// None of it is read back and none of it decides gameplay: the simulation's
+/// own integer light field is the only authority on who is seen.
+struct SceneShading {
+    /// 0 = the baked vertex colour alone. 1 = vertex colour times
+    /// (ambient + sun x Lambert(normal, sunDirection)). Between is a mix.
+    float lightMix = 0.0F;
+    /// Unit vector pointing TOWARD the sun or moon.
+    Vec3 sunDirection{0.0F, 1.0F, 0.0F};
+    Vec3 sunColour{1.0F, 1.0F, 1.0F};
+    Vec3 ambientColour{1.0F, 1.0F, 1.0F};
+    /// Exponential distance fog: f = 1 - exp(-density x distance), distance
+    /// in tiles from the eye. 0 = none.
+    float fogDensity = 0.0F;
+    Vec3 fogColour{0.0F, 0.0F, 0.0F};
+    /// Post pass: the scene colour times this, then a vignette of this
+    /// strength (0 = none). 1 and 0 leave the picture alone.
+    float exposure = 1.0F;
+    float vignette = 0.0F;
+};
+
 struct SceneDescription {
     SceneCamera camera;
+    /// The shader pipeline's uniforms; a pass-through by default.
+    SceneShading shading;
     /// The sky -- what the frame is cleared to before anything draws.
     Rgba8 clearColour{0, 0, 0, 255};
     std::vector<MeshData> meshes;

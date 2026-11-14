@@ -87,12 +87,11 @@ void Backend::Impl::drawHaloFan(const Matrix& transform, const PieceTints& tints
                                       MatrixTranslate(0.5F * (tints.from + tints.to),
                                                       0.5F * (tints.fromZ + tints.toZ), 0.0F));
     const Color glow = averageColour(tints);
-    const Rgba8 tint{glow.r, glow.g, glow.b, glow.a};
     material.maps[MATERIAL_MAP_DIFFUSE].texture = defaultTexture;
     material.maps[MATERIAL_MAP_DIFFUSE].color = glow;
     rlDisableDepthMask();
     rlDisableBackfaceCulling();
-    DrawMesh(tinted(haloFan, tint), material, MatrixMultiply(fit, transform));
+    DrawMesh(haloFan, material, MatrixMultiply(fit, transform));
     rlEnableBackfaceCulling();
     rlEnableDepthMask();
     material.maps[MATERIAL_MAP_DIFFUSE].color = WHITE;
@@ -113,7 +112,7 @@ void Backend::Impl::drawPaneRamp(const Matrix& transform, const PieceTints& tint
     material.maps[MATERIAL_MAP_DIFFUSE].texture = defaultTexture;
     material.maps[MATERIAL_MAP_DIFFUSE].color = Color{tint.r, tint.g, tint.b, 255};
     rlDisableBackfaceCulling();
-    DrawMesh(tinted(paneRamp, tint), material, MatrixMultiply(fit, transform));
+    DrawMesh(paneRamp, material, MatrixMultiply(fit, transform));
     rlEnableBackfaceCulling();
     material.maps[MATERIAL_MAP_DIFFUSE].color = WHITE;
     stats.trianglesDrawn += static_cast<std::size_t>(paneRamp.triangleCount);
@@ -136,12 +135,12 @@ void Backend::Impl::drawLateGlass(const DeferredMesh& late, SceneStats& stats) {
             ensurePaneRamp();
             const Matrix fit = MatrixMultiply(MatrixScale(w, h, 1.0F),
                                               MatrixTranslate(tints.from, tints.fromZ, 0.0F));
-            DrawMesh(tinted(paneRamp, pane), material, MatrixMultiply(fit, late.transform));
+            DrawMesh(paneRamp, material, MatrixMultiply(fit, late.transform));
             stats.trianglesDrawn += static_cast<std::size_t>(paneRamp.triangleCount);
         }
     } else if (late.model != nullptr && late.mesh < late.model->model.meshCount) {
         const Mesh& mesh = late.model->model.meshes[late.mesh];
-        DrawMesh(tinted(mesh, pane), material, late.transform);
+        DrawMesh(mesh, material, late.transform);
         stats.trianglesDrawn += static_cast<std::size_t>(mesh.triangleCount);
     }
     rlEnableBackfaceCulling();
@@ -163,7 +162,7 @@ void Backend::Impl::drawStaticMesh(StaticModel& model, int i, const Matrix& tran
     }
     // The blend: the four tints over the piece when the shader is there
     // and they differ -- or the piece asks for shading, which only the
-    // shader does -- their average when it is not (the software path)
+    // shader does -- their average when the blend shader did not load
     // or they do not. A halo never gets here.
     const bool spanned = tints.to > tints.from || tints.toZ > tints.fromZ;
     const bool blended =
@@ -197,8 +196,7 @@ void Backend::Impl::drawStaticMesh(StaticModel& model, int i, const Matrix& tran
     if (glass) {
         // Glass is a colour, not a texel: drawn on the backend's own
         // white texture so the pane tint is what shows, the ramp (if
-        // the mesh carries one) folded in on the software path by
-        // tinted() and multiplied in by the GL default shader. Opaque
+        // the mesh carries one) multiplied in by the shader. Opaque
         // here; a pane alpha under 255 is the fog's share, for the
         // late pass (lateGlass) and not for this one.
         ensureMaterial();
@@ -207,12 +205,11 @@ void Backend::Impl::drawStaticMesh(StaticModel& model, int i, const Matrix& tran
         if (mirrored) {
             rlDisableBackfaceCulling();
         }
-        const Rgba8 pane{tints.pane.r, tints.pane.g, tints.pane.b, 255};
         material.maps[MATERIAL_MAP_DIFFUSE].color = Color{tints.pane.r, tints.pane.g, tints.pane.b, 255};
         if (tints.pane.a < kLateGlassBelow) {
             lateGlass.push_back(DeferredMesh{&model, i, transform, tints, mirrored});
         }
-        DrawMesh(tinted(model.model.meshes[i], pane), material, transform);
+        DrawMesh(model.model.meshes[i], material, transform);
         if (mirrored) {
             rlEnableBackfaceCulling();
         }

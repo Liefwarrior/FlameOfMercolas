@@ -240,6 +240,20 @@ TEST_CASE("a wall tile produces wall quads and a floor tile does not") {
     std::size_t floorSides = 0;
     bool floorTopSeen = false;
     const auto scan = [&](const ChunkGeometry& geometry) {
+        // PHASE 3: a normal per vertex, cut from the quad's corners: up for a
+        // top, down for a bottom, level for a side, and unit length always.
+        CHECK(geometry.normals.size() == geometry.positions.size());
+        for (const ChunkFace& face : geometry.faces) {
+            const float* n = &geometry.normals[static_cast<std::size_t>(face.firstVertex) * 3];
+            CHECK(std::abs(n[0] * n[0] + n[1] * n[1] + n[2] * n[2] - 1.0F) < 1.0e-4F);
+            if (face.dir == FaceDir::Top) {
+                CHECK(n[1] == doctest::Approx(1.0F));
+            } else if (face.dir == FaceDir::Bottom) {
+                CHECK(n[1] == doctest::Approx(-1.0F));
+            } else {
+                CHECK(std::abs(n[1]) < 1.0e-4F);
+            }
+        }
         for (const ChunkFace& face : geometry.faces) {
             const bool side = face.dir != FaceDir::Top && face.dir != FaceDir::Bottom;
             if (face.x == 10 && face.y == 10 && face.z == 5 && side) {
@@ -1007,7 +1021,7 @@ TEST_CASE("a door tile places the door frame") {
             CHECK(p.instance.scale.z < 0.0F);
             // A halo: the adapter draws its own fan over this extent
             // (haloFanMesh) instead of the flame model's quad, so the
-            // falloff is geometry and the rlsw twin and the GL exe agree.
+            // falloff is geometry and the old software twin and the GL exe agree.
             CHECK(p.mode == kDrawHalo);
             CHECK(p.instance.mode == kDrawHalo);
             // SQUARE IN METRES, so the fan comes out round in the world,

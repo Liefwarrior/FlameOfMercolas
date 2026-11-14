@@ -1177,7 +1177,7 @@ private:
         // A halo: the adapter draws its own vertex-coloured fan over this
         // local extent instead of the piece's mesh -- local X spans the
         // width and local Y the height (the adapter reads the Z span as Y
-        // for this mode) -- so the falloff is geometry and the rlsw twin
+        // for this mode) -- so the falloff is geometry and the old software twin
         // and the GL exe draw the same disc. A billboard: the world scene
         // turns it to the eye about its centre every frame, so it is never
         // seen edge-on as a bright bar at arm's length.

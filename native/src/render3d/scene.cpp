@@ -120,6 +120,51 @@ MeshData paneRampMesh() {
 // SceneDescription
 // ---------------------------------------------------------------------------
 
+void fillNormals(MeshData& mesh) {
+    const std::size_t vertices = mesh.vertexCount();
+    mesh.normals.assign(vertices * 3U, 0.0F);
+    const auto at = [&mesh](std::size_t v) {
+        return Vec3{mesh.positions[v * 3], mesh.positions[v * 3 + 1], mesh.positions[v * 3 + 2]};
+    };
+    for (std::size_t t = 0; t + 2 < mesh.indices.size(); t += 3) {
+        const std::size_t ia = mesh.indices[t];
+        const std::size_t ib = mesh.indices[t + 1];
+        const std::size_t ic = mesh.indices[t + 2];
+        if (ia >= vertices || ib >= vertices || ic >= vertices) {
+            continue;
+        }
+        const Vec3 a = at(ia);
+        const Vec3 b = at(ib);
+        const Vec3 c = at(ic);
+        const Vec3 e1{b.x - a.x, b.y - a.y, b.z - a.z};
+        const Vec3 e2{c.x - a.x, c.y - a.y, c.z - a.z};
+        // Counter-clockwise seen from the front: (b - a) x (c - a) points out.
+        const float nx = e1.y * e2.z - e1.z * e2.y;
+        const float ny = e1.z * e2.x - e1.x * e2.z;
+        const float nz = e1.x * e2.y - e1.y * e2.x;
+        for (const std::size_t v : {ia, ib, ic}) {
+            mesh.normals[v * 3] += nx;
+            mesh.normals[v * 3 + 1] += ny;
+            mesh.normals[v * 3 + 2] += nz;
+        }
+    }
+    for (std::size_t v = 0; v < vertices; ++v) {
+        float& x = mesh.normals[v * 3];
+        float& y = mesh.normals[v * 3 + 1];
+        float& z = mesh.normals[v * 3 + 2];
+        const float length = std::sqrt(x * x + y * y + z * z);
+        if (length > 1.0e-12F) {
+            x /= length;
+            y /= length;
+            z /= length;
+        } else {
+            x = 0.0F;
+            y = 1.0F;
+            z = 0.0F;
+        }
+    }
+}
+
 const MeshData* SceneDescription::findMesh(std::uint32_t id) const noexcept {
     for (const MeshData& mesh : meshes) {
         if (mesh.id == id) {
@@ -139,6 +184,11 @@ MeshData* SceneDescription::findMesh(std::uint32_t id) noexcept {
 }
 
 void SceneDescription::putMesh(MeshData mesh) {
+    // Every mesh in a description carries normals for the shader's per-pixel
+    // light; a lane that cut its own (the chunk mesher) keeps them.
+    if (mesh.normals.size() != mesh.positions.size() && mesh.triangleCount() > 0) {
+        fillNormals(mesh);
+    }
     if (MeshData* existing = findMesh(mesh.id)) {
         *existing = std::move(mesh);
         return;
@@ -236,6 +286,14 @@ std::uint64_t sceneHash(const SceneDescription& scene) noexcept {
     mixVec3(h, scene.camera.up);
     h.mixF32(scene.camera.fovyDegrees);
     mixRgba(h, scene.clearColour);
+    h.mixF32(scene.shading.lightMix);
+    mixVec3(h, scene.shading.sunDirection);
+    mixVec3(h, scene.shading.sunColour);
+    mixVec3(h, scene.shading.ambientColour);
+    h.mixF32(scene.shading.fogDensity);
+    mixVec3(h, scene.shading.fogColour);
+    h.mixF32(scene.shading.exposure);
+    h.mixF32(scene.shading.vignette);
 
     h.mixU64(static_cast<std::uint64_t>(scene.meshes.size()));
     for (const MeshData& mesh : scene.meshes) {
@@ -247,6 +305,10 @@ std::uint64_t sceneHash(const SceneDescription& scene) noexcept {
         }
         h.mixU64(static_cast<std::uint64_t>(mesh.texcoords.size()));
         for (const float f : mesh.texcoords) {
+            h.mixF32(f);
+        }
+        h.mixU64(static_cast<std::uint64_t>(mesh.normals.size()));
+        for (const float f : mesh.normals) {
             h.mixF32(f);
         }
         h.mixU64(static_cast<std::uint64_t>(mesh.colours.size()));

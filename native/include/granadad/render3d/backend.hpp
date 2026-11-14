@@ -9,19 +9,25 @@
 // PI...) from colliding with Windows headers and our own, and it is what
 // keeps the renderer replaceable.
 //
-// TWO BUILDS OF THE SAME ADAPTER, chosen at configure time by raylib's own
-// PLATFORM / OPENGL_VERSION options (native/cmake/Dependencies.cmake):
+// ONE RENDERER, TWO WAYS TO GET A GL 3.3 CORE CONTEXT, chosen at configure
+// time by raylib's own PLATFORM option (native/cmake/Dependencies.cmake):
 //
-//   PLATFORM=Memory  OPENGL_VERSION=Software   the docker host check. No
-//       window, no GPU, no display server: raylib's software rasterizer
-//       (rlsw) draws into memory and readback() hands the pixels over. Pure
-//       CPU arithmetic, so two draws of one description are byte-identical
-//       in-process and the frame tests can say so.
+//   PLATFORM=SDL      OPENGL_VERSION=3.3       the Linux build and the docker
+//       host check. BackendConfig::headless opens the context on SDL's
+//       `offscreen` video driver: no window, no display server, no GPU -- Mesa's
+//       llvmpipe draws the frame on the CPU, through the SAME GLSL the .exe
+//       runs. readback() hands the pixels over. llvmpipe is deterministic
+//       in-process, so two draws of one description are byte-identical
+//       there, but Mesa and LLVM move low bits between versions, so a frame
+//       is compared across builds by tolerance, never by hash.
 //
 //   PLATFORM=Desktop  OPENGL_VERSION=3.3       the shipped .exe. A GLFW
 //       window with an OpenGL 3.3 context; readback() still works (it is how
 //       --screenshot captures on the host) but a GPU frame is NEVER hashed --
-//       it is proved by stats and by similarity against the rlsw frame.
+//       it is proved by stats and by similarity against the llvmpipe frame.
+//
+// (Until phase 3 of docs/design/OBLIVION-PLAN.md the headless path was
+// raylib's rlsw software rasterizer, which runs no shader; it is gone.)
 //
 // A FRAME, in order:
 //
@@ -42,7 +48,7 @@
 // INPUT comes out of poll() in a NEUTRAL vocabulary -- USB HID usage ids
 // (page 7) for keys, which are exactly SDL's scancode numbers, so the client
 // can keep its scancode-keyed binding table -- plus mouse edges, deltas and
-// wheel in window pixels. The Memory build reports no input at all.
+// wheel in window pixels. A headless context reports no input at all.
 
 #include <array>
 #include <cstddef>
@@ -60,19 +66,23 @@ class Framebuffer;
 namespace granadad::render3d {
 
 enum class VideoKind : std::uint8_t {
-    /// rlsw in memory: headless, byte-identical, no window.
-    Software,
+    /// A context with no window (Mesa llvmpipe in the Linux build).
+    Headless,
     /// A real window and a GPU context.
     Gpu,
 };
 
 struct BackendConfig {
-    /// The frame the HUD is drawn at. On the Desktop build the window opens
-    /// at width*windowScale x height*windowScale; on the Memory build the
-    /// frame IS the window and windowScale is ignored.
+    /// The frame the HUD is drawn at. In a window it opens at
+    /// width*windowScale x height*windowScale; headless, the frame IS the
+    /// surface and windowScale is ignored.
     int width = 640;
     int height = 360;
     int windowScale = 2;
+    /// No window, no display server: SDL's offscreen driver and Mesa llvmpipe.
+    /// open() returns null, with the reason on stdout, in a build that cannot
+    /// (see Backend::headlessCapable()).
+    bool headless = false;
     bool resizable = true;
     bool vsync = true;
     /// Do not steal focus on show -- the owner's standing ask for the
@@ -184,13 +194,13 @@ struct SceneStats {
 
 class Backend {
 public:
-    /// True when this build renders through rlsw in memory -- i.e. open()
-    /// needs no display and readback() is byte-reproducible. The frame tests
-    /// gate on this: under a GPU build they skip rather than open a window
-    /// inside the test suite.
+    /// True when this build can open a headless context (BackendConfig::headless)
+    /// -- the SDL platform on Mesa. The frame tests gate on this: under the
+    /// .exe's GLFW build they skip rather than open a window inside the test
+    /// suite, and the gate asserts by name that they ran everywhere else.
     [[nodiscard]] static bool headlessCapable() noexcept;
 
-    /// Opens the window (or the memory framebuffer). Null on failure, with
+    /// Opens the window (or the headless context). Null on failure, with
     /// the reason on stdout. One at a time per process.
     [[nodiscard]] static std::unique_ptr<Backend> open(const BackendConfig& config);
     ~Backend();
@@ -198,7 +208,10 @@ public:
     Backend& operator=(const Backend&) = delete;
 
     [[nodiscard]] VideoKind kind() const noexcept;
-    /// Current window size (frame size on the Memory build).
+    /// GL_RENDERER of the context ("llvmpipe (LLVM 21.1.8, 256 bits)" when
+    /// headless), empty if the driver did not say.
+    [[nodiscard]] const std::string& rendererName() const noexcept;
+    /// Current window size (frame size when headless).
     [[nodiscard]] int width() const noexcept;
     [[nodiscard]] int height() const noexcept;
 
@@ -216,8 +229,7 @@ public:
     /// the origin looking down -Z (the parts are in view space), its
     /// projection's depth squeezed into the front of the range so the arms
     /// win the depth test against every wall and still occlude each other
-    /// -- the same picture on rlsw and GL 3.3, no depth clear, no
-    /// framebuffer object (rlsw has none).
+    /// -- no depth clear, so the same picture on every driver.
     SceneStats drawScene(const SceneDescription& scene);
     /// Draws `overlay` over the frame. Its pixels are render::Framebuffer's
     /// 0xAABBGGRR (R,G,B,A in memory), straight alpha.

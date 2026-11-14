@@ -17,7 +17,7 @@
 // skyHorizon at eye level, skyTop overhead -- so it is pitch-correct, it is
 // part of the hashed description, and it needs nothing from the adapter.
 // The clear colour is the horizon too, for the strip under the dome's rim.
-// The clear day's own fog is NOT here: rlsw has no shader for it and a
+// The clear day's own fog is NOT here: the old rlsw rasterizer had no shader for it and a
 // multiply can't add the fog colour in; the GPU path's fog shader is the
 // render lane's, and until then the district reads sharp to its far end.
 //
@@ -27,7 +27,7 @@
 // fog between it and the shell inside it, drawn far to near after everything
 // else in the pass with the depth test on. Whatever stands inside a shell is
 // clear of it; whatever stands beyond it is seen through it; the sky beyond
-// them all is seen through the lot. No shader, so the rlsw frame and the GPU
+// them all is seen through the lot. No shader, so the headless frame and the GPU
 // frame are the same picture, the way every other pixel of this pass is. It
 // is banded where a shader would be smooth -- nineteen steps out to fifty-six
 // tiles, closer together where the eye can tell -- and it is only ever

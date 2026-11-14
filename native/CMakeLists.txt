@@ -588,6 +588,7 @@ add_library(granadad-render3d-rl STATIC
     src/render3d/rl/passes.cpp
     src/render3d/rl/viewmodel_pass.cpp
     src/render3d/rl/capture.cpp
+    src/render3d/rl/offscreen.cpp
     src/render3d/rl/input.cpp)
 target_link_libraries(granadad-render3d-rl
     PUBLIC granadad-render3d-core
@@ -996,6 +997,10 @@ if(GRANADAD_BUILD_TESTS)
         # Under a GPU build (the .exe's own test binary) the frame cases skip
         # rather than open a window; the overlay-alpha cases run everywhere.
         tests/test_render3d.cpp
+        # PHASE 3 -- THE SAME FRAME AGAINST COMMITTED GOLDEN IMAGES, by a stated
+        # tolerance (tests/support/golden.hpp): the starter scene, the Docks at
+        # noon and at night, and TRUE pitch looking up and down.
+        tests/test_golden.cpp
         # 3D BUILD -- THE WORLD LANE. The chunk mesher over the real Docks:
         # the mesh is a deterministic function of the tile map (built twice,
         # same bytes, same scene hash), a wall cell emits its four sides and
@@ -1008,7 +1013,7 @@ if(GRANADAD_BUILD_TESTS)
         # the combat sim's state through Session (charge, hard hold, the
         # swing at the resolved tier, the guard, the cast, the flinch), the
         # posed parts are described and hashed, the terminal HUD composites
-        # over the 3D frame BYTE-IDENTICALLY where it is opaque (rlsw), the
+        # over the 3D frame BYTE-IDENTICALLY where it is opaque (llvmpipe), the
         # raised fists draw over the Docks and in front of a wall the body
         # stands against, and the washes are overlay pixels. Placeholder
         # arms: no licensed glb required.
@@ -1019,12 +1024,14 @@ if(GRANADAD_BUILD_TESTS)
         # the old sky byte for byte at every minute, a session pinned to fog,
         # overcast or wind stepping to the clear run's tavern and population
         # digests while its frame moves, two sessions under one fog drawing
-        # one frame, the veil in the description and in the rlsw frame twice
+        # one frame, the veil in the description and in the headless frame twice
         # over, the summary's weather= field, and the wind bed's one-way wire.
         tests/test_weather.cpp
     )
 
     add_executable(granadad-tests tests/test_main.cpp ${GRANADAD_TEST_SOURCES})
+    target_compile_definitions(granadad-tests PRIVATE
+        GRANADAD_GOLDEN_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/golden")
     target_link_libraries(granadad-tests
         PRIVATE granadad-gate granadad-render granadad-render3d-rl granadad-audio
                 granadad-workbench doctest::doctest)
@@ -1102,6 +1109,14 @@ if(GRANADAD_BUILD_TESTS)
     else()
         add_test(NAME granadad-tests COMMAND granadad-tests)
     endif()
+
+    # THE GPU ONLY DRAWS: no readback outside render3d/rl/capture.cpp, by
+    # grep (cmake/CheckNoGpuReadback.cmake). Runs on every build, cross
+    # included -- it reads source files, not a binary.
+    add_test(NAME granadad-no-gpu-readback
+             COMMAND ${CMAKE_COMMAND}
+                     "-DGRANADAD_NATIVE_DIR=${CMAKE_CURRENT_SOURCE_DIR}"
+                     -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/CheckNoGpuReadback.cmake")
 
     # The twin-run gate as a ctest entry. It is the only check in this build that
     # can catch nondeterminism rather than incorrectness, and a gate that is not

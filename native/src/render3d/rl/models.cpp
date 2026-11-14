@@ -99,9 +99,8 @@ template <typename Keep, typename ColourAt>
                                              : nullptr;
     out.normals = src.normals != nullptr ? rlAlloc<float>(static_cast<std::size_t>(out.vertexCount) * 3U)
                                          : nullptr;
-    // No colour array unless asked: on the GL 1.1 path a colour array
-    // REPLACES the material colour (see tinted()), so a metal mesh that
-    // carried one would lose its tint and its night cap there.
+    // No colour array unless asked: a metal mesh keeps the default white
+    // vertex colour, so its tint and its night cap come from the material.
     out.colors =
         withColours ? rlAlloc<unsigned char>(static_cast<std::size_t>(out.vertexCount) * 4U) : nullptr;
     int at = 0;
@@ -368,17 +367,15 @@ StaticModel* Backend::Impl::staticFor(const StaticPieceRef& ref) {
                 Material& material = candidate->model.materials[m];
                 candidate->baseColour[static_cast<std::size_t>(m)] =
                     material.maps[MATERIAL_MAP_DIFFUSE].color;
-#if !defined(PLATFORM_MEMORY)
                 // The pack atlases are flat-colour sheets a few thousand
                 // texels across drawn on 2.5 m walls: mipmapped and
                 // filtered they read as paint, point-sampled they
-                // shimmer. rlsw has neither, and never has the files.
+                // shimmer.
                 Texture2D& texture = material.maps[MATERIAL_MAP_DIFFUSE].texture;
                 if (texture.id != 0 && texture.id != defaultTexture.id) {
                     GenTextureMipmaps(&texture);
                     SetTextureFilter(texture, TEXTURE_FILTER_TRILINEAR);
                 }
-#endif
             }
             candidate->translucent.resize(static_cast<std::size_t>(candidate->model.meshCount));
             candidate->glass.resize(static_cast<std::size_t>(candidate->model.meshCount));
