@@ -7,7 +7,7 @@
 #include "granadad/render3d/chunk_mesher.hpp"
 #include "granadad/render/session.hpp"
 #include "granadad/render/vertical.hpp"
-#include "granadad/render/world_renderer.hpp"
+#include "granadad/render/scene_types.hpp"
 #include "granadad/sim/human_scale.hpp"
 
 namespace granadad::render3d {

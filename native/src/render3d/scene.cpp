@@ -3,7 +3,7 @@
 #include <cmath>
 #include <cstring>
 
-#include "granadad/render/world_renderer.hpp"
+#include "granadad/render/scene_types.hpp"
 
 namespace granadad::render3d {
 

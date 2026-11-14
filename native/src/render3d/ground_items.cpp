@@ -9,7 +9,7 @@
 #include "granadad/render/lighting.hpp"
 #include "granadad/render/session.hpp"
 #include "granadad/render/vertical.hpp"
-#include "granadad/render/world_renderer.hpp"
+#include "granadad/render/scene_types.hpp"
 #include "granadad/sim/items.hpp"
 #include "granadad/sim/tavern.hpp"
 

@@ -307,6 +307,9 @@ add_library(granadad-render STATIC
     src/render/lamps.cpp
     src/render/lighting.cpp
     src/render/world_renderer.cpp
+    # Camera, Projection and SpriteInstance, shared by the software world pass and
+    # the 3D scene builders (moved out of world_renderer.cpp unchanged).
+    src/render/scene_types.cpp
     # Every Docks building's door and every named street, as a legible
     # floating nameplate when the player is close enough to read it. See the
     # file's own header for why it reuses the world pass's camera math and
@@ -339,7 +342,40 @@ add_library(granadad-render STATIC
     # is here and not another --smoke flag.
     src/render/case_watch.cpp
     src/render/demo.cpp
+    # Session is ONE class defined across these files (see session_internal.hpp);
+    # the scripted --flag capture drivers live under render/scripted/.
     src/render/session.cpp
+    src/render/session_casebook.cpp
+    src/render/session_cases.cpp
+    src/render/session_combat.cpp
+    src/render/session_court.cpp
+    src/render/session_dialogue.cpp
+    src/render/session_hud.cpp
+    src/render/session_interact.cpp
+    src/render/session_map.cpp
+    src/render/session_menus.cpp
+    src/render/session_movement.cpp
+    src/render/session_panels.cpp
+    src/render/session_sprites.cpp
+    src/render/session_step.cpp
+    src/render/scripted/burgle.cpp
+    src/render/scripted/case.cpp
+    src/render/scripted/common.cpp
+    src/render/scripted/contract.cpp
+    src/render/scripted/court.cpp
+    src/render/scripted/eviction.cpp
+    src/render/scripted/flame.cpp
+    src/render/scripted/kit.cpp
+    src/render/scripted/nemesis.cpp
+    src/render/scripted/radiant.cpp
+    src/render/scripted/roofs_skyrun.cpp
+    src/render/scripted/rung.cpp
+    src/render/scripted/shop.cpp
+    src/render/scripted/smoke.cpp
+    src/render/scripted/street.cpp
+    src/render/scripted/threshold_petition.cpp
+    src/render/scripted/trail.cpp
+    src/render/scripted/voice.cpp
     src/render/step_pump.cpp
     src/render/stb_impl.cpp
     # Task #83 -- the steps-based ease every panel's open/close and the HUD's
