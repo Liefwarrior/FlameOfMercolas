@@ -581,6 +581,8 @@ native/
   include/granadad/workbench/ workbench headers
   src/sim/                    simulation. no floats, no SDL.
   src/render/                 the software first-person renderer. floats legal. no SDL.
+                              Session is one class defined across session*.cpp
+  src/render/scripted/        the --flag capture drivers behind runSmoke (--trail, --flame, ...)
   src/render3d/               the 3D world path: chunk meshes, scene, the raylib adapter
   src/audio/                  the audio engine and its backends
   src/gate/                   the twin-run gate and its reports
