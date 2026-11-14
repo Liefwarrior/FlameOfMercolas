@@ -199,6 +199,7 @@ constexpr std::int32_t kStreetReachTiles = 2;
 [[nodiscard]] int runContractLine(Session& session, const std::string& ending);
 [[nodiscard]] int runNemesisLine(Session& session, const std::string& ending);
 [[nodiscard]] int runWatchHaltLine(Session& session, const std::string& ending);
+[[nodiscard]] int runVoiceLine(Session& session, const std::string& ending);
 [[nodiscard]] int runKitLine(Session& session, const std::string& ending);
 [[nodiscard]] int runCourtLine(Session& session, const std::string& ending);
 [[nodiscard]] int runTrailLine(Session& session, const std::string& ending);

@@ -361,6 +361,7 @@ add_library(granadad-render STATIC
     src/render/scripted/street.cpp
     src/render/scripted/threshold_petition.cpp
     src/render/scripted/trail.cpp
+    src/render/scripted/voice.cpp
     src/render/step_pump.cpp
     src/render/stb_impl.cpp
     # Task #83 -- the steps-based ease every panel's open/close and the HUD's
