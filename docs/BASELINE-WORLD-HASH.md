@@ -269,8 +269,7 @@ brick_facade/reman_facade art fix) moved the number. This section says exactly w
 file's own discipline, so a later reader can tell a deliberate step from a regression.
 
 **Tool note.** Every number above this section was produced by the Java `client-observer`
-module, which no longer exists in this repo (removed as dead weight; see CLAUDE.md — do not
-resurrect it). The C++ port's own `granadad-twin-gate --population` is now the tool of record
+module, which no longer exists in this repo (removed as dead weight — do not resurrect it). The C++ port's own `granadad-twin-gate --population` is now the tool of record
 for this measurement; it does not take the same tick count or actor count as the old Java run
 (7,200 ticks / 96 walkers vs. the old 15,000 ticks / 692 actors — see
 `native/CMakeLists.txt`'s `granadad-twin-run-gate-population` test for why those numbers are

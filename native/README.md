@@ -324,7 +324,7 @@ build and reproducibility on the cross build.
 | `granadad-content-tests` — TROJSAV reader vs. the real baked worlds | 57 | 902,056 |
 | `granadad-twin-run-gate` — two entries: bare, and with the tavern registered | 2 | — |
 | `granadad-content-fingerprint`, `granadad-world-hash-fingerprint` | 2 | — |
-| **ctest total** | **349** | |
+| **ctest total** | `dist/GATE-STAMP.txt` has the current number | |
 
 Some of those cases **render frames of the real Docks**, inside the container,
 with no window and no GPU — the renderer is software, so a frame is an ordinary
@@ -575,8 +575,16 @@ native/
   content/                    the TROJSAV / world-format reader. links nothing of ours.
   include/granadad/sim/       simulation headers
   include/granadad/render/    renderer headers
+  include/granadad/render3d/  the 3D world path's headers
+  include/granadad/audio/     audio engine headers
+  include/granadad/gate/      twin-run gate headers
+  include/granadad/workbench/ workbench headers
   src/sim/                    simulation. no floats, no SDL.
   src/render/                 the software first-person renderer. floats legal. no SDL.
+  src/render3d/               the 3D world path: chunk meshes, scene, the raylib adapter
+  src/audio/                  the audio engine and its backends
+  src/gate/                   the twin-run gate and its reports
+  src/workbench/              the workbench executable
   src/tools/                  bake tools, run by hand
   src/client/                 the SDL3 window, and nothing else
   tests/

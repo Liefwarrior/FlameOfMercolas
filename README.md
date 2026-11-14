@@ -19,7 +19,7 @@ The game is being rewritten in C++. **`native/` is the live tree**; read
 ```
 .\scripts\gate.ps1                         # reproducible build -> dist/, commit stamped
 .\dist\granadad.exe                        # the game
-.\dist\granadad.exe --smoke=120 --screenshot=frame.png   # a frame, no window needed
+.\dist\granadad.exe --smoke=120 --screenshot=frame.png   # a frame (this build opens a window for one frame; the headless build opens none)
 .\dist\granadad.exe --nemesis --screenshot=rival.png    # lose three fights, watch him rise
 .\dist\granadad.exe --ward                # the compounds, two years, as text
 .\scripts\verify-windows.ps1               # finishes the cross-toolchain determinism gate
@@ -118,6 +118,6 @@ harbour fog.
 
 ## Canon
 
-Lore lives in the sibling repo `..\LordOfTrojia-MVP` (read-only reference; the novel always wins;
-the `Lore\*.html` files there are non-canon). Derived game data in this repo carries provenance
-notes.
+Lore lives in `Lore\` in this repo and in the sibling repo `..\LordOfTrojia-MVP` (read-only
+reference; the novel always wins; the `Lore\*.html` files are non-canon). Derived game data in
+this repo carries provenance notes.

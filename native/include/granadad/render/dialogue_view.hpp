@@ -465,26 +465,4 @@ struct DialogueTopicHit {
 [[nodiscard]] DialogueTopicHit dialogueTopicAtPixel(const DialogueViewState& state, int width,
                                                     int height, int px, int py);
 
-/// The picked row's highlight: a soft band under the label and a bright
-/// hairline where the cursor arrow sits.
-///
-/// NOT USED BY drawDialogue ANY MORE. UI-REFERENCE-TERMINAL.md forbids the
-/// arrow by name -- "Selection is an inverted highlight ... Not an arrow, not a
-/// bracket. The fill is the affordance" -- and the conversation panel's own
-/// verifier photographed `>1 TELL ME ABOUT...`. The topic list selects with
-/// panel.hpp's drawInvertedFill in the speaker's own attitude accent now. This
-/// shape survives only for menu_view.cpp's four tiled panels, which were not in
-/// that pass's scope and are the next surface to convert.
-///
-/// EXPOSED (moved out of dialogue_view.cpp's own anonymous namespace) so the
-/// tiled Menu (menu_view.cpp) can draw the identical "this one is selected"
-/// shape inside
-/// each of its four smaller panels instead of re-implementing it -- see that
-/// file's own header. Parameterised by `scale` rather than tied to the one
-/// register drawDialogue() itself draws at, so a caller drawing at
-/// hudMinorScale (a smaller panel, denser text) gets a highlight sized to
-/// match.
-void drawPickHighlight(Framebuffer& target, int x, int y, int rowStep, int glyphAdvance, int scale,
-                       int labelWidth, int roomWidth, float phase);
-
 }  // namespace granadad::render

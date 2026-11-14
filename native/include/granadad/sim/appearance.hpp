@@ -44,9 +44,8 @@
 namespace granadad::sim {
 
 /// One playable look: the WardType it renders as (render::ActorSheet::forType
-/// and render::actorSheetQuery both already handle any WardType -- nothing
-/// there has to change for this to work), a stable id never shown on screen,
-/// and a short label that is.
+/// already handles any WardType -- nothing there has to change for this to
+/// work), a stable id never shown on screen, and a short label that is.
 struct AppearanceOption {
     WardType type;
     /// "priest_of_the_flame" -- content/raws/companions/*.json's own

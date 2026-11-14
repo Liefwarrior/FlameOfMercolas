@@ -1312,9 +1312,6 @@ public:
     /// How many rows of the options page are sliders rather than bindings.
     static constexpr int kSliderRows = 4;
 
-    /// Field of view, degrees, clamped to kMinFov..kMaxFov. Live: the camera
-    /// reads it every frame, so the slider moves the view while you watch.
-    void setFov(int degrees);
     [[nodiscard]] int fovDegrees() const noexcept { return controls_.fovDegrees; }
 
     // --- the pause menu -------------------------------------------------------

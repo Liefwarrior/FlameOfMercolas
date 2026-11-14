@@ -6,11 +6,9 @@ namespace granadad::sim {
 
 const std::vector<AppearanceOption>& appearanceOptions() noexcept {
     // WARD_ACTORS.HPP'S OWN ORDER, minus Urchin and the four beasts -- see
-    // the header. render::actorSheetQuery already knows a tag string for
-    // every one of these, and render::ActorSheet::forType already knows how
-    // to hand back a sprite for every one of these; this table adds nothing
-    // to either, it only says WHICH of WardType's sixteen a player may stand
-    // in.
+    // the header. render::ActorSheet::forType already knows how to hand back
+    // a sprite for every one of these; this table adds nothing to it, it only
+    // says WHICH of WardType's sixteen a player may stand in.
     // FOUR OF THESE USED TO BE LONGER, AND THE COLUMN NEVER FORGAVE IT. The
     // custom screen's LOOK row prints "N LOOK  " (eight glyphs: the row
     // number, a space, "LOOK" and two more) ahead of whichever of these a

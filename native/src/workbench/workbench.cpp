@@ -436,11 +436,6 @@ std::vector<HierarchyRow> Workbench::hierarchyRows() const {
     return rows;
 }
 
-void Workbench::clampCursor() {
-    const int count = static_cast<int>(hierarchyRows().size());
-    cursor_ = count <= 0 ? 0 : std::clamp(cursor_, 0, count - 1);
-}
-
 bool Workbench::selectByName(Selection::Kind kind, std::string_view what) {
     const render::Session& s = *session_;
     std::int32_t id = -1;
