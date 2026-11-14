@@ -307,6 +307,9 @@ add_library(granadad-render STATIC
     src/render/lamps.cpp
     src/render/lighting.cpp
     src/render/world_renderer.cpp
+    # Camera, Projection and SpriteInstance, shared by the software world pass and
+    # the 3D scene builders (moved out of world_renderer.cpp unchanged).
+    src/render/scene_types.cpp
     # Every Docks building's door and every named street, as a legible
     # floating nameplate when the player is close enough to read it. See the
     # file's own header for why it reuses the world pass's camera math and

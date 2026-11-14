@@ -7,7 +7,7 @@
 
 #include "granadad/render/lighting.hpp"
 #include "granadad/render/voxel_classify.hpp"
-#include "granadad/render/world_renderer.hpp"
+#include "granadad/render/scene_types.hpp"
 #include "granadad/sim/tile_query.hpp"
 
 namespace granadad::render3d {

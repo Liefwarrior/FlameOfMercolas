@@ -6,7 +6,7 @@
 #include "granadad/render/lamps.hpp"
 #include "granadad/render/lighting.hpp"
 #include "granadad/render/session.hpp"
-#include "granadad/render/world_renderer.hpp"
+#include "granadad/render/scene_types.hpp"
 #include "granadad/sim/tavern.hpp"
 
 namespace granadad::render3d {
