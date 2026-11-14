@@ -347,6 +347,7 @@ add_library(granadad-render STATIC
     src/render/session.cpp
     src/render/session_casebook.cpp
     src/render/session_cases.cpp
+    src/render/session_combat.cpp
     src/render/scripted/burgle.cpp
     src/render/scripted/case.cpp
     src/render/scripted/common.cpp
