@@ -354,6 +354,7 @@ add_library(granadad-render STATIC
     src/render/scripted/flame.cpp
     src/render/scripted/kit.cpp
     src/render/scripted/nemesis.cpp
+    src/render/scripted/radiant.cpp
     src/render/step_pump.cpp
     src/render/stb_impl.cpp
     # Task #83 -- the steps-based ease every panel's open/close and the HUD's
