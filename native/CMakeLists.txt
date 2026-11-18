@@ -540,6 +540,7 @@ add_library(granadad-render3d-core STATIC
     # against them in parallel: chunk meshes (W), actor instances (A), the
     # viewmodel machine (V).
     src/render3d/chunk_mesher.cpp
+    src/render3d/world_surfaces.cpp
     # ONE TEST, TWO READERS: which wall cells flank a door opening. The
     # placer stands the slim jamb beam on them, the mesher leaves their
     # ground-storey box out under the head. Pure over the tile bytes.
@@ -563,6 +564,12 @@ add_library(granadad-render3d-core STATIC
 )
 target_include_directories(granadad-render3d-core PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
 target_link_libraries(granadad-render3d-core PUBLIC granadad-render)
+
+# The material generator: writes the district's procedural surfaces as PNGs
+# (content/art/oblivion/materials). Run by hand; its output is committed and a
+# test pins that it still is what this program writes.
+add_executable(granadad-gen-world-materials src/tools/gen_world_materials.cpp)
+target_link_libraries(granadad-gen-world-materials PRIVATE granadad-render3d-core granadad-content)
 granadad_apply_determinism(granadad-render3d-core)
 
 # ---------------------------------------------------------------------------
@@ -997,6 +1004,8 @@ if(GRANADAD_BUILD_TESTS)
         # Under a GPU build (the .exe's own test binary) the frame cases skip
         # rather than open a window; the overlay-alpha cases run everywhere.
         tests/test_render3d.cpp
+        tests/test_world_surfaces.cpp
+        tests/test_world_geometry.cpp
         # PHASE 3 -- THE SAME FRAME AGAINST COMMITTED GOLDEN IMAGES, by a stated
         # tolerance (tests/support/golden.hpp): the starter scene, the Docks at
         # noon and at night, and TRUE pitch looking up and down.

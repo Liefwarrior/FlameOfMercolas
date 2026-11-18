@@ -146,6 +146,10 @@ std::span<const std::string_view> materialIds() noexcept {
     return std::span<const std::string_view>(kMaterialIds, kMaterialCount);
 }
 
+Rgb materialTone(std::uint16_t material) noexcept {
+    return material < kMaterialCount ? kFallbackTones[material].colour : Rgb{0.40F, 0.40F, 0.40F};
+}
+
 std::size_t TileAtlas::appendProceduralTile(Rgb base, std::uint32_t seed, bool speckled) {
     const std::size_t tile = texels_.size() / kTileTexels;
     texels_.resize(texels_.size() + kTileTexels);

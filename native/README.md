@@ -554,6 +554,41 @@ not on the SDL platform (the `.exe`'s own GLFW build) skips the frame cases.
 The Windows `.exe` is *not* built, run or tested by any of this: its GLFW window,
 the offscreen target and the shaders on a real GPU need a check on Windows.
 
+### World geometry and materials (phase 4 of `docs/design/OBLIVION-PLAN.md`)
+
+The district is meshed from the tile data by `render3d/chunk_mesher.cpp`, in three
+parts that are kept apart so the building the sim collides with stays exactly what
+it was:
+
+- **The body**: a quad per exposed face of every tile box, as before. Every face
+  now wears a **procedural surface** (`render3d/world_surfaces.cpp`: ashlar,
+  brick, cobble, planks, thatch, shingle...) over **world-metre UVs**, so a
+  storey is a run of courses and not one 16-pixel tile stretched over three
+  metres. A surface is a two-metre tileable image; the scene shader tiles it
+  inside its atlas cell (the cell is ringed by a wrapped gutter) with a mip
+  level held to 3, so it never reads a neighbour. `content/art/oblivion/
+  materials/` holds the same images as PNGs, written by
+  `granadad-gen-world-materials`; a test pins that they are what the generator
+  writes. The owner's 16-pixel tile pack stays the 2D sprites' and the old
+  software pass's.
+- **The detail**: a plinth under every street-level wall and a cornice or string
+  course at every wall head; two timber posts to a door; ramps as wedges and
+  stairs as steps (the slab under them is still the walking surface); ceiling
+  beams; quay coping, bollards and pilings; interior floors by room use (planks,
+  flags, concrete) and plaster inside a masonry room.
+- **The roofs**: a hipped roof with eaves, a soffit and a chimney over every
+  building top (a floor with sky over it, held up by walls at its edge, over at
+  least one room: a pier deck or a street is not one), one mesh per level. The
+  flat deck underneath is the sim's truth and the Skyrunners' road, so the
+  pitched shell is drawn only while the eye is below its deck.
+
+Chunks further than `WorldSceneParams::farDistance` are drawn from their **far
+geometry** (`Detail::Far`): the body and the roofs, no trim, every face in its
+surface's mean colour, so a distant street holds its colour instead of
+shimmering; the switch has hysteresis. A **skyline ring** (`buildSkyline`) from
+DOCKS-GAZETTEER's own words (the Inner Wall and its gate to the south, the
+palace spire, low sea to the north) stands behind the district.
+
 ## 2. CMake presets — the fast local loop
 
 Needs cmake ≥ 3.24, Ninja, and a C++20 compiler on your PATH.

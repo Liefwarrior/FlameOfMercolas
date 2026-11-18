@@ -65,6 +65,10 @@ namespace granadad::render3d {
 inline constexpr std::uint32_t kSkyMeshId = 900;
 /// WEATHER. The veil's mesh id, beside the sky's.
 inline constexpr std::uint32_t kVeilMeshId = 901;
+/// THE SKYLINE RING's mesh id (buildSkyline), beside them.
+inline constexpr std::uint32_t kSkylineMeshId = 902;
+/// The ring's radius in tiles: inside the dome, outside any street.
+inline constexpr float kSkylineRadius = 330.0F;
 /// Dome radius in tiles. Must clear the far plane (512) with the dome's
 /// height on top, and exceed the farthest geometry from any eye in the
 /// district (the authored Docks are 192x128 tiles: nothing is 300 away).
@@ -76,6 +80,21 @@ inline constexpr float kSkyHeight = 220.0F;
 [[nodiscard]] MeshData buildSkyDome(int timeOfDaySeconds);
 [[nodiscard]] MeshData buildSkyDome(int timeOfDaySeconds, const render::Weather& weather);
 [[nodiscard]] std::uint32_t skyDomeVersion(int timeOfDaySeconds) noexcept;
+
+/// THE SKYLINE RING (OBLIVION-PLAN 6.5, "distance"): the far horizon the
+/// district stands in, from DOCKS-GAZETTEER's own words. The ground climbs to
+/// the south ("up-slope", Saltgate Rise z11 to z13) to the INNER WALL with its
+/// gate and two towers ("somewhere up-slope to the south"), the PALACE "standing
+/// tall at the far end of the city" is a silhouette and nothing more, and the
+/// harbour to the north is low water with a far headland. Coloured by the day
+/// curve and hazed toward the horizon colour, so it is a fogged ring that holds
+/// the far streets against something. Centred on the eye like the dome; its
+/// version is the sky's.
+[[nodiscard]] MeshData buildSkyline(int timeOfDaySeconds, const render::Weather& weather);
+/// The ring's silhouette height above the eye at an angle (radians, 0 = east,
+/// pi/2 = south), in tiles. Exposed so a test can pin where the wall and the
+/// palace stand.
+[[nodiscard]] float skylineHeight(float angle) noexcept;
 
 /// WEATHER. The veil for a sky: the shells, far to near, each ring coloured
 /// the fog's colour below the horizon and the sky's own colour at its
@@ -115,15 +134,32 @@ struct WorldSceneParams {
     render::Weather weather;
     /// Lights that come and go: Session::tavernLights().
     std::vector<render::Lamp> dynamicLamps;
-    /// Chunks whose nearest edge is further than this from the eye are not
-    /// instanced this frame. The software pass stops its rays at 54.
+    /// The reach of a piece that names none of its own, in tiles (the static
+    /// pieces; the chunks have their own, below).
     float maxDistance = 64.0F;
+    /// How far chunks are drawn (their nearest edge from the eye). The
+    /// software pass stopped its rays at 54; the 3D district draws whole (it
+    /// is 192 x 128 tiles) and what is far is the far level of detail.
+    /// `maxDistance` above stays the reach of the pieces that name none.
+    float chunkDistance = 160.0F;
+    /// Chunks whose nearest edge is further than this are drawn from their
+    /// far geometry (Detail::Far); those within `nearDistance` from the near
+    /// one. Between the two a chunk keeps the level it has (hysteresis), so
+    /// a chunk at the boundary does not flicker between them.
+    float farDistance = 46.0F;
+    float nearDistance = 38.0F;
+    /// The pitched roofs (chunk_mesher.hpp). Off draws the flat decks alone.
+    bool pitchedRoofs = true;
 };
 
 struct WorldSceneStats {
     std::size_t chunksBuilt = 0;
     std::size_t chunksWithGeometry = 0;
     std::size_t chunksInstanced = 0;
+    /// How many of the instanced chunks were drawn from their far geometry,
+    /// and how many roof levels were drawn.
+    std::size_t chunksFar = 0;
+    std::size_t roofsInstanced = 0;
     std::size_t trianglesBuilt = 0;
     std::size_t meshesRecoloured = 0;
     bool anyTruncated = false;
@@ -195,6 +231,11 @@ public:
 private:
     struct Slot {
         ChunkGeometry geometry;
+        /// The far geometry, built the first time the chunk is far.
+        ChunkGeometry farGeometry;
+        bool farBuilt = false;
+        /// Which level of detail the chunk is drawn at now.
+        bool useFar = false;
         std::uint32_t rebuildCount = 0;
         bool built = false;
         bool stale = true;

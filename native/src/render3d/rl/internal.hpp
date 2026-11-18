@@ -64,6 +64,9 @@ struct CachedMesh {
 struct CachedTexture {
     std::uint32_t version = 0;
     Texture2D texture{};
+    /// TextureData::tileU/tileV: a tiling atlas's cell, 0 for a plain texture.
+    float tileU = 0.0F;
+    float tileV = 0.0F;
 };
 
 /// A glb rig, loaded once per FILE (several WardTypes share a file) and
@@ -253,6 +256,7 @@ struct Backend::Impl {
     int sceneAmbient = -1;
     int sceneFogDensity = -1;
     int sceneFogColour = -1;
+    int sceneAtlasCell = -1;
     int postExposure = -1;
     int postVignette = -1;
     /// The shading of the scene being drawn, kept for the post pass.

@@ -307,6 +307,10 @@ std::uint64_t sceneHash(const SceneDescription& scene) noexcept {
         for (const float f : mesh.texcoords) {
             h.mixF32(f);
         }
+        h.mixU64(static_cast<std::uint64_t>(mesh.texcoords2.size()));
+        for (const float f : mesh.texcoords2) {
+            h.mixF32(f);
+        }
         h.mixU64(static_cast<std::uint64_t>(mesh.normals.size()));
         for (const float f : mesh.normals) {
             h.mixF32(f);
@@ -327,6 +331,9 @@ std::uint64_t sceneHash(const SceneDescription& scene) noexcept {
         h.mixU32(texture.version);
         h.mixI32(texture.width);
         h.mixI32(texture.height);
+        h.mixF32(texture.tileU);
+        h.mixF32(texture.tileV);
+        h.mixU8(texture.mipmapped ? 1U : 0U);
         h.mixU64(static_cast<std::uint64_t>(texture.pixels.size()));
         if (!texture.pixels.empty()) {
             h.mix(texture.pixels.data(), texture.pixels.size());

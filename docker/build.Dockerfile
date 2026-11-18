@@ -107,6 +107,12 @@ COPY content/maps/baked /src/content/maps/baked
 # that never ships.
 COPY content/art/custom /src/content/art/custom
 
+# The generated world materials, ~200 KB (phase 4): tests/test_world_surfaces.cpp
+# fails if these committed PNGs stop being what granadad-gen-world-materials
+# writes. The game itself does not read them (it generates the same texels in
+# process), so this is for the gate alone.
+COPY content/art/oblivion /src/content/art/oblivion
+
 # The actor sprites, 30 KB, for the same reason (#78). The ward's six hundred
 # people are drawn out of the owner's own sheet, and ActorSheet::load is
 # deliberately silent about a missing pack -- so without this in the context

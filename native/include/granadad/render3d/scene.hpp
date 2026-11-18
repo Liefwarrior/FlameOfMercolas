@@ -101,6 +101,12 @@ struct MeshData {
     std::vector<float> positions;
     /// uv per vertex. Empty means "all zero" (untextured).
     std::vector<float> texcoords;
+    /// A second texture coordinate per vertex, for a mesh that wears a TILING
+    /// ATLAS (TextureData::tileU/tileV): the normalised origin of the atlas
+    /// cell the vertex's surface lives in. Then `texcoords` are in SURFACE
+    /// units (repeats, not 0..1) and the shader folds them into the cell
+    /// (rl/shaders.cpp). Empty means a plain mesh and plain texcoords.
+    std::vector<float> texcoords2;
     /// Unit normal (xyz) per vertex, in the mesh's own space. The shader's
     /// per-pixel light reads it; the vertex-colour look does not need it, so
     /// empty is allowed and means "up" (0, 1, 0). Hashed with the rest.
@@ -127,6 +133,15 @@ struct TextureData {
     int height = 0;
     /// R,G,B,A per pixel, top row first -- render::Framebuffer's own order.
     std::vector<std::uint8_t> pixels;
+    /// A TILING ATLAS: over zero, the texture is a grid of surface images and
+    /// this is the size of one image (without its gutter) in normalised atlas
+    /// units; the scene shader then tiles a mesh's texcoords inside the cell
+    /// its texcoords2 name. Zero is a plain texture, sampled as it always was.
+    float tileU = 0.0F;
+    float tileV = 0.0F;
+    /// Upload with a mip chain and trilinear filtering (the world's surfaces)
+    /// rather than the point-sampled pixel look every other texture keeps.
+    bool mipmapped = false;
 };
 
 /// One drawn thing: a mesh at a place. Positions arrive as floats DERIVED

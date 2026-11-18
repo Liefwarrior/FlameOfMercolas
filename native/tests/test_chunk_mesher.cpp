@@ -90,7 +90,7 @@ TEST_CASE("the Docks mesh is a deterministic function of the tile map") {
     const sim::TileQuery tilesB(docksWorld());
     const render::TileAtlas& atlas = proceduralAtlas();
     const ChunkMaterials materials = ChunkMaterials::fromAtlas(atlas);
-    REQUIRE(materials.tileCount() == atlas.tileCount());
+    REQUIRE(materials.surfaces().texture().tileU > 0.0F);
     REQUIRE(materials.texture().id == kChunkAtlasTextureId);
     REQUIRE(materials.texture().pixels.size() ==
             static_cast<std::size_t>(materials.texture().width) *
@@ -324,6 +324,8 @@ TEST_CASE("the world scene instances the chunks near the eye and recolours on th
     const render::Camera eye = spawnCamera();
     WorldSceneParams params;
     params.timeOfDaySeconds = 12 * 3600;
+    // The reach the chunks had before phase 4 drew the district whole.
+    params.chunkDistance = 64.0F;
 
     WorldScene world(tiles, atlas, nullptr);
     SceneDescription scene;
@@ -335,10 +337,13 @@ TEST_CASE("the world scene instances the chunks near the eye and recolours on th
     // Near the spawn: some chunks, not the whole district.
     CHECK(stats.chunksInstanced >= 4);
     CHECK(stats.chunksInstanced < stats.chunksWithGeometry);
-    // The sky first, then the chunks, all textured with the one atlas.
-    REQUIRE(scene.instances.size() == stats.chunksInstanced + 1);
+    // The sky and the skyline ring first, then the chunks and their roofs, all
+    // textured with the one atlas.
+    REQUIRE(scene.instances.size() == stats.chunksInstanced + stats.roofsInstanced + 2);
     CHECK(scene.instances[0].meshId == kSkyMeshId);
-    for (std::size_t i = 1; i < scene.instances.size(); ++i) {
+    CHECK(scene.instances[1].meshId == kSkylineMeshId);
+    CHECK(scene.instances[1].textureId == 0);
+    for (std::size_t i = 2; i < scene.instances.size(); ++i) {
         CHECK(scene.instances[i].textureId == kChunkAtlasTextureId);
         CHECK(scene.instances[i].meshId >= kChunkMeshIdBase);
         CHECK(scene.instances[i].meshId < kActorMeshIdBase);
@@ -373,7 +378,8 @@ TEST_CASE("the world scene instances the chunks near the eye and recolours on th
         scene.findMesh(chunkMeshId(spawnChunk))->colours;
     params.timeOfDaySeconds = 20 * 3600;
     world.refresh(scene, eye, 320.0F / 180.0F, params);
-    CHECK(stats.meshesRecoloured == recoloured + stats.chunksWithGeometry);
+    // Every chunk in reach recolours (and its roofs with it).
+    CHECK(stats.meshesRecoloured >= recoloured + stats.chunksInstanced);
     CHECK(scene.findMesh(chunkMeshId(spawnChunk))->positions == before);
     CHECK(scene.findMesh(chunkMeshId(spawnChunk))->colours != beforeColours);
     CHECK(sceneHash(scene) != sameMinute);
