@@ -14,6 +14,7 @@
 // every single build.
 
 #include <filesystem>
+#include <optional>
 
 #include "granadad/render/framebuffer.hpp"
 
@@ -22,6 +23,11 @@ namespace granadad::render {
 /// Writes a framebuffer as an 8-bit RGBA PNG. Creates parent directories.
 /// Returns false and leaves no partial file on failure.
 bool writePng(const Framebuffer& frame, const std::filesystem::path& file);
+
+/// Reads an 8-bit PNG back into a framebuffer (alpha 255 where the file has
+/// none). The golden-image tests compare a frame with a committed PNG through
+/// this. Nullopt when the file is missing or is not a PNG.
+[[nodiscard]] std::optional<Framebuffer> readPng(const std::filesystem::path& file);
 
 /// Scales a framebuffer up by an integer factor with NEAREST NEIGHBOUR, never
 /// interpolation. The chunkiness is the art direction, not an artefact, and a

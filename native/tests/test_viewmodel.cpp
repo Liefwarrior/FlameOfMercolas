@@ -11,13 +11,13 @@
 //      try (and NOT on a refusal), and the flinch on an unguarded blow.
 //   2. THE HUD COMPOSITES BYTE FOR BYTE. The terminal register drawn into
 //      its Framebuffer, uploaded and drawn over a real 3D frame of the
-//      Docks through rlsw: every pixel the overlay covers opaquely is the
+//      Docks on llvmpipe: every pixel the overlay covers opaquely is the
 //      overlay's own bytes, every clear pixel is the world's own bytes, and
 //      a wash in between is the lerp within rlsw's truncation. The eighteen
 //      pixel-exact HUD/page files never see the 3D pass at all -- they keep
 //      drawing into the Framebuffer -- so this is the one place the
 //      COMPOSITE is held to the same standard.
-//   3. THE FISTS DRAW OVER THE WORLD. Headless through rlsw: the raised
+//   3. THE FISTS DRAW OVER THE WORLD. Headless on llvmpipe: the raised
 //      placeholder fists put pixels in the lower corners of the Docks frame,
 //      and in front of a wall thirty hundredths of a tile from the eye --
 //      the depth squeeze the adapter does in the projection, proved on the
@@ -74,6 +74,7 @@ BackendConfig headlessConfig() {
     config.width = kWidth;
     config.height = kHeight;
     config.windowScale = 1;
+    config.headless = true;
     config.vsync = false;
     return config;
 }
@@ -546,7 +547,7 @@ TEST_CASE("the viewmodel is described from the sim's own hand and hashes") {
 
 TEST_CASE("the HUD overlay composites byte-identically over a 3D frame") {
     if (!Backend::headlessCapable()) {
-        MESSAGE("skipped: this build renders through a GPU window, not rlsw");
+        MESSAGE("skipped: this build is not on raylib's SDL platform, so it has no headless context");
         return;
     }
     // A real session, walked one step (the opening page closes) and left
@@ -625,7 +626,7 @@ TEST_CASE("the HUD overlay composites byte-identically over a 3D frame") {
 
 TEST_CASE("the raised fists render over the Docks and in front of the nearest wall") {
     if (!Backend::headlessCapable()) {
-        MESSAGE("skipped: this build renders through a GPU window, not rlsw");
+        MESSAGE("skipped: this build is not on raylib's SDL platform, so it has no headless context");
         return;
     }
     std::unique_ptr<Backend> video = Backend::open(headlessConfig());
@@ -774,7 +775,7 @@ TEST_CASE("the raised fists render over the Docks and in front of the nearest wa
 
 TEST_CASE("the washes are overlay pixels over the 3D frame") {
     if (!Backend::headlessCapable()) {
-        MESSAGE("skipped: this build renders through a GPU window, not rlsw");
+        MESSAGE("skipped: this build is not on raylib's SDL platform, so it has no headless context");
         return;
     }
     // A blow landing on the player fires the blooded wash -- a low-alpha

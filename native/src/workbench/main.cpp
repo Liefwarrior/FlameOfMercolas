@@ -64,11 +64,6 @@ bool startsWith(const char* arg, const char* prefix, const char** value) {
 
 int runWindow(wb::Workbench& bench) {
     namespace r3 = granadad::render3d;
-    if (r3::Backend::headlessCapable()) {
-        std::printf("granadad-workbench: this build renders in memory and has no window -- "
-                    "use --script or --serve\n");
-        return 2;
-    }
     r3::BackendConfig config;
     config.width = wb::kFrameWidth;
     config.height = wb::kFrameHeight;

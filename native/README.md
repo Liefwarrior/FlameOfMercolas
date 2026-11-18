@@ -33,13 +33,15 @@ and puts a native Windows binary in `dist/`. Then, on Windows, natively:
 ```
 .\dist\granadad.exe --selftest     # no window, just proves the binary works
 .\dist\granadad.exe                # the game
-.\dist\granadad.exe --smoke=120 --screenshot=frame.png   # a frame, no window
+.\dist\granadad.exe --smoke=120 --screenshot=frame.png   # a frame (a window for one frame)
 ```
 
-`--screenshot` opens no window, needs no GPU and needs no display server,
-because the renderer is software. That is the point of it: every sprint has to
-be able to prove visually that it works, and a capture path that needs a
-desktop is a capture path nobody runs. `--help` lists the rest — `--time`,
+`--screenshot` needs no GPU and no display server in the Linux build: the 3D
+frame is drawn on Mesa's llvmpipe (section 3, "Headless GL"). That is the point
+of it: every sprint has to be able to prove visually that it works, and a
+capture path that needs a desktop is a capture path nobody runs. (The shipped
+`.exe` draws the same frame on the player's GPU and opens a window for one frame
+to take it.) `--help` lists the rest — `--time`,
 `--spawn`, `--yaw`, `--fov`, `--width/--height/--scale`.
 
 `--talk`, `--topic=N[,N...]`, `--offer=N`, `--again` and `--flame` drive a
@@ -327,8 +329,8 @@ build and reproducibility on the cross build.
 | **ctest total** | `dist/GATE-STAMP.txt` has the current number | |
 
 Some of those cases **render frames of the real Docks**, inside the container,
-with no window and no GPU — the renderer is software, so a frame is an ordinary
-testable artifact. The build also checks by name that the first-person case and
+with no window and no GPU — Mesa's llvmpipe draws them, so a frame is an ordinary
+testable artifact (compared with a committed image by tolerance, never by hash). The build also checks by name that the first-person case and
 the case that loads `content/art/custom` are registered, because a renderer
 silently falling back to procedural tiles would still be green.
 
@@ -517,6 +519,41 @@ Unset, it is `unknown`.
 
 ---
 
+### Headless GL: Mesa llvmpipe (phase 3 of `docs/design/OBLIVION-PLAN.md`)
+
+The 3D frame is drawn by raylib on OpenGL 3.3 core with our own GLSL
+(`src/render3d/rl/shaders.cpp`). The shipped `.exe` runs it on the player's GPU
+through raylib's GLFW platform. Everything else -- the docker host check, the
+Linux build, `--screenshot` on Linux -- runs **the same shaders on Mesa's
+llvmpipe**, on the CPU, with no window, no display server and no GPU:
+
+| | |
+|---|---|
+| configure | `-DPLATFORM=SDL -DOPENGL_VERSION=3.3` (raylib's SDL platform; SDL3 is built too, as a console build, so no X11 or Wayland headers are needed) |
+| runtime | `BackendConfig::headless` sets `SDL_VIDEODRIVER=offscreen`, `EGL_PLATFORM=surfaceless` and `GALLIUM_DRIVER=llvmpipe` (a caller's own values win), so a box with a desktop or a GPU still draws on llvmpipe |
+| packages | the Mesa *runtime* only: `libegl1 libegl-mesa0 libgl1-mesa-dri`. No `-dev`, no Xvfb |
+| proof | `Backend::rendererName()` says `llvmpipe (...)`; the first frame case asserts it |
+| what it is compared with | a committed golden PNG, by tolerance (`tests/support/golden.hpp`): Mesa and LLVM move low bits between versions, so a frame is never hashed. The scene hash (`render3d::sceneHash`) is the exact cross-machine proof |
+
+The routes the plan weighed were A (SDL's offscreen driver), B (Xvfb) and C (our
+own EGL platform file); A worked on the first try and is what is built.
+
+To rebuild the goldens after a change that is *meant* to move pixels, and review
+the PNG diff:
+
+```
+GRANADAD_BLESS_GOLDEN=1 ./granadad-tests --source-file=*test_golden.cpp
+```
+
+**The GPU only draws.** No pixel, depth value or query result is ever read back
+anywhere but `src/render3d/rl/capture.cpp` (the ctest entry
+`granadad-no-gpu-readback` greps `native/` for it), so rendering can never decide
+gameplay. A test that cannot open a context fails; only a build whose raylib is
+not on the SDL platform (the `.exe`'s own GLFW build) skips the frame cases.
+
+The Windows `.exe` is *not* built, run or tested by any of this: its GLFW window,
+the offscreen target and the shaders on a real GPU need a check on Windows.
+
 ## 2. CMake presets — the fast local loop
 
 Needs cmake ≥ 3.24, Ninja, and a C++20 compiler on your PATH.
@@ -580,10 +617,14 @@ native/
   include/granadad/gate/      twin-run gate headers
   include/granadad/workbench/ workbench headers
   src/sim/                    simulation. no floats, no SDL.
-  src/render/                 the software first-person renderer. floats legal. no SDL.
+  src/render/                 HUD, pages, Session, the day curve, lamp field; the old software
+                              world pass (--2d, until phase 7). floats legal. no SDL.
                               Session is one class defined across session*.cpp
   src/render/scripted/        the --flag capture drivers behind runSmoke (--trail, --flame, ...)
-  src/render3d/               the 3D world path: chunk meshes, scene, the raylib adapter
+  src/render3d/               the 3D world path: chunk meshes, scene description, hashing
+  src/render3d/rl/            the raylib adapter: the ONLY code that includes raylib.h
+                              (context, resources, shaders, models, pieces, passes,
+                              viewmodel_pass, offscreen, capture, input)
   src/audio/                  the audio engine and its backends
   src/gate/                   the twin-run gate and its reports
   src/workbench/              the workbench executable
@@ -682,8 +723,8 @@ What is real underneath:
 | format reader | TROJSAV container, chunk codec, lanes, overlays. Verified against the shipped bytes on two toolchains. |
 | simulation | counter-based RNG proven bit-equivalent to the JVM, wrapping helpers, world hasher, phased tick loop, twin-run gate. |
 | movement | Q8 sub-tile body, integer trig, axis-separated collision against the real tile geometry, a climb rule that only goes up where a ramp or a stair was authored. |
-| renderer | software voxel-column first person, the owner's own tile art, lamp glow, billboards, a HUD that hugs the edges. |
-| capture | `--smoke=N --screenshot=PATH`, with no window anywhere in it. |
+| renderer | 3D first person through raylib on OpenGL 3.3 (depth buffer, true pitch, perspective-correct textures, GLSL scene and post shaders), the owner's own tile art, lamp glow, a HUD that hugs the edges. The old software voxel-column world pass remains behind `--2d` until phase 7. |
+| capture | `--smoke=N --screenshot=PATH`; in the Linux build with no window and no GPU (Mesa llvmpipe). |
 
 On top of that, as of S4: the Gilded Gull with fourteen people in it who keep
 hours and remember what you did; conversation as a list of topics assembled from

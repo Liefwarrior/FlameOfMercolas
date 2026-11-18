@@ -1,17 +1,24 @@
 // THE 3D FRAME, ASSERTED ON THE PIXELS IT ACTUALLY PRODUCES -- HEADLESS.
 //
-// raylib 6.0 ships a software rasterizer (rlsw) and a windowless platform
-// (PLATFORM_MEMORY); the docker host check builds the adapter on those, so a
-// real 3D frame of a real description can be drawn INSIDE the test suite with
-// no window, no GPU and no display server, and facts about it checked on
-// every build. That is the same discipline the software renderer bought S1
-// through S13, carried into 3D.
+// The Linux and docker builds put raylib on its SDL platform and open the
+// context on SDL's `offscreen` video driver: no window, no display server, no
+// GPU -- Mesa's llvmpipe draws the frame on the CPU through the SAME GLSL the
+// shipped .exe runs. So a real 3D frame of a real description is drawn INSIDE
+// the test suite and facts about it checked on every build, the discipline the
+// software renderer bought S1 through S13, carried into 3D. (Before phase 3 of
+// docs/design/OBLIVION-PLAN.md this was raylib's rlsw rasterizer, which runs
+// no shader.)
+//
+// llvmpipe is deterministic in-process, so "the same description drawn twice
+// is byte-identical" is still asserted; but Mesa and LLVM move low bits
+// between versions, so a frame is compared with a committed golden image only
+// by tolerance (tests/support/golden.hpp), never by hash.
 //
 // The shipped .exe builds the adapter on GLFW + OpenGL 3.3 instead. Under
-// that build these frame cases SKIP rather than open a window inside the
-// test suite: a GPU frame is proved by the exe's own --screenshot on the host
-// and by similarity, never by a hash -- see backend.hpp. The
-// Framebuffer-alpha cases below run everywhere.
+// that build these frame cases SKIP rather than open a window inside the test
+// suite: a GPU frame is proved by the exe's own --screenshot on the host and
+// by similarity, never by a hash -- see backend.hpp. The Framebuffer-alpha
+// cases below run everywhere.
 
 #include <doctest/doctest.h>
 
@@ -52,6 +59,7 @@ BackendConfig headlessConfig() {
     config.width = kWidth;
     config.height = kHeight;
     config.windowScale = 1;
+    config.headless = true;
     config.vsync = false;
     return config;
 }
@@ -121,14 +129,17 @@ Rgba8 faceColour(const MeshData& mesh, std::size_t face) {
 
 }  // namespace
 
-TEST_CASE("a 3D frame of a lit plane and a cube renders headless through rlsw") {
+TEST_CASE("a 3D frame of a lit plane and a cube renders headless on llvmpipe") {
     if (!Backend::headlessCapable()) {
-        MESSAGE("skipped: this build renders through a GPU window, not rlsw");
+        MESSAGE("skipped: this build is not on raylib's SDL platform, so it has no headless context");
         return;
     }
     std::unique_ptr<Backend> video = Backend::open(headlessConfig());
     REQUIRE(video != nullptr);
-    CHECK(video->kind() == VideoKind::Software);
+    CHECK(video->kind() == VideoKind::Headless);
+    // The CPU renderer, never a machine's own GPU: the golden frames and the
+    // before/after captures all come out of the same rasterizer.
+    CHECK(video->rendererName().find("llvmpipe") != std::string::npos);
     CHECK(video->width() == kWidth);
     CHECK(video->height() == kHeight);
 
@@ -188,9 +199,102 @@ TEST_CASE("a 3D frame of a lit plane and a cube renders headless through rlsw") 
     CHECK(channelDistance(pixelAt(frame, 40, 140), southFace) > 2);
 }
 
+TEST_CASE("the scene shader and the post pass are driven by the description, and its defaults leave the picture alone") {
+    // PHASE 3: every mesh is drawn by our own GLSL, into an offscreen target
+    // that the post shader puts on the window. SceneShading's defaults are a
+    // pass-through (the first case above asserts the vertex colours arrive
+    // untouched); each uniform is proved here to reach the pixels.
+    if (!Backend::headlessCapable()) {
+        MESSAGE("skipped: this build is not on raylib's SDL platform, so it has no headless context");
+        return;
+    }
+    std::unique_ptr<Backend> video = Backend::open(headlessConfig());
+    REQUIRE(video != nullptr);
+
+    const SceneDescription plain = starterScene();
+    const render::Framebuffer base = drawOnce(*video, plain, nullptr, nullptr);
+    const std::uint32_t groundAt = pixelAt(base, kWidth / 2, kHeight - 3);
+    const std::uint32_t southAt = pixelAt(base, kWidth / 2, 140);
+    const std::uint32_t topAt = pixelAt(base, kWidth / 2, 118);
+    const auto red = [](std::uint32_t p) { return static_cast<int>(p & 0xFFU); };
+    const auto green = [](std::uint32_t p) { return static_cast<int>((p >> 8) & 0xFFU); };
+    const auto blue = [](std::uint32_t p) { return static_cast<int>((p >> 16) & 0xFFU); };
+    REQUIRE(red(southAt) + green(southAt) + blue(southAt) > 90);
+
+    SUBCASE("per-pixel light: a face turned from the sun goes dark, one towards it does not") {
+        SceneDescription lit = plain;
+        lit.shading.lightMix = 1.0F;
+        lit.shading.ambientColour = Vec3{0.2F, 0.2F, 0.2F};
+        lit.shading.sunColour = Vec3{0.8F, 0.8F, 0.8F};
+        lit.shading.sunDirection = Vec3{0.0F, 1.0F, 0.0F};
+        const render::Framebuffer frame = drawOnce(*video, lit, nullptr, nullptr);
+        // Up-facing: ambient 0.2 + sun 0.8 x 1 = 1.0, the vertex colour as it was.
+        CHECK(channelDistance(pixelAt(frame, kWidth / 2, kHeight - 3), groundAt) <= 2);
+        CHECK(channelDistance(pixelAt(frame, kWidth / 2, 118), topAt) <= 2);
+        // Facing south (+Z): level with the horizon, Lambert 0, ambient only.
+        const std::uint32_t south = pixelAt(frame, kWidth / 2, 140);
+        CHECK(red(south) < red(southAt) / 3 + 3);
+        CHECK(green(south) < green(southAt) / 3 + 3);
+        CHECK(blue(south) < blue(southAt) / 3 + 3);
+        // The sky is not a mesh: the clear colour is untouched.
+        CHECK(channelDistance(pixelAt(frame, 0, 0), packed(plain.clearColour)) <= 1);
+    }
+    SUBCASE("fog mixes toward its colour by distance and leaves the clear colour alone") {
+        SceneDescription fogged = plain;
+        fogged.shading.fogDensity = 5.0F;
+        fogged.shading.fogColour = Vec3{1.0F, 0.0F, 0.0F};
+        const render::Framebuffer frame = drawOnce(*video, fogged, nullptr, nullptr);
+        // Three and a half tiles away at density 5: all fog.
+        const std::uint32_t south = pixelAt(frame, kWidth / 2, 140);
+        CHECK(red(south) >= 253);
+        CHECK(green(south) <= 2);
+        CHECK(blue(south) <= 2);
+        CHECK(channelDistance(pixelAt(frame, 0, 0), packed(plain.clearColour)) <= 1);
+        // A faint fog is a faint change.
+        SceneDescription faint = plain;
+        faint.shading.fogDensity = 0.02F;
+        faint.shading.fogColour = Vec3{1.0F, 1.0F, 1.0F};
+        const render::Framebuffer light = drawOnce(*video, faint, nullptr, nullptr);
+        const std::uint32_t near = pixelAt(light, kWidth / 2, 140);
+        CHECK(channelDistance(near, southAt) > 0);
+        CHECK(channelDistance(near, southAt) < 40);
+    }
+    SUBCASE("the post pass: exposure scales the whole picture, a vignette darkens the corners") {
+        SceneDescription dim = plain;
+        dim.shading.exposure = 0.5F;
+        const render::Framebuffer frame = drawOnce(*video, dim, nullptr, nullptr);
+        CHECK(std::abs(red(pixelAt(frame, kWidth / 2, 140)) * 2 - red(southAt)) <= 3);
+        CHECK(std::abs(green(pixelAt(frame, kWidth / 2, 140)) * 2 - green(southAt)) <= 3);
+        CHECK(std::abs(red(pixelAt(frame, 0, 0)) * 2 - red(pixelAt(base, 0, 0))) <= 3);
+        SceneDescription vignetted = plain;
+        vignetted.shading.vignette = 1.0F;
+        const render::Framebuffer corners = drawOnce(*video, vignetted, nullptr, nullptr);
+        // The corner is the whole falloff: black. Row 140 is 0.28 of the
+        // height below the centre: 1 - 4 x 0.28^2 = 0.685 of the light.
+        CHECK(channelDistance(pixelAt(corners, 0, 0), 0xFF000000U) <= 2);
+        const std::uint32_t mid = pixelAt(corners, kWidth / 2, 140);
+        const float d = (140.5F / static_cast<float>(kHeight)) - 0.5F;
+        const float keep = 1.0F - 4.0F * (d * d + 0.0F);
+        CHECK(std::abs(static_cast<float>(red(mid)) - static_cast<float>(red(southAt)) * keep) <= 4.0F);
+        CHECK(std::abs(static_cast<float>(green(mid)) - static_cast<float>(green(southAt)) * keep) <= 4.0F);
+        CHECK(std::abs(static_cast<float>(blue(mid)) - static_cast<float>(blue(southAt)) * keep) <= 4.0F);
+    }
+    SUBCASE("the HUD is never graded: the overlay lands after the post pass") {
+        SceneDescription dark = plain;
+        dark.shading.exposure = 0.0F;
+        render::Framebuffer overlay(kWidth, kHeight);
+        overlay.clearTransparent();
+        overlay.pixels()[overlay.index(10, 10)] = 0xFF2040FFU;  // opaque, AABBGGRR
+        const render::Framebuffer frame = drawOnce(*video, dark, &overlay, nullptr);
+        CHECK(channelDistance(pixelAt(frame, 10, 10), 0xFF2040FFU) <= 1);
+        // And the world under it is black, whatever the sky was.
+        CHECK(channelDistance(pixelAt(frame, 100, 100), 0xFF000000U) <= 1);
+    }
+}
+
 TEST_CASE("the same 3D scene renders byte-identical twice") {
     if (!Backend::headlessCapable()) {
-        MESSAGE("skipped: this build renders through a GPU window, not rlsw");
+        MESSAGE("skipped: this build is not on raylib's SDL platform, so it has no headless context");
         return;
     }
     const SceneDescription scene = starterScene();
@@ -216,7 +320,7 @@ TEST_CASE("the same 3D scene renders byte-identical twice") {
 
 TEST_CASE("the HUD overlay composites over the 3D frame and leaves the sky alone where it is clear") {
     if (!Backend::headlessCapable()) {
-        MESSAGE("skipped: this build renders through a GPU window, not rlsw");
+        MESSAGE("skipped: this build is not on raylib's SDL platform, so it has no headless context");
         return;
     }
     std::unique_ptr<Backend> video = Backend::open(headlessConfig());
@@ -306,12 +410,12 @@ TEST_CASE("the Docks render to a 3D frame with a world in it") {
     // THE WORLD LANE'S FRAME: the real district, meshed by chunk from its
     // baked tiles, lit by its own lamps and the noon curve, seen from the
     // authored spawn on the quayside looking west down the Tarwalk with the
-    // Gilded Gull on the left -- drawn headless through rlsw. What is
+    // Gilded Gull on the left -- drawn headless on llvmpipe. What is
     // asserted is that a WORLD is in the picture: thousands of pixels that
     // the sky alone would not have put there, many colours, and the same
     // bytes when drawn again.
     if (!Backend::headlessCapable()) {
-        MESSAGE("skipped: this build renders through a GPU window, not rlsw");
+        MESSAGE("skipped: this build is not on raylib's SDL platform, so it has no headless context");
         return;
     }
     namespace content = granadad::content;
@@ -388,13 +492,13 @@ TEST_CASE("the ward's people render as figures in the 3D frame") {
     // Docks meshed by chunk, and the ward's own roster instanced into the
     // description -- then the eye is stood two tiles from the nearest body
     // on the same storey, looking straight at it, and the frame is drawn
-    // headless through rlsw. What is asserted: the body put pixels in the
+    // headless on llvmpipe. What is asserted: the body put pixels in the
     // picture that the world alone did not, near the middle of the frame
     // where a figure two tiles away stands, the stats count it as a body
     // drawn through its placeholder (no glb in this container, ever), and
     // the same description draws the same bytes again.
     if (!Backend::headlessCapable()) {
-        MESSAGE("skipped: this build renders through a GPU window, not rlsw");
+        MESSAGE("skipped: this build is not on raylib's SDL platform, so it has no headless context");
         return;
     }
     namespace sim = granadad::sim;
@@ -526,7 +630,7 @@ TEST_CASE("a missing piece falls back to the placeholder and the scene still ren
     // the placeholder, always there. Then a directory that exists but holds
     // no .gltf: the same frame again, no file opened, no crash.
     if (!Backend::headlessCapable()) {
-        MESSAGE("skipped: this build renders through a GPU window, not rlsw");
+        MESSAGE("skipped: this build is not on raylib's SDL platform, so it has no headless context");
         return;
     }
     namespace content = granadad::content;
@@ -593,7 +697,7 @@ TEST_CASE("a missing piece falls back to the placeholder and the scene still ren
 
 TEST_CASE("the halo's fan is a two-stop disc with nothing at its rim") {
     // THE FALLOFF IS GEOMETRY NOW. It used to be a radial alpha in the GL
-    // 3.3 blend shader, which rlsw has not got: the exe drew a soft disc and
+    // 3.3 blend shader, which the old rlsw rasterizer had not got: the exe drew a soft disc and
     // the headless twin drew a flat pale RECTANGLE, and the critic reading
     // the software frames wrote down "a quad, not a flame" -- correctly. So
     // the falloff lives in vertex colours, which both rasterizers carry
@@ -721,7 +825,7 @@ TEST_CASE("a lantern pools on a surface: its own cell dwarfs four tiles out") {
                                  << ", 4 tiles " << fourOut);
 }
 
-TEST_CASE("the lamps put light on the wall in a night frame, headless through rlsw") {
+TEST_CASE("the lamps put light on the wall in a night frame, headless on llvmpipe") {
     // THE TARWALK AT TEN AT NIGHT, from the authored spawn looking west with
     // the Gilded Gull on the left: reviewer frame 10's own line, and the very
     // camera the noon case above draws its eight thousand world pixels from.
@@ -755,7 +859,7 @@ TEST_CASE("the lamps put light on the wall in a night frame, headless through rl
     // chunk mesh, lit off the glow, so this case measures the pool itself and
     // not the lantern model.
     if (!Backend::headlessCapable()) {
-        MESSAGE("skipped: this build renders through a GPU window, not rlsw");
+        MESSAGE("skipped: this build is not on raylib's SDL platform, so it has no headless context");
         return;
     }
     namespace content = granadad::content;

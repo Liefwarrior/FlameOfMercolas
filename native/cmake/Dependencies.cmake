@@ -14,16 +14,29 @@ set(FETCHCONTENT_QUIET OFF)
 # --- SDL3 — window, input, audio. Rendering only; never linked into sim-core.
 # release-3.4.12
 #
-# Skipped entirely when GRANADAD_BUILD_CLIENT=OFF. SDL is by far the heaviest
-# thing here, and a sim-only build (tests, headless soak, the determinism lint)
-# has no business paying for it.
-if(GRANADAD_BUILD_CLIENT)
+# Skipped entirely when GRANADAD_BUILD_CLIENT=OFF AND raylib is not on its SDL
+# platform. SDL is by far the heaviest thing here, and a sim-only build (the
+# determinism lint, a soak) has no business paying for it -- but the host
+# check's raylib IS on the SDL platform (PHASE 3: headless GL on Mesa
+# llvmpipe, see the raylib block below), so the host check fetches it too.
+set(GRANADAD_NEED_SDL OFF)
+if(GRANADAD_BUILD_CLIENT OR PLATFORM STREQUAL "SDL")
+    set(GRANADAD_NEED_SDL ON)
+endif()
+if(GRANADAD_NEED_SDL)
 set(SDL_SHARED         OFF CACHE BOOL "" FORCE)
 set(SDL_STATIC         ON  CACHE BOOL "" FORCE)
 set(SDL_TEST_LIBRARY   OFF CACHE BOOL "" FORCE)
 set(SDL_TESTS          OFF CACHE BOOL "" FORCE)
 set(SDL_EXAMPLES       OFF CACHE BOOL "" FORCE)
 set(SDL_INSTALL        OFF CACHE BOOL "" FORCE)
+if(UNIX AND NOT APPLE AND PLATFORM STREQUAL "SDL")
+    # The Linux host check opens a context on SDL's `offscreen` video driver,
+    # which needs no X11 or Wayland. Without this SDL refuses to configure on
+    # a box that has neither set of development headers (the docker image has
+    # none and must never need them).
+    set(SDL_UNIX_CONSOLE_BUILD ON CACHE BOOL "" FORCE)
+endif()
 FetchContent_Declare(SDL3
     GIT_REPOSITORY https://github.com/libsdl-org/SDL.git
     GIT_TAG        f87239e71e42da91ca317a12eefb82cfbf3393eb
@@ -104,30 +117,37 @@ FetchContent_Declare(stb
     GIT_REPOSITORY https://github.com/nothings/stb.git
     GIT_TAG        31c1ad37456438565541f4919958214b6e762fb4)
 
-# --- raylib — the 3D renderer: the window, the GL context and, in the docker
-# host check, the software rasterizer the 3D frame tests draw through.
+# --- raylib — the 3D renderer: the window and the GL context, in the shipped
+# .exe on the player's GPU and in the docker host check on Mesa's llvmpipe.
 # 6.0 (tag `6.0` = dbc56a87da87d973a9c5baa4e7438a9d20121d28, resolved with
 # `git ls-remote --tags https://github.com/raysan5/raylib.git`; it is a
 # lightweight tag, so the tag ref and the commit are one object)
 #
-# Fetched in BOTH configures, unlike SDL: the 3D scene/frame tests run in the
-# sim-only host check, so the library that draws them has to be there too.
-# raylib's PLATFORM and OPENGL_VERSION options are deliberately NOT set here
-# -- they are the one thing the two configures disagree about, and the
-# Dockerfile passes them on each cmake command line:
+# Fetched in BOTH configures, unlike SDL (in the client build): the 3D
+# scene/frame tests run in the sim-only host check, so the library that draws
+# them has to be there too. raylib's PLATFORM and OPENGL_VERSION options are
+# deliberately NOT set here -- they are the one thing the two configures
+# disagree about, and the Dockerfile passes them on each cmake command line:
 #
-#     host check    -DPLATFORM=Memory  -DOPENGL_VERSION=Software
-#                   rcore_memory.c + rlsw.h: no window, no GPU, no display
-#                   server. Frames land in memory, pure CPU arithmetic, so a
-#                   frame of a description is byte-reproducible in-process.
+#     host check    -DPLATFORM=SDL  -DOPENGL_VERSION=3.3
+#                   rcore_desktop_sdl.c on SDL3 (built here too, console
+#                   build, no X11 or Wayland), opened on SDL's `offscreen`
+#                   video driver (SDL_VIDEODRIVER, set by the adapter when
+#                   BackendConfig::headless): no window, no display server,
+#                   no GPU. The GL 3.3 core context comes from EGL, which on
+#                   such a box is Mesa's llvmpipe -- the SAME GLSL the .exe
+#                   runs, drawn on the CPU. PHASE 3 of
+#                   docs/design/OBLIVION-PLAN.md retired the rlsw software
+#                   rasterizer (PLATFORM=Memory), which ran no shader.
 #     mingw cross   -DPLATFORM=Desktop -DOPENGL_VERSION=3.3
 #                   GLFW window + OpenGL 3.3: the shipped .exe.
 #
 # A configure that passes neither gets raylib's own default (Desktop, 3.3),
 # which on Linux wants X11 headers -- fine on a developer box, never in the
-# container. Both defines reach exactly one translation unit of ours
-# (src/render3d/rl_backend.cpp) as raylib's PUBLIC compile definitions, and
-# every place the headless build behaves differently is one #if there.
+# container. Both defines reach the translation units of ours under
+# src/render3d/rl/ as raylib's PUBLIC compile definitions; the only place the
+# two builds differ is whether BackendConfig::headless can be honoured
+# (rl/internal.hpp, kHeadlessCapable).
 #
 # THE OPTIONS, each verified against the pin rather than the docs:
 #
@@ -166,7 +186,7 @@ FetchContent_Declare(raylib
     GIT_PROGRESS   TRUE)
 
 set(GRANADAD_DEPS miniz nlohmann_json doctest stb)
-if(GRANADAD_BUILD_CLIENT)
+if(GRANADAD_NEED_SDL)
     list(INSERT GRANADAD_DEPS 0 SDL3)
 endif()
 FetchContent_MakeAvailable(${GRANADAD_DEPS})
@@ -188,6 +208,16 @@ FetchContent_MakeAvailable(${GRANADAD_DEPS})
 FetchContent_GetProperties(raylib)
 if(NOT raylib_POPULATED)
     FetchContent_Populate(raylib)
+    if(PLATFORM STREQUAL "SDL")
+        # raylib's CMake wants an OpenGL include directory and library on a
+        # Unix desktop even though it ships glad and loads every GL entry
+        # point through SDL_GL_GetProcAddress at run time. Point both at
+        # things that exist so a box with no libgl-dev (the docker image) still
+        # configures; nothing is compiled or linked against system GL.
+        file(MAKE_DIRECTORY "${CMAKE_BINARY_DIR}/no-system-gl")
+        set(OPENGL_INCLUDE_DIR "${CMAKE_BINARY_DIR}/no-system-gl" CACHE PATH "" FORCE)
+        set(OPENGL_LIBRARIES   m CACHE STRING "" FORCE)
+    endif()
     add_subdirectory("${raylib_SOURCE_DIR}" "${raylib_BINARY_DIR}" EXCLUDE_FROM_ALL)
 endif()
 
@@ -220,7 +250,7 @@ foreach(dep IN ITEMS miniz::miniz doctest::doctest nlohmann_json::nlohmann_json)
 endforeach()
 
 # Same for SDL: we ask for static, but do not assume we got it.
-if(GRANADAD_BUILD_CLIENT)
+if(GRANADAD_NEED_SDL)
     if(TARGET SDL3::SDL3-static)
         set(GRANADAD_SDL_TARGET SDL3::SDL3-static)
     elseif(TARGET SDL3::SDL3-shared)
@@ -258,15 +288,4 @@ target_compile_definitions(raylib PRIVATE SUPPORT_MODULE_RAUDIO=0)
 # rtextures.c.o, which is the only raylib translation unit that calls it.
 # Ours stays the one the renderer links; raylib's stays raylib's business.
 target_compile_definitions(raylib PRIVATE STB_IMAGE_STATIC STB_IMAGE_WRITE_STATIC)
-# THE SOFTWARE RASTERIZER READS BACK R,G,B,A -- NOT B,G,R,A. rlsw.h defaults
-# SW_FRAMEBUFFER_OUTPUT_BGRA to true (a DRM scanout wants BGRA), and rcore.c
-# tries to switch it off for the Memory platform under a name rlsw never
-# reads (SW_GL_FRAMEBUFFER_COPY_BGRA) -- so at this pin every
-# swReadPixels(GL_RGBA) hands back B,G,R,A. The frame the adapter reads back
-# is compared byte for byte against render::Framebuffer's R,G,B,A (see
-# tests/test_render3d.cpp), so the switch is thrown here, where rlsw's own
-# #ifndef honours it.
-if(PLATFORM STREQUAL "Memory" OR OPENGL_VERSION STREQUAL "Software")
-    target_compile_definitions(raylib PRIVATE SW_FRAMEBUFFER_OUTPUT_BGRA=0)
-endif()
 message(STATUS "granadad: raylib PLATFORM=${PLATFORM} OPENGL_VERSION=${OPENGL_VERSION}")

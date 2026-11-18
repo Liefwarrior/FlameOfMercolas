@@ -19,7 +19,7 @@
 //     one -- while its frame is a different picture;
 //   * THE SAME INPUTS ARE THE SAME FRAME. Two sessions, one config, one fog:
 //     byte-identical frames. One description refreshed twice: one scene hash.
-//     The veil is in the 3D picture headless through rlsw, twice the same,
+//     The veil is in the 3D picture headless on llvmpipe, twice the same,
 //     and a clear description has no veil in it at all.
 //
 // Plus the wiring at both ends: the capture summary's `weather=` field, the
@@ -171,6 +171,7 @@ const render::TileAtlas& proceduralAtlas() {
     config.width = kWidth;
     config.height = kHeight;
     config.windowScale = 1;
+    config.headless = true;
     config.vsync = false;
     return config;
 }
@@ -722,9 +723,9 @@ TEST_CASE("a fog is in the description, a clear description has no veil in it, a
     CHECK(sceneHash(fogScene) == clearHash);
 }
 
-TEST_CASE("the fog is in the 3D frame, headless through rlsw, and the same bytes twice") {
+TEST_CASE("the fog is in the 3D frame, headless on llvmpipe, and the same bytes twice") {
     if (!Backend::headlessCapable()) {
-        MESSAGE("skipped: this build renders through a GPU window, not rlsw");
+        MESSAGE("skipped: this build is not on raylib's SDL platform, so it has no headless context");
         return;
     }
     const sim::TileQuery tiles(docksWorld());

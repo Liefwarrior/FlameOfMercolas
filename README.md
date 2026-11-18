@@ -19,7 +19,7 @@ The game is being rewritten in C++. **`native/` is the live tree**; read
 ```
 .\scripts\gate.ps1                         # reproducible build -> dist/, commit stamped
 .\dist\granadad.exe                        # the game
-.\dist\granadad.exe --smoke=120 --screenshot=frame.png   # a frame (this build opens a window for one frame; the headless build opens none)
+.\dist\granadad.exe --smoke=120 --screenshot=frame.png   # a frame (this build opens a window for one frame; the Linux build opens none: Mesa llvmpipe, no GPU)
 .\dist\granadad.exe --nemesis --screenshot=rival.png    # lose three fights, watch him rise
 .\dist\granadad.exe --ward                # the compounds, two years, as text
 .\scripts\verify-windows.ps1               # finishes the cross-toolchain determinism gate
@@ -89,7 +89,7 @@ is the client now.
 
 | Directory | What it is |
 |---|---|
-| `native/` | The C++ game: format reader, simulation, software first-person renderer, SDL3 client. |
+| `native/` | The C++ game: format reader, simulation, the 3D first-person renderer (raylib on OpenGL 3.3, hand-written GLSL), SDL3 audio and gamepad. |
 | `content/` | **The owner's authored canon. Read-only.** Raws, barks, notables, names, rumors, factions, skills, spells, jobs, quests, the Tiled sources and the baked worlds, and the art packs. |
 | `docs/design/` | Binding rulings (`DECISIONS.md`), the setting bible (`DOCKS-GAZETTEER.md`), the feel bar (`COMBAT-FEEL-REFERENCE.md`). |
 | `ARCHITECTURE.md` | The 2026-07-12 design, reconciled against the code on 2026-07-31. Every claim is marked BUILT / PARTIAL / NOT BUILT / SUPERSEDED. **Trust the markings.** |
@@ -112,9 +112,11 @@ is the client now.
 > Social power is maxed from the start; physical power starts near zero and grows through
 > exploitable systems — never through levels. Authority and law are first-class domain concepts.
 
-Visually: **Barony-grade, sharper.** Chunky readable sprites over an authoritative tile
+Visually: **the original 2006 *Oblivion*, roughly** (ruled 2026-11-12, `docs/design/DECISIONS.md`:
+"Real 3D renderer"; the plan is `docs/design/OBLIVION-PLAN.md`). Free first-person walking with true
+mouse-look, solid 3D streets built from the ward's tile data over the authoritative tile
 simulation, committed dark — torchlit pools against near-black, architecture as silhouette,
-harbour fog.
+harbour fog. ~~Barony-grade, sharper~~ is superseded.
 
 ## Canon
 

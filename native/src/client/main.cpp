@@ -774,7 +774,8 @@ void print_usage() {
         "  --screenshot=PATH    write the captured frame as a PNG. Composited\n"
         "                       through the 3D backend: the shipped build opens\n"
         "                       a window for the shutter and closes it; the\n"
-        "                       headless (rlsw) build opens none\n"
+        "                       Linux build opens none (Mesa llvmpipe, no display\n"
+        "                       server, no GPU)\n"
         "  --2d                 draw the world with the software raycaster inside\n"
         "                       the overlay instead of the 3D chunk meshes (the\n"
         "                       picture this build showed before the 3D programme)\n"
@@ -3976,7 +3977,7 @@ render3d::SceneStats present_frame(render3d::Backend& video, const Options& opti
 /// window uses and writes what the window would have shown. On the shipped
 /// build that opens a real window for the length of one frame -- which is
 /// exactly what scripts/verify-windows.ps1 wants proved on the host -- and on
-/// the headless build it opens none.
+/// the Linux build it opens none (headless, Mesa llvmpipe).
 [[nodiscard]] bool shutter_through_backend(const Options& options, const render::Session& session,
                                            const render::Framebuffer& software) {
     render3d::BackendConfig config;
@@ -3985,6 +3986,9 @@ render3d::SceneStats present_frame(render3d::Backend& video, const Options& opti
     config.windowScale = options.smoke.captureScale;
     config.resizable = false;
     config.vsync = false;
+    // The Linux build draws the shutter on a context with no window (Mesa
+    // llvmpipe); the shipped .exe opens a real window for one frame.
+    config.headless = render3d::Backend::headlessCapable();
     config.modelDir = rig_model_dir();
     config.weaponDir = weapon_model_dir();
     config.staticDir = static_model_dir();
@@ -4001,8 +4005,8 @@ render3d::SceneStats present_frame(render3d::Backend& video, const Options& opti
     render::Framebuffer shot(1, 1);
     const render3d::SceneStats stats =
         present_frame(*video, options, rig, session, overlay, &shot);
-    // The headless build's frame is the framebuffer's own size; the window
-    // build already presented at the capture scale.
+    // The headless frame is the framebuffer's own size; the window build
+    // already presented at the capture scale.
     const bool needsUpscale =
         shot.width() == software.width() && options.smoke.captureScale > 1;
     const render::Framebuffer output =
@@ -4013,11 +4017,12 @@ render3d::SceneStats present_frame(render3d::Backend& video, const Options& opti
     // so two separate processes of the same scripted drive prove the 3D
     // frame's INPUT twin-runs identical across processes -- the frame's
     // bytes are never hashed on a GPU, the description is.
-    std::printf("granadad: 3d shutter -- %s backend, %dx%d, %zu instance(s), %zu triangle(s), "
+    std::printf("granadad: 3d shutter -- %s backend (%s), %dx%d, %zu instance(s), %zu triangle(s), "
                 "%zu piece(s) of %zu placed (%zu drawn, %zu piece file(s)), "
                 "%zu bod%s (%zu skinned, %zu rig file(s)), hands %s/%s %s %zu part(s)%s%s, "
                 "scene 0x%016llX%s\n",
-                video->kind() == render3d::VideoKind::Software ? "rlsw" : "gpu", output.width(),
+                video->kind() == render3d::VideoKind::Headless ? "headless" : "gpu",
+                video->rendererName().c_str(), output.width(),
                 output.height(), stats.instancesDrawn, stats.trianglesDrawn,
                 rig.scene.statics.size(), rig.world != nullptr ? rig.world->stats().piecesPlaced : std::size_t{0},
                 stats.staticsDrawn, stats.staticModelsLoaded, stats.actorsDrawn,
@@ -4693,7 +4698,7 @@ int run_client(const Options& options, const render::CreationResult& chosen,
     VideoBridge bridge;
     SceneRig rig;
     std::printf("granadad: video %s backend, %dx%d window%s\n",
-                video.kind() == render3d::VideoKind::Software ? "rlsw" : "gpu", video.width(),
+                video.kind() == render3d::VideoKind::Headless ? "headless" : "gpu", video.width(),
                 video.height(), options.video3d ? ", 3D world" : ", --2d software world");
 
     render::Framebuffer frame(options.smoke.session.width, options.smoke.session.height);

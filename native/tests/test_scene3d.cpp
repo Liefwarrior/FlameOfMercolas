@@ -111,6 +111,32 @@ TEST_CASE("any byte of the description moved is a different hash") {
         fewer.instances.pop_back();
         CHECK(sceneHash(fewer) != reference);
     }
+    SUBCASE("a vertex normal turned, and each shading uniform moved") {
+        // PHASE 3: the normals the shader lights by and the uniforms it is
+        // driven with are part of the digest.
+        SceneDescription turned = base;
+        REQUIRE(turned.meshes[1].normals.size() == turned.meshes[1].positions.size());
+        turned.meshes[1].normals[0] += 1.0F / 64.0F;
+        CHECK(sceneHash(turned) != reference);
+        SceneDescription shaded = base;
+        shaded.shading.lightMix = 1.0F;
+        CHECK(sceneHash(shaded) != reference);
+        shaded = base;
+        shaded.shading.sunDirection.x = 0.5F;
+        CHECK(sceneHash(shaded) != reference);
+        shaded = base;
+        shaded.shading.fogDensity = 0.01F;
+        CHECK(sceneHash(shaded) != reference);
+        shaded = base;
+        shaded.shading.fogColour.z = 0.5F;
+        CHECK(sceneHash(shaded) != reference);
+        shaded = base;
+        shaded.shading.exposure = 0.9F;
+        CHECK(sceneHash(shaded) != reference);
+        shaded = base;
+        shaded.shading.vignette = 0.2F;
+        CHECK(sceneHash(shaded) != reference);
+    }
     SUBCASE("a body added, and then its clip changed") {
         // A LANE: the actor list is part of the digest, and so is what a
         // body is doing -- a punch and an idle are different pictures.
@@ -835,4 +861,42 @@ TEST_CASE("a named body follows its name, and the id draw only where the name sa
         }
     }
     MESSAGE("crowd from the spawn, by name and draw: " << women << " women, " << men << " serf men");
+}
+
+TEST_CASE("every mesh in a description carries unit normals the shader can light by") {
+    // PHASE 3: vertex data gains normals. A mesh a lane puts without them
+    // gets them cut from its triangles; the chunk mesher cuts its own from
+    // each quad's corners.
+    const SceneDescription scene = starterAt(0.0F);
+    REQUIRE(scene.meshes.size() >= 2);
+    for (const MeshData& mesh : scene.meshes) {
+        REQUIRE(mesh.normals.size() == mesh.positions.size());
+        for (std::size_t v = 0; v < mesh.vertexCount(); ++v) {
+            const float x = mesh.normals[v * 3];
+            const float y = mesh.normals[v * 3 + 1];
+            const float z = mesh.normals[v * 3 + 2];
+            CHECK(std::abs(x * x + y * y + z * z - 1.0F) < 1.0e-4F);
+        }
+    }
+    // The ground plane looks up.
+    const MeshData* ground = scene.findMesh(kStarterGroundMeshId);
+    REQUIRE(ground != nullptr);
+    CHECK(ground->normals[0] == doctest::Approx(0.0F).epsilon(1.0e-4));
+    CHECK(ground->normals[1] == doctest::Approx(1.0F).epsilon(1.0e-4));
+    CHECK(ground->normals[2] == doctest::Approx(0.0F).epsilon(1.0e-4));
+    // The cube has all six: a vertex's normal is the face it belongs to, so
+    // the six axis directions are all present and no vertex is diagonal.
+    const MeshData* cube = scene.findMesh(kStarterCubeMeshId);
+    REQUIRE(cube != nullptr);
+    std::set<std::string> directions;
+    for (std::size_t v = 0; v < cube->vertexCount(); ++v) {
+        const int x = static_cast<int>(std::lround(cube->normals[v * 3]));
+        const int y = static_cast<int>(std::lround(cube->normals[v * 3 + 1]));
+        const int z = static_cast<int>(std::lround(cube->normals[v * 3 + 2]));
+        CHECK(std::abs(cube->normals[v * 3] - static_cast<float>(x)) < 1.0e-4F);
+        CHECK(std::abs(cube->normals[v * 3 + 1] - static_cast<float>(y)) < 1.0e-4F);
+        CHECK(std::abs(cube->normals[v * 3 + 2] - static_cast<float>(z)) < 1.0e-4F);
+        directions.insert(std::to_string(x) + "," + std::to_string(y) + "," + std::to_string(z));
+    }
+    CHECK(directions.size() == 6);
 }

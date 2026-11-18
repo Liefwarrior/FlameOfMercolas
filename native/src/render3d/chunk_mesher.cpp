@@ -206,7 +206,29 @@ public:
         face.kind = kind;
         face.firstVertex = base;
         out_.faces.push_back(face);
+        const float e1x = c[1].x - c[0].x;
+        const float e1y = c[1].y - c[0].y;
+        const float e1z = c[1].z - c[0].z;
+        const float e2x = c[2].x - c[0].x;
+        const float e2y = c[2].y - c[0].y;
+        const float e2z = c[2].z - c[0].z;
+        float nx = e1y * e2z - e1z * e2y;
+        float ny = e1z * e2x - e1x * e2z;
+        float nz = e1x * e2y - e1y * e2x;
+        const float length = std::sqrt(nx * nx + ny * ny + nz * nz);
+        if (length > 1.0e-12F) {
+            nx /= length;
+            ny /= length;
+            nz /= length;
+        } else {
+            nx = 0.0F;
+            ny = 1.0F;
+            nz = 0.0F;
+        }
         for (const Corner& corner : c) {
+            out_.normals.push_back(nx);
+            out_.normals.push_back(ny);
+            out_.normals.push_back(nz);
             out_.positions.push_back(corner.x);
             out_.positions.push_back(corner.y);
             out_.positions.push_back(corner.z);
@@ -503,6 +525,7 @@ MeshData colourChunk(const ChunkGeometry& geometry, const ChunkLighting& lightin
     mesh.version = chunkVersion(geometry.rebuildCount, lighting);
     mesh.positions = geometry.positions;
     mesh.texcoords = geometry.texcoords;
+    mesh.normals = geometry.normals;
     mesh.indices = geometry.indices;
 
     const std::size_t vertices = geometry.vertexCount();
