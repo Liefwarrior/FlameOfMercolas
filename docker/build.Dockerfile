@@ -47,6 +47,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         g++-mingw-w64-x86-64-posix \
         libegl1 \
         libegl-mesa0 \
+        libgl1 \
         libgl1-mesa-dri \
     && rm -rf /var/lib/apt/lists/*
 
@@ -55,7 +56,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # video driver, and Mesa's llvmpipe draws it on the CPU (phase 3 of
 # docs/design/OBLIVION-PLAN.md; before it the frames came from raylib's rlsw,
 # which runs no shader). libegl1 is the loader SDL dlopens, libegl-mesa0 the
-# EGL driver, libgl1-mesa-dri the llvmpipe/swrast gallium driver. No -dev
+# EGL driver, libgl1-mesa-dri the llvmpipe/swrast gallium driver, and libgl1
+# the GLVND libGL.so.1 SDL's EGL path opens for a DESKTOP (not ES) profile:
+# without it SDL_CreateWindow fails on the offscreen driver ("Invalid
+# window"), raylib cannot open a context, and every frame test in the suite
+# goes red (test_golden, test_render3d, test_light_model, test_viewmodel,
+# test_weather). A box that happens to have libgl1 installed hides this,
+# which is how phases 3-8 passed off this container and failed in it. No -dev
 # package, no X11, no Wayland, no Xvfb: nothing is compiled or linked against
 # system GL (native/cmake/Dependencies.cmake says how raylib is told so). Mesa
 # and LLVM move low bits between versions, which is why a frame is compared
