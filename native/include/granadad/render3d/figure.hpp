@@ -15,7 +15,7 @@
 //        id (and the sex its name says) and of nothing else: no position, no
 //        clock, no RNG. Packed to a 26-bit key that is part of the mesh id.
 //   buildFigure(look)                -> MeshData    WHAT they look like at rest:
-//        one mesh, ~500-700 triangles, vertex colours from the look, every
+//        one mesh, ~1,400 triangles (a far twin of ~600), vertex colours from the look, every
 //        vertex weighted to one bone, the skeleton's rest joints in boneRest.
 //   evaluateFigurePose(rest, clip, frame)           HOW they stand now: a
 //        function of the clip and the integer frame the sim derived
