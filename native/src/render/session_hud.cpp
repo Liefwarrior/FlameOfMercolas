@@ -891,9 +891,8 @@ void Session::drawFrame(Framebuffer& target) const {
     const Camera view = camera();
     // THE WORLD IS THE RAYLIB BACKEND'S FRAME, and this target is the OVERLAY
     // it composites on top: cleared to nothing, then every pass below draws
-    // over it. The signage sees an infinite depth buffer, so no sign is
-    // occluded by a wall until the V lane gives signage its line-of-sight
-    // projector.
+    // over it. There is no depth under it, which is why the signage is
+    // handed a line of sight instead (below).
     target.clearTransparent();
 
     // World content, not interface -- drawn rather than gated behind
