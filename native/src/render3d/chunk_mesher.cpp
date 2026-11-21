@@ -208,6 +208,10 @@ struct Dress {
     float r = 1.0F;
     float g = 1.0F;
     float b = 1.0F;
+    /// A face that looks into a room (or up at a ceiling): the sky's own light
+    /// does not reach it, only the lamps in the room. The per-pixel look carries
+    /// it as the vertex colour's alpha (colourLit).
+    bool indoor = false;
 };
 
 /// The standing water's tone (it is multiplied by the pack's per-depth
@@ -259,7 +263,7 @@ public:
 
     /// Four corners counter-clockwise seen from the side the face looks to.
     void quad(const V3 (&c)[4], CellId cell, float wet, FaceDir dir, render::FaceKind kind,
-              const Dress& dress) {
+              const Dress& dress, const float* shore = nullptr) {
         const auto base = static_cast<std::uint16_t>(out_.vertexCount());
         if (faces_ != nullptr) {
             ChunkFace face;
@@ -272,8 +276,8 @@ public:
             faces_->push_back(face);
         }
         const V3 n = normalised(cross(sub(c[1], c[0]), sub(c[2], c[0])));
-        for (const V3& corner : c) {
-            vertex(corner, n, cell, wet, dress);
+        for (int k = 0; k < 4; ++k) {
+            vertex(c[k], n, cell, wet, dress, shore != nullptr ? shore[k] : -1.0F);
         }
         out_.indices.push_back(base);
         out_.indices.push_back(static_cast<std::uint16_t>(base + 1));
@@ -343,7 +347,8 @@ private:
     /// surface runs on across every face of a wall, a floor or a roof plane
     /// with no seam where two cells meet. `t` runs along the face
     /// horizontally, `b` up it.
-    void vertex(const V3& p, const V3& n, CellId cell, float wet, const Dress& dress) {
+    void vertex(const V3& p, const V3& n, CellId cell, float wet, const Dress& dress,
+                float shore = -1.0F) {
         V3 t{1.0F, 0.0F, 0.0F};
         if (std::abs(n.y) < 0.999F) {
             t = normalised(cross(V3{0.0F, 1.0F, 0.0F}, n));
@@ -369,6 +374,8 @@ private:
         out_.tones.push_back(dress.r);
         out_.tones.push_back(dress.g);
         out_.tones.push_back(dress.b);
+        out_.shore.push_back(shore);
+        out_.skyOpen.push_back(dress.indoor ? 0.0F : 1.0F);
     }
 
     SurfaceArrays& out_;
@@ -388,6 +395,7 @@ private:
                              Role role) noexcept {
     const Surface surface = surfaceFor(material, role);
     Dress d;
+    d.indoor = role == Role::Indoor || role == Role::Inside;
     if (surface == Surface::White) {
         const SurfaceTone t = materialToneOf(material);
         d.r = t.r;
@@ -501,6 +509,37 @@ public:
     }
 
 private:
+    /// How far the point (px, pz) of a water surface in band `z` is from the
+    /// nearest bank, in tiles, held at three: a cell is a bank when something
+    /// that is not open air stands in it at the water's band or the quay's one
+    /// above. Beyond the district's edge is more water.
+    [[nodiscard]] float shoreDistance(float px, float pz, std::int32_t z) const noexcept {
+        const std::int32_t cx = static_cast<std::int32_t>(std::floor(px));
+        const std::int32_t cz = static_cast<std::int32_t>(std::floor(pz));
+        float best = 3.0F;
+        for (std::int32_t gy = cz - 3; gy <= cz + 2; ++gy) {
+            for (std::int32_t gx = cx - 3; gx <= cx + 2; ++gx) {
+                if (!tiles_.inBounds(gx, gy, z)) {
+                    continue;
+                }
+                const auto solid = [&](std::int32_t level) {
+                    if (!tiles_.inBounds(gx, gy, level)) {
+                        return false;
+                    }
+                    const content::TileForm f = tiles_.form(gx, gy, level);
+                    return f != content::TileForm::Open && f != content::TileForm::Void;
+                };
+                if (!solid(z) && !solid(z + 1)) {
+                    continue;
+                }
+                const float dx = std::max({static_cast<float>(gx) - px, px - static_cast<float>(gx + 1), 0.0F});
+                const float dz = std::max({static_cast<float>(gy) - pz, pz - static_cast<float>(gy + 1), 0.0F});
+                best = std::min(best, std::sqrt(dx * dx + dz * dz));
+            }
+        }
+        return best;
+    }
+
     // ---- the body: the tile boxes, as they always were ---------------------
 
     [[nodiscard]] bool body(std::int32_t x, std::int32_t y, std::int32_t z, const render::Voxel& v,
@@ -545,7 +584,19 @@ private:
                 dress = dressFor(atlas_, far_, v.material, role);
             }
             const V3 c[4] = {{x0, t, z1}, {x1, t, z1}, {x1, t, z0}, {x0, t, z0}};
-            if (!emit(c, wet, FaceDir::Top, v.topFace, dress)) {
+            if (v.topFace == render::FaceKind::Water) {
+                // The harbour's own faces carry how far each corner is from
+                // a bank, for the water shader's foam and shallows.
+                float shore[4];
+                for (int k = 0; k < 4; ++k) {
+                    shore[k] = shoreDistance(c[k].x, c[k].z, z);
+                }
+                if (body_.full()) {
+                    out_.truncated = true;
+                    return false;
+                }
+                body_.quad(c, cell, wet, FaceDir::Top, v.topFace, dress, shore);
+            } else if (!emit(c, wet, FaceDir::Top, v.topFace, dress)) {
                 return false;
             }
         }
@@ -1336,6 +1387,13 @@ std::uint32_t weatherVersionKey(const render::Weather& weather) noexcept {
 }
 
 std::uint32_t chunkVersion(std::uint32_t rebuildCount, const ChunkLighting& lighting) noexcept {
+    if (lighting.perPixel) {
+        // The light is the shader's: nothing of the clock, the lamps or the
+        // weather is in a vertex colour, so only a rebuild moves the version.
+        // Bit 11 keeps it apart from the minute bucket of the vertex-colour
+        // look (1440 minutes never reach it), so a switch re-uploads.
+        return (rebuildCount << 12) + 1U + 0x800U;
+    }
     const int minute = ((lighting.timeOfDaySeconds % 86400) + 86400) % 86400 / 60;
     // Rebuilds in the high bits, the lighting bucket in the low twelve (1440
     // minutes fit), plus one so a fresh mesh never reads as version 0. The
@@ -1398,6 +1456,65 @@ ChunkGeometry buildChunkGeometry(const sim::TileQuery& tiles, const render::Tile
 // ---------------------------------------------------------------------------
 
 namespace {
+
+/// THE PER-PIXEL LOOK (ChunkLighting::perPixel): the vertices of `arrays` that
+/// are (or are not) standing water, appended to `mesh` with the colour of what
+/// the surface IS and none of the light on it. Land wears its tone and the pack's
+/// wet darkening; water wears what the water shader reads (see colourWater).
+void colourLit(MeshData& mesh, const SurfaceArrays& arrays, bool water) {
+    const std::size_t vertices = arrays.vertexCount();
+    const auto isWater = [&](std::size_t i) {
+        return i < arrays.shore.size() && arrays.shore[i] >= 0.0F;
+    };
+    std::vector<std::int32_t> remap(vertices, -1);
+    const std::size_t first = mesh.vertexCount();
+    std::size_t kept = 0;
+    for (std::size_t i = 0; i < vertices; ++i) {
+        if (isWater(i) != water) {
+            continue;
+        }
+        remap[i] = static_cast<std::int32_t>(first + kept);
+        ++kept;
+        mesh.positions.insert(mesh.positions.end(), arrays.positions.begin() + static_cast<std::ptrdiff_t>(i * 3),
+                              arrays.positions.begin() + static_cast<std::ptrdiff_t>(i * 3 + 3));
+        mesh.texcoords.insert(mesh.texcoords.end(), arrays.texcoords.begin() + static_cast<std::ptrdiff_t>(i * 2),
+                              arrays.texcoords.begin() + static_cast<std::ptrdiff_t>(i * 2 + 2));
+        mesh.texcoords2.insert(mesh.texcoords2.end(), arrays.texcoords2.begin() + static_cast<std::ptrdiff_t>(i * 2),
+                               arrays.texcoords2.begin() + static_cast<std::ptrdiff_t>(i * 2 + 2));
+        mesh.normals.insert(mesh.normals.end(), arrays.normals.begin() + static_cast<std::ptrdiff_t>(i * 3),
+                            arrays.normals.begin() + static_cast<std::ptrdiff_t>(i * 3 + 3));
+        float r = 1.0F;
+        float g = 1.0F;
+        float b = 1.0F;
+        if (water) {
+            r = std::clamp(arrays.shore[i] / 3.0F, 0.0F, 1.0F);
+            g = arrays.wetAlpha[i];
+            b = 0.0F;
+        } else {
+            const float wet = arrays.wetAlpha[i];
+            r = (1.0F + (kWaterTintFull.r - 1.0F) * wet) * arrays.tones[i * 3];
+            g = (1.0F + (kWaterTintFull.g - 1.0F) * wet) * arrays.tones[i * 3 + 1];
+            b = (1.0F + (kWaterTintFull.b - 1.0F) * wet) * arrays.tones[i * 3 + 2];
+        }
+        mesh.colours.push_back(channel8(r));
+        mesh.colours.push_back(channel8(g));
+        mesh.colours.push_back(channel8(b));
+        // The alpha is what the sky reaches: 255 open to it, 0 in a room. The
+        // scene shader dims the ambient by it (and never reads it as a blend).
+        mesh.colours.push_back(water || i >= arrays.skyOpen.size() ? 255U : channel8(arrays.skyOpen[i]));
+    }
+    for (std::size_t t = 0; t + 2 < arrays.indices.size(); t += 3) {
+        const std::int32_t a = remap[arrays.indices[t]];
+        const std::int32_t b = remap[arrays.indices[t + 1]];
+        const std::int32_t c = remap[arrays.indices[t + 2]];
+        if (a < 0 || b < 0 || c < 0) {
+            continue;
+        }
+        mesh.indices.push_back(static_cast<std::uint16_t>(a));
+        mesh.indices.push_back(static_cast<std::uint16_t>(b));
+        mesh.indices.push_back(static_cast<std::uint16_t>(c));
+    }
+}
 
 /// Colours `arrays` and appends it to `mesh`, its indices lifted by the
 /// vertices already there.
@@ -1510,10 +1627,26 @@ MeshData colourChunk(const ChunkGeometry& geometry, const ChunkLighting& lightin
     mesh.id = geometry.detail == Detail::Far ? farChunkMeshId(geometry.key) : chunkMeshId(geometry.key);
     mesh.version = chunkVersion(geometry.rebuildCount, lighting) ^
                    (geometry.detail == Detail::Far ? kFarVersionBit : 0U);
+    if (lighting.perPixel) {
+        colourLit(mesh, geometry, false);
+        colourLit(mesh, geometry.extra, false);
+        return mesh;
+    }
     const render::SkyState sky = render::skyAt(lighting.timeOfDaySeconds, lighting.weather);
     const bool hasDynamic = lighting.dynamicLamps != nullptr && !lighting.dynamicLamps->empty();
     colourInto(mesh, geometry, lighting, sky, hasDynamic);
     colourInto(mesh, geometry.extra, lighting, sky, hasDynamic);
+    return mesh;
+}
+
+MeshData colourWater(const ChunkGeometry& geometry) {
+    MeshData mesh;
+    const bool far = geometry.detail == Detail::Far;
+    mesh.id = waterMeshId(geometry.key, far);
+    ChunkLighting lit;
+    lit.perPixel = true;
+    mesh.version = chunkVersion(geometry.rebuildCount, lit) ^ (far ? kFarVersionBit : 0U);
+    colourLit(mesh, geometry, true);
     return mesh;
 }
 
@@ -1523,6 +1656,10 @@ MeshData colourRoof(const ChunkGeometry& geometry, const RoofLayer& roof,
     mesh.id = roofMeshId(geometry.key, roof.level);
     mesh.version = chunkVersion(geometry.rebuildCount, lighting) ^
                    (geometry.detail == Detail::Far ? kFarVersionBit : 0U);
+    if (lighting.perPixel) {
+        colourLit(mesh, roof, false);
+        return mesh;
+    }
     const render::SkyState sky = render::skyAt(lighting.timeOfDaySeconds, lighting.weather);
     const bool hasDynamic = lighting.dynamicLamps != nullptr && !lighting.dynamicLamps->empty();
     colourInto(mesh, roof, lighting, sky, hasDynamic);

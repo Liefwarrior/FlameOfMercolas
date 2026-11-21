@@ -294,6 +294,46 @@ std::uint64_t sceneHash(const SceneDescription& scene) noexcept {
     mixVec3(h, scene.shading.fogColour);
     h.mixF32(scene.shading.exposure);
     h.mixF32(scene.shading.vignette);
+    // THE LIGHTING PHASE'S FIELDS, mixed only when that phase is on (the
+    // veils' rule above): a description that never asked for per-pixel light,
+    // a sky shader or a post grade hashes exactly as it did before.
+    const SceneShading& shade = scene.shading;
+    if (shade.lightMix > 0.0F || shade.skyShader || shade.bloom > 0.0F || shade.toneCurve > 0.0F) {
+        mixVec3(h, shade.ambientGround);
+        h.mixF32(shade.lightGain);
+        h.mixF32(shade.lightClock);
+        h.mixF32(shade.shadowStrength);
+        h.mixF32(shade.shadowReach);
+        h.mixU8(shade.skyShader ? 1U : 0U);
+        mixVec3(h, shade.skyZenith);
+        mixVec3(h, shade.skyHorizon);
+        mixVec3(h, shade.sunSkyDirection);
+        mixVec3(h, shade.sunDisc);
+        mixVec3(h, shade.moonDirection);
+        mixVec3(h, shade.moonDisc);
+        h.mixF32(shade.stars);
+        h.mixF32(shade.cloudCover);
+        mixVec3(h, shade.cloudColour);
+        h.mixF32(shade.cloudClock);
+        mixVec3(h, shade.waterShallow);
+        mixVec3(h, shade.waterDeep);
+        h.mixF32(shade.waterClock);
+        h.mixF32(shade.bloom);
+        h.mixF32(shade.bloomThreshold);
+        h.mixF32(shade.toneCurve);
+        h.mixF32(shade.saturation);
+        h.mixF32(shade.contrast);
+        mixVec3(h, shade.gradeTint);
+        h.mixU64(static_cast<std::uint64_t>(scene.lights.size()));
+        for (const ScenePointLight& light : scene.lights) {
+            mixVec3(h, light.position);
+            mixVec3(h, light.colour);
+            h.mixF32(light.radius);
+            h.mixF32(light.peak);
+            h.mixU32(light.flicker);
+            h.mixF32(light.flickerDepth);
+        }
+    }
 
     h.mixU64(static_cast<std::uint64_t>(scene.meshes.size()));
     for (const MeshData& mesh : scene.meshes) {
@@ -347,6 +387,10 @@ std::uint64_t sceneHash(const SceneDescription& scene) noexcept {
         h.mixF32(instance.yaw);
         h.mixF32(instance.scale);
         mixRgba(h, instance.tint);
+        // The surface kind, only where it is not the plain lit one.
+        if (instance.surface != kSurfaceLit) {
+            h.mixU8(instance.surface);
+        }
     };
     h.mixU64(static_cast<std::uint64_t>(scene.instances.size()));
     for (const Instance& instance : scene.instances) {

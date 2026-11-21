@@ -157,7 +157,18 @@ struct Instance {
     float scale = 1.0F;
     /// Multiplies the vertex colours.
     Rgba8 tint;
+    /// How the adapter shades it: kSurfaceLit (the scene shader, everything
+    /// until the lighting phase), kSurfaceWater (the harbour's own shader),
+    /// kSurfaceSky (the sky shader: the dome, which reads the day's colours
+    /// off the description and not off its vertices) or kSurfaceFar (lit by
+    /// nothing and fogged by nothing: the skyline ring's own colours).
+    std::uint8_t surface = 0;
 };
+
+inline constexpr std::uint8_t kSurfaceLit = 0;
+inline constexpr std::uint8_t kSurfaceWater = 1;
+inline constexpr std::uint8_t kSurfaceSky = 2;
+inline constexpr std::uint8_t kSurfaceFar = 3;
 
 struct SceneCamera {
     Vec3 position;
@@ -513,25 +524,109 @@ inline constexpr Rgba8 kPaneRampHead{158, 122, 97, 255};
 struct SceneShading {
     /// 0 = the baked vertex colour alone. 1 = vertex colour times
     /// (ambient + sun x Lambert(normal, sunDirection)). Between is a mix.
+    /// Anything over zero also switches the per-pixel point lights on
+    /// (SceneDescription::lights): the lighting phase's own flag.
     float lightMix = 0.0F;
     /// Unit vector pointing TOWARD the sun or moon.
     Vec3 sunDirection{0.0F, 1.0F, 0.0F};
     Vec3 sunColour{1.0F, 1.0F, 1.0F};
+    /// The hemisphere ambient: this above, `ambientGround` below, mixed by
+    /// the normal's up. A negative ground (the default) means "the same as
+    /// above": a flat ambient, which is what every description before the
+    /// lighting phase meant.
     Vec3 ambientColour{1.0F, 1.0F, 1.0F};
+    Vec3 ambientGround{-1.0F, -1.0F, -1.0F};
     /// Exponential distance fog: f = 1 - exp(-density x distance), distance
     /// in tiles from the eye. 0 = none.
     float fogDensity = 0.0F;
     Vec3 fogColour{0.0F, 0.0F, 0.0F};
-    /// Post pass: the scene colour times this, then a vignette of this
-    /// strength (0 = none). 1 and 0 leave the picture alone.
+    /// The point lights' gain, and the render clock their flicker reads, in
+    /// seconds. The clock is derived from the session's own step count and
+    /// time of day, never from a wall clock, so a scripted capture is the
+    /// same frame twice; and it is read by the flicker only, never by the sim.
+    float lightGain = 1.0F;
+    float lightClock = 0.0F;
+    /// THE SHADOW MAP. Over zero, the sun or moon (`sunDirection`) casts
+    /// into a depth map fitted to the `shadowReach` tiles round the eye, and
+    /// a lit pixel in shadow keeps this share of the direct light taken off.
+    /// COSMETIC BY RULING (OBLIVION-PLAN 6.3, owner 2026-11-13): the sim's own
+    /// integer light field decides stealth and a shadow hides nobody.
+    float shadowStrength = 0.0F;
+    float shadowReach = 48.0F;
+    /// THE SKY. On, the dome (Instance::surface == kSurfaceSky) is drawn by the
+    /// sky shader from these: a horizon-to-zenith gradient, the sun and moon
+    /// as discs along their directions, stars faded in by `stars`, and one
+    /// scrolling layer of cloud (`cloudCover` 0..1, drifted by `cloudClock`).
+    bool skyShader = false;
+    Vec3 skyZenith{0.0F, 0.0F, 0.0F};
+    Vec3 skyHorizon{0.0F, 0.0F, 0.0F};
+    /// Where the sun is in the sky (unit; below the horizon is under it) and
+    /// the colour of its disc (zero when it is down). `sunDirection` above is the
+    /// light that casts -- the sun by day, the moon when the sun is down.
+    Vec3 sunSkyDirection{0.0F, 1.0F, 0.0F};
+    Vec3 sunDisc{0.0F, 0.0F, 0.0F};
+    Vec3 moonDirection{0.0F, -1.0F, 0.0F};
+    Vec3 moonDisc{0.0F, 0.0F, 0.0F};
+    float stars = 0.0F;
+    float cloudCover = 0.0F;
+    Vec3 cloudColour{1.0F, 1.0F, 1.0F};
+    float cloudClock = 0.0F;
+    /// THE HARBOUR. Water (Instance::surface == kSurfaceWater) is drawn by the
+    /// water shader: two scrolling normal layers, a Fresnel mix of the sky
+    /// and a dark tint, glints of the sun, the moon and the lamps, shore
+    /// foam. `waterClock` drifts the layers.
+    Vec3 waterShallow{0.0F, 0.0F, 0.0F};
+    Vec3 waterDeep{0.0F, 0.0F, 0.0F};
+    float waterClock = 0.0F;
+    /// Post pass: the scene colour times `exposure`, a bloom of what is over
+    /// `bloomThreshold` (strength 0 = none), the tone curve (0 = a clamp, 1 =
+    /// the filmic shoulder), the grade, then a vignette of this strength
+    /// (0 = none). The defaults leave the picture alone.
     float exposure = 1.0F;
     float vignette = 0.0F;
+    float bloom = 0.0F;
+    float bloomThreshold = 0.85F;
+    float toneCurve = 0.0F;
+    float saturation = 1.0F;
+    float contrast = 1.0F;
+    Vec3 gradeTint{1.0F, 1.0F, 1.0F};
 };
+
+/// ONE POINT LIGHT, per pixel: a torch, a lantern, a brazier, a hearth. The
+/// source of truth is unchanged (the 27 baked lamps and the tavern's live
+/// ones); the renderer reads each as a position and the sim's own curve --
+/// `peak * (1 - (d / radius)^2)^2`, zero at the radius and beyond -- the same
+/// function render::lampFalloff evaluates in C++ and the stealth field
+/// evaluates in integers (a test pins the three together).
+struct ScenePointLight {
+    Vec3 position;
+    /// Linear colour of the flame (warm for fire, whiter for a lantern).
+    Vec3 colour{1.0F, 1.0F, 1.0F};
+    /// Tiles, from sim::lightRadiusQ4.
+    float radius = 0.0F;
+    /// 0..1, from sim::lightPeak.
+    float peak = 0.0F;
+    /// 0 = steady; otherwise a hash of the lamp's identity, the phase of its
+    /// flicker (hashed with the render clock, never with sim state).
+    std::uint32_t flicker = 0;
+    /// How far the flame wavers, as a share of its strength (0.04 on a
+    /// shielded lantern, 0.15 on an open fire).
+    float flickerDepth = 0.0F;
+};
+
+/// The most lights one draw reads: the nearest, chosen per instance by the
+/// adapter (OBLIVION-PLAN 6.6: "capped at the 8 nearest" per chunk; twelve
+/// here because a tavern is lit by a hearth, a lantern and its candles).
+inline constexpr std::size_t kMaxDrawLights = 12;
 
 struct SceneDescription {
     SceneCamera camera;
     /// The shader pipeline's uniforms; a pass-through by default.
     SceneShading shading;
+    /// The point lights of the frame, nearest-first picking left to the
+    /// adapter. Empty (the default) is the unlit description every frame had
+    /// before the lighting phase.
+    std::vector<ScenePointLight> lights;
     /// The sky -- what the frame is cleared to before anything draws.
     Rgba8 clearColour{0, 0, 0, 255};
     std::vector<MeshData> meshes;

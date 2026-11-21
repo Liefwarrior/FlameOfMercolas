@@ -8,6 +8,7 @@
 #include "granadad/render/lighting.hpp"
 #include "granadad/render/voxel_classify.hpp"
 #include "granadad/render/scene_types.hpp"
+#include "granadad/render3d/light_model.hpp"
 #include "granadad/sim/tile_query.hpp"
 
 namespace granadad::render3d {
@@ -64,6 +65,12 @@ void pushDoubleTriangle(MeshData& mesh, std::uint16_t a, std::uint16_t b, std::u
 /// A surface's light is ambient + glow, and a piece in a lamp's pool is
 /// lit rather than blown out: the sum is clamped a little over one.
 constexpr float kLightClamp = 1.15F;
+
+/// PHASE 5. A lit pane's candle as a point light: how high over the floor it
+/// burns, how far it reaches (tiles) and its peak -- a fraction of a lantern's.
+constexpr float kWindowLightHeight = 1.5F;
+constexpr float kWindowLightRadius = 3.6F;
+constexpr float kWindowLightPeak = 0.55F;
 
 /// A flame's halo keeps this much of its alpha at full daylight.
 constexpr float kFlameDayAlpha = 0.12F;
@@ -788,6 +795,43 @@ void WorldScene::buildSpill(const ChunkLighting& lighting) {
     }
 }
 
+void WorldScene::buildWindowLights(const ChunkLighting& lighting) {
+    windowLights_.clear();
+    if (catalogue_ == nullptr) {
+        return;
+    }
+    const render::SkyState sky = render::skyAt(lighting.timeOfDaySeconds, lighting.weather);
+    const bool night = sky.daylight < catalogue_->knobs().paneDuskBelow;
+    if (!night) {
+        return;
+    }
+    const int second = ((lighting.timeOfDaySeconds % 86400) + 86400) % 86400;
+    const float hour = static_cast<float>(second) / 3600.0F;
+    for (const StaticPlacement& p : placements_.placements) {
+        if (p.role != PieceRole::WallWindow && p.role != PieceRole::PaneTimber) {
+            continue;
+        }
+        if (!paneUpUnder(p, lighting, night, hour)) {
+            continue;
+        }
+        // The candle behind the glass, a little out into the street so the wall
+        // it is set in is lit by it and the cobbles below are too.
+        const float strength = candleStrengthOf(p, hour);
+        const float nx = static_cast<float>(p.paneX - p.insideX);
+        const float ny = static_cast<float>(p.paneY - p.insideY);
+        ScenePointLight light;
+        light.position = toScene(static_cast<float>(p.paneX) + 0.5F + nx * 0.55F,
+                                 static_cast<float>(p.paneY) + 0.5F + ny * 0.55F,
+                                 render::bandSurface(p.insideZ) + kWindowLightHeight);
+        light.colour = Vec3{1.0F, 0.66F, 0.30F};
+        light.radius = kWindowLightRadius;
+        light.peak = kWindowLightPeak * strength;
+        light.flicker = 0x9E3779B1U ^ static_cast<std::uint32_t>(p.paneX * 73856093 ^ p.paneY * 19349663);
+        light.flickerDepth = 0.06F;
+        windowLights_.push_back(light);
+    }
+}
+
 void WorldScene::relightPieces(const ChunkLighting& lighting) {
     // Without a catalogue nothing was placed and there is nothing to
     // relight (refresh() never asks; this keeps the knobs below honest).
@@ -891,8 +935,13 @@ void WorldScene::relightPieces(const ChunkLighting& lighting) {
         // The surface's own light (already the pool's shape) plus any
         // emissive `extra` the piece carries, under the clamp, into the
         // catalogue tint.
-        const auto litWith = [&p, &sky](const render::Rgb& pool, const render::Rgb& extra,
-                                        const Rgba8& tint, float cap) {
+        const bool byShader = lighting.perPixel;
+        const auto litWith = [&p, &sky, byShader](const render::Rgb& pool, const render::Rgb& extra,
+                                                  const Rgba8& tint, float cap) {
+            if (byShader) {
+                // PHASE 5: the shader lights the piece; its tint is what it is.
+                return tint;
+            }
             // Clamped by the brightest channel (render::clampLight), so the
             // light keeps its hue at saturation.
             const render::Rgb light = render::clampLight(
@@ -1056,6 +1105,14 @@ void WorldScene::refresh(SceneDescription& scene, const render::Camera& camera, 
     lighting.dynamicLamps = &params.dynamicLamps;
     lighting.lampKey = dynamicLampKey(params.dynamicLamps);
     lighting.pool = pool();
+    lighting.perPixel = params.perPixel;
+    // The bucket the relight and the window lights are kept under: the minute,
+    // the weather and the live lamps, whichever look the chunks wear.
+    const std::uint32_t lightBucket = [&] {
+        ChunkLighting legacy = lighting;
+        legacy.perPixel = false;
+        return chunkVersion(0, legacy);
+    }();
 
     // The atlas, once per scene.
     bool haveTexture = false;
@@ -1074,12 +1131,15 @@ void WorldScene::refresh(SceneDescription& scene, const render::Camera& camera, 
     // own key rides the version above the minute (zero for clear: a clear
     // dome's version is what it always was), and a day skipped at the same
     // minute rebuilds the dome and the veil rather than keeping them.
+    // PHASE 5: the dome's colours are the sky shader's, off the description,
+    // so its mesh is the same all day; the skyline ring keeps its bands.
     const std::uint32_t skyVersion =
         skyDomeVersion(params.timeOfDaySeconds) ^ (weatherVersionKey(params.weather) << 16);
+    const std::uint32_t domeVersion = params.perPixel ? 0x5D0E0001U : skyVersion;
     const MeshData* sky = scene.findMesh(kSkyMeshId);
-    if (sky == nullptr || sky->version != skyVersion) {
+    if (sky == nullptr || sky->version != domeVersion) {
         MeshData dome = buildSkyDome(params.timeOfDaySeconds, params.weather);
-        dome.version = skyVersion;
+        dome.version = domeVersion;
         scene.putMesh(std::move(dome));
     }
     const MeshData* skyline = scene.findMesh(kSkylineMeshId);
@@ -1092,7 +1152,7 @@ void WorldScene::refresh(SceneDescription& scene, const render::Camera& camera, 
     const render::SkyState skyState = render::skyAt(params.timeOfDaySeconds, params.weather);
     scene.veils.clear();
     bool veiled = false;
-    if (skyState.veil > 0.0F) {
+    if (skyState.veil > 0.0F && !params.perPixel) {
         const MeshData* veil = scene.findMesh(kVeilMeshId);
         if (veil == nullptr || veil->version != skyVersion) {
             scene.putMesh(buildVeil(skyState, skyVersion));
@@ -1107,18 +1167,35 @@ void WorldScene::refresh(SceneDescription& scene, const render::Camera& camera, 
         scene.removeMesh(kVeilMeshId);
     }
 
+    // PHASE 5: the atmosphere and the lights, written into the description
+    // from the clock and the weather alone.
+    if (params.perPixel) {
+        atmosphereAt(scene.shading, params.timeOfDaySeconds, params.weather);
+        scene.shading.lightClock = params.renderClock;
+        if (catalogue_ != nullptr && !placements_.placements.empty() &&
+            (lightBucket != windowBucket_ || windowBucket_ == 0U)) {
+            buildWindowLights(lighting);
+            windowBucket_ = lightBucket;
+        }
+        scene.lights = pointLightsOf(lamps_, params.dynamicLamps, skyState.haloScale);
+        scene.lights.insert(scene.lights.end(), windowLights_.begin(), windowLights_.end());
+    } else {
+        scene.shading = SceneShading{};
+        scene.lights.clear();
+    }
+
     // THE SPILL MAP, before the chunks: the lighting bucket that moves the
     // relight moves it, and the chunk colour stage reads it under the same
     // version, so a pane that goes dark on the minute takes its candle off
-    // the wall on the same minute.
-    if (catalogue_ != nullptr && !placements_.placements.empty()) {
-        const std::uint32_t litVersion = chunkVersion(0, lighting);
+    // the wall on the same minute. (Lit per pixel, the candle is a light.)
+    if (!params.perPixel && catalogue_ != nullptr && !placements_.placements.empty()) {
+        const std::uint32_t litVersion = lightBucket;
         if (litVersion != litVersion_ ||
             litTints_.size() != placements_.placements.size() * kLitSlots) {
             buildSpill(lighting);
         }
     }
-    lighting.spill = &spill_;
+    lighting.spill = params.perPixel ? nullptr : &spill_;
 
     // The chunks: recoloured when their version moved, instanced when near.
     const Vec3 eye = toScene(camera.x, camera.y, camera.z);
@@ -1130,11 +1207,17 @@ void WorldScene::refresh(SceneDescription& scene, const render::Camera& camera, 
     Instance skyAt;
     skyAt.meshId = kSkyMeshId;
     skyAt.position = eye;
+    if (params.perPixel) {
+        skyAt.surface = kSurfaceSky;
+    }
     scene.instances.push_back(skyAt);
     // The skyline ring rides the eye beside the dome, after it.
     Instance skylineAt;
     skylineAt.meshId = kSkylineMeshId;
     skylineAt.position = eye;
+    if (params.perPixel) {
+        skylineAt.surface = kSurfaceFar;
+    }
     scene.instances.push_back(skylineAt);
     if (veiled) {
         // The veil rides the eye exactly as the dome does, and is drawn last.
@@ -1176,6 +1259,7 @@ void WorldScene::refresh(SceneDescription& scene, const render::Camera& camera, 
             const std::uint32_t bodyId = s.useFar ? farChunkMeshId(key) : chunkMeshId(key);
             if (wasFar != s.useFar) {
                 scene.removeMesh(s.useFar ? chunkMeshId(key) : farChunkMeshId(key));
+                scene.removeMesh(waterMeshId(key, !s.useFar));
             }
             const std::uint32_t version =
                 chunkVersion(s.rebuildCount, lighting) ^ (s.useFar ? kFarVersionBit : 0U);
@@ -1189,6 +1273,30 @@ void WorldScene::refresh(SceneDescription& scene, const render::Camera& camera, 
             at.textureId = kChunkAtlasTextureId;
             scene.instances.push_back(at);
             ++stats_.chunksInstanced;
+            // The harbour, cut out of the body when the light is per pixel, for
+            // the water shader: one mesh per chunk that has any.
+            if (params.perPixel) {
+                signed char& known = s.hasWater[s.useFar ? 1 : 0];
+                if (known < 0) {
+                    known = std::any_of(drawn.shore.begin(), drawn.shore.end(),
+                                        [](float d) { return d >= 0.0F; })
+                                ? 1
+                                : 0;
+                }
+                if (known == 1) {
+                    const std::uint32_t waterId = waterMeshId(key, s.useFar);
+                    const MeshData* haveWater = scene.findMesh(waterId);
+                    if (haveWater == nullptr || haveWater->version != version) {
+                        MeshData water = colourWater(drawn);
+                        water.version = version;
+                        scene.putMesh(std::move(water));
+                    }
+                    Instance waterAt;
+                    waterAt.meshId = waterId;
+                    waterAt.surface = kSurfaceWater;
+                    scene.instances.push_back(waterAt);
+                }
+            }
             if (s.useFar) {
                 ++stats_.chunksFar;
             }
@@ -1228,7 +1336,7 @@ void WorldScene::refresh(SceneDescription& scene, const render::Camera& camera, 
     stats_.piecesInstanced = 0;
     stats_.piecesInReach = 0;
     if (catalogue_ != nullptr && !placements_.placements.empty()) {
-        const std::uint32_t litVersion = chunkVersion(0, lighting);
+        const std::uint32_t litVersion = lightBucket ^ (params.perPixel ? 0x40000000U : 0U);
         if (litVersion != litVersion_ ||
             litTints_.size() != placements_.placements.size() * kLitSlots) {
             relightPieces(lighting);

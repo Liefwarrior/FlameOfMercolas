@@ -589,6 +589,50 @@ shimmering; the switch has hysteresis. A **skyline ring** (`buildSkyline`) from
 DOCKS-GAZETTEER's own words (the Inner Wall and its gate to the south, the
 palace spire, low sea to the north) stands behind the district.
 
+### Lighting and atmosphere (phase 5 of `docs/design/OBLIVION-PLAN.md`)
+
+The 3D pass is **lit per pixel** (`--flat-light` draws the vertex-colour light of
+the phases before, for a GPU that cannot take the new passes and to photograph the
+difference). The GPU only draws: everything below is a pure function of the clock,
+the weather and the lamp list, written into the `SceneDescription`
+(`render3d/light_model.cpp`) and hashed with the rest.
+
+- **Lights.** The 27 baked lamps, the tavern's live ones and a candle behind every
+  lit window are `ScenePointLight`s. The scene shader loops the twelve nearest to
+  each draw. A lamp's strength is the sim's own curve, `peak * (1 - (d/R)^2)^2`,
+  with `R` and `peak` from `sim::lightRadiusQ4` / `sim::lightPeak`:
+  `render3d::lampFalloff` (the shader's function in C++), `sim::glowFrom` (the
+  stealth field, in integers) and the GLSL are pinned to one another by
+  `tests/test_light_model.cpp`, so what the player sees lit and what stealth reads
+  are one idea. Flames waver by a hash of the lamp and a render clock derived from
+  the body's step count, never from a wall clock and never from sim state.
+- **Sun and moon.** `heavensAt` walks the sun east to south to west between 06:15
+  and 20:15 and the moon the same road through the night; whichever is stronger is
+  the one directional light, with a hemisphere ambient (the sky above, the ground's
+  bounce below). A face that looks into a room takes none of the sky's ambient
+  (the vertex alpha carries it), so a room is lit by its own lamps.
+- **Shadows.** The sun or moon draws the chunks, roofs, opaque pieces and people into
+  a 2,048-pixel depth map fitted to the 48 tiles round the eye and snapped to its
+  texel (no shimmer), and the shader takes a 3x3 PCF lookup. Lamps cast none (a
+  plan decision). **Shadows are cosmetic:** the sim's integer light field decides
+  stealth and a dark patch under an eave is not cover; the SNEAK help line says so.
+- **Sky and fog.** The dome is drawn by a sky shader (gradient, sun and moon discs
+  with glow, stars faded in by the dark, one scrolling layer of cloud). Distance
+  fog is `1 - exp(-density * d)` in the fragment shaders, mixed to the sky's horizon
+  colour so the two meet there; the clear day's haze is a third of the software
+  pass's, the weather adds to it, and the banded veil shells are gone from this path.
+- **Water.** The harbour's top faces are cut into a mesh of their own (the vertex
+  colour carries the shore distance), drawn by a water shader: two scrolling
+  procedural normal layers, a Fresnel mix of the sky and a dark depth tint, glints
+  of the sun, the moon and the lamps, foam along the banks. No refraction and no
+  planar reflection.
+- **Post.** The scene is drawn into a half-float target; a bloom (threshold, one
+  blur at quarter resolution, added back), a filmic shoulder, the day's grade and a
+  vignette are one pass over it. The HUD is drawn after it, so it is never graded.
+
+Cost, on llvmpipe at 1280x720 for the first street frame: see the PR for the
+measured budget. Not verified here: the Windows `.exe` on a real GPU (see the PR).
+
 ## 2. CMake presets — the fast local loop
 
 Needs cmake ≥ 3.24, Ninja, and a C++20 compiler on your PATH.

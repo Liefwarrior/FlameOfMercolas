@@ -262,7 +262,7 @@ void Backend::Impl::drawViewmodel(const ViewmodelInstance& hands, SceneStats& st
         }
     } else {
         for (const ViewmodelPart& part : hands.parts) {
-            if (drawMeshWith(part.meshId, 0, part.tint, partTransform(part), stats)) {
+            if (drawMeshWith(part.meshId, 0, part.tint, partTransform(part), stats, kSurfaceLit, true)) {
                 ++stats.viewmodelPartsDrawn;
             }
         }

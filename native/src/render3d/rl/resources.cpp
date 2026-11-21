@@ -161,6 +161,24 @@ void Backend::Impl::release() {
         UnloadShader(post);
         post = Shader{};
     }
+    for (Shader* extra : {&depth, &sky, &water, &bright, &blur}) {
+        if (extra->id != 0) {
+            UnloadShader(*extra);
+            *extra = Shader{};
+        }
+    }
+    if (shadowTarget.id != 0) {
+        UnloadRenderTexture(shadowTarget);
+        shadowTarget = RenderTexture2D{};
+    }
+    shadowReady = false;
+    shadowsOn = false;
+    for (RenderTexture2D* rt : {&bloomA, &bloomB}) {
+        if (rt->id != 0) {
+            UnloadRenderTexture(*rt);
+            *rt = RenderTexture2D{};
+        }
+    }
     sceneTried = false;
     if (target.id != 0) {
         UnloadRenderTexture(target);

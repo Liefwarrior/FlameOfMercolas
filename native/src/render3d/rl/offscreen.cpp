@@ -15,6 +15,36 @@ namespace granadad::render3d {
 
 using namespace rl;
 
+namespace {
+
+/// A render target the scene is drawn into: a half-float colour texture (a
+/// lamp's core is over one, the bloom takes what is over its threshold and
+/// the filmic shoulder rolls the rest off) and, when asked, a 24-bit depth
+/// renderbuffer. Falls back to raylib's own 8-bit target on a driver that
+/// cannot attach one (the picture is then clipped at one, as it always was).
+[[nodiscard]] RenderTexture2D loadTarget(int w, int h, bool withDepth) {
+    RenderTexture2D rt{};
+    rt.id = rlLoadFramebuffer();
+    if (rt.id != 0) {
+        const unsigned int colour = rlLoadTexture(nullptr, w, h, RL_PIXELFORMAT_UNCOMPRESSED_R16G16B16A16, 1);
+        rt.texture = Texture2D{colour, w, h, 1, RL_PIXELFORMAT_UNCOMPRESSED_R16G16B16A16};
+        rlFramebufferAttach(rt.id, colour, RL_ATTACHMENT_COLOR_CHANNEL0, RL_ATTACHMENT_TEXTURE2D, 0);
+        if (withDepth) {
+            const unsigned int depthBuffer = rlLoadTextureDepth(w, h, true);
+            rt.depth = Texture2D{depthBuffer, w, h, 1, 19};
+            rlFramebufferAttach(rt.id, depthBuffer, RL_ATTACHMENT_DEPTH, RL_ATTACHMENT_RENDERBUFFER, 0);
+        }
+        if (rlFramebufferComplete(rt.id)) {
+            return rt;
+        }
+        UnloadRenderTexture(rt);
+        rt = RenderTexture2D{};
+    }
+    return withDepth ? LoadRenderTexture(w, h) : RenderTexture2D{};
+}
+
+}  // namespace
+
 void Backend::Impl::ensureTarget(int w, int h) {
     if (target.id != 0 && target.texture.width == w && target.texture.height == h) {
         return;
@@ -23,10 +53,30 @@ void Backend::Impl::ensureTarget(int w, int h) {
         UnloadRenderTexture(target);
         target = RenderTexture2D{};
     }
-    target = LoadRenderTexture(w, h);
-    // One texel per window pixel: nearest, so the post pass is exact.
-    SetTextureFilter(target.texture, TEXTURE_FILTER_POINT);
+    if (bloomA.id != 0) {
+        UnloadRenderTexture(bloomA);
+        bloomA = RenderTexture2D{};
+    }
+    if (bloomB.id != 0) {
+        UnloadRenderTexture(bloomB);
+        bloomB = RenderTexture2D{};
+    }
+    target = loadTarget(w, h, true);
+    // Bilinear, clamped: the post pass draws it one texel to a pixel, so it is
+    // exact there, and the bloom's down-sample reads it between texels.
+    SetTextureFilter(target.texture, TEXTURE_FILTER_BILINEAR);
     SetTextureWrap(target.texture, TEXTURE_WRAP_CLAMP);
+    // The bloom works at a quarter of the resolution.
+    const int qw = std::max(1, w / 4);
+    const int qh = std::max(1, h / 4);
+    bloomA = loadTarget(qw, qh, false);
+    bloomB = loadTarget(qw, qh, false);
+    for (RenderTexture2D* rt : {&bloomA, &bloomB}) {
+        if (rt->id != 0) {
+            SetTextureFilter(rt->texture, TEXTURE_FILTER_BILINEAR);
+            SetTextureWrap(rt->texture, TEXTURE_WRAP_CLAMP);
+        }
+    }
 }
 
 void Backend::Impl::resolveScene() {
@@ -42,11 +92,64 @@ void Backend::Impl::resolveScene() {
     const Rectangle source{0.0F, 0.0F, w, -h};
     const Rectangle dest{0.0F, 0.0F, w, h};
     const bool shaded = post.id != 0;
+    // THE BLOOM: what is over the threshold, taken at a quarter of the size,
+    // blurred once each way (a nine-tap gaussian), added back in the post pass.
+    // No readback: the blur is a texture the next pass samples.
+    bool bloomed = false;
+    if (shaded && shadingNow.bloom > 0.0F && bright.id != 0 && blur.id != 0 && bloomA.id != 0 &&
+        bloomB.id != 0) {
+        const float qw = static_cast<float>(bloomA.texture.width);
+        const float qh = static_cast<float>(bloomA.texture.height);
+        const Rectangle quarter{0.0F, 0.0F, qw, qh};
+        const Rectangle quarterFlip{0.0F, 0.0F, qw, -qh};
+        rlDrawRenderBatchActive();
+        rlDisableColorBlend();
+        {
+            BeginTextureMode(bloomA);
+            ClearBackground(BLACK);
+            const float texel[2] = {1.0F / w, 1.0F / h};
+            SetShaderValue(bright, brightTexel, texel, SHADER_UNIFORM_VEC2);
+            SetShaderValue(bright, brightThreshold, &shadingNow.bloomThreshold, SHADER_UNIFORM_FLOAT);
+            SetShaderValue(bright, brightExposure, &shadingNow.exposure, SHADER_UNIFORM_FLOAT);
+            BeginShaderMode(bright);
+            DrawTexturePro(target.texture, source, quarter, Vector2{0.0F, 0.0F}, 0.0F, WHITE);
+            EndShaderMode();
+            EndTextureMode();
+        }
+        {
+            BeginTextureMode(bloomB);
+            const float dir[2] = {1.0F / qw, 0.0F};
+            SetShaderValue(blur, blurDirection, dir, SHADER_UNIFORM_VEC2);
+            BeginShaderMode(blur);
+            DrawTexturePro(bloomA.texture, quarterFlip, quarter, Vector2{0.0F, 0.0F}, 0.0F, WHITE);
+            EndShaderMode();
+            EndTextureMode();
+        }
+        {
+            BeginTextureMode(bloomA);
+            const float dir[2] = {0.0F, 1.0F / qh};
+            SetShaderValue(blur, blurDirection, dir, SHADER_UNIFORM_VEC2);
+            BeginShaderMode(blur);
+            DrawTexturePro(bloomB.texture, quarterFlip, quarter, Vector2{0.0F, 0.0F}, 0.0F, WHITE);
+            EndShaderMode();
+            EndTextureMode();
+        }
+        rlEnableColorBlend();
+        bloomed = true;
+    }
     if (shaded) {
-        const float exposure = shadingNow.exposure;
-        const float vignette = shadingNow.vignette;
-        SetShaderValue(post, postExposure, &exposure, SHADER_UNIFORM_FLOAT);
-        SetShaderValue(post, postVignette, &vignette, SHADER_UNIFORM_FLOAT);
+        SetShaderValue(post, postExposure, &shadingNow.exposure, SHADER_UNIFORM_FLOAT);
+        SetShaderValue(post, postVignette, &shadingNow.vignette, SHADER_UNIFORM_FLOAT);
+        const float bloomStrength = bloomed ? shadingNow.bloom : 0.0F;
+        SetShaderValue(post, postBloom, &bloomStrength, SHADER_UNIFORM_FLOAT);
+        SetShaderValue(post, postTone, &shadingNow.toneCurve, SHADER_UNIFORM_FLOAT);
+        SetShaderValue(post, postSaturation, &shadingNow.saturation, SHADER_UNIFORM_FLOAT);
+        SetShaderValue(post, postContrast, &shadingNow.contrast, SHADER_UNIFORM_FLOAT);
+        const float tint[3] = {shadingNow.gradeTint.x, shadingNow.gradeTint.y, shadingNow.gradeTint.z};
+        SetShaderValue(post, postTint, tint, SHADER_UNIFORM_VEC3);
+        if (bloomed) {
+            SetShaderValueTexture(post, postBloomTexture, bloomA.texture);
+        }
         BeginShaderMode(post);
     }
     // Opaque: the frame replaces what the window held. Straight blend would

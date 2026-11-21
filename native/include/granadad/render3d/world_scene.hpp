@@ -150,6 +150,18 @@ struct WorldSceneParams {
     float nearDistance = 38.0F;
     /// The pitched roofs (chunk_mesher.hpp). Off draws the flat decks alone.
     bool pitchedRoofs = true;
+    /// PHASE 5, LIGHTING AND ATMOSPHERE (docs/design/OBLIVION-PLAN.md 6.6-6.8).
+    /// On: the light is the scene shader's, per pixel -- the lamps and the lit
+    /// windows are point lights in the description (SceneDescription::lights),
+    /// the sun and moon come from the clock (light_model.hpp, atmosphereAt), the
+    /// fog is a shader and not a veil, the dome is the sky shader's, and the
+    /// harbour is its own mesh for the water shader. A chunk's vertex colour is
+    /// then what the surface is and nothing of the hour. Off (the default) is the
+    /// vertex-colour light every frame had before the phase, which the existing
+    /// frame tests and the 2D-under-3D paths still draw.
+    bool perPixel = false;
+    /// The render clock the lamps' flicker reads, in seconds (never sim state).
+    float renderClock = 0.0F;
 };
 
 struct WorldSceneStats {
@@ -241,6 +253,9 @@ private:
         bool stale = true;
         /// The version the mesh in the scene carries, 0 = not put yet.
         std::uint32_t putVersion = 0;
+        /// Whether the near and far geometries hold standing water: -1 not
+        /// yet looked, 0 none, 1 some (the lit colour stage's water mesh).
+        signed char hasWater[2] = {-1, -1};
         /// Bounds in scene space, for the distance cull.
         float minX = 0.0F, minY = 0.0F, minZ = 0.0F;
         float maxX = 0.0F, maxY = 0.0F, maxZ = 0.0F;
@@ -284,6 +299,11 @@ private:
     std::vector<Rgba8> litTints_;
     std::uint32_t litVersion_ = 0;
     std::map<std::uint64_t, render::Rgb> spill_;
+    /// PHASE 5. The candle behind every lit pane as a point light, rebuilt
+    /// when the lighting bucket (the minute, the weather) moves.
+    std::vector<ScenePointLight> windowLights_;
+    std::uint32_t windowBucket_ = 0;
+    void buildWindowLights(const ChunkLighting& lighting);
 
 public:
     [[nodiscard]] const std::map<std::uint64_t, render::Rgb>& spill() const noexcept {
