@@ -5,7 +5,7 @@
   ],
   "items": {
     "bread":   { "pack": "PolygonGeneric", "file": "SM_Gen_Prop_Sack_01.gltf", "scale": 0.34, "tint": [176, 134, 78], "maxDistance": 24 },
-    "ale":     { "pack": "PolygonGeneric", "file": "SM_Gen_Prop_Bottle_01.gltf", "scale": 1.0, "tint": [128, 120, 100], "maxDistance": 24 },
+    "ale":     { "pack": "PolygonGeneric", "file": "SM_Gen_Prop_Bottle_01.gltf", "scale": 0.264, "tint": [128, 120, 100], "maxDistance": 24 },
     "bandage": { "pack": "PolygonGeneric", "file": "SM_Gen_Prop_Sack_01.gltf", "scale": 0.24, "tint": [214, 204, 184], "maxDistance": 20 }
   }
 }

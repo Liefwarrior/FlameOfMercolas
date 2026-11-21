@@ -180,9 +180,22 @@ TEST_CASE("the crosshair names a thing on the ground only when the reticle is on
         }
     }
     REQUIRE(coil >= 0);
-    // In the take's reach: what the old read would have named.
+    // In the take's reach, by the take's own shape (Manhattan Q8 from the
+    // tile centre, inside kReachQ8). The old read named the NEAREST thing in
+    // that reach wherever the eye was, and since phase 8 that is no longer
+    // the coil: the quay's bandage stand (154,63) is a tile east, behind the
+    // eye, and nearer. So the premise is pinned as two facts instead of one
+    // index -- the old read names something here, and the coil is inside
+    // the reach -- and the level eye below must still name neither.
     CHECK(session.tavern().groundItemInReachOf(session.body().x(), session.body().y(),
-                                               session.body().band()) == coil);
+                                               session.body().band()) >= 0);
+    {
+        const sim::GroundItem& entry =
+            session.tavern().groundItems()[static_cast<std::size_t>(coil)];
+        const std::int32_t dx = sim::q8_tile_centre(entry.x) - session.body().x();
+        const std::int32_t dy = sim::q8_tile_centre(entry.y) - session.body().y();
+        CHECK((dx < 0 ? -dx : dx) + (dy < 0 ? -dy : dy) <= sim::kReachQ8);
+    }
     // A level eye is not on it: not named, and the press does not take it.
     CHECK(session.groundItemUnderReticle() == -1);
     const Session::InteractTarget level = session.interactTarget();

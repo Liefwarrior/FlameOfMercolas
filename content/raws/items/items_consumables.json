@@ -12,7 +12,7 @@
   "items": [
     {
       "id": "bread", "name": "BREAD", "drams": 10, "royals": 1, "slot": "none", "class": "fists",
-      "drawnCm": [0, 12],
+      "drawnCm": [0, 20],
       "use": { "verb": "EAT", "done": "ATE", "effects": [ { "effect": "vitality", "magnitude": 12 } ] },
       "desc": "A DOCK LOAF, DENSE AS A BRICK AND ABOUT AS KIND. IT MENDS A BRUISING."
     },
@@ -24,7 +24,7 @@
     },
     {
       "id": "bandage", "name": "BANDAGE", "drams": 4, "royals": 3, "slot": "none", "class": "fists",
-      "drawnCm": [0, 6],
+      "drawnCm": [0, 14],
       "use": { "verb": "BIND", "done": "BOUND", "effects": [ { "effect": "vitality", "magnitude": 30 } ] },
       "desc": "BOILED LINEN, ROLLED TIGHT. THE QUAY'S ANSWER TO A CUT."
     }
