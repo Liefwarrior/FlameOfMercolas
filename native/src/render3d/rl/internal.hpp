@@ -362,6 +362,12 @@ struct Backend::Impl {
     /// it on the window through the post shader before the HUD goes over it.
     RenderTexture2D target{};
     bool sceneOpen = false;
+    /// Where resolveScene puts the scene on the window, in window pixels; a
+    /// zero width means the whole window (Backend::setSceneDestination).
+    int destX = 0;
+    int destY = 0;
+    int destW = 0;
+    int destH = 0;
     Material material{};
     bool materialLoaded = false;
     /// THE HALO'S FAN (scene.hpp haloFanMesh): one unit disc, uploaded the

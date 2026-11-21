@@ -158,6 +158,13 @@ void Backend::beginFrame(const Rgba8& clear) {
     ClearBackground(colourOf(clear));
 }
 
+void Backend::setSceneDestination(int x, int y, int width, int height) {
+    impl_->destX = x;
+    impl_->destY = y;
+    impl_->destW = width;
+    impl_->destH = height;
+}
+
 OverlayPlacement Backend::overlayPlacement(int frameWidth, int frameHeight) const noexcept {
     OverlayPlacement placement;
     const int windowWidth = GetScreenWidth();

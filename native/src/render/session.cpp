@@ -36,8 +36,8 @@ Session::Session(const SessionConfig& config)
                                     (config_.world + ".trojsav"))),
       tiles_(std::make_unique<sim::TileQuery>(world_)),
       atlas_(TileAtlas::load(config_.contentDir)) {
-    renderer_ = std::make_unique<WorldRenderer>(*tiles_, atlas_,
-                                                loadLamps(config_.contentDir, config_.world));
+    lamps_ = loadLamps(config_.contentDir, config_.world);
+    glow_ = LampGlow::build(*tiles_, lamps_);
     body_ = std::make_unique<sim::PlayerBody>(*tiles_, config_.spawnX, config_.spawnY,
                                               config_.spawnBand, config_.spawnYaw);
     if (config_.spawnPitchGiven) {
@@ -49,7 +49,6 @@ Session::Session(const SessionConfig& config)
     body_->setLandingFloor(sim::docks::kLandingFloor);
     timeOfDay_ = ((config_.timeOfDay % sim::kSecondsPerDay) + sim::kSecondsPerDay) %
                  sim::kSecondsPerDay;
-    settings_.timeOfDay = timeOfDay_;
 
     engine_ = std::make_unique<sim::PhasedEngine>(config_.worldSeed, world_);
     auto tavern =

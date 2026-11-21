@@ -90,7 +90,16 @@ void Backend::Impl::resolveScene() {
     // A GL texture is bottom row first: the source rectangle's negative height
     // is the flip.
     const Rectangle source{0.0F, 0.0F, w, -h};
-    const Rectangle dest{0.0F, 0.0F, w, h};
+    Rectangle dest{0.0F, 0.0F, w, h};
+    if (destW > 0 && destH > 0) {
+        // The scene is a PANE of a larger window (the workbench's game
+        // pane): the window is cleared first, since the scene no longer
+        // covers it, and the overlay drawn next leaves a hole where the
+        // picture shows through.
+        dest = Rectangle{static_cast<float>(destX), static_cast<float>(destY),
+                         static_cast<float>(destW), static_cast<float>(destH)};
+        ClearBackground(BLACK);
+    }
     const bool shaded = post.id != 0;
     // THE BLOOM: what is over the threshold, taken at a quarter of the size,
     // blurred once each way (a nine-tap gaussian), added back in the post pass.

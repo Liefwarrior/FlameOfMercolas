@@ -5,6 +5,7 @@
 #include <vector>
 
 #include "granadad/render/hud.hpp"
+#include "granadad/render/vertical.hpp"
 #include "granadad/sim/docks_signs.hpp"
 
 namespace granadad::render {
@@ -13,7 +14,7 @@ namespace {
 
 /// Above the floor of the level the sign's building stands on. ABSOLUTE tile
 /// heights, the same convention every other billboard in this renderer uses
-/// (see world_renderer.cpp's lamp bracket and tavern flame heights) -- a
+/// (the lamp bracket and tavern flame heights were the precedent) -- a
 /// storey is kBandHeight (3) tiles now, and a sign nailed above a doorway
 /// does not get taller when the ceiling does.
 ///
@@ -108,27 +109,17 @@ void drawSignage(Framebuffer& target, const Camera& camera, const SignageSetting
         const float centreY =
             horizon - (candidate.worldZ - camera.z) * focal / candidate.distance;
 
-        // ---- occlusion: reuse the depth buffer the world pass wrote -----
+        // ---- occlusion: a line of sight to the wall it is nailed to -----
         //
-        // Sampled at the label's own anchor pixel rather than its (wider)
-        // text box: the box is centred on the anchor, so the anchor pixel is
-        // the one point guaranteed to be either "on the building" or "just
-        // in front of it" for every sign in the table.
+        // Asked at the label's own anchor, on the frame it projects to.
         const int sampleX = static_cast<int>(std::lround(centreX));
         const int sampleY = static_cast<int>(std::lround(centreY));
         if (!target.contains(sampleX, sampleY)) {
             continue;  // projects off the edge of the frame entirely
         }
-        const float pixelDepth = target.depth()[target.index(sampleX, sampleY)];
-        if (!std::isfinite(pixelDepth)) {
-            continue;  // raw sky here -- the building is not actually in view
-        }
-        // A little slack (0.4 tile) for the sign standing slightly in front
-        // of or behind the wall face it is nailed to -- without it, a sign
-        // anchored exactly on its own building's front wall is judged
-        // "behind" that same wall by float rounding and never draws.
-        if (pixelDepth < candidate.distance - 0.4F) {
-            continue;  // something nearer (another wall) is in front of it
+        if (settings.sightClear &&
+            !settings.sightClear(candidate.worldX, candidate.worldY, settings.eyeBand)) {
+            continue;  // the wall is behind another wall
         }
 
         // ---- fade out over the last stretch before maxDistance ----------

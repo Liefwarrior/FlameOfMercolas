@@ -459,7 +459,9 @@ TEST_CASE("a thing on a tile is an Item piece off the catalogue, and the placeho
 #include <nlohmann/json.hpp>
 
 #include "granadad/render/vertical.hpp"
-#include "granadad/render/world_renderer.hpp"
+#include "granadad/render/scene_types.hpp"
+#include "granadad/render/vertical.hpp"
+#include "granadad/render/voxel_classify.hpp"
 #include "granadad/render3d/world_scene.hpp"
 
 namespace {
@@ -895,7 +897,7 @@ TEST_CASE("the Gull's table lantern stands on the barrel under it, sheds its cor
     SUBCASE("its foot on the head of the prop the placer stood on its tile") {
         Session session(gullAt(14, kStandX, kStandY + 2, kStandBand, 0));
         const render3d::StaticPlacements placed =
-            render3d::placeStaticPieces(session.tiles(), catalogue, session.renderer().lamps());
+            render3d::placeStaticPieces(session.tiles(), catalogue, session.lamps());
         const render3d::StaticPlacement* prop = nullptr;
         std::size_t props = 0;
         for (const render3d::StaticPlacement& p : placed.placements) {

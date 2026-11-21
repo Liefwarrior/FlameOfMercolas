@@ -29,7 +29,9 @@
 #include "granadad/render/lamps.hpp"
 #include "granadad/render/lighting.hpp"
 #include "granadad/render/vertical.hpp"
-#include "granadad/render/world_renderer.hpp"
+#include "granadad/render/scene_types.hpp"
+#include "granadad/render/vertical.hpp"
+#include "granadad/render/voxel_classify.hpp"
 #include "granadad/render3d/backend.hpp"
 #include "granadad/render3d/light_model.hpp"
 #include "granadad/render3d/scene.hpp"
@@ -516,4 +518,164 @@ TEST_CASE("the lit pass is the legacy pass when the description asks for nothing
     CHECK((px & 0xFFU) == 40);
     CHECK(((px >> 8) & 0xFFU) == 60);
     CHECK(((px >> 16) & 0xFFU) == 90);
+}
+
+// ---------------------------------------------------------------------------
+// THE CASES THE SOFTWARE WORLD PASS USED TO CARRY (phase 7 of OBLIVION-PLAN)
+// ---------------------------------------------------------------------------
+//
+// test_render.cpp used to draw the world in software and assert facts about its
+// pixels: the sky overhead, a lamp you stand under, turning round, the harbour
+// at the quay's lip. The world is the backend's frame now, so the same facts are
+// asked of IT, from an eye placed anywhere in the Docks, lit per pixel,
+// headless on llvmpipe.
+
+namespace {
+
+/// The Docks seen from an eye at tile (x, y) on `band`, `yawDeg` (0 north,
+/// clockwise) and `pitchDeg` (up positive), at `seconds`, lit per pixel.
+render::Framebuffer frameFrom(Backend& video, float x, float y, std::int32_t band, float yawDeg,
+                              float pitchDeg, int seconds) {
+    render::Camera eye;
+    eye.x = x;
+    eye.y = y;
+    eye.z = render::bandSurface(band) + static_cast<float>(sim::kEyeHeightTilesQ8) / 256.0F;
+    eye.yaw = yawDeg * kPi / 180.0F;
+    eye.pitch = pitchDeg * kPi / 180.0F;
+    eye.hfovTan = 1.0F;
+    SceneDescription scene;
+    docksWorld().refresh(scene, eye, static_cast<float>(kWidth) / static_cast<float>(kHeight),
+                         litParams(seconds));
+    return drawOnce(video, scene);
+}
+
+double meanLumaOfRows(const render::Framebuffer& frame, int y0, int y1) {
+    double sum = 0.0;
+    int count = 0;
+    for (int y = y0; y < y1; ++y) {
+        for (int x = 0; x < frame.width(); ++x) {
+            const std::uint32_t px = frame.pixels()[frame.index(x, y)];
+            sum += 0.30 * static_cast<double>(px & 0xFFU) +
+                   0.59 * static_cast<double>((px >> 8) & 0xFFU) +
+                   0.11 * static_cast<double>((px >> 16) & 0xFFU);
+            ++count;
+        }
+    }
+    return count == 0 ? 0.0 : sum / static_cast<double>(count);
+}
+
+}  // namespace
+
+TEST_CASE("turning round changes the 3D frame, and looking up shows the sky") {
+    if (!Backend::headlessCapable()) {
+        MESSAGE("skipped: this build is not on raylib's SDL platform, so it has no headless context");
+        return;
+    }
+    std::unique_ptr<Backend> video = Backend::open(headlessConfig());
+    REQUIRE(video != nullptr);
+    const float x = static_cast<float>(sim::docks::kSpawnTileX) + 0.5F;
+    const float y = static_cast<float>(sim::docks::kSpawnTileY) + 0.5F;
+    const render::Framebuffer north = frameFrom(*video, x, y, sim::docks::kSpawnBand, 0.0F, 0.0F, 12 * 3600);
+    const render::Framebuffer south = frameFrom(*video, x, y, sim::docks::kSpawnBand, 180.0F, 0.0F, 12 * 3600);
+    std::size_t differing = 0;
+    for (std::size_t i = 0; i < north.pixels().size(); ++i) {
+        differing += north.pixels()[i] != south.pixels()[i] ? 1U : 0U;
+    }
+    // Facing the harbour and facing the warehouse fronts are not the same view.
+    CHECK(differing > north.pixels().size() / 3);
+
+    // And LOOK UP. Seventy degrees of pitch clears anything the Docks has: the
+    // top of the frame is open sky, which no level frame from a street has, so
+    // it is a smooth gradient and not a wall -- its rows barely differ from
+    // their neighbours, where masonry and timber are noise.
+    const render::Framebuffer up = frameFrom(*video, x, y, sim::docks::kSpawnBand, 265.0F, 70.0F, 12 * 3600);
+    double roughness = 0.0;
+    int pairs = 0;
+    for (int row = 0; row < 12; ++row) {
+        for (int col = 1; col < up.width(); ++col) {
+            const std::uint32_t a = up.pixels()[up.index(col - 1, row)];
+            const std::uint32_t b = up.pixels()[up.index(col, row)];
+            roughness += std::abs(static_cast<int>(a & 0xFFU) - static_cast<int>(b & 0xFFU));
+            ++pairs;
+        }
+    }
+    const double skyRoughness = roughness / pairs;
+    const render::Framebuffer level = frameFrom(*video, x, y, sim::docks::kSpawnBand, 265.0F, 0.0F, 12 * 3600);
+    double wallRoughness = 0.0;
+    int wallPairs = 0;
+    for (int row = 60; row < 120; ++row) {
+        for (int col = 1; col < level.width(); ++col) {
+            const std::uint32_t a = level.pixels()[level.index(col - 1, row)];
+            const std::uint32_t b = level.pixels()[level.index(col, row)];
+            wallRoughness += std::abs(static_cast<int>(a & 0xFFU) - static_cast<int>(b & 0xFFU));
+            ++wallPairs;
+        }
+    }
+    MESSAGE("row-to-row roughness: sky overhead " << skyRoughness << ", the street ahead "
+                                                  << wallRoughness / wallPairs);
+    CHECK(skyRoughness < wallRoughness / wallPairs * 0.5);
+}
+
+TEST_CASE("standing under a lamp does not white out the 3D frame") {
+    // A lamp's core is over one and the filmic shoulder rolls it off: walking up
+    // to the Gilded Gull's door lamp makes the frame brighter, never a
+    // featureless white disc. (It was a software billboard's case: an additive
+    // sprite grew with the square of how close you stood.)
+    if (!Backend::headlessCapable()) {
+        MESSAGE("skipped: this build is not on raylib's SDL platform, so it has no headless context");
+        return;
+    }
+    const render::Lamp* gull = nullptr;
+    for (const render::Lamp& lamp : docks().lamps) {
+        if (lamp.name == "lamp_gull_door") {
+            gull = &lamp;
+        }
+    }
+    REQUIRE(gull != nullptr);
+    std::unique_ptr<Backend> video = Backend::open(headlessConfig());
+    REQUIRE(video != nullptr);
+    const auto lumaFrom = [&](int away) {
+        const render::Framebuffer frame =
+            frameFrom(*video, static_cast<float>(gull->x) + 0.5F,
+                      static_cast<float>(gull->y - away) + 0.5F, gull->z, 180.0F, 0.0F, 5 * 3600);
+        return meanLumaOfRows(frame, 0, kHeight);
+    };
+    const double pressedAgainstIt = lumaFrom(1);
+    const double acrossTheStreet = lumaFrom(5);
+    MESSAGE("mean luma at the lamp " << pressedAgainstIt << ", across the street " << acrossTheStreet);
+    // Not a white-out: well under full scale.
+    CHECK(pressedAgainstIt < 200.0);
+    // And the lamp is still doing something: brighter one tile away than five.
+    CHECK(pressedAgainstIt > acrossTheStreet);
+}
+
+TEST_CASE("the harbour fills the lower frame at the quay's lip, and it is water-coloured") {
+    // The 3D half of "walking to the water's edge" (test_render.cpp keeps the
+    // walk): what was a deck under the eye is open harbour two levels down.
+    // Looking down from the apron and from the lip, the lip's picture is the
+    // bluer: the water shader's colour is blue over the deck's brown.
+    if (!Backend::headlessCapable()) {
+        MESSAGE("skipped: this build is not on raylib's SDL platform, so it has no headless context");
+        return;
+    }
+    std::unique_ptr<Backend> video = Backend::open(headlessConfig());
+    REQUIRE(video != nullptr);
+    const float x = static_cast<float>(sim::docks::kQuayApproachX) + 0.5F;
+    const render::Framebuffer apron =
+        frameFrom(*video, x, static_cast<float>(sim::docks::kQuayApproachY) + 0.5F,
+                  sim::docks::kBandQuayside, 0.0F, -35.0F, 20 * 3600);
+    // Eight seconds' walk north, as the behavioural case does, lands a few
+    // tiles on: the lip. (Asked of the picture, not of the body.)
+    const render::Framebuffer lip =
+        frameFrom(*video, x, static_cast<float>(sim::docks::kQuayApproachY - 6) + 0.5F,
+                  sim::docks::kBandQuayside, 0.0F, -35.0F, 20 * 3600);
+    const auto blueness = [](const render::Framebuffer& frame) {
+        double sum = 0.0;
+        for (const std::uint32_t px : frame.pixels()) {
+            sum += static_cast<double>((px >> 16) & 0xFFU) - static_cast<double>(px & 0xFFU);
+        }
+        return sum / static_cast<double>(frame.pixels().size());
+    };
+    MESSAGE("mean blue-minus-red: apron " << blueness(apron) << ", at the lip " << blueness(lip));
+    CHECK(blueness(lip) > blueness(apron) + 2.0);
 }

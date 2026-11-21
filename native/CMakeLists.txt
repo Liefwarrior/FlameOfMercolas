@@ -306,14 +306,12 @@ add_library(granadad-render STATIC
     src/render/atlas.cpp
     src/render/lamps.cpp
     src/render/lighting.cpp
-    src/render/world_renderer.cpp
-    # Camera, Projection and SpriteInstance, shared by the software world pass and
-    # the 3D scene builders (moved out of world_renderer.cpp unchanged).
+    # Camera and Projection, which the 3D scene builders and the signage speak.
     src/render/scene_types.cpp
     # Every Docks building's door and every named street, as a legible
     # floating nameplate when the player is close enough to read it. See the
-    # file's own header for why it reuses the world pass's camera math and
-    # depth buffer instead of a second projection/visibility system.
+    # file's own header for why it shares the 3D camera's projection and asks
+    # the session for a line of sight instead of reading a depth buffer.
     src/render/signage_renderer.cpp
     src/render/controls.cpp
     src/render/hud.cpp
@@ -356,7 +354,7 @@ add_library(granadad-render STATIC
     src/render/session_menus.cpp
     src/render/session_movement.cpp
     src/render/session_panels.cpp
-    src/render/session_sprites.cpp
+    src/render/session_figures.cpp
     src/render/session_step.cpp
     src/render/scripted/burgle.cpp
     src/render/scripted/case.cpp
@@ -549,6 +547,8 @@ add_library(granadad-render3d-core STATIC
     # recoloured on the minute, instanced near the eye, the sky dome, the
     # camera from the body.
     src/render3d/world_scene.cpp
+    # The Session -> SceneDescription assembly the client and the workbench share.
+    src/render3d/scene_rig.cpp
     # PHASE 5: lighting and atmosphere as pure functions (the lamp falloff the
     # sim and the shader share, the sun, the moon, the sky, the fog).
     src/render3d/light_model.cpp

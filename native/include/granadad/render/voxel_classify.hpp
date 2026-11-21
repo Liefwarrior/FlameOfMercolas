@@ -2,16 +2,15 @@
 
 // WHAT A CELL IS, ANSWERED ONCE.
 //
-// The software raycaster (world_renderer.cpp) and the 3D chunk mesher
-// (render3d/chunk_mesher.cpp) both turn tile lanes into faces, and the 3D
-// programme's second-biggest risk (the renderer plan, section 4) is the two
-// disagreeing about what a cell is: a wall the software pass draws and the
-// mesher leaves out is a wall you walk into unseen, which is exactly the
+// The 3D chunk mesher (render3d/chunk_mesher.cpp) turns tile lanes into
+// faces, and the 3D programme's second-biggest risk (the renderer plan,
+// section 4) is it disagreeing with the world the sim collides with: a wall
+// the mesher leaves out is a wall you walk into unseen, which is exactly the
 // class of bug the S2 headroom finding was. So the classification -- what a
 // FORM plus a FLUID depth becomes in tile-heights, which face art it wears,
-// whether it has sides -- lives here, header-only, and both passes call it.
-// A change to a slab thickness or to the water rule moves both pictures at
-// once or neither.
+// whether it has sides -- lives here, header-only, in one place. (It was
+// shared with the software raycaster until phase 7 of
+// docs/design/OBLIVION-PLAN.md retired that.)
 //
 // Also here: the two variant keys that pick a material's authored
 // appearance variant for a cell, so a wall does not shimmer as you walk past

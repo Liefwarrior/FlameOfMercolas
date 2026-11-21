@@ -10,36 +10,37 @@
 // for the priority order), and this file projects that label into screen
 // space and draws it.
 //
-// REUSES THE CAMERA MATH, DELIBERATELY. The projection here is the exact
-// shape WorldRenderer::drawSprite already uses for a billboard: a world
-// offset dotted against the camera's forward/right axes gives distance and
-// lateral offset, and `projectionFor`'s focal/horizon turn those into a
-// screen point. A second, independently-derived formula is exactly how a
-// sign would end up standing in a different place than the wall behind it.
+// ONE CAMERA, ONE PROJECTION. A world offset dotted against the camera's
+// forward/right axes gives distance and lateral offset, and `projectionFor`'s
+// focal/horizon turn those into a screen point -- the same camera the 3D
+// backend draws the world through, so a sign stands where the wall behind it
+// does. A second, independently-derived formula is exactly how a sign would
+// end up standing in a different place than the wall behind it.
 //
-// OCCLUSION REUSES THE DEPTH BUFFER THE WORLD PASS ALREADY WROTE, rather than
-// a second visibility system: a sign draws only when the pixel it projects
-// to is either unwritten-behind-it (world geometry the same distance or
-// farther) -- never when the world pass painted raw sky there (the building
-// is not in view at all from here) or something nearer (a wall in front of
-// it).
+// OCCLUSION IS A LINE OF SIGHT, asked of the caller (SignageSettings::
+// sightClear): the sign layer draws onto an overlay the backend composites over
+// the world, so there is no depth to read, and the question "can the eye see
+// that wall" is the session's to answer off the tiles. (Until phase 7 of
+// docs/design/OBLIVION-PLAN.md the answer was the software world pass's depth
+// buffer; the 3D build, with an overlay that had none, drew no signs at all.)
 
+#include <functional>
 #include <string_view>
 
 #include "granadad/render/framebuffer.hpp"
 #include "granadad/render/hud.hpp"
-#include "granadad/render/world_renderer.hpp"
+#include "granadad/render/scene_types.hpp"
 
 namespace granadad::render {
 
 struct SignageSettings {
     /// Closer than this and the label is behind the eye or pressed against
-    /// the camera plane -- the same near-cull drawSprite uses.
+    /// the camera plane -- the near-cull a billboard needs.
     float minDistance = 0.5F;
     /// Past this, a label is unreadable noise rather than information, so it
-    /// is not drawn at all. Well inside RenderSettings::maxDistance: fog
-    /// closes the WORLD in by then, but a name tag needs to stop being
-    /// legible well before the wall it is nailed to disappears into it.
+    /// is not drawn at all. Well inside the fog's reach: fog closes
+    /// the WORLD in by then, but a name tag needs to stop being legible well
+    /// before the wall it is nailed to disappears into it.
     float maxDistance = 16.0F;
     /// Alpha eases from 1 to 0 across this last stretch before maxDistance,
     /// so a sign disappears as you back away rather than popping off.
@@ -84,15 +85,21 @@ struct SignageSettings {
     /// Empty suppresses nothing, so a caller that does not pass one is
     /// pixel-identical to before this existed.
     std::string_view namedByPrompt;
+    /// Whether the eye has a clear line to a sign's anchor: (anchorX, anchorY)
+    /// in tiles, and the band the eye stands in. A sign it answers false for
+    /// is not drawn -- the wall it is nailed to is behind another wall. Empty
+    /// (a test, a caller with no world) draws every sign in range.
+    std::function<bool(float anchorX, float anchorY, int eyeBand)> sightClear;
+    /// The band the eye stands in, passed to sightClear.
+    int eyeBand = 0;
 };
 
 /// Draws every Docks sign that is in range, facing the right way to be seen,
 /// and not occluded, as a floating nameplate near its door or street post.
 ///
-/// Call AFTER WorldRenderer::renderFrame and BEFORE the HUD: it reads the
-/// depth buffer renderFrame just wrote, and it is world content, not
-/// interface, so the HUD's edge-hugging rule (hud.hpp's own header) does not
-/// apply to it and it must not be drawn after drawHud paints over it.
+/// Call BEFORE the HUD: it is world content, not interface, so the HUD's
+/// edge-hugging rule (hud.hpp's own header) does not apply to it and it must
+/// not be drawn after drawHud paints over it.
 void drawSignage(Framebuffer& target, const Camera& camera,
                  const SignageSettings& settings = SignageSettings{});
 

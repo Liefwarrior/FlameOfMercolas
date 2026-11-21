@@ -52,6 +52,7 @@
 #include "granadad/render3d/backend.hpp"
 #include "granadad/render3d/chunk_mesher.hpp"
 #include "granadad/render3d/scene.hpp"
+#include "granadad/render3d/scene_rig.hpp"
 #include "granadad/render3d/world_scene.hpp"
 #include "granadad/sim/docks.hpp"
 #include "granadad/sim/human_scale.hpp"
@@ -64,6 +65,7 @@
 
 using namespace granadad::render3d;
 namespace render = granadad::render;
+namespace render3d = granadad::render3d;
 namespace sim = granadad::sim;
 namespace content = granadad::content;
 using granadad::audio::AudioEngine;
@@ -518,8 +520,15 @@ TEST_CASE("the weather never reaches the sim: fog, overcast and wind run to the 
     walk(clear);
     const std::uint64_t tavern = tavernDigest(clear);
     const std::uint64_t people = peopleDigest(clear);
-    render::Framebuffer clearFrame(kWidth, kHeight);
-    clear.drawFrame(clearFrame);
+    // THE PICTURE is the 3D scene description (the world is the backend's
+    // frame, and a description is what two builds are compared by): the sky
+    // dome, the fog, the veils all ride in it.
+    const auto sceneOf = [](const render::Session& session) {
+        render3d::SceneRig rig;
+        rig.refresh(session, kAspect);
+        return render3d::sceneHash(rig.scene);
+    };
+    const std::uint64_t clearScene = sceneOf(clear);
 
     const WeatherKind kinds[] = {WeatherKind::Fog, WeatherKind::Overcast, WeatherKind::Wind};
     for (const WeatherKind kind : kinds) {
@@ -539,28 +548,26 @@ TEST_CASE("the weather never reaches the sim: fog, overcast and wind run to the 
         CHECK(tavernDigest(under) == tavern);
         CHECK(peopleDigest(under) == people);
         // While the picture is a different picture.
-        render::Framebuffer frame(kWidth, kHeight);
-        under.drawFrame(frame);
-        CHECK(frame.pixels() != clearFrame.pixels());
+        CHECK(sceneOf(under) != clearScene);
         // sky() is skyAt(the clock, weather()), the one every consumer reads.
         CHECK(sameSky(under.sky(), render::skyAt(under.timeOfDay(), under.weather())));
     }
 }
 
-TEST_CASE("two sessions under one fog draw one frame, byte for byte") {
+TEST_CASE("two sessions under one fog describe one scene, byte for byte") {
     render::Session a(docksUnder(WeatherKind::Fog));
     render::Session b(docksUnder(WeatherKind::Fog));
     walk(a);
     walk(b);
-    render::Framebuffer first(kWidth, kHeight);
-    render::Framebuffer second(kWidth, kHeight);
-    a.drawFrame(first);
-    b.drawFrame(second);
-    CHECK(first.pixels() == second.pixels());
-    // And the same session again: the frame is a function of its inputs.
-    render::Framebuffer again(kWidth, kHeight);
-    a.drawFrame(again);
-    CHECK(again.pixels() == first.pixels());
+    render3d::SceneRig first;
+    render3d::SceneRig second;
+    first.refresh(a, kAspect);
+    second.refresh(b, kAspect);
+    CHECK(render3d::sceneHash(first.scene) == render3d::sceneHash(second.scene));
+    // And the same session again: the scene is a function of its inputs.
+    render3d::SceneRig again;
+    again.refresh(a, kAspect);
+    CHECK(render3d::sceneHash(again.scene) == render3d::sceneHash(first.scene));
 }
 
 TEST_CASE("the capture summary says what sky the frame was shot under") {

@@ -37,7 +37,9 @@
 #include "granadad/render/lighting.hpp"
 #include "granadad/render/session.hpp"
 #include "granadad/render/vertical.hpp"
-#include "granadad/render/world_renderer.hpp"
+#include "granadad/render/scene_types.hpp"
+#include "granadad/render/vertical.hpp"
+#include "granadad/render/voxel_classify.hpp"
 #include "granadad/render3d/actor_instances.hpp"
 #include "granadad/render3d/chunk_mesher.hpp"
 #include "granadad/render3d/door_jambs.hpp"
@@ -3312,8 +3314,8 @@ TEST_CASE("a session's own clock relights the ward with no session.step() betwee
 
     const StaticCatalogue& catalogue = shippedCatalogue();
     const Rgba8 warm = catalogue.knobs().litPane;
-    WorldScene world(session.tiles(), session.atlas(), &session.renderer().glow(), &catalogue,
-                     &session.renderer().lamps());
+    WorldScene world(session.tiles(), session.atlas(), &session.glow(), &catalogue,
+                     &session.lamps());
     SceneDescription scene;
     WorldSceneParams params;
     params.timeOfDaySeconds = session.timeOfDay();
@@ -3498,8 +3500,8 @@ TEST_CASE("the morning: more household panes are lit at five than at two, and mo
     REQUIRE(knobs.houseRisingFrom > 0.0F);
     REQUIRE(knobs.houseRisingTo > knobs.houseRisingFrom);
     const Rgba8 warm = knobs.litPane;
-    WorldScene world(session.tiles(), session.atlas(), &session.renderer().glow(), &catalogue,
-                     &session.renderer().lamps());
+    WorldScene world(session.tiles(), session.atlas(), &session.glow(), &catalogue,
+                     &session.lamps());
     SceneDescription scene;
     WorldSceneParams params;
     const auto refreshNow = [&] {
@@ -4152,8 +4154,8 @@ TEST_CASE("a body beside a lantern after dark wears the lantern's pool, and one 
     config.timeOfDayGiven = true;
     render::Session session(config);
     const StaticCatalogue& catalogue = shippedCatalogue();
-    WorldScene world(session.tiles(), session.atlas(), &session.renderer().glow(), &catalogue,
-                     &session.renderer().lamps());
+    WorldScene world(session.tiles(), session.atlas(), &session.glow(), &catalogue,
+                     &session.lamps());
     REQUIRE(world.pool() != nullptr);
     ActorSceneParams params;
     params.pool = world.pool();
@@ -4183,7 +4185,7 @@ TEST_CASE("a body beside a lantern after dark wears the lantern's pool, and one 
                                                   << brighterInSkirt << " brighter in a skirt");
     CHECK(differ >= 20);
     CHECK(brighterInSkirt >= 10);
-    const std::vector<render::Lamp>& lamps = session.renderer().lamps();
+    const std::vector<render::Lamp>& lamps = session.lamps();
     std::size_t inPool = 0;
     std::size_t inDark = 0;
     for (const ActorInstance& body : bodies) {

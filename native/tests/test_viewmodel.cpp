@@ -117,7 +117,7 @@ struct Stack {
 
     explicit Stack(const render::Session& session) {
         docks = std::make_unique<WorldScene>(session.tiles(), session.atlas(),
-                                             &session.renderer().glow());
+                                             &session.glow());
         refresh(session);
     }
 
@@ -136,10 +136,10 @@ struct Stack {
 };
 
 /// The overlay the client draws: the terminal register on a transparent
-/// ground, with the world pass left out.
+/// ground.
 render::Framebuffer overlayOf(const render::Session& session) {
     render::Framebuffer overlay(kWidth, kHeight);
-    (void)session.drawFrame(overlay, render::Session::FramePasses{.world = false});
+    session.drawFrame(overlay);
     return overlay;
 }
 

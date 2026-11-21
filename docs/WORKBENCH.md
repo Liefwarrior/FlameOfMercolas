@@ -23,8 +23,8 @@ does.
 |  BOARD        | wedge, the selection ringed     | home, coin, errands,    |
 |  KIT          +---------------------------------+ counter, who E answers  |
 |  (filterable) | GAME    what the player sees    +-------------------------+
-|               | (640x360, the software          | CONSOLE  every command  |
-|               |  raycaster) with the HUD and    | and every answer, and   |
+|               | (640x360, the 3D world)         | CONSOLE  every command  |
+|               |  with the HUD and               | and every answer, and   |
 |               |  any open conversation          | what the ward said      |
 +---------------+---------------------------------+-------------------------+
 | > the command line                                                        |
@@ -122,9 +122,13 @@ one's picture -- that is the point. A `quit` command ends the server.
 
 ## What it is not, yet
 
-- **The GAME pane is the software raycaster**, not the 3D scene: the 3D backend owns
-  one window and one camera, and a second 3D view inside a pane is a renderer job of
-  its own. The raycaster is the same world, the same people and the same HUD.
+- **The GAME pane is the 3D world** (since phase 7 of `docs/design/OBLIVION-PLAN.md`
+  retired the software raycaster it used to show), with the game's own HUD over it. In
+  the window the 3D backend draws the world into the pane's rectangle
+  (`Backend::setSceneDestination`) and the HUD is composited over it; under `--serve`,
+  `frame.png` carries the same picture, rendered headless on Mesa llvmpipe where the
+  build can open one (the HUD over the dark ground where it cannot). The window has not
+  been run on a GPU here, only the headless path.
 - **It edits by acting, not by painting.** Nothing it does writes `content/`; changing a
   map is still Tiled's job, and changing a raw is still a text editor's. What it adds is
   a place to SEE the live ward -- who is where, what the board holds, what E would say

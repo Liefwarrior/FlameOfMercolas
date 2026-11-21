@@ -1372,7 +1372,7 @@ SmokeRunResult runSmoke(const SmokeRunConfig& config) {
     }
 
     Framebuffer frame(config.session.width, config.session.height);
-    result.stats = session.drawFrame(frame);
+    session.drawFrame(frame);
     // PLANNING SPRINT (item #1). THE NUMBERS BESIDE THE PICTURE -- see
     // SmokeRunResult::characterFocusAtCapture's own header. Read AFTER every
     // step() above has already run, so this is the exact value the frame
@@ -1388,13 +1388,10 @@ SmokeRunResult runSmoke(const SmokeRunConfig& config) {
     result.endBand = session.body().band();
     result.gullPresent = session.tavern().presentCount();
     {
-        // How much of the ward this frame is actually looking at. `seen` comes
-        // out of the renderer itself -- a body counted only when it put a pixel
-        // on screen -- because a figure standing behind a warehouse is
-        // submitted, sorted, projected and drawn nowhere, and counting those
-        // would make "the street is busy" a claim about the roster rather than
-        // about the frame. `near` is a plain radius and says how many were
-        // within twelve tiles whether or not the camera was pointed at them.
+        // How much of the ward is about: the roll, and how many of it stand
+        // within twelve tiles of the camera whether or not the camera is
+        // pointed at them. How many the frame DREW is the 3D shutter's own
+        // line (`bodies`), counted where they are drawn.
         const sim::WardCensus roll = session.people().census();
         result.wardRoll = roll.alive;
         result.roofHomed = roll.roofHomed;
@@ -1402,7 +1399,6 @@ SmokeRunResult runSmoke(const SmokeRunConfig& config) {
         result.prey = roll.prey;
         result.preyUp = roll.preyUp;
         result.catches = session.people().catches();
-        result.wardDrawn = static_cast<std::int32_t>(result.stats.wardActorsDrawn);
         const Camera view = session.camera();
         for (const sim::WardActor& actor : session.people().actors()) {
             if (!actor.visible()) {
@@ -1442,15 +1438,13 @@ SmokeRunResult runSmoke(const SmokeRunConfig& config) {
             << " gull=" << result.gullPresent
             << " art=" << (session.atlas().fromAuthoredArt() ? "custom" : "procedural")
             // #78: THE WARD'S OWN ROLL, PRINTED BESIDE THE TAPROOM'S. `ward` is
-            // how many bodies the district holds, `seen` is how many of them
-            // this frame actually drew a pixel of, and `near` is how many stand
-            // within twelve tiles of the camera. The three differing is the
+            // how many bodies the district holds and `near` is how many stand
+            // within twelve tiles of the camera. The two differing is the
             // normal case and is exactly what the owner ruled OUT as a gate: a
             // cellar or a back lane at four in the morning is legitimately
             // empty, so this is EVIDENCE for a person to read and never a
             // threshold a build fails on.
             << " ward=" << result.wardRoll
-            << " seen=" << result.wardDrawn
             << " near=" << result.wardNear
             // #80. THE TWO THINGS THIS ROUND ADDED, ON THE FRAME'S OWN LINE.
             // `roof` is beds-on-a-deck / bodies-standing-on-one-right-now, so a
@@ -1462,12 +1456,7 @@ SmokeRunResult runSmoke(const SmokeRunConfig& config) {
             << " roof=" << result.roofHomed << '/' << result.onRoofNow
             << " mice=" << result.preyUp << '/' << result.prey
             << " ate=" << result.catches
-            << " figures=" << (session.actorSheet().fromAuthoredArt() ? "sheet" : "procedural")
-            << " | world px=" << result.stats.worldPixels
-            << " sky px=" << result.stats.skyPixels
-            << " sprite px=" << result.stats.spritePixels
-            << " actor px=" << result.stats.actorPixels << " luma="
-            << result.stats.meanLuma << " colours=" << result.stats.distinctColours;
+            << " figures=" << (session.actorSheet().fromAuthoredArt() ? "sheet" : "procedural");
     if (config.street) {
         // WHO ANSWERED AND OUT OF WHICH TABLE, printed beside the frame. A
         // capture that says only "a conversation is open" cannot tell a

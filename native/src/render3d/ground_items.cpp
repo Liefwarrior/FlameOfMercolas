@@ -216,7 +216,7 @@ void describe(std::vector<StaticInstance>& out, const StaticCatalogue& catalogue
             }
         }
     } else {
-        ground = render::pooledGlow(session.renderer().glow().at(at.x, at.y, at.band));
+        ground = render::pooledGlow(session.glow().at(at.x, at.y, at.band));
         dyn = render::pooledGlow(render::dynamicGlowAt(live, at.x, at.y, at.band));
     }
     // A self-lit thing is its own light -- and after dark a lantern's

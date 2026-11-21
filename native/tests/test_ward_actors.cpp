@@ -28,6 +28,7 @@
 #include "granadad/content/content_dir.hpp"
 #include "granadad/content/world_reader.hpp"
 #include "granadad/render/session.hpp"
+#include "granadad/render3d/actor_instances.hpp"
 #include "granadad/sim/docks.hpp"
 #include "granadad/sim/docks_signs.hpp"
 #include "granadad/sim/engine.hpp"
@@ -679,13 +680,16 @@ TEST_CASE("the population is registered in the windowed game and keeps the hour"
     }
     CHECK(outAtTwo == 7);
 
-    // The ward's billboards are real, drawn figures, and there is one per body.
-    const std::vector<render::SpriteInstance> figures = session.wardSprites();
-    CHECK(figures.size() == static_cast<std::size_t>(session.people().census().alive));
-    for (const render::SpriteInstance& sprite : figures) {
-        CHECK(sprite.art != nullptr);
-        CHECK(sprite.ward);
-        CHECK(sprite.glow == 0.0F);
+    // The ward is handed to the 3D pass body for body: with the cull pushed
+    // out past the district, every living person is an instance (and the
+    // Gull's own bodies ride after them).
+    render3d::ActorSceneParams everyone;
+    everyone.maxDistance = 1.0e6F;
+    const std::vector<render3d::ActorInstance> figures =
+        render3d::actorInstances(session, session.camera(), everyone);
+    CHECK(figures.size() >= static_cast<std::size_t>(session.people().census().alive));
+    for (const render3d::ActorInstance& body : figures) {
+        CHECK(body.instance.scale > 0.0F);
     }
 }
 

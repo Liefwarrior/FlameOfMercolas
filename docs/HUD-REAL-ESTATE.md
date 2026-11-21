@@ -88,6 +88,10 @@ The world render is bit-identical across the change — the smoke line's own
 HUD is drawn, and all three scenes print exactly the same values before and
 after. That is what makes one `--nohud` capture a valid baseline for both eras.
 
+(Phase 7 of `docs/design/OBLIVION-PLAN.md` removed those summary fields with the
+software world pass that computed them; the `--nohud` ruler itself is unchanged and is
+now taken against the 3D frame, which the capture composites under the same HUD.)
+
 ## What actually changed
 
 Nothing about the look. Same 4x6 font, same colours, same corners, same rule

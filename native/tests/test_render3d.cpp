@@ -35,7 +35,9 @@
 #include "granadad/render/lighting.hpp"
 #include "granadad/render/session.hpp"
 #include "granadad/render/vertical.hpp"
-#include "granadad/render/world_renderer.hpp"
+#include "granadad/render/scene_types.hpp"
+#include "granadad/render/vertical.hpp"
+#include "granadad/render/voxel_classify.hpp"
 #include "granadad/render3d/actor_instances.hpp"
 #include "granadad/render3d/backend.hpp"
 #include "granadad/render3d/scene.hpp"
@@ -555,7 +557,7 @@ TEST_CASE("the ward's people render as figures in the 3D frame") {
 
     WorldSceneParams params;
     params.timeOfDaySeconds = session.timeOfDay();
-    WorldScene docks(session.tiles(), session.atlas(), &session.renderer().glow());
+    WorldScene docks(session.tiles(), session.atlas(), &session.glow());
     SceneDescription scene;
     docks.refresh(scene, eye, static_cast<float>(kWidth) / static_cast<float>(kHeight), params);
     putActorRigs(scene);

@@ -743,8 +743,9 @@ native/
   include/granadad/gate/      twin-run gate headers
   include/granadad/workbench/ workbench headers
   src/sim/                    simulation. no floats, no SDL.
-  src/render/                 HUD, pages, Session, the day curve, lamp field; the old software
-                              world pass (--2d, until phase 7). floats legal. no SDL.
+  src/render/                 HUD, pages, signage, Session, the day curve, lamp field -- the
+                              overlay the 3D world is composited under (the software world
+                              pass is gone). floats legal. no SDL.
                               Session is one class defined across session*.cpp
   src/render/scripted/        the --flag capture drivers behind runSmoke (--trail, --flame, ...)
   src/render3d/               the 3D world path: chunk meshes, scene description, hashing
@@ -849,7 +850,7 @@ What is real underneath:
 | format reader | TROJSAV container, chunk codec, lanes, overlays. Verified against the shipped bytes on two toolchains. |
 | simulation | counter-based RNG proven bit-equivalent to the JVM, wrapping helpers, world hasher, phased tick loop, twin-run gate. |
 | movement | Q8 sub-tile body, integer trig, axis-separated collision against the real tile geometry, a climb rule that only goes up where a ramp or a stair was authored. |
-| renderer | 3D first person through raylib on OpenGL 3.3 (depth buffer, true pitch, perspective-correct textures, GLSL scene and post shaders), the owner's own tile art, lamp glow, a HUD that hugs the edges. The old software voxel-column world pass remains behind `--2d` until phase 7. |
+| renderer | 3D first person through raylib on OpenGL 3.3 (depth buffer, true pitch, perspective-correct textures, GLSL scene and post shaders), the owner's own tile art, lamp glow, a HUD that hugs the edges. The software voxel-column world pass and its `--2d` flag were retired in phase 7: this is the only world renderer. |
 | capture | `--smoke=N --screenshot=PATH`; in the Linux build with no window and no GPU (Mesa llvmpipe). |
 
 On top of that, as of S4: the Gilded Gull with fourteen people in it who keep
