@@ -128,6 +128,16 @@ inline constexpr std::uint32_t kFarMeshIdBase = 20000;
     return kFarMeshIdBase + static_cast<std::uint32_t>(key.cy * kChunksAcross + key.cx);
 }
 
+/// The id of a chunk's WATER (the harbour's top faces, cut out of the body when
+/// the colour stage is lit per pixel so the water shader can draw them), near
+/// and far, beside the others.
+inline constexpr std::uint32_t kWaterMeshIdBase = 30000;
+inline constexpr std::uint32_t kFarWaterMeshIdBase = 30200;
+[[nodiscard]] constexpr std::uint32_t waterMeshId(ChunkKey key, bool far) noexcept {
+    return (far ? kFarWaterMeshIdBase : kWaterMeshIdBase) +
+           static_cast<std::uint32_t>(key.cy * kChunksAcross + key.cx);
+}
+
 /// The bit a far geometry's mesh version is flipped by, so a chunk that
 /// changes level of detail is re-uploaded even where its id is the same (a
 /// roof's is).
@@ -139,6 +149,14 @@ enum class Detail : std::uint8_t { Near = 0, Far = 1 };
 
 /// What the colour stage needs besides the geometry.
 struct ChunkLighting {
+    /// PHASE 5. The light is the scene shader's, per pixel, from the point
+    /// lights and the sun the description carries: the vertex colour is what
+    /// the surface itself is (its tone, the wet darkening, the hand-painted
+    /// facing is gone -- the normals do that now) and nothing of the clock, the
+    /// lamps or the weather, so a chunk is coloured once and never again, and
+    /// its water is cut into a mesh of its own. False (the default) is the
+    /// vertex-colour light every frame had before the phase.
+    bool perPixel = false;
     /// Seconds since midnight, bucketed by the caller to the minute.
     int timeOfDaySeconds = 12 * 3600;
     /// WEATHER. The sky the faces are lit under is skyAt(timeOfDaySeconds,
@@ -276,6 +294,13 @@ struct SurfaceArrays {
     /// Per vertex: the colour multiplier of the face's surface (1 for a
     /// textured surface, the material's own tone for a flat one).
     std::vector<float> tones;
+    /// Per vertex: negative for everything but standing water; on a water
+    /// face, how far the vertex is from the nearest bank, in tiles, held at
+    /// three. The water shader's foam and its shallows read it.
+    std::vector<float> shore;
+    /// Per vertex: 1 where the sky's light reaches the face, 0 for a face that
+    /// looks into a room or up at a ceiling.
+    std::vector<float> skyOpen;
 
     [[nodiscard]] std::size_t vertexCount() const noexcept { return positions.size() / 3; }
     [[nodiscard]] std::size_t triangleCount() const noexcept { return indices.size() / 3; }
@@ -328,6 +353,13 @@ struct ChunkGeometry : SurfaceArrays {
 /// `lighting`, under the chunk's id (farChunkMeshId for a Far geometry) and
 /// the version chunkVersion() gives it.
 [[nodiscard]] MeshData colourChunk(const ChunkGeometry& geometry, const ChunkLighting& lighting);
+
+/// The water of a chunk (the faces `shore` marks), as a mesh under waterMeshId:
+/// only for a perPixel lighting, whose colourChunk leaves them out. The vertex
+/// colour carries what the water shader reads: red the shore distance over three
+/// tiles, green the pack's depth tint, blue the tide's own height over the
+/// cell, alpha 255. Empty (no vertices) for a chunk with no water.
+[[nodiscard]] MeshData colourWater(const ChunkGeometry& geometry);
 
 /// The colour stage for one roof level of a chunk, under roofMeshId().
 [[nodiscard]] MeshData colourRoof(const ChunkGeometry& geometry, const RoofLayer& roof,

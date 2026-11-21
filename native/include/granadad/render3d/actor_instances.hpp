@@ -278,6 +278,9 @@ struct ActorSceneParams {
     /// it, so a body talking under a lit window is not a silhouette against
     /// it. Null means none.
     const std::map<std::uint64_t, render::Rgb>* spill = nullptr;
+    /// PHASE 5: the scene shader lights the bodies per pixel, so their tint is
+    /// white and nothing of the light where they stand.
+    bool perPixel = false;
 };
 
 /// The instances for one frame: every visible ward body and every present

@@ -472,7 +472,8 @@ std::vector<ActorInstance> actorInstances(const render::Session& session,
         body.instance.yaw = yawOf(actor.facing);
         body.instance.scale = actorInstanceScale(actor.type);
         body.instance.tint =
-            bodyTint(sky, params.pool, params.spill, glow, kNoLive, actor.x, actor.y, actor.band);
+            params.perPixel ? Rgba8{255, 255, 255, 255}
+                            : bodyTint(sky, params.pool, params.spill, glow, kNoLive, actor.x, actor.y, actor.band);
         body.clip = actor.slain ? ActorClip::Death
                     : down     ? ActorClip::Recover
                     : actor.dead ? ActorClip::Death
@@ -506,8 +507,10 @@ std::vector<ActorInstance> actorInstances(const render::Session& session,
         body.instance.position = toScene(px, py, render::bandSurface(actor.band()));
         body.instance.yaw = yawOf(actor.facing());
         body.instance.scale = actorInstanceScale(type);
-        body.instance.tint = bodyTint(sky, params.pool, params.spill, glow, live, actor.tileX(),
-                                      actor.tileY(), actor.band());
+        body.instance.tint = params.perPixel
+                                 ? Rgba8{255, 255, 255, 255}
+                                 : bodyTint(sky, params.pool, params.spill, glow, live, actor.tileX(),
+                                            actor.tileY(), actor.band());
         // VOICE LANE, THE ADDRESS. The one held for the talk is drawn
         // STANDING, whatever his schedule says he was doing: the hold keeps
         // his tile and his face to you (tavern.cpp, stepMovement), and a

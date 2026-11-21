@@ -47,11 +47,13 @@ namespace granadad::render3d {
 /// light a thing on the ground wears is the light the cobbles under it
 /// wear (the auditor's fifth: items read the law's raw glow, so a rope a
 /// tile from a lantern outshone the setts it lay on). Null falls back to
-/// the law's glow shaped by pooledGlow().
+/// the law's glow shaped by pooledGlow(). `perPixel` (phase 5): the scene
+/// shader lights the thing, so its tint is the catalogue's own and nothing of
+/// the light where it lies.
 [[nodiscard]] std::vector<StaticInstance> groundItemInstances(
     const render::Session& session, const StaticCatalogue& catalogue, const render::Camera& view,
     float maxDistance = 40.0F, const render::LampGlow* pool = nullptr,
-    const std::map<std::uint64_t, render::Rgb>* spill = nullptr);
+    const std::map<std::uint64_t, render::Rgb>* spill = nullptr, bool perPixel = false);
 
 /// THE TABLE LANTERN'S GLOW (the 2026-10-06 director: at 22:00 the Gull's
 /// lantern was dark while the same model on the street wall glowed). A hung

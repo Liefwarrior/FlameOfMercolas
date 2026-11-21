@@ -59,6 +59,48 @@ constexpr bool kHeadlessCapable = false;
 struct CachedMesh {
     std::uint32_t version = 0;
     Mesh mesh{};
+    /// The mesh's own bounds (scene space for a chunk, whose transform is the
+    /// identity): which point lights reach it, and whether it can shade the
+    /// frame from the sun.
+    Vec3 lo{};
+    Vec3 hi{};
+};
+
+/// The texture slot the shadow map is bound to, beside the material's own
+/// twelve maps (raylib's own shadow-map example uses ten).
+constexpr int kShadowSlot = 10;
+
+/// Where the lit shaders' shared uniforms are (shaders.cpp kLitHeader); -1
+/// where a shader has none (the compiler drops what a shader does not read).
+struct LitLocs {
+    int lightMix = -1;
+    int sunDirection = -1;
+    int sunColour = -1;
+    int ambientColour = -1;
+    int ambientGround = -1;
+    int fogDensity = -1;
+    int fogColour = -1;
+    int lightGain = -1;
+    int lightClock = -1;
+    int lightCount = -1;
+    int lightPosR = -1;
+    int lightColPeak = -1;
+    int lightFlick = -1;
+    int shadowMap = -1;
+    int matLightVP = -1;
+    int shadowStrength = -1;
+    int shadowTexel = -1;
+    int emissive = -1;
+    int unlit = -1;
+};
+[[nodiscard]] LitLocs fetchLitLocs(const Shader& shader);
+
+struct SkyLocs {
+    int zenith = -1, horizon = -1, sunDirection = -1, sunDisc = -1, moonDirection = -1,
+        moonDisc = -1, stars = -1, cloudCover = -1, cloudColour = -1, cloudClock = -1;
+};
+struct WaterLocs {
+    int viewPos = -1, zenith = -1, horizon = -1, shallow = -1, deep = -1, clock = -1;
 };
 
 struct CachedTexture {
@@ -192,6 +234,17 @@ template <typename T>
     return static_cast<T*>(std::calloc(count == 0 ? 1 : count, sizeof(T)));
 }
 
+/// The matrix a static piece is drawn by (pieces.cpp, lighting.cpp's shadow
+/// pass): scale, roll about its Z, pitch about its X, yaw, place.
+[[nodiscard]] inline Matrix staticTransformOf(const StaticInstance& piece) noexcept {
+    return MatrixMultiply(
+        MatrixMultiply(MatrixMultiply(MatrixMultiply(MatrixScale(piece.scale.x, piece.scale.y, piece.scale.z),
+                                                     MatrixRotateZ(piece.roll)),
+                                      MatrixRotateX(piece.pitch)),
+                       MatrixRotateY(-piece.yaw)),
+        MatrixTranslate(piece.position.x, piece.position.y, piece.position.z));
+}
+
 /// Upload a description's mesh or texture to the GPU (resources.cpp).
 Mesh uploadMesh(const MeshData& data);
 Texture2D uploadTexture(const TextureData& data);
@@ -242,6 +295,7 @@ struct Backend::Impl {
     int blendTintD = -1;
     int blendSpan = -1;
     int blendMode = -1;
+    LitLocs blendLit;
 
     void ensureBlendShader();
     /// THE SCENE SHADER (every mesh the description names) and the POST PASS
@@ -250,15 +304,47 @@ struct Backend::Impl {
     Shader scene{};
     Shader post{};
     bool sceneTried = false;
-    int sceneLightMix = -1;
-    int sceneSun = -1;
-    int sceneSunColour = -1;
-    int sceneAmbient = -1;
-    int sceneFogDensity = -1;
-    int sceneFogColour = -1;
+    LitLocs sceneLit;
     int sceneAtlasCell = -1;
     int postExposure = -1;
     int postVignette = -1;
+    int postBloom = -1;
+    int postBloomTexture = -1;
+    int postTone = -1;
+    int postSaturation = -1;
+    int postContrast = -1;
+    int postTint = -1;
+    /// PHASE 5. The shadow pass's depth shader, the sky, the water and the
+    /// bloom's two small passes.
+    Shader depth{};
+    Shader sky{};
+    SkyLocs skyLoc;
+    Shader water{};
+    LitLocs waterLit;
+    WaterLocs waterLoc;
+    Shader bright{};
+    int brightTexel = -1;
+    int brightThreshold = -1;
+    int brightExposure = -1;
+    Shader blur{};
+    int blurDirection = -1;
+    /// THE SHADOW MAP: a depth texture the sun or moon draws the casters
+    /// into (lighting.cpp), `shadowSize` square, with a throwaway colour
+    /// attachment so every driver calls the framebuffer complete.
+    int shadowSize = 2048;
+    RenderTexture2D shadowTarget{};
+    bool shadowReady = false;
+    bool shadowsOn = false;
+    Matrix lightViewProj{};
+    /// While set, every draw goes through this depth-only shader and nothing
+    /// is counted: the shadow pass reuses the colour pass's own draw calls.
+    const Shader* depthOverride = nullptr;
+    /// The description being drawn (its lights) and where its eye is.
+    const SceneDescription* sceneNow = nullptr;
+    Vec3 eyeNow{};
+    /// The bloom's quarter-resolution targets.
+    RenderTexture2D bloomA{};
+    RenderTexture2D bloomB{};
     /// The shading of the scene being drawn, kept for the post pass.
     SceneShading shadingNow{};
     /// THE OFFSCREEN SCENE: the 3D pass draws into this (colour + a 24-bit
@@ -291,6 +377,13 @@ struct Backend::Impl {
     void ensureSceneShader();
     /// Uploads the description's shading uniforms to the scene shader.
     void applyShading(const SceneShading& shading);
+    /// The shared uniforms to every lit shader once the shadow map is known.
+    void applyShadows();
+    /// The point lights that reach a box, nearest first, to a shader's arrays.
+    void setDrawLights(const Shader& shader, const LitLocs& locs, const Vec3& lo, const Vec3& hi);
+    /// The shadow pass (lighting.cpp): sets shadowsOn and lightViewProj.
+    void renderShadows(const SceneDescription& scene);
+    void ensureShadowMap();
     /// Makes the offscreen target exactly `w` x `h` (offscreen.cpp).
     void ensureTarget(int w, int h);
     /// Closes the offscreen pass, if one is open, and draws it over the
@@ -374,7 +467,8 @@ struct Backend::Impl {
     /// and a full transform. False when the mesh is not uploaded (nothing
     /// drawn). The instances and the viewmodel parts both end here.
     bool drawMeshWith(std::uint32_t meshId, std::uint32_t textureId, const Rgba8& tint,
-                      const Matrix& transform, SceneStats& stats);
+                      const Matrix& transform, SceneStats& stats,
+                      std::uint8_t surface = kSurfaceLit, bool plain = false);
 
     /// One placeholder-or-chunk instance through the mesh cache. False when
     /// its mesh is not uploaded (nothing drawn).
@@ -412,6 +506,9 @@ struct Backend::Impl {
 
     /// One body: its rig model, animated when skinned, else its placeholder.
     void drawActor(const ActorInstance& actor, SceneStats& stats);
+
+    /// A static piece into the shadow map: its opaque meshes, depth only.
+    void drawStaticCaster(const StaticInstance& piece, const SceneDescription& scene);
 
     void release();
 };

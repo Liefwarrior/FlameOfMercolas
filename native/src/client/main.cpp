@@ -63,6 +63,7 @@
 #include "granadad/render3d/scene.hpp"
 #include "granadad/render3d/actor_instances.hpp"
 #include "granadad/render3d/ground_items.hpp"
+#include "granadad/render3d/light_model.hpp"
 #include "granadad/render3d/viewmodel.hpp"
 #include "granadad/render3d/world_scene.hpp"
 #include "granadad/sim/angle.hpp"
@@ -363,6 +364,12 @@ struct Options {
     /// 3D programme; the window, the composite and the capture go through
     /// raylib either way. `--3d` is still accepted and means the default.
     bool video3d = true;
+    /// PHASE 5. True by default: the 3D pass is lit per pixel (point lights, a
+    /// sun and a moon from the clock, shadows, fog, the sky and water shaders,
+    /// bloom). `--flat-light` draws the vertex-colour light this build had
+    /// before the lighting phase, for a machine whose GPU cannot take the new
+    /// passes and to photograph the difference.
+    bool perPixelLight = true;
     /// THE LOT PASS: --music-off. The MusicDirector loads and plays nothing;
     /// every other sound stays. Audio-side only, never in the settings file
     /// (a launch flag, like --nohud).
@@ -790,6 +797,9 @@ void print_usage() {
         "                       scripted line sets its own hour when this is not\n"
         "                       given -- --skyrun wants 22, when Finch is in\n"
         "                       the snug -- and never overrides one that is\n"
+        "  --flat-light         the 3D world lit as it was before the lighting\n"
+        "                       phase (vertex colour): no per-pixel lamps, shadows,\n"
+        "                       sky shader or bloom\n"
         "  --weather=STATE      clear, overcast, fog or wind, pinned at full.\n"
         "                       Without it the sky is the LIVE weather for the\n"
         "                       seed, the day and the hour (fog off the water\n"
@@ -1301,6 +1311,8 @@ void print_usage() {
             options.video3d = true;
         } else if (std::strcmp(arg, "--2d") == 0) {
             options.video3d = false;
+        } else if (std::strcmp(arg, "--flat-light") == 0) {
+            options.perPixelLight = false;
         } else if (starts_with(arg, "--controls=", &value)) {
             options.controlsFile = value;
         } else if (starts_with(arg, "--clock=", &value)) {
@@ -3885,6 +3897,8 @@ struct VideoBridge {
 [[nodiscard]] std::string static_model_dir() { return weapon_model_dir(); }
 
 struct SceneRig {
+    /// PHASE 5: lit per pixel (Options::perPixelLight).
+    bool perPixel = true;
     render3d::SceneDescription scene;
     std::unique_ptr<render3d::WorldScene> world;
     /// S LANE. The piece catalogue (content/raws/world3d/docks-pieces.json)
@@ -3913,6 +3927,11 @@ struct SceneRig {
         // clock, or pinned by --weather. Render-only; the sim never sees it.
         params.weather = session.weather();
         params.dynamicLamps = session.tavernLights();
+        params.perPixel = perPixel;
+        // The render clock the flames waver by: the body's own step count at
+        // sixty a second, so a scripted capture is the same frame twice. It
+        // is read by the flicker and by nothing in the sim.
+        params.renderClock = static_cast<float>(session.body().stepCount() % 360000) / 60.0F;
         world->refresh(scene, session.camera(), aspect, params);
         // KIT BUILD: the things on the tiles -- the room's hashed ground
         // list, the four strongboxes and the snug's bale -- as Item pieces
@@ -3921,7 +3940,7 @@ struct SceneRig {
         // TAKE removes a thing in the sim and the next frame has one fewer.
         {
             const std::vector<render3d::StaticInstance> things = render3d::groundItemInstances(
-                session, catalogue, session.camera(), 40.0F, world->pool(), &world->spill());
+                session, catalogue, session.camera(), 40.0F, world->pool(), &world->spill(), perPixel);
             scene.statics.insert(scene.statics.end(), things.begin(), things.end());
             // And a lantern on a table burns like one on a wall: its halo,
             // drawn last with every other (the adapter defers kDrawHalo).
@@ -3939,6 +3958,7 @@ struct SceneRig {
         render3d::ActorSceneParams actorParams;
         actorParams.pool = world->pool();
         actorParams.spill = &world->spill();
+        actorParams.perPixel = perPixel;
         scene.actors = render3d::actorInstances(session, session.camera(), actorParams);
         // V LANE: the player's own hands. The placeholder parts put once
         // (the adapter swaps in the arms glb by name where it has one), the
@@ -3947,6 +3967,18 @@ struct SceneRig {
         // same frame on every machine.
         render3d::putViewmodelMeshes(scene);
         scene.viewmodel = render3d::viewmodelInstance(session);
+        if (perPixel) {
+            // The hands are drawn in their own pass, in view space, where the
+            // per-pixel light cannot reach: they wear the light at the eye, by
+            // the same model (render3d::litSurface), clipped at one.
+            const render3d::Vec3 light = render3d::litSurface(
+                scene.shading, scene.lights, scene.camera.position, render3d::Vec3{0.0F, 0.6F, 0.8F});
+            const auto channel = [](float l) {
+                return static_cast<std::uint8_t>(std::clamp(l, 0.0F, 1.0F) * 255.0F + 0.5F);
+            };
+            scene.viewmodel.tint =
+                render3d::Rgba8{channel(light.x), channel(light.y), channel(light.z), 255};
+        }
     }
 };
 
@@ -4002,6 +4034,7 @@ render3d::SceneStats present_frame(render3d::Backend& video, const Options& opti
         (void)session.drawFrame(overlay, render::Session::FramePasses{.world = false});
     }
     SceneRig rig;
+    rig.perPixel = options.perPixelLight;
     render::Framebuffer shot(1, 1);
     const render3d::SceneStats stats =
         present_frame(*video, options, rig, session, overlay, &shot);
@@ -4697,6 +4730,7 @@ int run_client(const Options& options, const render::CreationResult& chosen,
     // loop below reads; the rig is the 3D scene under the overlay.
     VideoBridge bridge;
     SceneRig rig;
+    rig.perPixel = options.perPixelLight;
     std::printf("granadad: video %s backend, %dx%d window%s\n",
                 video.kind() == render3d::VideoKind::Headless ? "headless" : "gpu", video.width(),
                 video.height(), options.video3d ? ", 3D world" : ", --2d software world");

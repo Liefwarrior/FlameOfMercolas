@@ -6,6 +6,18 @@ namespace granadad::render3d {
 
 using namespace rl;
 
+namespace {
+
+/// A glow, a pane or a halo is light itself: the scene shader takes no
+/// lighting off the world for it (only the fog) while this is on.
+void setEmissive(const Shader& shader, const LitLocs& locs, float value) {
+    if (shader.id != 0 && locs.emissive >= 0) {
+        SetShaderValue(shader, locs.emissive, &value, SHADER_UNIFORM_FLOAT);
+    }
+}
+
+}  // namespace
+
 void Backend::Impl::drawStatic(const StaticInstance& piece, const SceneDescription& scene,
                 SceneStats& stats) {
     if (piece.piece >= scene.pieces.size()) {
@@ -18,12 +30,7 @@ void Backend::Impl::drawStatic(const StaticInstance& piece, const SceneDescripti
         return;
     }
     // Scale, roll about the piece's own Z, pitch about its X, yaw, place.
-    const Matrix transform = MatrixMultiply(
-        MatrixMultiply(MatrixMultiply(MatrixMultiply(MatrixScale(piece.scale.x, piece.scale.y, piece.scale.z),
-                                                     MatrixRotateZ(piece.roll)),
-                                      MatrixRotateX(piece.pitch)),
-                       MatrixRotateY(-piece.yaw)),
-        MatrixTranslate(piece.position.x, piece.position.y, piece.position.z));
+    const Matrix transform = staticTransformOf(piece);
     const Matrix full = MatrixMultiply(model->model.transform, transform);
     // A mirrored piece (one negative scale axis: a ceiling quad laid as
     // a floor, a flat quad drawn both sides) has its winding reversed,
@@ -91,7 +98,9 @@ void Backend::Impl::drawHaloFan(const Matrix& transform, const PieceTints& tints
     material.maps[MATERIAL_MAP_DIFFUSE].color = glow;
     rlDisableDepthMask();
     rlDisableBackfaceCulling();
+    setEmissive(scene, sceneLit, 1.0F);
     DrawMesh(haloFan, material, MatrixMultiply(fit, transform));
+    setEmissive(scene, sceneLit, 0.0F);
     rlEnableBackfaceCulling();
     rlEnableDepthMask();
     material.maps[MATERIAL_MAP_DIFFUSE].color = WHITE;
@@ -112,7 +121,9 @@ void Backend::Impl::drawPaneRamp(const Matrix& transform, const PieceTints& tint
     material.maps[MATERIAL_MAP_DIFFUSE].texture = defaultTexture;
     material.maps[MATERIAL_MAP_DIFFUSE].color = Color{tint.r, tint.g, tint.b, 255};
     rlDisableBackfaceCulling();
+    setEmissive(scene, sceneLit, 1.0F);
     DrawMesh(paneRamp, material, MatrixMultiply(fit, transform));
+    setEmissive(scene, sceneLit, 0.0F);
     rlEnableBackfaceCulling();
     material.maps[MATERIAL_MAP_DIFFUSE].color = WHITE;
     stats.trianglesDrawn += static_cast<std::size_t>(paneRamp.triangleCount);
@@ -128,6 +139,7 @@ void Backend::Impl::drawLateGlass(const DeferredMesh& late, SceneStats& stats) {
     // pass, and drawHaloFan puts the mask back on after itself.
     rlDisableDepthMask();
     rlDisableBackfaceCulling();
+    setEmissive(scene, sceneLit, 1.0F);
     if (late.mesh < 0) {
         const float w = tints.to - tints.from;
         const float h = tints.toZ - tints.fromZ;
@@ -143,6 +155,7 @@ void Backend::Impl::drawLateGlass(const DeferredMesh& late, SceneStats& stats) {
         DrawMesh(mesh, material, late.transform);
         stats.trianglesDrawn += static_cast<std::size_t>(mesh.triangleCount);
     }
+    setEmissive(scene, sceneLit, 0.0F);
     rlEnableBackfaceCulling();
     rlEnableDepthMask();
     material.maps[MATERIAL_MAP_DIFFUSE].color = WHITE;
@@ -165,8 +178,11 @@ void Backend::Impl::drawStaticMesh(StaticModel& model, int i, const Matrix& tran
     // shader does -- their average when the blend shader did not load
     // or they do not. A halo never gets here.
     const bool spanned = tints.to > tints.from || tints.toZ > tints.fromZ;
+    const bool litFrame = shadingNow.lightMix > 0.0F;
+    // Lit per pixel, every piece goes through the blend shader, which carries
+    // the same light as the scene shader (lights, shadow, fog).
     const bool blended =
-        blend.id != 0 && ((spanned && !tints.uniform()) || tints.mode >= kDrawShaded);
+        blend.id != 0 && (litFrame || (spanned && !tints.uniform()) || tints.mode >= kDrawShaded);
     const Color tint = blended ? Color{255, 255, 255, tints.a.a} : averageColour(tints);
     const Color base = model.baseColour[static_cast<std::size_t>(m)];
     const auto ch = [](unsigned char a, unsigned char b) {
@@ -209,7 +225,17 @@ void Backend::Impl::drawStaticMesh(StaticModel& model, int i, const Matrix& tran
         if (tints.pane.a < kLateGlassBelow) {
             lateGlass.push_back(DeferredMesh{&model, i, transform, tints, mirrored});
         }
+        // A lit pane is its own light: the scene shader fogs it and lights nothing.
+        const bool emitFog = litFrame && scene.id != 0;
+        if (emitFog) {
+            material.shader = scene;
+            setEmissive(scene, sceneLit, 1.0F);
+        }
         DrawMesh(model.model.meshes[i], material, transform);
+        if (emitFog) {
+            setEmissive(scene, sceneLit, 0.0F);
+            material.shader = keep;
+        }
         if (mirrored) {
             rlEnableBackfaceCulling();
         }
@@ -236,6 +262,15 @@ void Backend::Impl::drawStaticMesh(StaticModel& model, int i, const Matrix& tran
         SetShaderValue(blend, blendSpan, span, SHADER_UNIFORM_VEC4);
         const int mode = static_cast<int>(tints.mode);
         SetShaderValue(blend, blendMode, &mode, SHADER_UNIFORM_INT);
+        if (litFrame) {
+            // The lights that reach the piece: its own place in the world, a few
+            // tiles about it (a wall run is longer, and its far end is lit by
+            // whatever the nearest twelve reach; the shader falls off per pixel).
+            const Vec3 at{transform.m12, transform.m13, transform.m14};
+            const float reach = 2.5F + 0.5F * std::max(tints.to - tints.from, tints.toZ - tints.fromZ);
+            setDrawLights(blend, blendLit, Vec3{at.x - reach, at.y - reach, at.z - reach},
+                          Vec3{at.x + reach, at.y + reach, at.z + reach});
+        }
     }
     DrawMesh(model.model.meshes[i], material, transform);
     material.shader = keep;

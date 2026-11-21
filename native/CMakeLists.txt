@@ -549,6 +549,9 @@ add_library(granadad-render3d-core STATIC
     # recoloured on the minute, instanced near the eye, the sky dome, the
     # camera from the body.
     src/render3d/world_scene.cpp
+    # PHASE 5: lighting and atmosphere as pure functions (the lamp falloff the
+    # sim and the shader share, the sun, the moon, the sky, the fog).
+    src/render3d/light_model.cpp
     # The S lane: the Synty building kit placed from the tile map -- the
     # catalogue (content/raws/world3d/docks-pieces.json) and the rules that
     # turn wall faces, door gaps, floors, water, lamps and a tile hash into
@@ -596,6 +599,8 @@ add_library(granadad-render3d-rl STATIC
     src/render3d/rl/viewmodel_pass.cpp
     src/render3d/rl/capture.cpp
     src/render3d/rl/offscreen.cpp
+    # PHASE 5: the shadow map the sun or the moon draws first.
+    src/render3d/rl/lighting.cpp
     src/render3d/rl/input.cpp)
 target_link_libraries(granadad-render3d-rl
     PUBLIC granadad-render3d-core
@@ -1010,6 +1015,10 @@ if(GRANADAD_BUILD_TESTS)
         # tolerance (tests/support/golden.hpp): the starter scene, the Docks at
         # noon and at night, and TRUE pitch looking up and down.
         tests/test_golden.cpp
+        # PHASE 5 -- LIGHTING AND ATMOSPHERE: the lamp curve the shader and the
+        # simulation share, the sun and the moon from the clock, the sky, the fog,
+        # the lit description, and the lit frames against goldens.
+        tests/test_light_model.cpp
         # 3D BUILD -- THE WORLD LANE. The chunk mesher over the real Docks:
         # the mesh is a deterministic function of the tile map (built twice,
         # same bytes, same scene hash), a wall cell emits its four sides and

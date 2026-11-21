@@ -175,7 +175,7 @@ void describe(std::vector<StaticInstance>& out, const StaticCatalogue& catalogue
               const Placed& at, const render::Session& session, const render::SkyState& sky,
               const std::vector<render::Lamp>& live, const render::Camera& view,
               float maxDistance, const render::LampGlow* pool,
-              const std::map<std::uint64_t, render::Rgb>* spill) {
+              const std::map<std::uint64_t, render::Rgb>* spill, bool perPixel) {
     const PieceSpec* spec = at.spec;
     if (spec == nullptr) {
         return;
@@ -225,7 +225,8 @@ void describe(std::vector<StaticInstance>& out, const StaticCatalogue& catalogue
     // it. At its full tint the brass out-valued the glass on the Gull's
     // table: a lamp whose dullest part was its light.
     const bool night = sky.daylight < catalogue.knobs().paneDuskBelow;
-    const Rgba8 light = !spec->selfLit                ? tintFor(sky, ground, dyn)
+    const Rgba8 light = perPixel                      ? Rgba8{255, 255, 255, 255}
+                        : !spec->selfLit                ? tintFor(sky, ground, dyn)
                         : (night && litGlass(*spec)) ? tintFor(sky, ground, dyn, kLampMetalNightCap)
                                                      : Rgba8{255, 255, 255, 255};
     piece.tint = mulTint(spec->tint, light);
@@ -247,7 +248,7 @@ void describe(std::vector<StaticInstance>& out, const StaticCatalogue& catalogue
 std::vector<StaticInstance> groundItemInstances(
     const render::Session& session, const StaticCatalogue& catalogue, const render::Camera& view,
     float maxDistance, const render::LampGlow* pool,
-    const std::map<std::uint64_t, render::Rgb>* spill) {
+    const std::map<std::uint64_t, render::Rgb>* spill, bool perPixel) {
     std::vector<StaticInstance> out;
     if (catalogue.itemIds().empty()) {
         return out;
@@ -256,7 +257,7 @@ std::vector<StaticInstance> groundItemInstances(
     const render::SkyState sky = session.sky();
     const std::vector<render::Lamp> live = session.tavernLights();
     for (const Placed& at : placedThings(session, catalogue)) {
-        describe(out, catalogue, at, session, sky, live, view, maxDistance, pool, spill);
+        describe(out, catalogue, at, session, sky, live, view, maxDistance, pool, spill, perPixel);
     }
     return out;
 }

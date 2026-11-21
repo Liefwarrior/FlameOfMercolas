@@ -7,11 +7,26 @@ namespace granadad::render3d {
 using namespace rl;
 
 bool Backend::Impl::drawMeshWith(std::uint32_t meshId, std::uint32_t textureId, const Rgba8& tint,
-                  const Matrix& transform, SceneStats& stats) {
+                  const Matrix& transform, SceneStats& stats, std::uint8_t surface, bool plain) {
     const auto mesh = meshes.find(meshId);
     if (mesh == meshes.end()) {
         return false;
     }
+    const CachedMesh& cached = mesh->second;
+    // THE SHADOW PASS draws what the colour pass draws, through the depth
+    // shader: nothing is counted, nothing is textured, and the sky, the water
+    // and the far ring cast none.
+    if (depthOverride != nullptr) {
+        if (surface != kSurfaceLit) {
+            return false;
+        }
+        const Shader keep = material.shader;
+        material.shader = *depthOverride;
+        DrawMesh(cached.mesh, material, transform);
+        material.shader = keep;
+        return true;
+    }
+    const bool litFrame = shadingNow.lightMix > 0.0F;
     material.maps[MATERIAL_MAP_DIFFUSE].color = colourOf(tint);
     material.maps[MATERIAL_MAP_DIFFUSE].texture = defaultTexture;
     float cell[2] = {0.0F, 0.0F};
@@ -23,14 +38,74 @@ bool Backend::Impl::drawMeshWith(std::uint32_t meshId, std::uint32_t textureId, 
             cell[1] = texture->second.tileV;
         }
     }
+    // THE SKY: the dome through the sky shader, from the description's colours.
+    if (surface == kSurfaceSky && sky.id != 0 && shadingNow.skyShader) {
+        material.shader = sky;
+        DrawMesh(cached.mesh, material, transform);
+        material.shader = scene;
+        ++stats.instancesDrawn;
+        stats.trianglesDrawn += static_cast<std::size_t>(cached.mesh.triangleCount);
+        return true;
+    }
+    // THE HARBOUR: through the water shader, lit by the lights that reach it.
+    if (surface == kSurfaceWater && water.id != 0 && litFrame) {
+        setDrawLights(water, waterLit, cached.lo, cached.hi);
+        material.shader = water;
+        DrawMesh(cached.mesh, material, transform);
+        material.shader = scene;
+        ++stats.instancesDrawn;
+        stats.trianglesDrawn += static_cast<std::size_t>(cached.mesh.triangleCount);
+        return true;
+    }
     // A tiling atlas tells the scene shader the size of one cell; every
     // other texture leaves it at zero and is sampled as it always was.
     if (scene.id != 0 && sceneAtlasCell >= 0) {
         SetShaderValue(scene, sceneAtlasCell, cell, SHADER_UNIFORM_VEC2);
     }
-    DrawMesh(mesh->second.mesh, material, transform);
+    // The skyline ring and the hands wear their own colours: no light, no fog.
+    const bool unlit = litFrame && (surface == kSurfaceFar || plain);
+    if (scene.id != 0 && litFrame) {
+        if (unlit) {
+            const float on = 1.0F;
+            SetShaderValue(scene, sceneLit.unlit, &on, SHADER_UNIFORM_FLOAT);
+        } else {
+            // Bounds in scene space: the mesh's own, moved by the instance's
+            // transform (the identity for a chunk; a placeholder body is
+            // turned and scaled, so its box is the sphere round its middle).
+            const Vector3 middle = Vector3Transform(
+                Vector3{0.5F * (cached.lo.x + cached.hi.x), 0.5F * (cached.lo.y + cached.hi.y),
+                        0.5F * (cached.lo.z + cached.hi.z)},
+                transform);
+            const float spanX = cached.hi.x - cached.lo.x;
+            const float spanY = cached.hi.y - cached.lo.y;
+            const float spanZ = cached.hi.z - cached.lo.z;
+            const float scaleOf = std::sqrt(transform.m0 * transform.m0 + transform.m1 * transform.m1 +
+                                            transform.m2 * transform.m2);
+            const float radius = 0.5F * std::sqrt(spanX * spanX + spanY * spanY + spanZ * spanZ) *
+                                 std::max(scaleOf, 0.0001F);
+            const bool identity = std::abs(scaleOf - 1.0F) < 1e-4F && std::abs(transform.m12) < 1e-4F &&
+                                  std::abs(transform.m13) < 1e-4F && std::abs(transform.m14) < 1e-4F;
+            if (identity) {
+                setDrawLights(scene, sceneLit, cached.lo, cached.hi);
+            } else {
+                setDrawLights(scene, sceneLit, Vec3{middle.x - radius, middle.y - radius, middle.z - radius},
+                              Vec3{middle.x + radius, middle.y + radius, middle.z + radius});
+            }
+        }
+    }
+    DrawMesh(cached.mesh, material, transform);
+    if (unlit && scene.id != 0) {
+        const float off = 0.0F;
+        SetShaderValue(scene, sceneLit.unlit, &off, SHADER_UNIFORM_FLOAT);
+    }
+    // The cell goes back to zero: a glTF piece drawn after a chunk through the
+    // same shader must not be sampled as a tiling atlas.
+    if (scene.id != 0 && sceneAtlasCell >= 0 && cell[0] > 0.0F) {
+        const float none[2] = {0.0F, 0.0F};
+        SetShaderValue(scene, sceneAtlasCell, none, SHADER_UNIFORM_VEC2);
+    }
     ++stats.instancesDrawn;
-    stats.trianglesDrawn += static_cast<std::size_t>(mesh->second.mesh.triangleCount);
+    stats.trianglesDrawn += static_cast<std::size_t>(cached.mesh.triangleCount);
     return true;
 }
 
@@ -42,7 +117,8 @@ bool Backend::Impl::drawInstance(const Instance& instance, SceneStats& stats) {
         MatrixMultiply(MatrixScale(instance.scale, instance.scale, instance.scale),
                        MatrixRotateY(-instance.yaw)),
         MatrixTranslate(instance.position.x, instance.position.y, instance.position.z));
-    return drawMeshWith(instance.meshId, instance.textureId, instance.tint, transform, stats);
+    return drawMeshWith(instance.meshId, instance.textureId, instance.tint, transform, stats,
+                        instance.surface);
 }
 
 void Backend::Impl::drawActor(const ActorInstance& actor, SceneStats& stats) {
@@ -75,10 +151,35 @@ void Backend::Impl::drawActor(const ActorInstance& actor, SceneStats& stats) {
         rig->posed = false;
     }
     const Instance& instance = actor.instance;
+    // A glb rig draws through raylib's own default shader unless it is given
+    // ours for the draw: the depth shader in the shadow pass, the scene shader
+    // (lit by the lights round the body, fogged) in the colour pass. Put back
+    // after, so UnloadModel never frees a shader that is shared.
+    std::vector<Shader> kept;
+    const Shader* wear = depthOverride != nullptr ? depthOverride : (scene.id != 0 ? &scene : nullptr);
+    if (wear != nullptr) {
+        for (int i = 0; i < rig->model.materialCount; ++i) {
+            kept.push_back(rig->model.materials[i].shader);
+            rig->model.materials[i].shader = *wear;
+        }
+        if (depthOverride == nullptr) {
+            const float reach = 1.6F * instance.scale + 0.5F;
+            setDrawLights(scene, sceneLit,
+                          Vec3{instance.position.x - reach, instance.position.y - 0.5F, instance.position.z - reach},
+                          Vec3{instance.position.x + reach, instance.position.y + 2.5F * instance.scale + 0.5F,
+                               instance.position.z + reach});
+        }
+    }
     DrawModelEx(rig->model, vec(instance.position), Vector3{0.0F, 1.0F, 0.0F},
                 -(instance.yaw + kGltfForwardYaw) * kRadToDeg,
                 Vector3{instance.scale, instance.scale, instance.scale},
                 colourOf(instance.tint));
+    for (std::size_t i = 0; i < kept.size(); ++i) {
+        rig->model.materials[i].shader = kept[i];
+    }
+    if (depthOverride != nullptr) {
+        return;
+    }
     ++stats.actorsDrawn;
     ++stats.instancesDrawn;
     for (int i = 0; i < rig->model.meshCount; ++i) {
@@ -109,6 +210,22 @@ SceneStats Backend::drawScene(const SceneDescription& scene) {
         CachedMesh cached;
         cached.version = data.version;
         cached.mesh = uploadMesh(data);
+        {
+            Vec3 lo{std::numeric_limits<float>::max(), std::numeric_limits<float>::max(),
+                    std::numeric_limits<float>::max()};
+            Vec3 hi{std::numeric_limits<float>::lowest(), std::numeric_limits<float>::lowest(),
+                    std::numeric_limits<float>::lowest()};
+            for (std::size_t v = 0; v + 2 < data.positions.size(); v += 3) {
+                lo.x = std::min(lo.x, data.positions[v]);
+                lo.y = std::min(lo.y, data.positions[v + 1]);
+                lo.z = std::min(lo.z, data.positions[v + 2]);
+                hi.x = std::max(hi.x, data.positions[v]);
+                hi.y = std::max(hi.y, data.positions[v + 1]);
+                hi.z = std::max(hi.z, data.positions[v + 2]);
+            }
+            cached.lo = lo;
+            cached.hi = hi;
+        }
         impl.meshes.emplace(data.id, cached);
         ++stats.meshesUploaded;
     }
@@ -134,6 +251,14 @@ SceneStats Backend::drawScene(const SceneDescription& scene) {
         impl.textures.emplace(data.id, cached);
         ++stats.texturesUploaded;
     }
+
+    // PHASE 5: the lights the draws pick from, the shadow map the sun or the
+    // moon draws first, and the uniforms every lit shader shares.
+    impl.sceneNow = &scene;
+    impl.eyeNow = scene.camera.position;
+    impl.ensureBlendShader();
+    impl.renderShadows(scene);
+    impl.applyShadows();
 
     Camera3D camera{};
     camera.position = vec(scene.camera.position);
@@ -204,6 +329,7 @@ SceneStats Backend::drawScene(const SceneDescription& scene) {
     EndMode3D();
     // The hands, last, in their own pass over everything.
     impl.drawViewmodel(scene.viewmodel, stats);
+    impl.sceneNow = nullptr;
     stats.rigModelsLoaded = impl.rigsLoaded();
     stats.staticModelsLoaded = impl.staticsLoaded();
     // The material never keeps hold of a cached texture between passes:
