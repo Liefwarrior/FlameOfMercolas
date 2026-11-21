@@ -571,6 +571,54 @@ TEST_CASE("--kit lands all ten of its beats: named, taken, dropped, THEIRS, the 
     CHECK(played.summary.find(" legs=") != std::string::npos);
 }
 
+TEST_CASE("--pack lands all six of its beats: the free goods taken, the house's lifted, the pack listed, a loaf's use, its press, the load") {
+    // OBLIVION-PLAN phase 8. The whole line, through the real verbs -- see
+    // runPackLine.
+    render::SmokeRunConfig run;
+    run.pack = true;
+    const render::SmokeRunResult played = play(run);
+    INFO(played.summary);
+    CHECK(played.ok);
+    CHECK_FALSE(played.scriptFellShort());
+    CHECK(played.packBeats == 6);
+    CHECK(played.summary.find("bandage=2 bread=2") != std::string::npos);
+    CHECK(played.summary.find("ale=1/1 bread-theirs=1") != std::string::npos);
+    CHECK(played.summary.find(" legs=") != std::string::npos);
+}
+
+TEST_CASE("--pack=list, --pack=use and --pack=ate each stop on their own beat") {
+    render::SmokeRunConfig run;
+    run.pack = true;
+    run.packEnd = "list";
+    render::SmokeRunResult played = play(run);
+    INFO(played.summary);
+    CHECK(played.ok);
+    CHECK_FALSE(played.scriptFellShort());
+    CHECK(played.packBeats == 3);
+    run.packEnd = "use";
+    played = play(run);
+    INFO(played.summary);
+    CHECK_FALSE(played.scriptFellShort());
+    CHECK(played.packBeats == 4);
+    run.packEnd = "ate";
+    played = play(run);
+    INFO(played.summary);
+    CHECK_FALSE(played.scriptFellShort());
+    CHECK(played.packBeats == 5);
+    CHECK(played.summary.find(" ate=") != std::string::npos);
+}
+
+TEST_CASE("--kit=pack is the equip beat's tile stepped from the sheet to the pack") {
+    render::SmokeRunConfig run;
+    run.kit = true;
+    run.kitEnd = "pack";
+    const render::SmokeRunResult played = play(run);
+    INFO(played.summary);
+    CHECK(played.ok);
+    CHECK_FALSE(played.scriptFellShort());
+    CHECK(played.kitBeats == 5);
+}
+
 TEST_CASE("--kit=take stops on the prompt, --kit=search on the list, --kit=drop on the coil on the boards") {
     render::SmokeRunConfig run;
     run.kit = true;

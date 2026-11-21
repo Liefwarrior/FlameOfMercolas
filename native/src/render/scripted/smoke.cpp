@@ -141,6 +141,9 @@ constexpr std::int32_t kKitBeats = 10;
     if (ending == "equip") {
         return 4;
     }
+    if (ending == "pack") {
+        return 5;
+    }
     if (ending == "slot") {
         return 5;
     }
@@ -328,7 +331,7 @@ int scriptedStartHour(const SmokeRunConfig& config) noexcept {
     // its own clock to four the next morning for the lifts (the house
     // empty, nobody to see them, no bouncer's ladder started) and back to
     // two for Ox and the coat's turn -- see runKitLine.
-    if (config.kit) {
+    if (config.kit || config.pack) {
         return 14;
     }
     // Father Maell takes an evening hour in the Gull between seven and half
@@ -907,6 +910,16 @@ SmokeRunResult runSmoke(const SmokeRunConfig& config) {
             static_cast<std::int32_t>(runKitLine(session, config.kitEnd));
         result.kitBeats = landed;
         result.scriptedWanted += kitBeatsFor(config.kitEnd);
+        result.scriptedLanded += landed;
+    }
+
+    if (config.pack) {
+        // OBLIVION-PLAN phase 8. The pack, played through the real verbs --
+        // see runPackLine. Each ending owes its own count.
+        const std::int32_t landed =
+            static_cast<std::int32_t>(runPackLine(session, config.packEnd));
+        result.packBeats = landed;
+        result.scriptedWanted += packBeatsFor(config.packEnd);
         result.scriptedLanded += landed;
     }
 
@@ -1677,6 +1690,12 @@ SmokeRunResult runSmoke(const SmokeRunConfig& config) {
         summary << " | kit beats=" << result.kitBeats << '/' << kitBeatsFor(config.kitEnd)
                 << gKitNote << " hand=" << sim::weaponName(session.tavern().playerWeapon())
                 << " dr=" << session.tavern().wornDr()
+                << " ground=" << session.tavern().groundItems().size();
+    }
+    if (config.pack) {
+        summary << " | pack beats=" << result.packBeats << '/' << packBeatsFor(config.packEnd)
+                << gPackNote << " load=" << session.tavern().loadDrams() << '/'
+                << session.tavern().loadBudget() << " hp=" << session.tavern().playerHp()
                 << " ground=" << session.tavern().groundItems().size();
     }
     if (config.court) {

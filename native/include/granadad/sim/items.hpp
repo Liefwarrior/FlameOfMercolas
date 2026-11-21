@@ -67,6 +67,7 @@
 #include <string_view>
 #include <vector>
 
+#include "granadad/sim/attributes.hpp"
 #include "granadad/sim/brawl.hpp"
 #include "granadad/sim/world_hash.hpp"
 
@@ -115,6 +116,41 @@ inline constexpr std::size_t kItemSlotCount = kWornSlotCount + 1;
 // the record
 // ---------------------------------------------------------------------------
 
+/// What a USE does to the body, in the integer effect vocabulary the spells
+/// already speak (spellforge.hpp's Vitality and Attribute axes). Nothing
+/// else is invented: Temperature has no reader in this ward, and the phase
+/// that owns a new effect kind is the spell phase, not this one.
+enum class ItemEffectKind : std::uint8_t {
+    /// Hit points, signed. A mend is positive. Instant.
+    Vitality = 0,
+    /// A held tuning of one attribute, clamped like a spell's (+/-2 over
+    /// every hold that is live), for `seconds` of room time.
+    Attribute = 1,
+};
+
+struct ItemEffect {
+    ItemEffectKind kind = ItemEffectKind::Vitality;
+    std::int32_t magnitude = 0;
+    /// The string a held tuning turns. Meaningless for Vitality.
+    AttributeId attribute = AttributeId::Might;
+    /// How long a held tuning lasts, in room seconds. Zero for Vitality.
+    std::int32_t seconds = 0;
+};
+
+/// What the pack groups a row under. Derived from the row (never authored,
+/// so a raws file cannot disagree with the rule): a hand item is a WEAPON, a
+/// worn body, head or feet piece is ARMOUR, anything with a use is a
+/// CONSUMABLE, a sack good is GOODS, and the rest -- ropes, picks, lamps,
+/// purses, letters -- is GEAR. The numeric order is the pack's sort order.
+enum class ItemCategory : std::uint8_t {
+    Weapon = 0,
+    Armour = 1,
+    Consumable = 2,
+    Gear = 3,
+    Goods = 4,
+};
+inline constexpr std::size_t kItemCategoryCount = 5;
+
 /// One thing a docker could own. Straight out of the raws.
 struct ItemDef {
     /// The raws key: snake_case, THE one spelling every other file uses.
@@ -161,7 +197,24 @@ struct ItemDef {
     /// the raws leave it out.
     std::int32_t drawnLoCm = 0;
     std::int32_t drawnHiCm = 30;
+    /// What USE does, in the order it is applied; empty for a thing that
+    /// cannot be used. A row with effects is a consumable: one unit is spent
+    /// by every use.
+    std::vector<ItemEffect> effects;
+    /// The verb the pack prints for it ("EAT", "DRINK", "BIND"). Empty when
+    /// the row has no effects.
+    std::string useVerb;
+    /// The same verb done: "ATE", "DRANK", "BOUND" -- the message line's word.
+    std::string useDone;
 };
+
+/// The pack's group for a row; see ItemCategory.
+[[nodiscard]] ItemCategory itemCategory(const ItemDef& item) noexcept;
+/// "WEAPONS", "ARMOUR", "CONSUMABLES", "GEAR", "GOODS".
+[[nodiscard]] std::string_view itemCategoryName(ItemCategory category) noexcept;
+/// One line saying what a use does: "MENDS 8", "MIGHT +1 FOR 300 S", or
+/// both joined with ", ". Empty for a row with no effects. Pure.
+[[nodiscard]] std::string itemEffectLine(const ItemDef& item);
 
 /// Where the world puts a thing before anybody moves it.
 struct ItemStand {
@@ -191,7 +244,12 @@ struct CorpseKit {
 /// sort here would be this file inventing a shop.
 class ItemRegistry {
 public:
-    /// Reads content/raws/items/items.json under `contentDir`. Never throws:
+    /// Reads content/raws/items/items.json under `contentDir`, then every
+    /// file of kExtraItemFiles beside it (items_consumables.json), appended
+    /// in that order: `items.json` is the owner's and is never edited, so a
+    /// phase's new rows ride in a file of their own and land AFTER every row
+    /// the first file holds -- an old save's ids and the old rows' indices
+    /// stay where they were. Never throws:
     /// a missing or malformed file yields an empty registry, and `loaded()`
     /// says so. The game boots either way -- with no items there is nothing
     /// to take, and the sheet prints IN HAND FISTS.
@@ -199,6 +257,15 @@ public:
     /// The same parse over a string, for a test that wants a small vocabulary
     /// without a file on disk.
     [[nodiscard]] static ItemRegistry fromJson(std::string_view json);
+
+    /// The same parse over a string, appended to what is already loaded: the
+    /// way an extra file's rows join the registry. Ids already present are
+    /// refused with a warning, never overwritten.
+    void appendJson(std::string_view json);
+    /// How many rows the first file (items.json) holds -- the rows the Kit's
+    /// hash has always covered. Rows from `baseRows()` on came from an extra
+    /// file; see Kit::hashInto on why the hash tells them apart.
+    [[nodiscard]] std::size_t baseRows() const noexcept { return baseRows_; }
 
     [[nodiscard]] bool loaded() const noexcept { return !items_.empty(); }
     [[nodiscard]] const std::vector<ItemDef>& items() const noexcept { return items_; }
@@ -228,10 +295,13 @@ private:
     std::vector<ItemStand> stands_;
     std::vector<CorpseKit> carried_;
     std::vector<std::string> warnings_;
+    std::size_t baseRows_ = 0;
 };
 
 /// content/raws/items/items.json.
 [[nodiscard]] std::filesystem::path itemRawsPath(const std::filesystem::path& contentDir);
+/// The extra files read after it, in order: the Phase 8 consumables.
+inline constexpr std::string_view kExtraItemFiles[] = {"items_consumables.json"};
 
 /// The skill a blow turned by worn kit trains. content/raws/skills/
 /// skills.json's own row: "harness", armour familiarity, governing VIG. Named
@@ -276,6 +346,43 @@ inline constexpr std::int32_t kLoadSpeedFloorQ8 = 128;
 }
 
 // ---------------------------------------------------------------------------
+// the inspect record
+// ---------------------------------------------------------------------------
+
+/// Everything the pack's detail pane says about one row, as numbers and words
+/// and no layout: the raws' own columns, what is carried of it, whether it is
+/// worn and how much of it is somebody else's. A pure function of its inputs,
+/// so a case can pin the record without a screen (and the screen can never
+/// say a number the sim would not).
+struct ItemInspect {
+    std::string name;
+    std::string desc;
+    ItemCategory category = ItemCategory::Gear;
+    std::int32_t count = 0;
+    /// One unit's weight and worth.
+    std::int32_t unitDrams = 0;
+    std::int32_t unitRoyals = 0;
+    /// A hand item's span (both zero for everything else) and the sheet's
+    /// word for its class: "IMPACT" or "EDGE".
+    std::int32_t damageLo = 0;
+    std::int32_t damageHi = 0;
+    std::string damageWord;
+    std::int32_t dr = 0;
+    /// What the Watch adds per unit when it finds one on you.
+    std::int32_t heat = 0;
+    bool worn = false;
+    /// Units lifted off somebody (THEIRS); at most `count`.
+    std::int32_t stolen = 0;
+    /// What a use does ("MENDS 8"), and the verb, or both empty.
+    std::string useVerb;
+    std::string useLine;
+    bool fixed = false;
+};
+
+[[nodiscard]] ItemInspect inspectItem(const ItemDef& item, std::int32_t count, bool worn,
+                                      std::int32_t stolen);
+
+// ---------------------------------------------------------------------------
 // what is on the body
 // ---------------------------------------------------------------------------
 
@@ -306,9 +413,18 @@ public:
     /// checked before this is called.
     std::int32_t add(std::int32_t index, std::int32_t units);
     /// Takes units out. Returns how many were there to take. A row taken to
-    /// zero is bared from any slot it was worn in.
+    /// zero is bared from any slot it was worn in. Units that are not
+    /// somebody else's go first: what is left still carries its THEIRS.
     std::int32_t take(std::int32_t index, std::int32_t units);
     void clear() noexcept;
+
+    /// How many units of this row were lifted off somebody -- the pack's
+    /// THEIRS. Never more than the row's count. Carrying it changes nothing
+    /// about the Watch (the crime was judged the moment it was lifted); it is
+    /// the record the inspect pane reads.
+    [[nodiscard]] std::int32_t stolen(std::int32_t index) const noexcept;
+    /// Marks `units` of a carried row as lifted. Clamped to what is carried.
+    void markStolen(std::int32_t index, std::int32_t units);
 
     /// The row worn in a slot, or -1.
     [[nodiscard]] std::int32_t worn(ItemSlot slot) const noexcept;
@@ -327,16 +443,29 @@ public:
     [[nodiscard]] Weapon handClass(const ItemRegistry& registry) const noexcept;
 
     /// By ID, not by index: an appended raws row does not move a saved Kit.
+    /// Version 2 appends the stolen counts; version 1 images still decode
+    /// (nothing stolen).
     [[nodiscard]] std::vector<std::uint8_t> encode(const ItemRegistry& registry) const;
     /// False for a malformed image, a version this build does not read, or an
     /// id the registry no longer knows -- a save that names a thing the raws
     /// have lost is refused whole rather than quietly emptied of it.
     [[nodiscard]] static bool decode(const std::vector<std::uint8_t>& bytes,
                                      const ItemRegistry& registry, Kit& out);
-    void hashInto(HashSink& sink) const;
+    /// `legacyRows` is the registry's baseRows(): the first `legacyRows`
+    /// counts and the worn rows hash exactly as they did before any extra
+    /// raws file existed, and rows past it hash as a tail that is written
+    /// ONLY when one of them holds something (a count, or a stolen unit).
+    /// An appended raws file therefore moves no hash for a body that holds
+    /// none of its rows, which is what keeps the twin-run baselines of a
+    /// workload that never touches the new rows exactly where they were.
+    void hashInto(HashSink& sink, std::size_t legacyRows) const;
+    /// Every row, as before (a Kit built over one file).
+    void hashInto(HashSink& sink) const { hashInto(sink, counts_.size()); }
 
 private:
     std::vector<std::int32_t> counts_;
+    /// Units of each row that are somebody's, dense with counts_.
+    std::vector<std::int32_t> stolen_;
     /// Dense by wornSlotIndex, -1 empty.
     std::array<std::int32_t, kWornSlotCount> worn_{{-1, -1, -1, -1, -1}};
 };

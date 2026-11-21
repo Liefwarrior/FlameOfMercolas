@@ -1025,6 +1025,7 @@ void Session::toggleMenuFocused(int focus) {
             caseEntry_ = -1;
             characterCursor_ = 0;
             characterPage_ = 0;
+            characterPack_ = false;
             mapCursor_ = 0;
             mapPage_ = 0;
             lettersCursor_ = 0;
@@ -1057,6 +1058,7 @@ void Session::toggleMenuFocused(int focus) {
         caseEntry_ = -1;
         characterCursor_ = 0;
         characterPage_ = 0;
+        characterPack_ = false;
         mapCursor_ = 0;
         mapPage_ = 0;
         lettersCursor_ = 0;

@@ -1439,6 +1439,51 @@ public:
     /// The load line: "LOAD  212 / 240 DRAMS".
     [[nodiscard]] std::string loadLine() const;
 
+    // --- THE PACK (OBLIVION-PLAN phase 8, section 8.2) -------------------------
+    //
+    // The Character tile has two views of itself. The SHEET is everything it
+    // always was: the five tracks, the skills, the four strings, the ladders,
+    // then the Kit's rows at the foot of a list two pages long. The PACK is the
+    // inventory on its own: the list is WORN (a row per slot the raws fill, the
+    // thing in it or NOTHING) then CARRIED (the Kit and the sack, grouped by
+    // what a thing is, in registry order inside a group), and the two tiles to
+    // its right give their room to a detail pane about the highlighted row --
+    // what it is, its numbers, whose it is, the keys that act on it. TAB
+    // (the triggers on a pad) steps between the two views; the verbs on a row
+    // are the sheet's own (ENTER wears or uses, LEFT and RIGHT walk the quick
+    // slot, X drops) because they are the same rows and the same doors.
+    // Nothing here is hashed or saved: the view is UI, the rows are the Kit's.
+
+    /// One row of the pack's list. A header and a bare slot are rows too (the
+    /// cursor can stand on a bare slot and read what it is for); a header is
+    /// the one row the cursor steps over.
+    struct PackRow {
+        enum class Kind : std::uint8_t { Header, Slot, Item };
+        Kind kind = Kind::Item;
+        /// A header's text ("WORN", "CARRIED", "WEAPONS").
+        std::string text;
+        /// A Slot row's slot.
+        sim::ItemSlot slot = sim::ItemSlot::None;
+        /// The registry row on the line, or -1 for a bare slot and a header.
+        std::int32_t item = -1;
+        /// Units on the line: carried and not worn for an Item row, 1 for a
+        /// worn Slot row.
+        std::int32_t count = 0;
+        /// A row the Kit itself holds -- the only kind the verbs act on.
+        bool inKit = false;
+    };
+    /// The pack's rows, in screen order. Pure over the Kit and the registry.
+    [[nodiscard]] std::vector<PackRow> packRows() const;
+    /// True while the Character tile shows the pack and not the sheet.
+    [[nodiscard]] bool characterPack() const noexcept { return characterPack_; }
+    /// Steps the Character tile between the sheet and the pack. The cursor
+    /// goes back to the top of the list it changes to (the two lists share
+    /// nothing).
+    void toggleCharacterPack();
+    /// The detail pane for the row under the cursor; `open` only on the pack
+    /// view of a focused Character tile.
+    [[nodiscard]] InspectPane inspectPaneView() const;
+
     // --- THE SEARCH LIST (KIT BUILD) ----------------------------------------
     //
     // A dead roster body in reach opens a list of what he carried -- the
@@ -2797,6 +2842,12 @@ private:
     /// tile is a choice to make), so there is no "entry" to remember.
     int characterCursor_ = 0;
     int characterPage_ = 0;
+    /// The sheet (false) or the pack (true). UI state, closed with the Menu.
+    bool characterPack_ = false;
+    /// Steps the cursor off a pack header, in `direction`.
+    void settlePackCursor(int direction);
+    /// The pack list's printed rows (characterRows() on the pack view).
+    [[nodiscard]] std::vector<std::string> packRowLabels() const;
     /// THE MAP TILE'S OWN CURSOR AND PAGE. Also read-only.
     int mapCursor_ = 0;
     int mapPage_ = 0;
@@ -3857,6 +3908,16 @@ struct SmokeRunConfig {
     /// what is left).
     bool kit = false;
     std::string kitEnd;
+    /// OBLIVION-PLAN phase 8. Play the pack: take the free bandages and loaves
+    /// off the quay, lift the Gull's ale, bread, knife and coat at four, open
+    /// the Character tile on its PACK view, wear the coat and the knife,
+    /// press ENTER on a loaf with a hurt body, and fill the load. WHERE is
+    /// take, theirs, list (the whole pack, worn and carried), use (the loaf
+    /// highlighted, its verb on the foot), ate (after the press), load (the
+    /// body at its budget; the weight is given, not carried, the one staged
+    /// beat), or empty for the whole line.
+    bool pack = false;
+    std::string packEnd;
     /// S9. Play a burglary: crouch, cross a dark taproom unseen, lift a purse
     /// off somebody who does not feel it, up the stair, wire into a guest's
     /// strongbox, work the pins, and empty it. WHERE is "box" (standing over
@@ -4398,6 +4459,7 @@ struct SmokeRunResult {
     std::int32_t courtBeats = 0;
     /// KIT BUILD: beats of the Kit line (--kit), by its ending.
     std::int32_t kitBeats = 0;
+    std::int32_t packBeats = 0;
     /// How many of the six beats of the bounty run landed.
     std::int32_t contractBeats = 0;
     /// How many of the seven beats of the nemesis arc landed.

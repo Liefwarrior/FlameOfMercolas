@@ -137,6 +137,7 @@ void lookAtFace(Session& session, std::int32_t xQ8, std::int32_t yQ8, sim::WardT
 
 /// What the Kit line saw, for the summary.
 inline std::string gKitNote;
+inline std::string gPackNote;
 
 constexpr std::int32_t kCourtRopePageBeats = 4;
 [[nodiscard]] bool courtEndingHangs(const std::string& ending);
@@ -201,6 +202,8 @@ constexpr std::int32_t kStreetReachTiles = 2;
 [[nodiscard]] int runWatchHaltLine(Session& session, const std::string& ending);
 [[nodiscard]] int runVoiceLine(Session& session, const std::string& ending);
 [[nodiscard]] int runKitLine(Session& session, const std::string& ending);
+[[nodiscard]] int runPackLine(Session& session, const std::string& ending);
+[[nodiscard]] int packBeatsFor(const std::string& ending);
 [[nodiscard]] int runCourtLine(Session& session, const std::string& ending);
 [[nodiscard]] int runTrailLine(Session& session, const std::string& ending);
 [[nodiscard]] int runBurgleLine(Session& session, const std::string& ending);

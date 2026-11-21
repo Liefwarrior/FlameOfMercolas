@@ -88,6 +88,11 @@ struct DialogueViewState {
     int cursor = 0;
     /// Which page of the list is showing.
     int page = 0;
+    /// Indices into `topics` that are GROUP HEADINGS, not choices (the pack's
+    /// WORN, CARRIED and category rows): drawn in the dim ink with no printed
+    /// number, never filled. Empty on every list that has no groups, which is
+    /// every list but the pack's.
+    std::vector<int> headerRows;
 
     // --- polish-2: a courtesy for whoever is watching it live ---------------
     //

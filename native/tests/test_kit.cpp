@@ -991,3 +991,353 @@ TEST_CASE("a keeper offers the shelf on their own list, and away from the counte
     CHECK(indexOf(TopicKind::Wares) < 0);
     talk.close();
 }
+
+// ---------------------------------------------------------------------------
+// PHASE 8 -- INVENTORY: consumables, use, THEIRS, the inspect record, the hash
+// ---------------------------------------------------------------------------
+
+namespace {
+
+/// The first file's rows plus one consumable: the extra-file path without
+/// the filesystem.
+constexpr std::string_view kExtraRaws = R"({
+  "items": [
+    {"id": "bread", "name": "BREAD", "drams": 10, "royals": 1, "desc": "A LOAF.",
+     "use": {"verb": "EAT", "done": "ATE", "effects": [{"effect": "vitality", "magnitude": 12}]}},
+    {"id": "ale", "name": "ALE", "drams": 14, "royals": 2,
+     "use": {"verb": "DRINK", "done": "DRANK", "effects": [
+       {"effect": "vitality", "magnitude": 4},
+       {"effect": "attribute", "param": "MGT", "magnitude": 1, "seconds": 300}]}}
+  ]
+})";
+
+[[nodiscard]] std::uint64_t kitHash(const Kit& kit, std::size_t legacyRows) {
+    HashSink sink(0x4B4954ull);
+    kit.hashInto(sink, legacyRows);
+    return sink.finished();
+}
+
+}  // namespace
+
+TEST_CASE("the consumables file loads after items.json: appended rows, a use on each, no refusals") {
+    const ItemRegistry items = ItemRegistry::load(content::contentDir());
+    REQUIRE(items.loaded());
+    CHECK(items.warnings().empty());
+    // items.json's own rows are the base; the consumables come after every one.
+    CHECK(items.baseRows() == 23);
+    CHECK(items.size() == 26);
+    for (const char* id : {"bread", "ale", "bandage"}) {
+        INFO("consumable: ", id);
+        const ItemDef* row = items.find(id);
+        REQUIRE(row != nullptr);
+        CHECK(static_cast<std::size_t>(items.indexOf(id)) >= items.baseRows());
+        CHECK_FALSE(row->effects.empty());
+        CHECK_FALSE(row->useVerb.empty());
+        CHECK_FALSE(row->useDone.empty());
+        CHECK(row->slot == ItemSlot::None);
+        CHECK(itemCategory(*row) == ItemCategory::Consumable);
+        CHECK_FALSE(row->desc.empty());
+    }
+    // The first file's order is untouched: a saved Kit's rows are by id, and
+    // the old rows are where they were.
+    CHECK(items.indexOf("cudgel") == 0);
+    CHECK(items.indexOf("artifact") == 22);
+    // The registry never reads an item's use off a row that has none.
+    CHECK(items.find("knife")->effects.empty());
+    CHECK(itemEffectLine(*items.find("ale")) == "MENDS 4, MIGHT +1 FOR 300 S");
+    CHECK(itemEffectLine(*items.find("bandage")) == "MENDS 30");
+    CHECK(itemEffectLine(*items.find("knife")).empty());
+}
+
+TEST_CASE("a use the sim has no reader for refuses its row, a good one is kept") {
+    ItemRegistry items = ItemRegistry::fromJson(kSmallRaws);
+    items.appendJson(R"({"items": [
+      {"id": "warmth", "name": "WARMTH", "use": {"verb": "WARM", "effects": [{"effect": "temperature", "magnitude": 3}]}},
+      {"id": "mystery", "name": "MYSTERY", "use": {"verb": "SIP", "effects": [{"effect": "attribute", "param": "LUCK", "magnitude": 1, "seconds": 30}]}},
+      {"id": "forever", "name": "FOREVER", "use": {"verb": "SIP", "effects": [{"effect": "attribute", "param": "MGT", "magnitude": 1}]}},
+      {"id": "empty", "name": "EMPTY", "use": {"verb": "SIP", "effects": []}},
+      {"id": "nothing", "name": "NOTHING", "use": {"verb": "SIP", "effects": [{"effect": "vitality", "magnitude": 0}]}},
+      {"id": "cudgel", "name": "AGAIN", "drams": 1},
+      {"id": "tonic", "name": "TONIC", "use": {"verb": "SIP", "done": "SIPPED", "effects": [{"effect": "vitality", "magnitude": 3}]}}
+    ]})");
+    CHECK(items.find("warmth") == nullptr);
+    CHECK(items.find("mystery") == nullptr);
+    CHECK(items.find("forever") == nullptr);
+    CHECK(items.find("empty") == nullptr);
+    CHECK(items.find("nothing") == nullptr);
+    // A repeated id is refused, never overwritten.
+    CHECK(items.find("cudgel")->name == "CUDGEL");
+    REQUIRE(items.find("tonic") != nullptr);
+    CHECK(items.find("tonic")->useDone == "SIPPED");
+    CHECK(items.size() == 5);
+    // fromJson alone counts every row as the base; appendJson does not.
+    CHECK(items.baseRows() == 4);
+    CHECK(items.warnings().size() == 6);
+}
+
+TEST_CASE("the pack groups rows by what a thing is, and the rule is derived from the row") {
+    ItemRegistry items = ItemRegistry::fromJson(kSmallRaws);
+    items.appendJson(kExtraRaws);
+    CHECK(itemCategory(*items.find("cudgel")) == ItemCategory::Weapon);
+    CHECK(itemCategory(*items.find("coat")) == ItemCategory::Armour);
+    CHECK(itemCategory(*items.find("hood")) == ItemCategory::Armour);
+    CHECK(itemCategory(*items.find("rope")) == ItemCategory::Gear);
+    CHECK(itemCategory(*items.find("bread")) == ItemCategory::Consumable);
+    ItemDef sack;
+    sack.contraband = "dust";
+    CHECK(itemCategory(sack) == ItemCategory::Goods);
+    // The sort order is the enum's: weapons, armour, consumables, gear, goods.
+    CHECK(itemCategoryName(ItemCategory::Weapon) == "WEAPONS");
+    CHECK(itemCategoryName(ItemCategory::Consumable) == "CONSUMABLES");
+    CHECK(static_cast<int>(ItemCategory::Consumable) < static_cast<int>(ItemCategory::Gear));
+}
+
+TEST_CASE("the inspect record is the raws' columns and what is carried, and never says more") {
+    ItemRegistry items = ItemRegistry::fromJson(kSmallRaws);
+    items.appendJson(kExtraRaws);
+    const ItemInspect cudgel = inspectItem(*items.find("cudgel"), 1, true, 0);
+    CHECK(cudgel.name == "CUDGEL");
+    CHECK(cudgel.category == ItemCategory::Weapon);
+    CHECK(cudgel.unitDrams == 40);
+    CHECK(cudgel.unitRoyals == 6);
+    CHECK(cudgel.damageLo == baseDamage(Weapon::Blunt));
+    CHECK(cudgel.damageHi == baseDamage(Weapon::Blunt) + kStrikeVarianceMax);
+    CHECK(cudgel.damageWord == "IMPACT");
+    CHECK(cudgel.worn);
+    CHECK(cudgel.useLine.empty());
+    const ItemInspect coat = inspectItem(*items.find("coat"), 2, false, 1);
+    CHECK(coat.dr == 2);
+    CHECK(coat.damageHi == 0);
+    CHECK(coat.count == 2);
+    CHECK(coat.stolen == 1);
+    // A stolen count is never more than what is carried.
+    CHECK(inspectItem(*items.find("coat"), 1, false, 9).stolen == 1);
+    CHECK(inspectItem(*items.find("coat"), 0, false, 9).stolen == 0);
+    const ItemInspect bread = inspectItem(*items.find("bread"), 3, false, 0);
+    CHECK(bread.useVerb == "EAT");
+    CHECK(bread.useLine == "MENDS 12");
+    CHECK(bread.desc == "A LOAF.");
+}
+
+TEST_CASE("the Kit round-trips THEIRS through its codec, still reads a version-1 image, refuses a lie") {
+    ItemRegistry items = ItemRegistry::fromJson(kSmallRaws);
+    items.appendJson(kExtraRaws);
+    Kit kit(items.size());
+    const std::int32_t coat = items.indexOf("coat");
+    const std::int32_t bread = items.indexOf("bread");
+    kit.add(coat, 2);
+    kit.add(bread, 3);
+    kit.markStolen(coat, 1);
+    kit.markStolen(bread, 99);  // clamped to the three carried
+    CHECK(kit.stolen(coat) == 1);
+    CHECK(kit.stolen(bread) == 3);
+    const std::vector<std::uint8_t> bytes = kit.encode(items);
+    Kit back;
+    REQUIRE(Kit::decode(bytes, items, back));
+    CHECK(back.count(coat) == 2);
+    CHECK(back.count(bread) == 3);
+    CHECK(back.stolen(coat) == 1);
+    CHECK(back.stolen(bread) == 3);
+    CHECK(back.encode(items) == bytes);
+    // A kit with nothing lifted still round-trips and encodes deterministically.
+    Kit plain(items.size());
+    plain.add(coat, 1);
+    Kit plainBack;
+    REQUIRE(Kit::decode(plain.encode(items), items, plainBack));
+    CHECK(plainBack.stolen(coat) == 0);
+    // Version 1 is the image this build used to write: counts and worn, no
+    // stolen block. It still decodes, as a body that lifted nothing.
+    std::vector<std::uint8_t> v1 = plain.encode(items);
+    REQUIRE(v1.size() > 7);
+    v1[2] = 1;
+    v1.resize(v1.size() - 4);  // the empty stolen block's count
+    Kit old;
+    REQUIRE(Kit::decode(v1, items, old));
+    CHECK(old.count(coat) == 1);
+    CHECK(old.stolen(coat) == 0);
+    // A version this build does not read is refused whole, and so is a
+    // stolen count past what is carried.
+    std::vector<std::uint8_t> v3 = bytes;
+    v3[2] = 3;
+    CHECK_FALSE(Kit::decode(v3, items, back));
+    Kit liar(items.size());
+    liar.add(coat, 1);
+    std::vector<std::uint8_t> lie = liar.encode(items);
+    // Rewrite the (empty) stolen block into one that claims two of the coat.
+    lie.resize(lie.size() - 4);
+    const std::uint8_t claim[] = {1, 0, 0, 0, 4, 'c', 'o', 'a', 't', 2, 0, 0, 0};
+    lie.insert(lie.end(), std::begin(claim), std::end(claim));
+    CHECK_FALSE(Kit::decode(lie, items, back));
+}
+
+TEST_CASE("units that are nobody's leave first, so what is left keeps its THEIRS") {
+    ItemRegistry items = ItemRegistry::fromJson(kSmallRaws);
+    Kit kit(items.size());
+    const std::int32_t rope = items.indexOf("rope");
+    kit.add(rope, 3);
+    kit.markStolen(rope, 1);
+    kit.take(rope, 2);
+    CHECK(kit.count(rope) == 1);
+    CHECK(kit.stolen(rope) == 1);
+    kit.take(rope, 1);
+    CHECK(kit.count(rope) == 0);
+    CHECK(kit.stolen(rope) == 0);
+    // Nothing carried, nothing to mark.
+    kit.markStolen(rope, 2);
+    CHECK(kit.stolen(rope) == 0);
+}
+
+TEST_CASE("the Kit's hash holds still for rows an extra file added, and moves the moment one is held") {
+    ItemRegistry items = ItemRegistry::fromJson(kSmallRaws);
+    const std::size_t base = items.baseRows();
+    items.appendJson(kExtraRaws);
+    REQUIRE(items.size() == base + 2);
+    // The same body, over the first file alone and over the first file plus
+    // the extra: the extra's rows are empty, so the number is the same.
+    Kit narrow(base);
+    narrow.add(items.indexOf("coat"), 1);
+    narrow.wear(items, items.indexOf("coat"));
+    Kit wide(items.size());
+    wide.add(items.indexOf("coat"), 1);
+    wide.wear(items, items.indexOf("coat"));
+    CHECK(kitHash(wide, base) == kitHash(narrow, base));
+    // Holding a consumable moves it, and so does a stolen unit of a base row.
+    Kit fed = wide;
+    fed.add(items.indexOf("bread"), 1);
+    CHECK(kitHash(fed, base) != kitHash(wide, base));
+    Kit lifted = wide;
+    lifted.markStolen(items.indexOf("coat"), 1);
+    CHECK(kitHash(lifted, base) != kitHash(wide, base));
+    // Which bread is held is in the number.
+    Kit drank = wide;
+    drank.add(items.indexOf("ale"), 1);
+    CHECK(kitHash(drank, base) != kitHash(fed, base));
+}
+
+TEST_CASE("USE spends one unit: a mend heals, a held tuning is held, nothing is drawn") {
+    Room room(hourOfDay(14), gull::kBartenderX, gull::kBartenderY + 1);
+    Tavern& tavern = room.tavern();
+    const std::int32_t bread = tavern.items().indexOf("bread");
+    const std::int32_t bandage = tavern.items().indexOf("bandage");
+    const std::int32_t ale = tavern.items().indexOf("ale");
+    REQUIRE(bread >= 0);
+    REQUIRE(tavern.giveItem("bread", 2));
+    REQUIRE(tavern.giveItem("bandage", 1));
+    REQUIRE(tavern.giveItem("ale", 1));
+    tavern.setPlayerHealth(50, 100);
+    const Tavern::StealResult ate = tavern.useItem(bread);
+    CHECK(ate.result == ServiceResult::Served);
+    CHECK(ate.line == "ATE - BREAD. MENDS 12.");
+    CHECK(tavern.playerHp() == 62);
+    CHECK(tavern.kit().count(bread) == 1);
+    // A mend never goes past the ceiling.
+    CHECK(tavern.useItem(bandage).result == ServiceResult::Served);
+    CHECK(tavern.useItem(tavern.items().indexOf("bread")).result == ServiceResult::Served);
+    CHECK(tavern.playerHp() == 100);
+    CHECK(tavern.kit().count(bandage) == 0);
+    // A held tuning: the ale, +1 MIGHT for five minutes, and a mend of four.
+    tavern.setPlayerHealth(40, 100);
+    const std::int32_t might = tavern.effectiveAttributes().value(AttributeId::Might);
+    const std::int32_t loadBefore = tavern.loadBudget();
+    const Tavern::StealResult drank = tavern.useItem(ale);
+    CHECK(drank.result == ServiceResult::Served);
+    CHECK(drank.line == "DRANK - ALE. MENDS 4, MIGHT +1 FOR 300 S.");
+    CHECK(tavern.playerHp() == 44);
+    CHECK(tavern.effectiveAttributes().value(AttributeId::Might) == might + 1);
+    CHECK(tavern.loadBudget() == loadBefore + kLoadPerMight);
+    REQUIRE(tavern.heldEffects().size() == 1);
+    CHECK(tavern.heldEffects().front().spellId == "ale");
+    // It lapses on the room's own clock, like a spell's.
+    room.run(301);
+    CHECK(tavern.heldEffects().empty());
+    CHECK(tavern.effectiveAttributes().value(AttributeId::Might) == might);
+}
+
+TEST_CASE("USE refuses and keeps the unit: nothing carried, no use, a mend on a whole body") {
+    Room room(hourOfDay(14), gull::kBartenderX, gull::kBartenderY + 1);
+    Tavern& tavern = room.tavern();
+    const std::int32_t bread = tavern.items().indexOf("bread");
+    const std::int32_t rope = tavern.items().indexOf("rope");
+    const std::int32_t ale = tavern.items().indexOf("ale");
+    // Nothing carried.
+    CHECK(tavern.useItem(bread).result == ServiceResult::Refused);
+    CHECK(tavern.useItem(bread).line == "NOTHING TO USE.");
+    CHECK(tavern.useItem(-1).result == ServiceResult::Refused);
+    // A thing with no use.
+    REQUIRE(tavern.giveItem("rope"));
+    const Tavern::StealResult tried = tavern.useItem(rope);
+    CHECK(tried.result == ServiceResult::Refused);
+    CHECK(tried.line == "THE ROPE HAS NO USE.");
+    CHECK(tavern.kit().count(rope) == 1);
+    // A mend on a body that is whole: the unit is kept.
+    REQUIRE(tavern.giveItem("bread"));
+    tavern.setPlayerHealth(100, 100);
+    const std::uint64_t before = room.hash();
+    const Tavern::StealResult well = tavern.useItem(bread);
+    CHECK(well.result == ServiceResult::Refused);
+    CHECK(well.line == "YOU ARE WELL ALREADY.");
+    CHECK(tavern.kit().count(bread) == 1);
+    CHECK(room.hash() == before);
+    // The ale is a tuning as well as a mend, so a whole body may still drink it.
+    REQUIRE(tavern.giveItem("ale"));
+    CHECK(tavern.useItem(ale).result == ServiceResult::Served);
+    // A second drink refreshes the hold whole: one row, never two stacked.
+    REQUIRE(tavern.giveItem("ale"));
+    room.run(100);
+    CHECK(tavern.useItem(ale).result == ServiceResult::Served);
+    REQUIRE(tavern.heldEffects().size() == 1);
+    CHECK(tavern.holdSecondsLeft(tavern.heldEffects().front()) == 300);
+}
+
+TEST_CASE("a lifted ale is THEIRS in the pack, a free loaf is not, and a drop keeps what is left") {
+    // The Gull's own ale at (153,70) and the free loaves on the quay are
+    // authored stands of items_consumables.json.
+    Room room(hourOfDay(14), 153, 69);
+    Tavern& tavern = room.tavern();
+    room.run(2);
+    const std::int32_t ale = tavern.items().indexOf("ale");
+    bool seen = false;
+    for (const GroundItem& entry : tavern.groundItems()) {
+        seen = seen || (entry.item == ale && entry.owned && entry.x == 153 && entry.y == 70);
+    }
+    REQUIRE(seen);
+    room.setYaw(kFacingSouth);
+    // The bread a tile east is as near as the ale: take the ale by its index.
+    std::int32_t at = -1;
+    for (std::size_t i = 0; i < tavern.groundItems().size(); ++i) {
+        if (tavern.groundItems()[i].item == ale) {
+            at = static_cast<std::int32_t>(i);
+        }
+    }
+    REQUIRE(at >= 0);
+    const Tavern::StealResult took = tavern.takeGroundItem(at);
+    REQUIRE(took.result == ServiceResult::Served);
+    CHECK(took.line.rfind("TAKEN - ", 0) == 0);
+    CHECK(tavern.kit().count(ale) == 1);
+    CHECK(tavern.kit().stolen(ale) == 1);
+    // Drinking it spends the unit, and the stolen mark goes with it.
+    tavern.setPlayerHealth(10, 100);
+    REQUIRE(tavern.useItem(ale).result == ServiceResult::Served);
+    CHECK(tavern.kit().count(ale) == 0);
+    CHECK(tavern.kit().stolen(ale) == 0);
+}
+
+TEST_CASE("the consumables' stands are standable, and the free ones are nobody's") {
+    const ItemRegistry items = ItemRegistry::load(content::contentDir());
+    const content::World world = content::loadWorldFile(content::bakedMap(docks::kWorldName));
+    const TileQuery tiles(world);
+    int found = 0;
+    int owned = 0;
+    for (const ItemStand& stand : items.stands()) {
+        const ItemDef* row = items.find(stand.item);
+        if (row == nullptr || row->effects.empty()) {
+            continue;
+        }
+        ++found;
+        owned += stand.owned ? 1 : 0;
+        INFO("stand: ", stand.item, " at ", stand.x, ",", stand.y);
+        CHECK(tiles.standable(stand.x, stand.y, stand.band));
+    }
+    CHECK(found == 4);
+    CHECK(owned == 2);
+}

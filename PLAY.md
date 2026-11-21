@@ -411,6 +411,14 @@ that). Buying puts the thing in your Kit (`J`, the Character tile) and
 refuses past your load with TAKE's own numbers. Met in the street at night,
 a keeper offers the shelf and tells you to come by the counter.
 
+**The pack** (OBLIVION-PLAN phase 8). `J`, then `[` or `]` to the Character tile, then `TAB`
+(`LT`/`RT` on a pad) steps it from the sheet to the pack: what you wear, then what you carry grouped by
+what it is, the load across the top, and a pane on the right about the thing under the cursor -- what it
+is, its weight and worth, a weapon's span, a piece's DR, what using it does, and `THEIRS` when you lifted
+it. `ENTER` wears or bares a worn thing and eats, drinks or binds a consumable; `X` drops one; `LEFT` and
+`RIGHT` walk its quick slot. A loaf, a mug of ale and a bandage lie on the quay and in the Gull. `granadad
+--pack` plays the line.
+
 **The purses are real.** What you pay goes into the keeper's own purse in
 the ward's ledger; what Fenner pays comes out of his, and a short pawnbroker
 says so: *"FENNER HAS NOT GOT IT TODAY."* Worn things are not for sale --

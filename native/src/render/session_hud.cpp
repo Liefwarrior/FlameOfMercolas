@@ -1440,6 +1440,7 @@ void Session::drawFrame(Framebuffer& target) const {
         MenuTileState tiles;
         tiles.open = true;
         tiles.character = characterPanelView();
+        tiles.inspect = inspectPaneView();
         tiles.map = mapPanelView();
         tiles.letters = lettersPanelView();
         tiles.journal = journalPanelView();
