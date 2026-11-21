@@ -633,6 +633,53 @@ the weather and the lamp list, written into the `SceneDescription`
 Cost, on llvmpipe at 1280x720 for the first street frame: see the PR for the
 measured budget. Not verified here: the Windows `.exe` on a real GPU (see the PR).
 
+### Characters and the first-person view (phase 6 of `docs/design/OBLIVION-PLAN.md`)
+
+The people are low-poly figures built in code (`render3d/figure.cpp`, from the
+solids of `render3d/shapes.cpp`): no model file, so a clean checkout draws them.
+When the licensed glb rigs are on disk (`content/art/lot-3d/characters/`) they
+still win for the kinds that have one, exactly as before. Three pure functions:
+
+- **Who.** `actorLookFor(kind, id, female)` is a parameter set: build, skin, hair
+  colour and cut, coat colour and cut (a tunic, a coat, a robe or dress, shirt
+  sleeves), trousers, headgear (cap, helmet, hood, brimmed hat, knit cap, scarf,
+  coif) and an apron. A function of the body's kind, its id and the sex its name
+  says, nothing else, so a Watchman is a Watchman at a glance and no two serfs are
+  alike. Packed to a 26-bit key that is the mesh id's low bits: the description
+  holds one mesh per look in sight, not one per body, and the key is hashed with
+  the body. The id also draws a height (0.95 to 1.05 of the kind's).
+- **What.** `buildFigure(look)` is one rigged mesh: ~1,400 triangles near, about
+  600 in the far twin that bodies beyond the skin radius use (no face, a mitten for
+  a hand, four-sided limbs). A 15-bone skeleton (pelvis, torso, head, two arms of
+  three bones, two legs of three), every vertex weighted to one bone, every limb
+  capped past its joint so a bent knee shows no gap. The rest joints ride in the
+  mesh (`MeshData::bones`, `boneRest`) and are hashed with it.
+- **How.** `evaluateFigurePose(rest, clip, frame)` is the animation, written by
+  hand: idle, walk, punch left and right, block, hit, recover (sitting dazed on
+  the floor, where a struck-down body is drawn), death (flat on the back, where a
+  slain one lies) and the new **talk** (clip index 10: 8 and 9 stay reserved by
+  the glb asset contract): the head nods and turns and the right hand talks. The
+  Gull's actor held for a conversation, and the ward body you are speaking to,
+  play it. A pure function of the clip and the frame the sim derived
+  (`actorClipFrame`: the player's step count shifted by the actor id): no clock, no
+  RNG, so two sessions driven the same way describe the same crowd to the byte
+  (`tests/test_figure.cpp`). A looping clip wraps its length; a one-shot plays to
+  its length and holds, which is where the sim leaves a body that is down.
+
+The adapter poses a copy of the rest mesh on the CPU for a near body and writes it
+over the GPU's buffers (what `UpdateModelAnimation` does for a glb), and puts the
+rest back for the far ones. **The hands** are the same solids (a hand with its
+knuckles, four curled fingers and a thumb, a sleeve with a cuff, a studded club, a
+dagger, a cutlass with a fuller and a guard) in the viewmodel's own pass; the
+poses and the state machine are unchanged. Captures: `--sheet=clips` stands one
+figure per clip in front of the eye, `--sheet=looks` one per kind of body, and
+`--hands=fists|club|dagger|sword` puts that hand model in the hands (verification
+aids; nothing in the sim reads them).
+
+Not verified here: the Windows `.exe` on a real GPU (see the PR). The talk clip is
+not yet wired to the dialogue pages (phase 12 does that; today it plays on the
+person you are speaking to).
+
 ## 2. CMake presets — the fast local loop
 
 Needs cmake ≥ 3.24, Ninja, and a C++20 compiler on your PATH.

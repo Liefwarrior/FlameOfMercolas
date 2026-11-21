@@ -156,6 +156,13 @@ TEST_CASE("any byte of the description moved is a different hash") {
         crowd.actors[0].clipFrame = 8;
         CHECK(sceneHash(crowd) != withBody);
         crowd.actors[0].clipFrame = 7;
+        // PHASE 6: and who they are is part of the picture too.
+        crowd.actors[0].lookKey = 12345;
+        CHECK(sceneHash(crowd) != withBody);
+        crowd.actors[0].lookKey = 0;
+        crowd.actors[0].clip = ActorClip::Talk;
+        CHECK(sceneHash(crowd) != withBody);
+        crowd.actors[0].clip = ActorClip::Idle;
         crowd.actors[0].skinned = true;
         CHECK(sceneHash(crowd) != withBody);
     }
@@ -355,10 +362,20 @@ SceneDescription crowdScene(const render::Session& session) {
     putActorRigs(scene);
     scene.camera = cameraFrom(session.camera(), 16.0F / 9.0F);
     scene.actors = actorInstances(session, session.camera());
+    putActorFigures(scene, scene.actors);
     return scene;
 }
 
 [[nodiscard]] bool nearly(float a, float b, float eps = 1e-4F) { return std::fabs(a - b) <= eps; }
+
+/// PHASE 6: is this body of this kind? A person is drawn as the figure of its
+/// look (the mesh id carries the look's kind); a beast is still its kind's box.
+[[nodiscard]] bool isKind(const ActorInstance& body, sim::WardType type) {
+    if (isFigureMeshId(body.instance.meshId)) {
+        return ActorLook::fromKey(body.lookKey).type == static_cast<std::uint8_t>(type);
+    }
+    return body.instance.meshId == actorRigMeshId(actorRigOf(type));
+}
 
 }  // namespace
 
@@ -426,7 +443,7 @@ TEST_CASE("an actor is drawn where the simulation says the actor is") {
             if (nearly(body.instance.position.x, where.x) &&
                 nearly(body.instance.position.y, where.y) &&
                 nearly(body.instance.position.z, where.z) &&
-                body.instance.meshId == actorRigMeshId(actorRigOf(actor.type))) {
+                isKind(body, actor.type)) {
                 found = true;
                 CHECK(body.rig == actorRigFor(actor.type, actor.id,
                                               session.people().identity(actor.id).name));
@@ -437,7 +454,7 @@ TEST_CASE("an actor is drawn where the simulation says the actor is") {
                 CHECK(body.instance.tint.a == 255);
                 if (sim::isPerson(actor.type)) {
                     CHECK(body.instance.scale > 0.5F);
-                    CHECK(body.instance.scale < 1.2F);
+                    CHECK(body.instance.scale < 1.3F);
                 } else {
                     CHECK(body.instance.scale == 1.0F);
                 }
@@ -472,7 +489,7 @@ TEST_CASE("an actor is drawn where the simulation says the actor is") {
                 // VOICE LANE: the one held for a talk stands; nobody is
                 // held here, so this is the activity's own clip.
                 CHECK(body.clip == (session.tavern().holdsForTalk(actor)
-                                        ? ActorClip::Idle
+                                        ? ActorClip::Talk
                                         : clipForActivity(actor.activity(), actor.npcSwingSeq())));
                 break;
             }
@@ -514,7 +531,7 @@ TEST_CASE("an actor is drawn where the simulation says the actor is") {
         for (const ActorInstance& body : later.actors) {
             if (nearly(body.instance.position.x, where.x) &&
                 nearly(body.instance.position.z, where.z) &&
-                body.instance.meshId == actorRigMeshId(actorRigOf(actor.type))) {
+                isKind(body, actor.type)) {
                 found = true;
                 CHECK(body.clip == ActorClip::Walk);
                 break;
@@ -577,6 +594,10 @@ TEST_CASE("the clip table follows the activity and the rigs name the asset lane'
     CHECK(clipForActivity(sim::Activity::Drinking, 0) == ActorClip::Idle);
     CHECK(clipForActivity(sim::Activity::Watching, 0) == ActorClip::Idle);
     CHECK(clipForActivity(sim::Activity::Warning, 0) == ActorClip::Idle);
+    // PHASE 6: Talk is clip index 10; 8 and 9 stay reserved by the glb contract.
+    CHECK(static_cast<int>(ActorClip::Talk) == 10);
+    CHECK(actorClipName(ActorClip::Talk) == "talk");
+    CHECK(!actorClipOneShot(ActorClip::Talk));
     CHECK(wardClip(true) == ActorClip::Walk);
     CHECK(wardClip(false) == ActorClip::Idle);
     CHECK(actorClipOneShot(ActorClip::Death));
@@ -686,7 +707,8 @@ TEST_CASE("the one held for a talk is drawn standing and facing you, whatever hi
     for (const ActorInstance& body : bodies) {
         if (standsAt(body, *now)) {
             drawn = true;
-            CHECK(body.clip == ActorClip::Idle);
+            // PHASE 6: held for the talk, he TALKS (the gesturing clip).
+            CHECK(body.clip == ActorClip::Talk);
             CHECK(body.instance.yaw ==
                   doctest::Approx(static_cast<float>(now->facing()) * (2.0F * kTestPi / 65536.0F)));
         }
@@ -773,9 +795,11 @@ TEST_CASE("the rig split is a pure function of kind and id, about half, and neve
             ++women;
             CHECK(body.instance.meshId != actorRigMeshId(kActorRigTownswoman));
         }
-        if (body.instance.meshId == actorRigMeshId(actorRigOf(sim::WardType::Urchin))) {
+        if (isKind(body, sim::WardType::Urchin)) {
             ++urchins;
-            CHECK(body.instance.scale == doctest::Approx(1.30F / 1.875F));
+            // The kind's height, times the id's own jitter (phase 6: 0.95 to 1.05).
+            CHECK(body.instance.scale > 1.30F / 1.875F * 0.949F);
+            CHECK(body.instance.scale < 1.30F / 1.875F * 1.051F);
             if (body.rig == kActorRigTownswoman) {
                 ++urchinWomen;
             }
@@ -841,7 +865,7 @@ TEST_CASE("a named body follows its name, and the id draw only where the name sa
     for (const ActorInstance& body : scene.actors) {
         if (body.rig == kActorRigTownswoman) {
             ++women;
-        } else if (body.instance.meshId == actorRigMeshId(actorRigOf(sim::WardType::Serf))) {
+        } else if (isKind(body, sim::WardType::Serf)) {
             ++men;
         }
     }

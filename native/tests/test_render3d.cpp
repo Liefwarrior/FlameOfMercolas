@@ -560,6 +560,7 @@ TEST_CASE("the ward's people render as figures in the 3D frame") {
     docks.refresh(scene, eye, static_cast<float>(kWidth) / static_cast<float>(kHeight), params);
     putActorRigs(scene);
     scene.actors = actorInstances(session, eye);
+    putActorFigures(scene, scene.actors);
     REQUIRE(!scene.actors.empty());
     // The subject is among them, two tiles ahead of the eye. Same
     // personal-space nudge actorInstances() applies to every body's render
@@ -584,7 +585,13 @@ TEST_CASE("the ward's people render as figures in the 3D frame") {
     SceneStats stats;
     const render::Framebuffer frame = drawOnce(*video, scene, nullptr, &stats);
     CHECK(stats.actorsDrawn == scene.actors.size());
-    CHECK(stats.actorsSkinned == 0);  // no glb here: every body is its placeholder
+    // No glb here: every person is a procedural figure, posed on the CPU when it is near
+    // (a beast is still its box).
+    std::size_t nearBodies = 0;
+    for (const ActorInstance& body : scene.actors) {
+        nearBodies += (body.skinned && isFigureMeshId(body.instance.meshId)) ? 1U : 0U;
+    }
+    CHECK(stats.actorsSkinned == nearBodies);
     CHECK(stats.rigModelsLoaded == 0);
     CHECK(stats.instancesDrawn == scene.instances.size() + scene.actors.size());
 

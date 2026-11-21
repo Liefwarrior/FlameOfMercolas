@@ -154,6 +154,19 @@ void pushBox(MeshData& mesh, float x0, float y0, float z0, float x1, float y1, f
                    live.empty() ? render::Rgb{} : render::pooledGlow(render::dynamicGlowAt(live, x, y, z)));
 }
 
+/// PHASE 6: a person is drawn as the procedural figure of their look -- the
+/// rest mesh for the look's key, at the kind's height and the id's own jitter.
+/// A beast keeps its box.
+void dressBody(ActorInstance& body, sim::WardType type, std::int32_t id, std::string_view name) {
+    if (!sim::isPerson(type)) {
+        return;
+    }
+    const ActorLook look = actorLookFor(type, id, actorFemale(type, id, name));
+    body.lookKey = look.key();
+    body.instance.meshId = figureMeshId(look);
+    body.instance.scale = actorInstanceScale(type) * actorHeightJitter(id);
+}
+
 [[nodiscard]] float yawOf(sim::Angle facing) noexcept {
     // BAM 0 is north, increasing clockwise (sim/angle.hpp) -- the scene's
     // own convention, so this is a scale and nothing else.
@@ -304,6 +317,27 @@ std::uint8_t actorRigFor(sim::WardType type, std::int32_t actorId, std::string_v
     return actorRigFor(type, actorId);
 }
 
+bool actorFemale(sim::WardType type, std::int32_t actorId, std::string_view name) noexcept {
+    if (!sim::isPerson(type)) {
+        return false;
+    }
+    const int says = actorNameSays(name);
+    if (says != 0) {
+        return says > 0;
+    }
+    if (actorKindSplits(type)) {
+        return (actorLookDraw(actorId) & 1U) != 0U;
+    }
+    switch (type) {
+        case sim::WardType::Wastrel:
+        case sim::WardType::Thief:
+        case sim::WardType::DiscipleOfTheFlame:
+            return (actorLookDraw(actorId) & 1U) != 0U;
+        default:
+            return false;
+    }
+}
+
 float actorInstanceScale(sim::WardType type) noexcept {
     if (!sim::isPerson(type)) {
         return 1.0F;
@@ -321,6 +355,7 @@ std::string_view actorClipName(ActorClip clip) noexcept {
         case ActorClip::Hit: return "hit";
         case ActorClip::Recover: return "recover";
         case ActorClip::Death: return "death";
+        case ActorClip::Talk: return "talk";
     }
     return "idle";
 }
@@ -406,6 +441,15 @@ MeshData buildActorPlaceholder(std::uint8_t kind) {
     return mesh;
 }
 
+void putActorFigures(SceneDescription& scene, const std::vector<ActorInstance>& actors) {
+    for (const ActorInstance& body : actors) {
+        if (isFigureMeshId(body.instance.meshId)) {
+            const ActorLook look = ActorLook::fromKey(body.lookKey);
+            putFigure(scene, look, isFarFigureMeshId(body.instance.meshId));
+        }
+    }
+}
+
 void putActorRigs(SceneDescription& scene) {
     for (std::uint32_t kind = 0; kind < kActorKindCount; ++kind) {
         const MeshData* present = scene.findMesh(actorRigMeshId(kind));
@@ -471,15 +515,21 @@ std::vector<ActorInstance> actorInstances(const render::Session& session,
         body.instance.position = toScene(px, py, render::bandSurface(actor.band));
         body.instance.yaw = yawOf(actor.facing);
         body.instance.scale = actorInstanceScale(actor.type);
+        dressBody(body, actor.type, actor.id, people.identity(actor.id).name);
         body.instance.tint =
             params.perPixel ? Rgba8{255, 255, 255, 255}
                             : bodyTint(sky, params.pool, params.spill, glow, kNoLive, actor.x, actor.y, actor.band);
         body.clip = actor.slain ? ActorClip::Death
                     : down     ? ActorClip::Recover
                     : actor.dead ? ActorClip::Death
-                                 : wardClip(actor.x != actor.prevX || actor.y != actor.prevY);
+                    : (session.talking() && session.wardTalkingTo() == actor.id)
+                        ? ActorClip::Talk
+                        : wardClip(actor.x != actor.prevX || actor.y != actor.prevY);
         body.clipFrame = actorClipFrame(stepCount, actor.id);
         body.skinned = distance <= params.skinDistance;
+        if (!body.skinned && isFigureMeshId(body.instance.meshId)) {
+            body.instance.meshId = figureFarMeshId(ActorLook::fromKey(body.lookKey));
+        }
         out.push_back(body);
     }
 
@@ -507,6 +557,7 @@ std::vector<ActorInstance> actorInstances(const render::Session& session,
         body.instance.position = toScene(px, py, render::bandSurface(actor.band()));
         body.instance.yaw = yawOf(actor.facing());
         body.instance.scale = actorInstanceScale(type);
+        dressBody(body, type, actor.id(), actor.name());
         body.instance.tint = params.perPixel
                                  ? Rgba8{255, 255, 255, 255}
                                  : bodyTint(sky, params.pool, params.spill, glow, live, actor.tileX(),
@@ -517,11 +568,16 @@ std::vector<ActorInstance> actorInstances(const render::Session& session,
         // held man drawn mid-stride in the walk clip, hair over the face,
         // read as a prop with a panel over it. The clip is the one render
         // fact the hold owns; the facing is the sim's, read below as ever.
+        // PHASE 6: and while he is held for it he TALKS (the gesturing clip),
+        // so the one you are speaking to is seen speaking.
         body.clip = session.tavern().holdsForTalk(actor)
-                        ? ActorClip::Idle
+                        ? ActorClip::Talk
                         : clipForActivity(actor.activity(), actor.npcSwingSeq());
         body.clipFrame = actorClipFrame(stepCount, actor.id());
         body.skinned = distance <= params.skinDistance;
+        if (!body.skinned && isFigureMeshId(body.instance.meshId)) {
+            body.instance.meshId = figureFarMeshId(ActorLook::fromKey(body.lookKey));
+        }
         out.push_back(body);
     }
     return out;

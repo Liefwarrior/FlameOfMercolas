@@ -370,6 +370,14 @@ struct Options {
     /// before the lighting phase, for a machine whose GPU cannot take the new
     /// passes and to photograph the difference.
     bool perPixelLight = true;
+    /// PHASE 6, VERIFICATION ONLY: `--hands=fists|club|dagger|sword` puts that
+    /// hand model in the hands of the capture (-1 = what the sim holds).
+    int handsKind = -1;
+    /// PHASE 6, VERIFICATION ONLY: `--sheet=clips` or `--sheet=looks` stands a
+    /// row of figures in front of the eye instead of the ward's people: one
+    /// per animation clip, or one per kind of body each with its own look.
+    /// 0 = off, 1 = clips, 2 = looks. Render-only.
+    int sheet = 0;
     /// THE LOT PASS: --music-off. The MusicDirector loads and plays nothing;
     /// every other sound stays. Audio-side only, never in the settings file
     /// (a launch flag, like --nohud).
@@ -797,6 +805,9 @@ void print_usage() {
         "                       scripted line sets its own hour when this is not\n"
         "                       given -- --skyrun wants 22, when Finch is in\n"
         "                       the snug -- and never overrides one that is\n"
+        "  --sheet=clips|looks  capture a row of figures in front of the eye: one per\n"
+        "                       animation clip, or one per kind of body\n"
+        "  --hands=KIND         capture with fists, club, dagger or sword in the hands\n"
         "  --flat-light         the 3D world lit as it was before the lighting\n"
         "                       phase (vertex colour): no per-pixel lamps, shadows,\n"
         "                       sky shader or bloom\n"
@@ -1313,6 +1324,14 @@ void print_usage() {
             options.video3d = false;
         } else if (std::strcmp(arg, "--flat-light") == 0) {
             options.perPixelLight = false;
+        } else if (starts_with(arg, "--sheet=", &value)) {
+            options.sheet = std::strcmp(value, "clips") == 0 ? 1 : (std::strcmp(value, "looks") == 0 ? 2 : 0);
+        } else if (starts_with(arg, "--hands=", &value)) {
+            options.handsKind = std::strcmp(value, "fists") == 0    ? 0
+                                : std::strcmp(value, "club") == 0   ? 1
+                                : std::strcmp(value, "dagger") == 0 ? 2
+                                : std::strcmp(value, "sword") == 0  ? 3
+                                                                    : -1;
         } else if (starts_with(arg, "--controls=", &value)) {
             options.controlsFile = value;
         } else if (starts_with(arg, "--clock=", &value)) {
@@ -3896,9 +3915,63 @@ struct VideoBridge {
 /// it. Same licence, same gitignore, same silent fallback (the chunk mesh).
 [[nodiscard]] std::string static_model_dir() { return weapon_model_dir(); }
 
+/// PHASE 6, VERIFICATION ONLY (--sheet=): a row of figures standing in front
+/// of the eye, facing it, in place of the ward's people. `mode` 1 is one
+/// figure per animation clip, each caught on the frame that shows it best;
+/// 2 is one per kind of body, alternately a man and a woman, standing.
+std::vector<render3d::ActorInstance> figure_sheet(const render::Session& session, int mode) {
+    std::vector<render3d::ActorInstance> out;
+    const render::Camera cam = session.camera();
+    const float fx = std::sin(cam.yaw);
+    const float fy = -std::cos(cam.yaw);
+    const float rx = std::cos(cam.yaw);
+    const float ry = std::sin(cam.yaw);
+    const float up = render::bandSurface(session.body().band());
+    struct Pose {
+        render3d::ActorClip clip;
+        std::uint32_t frame;
+    };
+    const Pose clips[] = {{render3d::ActorClip::Idle, 30},       {render3d::ActorClip::Walk, 13},
+                          {render3d::ActorClip::PunchRight, 17}, {render3d::ActorClip::PunchLeft, 17},
+                          {render3d::ActorClip::Block, 10},      {render3d::ActorClip::Talk, 30},
+                          {render3d::ActorClip::Hit, 6},         {render3d::ActorClip::Recover, 9999},
+                          {render3d::ActorClip::Death, 9999}};
+    const sim::WardType kinds[] = {
+        sim::WardType::Serf,   sim::WardType::Shopkeeper,        sim::WardType::Sailor,
+        sim::WardType::Fisher, sim::WardType::MilitiaWatch,      sim::WardType::Wastrel,
+        sim::WardType::Urchin, sim::WardType::Thief,             sim::WardType::PriestOfTheFlame,
+        sim::WardType::DiscipleOfTheFlame, sim::WardType::AnimalKeeper, sim::WardType::Carter};
+    const int count = mode == 1 ? 9 : 12;
+    for (int i = 0; i < count; ++i) {
+        const float across = (static_cast<float>(i) - static_cast<float>(count - 1) * 0.5F) * 0.8F;
+        const float depth = mode == 1 ? 4.4F : 5.0F;
+        const float px = cam.x + fx * depth + rx * across;
+        const float py = cam.y + fy * depth + ry * across;
+        render3d::ActorInstance body;
+        sim::WardType type = mode == 1 ? sim::WardType::Sailor : kinds[i];
+        const std::int32_t id = mode == 1 ? 21 : 40 + i * 7;
+        const bool female = mode == 1 ? false : (i % 2 == 1);
+        const render3d::ActorLook look = render3d::actorLookFor(type, id, female);
+        body.lookKey = look.key();
+        body.instance.meshId = render3d::figureMeshId(look);
+        body.instance.position = render3d::toScene(px, py, up);
+        body.instance.yaw = cam.yaw + 3.14159265F;
+        body.instance.scale = render3d::actorInstanceScale(type) * render3d::actorHeightJitter(id);
+        body.instance.tint = render3d::Rgba8{255, 255, 255, 255};
+        body.skinned = true;
+        body.clip = mode == 1 ? clips[i].clip : render3d::ActorClip::Idle;
+        body.clipFrame = mode == 1 ? clips[i].frame : 30U;
+        out.push_back(body);
+    }
+    return out;
+}
+
 struct SceneRig {
     /// PHASE 5: lit per pixel (Options::perPixelLight).
     bool perPixel = true;
+    /// PHASE 6: Options::handsKind and Options::sheet.
+    int handsKind = -1;
+    int sheet = 0;
     render3d::SceneDescription scene;
     std::unique_ptr<render3d::WorldScene> world;
     /// S LANE. The piece catalogue (content/raws/world3d/docks-pieces.json)
@@ -3960,13 +4033,18 @@ struct SceneRig {
         actorParams.spill = &world->spill();
         actorParams.perPixel = perPixel;
         scene.actors = render3d::actorInstances(session, session.camera(), actorParams);
+        // PHASE 6: and the figure of every person in sight (one mesh a look).
+        if (sheet != 0) {
+            scene.actors = figure_sheet(session, sheet);
+        }
+        render3d::putActorFigures(scene, scene.actors);
         // V LANE: the player's own hands. The placeholder parts put once
         // (the adapter swaps in the arms glb by name where it has one), the
         // pose rewritten every frame off Session::viewmodel() -- the machine
         // step() runs beside the sim, so a scripted swing photographs the
         // same frame on every machine.
         render3d::putViewmodelMeshes(scene);
-        scene.viewmodel = render3d::viewmodelInstance(session);
+        scene.viewmodel = render3d::viewmodelInstance(session, handsKind);
         if (perPixel) {
             // The hands are drawn in their own pass, in view space, where the
             // per-pixel light cannot reach: they wear the light at the eye, by
@@ -4035,6 +4113,8 @@ render3d::SceneStats present_frame(render3d::Backend& video, const Options& opti
     }
     SceneRig rig;
     rig.perPixel = options.perPixelLight;
+    rig.handsKind = options.handsKind;
+    rig.sheet = options.sheet;
     render::Framebuffer shot(1, 1);
     const render3d::SceneStats stats =
         present_frame(*video, options, rig, session, overlay, &shot);
@@ -4731,6 +4811,8 @@ int run_client(const Options& options, const render::CreationResult& chosen,
     VideoBridge bridge;
     SceneRig rig;
     rig.perPixel = options.perPixelLight;
+    rig.handsKind = options.handsKind;
+    rig.sheet = options.sheet;
     std::printf("granadad: video %s backend, %dx%d window%s\n",
                 video.kind() == render3d::VideoKind::Headless ? "headless" : "gpu", video.width(),
                 video.height(), options.video3d ? ", 3D world" : ", --2d software world");

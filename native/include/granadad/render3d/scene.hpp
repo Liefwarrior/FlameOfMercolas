@@ -43,6 +43,8 @@
 //     1000 .. 99999     chunk meshes  -- chunk_mesher.hpp
 //     100000 .. 199999  actor rigs    -- actor_instances.hpp
 //     200000 .. 209999  viewmodel     -- viewmodel.hpp
+//     0x01000000 ..     rigged people -- figure.hpp (one rest mesh per LOOK:
+//                       the id is the base plus the packed look key)
 //
 // STATIC PIECES (static_pieces.hpp) carry no mesh id at all: a StaticInstance
 // names a row of the description's own `pieces` table (a glTF file under the
@@ -87,6 +89,9 @@ inline constexpr std::uint32_t kStarterCubeMeshId = 2;
 inline constexpr std::uint32_t kChunkMeshIdBase = 1000;
 inline constexpr std::uint32_t kActorMeshIdBase = 100000;
 inline constexpr std::uint32_t kViewmodelMeshIdBase = 200000;
+/// PHASE 6: the procedural people. Above every other range so a look key
+/// (26 bits) never meets one; see figure.hpp.
+inline constexpr std::uint32_t kFigureMeshIdBase = 0x01000000U;
 
 /// Plain vertex arrays. Indexed triangles, CCW front faces, at most 65535
 /// vertices (raylib indexes with unsigned short; a chunk is 16x16 columns so
@@ -117,6 +122,15 @@ struct MeshData {
     /// llvmpipe frame and the GPU frame are the same picture. Empty means
     /// white.
     std::vector<std::uint8_t> colours;
+    /// PHASE 6: a RIGGED mesh (a person, figure.hpp). One bone index per
+    /// vertex, the vertex weighted wholly to that bone, and `boneRest`: the
+    /// rest position of every joint of the skeleton (xyz each) plus one
+    /// trailing entry of pose parameters. The positions above are the REST
+    /// pose; the adapter poses a copy of them on the CPU (the same
+    /// per-body update the glb rigs get) and puts the rest back for the far
+    /// bodies. Both empty for every other mesh. Hashed with the rest.
+    std::vector<std::uint8_t> bones;
+    std::vector<float> boneRest;
     /// Three per triangle.
     std::vector<std::uint16_t> indices;
 
@@ -185,7 +199,23 @@ struct SceneCamera {
 /// punch_l, punch_r, block, hit, recover, death -- the asset lane's job
 /// file), so `static_cast<int>(clip)` is the animation index the adapter
 /// plays. Nothing may be inserted in the middle.
-enum class ActorClip : std::uint8_t { Idle, Walk, PunchLeft, PunchRight, Block, Hit, Recover, Death };
+///
+/// PHASE 6 adds TALK as clip index 10: 8 and 9 (a sword swing and a spell
+/// blast) are reserved by the same contract and ride unused in the export.
+/// A glb with no clip 10 plays its idle for a talker; the procedural people
+/// (figure.hpp) gesture.
+enum class ActorClip : std::uint8_t {
+    Idle,
+    Walk,
+    PunchLeft,
+    PunchRight,
+    Block,
+    Hit,
+    Recover,
+    Death,
+    Talk = 10,
+};
+/// How many clips the glb contract numbers (0..7); Talk is the one beyond it.
 inline constexpr std::size_t kActorClipCount = 8;
 
 /// ONE BODY, DRAWN. The A lane's unit: a placeholder-or-rig instance plus
@@ -202,6 +232,10 @@ struct ActorInstance {
     /// instance.meshId stays the kind's placeholder; actorRigFile(rig) is
     /// the glb the adapter looks for.
     std::uint8_t rig = 0;
+    /// PHASE 6: the packed appearance (figure.hpp ActorLook::key) of a
+    /// procedural person, 0 for a beast. instance.meshId names the rest
+    /// mesh built from it. Hashed.
+    std::uint32_t lookKey = 0;
     ActorClip clip = ActorClip::Idle;
     /// Clip frame at 60 per second (one per movement step, which is what
     /// the glb keyframes are baked at): body().stepCount() phase-shifted by

@@ -52,6 +52,7 @@
 #include <map>
 #include <vector>
 
+#include "granadad/render3d/figure.hpp"
 #include "granadad/render3d/scene.hpp"
 #include "granadad/sim/actor.hpp"
 #include "granadad/render/lighting.hpp"
@@ -141,6 +142,14 @@ inline constexpr std::uint32_t kSaltLook = 0x4C4F4F4BU;  // "LOOK"
 /// The rig for a NAMED body: the name's say first, the id draw after.
 [[nodiscard]] std::uint8_t actorRigFor(sim::WardType type, std::int32_t actorId,
                                        std::string_view name) noexcept;
+
+/// PHASE 6. Whether a body is drawn a woman: the name's say first (any kind,
+/// so a wastrel called Moll is one), then the rig split for the kinds that
+/// split (the same id draw, so the glb and the procedural figure agree), then
+/// an id draw for the kinds that have no rig split but both sexes (the poor,
+/// the thieves, the Disciples). The Watch, the sailors and the Priest stay
+/// men. A pure function of kind, id and name.
+[[nodiscard]] bool actorFemale(sim::WardType type, std::int32_t actorId, std::string_view name) noexcept;
 
 // actorRigFile(rig) and actorClipOneShot(clip) -- the two facts the adapter
 // needs about a body -- live on scene.hpp, so the one raylib TU sees them
@@ -254,6 +263,11 @@ inline void personalSpaceNudge(std::int32_t selfId, std::int32_t tileX, std::int
 /// already (checked by id + version, so a per-frame call costs sixteen
 /// lookups).
 void putActorRigs(SceneDescription& scene);
+
+/// PHASE 6. Puts the figure mesh of every person in `actors` (its mesh id is a
+/// figure's) into the description if it is not there already, so the
+/// description holds one mesh per look in sight. Call after actorInstances.
+void putActorFigures(SceneDescription& scene, const std::vector<ActorInstance>& actors);
 
 /// The instance scale of a person of this kind: the figure table's height
 /// over the reference person's, the same ratio the sprite sheet draws at --

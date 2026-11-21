@@ -41,6 +41,7 @@
 #include "granadad/render/framebuffer.hpp"
 #include "granadad/render/voxel_classify.hpp"
 #include "granadad/render3d/backend.hpp"
+#include "granadad/render3d/figure.hpp"
 #include "granadad/render3d/shaft_square.hpp"
 
 namespace granadad::render3d::rl {
@@ -64,6 +65,15 @@ struct CachedMesh {
     /// frame from the sun.
     Vec3 lo{};
     Vec3 hi{};
+    /// PHASE 6: a rigged mesh (a person, figure.hpp) keeps its REST arrays so
+    /// a near body can be posed on the CPU and written over the GPU's copy,
+    /// the way UpdateModelAnimation does for a glb. `posed` says the GPU
+    /// holds a pose, not the rest: the next far draw puts the rest back.
+    std::vector<float> restPositions;
+    std::vector<float> restNormals;
+    std::vector<std::uint8_t> bones;
+    std::vector<Vec3> joints;
+    bool posed = false;
 };
 
 /// The texture slot the shadow map is bound to, beside the material's own
@@ -506,6 +516,14 @@ struct Backend::Impl {
 
     /// One body: its rig model, animated when skinned, else its placeholder.
     void drawActor(const ActorInstance& actor, SceneStats& stats);
+
+    /// PHASE 6: a procedural person. The rest mesh as it is for a far body;
+    /// for a near one the clip's pose skinned on the CPU into a copy of the
+    /// GPU's buffers first. False when the body has no rigged mesh here.
+    bool drawFigure(const ActorInstance& actor, SceneStats& stats);
+    /// Scratch for the posed arrays, reused by every body.
+    std::vector<float> skinPositions;
+    std::vector<float> skinNormals;
 
     /// A static piece into the shadow map: its opaque meshes, depth only.
     void drawStaticCaster(const StaticInstance& piece, const SceneDescription& scene);
