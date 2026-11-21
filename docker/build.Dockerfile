@@ -660,11 +660,13 @@ RUN --mount=type=cache,target=/deps,sharing=locked \
         || { echo "FATAL: the case that compares the C++ world hash against the"; \
              echo "       JVM's is not registered. Without it the hasher is only"; \
              echo "       being compared to itself."; exit 1; }; \
-    # S1's two by name. The renderer is software precisely so that a frame of
-    # the real district can be drawn and checked HERE, with no window and no
-    # GPU; and the art case must load the owner's actual sheet rather than the
-    # procedural fallback, which is the one thing that never ships.
-    case "$ctest_list" in *"the Docks render to a frame with a world in it"*) ;; *) false;; esac \
+    # S1's two by name. The renderer draws headless (Mesa llvmpipe, phase 3)
+    # precisely so that a frame of the real district can be drawn and checked
+    # HERE, with no window and no GPU; and the art case must load the owner's
+    # actual sheet rather than the procedural fallback, which is the one thing
+    # that never ships. (The case that did the first used to draw the software
+    # world; phase 7 retired that renderer and the case is the 3D one now.)
+    case "$ctest_list" in *"the Docks render to a 3D frame with a world in it"*) ;; *) false;; esac \
         || { echo "FATAL: the case that renders the Docks in first person is not"; \
              echo "       registered. Every sprint after S1 proves itself with a"; \
              echo "       captured frame, and this is what keeps that path alive."; \
@@ -702,7 +704,7 @@ RUN --mount=type=cache,target=/deps,sharing=locked \
         "a night's sleep does not make anybody forget" \
         "headroom refuses the world's own ceiling" \
         "an actor is drawn where the simulation says the actor is" \
-        "sprite pixels and people are counted apart" \
+        "the room is lit and full at nine, dark and empty at five" \
         "the Gull's lights come out of the baked bytes, not out of the renderer"; do \
         case "$ctest_list" in *"$case"*) ;; *) false;; esac \
             || { echo "FATAL: the case \"$case\" is not registered."; \
