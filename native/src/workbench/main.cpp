@@ -11,6 +11,7 @@
 //
 // Floats are legal in this file: it is a window and a loop, like src/client.
 
+#include <algorithm>
 #include <chrono>
 #include <cstdlib>
 #include <cstdio>
@@ -24,11 +25,42 @@
 #include "granadad/render/capture.hpp"
 #include "granadad/render/framebuffer.hpp"
 #include "granadad/render3d/backend.hpp"
+#include "granadad/render3d/scene_rig.hpp"
 #include "granadad/workbench/workbench.hpp"
 
 namespace {
 
 namespace wb = granadad::workbench;
+namespace r3 = granadad::render3d;
+
+/// The 3D scene of the bench's session, rebuilt when the session is (a `load`
+/// boots a new one, and the rig borrows the old one's tiles).
+class WorldView {
+public:
+    explicit WorldView(const wb::Workbench& bench) : bench_(&bench) {}
+
+    r3::SceneDescription& refresh(float aspect) {
+        if (generation_ != bench_->sessionGeneration()) {
+            rig_ = r3::SceneRig{};
+            generation_ = bench_->sessionGeneration();
+        }
+        rig_.refresh(bench_->session(), aspect);
+        return rig_.scene;
+    }
+
+private:
+    const wb::Workbench* bench_;
+    r3::SceneRig rig_;
+    int generation_ = 0;
+};
+
+[[nodiscard]] r3::BackendConfig worldBackendConfig() {
+    r3::BackendConfig config;
+    config.modelDir = r3::rigModelDir();
+    config.weaponDir = r3::weaponModelDir();
+    config.staticDir = r3::staticModelDir();
+    return config;
+}
 
 void printUsage() {
     std::printf(
@@ -62,9 +94,68 @@ bool startsWith(const char* arg, const char* prefix, const char** value) {
     return true;
 }
 
+/// THE PICTURE'S WORLD for a picture on disk (`shot`, `pane`, serve's
+/// frame.png): where this build can open a headless 3D context (Mesa
+/// llvmpipe), the GAME pane's world is the real 3D frame, read back the way a
+/// capture is; anywhere else the HUD is drawn over the dark ground and the
+/// picture says so by being dark.
+class HeadlessWorld {
+public:
+    /// Opens nothing until the first picture is asked for, so a script of
+    /// plain commands starts as fast as it ever did and never says a word
+    /// about GL.
+    explicit HeadlessWorld(wb::Workbench& bench) : bench_(&bench) {
+        bench.setWorldPainter([this](const granadad::render::Session&,
+                                     granadad::render::Framebuffer& world) {
+            return paint(world);
+        });
+    }
+
+private:
+    bool paint(granadad::render::Framebuffer& world) {
+        if (!tried_) {
+            tried_ = true;
+            open();
+        }
+        if (video_ == nullptr) {
+            return false;
+        }
+        r3::SceneDescription& scene = view_->refresh(
+            static_cast<float>(std::max(1, video_->width())) /
+            static_cast<float>(std::max(1, video_->height())));
+        video_->beginFrame(scene.clearColour);
+        (void)video_->drawScene(scene);
+        video_->endFrame(&world);
+        return true;
+    }
+
+    void open() {
+        if (!r3::Backend::headlessCapable()) {
+            std::printf("granadad-workbench: no headless 3D context here -- the game pane's "
+                        "picture carries the HUD over the dark ground\n");
+            return;
+        }
+        r3::BackendConfig config = worldBackendConfig();
+        config.width = bench_->session().config().width;
+        config.height = bench_->session().config().height;
+        config.windowScale = 1;
+        config.headless = true;
+        config.vsync = false;
+        config.resizable = false;
+        video_ = r3::Backend::open(config);
+        if (video_ != nullptr) {
+            view_ = std::make_unique<WorldView>(*bench_);
+        }
+    }
+
+    wb::Workbench* bench_;
+    bool tried_ = false;
+    std::unique_ptr<r3::Backend> video_;
+    std::unique_ptr<WorldView> view_;
+};
+
 int runWindow(wb::Workbench& bench) {
-    namespace r3 = granadad::render3d;
-    r3::BackendConfig config;
+    r3::BackendConfig config = worldBackendConfig();
     config.width = wb::kFrameWidth;
     config.height = wb::kFrameHeight;
     config.windowScale = 1;
@@ -83,6 +174,11 @@ int runWindow(wb::Workbench& bench) {
     constexpr std::uint16_t kDown = 81;
     constexpr std::uint16_t kUp = 82;
     constexpr std::uint16_t kKeypadEnter = 88;
+    // THE GAME PANE IS THE 3D WORLD: the backend draws it into the pane's
+    // rectangle and the bench leaves the pane transparent for it.
+    bench.setWorldInWindow(true);
+    WorldView worldView(bench);
+    const wb::Panes panes = wb::workbenchPanes();
     granadad::render::Framebuffer frame(wb::kFrameWidth, wb::kFrameHeight);
     while (!bench.quitRequested()) {
         const r3::InputFrame in = video->poll();
@@ -130,7 +226,14 @@ int runWindow(wb::Workbench& bench) {
         }
         bench.frame();
         bench.draw(frame);
-        video->beginFrame(r3::Rgba8{0, 0, 0, 255});
+        video->setSceneDestination(place.offsetX + panes.game.x * place.scale,
+                                   place.offsetY + panes.game.y * place.scale,
+                                   panes.game.w * place.scale, panes.game.h * place.scale);
+        r3::SceneDescription& scene = worldView.refresh(
+            static_cast<float>(std::max(1, video->width())) /
+            static_cast<float>(std::max(1, video->height())));
+        video->beginFrame(scene.clearColour);
+        (void)video->drawScene(scene);
         video->drawOverlay(frame);
         video->endFrame();
     }
@@ -176,6 +279,13 @@ int main(int argc, char** argv) {
     wb::Workbench bench(config);
     if (!scenes.empty()) {
         bench.setSceneDir(scenes);
+    }
+
+    // A picture on disk (a `shot`, a `pane`, serve's frame.png) carries the 3D
+    // world; the window draws it itself.
+    std::unique_ptr<HeadlessWorld> headlessWorld;
+    if (!script.empty() || !serve.empty()) {
+        headlessWorld = std::make_unique<HeadlessWorld>(bench);
     }
 
     if (!script.empty()) {

@@ -884,93 +884,20 @@ void dipTravelSeam(Framebuffer& target, float amount) {
 
 }  // namespace
 
-FrameStats Session::drawFrame(Framebuffer& target, FramePasses passes) const {
+void Session::drawFrame(Framebuffer& target) const {
     // The flicker phase is a pure function of the body's step count, so the
     // same scripted session captures the same frame every time.
     const float phase = static_cast<float>(body_->stepCount()) / 60.0F;
-    std::vector<SpriteInstance> sprites = renderer_->lampSprites(phase);
-
-    // A lamp is not a hole in the sky at noon. The flame billboards fade out as
-    // the daylight comes up, so a lit district reads at dusk and disappears
-    // into ordinary daylight the way it should. WEATHER: the same sky the
-    // world is drawn under, so a foggy noon keeps its lanterns, and a wind
-    // takes a little off every flame (SkyState::haloScale).
-    const SkyState skyNow = sky();
-    const float lampMix = (1.0F - 0.9F * skyNow.daylight) * skyNow.haloScale;
-    for (SpriteInstance& sprite : sprites) {
-        sprite.glow *= lampMix;
-        sprite.halfWidth *= 0.45F + 0.55F * lampMix;
-        sprite.halfHeight *= 0.45F + 0.55F * lampMix;
-    }
-
-    RenderSettings settings = settings_;
-    settings.dynamicLamps = tavernLights();
-    settings.weather = weather();
-
-    // The hearth's own flame, and a candle head on each lit table.
-    for (const Lamp& light : settings.dynamicLamps) {
-        const bool isHearth = light.name == "gull_hearth";
-        const bool isLantern = light.name == "gull_lantern";
-        SpriteInstance flame;
-        flame.x = static_cast<float>(light.x) + 0.5F;
-        // Pulled a little out of the wall the hearth is set into, so the flame
-        // sits in the mouth of it rather than inside the masonry.
-        flame.y = static_cast<float>(light.y) + (isHearth ? -0.05F : 0.5F);
-        // A hearth burns at the floor, a candle on a table, a lantern hangs —
-        // and now that a storey is three tiles those are three genuinely
-        // different heights instead of three points inside one tile. ABSOLUTE
-        // tile heights above the floor of the cell, not fractions of the
-        // storey: raising a ceiling does not raise a tabletop.
-        //
-        //   0.35  in the mouth of the fireplace, on the hearthstone
-        //   0.95  a candle on a table, about 0.86 m
-        //   2.30  a lantern on its hook, well over head height
-        constexpr float kHearthFlameHeight = 0.35F;
-        constexpr float kTableCandleHeight = 0.95F;
-        constexpr float kHangingLanternHeight = 2.30F;
-        flame.z = bandSurface(light.z) +
-                  (isHearth ? kHearthFlameHeight
-                            : (isLantern ? kHangingLanternHeight : kTableCandleHeight));
-        const float flicker =
-            0.85F + 0.15F * std::sin(phase * 4.3F + static_cast<float>(light.x));
-        const float scale = 0.10F + 0.008F * static_cast<float>(light.luminance);
-        flame.halfWidth = scale * flicker;
-        flame.halfHeight = scale * flicker * 1.4F;
-        flame.colour = isLantern ? Rgb{1.0F, 0.86F, 0.62F} : Rgb{1.0F, 0.58F, 0.22F};
-        flame.glow = 1.0F;
-        sprites.push_back(flame);
-    }
-
     const Camera view = camera();
-    const std::vector<SpriteInstance> people = actorSprites(view);
-    sprites.insert(sprites.end(), people.begin(), people.end());
-    // #78: AND THE REST OF THE DISTRICT. One roster, two sources: the Gilded
-    // Gull's seventeen come out of the Tavern and everybody else out of the
-    // population. They are appended and never merged, because the two systems
-    // own their own bodies and a renderer that stitched them into one list
-    // would be the third place that thinks it knows who is in the ward.
-    const std::vector<SpriteInstance> ward = wardSprites(view);
-    sprites.insert(sprites.end(), ward.begin(), ward.end());
+    // THE WORLD IS THE RAYLIB BACKEND'S FRAME, and this target is the OVERLAY
+    // it composites on top: cleared to nothing, then every pass below draws
+    // over it. There is no depth under it, which is why the signage is
+    // handed a line of sight instead (below).
+    target.clearTransparent();
 
-    FrameStats stats;
-    if (passes.world) {
-        stats = renderer_->renderFrame(target, view, settings, sprites);
-    } else {
-        // 3D BUILD. THE WORLD IS THE RAYLIB BACKEND'S FRAME NOW, and this
-        // target is the OVERLAY it composites on top: cleared to nothing,
-        // then every pass below draws exactly as it always has. The one
-        // thing that changes is what the signage sees -- an infinite depth
-        // buffer, so no sign is occluded by a wall until the V lane gives
-        // signage its line-of-sight projector. The stats are empty because
-        // no world was drawn here; the backend reports its own.
-        target.clearTransparent();
-    }
-
-    // World content, not interface -- drawn like the sprites above rather
-    // than gated behind config_.hud, and BEFORE the HUD/menu/dialogue passes
-    // below so none of them paint over a legible sign. See
-    // signage_renderer.hpp's own header for why occlusion needs the depth
-    // buffer renderFrame just wrote and nothing drawn after it yet.
+    // World content, not interface -- drawn rather than gated behind
+    // config_.hud, and BEFORE the HUD/menu/dialogue passes below so none of
+    // them paint over a legible sign.
     // AND THE ONE THING ON THE SCREEN THE SIGNS COULD NOT SEE.
     //
     // Signage is drawn before the HUD so nothing paints over a legible sign --
@@ -1029,6 +956,19 @@ FrameStats Session::drawFrame(Framebuffer& target, FramePasses passes) const {
     }
     // Signage is WORLD CONTENT and stays outside config_.hud -- the ruler has
     // to keep measuring it. A card is the one thing it yields to.
+    //
+    // WHICH SIGNS THE EYE CAN SEE is the lens's own line of sight over the
+    // tiles (cameraSightClear: the walk a camera needs, not the sim's
+    // person-to-person one), because this frame is an overlay with no depth
+    // under it. The wall a sign is nailed to is the walk's last cell, which a
+    // body or a sign standing in a cell never blocks.
+    signage.eyeBand = body_->band();
+    signage.sightClear = [this](float anchorX, float anchorY, int band) {
+        return cameraSightClear(*tiles_, body_->x(), body_->y(),
+                                static_cast<std::int32_t>(std::lround(anchorX * 256.0F)),
+                                static_cast<std::int32_t>(std::lround(anchorY * 256.0F)), band,
+                                false);
+    };
     if (!hudStandDown_) {
         drawSignage(target, view, signage);
     }
@@ -1393,7 +1333,7 @@ FrameStats Session::drawFrame(Framebuffer& target, FramePasses passes) const {
         }
         panelTailTiles_ = false;
         panelTailCourt_ = false;
-        return stats;
+        return;
     }
     // PANES PASS: THE CONTROLS PAGE IS THE FIRST SURFACE DRAWN IN THE
     // TERMINAL-PANEL REGISTER (render/keys_page.hpp, on render/panel.hpp's
@@ -1432,7 +1372,7 @@ FrameStats Session::drawFrame(Framebuffer& target, FramePasses passes) const {
         }
         panelTailTiles_ = false;
         panelTailCourt_ = false;
-        return stats;
+        return;
     }
     // MORROWIND ROUND: THE TILED MENU IS A DIFFERENT SURFACE FROM THE SINGLE
     // CONVERSATION PANEL, drawn by a different function (menu_view.hpp's
@@ -1488,7 +1428,7 @@ FrameStats Session::drawFrame(Framebuffer& target, FramePasses passes) const {
         }
         panelTailTiles_ = false;
         panelTailCourt_ = false;
-        return stats;
+        return;
     }
     // UI-EA-SPEC sec. 3 rule 4 -- CLOSE HONESTY: the tiled Menu's close tail
     // draws as the TILES easing out, not as the empty single panel the old
@@ -1548,7 +1488,7 @@ FrameStats Session::drawFrame(Framebuffer& target, FramePasses passes) const {
         // keeps drawing tiles until panelAnim_ settles and the condition
         // above goes quiet on its own.
         panelTailTiles_ = panelTailTiles_ || casebookOpen_;
-        return stats;
+        return;
     }
     // UI-EA-SPEC 1.7 (LANE PAGES, strip->card): pause, wait, options and the
     // grimoire draw as the composed card now, not as a HUD strip -- the ship
@@ -1574,7 +1514,7 @@ FrameStats Session::drawFrame(Framebuffer& target, FramePasses passes) const {
             composeRopeCeremony(target);
             composeTakenPlate(target);
         }
-        return stats;
+        return;
     }
     // JUSTICE BUILD (HEARING PAGE LANE). THE HEARING PAGE: a full-page
     // composition in the terminal register (hearing_page.hpp), drawn into
@@ -1611,7 +1551,7 @@ FrameStats Session::drawFrame(Framebuffer& target, FramePasses passes) const {
         // The memo: this frame's panel fade belonged to the bench. Only the
         // LIVE page re-arms it, exactly as the tiles' memo works.
         panelTailCourt_ = panelTailCourt_ || courtOpen_;
-        return stats;
+        return;
     }
     DialogueViewState panel = dialogueView();
     if (conversing && warned) {
@@ -1657,7 +1597,6 @@ FrameStats Session::drawFrame(Framebuffer& target, FramePasses passes) const {
         composeRopeCeremony(target);
         composeTakenPlate(target);
     }
-    return stats;
 }
 
 }  // namespace granadad::render

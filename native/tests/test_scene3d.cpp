@@ -20,7 +20,9 @@
 
 #include "granadad/render/session.hpp"
 #include "granadad/render/vertical.hpp"
-#include "granadad/render/world_renderer.hpp"
+#include "granadad/render/scene_types.hpp"
+#include "granadad/render/vertical.hpp"
+#include "granadad/render/voxel_classify.hpp"
 #include "granadad/render3d/actor_instances.hpp"
 #include "granadad/render3d/chunk_mesher.hpp"
 #include "granadad/render3d/scene.hpp"

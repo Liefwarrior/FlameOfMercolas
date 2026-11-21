@@ -49,7 +49,6 @@ void Session::settleDefeat() {
     awaitingLanding_ = false;
     syncTavernToBody();
     timeOfDay_ = tavern_->timeOfDay();
-    settings_.timeOfDay = timeOfDay_;
     // What he said standing over you, out of the owner's tables -- and the
     // short report of what it made him when there is nothing authored.
     if (!rise.taunt.empty()) {

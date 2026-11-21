@@ -1,11 +1,12 @@
-// The renderer, asserted on the pixels it actually produces.
+// The HUD and the capture path, asserted on the pixels they actually produce.
 //
-// This file is the reason every sprint after S1 can prove visually that it
-// works. The renderer is software, so a frame of the real Docks can be drawn
-// inside the test suite -- no window, no GPU, no display server -- and facts
-// about it checked on every build. "It looked right on my machine" is not a
-// gate; "the frame has a horizon, has lamplight in it, and has the harbour on
-// the left when you face north" is.
+// Everything here is the OVERLAY: the interface drawn into a Framebuffer on a
+// transparent ground (Session::drawFrame), which the 3D backend composites over
+// the world. It is drawn in software inside the test suite -- no window, no
+// GPU, no display server -- so facts about it are checked on every build. "It
+// looked right on my machine" is not a gate; "the HUD hugs the edges and the
+// centre is clear" is. The WORLD under it is the raylib backend's, and its
+// frames are asserted in test_render3d.cpp and test_light_model.cpp.
 
 #include <doctest/doctest.h>
 
@@ -37,20 +38,6 @@ SessionConfig docksAt(int hour) {
     config.width = 320;
     config.height = 180;
     return config;
-}
-
-float meanLuma(const Framebuffer& frame, int x0, int y0, int x1, int y1) {
-    double sum = 0.0;
-    int count = 0;
-    for (int y = y0; y < y1; ++y) {
-        for (int x = x0; x < x1; ++x) {
-            const Rgb colour = unpackRgb(frame.pixels()[frame.index(x, y)]);
-            sum += static_cast<double>(0.2126F * colour.r + 0.7152F * colour.g +
-                                       0.0722F * colour.b);
-            ++count;
-        }
-    }
-    return count == 0 ? 0.0F : static_cast<float>(sum / static_cast<double>(count));
 }
 
 }  // namespace
@@ -96,11 +83,11 @@ TEST_CASE("the day curve is committed dark and the lamps carry the night") {
 
 TEST_CASE("a lamp lights a pool around itself and nothing far from it") {
     const Session session(docksAt(20));
-    const LampGlow& glow = session.renderer().glow();
+    const LampGlow& glow = session.glow();
     REQUIRE(session.lampCount() == 28);
     CHECK(glow.litCellCount() > 1000);
 
-    const std::vector<Lamp>& lamps = session.renderer().lamps();
+    const std::vector<Lamp>& lamps = session.lamps();
     const Lamp& lamp = lamps.front();
     const Rgb centre = glow.at(lamp.x, lamp.y, lamp.z);
     CHECK(centre.r > 0.1F);
@@ -113,140 +100,6 @@ TEST_CASE("a lamp lights a pool around itself and nothing far from it") {
     CHECK(far.r == 0.0F);
     // And it does not shine through the floor two levels down.
     CHECK(glow.at(lamp.x, lamp.y, lamp.z - 3).r == 0.0F);
-}
-
-TEST_CASE("the Docks render to a frame with a world in it") {
-    Session session(docksAt(20));
-    REQUIRE(session.body().spawnedLegally());
-
-    Framebuffer frame(320, 180);
-    const FrameStats stats = session.drawFrame(frame);
-
-    // Something was drawn.
-    CHECK(stats.worldPixels > 8000);
-    // (S1 also asserted worldPixels + skyPixels == w*h here. That is an
-    // identity -- world_renderer.cpp defines skyPixels as w*h - worldPixels --
-    // so it could not fail. Removed rather than kept as decoration.)
-    //
-    // THE SKY MOVED OUT OF THIS FRAME IN polish-1 AND THAT IS THE FIX WORKING.
-    //
-    // This case used to assert skyPixels > 3000 and `the top twelve rows are
-    // under 5% world` from the authored spawn, and both passed for a bad
-    // reason: a storey was one tile tall, so the Gilded Gull's frontage six
-    // tiles across the Tarwalk topped out BELOW the eye line and you could see
-    // over the whole district from the pavement.
-    //
-    // A storey is three tiles now (sim/vertical_scale.hpp). That frontage is
-    // three storeys and a roof-slum plane above it, so it stands about 9 tiles
-    // -- 8 m -- out of a street 5.5 m wide, and the top of it is 50 degrees up
-    // from an eye with a 29-degree half-frame. It fills the view, the way the
-    // wall of a real warehouse fills the view when you stand under it. A test
-    // that demands sky from that spot is a test demanding the bug back.
-    //
-    // So the two halves of the original claim are now asked of the two frames
-    // that can honestly answer them: the level frame still owes us ground under
-    // our feet, and a frame that LOOKS UP still owes us sky.
-
-    // It is a lit scene with depth, not a flat fill.
-    CHECK(stats.distinctColours > 200);
-    CHECK(stats.meanLuma > 0.01F);
-    CHECK(stats.meanLuma < 0.7F);
-    // THE NEAR BOUND WAS MEASURING A WALL, AND #79 TOOK THE WALL AWAY.
-    //
-    // `nearestDepth < 3.0` passed from the S2 spawn because that spawn stood in
-    // a slot between two warehouses with masonry about a tile from the eye --
-    // which is the same fact that made its `seen=` zero and got the shot
-    // re-aimed. From an open street the nearest surface in the frame is the
-    // PAVING at the bottom edge, and where that lands is arithmetic rather than
-    // taste: a 1.70-tile eye over a frame whose lower half subtends 29.4
-    // degrees puts the bottom row of pavement 1.70 / tan(29.4) = 3.0 tiles out.
-    // The old bound sat exactly on that number, so on an open street it was a
-    // coin toss.
-    //
-    // What the case actually wants to say is that the frame has RANGE -- near
-    // geometry and far geometry in one picture, rather than a flat fill -- so
-    // it says that, in a form no spawn can make vacuous.
-    CHECK(stats.nearestDepth < 5.0F);
-    CHECK(stats.furthestDepth > 12.0F);
-    CHECK(stats.furthestDepth > 3.0F * stats.nearestDepth);
-
-    // The bottom of the frame is GROUND and the top is SKY, stated as the
-    // direction it actually is. S1 checked `groundLuma != skyLuma`, which is
-    // true for a flipped projection too.
-    const auto worldFraction = [&frame](int y0, int y1) {
-        std::size_t world = 0;
-        for (int y = y0; y < y1; ++y) {
-            for (int x = 0; x < frame.width(); ++x) {
-                if (std::isfinite(frame.depth()[frame.index(x, y)])) {
-                    ++world;
-                }
-            }
-        }
-        return static_cast<float>(world) /
-               static_cast<float>(frame.width() * (y1 - y0));
-    };
-    // Standing on a street with the eye level: the deck fills the bottom of the
-    // frame. Whatever else changes about the district's height, the paving
-    // under your own boots does not go anywhere.
-    CHECK(worldFraction(150, 180) > 0.99F);
-
-    // Every pixel of geometry has a finite depth, and the sky behind all of it
-    // does not.
-    //
-    // THIS USED TO BE AN EQUALITY AND #79 MADE IT AN INTERVAL, for a reason
-    // worth writing down rather than relaxing quietly. `worldPixels` counts
-    // what the raycaster wrote -- walls, floors, roofs. Billboards are drawn
-    // AFTER it and write depth of their own, so a figure standing against the
-    // sky is a finite-depth pixel that is not a world pixel. That is correct:
-    // a body has to occlude, and a body silhouetted on the skyline is the shape
-    // of a person and not a hole in the sky.
-    //
-    // The equality only held before because the old spawn was walled in and
-    // drew NOBODY -- `seen=0` at eight in the morning, which is the defect #79
-    // exists to fix. The first frame after the re-aim put fifteen pixels of
-    // dockhand against the sky and turned this red. So the claim is now stated
-    // as what it always meant: no finite pixel that is neither.
-    std::size_t finite = 0;
-    for (const float d : frame.depth()) {
-        if (std::isfinite(d)) {
-            ++finite;
-        }
-    }
-    CHECK(finite >= stats.worldPixels);
-    CHECK(finite <= stats.worldPixels + stats.spritePixels);
-    CHECK(finite + stats.skyPixels >= frame.pixels().size());
-
-    // THE PROJECTION IS THE RIGHT WAY UP, checked on the ground rather than on
-    // the sky, so that it stays a fact about the projection and not a fact
-    // about how tall the buildings happen to be. Paving runs AWAY from you as
-    // your eye climbs the frame: the pixel at your boots is nearer than the
-    // pixel most of the way up toward the horizon. A flipped frame reverses it.
-    const float atBoots = frame.depth()[frame.index(160, 178)];
-    const float towardHorizon = frame.depth()[frame.index(160, 100)];
-    REQUIRE(std::isfinite(atBoots));
-    REQUIRE(std::isfinite(towardHorizon));
-    CHECK(atBoots < towardHorizon);
-
-    // AND NOW LOOK UP. Seventy degrees of pitch clears anything the Docks has:
-    // the tallest thing in the baked district is the roof-slum plane four bands
-    // over the quay, twelve tiles, and a frontage six tiles away would have to
-    // stand sixteen tiles proud of the eye to reach the top of this frame. So
-    // the sky is up there, and this is the half of the original claim that
-    // survives -- asked of a camera that can honestly answer it.
-    session.body().setPitch(sim::angle_from_degrees(70));
-    Framebuffer looking(320, 180);
-    const FrameStats up = session.drawFrame(looking);
-    CHECK(up.skyPixels > 3000);
-
-    std::size_t skyAtTop = 0;
-    for (int y = 0; y < 12; ++y) {
-        for (int x = 0; x < looking.width(); ++x) {
-            if (!std::isfinite(looking.depth()[looking.index(x, y)])) {
-                ++skyAtTop;
-            }
-        }
-    }
-    CHECK(skyAtTop > static_cast<std::size_t>(looking.width() * 12) * 9 / 10);
 }
 
 TEST_CASE("a storey is three tiles tall and the eye is a person's eye inside it") {
@@ -279,321 +132,17 @@ TEST_CASE("a storey is three tiles tall and the eye is a person's eye inside it"
     CHECK(view.z < bandSurface(session.body().band() + 1));
     CHECK(bandSurface(session.body().band() + 1) - view.z > 1.0F);
 
-    // People are people-sized against the same scale. The tallest billboard an
-    // actor is made of must reach near the player's own eye -- a district of
-    // knee-high figures would have made the buildings look right and everything
-    // else look like a diorama.
-    const std::vector<SpriteInstance> people = session.actorSprites();
-    if (!people.empty()) {
-        // Each part measured against the floor of the level it is standing on,
-        // not against the player's -- the Gull's people are spread over the
-        // taproom and the guest floor above it, and a head three tiles higher
-        // than the eye is a person upstairs, not a giant.
-        float crown = 0.0F;
-        for (const SpriteInstance& part : people) {
-            const auto level = static_cast<std::int32_t>(std::floor(part.z / kBandHeight));
-            crown = std::max(crown, part.z + part.halfHeight - bandSurface(level));
-        }
+    // People are people-sized against the same scale. The 3D instancer sizes
+    // every body off these rows, and the tallest of them must reach near the
+    // player's own eye -- a district of knee-high figures would have made the
+    // buildings look right and everything else look like a diorama.
+    for (const sim::WardType kind :
+         {sim::WardType::Serf, sim::WardType::Shopkeeper, sim::WardType::MilitiaWatch,
+          sim::WardType::PriestOfTheFlame, sim::WardType::Thief}) {
+        const float crown = figureScaleOf(kind).heightTiles;
         CHECK(crown > 1.5F);
         CHECK(crown < 2.3F);
     }
-}
-
-TEST_CASE("noon is brighter than midnight, on the same geometry") {
-    Session day(docksAt(12));
-    Session night(docksAt(0));
-    Framebuffer dayFrame(320, 180);
-    Framebuffer nightFrame(320, 180);
-    const FrameStats dayStats = day.drawFrame(dayFrame);
-    const FrameStats nightStats = night.drawFrame(nightFrame);
-
-    CHECK(dayStats.meanLuma > nightStats.meanLuma * 2.0F);
-    // And the night frame is not simply black: the lamps are doing work.
-    CHECK(nightStats.meanLuma > 0.002F);
-}
-
-TEST_CASE("a lamp in view draws a flame, and a lamp behind you does not") {
-    // The sprite path, proven where it can be seen rather than wherever the
-    // default spawn happens to be pointing.
-    SessionConfig config = docksAt(22);
-    Session session(config);
-    const std::vector<Lamp>& lamps = session.renderer().lamps();
-    const Lamp* target = nullptr;
-    for (const Lamp& lamp : lamps) {
-        if (lamp.z == sim::docks::kBandQuayside && lamp.name == "lamp_eelpot_02") {
-            target = &lamp;
-        }
-    }
-    REQUIRE(target != nullptr);
-
-    // Stand four tiles due east of it and look west.
-    SessionConfig standing = config;
-    standing.spawnX = target->x + 4;
-    standing.spawnY = target->y;
-    standing.spawnBand = target->z;
-    standing.spawnYaw = sim::kFacingWest;
-    standing.spawnYawGiven = true;
-    Session facing(standing);
-    REQUIRE(facing.body().spawnedLegally());
-
-    // One sprite, so the count is about THIS lamp and not about the other
-    // twenty-six that happen to be down the street either way you turn.
-    SpriteInstance flame;
-    flame.x = static_cast<float>(target->x) + 0.5F;
-    flame.y = static_cast<float>(target->y) + 0.5F;
-    // bandSurface(), like every other height in the build: a level is
-    // kBandHeight tiles tall and `target->z` is a level number, not a height.
-    flame.z = bandSurface(target->z) + 1.90F;
-    flame.colour = Rgb{1.0F, 0.85F, 0.6F};
-    flame.glow = 1.0F;
-    const std::vector<SpriteInstance> one{flame};
-
-    Framebuffer towards(320, 180);
-    const FrameStats seen =
-        facing.renderer().renderFrame(towards, facing.camera(), RenderSettings{}, one);
-    CHECK(seen.spritePixels > 0);
-
-    facing.body().setYaw(sim::kFacingEast);
-    Framebuffer away(320, 180);
-    const FrameStats behind =
-        facing.renderer().renderFrame(away, facing.camera(), RenderSettings{}, one);
-    CHECK(behind.spritePixels == 0);
-}
-
-TEST_CASE("standing under a lamp does not white out the frame") {
-    // An additive billboard grows on screen as you approach it, so its total
-    // contribution grows with the square of how close you are. Two tiles from
-    // the Gilded Gull's door lamp at five in the morning, that was a
-    // featureless white disc across half the view. A flame is a small hot
-    // thing: walking up to it makes it bigger, not brighter.
-    SessionConfig config = docksAt(5);
-    const Session probe(config);
-    const Lamp* target = nullptr;
-    for (const Lamp& lamp : probe.renderer().lamps()) {
-        if (lamp.name == "lamp_gull_door") {
-            target = &lamp;
-        }
-    }
-    REQUIRE(target != nullptr);
-
-    const auto lumaFrom = [&config, target](std::int32_t away) {
-        SessionConfig standing = config;
-        standing.spawnX = target->x;
-        standing.spawnY = target->y - away;
-        standing.spawnBand = target->z;
-        standing.spawnYaw = sim::kFacingSouth;
-        standing.spawnYawGiven = true;
-        Session session(standing);
-        REQUIRE(session.body().spawnedLegally());
-        Framebuffer frame(320, 180);
-        return session.drawFrame(frame).meanLuma;
-    };
-
-    const float pressedAgainstIt = lumaFrom(1);
-    const float acrossTheStreet = lumaFrom(5);
-
-    // MEASURED, from this exact tile and this exact lamp: 0.1290 without the
-    // roll-off, 0.1015 with it. The threshold sits between the two on purpose,
-    // so this case is RED under the defect rather than merely true without it —
-    // checked by mutation on 2026-08-04.
-    CHECK(pressedAgainstIt < 0.115F);
-    // ...and the lamp is still doing something: brighter one tile away than
-    // five, or the roll-off has simply deleted it.
-    CHECK(pressedAgainstIt > acrossTheStreet * 1.5F);
-}
-
-TEST_CASE("the skyline backdrop stands in the southern sky and the night swallows it") {
-    // DISTRICT PHASE A, settled: the owner picked the stepped silhouette, the
-    // losing variants and the GRANADAD_SKYLINE selector are gone, and the
-    // compositor always paints the one skyline. The Inner Wall and the palace
-    // are "never maps, only backdrops" (Gazetteer section 1), so they are
-    // paint in the sky band -- and paint can be asserted on: south has it,
-    // seaward never does, night swallows it whole.
-    //
-    // The camera floats high over the ward on purpose. Up there the sky is
-    // unoccluded AND the z-window clips the whole district out of the frame,
-    // so every frame below is ALL sky (pinned via FrameStats) and every
-    // comparison is sky against sky. Street-level occlusion needs no selector
-    // to prove: the backdrop writes sky pixels only and the world pass
-    // unconditionally overwrites the pixels it draws geometry into, so any
-    // frame with skyPixels == 0 provably carries zero backdrop pixels.
-    //
-    // THE CAMERA WENT UP TWO BANDS IN DISTRICT PHASE B, AND THE REASON IS THE
-    // POINT OF THAT PASS. This stood at bandSurface(26), which with the default
-    // levelsBelow of 4 puts the z-window's floor at world z22 -- and that was
-    // all sky only because the Docks had nothing that tall within
-    // RenderSettings::maxDistance of the spawn. Phase B gave the Mission of the
-    // Flame a lantern-turret whose crown reaches world z23, fifty-two tiles from
-    // the spawn, and 477 pixels of it walked into this frame and turned the
-    // REQUIRE below red. That is the deliverable arriving, not a regression: the
-    // ward is supposed to have a landmark you can see across it now.
-    //
-    // So the camera goes to bandSurface(28), where the window's floor is z24.
-    // World z23 is the LAST interior band this format has (a 4-chunk-deep world
-    // with a one-chunk VOID border), so from up here the window is provably
-    // above everything anything can ever author into this map -- a structural
-    // guarantee rather than a standing bet on the ward staying short.
-    Session session(docksAt(12));
-    Camera aloft = session.camera();
-    aloft.z = bandSurface(28);
-    aloft.pitch = 0.0F;
-
-    constexpr float kSouth = 3.14159265F;
-    const auto pixelsAt = [&](float yaw, int hour) {
-        RenderSettings settings;
-        settings.timeOfDay = hour * 3600;
-        settings.drawSprites = false;
-        Camera view = aloft;
-        view.yaw = yaw;
-        Framebuffer frame(320, 180);
-        const FrameStats stats = session.renderer().renderFrame(frame, view, settings, {});
-        // Sky against sky, or every comparison below is comparing geometry.
-        REQUIRE(stats.skyPixels == static_cast<std::size_t>(320 * 180));
-        return frame.pixels();
-    };
-    const auto differing = [](const std::vector<std::uint32_t>& a,
-                              const std::vector<std::uint32_t>& b) {
-        std::size_t count = 0;
-        for (std::size_t i = 0; i < a.size(); ++i) {
-            if (a[i] != b[i]) {
-                ++count;
-            }
-        }
-        return count;
-    };
-
-    // Facing south at noon the silhouette is present. The bare sky gradient is
-    // a function of the screen ROW alone -- no yaw term anywhere in it -- so a
-    // southern all-sky frame can differ from a seaward one only where the
-    // backdrop stands, and it does, substantially.
-    const std::vector<std::uint32_t> seaward = pixelsAt(0.0F, 12);
-    const std::vector<std::uint32_t> southern = pixelsAt(kSouth, 12);
-    CHECK(differing(seaward, southern) > 200U);
-
-    // It is a MASS, not a glow: everything it touches gets darker.
-    double seawardSum = 0.0;
-    double southernSum = 0.0;
-    for (std::size_t i = 0; i < seaward.size(); ++i) {
-        const Rgb before = unpackRgb(seaward[i]);
-        const Rgb after = unpackRgb(southern[i]);
-        seawardSum += static_cast<double>(0.2126F * before.r + 0.7152F * before.g +
-                                          0.0722F * before.b);
-        southernSum += static_cast<double>(0.2126F * after.r + 0.7152F * after.g +
-                                           0.0722F * after.b);
-    }
-    CHECK(southernSum < seawardSum);
-
-    // Seaward is EMPTY, per the geography the table was authored from. Two
-    // different seaward yaws whose whole frustums sit inside the unauthored
-    // arc (hfovTan 1: +/-45 degrees around each) render the same frame -- a
-    // silhouette pans with yaw while the row-only gradient cannot, so any
-    // authored mass over the harbour would force these apart.
-    CHECK(differing(pixelsAt(-0.25F, 12), pixelsAt(0.25F, 12)) == 0U);
-
-    // And at midnight daylight is exactly 0 (the day-curve case above pins
-    // it), the backdrop's alpha is daylight times the fog term, and the
-    // closed-in fog swallows the mass entirely: the southern sky and the
-    // seaward sky become the same frame.
-    CHECK(differing(pixelsAt(0.0F, 0), pixelsAt(kSouth, 0)) == 0U);
-}
-
-TEST_CASE("the two harbour beacons carry through the night fog") {
-    // DISTRICT PHASE A. The Weighhouse signal mast and the Mission's doctrinal
-    // night lamp are tagged by name in lampSprites, and a tagged glow takes a
-    // reduced fog wash after dark -- a lighthouse behaviour, the honest way a
-    // distant lamp stays a point of light in weather that has already eaten
-    // the wall it hangs on.
-    Session session(docksAt(0));
-
-    // Exactly the two authored beacons, and exactly by name.
-    std::size_t beacons = 0;
-    for (const SpriteInstance& sprite : session.renderer().lampSprites(0.0F)) {
-        if (sprite.beacon) {
-            ++beacons;
-        }
-    }
-    CHECK(beacons == 2U);
-
-    // The same glow, the same spot, thirty tiles out at midnight, once tagged
-    // and once not: the beacon's point survives brighter. The camera floats
-    // above the z-window so both frames are the sprite against open sky.
-    Camera aloft = session.camera();
-    aloft.z = bandSurface(26);
-    aloft.yaw = 0.0F;
-    aloft.pitch = 0.0F;
-
-    RenderSettings settings;
-    settings.timeOfDay = 0;
-    // No skyline switch exists any more, and none is needed here: at midnight
-    // daylight is 0 so the backdrop's alpha is exactly 0, and the camera faces
-    // north into the unauthored seaward arc besides. The sky behind the sprite
-    // is bare gradient twice over.
-
-    SpriteInstance glow;
-    glow.x = aloft.x;
-    glow.y = aloft.y - 30.0F;
-    glow.z = aloft.z;
-    glow.halfWidth = 0.6F;
-    glow.halfHeight = 0.6F;
-    glow.colour = Rgb{1.0F, 0.88F, 0.66F};
-    glow.glow = 1.0F;
-
-    const auto centreLuma = [&](bool beacon) {
-        SpriteInstance sprite = glow;
-        sprite.beacon = beacon;
-        Framebuffer frame(320, 180);
-        const FrameStats stats =
-            session.renderer().renderFrame(frame, aloft, settings, {sprite});
-        REQUIRE(stats.spritePixels > 0);
-        const Rgb centre = unpackRgb(frame.pixels()[frame.index(160, 90)]);
-        return 0.2126F * centre.r + 0.7152F * centre.g + 0.0722F * centre.b;
-    };
-
-    const float carried = centreLuma(true);
-    const float drowned = centreLuma(false);
-    CHECK(carried > drowned * 1.5F);
-
-    // At NOON the exception does not exist: a beacon is an ordinary lamp in
-    // ordinary daylight, so the two draws are pixel-identical.
-    settings.timeOfDay = 12 * 3600;
-    SpriteInstance tagged = glow;
-    tagged.beacon = true;
-    SpriteInstance plain = glow;
-    Framebuffer dayTagged(320, 180);
-    Framebuffer dayPlain(320, 180);
-    session.renderer().renderFrame(dayTagged, aloft, settings, {tagged});
-    session.renderer().renderFrame(dayPlain, aloft, settings, {plain});
-    CHECK(dayTagged.pixels() == dayPlain.pixels());
-}
-
-TEST_CASE("turning around changes the frame") {
-    Session session(docksAt(20));
-    Framebuffer north(320, 180);
-    session.drawFrame(north);
-
-    session.body().setYaw(sim::kFacingSouth);
-    Framebuffer south(320, 180);
-    session.drawFrame(south);
-
-    std::size_t differing = 0;
-    for (std::size_t i = 0; i < north.pixels().size(); ++i) {
-        if (north.pixels()[i] != south.pixels()[i]) {
-            ++differing;
-        }
-    }
-    // Facing the harbour and facing the warehouse fronts are not the same view.
-    CHECK(differing > north.pixels().size() / 3);
-}
-
-TEST_CASE("the same session renders the same frame twice") {
-    // A captured frame is only evidence if it is reproducible.
-    Session a(docksAt(20));
-    Session b(docksAt(20));
-    Framebuffer left(320, 180);
-    Framebuffer right(320, 180);
-    a.drawFrame(left);
-    b.drawFrame(right);
-    CHECK(left.pixels() == right.pixels());
 }
 
 TEST_CASE("the HUD hugs the edges and leaves the centre completely clear") {
@@ -602,12 +151,10 @@ TEST_CASE("the HUD hugs the edges and leaves the centre completely clear") {
     // that stops that happening again.
     Session session(docksAt(20));
     Framebuffer bare(320, 180);
-    session.renderer().renderFrame(bare, session.camera(), RenderSettings{},
-                                   std::vector<SpriteInstance>{});
+    bare.clearTransparent();
 
     Framebuffer dressed(320, 180);
-    session.renderer().renderFrame(dressed, session.camera(), RenderSettings{},
-                                   std::vector<SpriteInstance>{});
+    dressed.clearTransparent();
     HudState hud;
     hud.health = 72;
     hud.yawBam = session.body().yaw();
@@ -1113,7 +660,6 @@ TEST_CASE("the capture path produces a PNG with no window anywhere in sight") {
     const SmokeRunResult result = runSmoke(config);
     CHECK(result.ok);
     CHECK(result.lampCount == 28);
-    CHECK(result.stats.worldPixels > 5000);
     REQUIRE(std::filesystem::exists(config.screenshot));
     // A real PNG, not an empty file: the 8-byte signature plus a chunk or two.
     CHECK(std::filesystem::file_size(config.screenshot) > 1000);
@@ -1143,68 +689,31 @@ TEST_CASE("the capture upscales with nearest neighbour and nothing else") {
     CHECK(big.pixels()[big.index(6, 3)] == small.pixels()[small.index(2, 1)]);
 }
 
-TEST_CASE("walking to the water's edge keeps the harbour in front of the eye") {
-    // A behavioural check on the whole stack: walk north off Tarwalk to the
-    // quay lip. What was a deck two feet under the eye becomes open harbour two
-    // levels down and thirty tiles wide, so the lower half of the frame both
-    // recedes and darkens -- water is the darkest thing in the district at
-    // dusk. S1 checked only that the two numbers DIFFERED, under a comment that
-    // promised a direction.
+TEST_CASE("walking north off the Tarwalk stops the body at the quay lip") {
+    // The walk half of what used to be "walking to the water's edge keeps the
+    // harbour in front of the eye". What was a deck two feet under the eye is
+    // open harbour two levels down and thirty tiles wide; that the lower half of
+    // the 3D frame darkens and recedes there is asserted in test_light_model.cpp,
+    // against the real frame. What is left here is the behavioural check on the
+    // body: it walks, and it stops at the lip rather than in the water.
     //
-    // IT STARTS FROM ITS OWN TILE AND NOT FROM THE SPAWN (#79). This is a claim
-    // about the renderer; hanging it off kSpawnTileY made it a claim about the
-    // opening shot too, so re-aiming the opening shot would have turned it red
-    // for a reason that has nothing to do with water. docks::kQuayApproach is
-    // the open apron this walk needs, named where the spawn is named.
+    // IT STARTS FROM ITS OWN TILE AND NOT FROM THE SPAWN (#79):
+    // docks::kQuayApproach is the open apron this walk needs, named where the
+    // spawn is named.
     SessionConfig config = docksAt(20);
     config.spawnX = sim::docks::kQuayApproachX;
     config.spawnY = sim::docks::kQuayApproachY;
     config.spawnBand = sim::docks::kBandQuayside;
-    // THE WORLD, NOT THE HUD (VOICE LANE). The lower half of the frame is
-    // where the HUD's bottom band lives, and the street now talks: a docker
-    // passing within reach during the eight-second walk puts a plate and a
-    // row of text there, which is not the harbour. This is a claim about the
-    // renderer's water, so the HUD stands down for it -- exactly what
-    // --nohud is for.
     config.hud = false;
     Session session(config);
     session.body().setYaw(sim::kFacingNorth);
-    Framebuffer before(320, 180);
-    session.drawFrame(before);
-    const float startLower = meanLuma(before, 0, 110, 320, 180);
-
-    const auto meanLowerDepth = [](const Framebuffer& frame) {
-        double sum = 0.0;
-        int count = 0;
-        for (int y = 110; y < 180; ++y) {
-            for (int x = 0; x < frame.width(); ++x) {
-                const float d = frame.depth()[frame.index(x, y)];
-                if (std::isfinite(d)) {
-                    sum += static_cast<double>(d);
-                    ++count;
-                }
-            }
-        }
-        return count == 0 ? 0.0F : static_cast<float>(sum / static_cast<double>(count));
-    };
-    const float startDepth = meanLowerDepth(before);
 
     sim::MoveInput forward;
     forward.forward = 1;
     session.stepMany(forward, 8 * sim::kStepsPerSecond);
 
-    Framebuffer after(320, 180);
-    session.drawFrame(after);
-    const float endLower = meanLuma(after, 0, 110, 320, 180);
-    const float endDepth = meanLowerDepth(after);
-
-    // It walked, and it stopped at the lip rather than in the water.
     CHECK(session.body().tileY() < sim::docks::kQuayApproachY);
     CHECK(session.body().band() == sim::docks::kBandQuayside);
-    // ...and the view below the horizon is now the harbour: further away, and
-    // darker than the lamplit deck it replaced.
-    CHECK(endDepth > startDepth);
-    CHECK(endLower < startLower);
 }
 
 // ===========================================================================

@@ -7,6 +7,7 @@
 #include <fstream>
 #include <sstream>
 #include <system_error>
+#include <utility>
 
 #include "granadad/render/capture.hpp"
 #include "granadad/render/hud.hpp"
@@ -319,6 +320,7 @@ Workbench::~Workbench() = default;
 
 void Workbench::reboot() {
     session_ = std::make_unique<render::Session>(config_);
+    ++generation_;
     playing_ = false;
     stepsRun_ = 0;
     selection_ = Selection{};
@@ -1449,13 +1451,43 @@ void Workbench::drawScene(Framebuffer& target, const PanelRect& pane) const {
 
 void Workbench::drawGame(Framebuffer& target, const PanelRect& pane) const {
     const render::Session& s = *session_;
-    Framebuffer frame(s.config().width, s.config().height);
-    (void)s.drawFrame(frame);
-    const int w = std::min(pane.w, frame.width());
-    const int h = std::min(pane.h, frame.height());
+    // The HUD, signage and pages: the game's own overlay, on a transparent
+    // ground (Session::drawFrame).
+    Framebuffer overlay(s.config().width, s.config().height);
+    s.drawFrame(overlay);
+    // What is under it: the painter's world, or the dark ground.
+    Framebuffer world(overlay.width(), overlay.height());
+    world.clear(ink().ground);
+    if (!worldInWindow_ && worldPainter_) {
+        Framebuffer painted(overlay.width(), overlay.height());
+        if (worldPainter_(s, painted) && painted.width() == overlay.width() &&
+            painted.height() == overlay.height()) {
+            world = std::move(painted);
+        }
+    }
+    const int w = std::min(pane.w, overlay.width());
+    const int h = std::min(pane.h, overlay.height());
     for (int y = 0; y < h; ++y) {
         for (int x = 0; x < w; ++x) {
-            target.pixels()[target.index(pane.x + x, pane.y + y)] = frame.pixels()[frame.index(x, y)];
+            const std::uint32_t top = overlay.pixels()[overlay.index(x, y)];
+            std::uint32_t out = top;
+            if (!worldInWindow_) {
+                // Straight-alpha over an opaque world, the way the backend
+                // composites the overlay in the game.
+                const std::uint32_t below = world.pixels()[world.index(x, y)];
+                const std::uint32_t alpha = top >> 24;
+                if (alpha == 0U) {
+                    out = below | 0xFF000000U;
+                } else if (alpha < 255U) {
+                    out = 0xFF000000U;
+                    for (int shift = 0; shift < 24; shift += 8) {
+                        const std::uint32_t a = (top >> shift) & 0xFFU;
+                        const std::uint32_t b = (below >> shift) & 0xFFU;
+                        out |= ((a * alpha + b * (255U - alpha) + 127U) / 255U) << shift;
+                    }
+                }
+            }
+            target.pixels()[target.index(pane.x + x, pane.y + y)] = out;
         }
     }
     outline(target, pane.x, pane.y, pane.w, pane.h, ink().rule);

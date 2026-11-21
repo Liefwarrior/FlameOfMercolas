@@ -48,8 +48,9 @@
 #include "granadad/render/street_voice.hpp"
 #include "granadad/render/pull.hpp"
 #include "granadad/render/rung_plate.hpp"
+#include "granadad/render/scene_types.hpp"
+#include "granadad/render/vertical.hpp"
 #include "granadad/render/viewmodel_machine.hpp"
-#include "granadad/render/world_renderer.hpp"
 #include "granadad/sim/casebook.hpp"
 #include "granadad/sim/compound.hpp"
 #include "granadad/sim/engine.hpp"
@@ -260,11 +261,11 @@ public:
     [[nodiscard]] sim::PlayerBody& body() noexcept { return *body_; }
     [[nodiscard]] const sim::PlayerBody& body() const noexcept { return *body_; }
     /// Movement steps into the current simulated second, 0..kStepsPerSecond-1.
-    /// THE RENDERER'S SLIDE: wardSprites() interpolates a ward body from
-    /// prevX to x by this over kStepsPerSecond, and the 3D actor instancer
-    /// (render3d/actor_instances.hpp) must use the identical fraction so a
-    /// body stands in the same place on both paths. Read-only; nothing here
-    /// is ever written back into the sim.
+    /// THE RENDERER'S SLIDE: a ward body is drawn interpolated from prevX to x
+    /// by this over kStepsPerSecond (render3d/actor_instances.hpp), and the
+    /// scripted lines aim their shots with the identical fraction so a shot
+    /// is aimed at the figure and not at the cell its feet will reach. Read-only;
+    /// nothing here is ever written back into the sim.
     [[nodiscard]] std::int32_t stepsThisSecond() const noexcept { return stepsThisSecond_; }
     /// 3D BUILD, V LANE. What the player's own hands are doing -- the
     /// viewmodel machine's pose, stepped once per movement step in step()
@@ -274,9 +275,13 @@ public:
     /// hashed, never written back; render3d/viewmodel.hpp turns it into the
     /// posed hands the 3D pass draws. See viewmodel_machine.hpp.
     [[nodiscard]] const ViewmodelPose& viewmodel() const noexcept { return viewmodel_.pose(); }
-    [[nodiscard]] const WorldRenderer& renderer() const noexcept { return *renderer_; }
+    /// The authored lamps (content/maps/baked/<world>.lamps) and the light they
+    /// spread over the tiles, baked once at boot. The 3D scene builders read
+    /// both: the glow is what a body and a piece are lit by where they stand.
+    [[nodiscard]] const std::vector<Lamp>& lamps() const noexcept { return lamps_; }
+    [[nodiscard]] const LampGlow& glow() const noexcept { return glow_; }
     [[nodiscard]] const TileAtlas& atlas() const noexcept { return atlas_; }
-    [[nodiscard]] std::size_t lampCount() const noexcept { return renderer_->lamps().size(); }
+    [[nodiscard]] std::size_t lampCount() const noexcept { return lamps_.size(); }
 
     /// The room, and the fourteen people in it.
     [[nodiscard]] sim::Tavern& tavern() noexcept { return *tavern_; }
@@ -523,19 +528,12 @@ public:
     /// The camera the body is currently looking through.
     [[nodiscard]] Camera camera() const noexcept;
 
-    /// 3D BUILD. Which passes drawFrame runs. `world` off skips the software
-    /// world pass (the sky, the tiles, the sprites) and clears the target to
-    /// transparent first, so everything drawn after it -- signage, washes,
-    /// the HUD, every page -- lands on an OVERLAY the raylib backend
-    /// composites over its own 3D frame. On by default: every test and the
-    /// software capture path draw the frame they always drew.
-    struct FramePasses {
-        bool world = true;
-    };
-
-    /// Draws the world, everybody in it, and the HUD into `target`.
-    FrameStats drawFrame(Framebuffer& target) const { return drawFrame(target, FramePasses{}); }
-    FrameStats drawFrame(Framebuffer& target, FramePasses passes) const;
+    /// Draws everything that is NOT the world into `target`: the signage, the
+    /// washes, the HUD and every page. The target is cleared to transparent
+    /// first -- it is the OVERLAY the raylib backend composites over the 3D
+    /// frame (render3d::Backend::drawOverlay), and the world is that backend's
+    /// frame, never this one's.
+    void drawFrame(Framebuffer& target) const;
 
     /// Where the player is, in words the player would use. Derived from x, y
     /// AND the band — see sim::docks::kPlaces for why that is worth saying.
@@ -2168,25 +2166,6 @@ public:
     /// inferring it from pixels.
     [[nodiscard]] std::vector<Lamp> tavernLights() const;
 
-    /// Every actor in view, as billboards, already shaded by the light where
-    /// they stand.
-    ///
-    /// Takes the CAMERA, because one part of a person is view-dependent: the
-    /// face only shows when they are looking roughly your way. See the note in
-    /// the implementation on why the eight-point facing the simulation has been
-    /// hashing since S2 finally gets drawn.
-    [[nodiscard]] std::vector<SpriteInstance> actorSprites(const Camera& view) const;
-    /// The same, through the body's own eye.
-    [[nodiscard]] std::vector<SpriteInstance> actorSprites() const;
-
-    /// THE WARD'S OWN PEOPLE, as billboards. One drawn figure each, out of the
-    /// owner's own sprite sheet, tile-stepped in the simulation and
-    /// interpolated HERE -- the sim owns which two tiles a body is between and
-    /// the renderer owns where between them it is drawn this frame, which is
-    /// the 2026-07-31 ruling read exactly as written.
-    [[nodiscard]] std::vector<SpriteInstance> wardSprites(const Camera& view) const;
-    [[nodiscard]] std::vector<SpriteInstance> wardSprites() const;
-
     /// SHEETS BUILD. The Journal tile's rows UNDER the leads: every live
     /// contract off the board contractLine() already reads (ALL of them,
     /// where that HUD row only shows the soonest), every TAKEN radiant
@@ -2472,7 +2451,8 @@ private:
     content::World world_;
     std::unique_ptr<sim::TileQuery> tiles_;
     TileAtlas atlas_;
-    std::unique_ptr<WorldRenderer> renderer_;
+    std::vector<Lamp> lamps_;
+    LampGlow glow_;
     std::unique_ptr<sim::PlayerBody> body_;
     std::unique_ptr<sim::PhasedEngine> engine_;
     /// Owned by the engine; borrowed here.
@@ -2486,7 +2466,6 @@ private:
     /// The notables registry the roll is refused against. Held because Ward
     /// takes it by reference and the reference has to outlive the constructor.
     std::unique_ptr<sim::NotableRegistry> who_;
-    RenderSettings settings_;
     int timeOfDay_ = 0;
     std::int64_t elapsedSeconds_ = 0;
     std::int32_t stepsThisSecond_ = 0;
@@ -4344,7 +4323,6 @@ struct StreetLineResult {
 
 struct SmokeRunResult {
     bool ok = false;
-    FrameStats stats;
     std::string summary;
     std::size_t lampCount = 0;
     std::int32_t endTileX = 0;
@@ -4361,12 +4339,12 @@ struct SmokeRunResult {
     /// actor is on screen out of six hundred", which is not what either number
     /// means: this one never had anything to do with the frame.
     std::int32_t gullPresent = 0;
-    /// #78. The ward's own roll, how many of it this frame could see, and how
-    /// many stood within twelve tiles of the camera. EVIDENCE, not a gate: the
-    /// owner ruled out "a frame must contain actors" outright, because a cellar
-    /// or a back lane at four in the morning is legitimately empty.
+    /// #78. The ward's own roll and how many stood within twelve tiles of the
+    /// camera. (How many of them the frame drew is the 3D shutter's line, the
+    /// `bodies` count it prints.) EVIDENCE, not a gate: the owner ruled out "a
+    /// frame must contain actors" outright, because a cellar or a back lane at
+    /// four in the morning is legitimately empty.
     std::int32_t wardRoll = 0;
-    std::int32_t wardDrawn = 0;
     std::int32_t wardNear = 0;
     /// #80. WHO LIVES ON THE ROOFS AND WHO IS UP THERE NOW, and how the food
     /// chain is doing. `roofHomed` counts beds on a deck -- a bed reached by

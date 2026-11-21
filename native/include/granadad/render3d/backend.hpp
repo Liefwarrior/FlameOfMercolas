@@ -239,6 +239,15 @@ public:
     /// moment a double-buffered GPU frame is defined.
     void endFrame(render::Framebuffer* capture = nullptr);
 
+    /// Puts the 3D frame in a RECTANGLE of the window (window pixels) instead
+    /// of over all of it, until called again with a zero width. The scene is
+    /// still drawn at the window's own size and the picture is scaled into the
+    /// rectangle when it is put on the window; the rest of the window is
+    /// cleared to black. For a host whose window is mostly something else --
+    /// the workbench, whose GAME pane is this frame with the HUD over it: the
+    /// overlay leaves that pane transparent and the world shows through.
+    void setSceneDestination(int x, int y, int width, int height);
+
     /// Where a framebuffer of this size would be drawn by drawOverlay.
     [[nodiscard]] OverlayPlacement overlayPlacement(int frameWidth, int frameHeight) const noexcept;
 

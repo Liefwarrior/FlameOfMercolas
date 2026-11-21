@@ -161,7 +161,7 @@ TEST_CASE("the shipped Docks bake carries the 28 authored light sources") {
     // The quayside count was 21 and the band count was 3. Phase B (Thresholds)
     // raised the Mission of the Flame a lantern-turret and took its doctrinal
     // night lamp up with it, z19 -> z23: same lamp, same name (which is what
-    // keeps world_renderer.cpp's beacon exception finding it), same (x, y)
+    // keeps the beacon tag, which is by name, finding it), same (x, y)
     // bracket cell, four bands higher. So one light leaves the quayside row and
     // arrives on a band of its own -- and z23 is the top authorable level of
     // this world, which is the whole point: the ward's doctrinal flame is now
@@ -178,7 +178,7 @@ TEST_CASE("the shipped Docks bake carries the 28 authored light sources") {
     // shape: the Weighhouse has carried a mast lamp AND a ground brazier since it was
     // authored. Same bracket cell the beacon left, quayside band, so the quayside row goes
     // 20 -> 21 and no other band moves. The name is deliberately NOT the beacon's --
-    // world_renderer.cpp's fog exception matches lamp names exactly, and a door lamp must not
+    // the beacon tag matches lamp names exactly, and a door lamp must not
     // be able to steal the tag.
     CHECK(byBand[granadad::sim::docks::kBandQuayside] == 21);
     CHECK(byBand[granadad::sim::docks::kBandMidSlope] == 2);
@@ -211,7 +211,7 @@ TEST_CASE("the shipped Docks bake carries the 28 authored light sources") {
 
     // The other beacon, and since Phase B the HIGHEST authored light in the
     // world. Pinned by name and by band because both are load-bearing: the name
-    // is what world_renderer.cpp's fog exception matches on, and the band is the
+    // is what the beacon tag matches on, and the band is the
     // deliverable -- a beacon at the skyline rather than over a doorway.
     const Lamp* mission = find("lamp_mission_night");
     REQUIRE(mission != nullptr);

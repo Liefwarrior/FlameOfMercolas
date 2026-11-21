@@ -13,7 +13,7 @@
 //   | places,     | a wedge, the selection ringed| the sim's own words   |
 //   | the board,  +------------------------------+-----------------------+
 //   | the Kit     | GAME  what the player sees   | CONSOLE  what the ward|
-//   |             | (the software raycaster)     | said, what you asked  |
+//   |             | (the 3D world, HUD over it)  | said, what you asked  |
 //   +-------------+------------------------------+-----------------------+
 //   | > the command line                                                 |
 //   +--------------------------------------------------------------------+
@@ -39,6 +39,7 @@
 
 #include <cstdint>
 #include <filesystem>
+#include <functional>
 #include <memory>
 #include <string>
 #include <string_view>
@@ -136,6 +137,10 @@ public:
     // --- state, for the tests and the serve loop ------------------------------
     [[nodiscard]] render::Session& session() noexcept { return *session_; }
     [[nodiscard]] const render::Session& session() const noexcept { return *session_; }
+    /// Counts the sessions this bench has held (1 at boot, one more for every
+    /// `load`): whoever keeps something borrowed from the session, as the 3D
+    /// scene does, rebuilds it when this moves.
+    [[nodiscard]] int sessionGeneration() const noexcept { return generation_; }
     [[nodiscard]] bool playing() const noexcept { return playing_; }
     [[nodiscard]] int speed() const noexcept { return speed_; }
     [[nodiscard]] std::int64_t stepsRun() const noexcept { return stepsRun_; }
@@ -157,6 +162,26 @@ public:
     /// Where `save NAME` writes and `load NAME` looks: workbench-scenes/ under
     /// the working directory unless set.
     void setSceneDir(std::filesystem::path dir) { sceneDir_ = std::move(dir); }
+
+    // --- the GAME pane's world -------------------------------------------------
+    //
+    // The pane is the game's own frame: the 3D world the raylib backend draws,
+    // the terminal HUD over it. The library draws the HUD and nothing of the
+    // world (it links no GL); whoever owns a backend says where the world comes
+    // from, one of two ways:
+    //
+    //   a PAINTER, for a picture on disk: draw() calls it for the pane's
+    //   640x360 world (the executable renders one headless and reads it back,
+    //   the way a capture does) and composites the HUD over what it returns;
+    //
+    //   IN THE WINDOW: the backend puts the world in the pane's rectangle
+    //   itself (Backend::setSceneDestination) and draw() leaves the pane's
+    //   ground transparent for it to show through.
+    //
+    // With neither (a test, a script) the HUD is drawn over the dark ground.
+    using WorldPainter = std::function<bool(const render::Session&, render::Framebuffer& world)>;
+    void setWorldPainter(WorldPainter painter) { worldPainter_ = std::move(painter); }
+    void setWorldInWindow(bool inWindow) noexcept { worldInWindow_ = inWindow; }
 
 private:
     void say(std::string line);
@@ -190,6 +215,9 @@ private:
     std::string commandLine_;
     std::filesystem::path sceneDir_ = "workbench-scenes";
     bool quit_ = false;
+    WorldPainter worldPainter_;
+    bool worldInWindow_ = false;
+    int generation_ = 0;
 };
 
 /// THE SERVE LOOP, one pass: executes every DIR/inbox/*.cmd in name order,

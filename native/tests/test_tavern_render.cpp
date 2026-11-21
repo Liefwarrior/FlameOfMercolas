@@ -17,6 +17,7 @@
 #include "granadad/render/dialogue_view.hpp"
 #include "granadad/render/hud.hpp"
 #include "granadad/render/session.hpp"
+#include "granadad/render3d/actor_instances.hpp"
 #include "granadad/sim/angle.hpp"
 #include "granadad/sim/contraband.hpp"
 #include "granadad/sim/contract.hpp"
@@ -24,6 +25,7 @@
 #include "granadad/sim/tavern.hpp"
 
 using namespace granadad::render;
+namespace render3d = granadad::render3d;
 namespace sim = granadad::sim;
 
 namespace {
@@ -102,14 +104,11 @@ TEST_CASE("every named place is somewhere a body can actually be") {
 
 TEST_CASE("the room is lit and full at nine, dark and empty at five") {
     // THE SPRINT'S ACCEPTANCE FRAMES, asserted rather than described. Same
-    // camera, same tile, same yaw; only the hour differs.
+    // camera, same tile, same yaw; only the hour differs. What is asserted is
+    // the room's own state and what the 3D instancer is handed -- the pictures
+    // of the room are the backend's (test_light_model.cpp, test_render3d.cpp).
     Session night(insideTheGull(21));
     Session dawn(insideTheGull(5));
-
-    Framebuffer nightFrame(320, 180);
-    Framebuffer dawnFrame(320, 180);
-    const FrameStats nightStats = night.drawFrame(nightFrame);
-    const FrameStats dawnStats = dawn.drawFrame(dawnFrame);
 
     // Nine at night: the fire is lit, the candles and lanterns are out, and
     // there are people between the camera and the far wall.
@@ -117,14 +116,14 @@ TEST_CASE("the room is lit and full at nine, dark and empty at five") {
     CHECK(night.tavern().isOpen());
     CHECK(night.tavernLights().size() >= 6);
     CHECK(night.tavern().presentCount() >= 6);
-    CHECK_FALSE(night.actorSprites().empty());
-    CHECK(nightStats.spritePixels > 0);
-    // AND PEOPLE ARE VISIBLE IN IT. The S2 review's fourth finding: this case
-    // used to assert spritePixels > 0, and a lit Gull carries nine flame
-    // sprites -- so it passed with every human being in the room invisible.
-    // actorPixels counts only billboards flagged `person`.
-    CHECK(nightStats.actorPixels > 0);
-    CHECK(nightStats.actorPixels <= nightStats.spritePixels);
+    // AND PEOPLE ARE HANDED TO THE 3D PASS. The S2 review's fourth finding
+    // was a case that counted flame sprites and passed with every human being
+    // in the room invisible; so this counts BODIES, and asks that every
+    // present person of the Gull is among them.
+    const std::vector<render3d::ActorInstance> nightBodies =
+        render3d::actorInstances(night, night.camera());
+    CHECK_FALSE(nightBodies.empty());
+    CHECK(nightBodies.size() >= static_cast<std::size_t>(night.tavern().presentCount()));
 
     // Five in the morning: the fire is banked, the doors are shut, and there is
     // nobody in the building at all.
@@ -133,180 +132,12 @@ TEST_CASE("the room is lit and full at nine, dark and empty at five") {
     // is the case that says so. The rats are on the skirting between one in the
     // morning and eleven, which is the whole reason the ward's bounty is
     // something a player has to keep an hour for. presentCount() counts PEOPLE
-    // and reads zero; the frame is not empty, and that is deliberate.
+    // and reads zero; the room is not empty, and that is deliberate.
     CHECK_FALSE(dawn.tavern().fireLit());
     CHECK_FALSE(dawn.tavern().isOpen());
     CHECK(dawn.tavernLights().empty());
     CHECK(dawn.tavern().presentCount() == 0);
     CHECK(dawn.tavern().verminPresent() == sim::kVerminPerNight);
-    CHECK(dawnStats.actorPixels == 0);
-
-    // And the two frames are genuinely different pictures: brighter, more
-    // colours, and sprite pixels where there were none.
-    CHECK(nightStats.meanLuma > dawnStats.meanLuma * 1.5F);
-    CHECK(nightStats.distinctColours > dawnStats.distinctColours);
-    // Sprite pixels at dawn are the rats and nothing else: a third of a
-    // person's height, unlit, in a black room. A handful of pixels against the
-    // night frame's thousands.
-    CHECK(dawnStats.spritePixels < nightStats.spritePixels / 20);
-
-    // Neither is a picture of the outdoors: standing in a room means the walls
-    // fill the frame.
-    CHECK(nightStats.skyPixels == 0);
-    CHECK(dawnStats.skyPixels == 0);
-}
-
-TEST_CASE("sprite pixels and people are counted apart") {
-    // The other half of the S2 review's fourth finding. It is not enough that
-    // actorPixels is non-zero when the room is full; the two counters have to
-    // be genuinely different things, or "the room is lit and full at nine" is
-    // still a claim that candles can satisfy.
-    //
-    // So the same camera, the same room, the same hour, drawn twice: once with
-    // only the flames in the sprite list, once with the people added.
-    //
-    // Standing north of the bar looking down the room, because the Gull is
-    // full of full-height furniture and from most of its corners you cannot
-    // see a flame at all -- which is itself worth knowing and is why this case
-    // names its camera instead of taking the default one.
-    Session session(insideTheGull(21, 152, 68, 180));
-    RenderSettings settings;
-    settings.timeOfDay = session.timeOfDay();
-    settings.dynamicLamps = session.tavernLights();
-    REQUIRE_FALSE(settings.dynamicLamps.empty());
-
-    std::vector<SpriteInstance> flames = session.renderer().lampSprites(0.0F);
-    for (const Lamp& light : settings.dynamicLamps) {
-        SpriteInstance flame;
-        flame.x = static_cast<float>(light.x) + 0.5F;
-        flame.y = static_cast<float>(light.y) + 0.5F;
-        flame.z = bandSurface(light.z) + 1.20F;
-        flame.halfWidth = 0.18F;
-        flame.halfHeight = 0.24F;
-        flame.colour = Rgb{1.0F, 0.6F, 0.25F};
-        flame.glow = 1.0F;
-        flames.push_back(flame);
-    }
-    // Nothing the renderer itself produces is ever a person.
-    for (const SpriteInstance& sprite : flames) {
-        REQUIRE_FALSE(sprite.person);
-    }
-
-    Framebuffer lit(320, 180);
-    const FrameStats withoutPeople =
-        session.renderer().renderFrame(lit, session.camera(), settings, flames);
-
-    std::vector<SpriteInstance> everything = flames;
-    const std::vector<SpriteInstance> people = session.actorSprites();
-    REQUIRE_FALSE(people.empty());
-    for (const SpriteInstance& sprite : people) {
-        REQUIRE(sprite.person);
-    }
-    everything.insert(everything.end(), people.begin(), people.end());
-
-    Framebuffer full(320, 180);
-    const FrameStats withPeople =
-        session.renderer().renderFrame(full, session.camera(), settings, everything);
-
-    // A lit room with nobody drawn in it: sprite pixels, and not one of them a
-    // person. THIS is the frame the old assertion could not tell apart from a
-    // room full of people.
-    CHECK(withoutPeople.spritePixels > 0);
-    CHECK(withoutPeople.actorPixels == 0);
-    // Add the people and only the second counter moves off zero.
-    CHECK(withPeople.actorPixels > 0);
-    CHECK(withPeople.spritePixels > withoutPeople.spritePixels);
-}
-
-TEST_CASE("an actor is drawn where the simulation says the actor is") {
-    // The renderer reads the Q8 the simulation owns. If a later sprint moves
-    // interpolation into the renderer, this is what says so.
-    //
-    // S3: THE OLD VERSION OF THIS CASE COULD NOT FAIL. It compared sprite.x
-    // against a STATIONARY bartender -- and a stationary actor sits at a tile
-    // centre, where x()/256 and tileX + 0.5 are the same float. The S2 review
-    // replaced the sub-tile read with `actor.tileX() + 0.5F`, throwing the Q8
-    // away outright, and the case stayed green. So the actor below is caught
-    // MID-STRIDE, between two tile centres, which is the only state that can
-    // tell the two reads apart.
-    // Ten seconds before ten at night, which is when the Skyrunner contact
-    // comes in off the quay. Nobody already seated ever leaves a tile centre;
-    // an ARRIVAL crosses the whole taproom, and that is the state this case
-    // needs and the old one never had.
-    SessionConfig config = insideTheGull(21, 152, 68, 180);
-    config.timeOfDay = 21 * 3600 + 59 * 60 + 50;
-    Session session(config);
-
-    const sim::Actor* walker = nullptr;
-    std::int32_t walkerX = 0;
-    std::int32_t walkerY = 0;
-    for (int second = 0; second < 60 && walker == nullptr; ++second) {
-        session.stepMany(sim::MoveInput{}, sim::kStepsPerSecond);
-        for (const sim::Actor& actor : session.tavern().actors()) {
-            if (!actor.present()) {
-                continue;
-            }
-            // Off a tile centre on either axis: mid-stride.
-            if (sim::q8_sub(actor.x()) != sim::kSubHalf ||
-                sim::q8_sub(actor.y()) != sim::kSubHalf) {
-                walker = &actor;
-                walkerX = actor.x();
-                walkerY = actor.y();
-                break;
-            }
-        }
-    }
-    INFO("no actor was ever caught between two tiles");
-    REQUIRE(walker != nullptr);
-    REQUIRE(walker->x() == walkerX);
-    REQUIRE(walker->y() == walkerY);
-
-    const float wantX = static_cast<float>(walker->x()) / 256.0F;
-    const float wantY = static_cast<float>(walker->y()) / 256.0F;
-    const float centreX = static_cast<float>(walker->tileX()) + 0.5F;
-    const float centreY = static_cast<float>(walker->tileY()) + 0.5F;
-    // The mutation the review used produces exactly these, and they are NOT
-    // where the actor is.
-    REQUIRE(std::abs(wantX - centreX) + std::abs(wantY - centreY) > 0.02F);
-
-    const std::vector<SpriteInstance> sprites = session.actorSprites();
-    REQUIRE_FALSE(sprites.empty());
-    int matching = 0;
-    int atTileCentre = 0;
-    for (const SpriteInstance& sprite : sprites) {
-        if (std::abs(sprite.x - wantX) < 0.001F && std::abs(sprite.y - wantY) < 0.001F) {
-            ++matching;
-        }
-        if (std::abs(sprite.x - centreX) < 0.001F && std::abs(sprite.y - centreY) < 0.001F) {
-            ++atTileCentre;
-        }
-    }
-    // The body's billboard sits on the body's own position.
-    //
-    // IT USED TO BE THREE, and the number moving is the whole of what #78 did
-    // to this file: an actor was legs, torso and head stacked, and it is now
-    // ONE drawn figure out of content/art/sprites. What this case is actually
-    // about -- that the renderer reads the Q8 the SIMULATION owns, and that a
-    // mutation replacing it with `tileX() + 0.5F` goes red -- is untouched, and
-    // that is why the assertion below is on the position and not on the count.
-    CHECK(matching >= 1);
-    CHECK(atTileCentre == 0);
-    // The sub-tile position really is inside its tile and not on its centre.
-    CHECK(wantX >= static_cast<float>(walker->tileX()));
-    CHECK(wantX < static_cast<float>(walker->tileX()) + 1.0F);
-    CHECK(wantY >= static_cast<float>(walker->tileY()));
-    CHECK(wantY < static_cast<float>(walker->tileY()) + 1.0F);
-
-    // Every billboard a solid, never a glow -- an actor is not a light source
-    // -- and every one of them a drawn FIGURE rather than an ellipse.
-    for (const SpriteInstance& sprite : sprites) {
-        CHECK(sprite.glow == 0.0F);
-        CHECK(sprite.person);
-        CHECK(sprite.art != nullptr);
-        CHECK(sprite.artSize == 16);
-        CHECK(sprite.artU1 >= sprite.artU0);
-        CHECK(sprite.artV1 >= sprite.artV0);
-    }
 }
 
 TEST_CASE("a person is a figure somebody drew, not an egg with a head on it") {
@@ -354,62 +185,6 @@ TEST_CASE("a person is a figure somebody drew, not an egg with a head on it") {
         CHECK(art.lastRow < ActorSprite::kPx);
         CHECK(art.firstCol <= art.lastCol);
     }
-}
-
-TEST_CASE("the facing the simulation has been hashing since S2 is finally drawn") {
-    // The S2 review's sixth finding: Actor::faceToward computes an eight-point
-    // facing, hashInto commits it to world state every tick, and no renderer
-    // ever read it. A feature that existed only as data.
-    Session session(insideTheGull(21, sim::gull::kBartenderX, sim::gull::kBarY - 1, 180));
-    const sim::Actor* bartender = nullptr;
-    for (const sim::Actor& actor : session.tavern().actors()) {
-        if (actor.role() == sim::ActorRole::Bartender && actor.present()) {
-            bartender = &actor;
-        }
-    }
-    REQUIRE(bartender != nullptr);
-    // Behind the bar means facing across it -- north, toward the customer.
-    REQUIRE(bartender->facing() == sim::kFacingNorth);
-
-    Camera infront = session.camera();
-    infront.x = static_cast<float>(bartender->tileX()) + 0.5F;
-    infront.y = static_cast<float>(bartender->tileY()) - 4.0F;
-    Camera behind = infront;
-    behind.y = static_cast<float>(bartender->tileY()) + 4.0F;
-
-    // #78 CHANGED WHAT THE FACING BUYS, and the change is worth stating.
-    //
-    // S3 spent it on a pale patch stuck to the side of the head, and this case
-    // used to count billboards: one more when the eye was in front of him than
-    // behind. content/art/sprites is drawn FRONT-ON and has no back view, and
-    // inventing one would be this build authoring art. So the facing is spent
-    // on LIGHT instead -- somebody looking your way catches what light there is
-    // and somebody turned away is a silhouette -- which is true, and at eight
-    // tiles in lamplight it is the one thing about a person you need to read.
-    //
-    // The claim under test is unchanged: the eight-point facing the simulation
-    // has been hashing since S2 reaches the frame. Only what it does there has.
-    const auto litnessAt = [&](const Camera& view) {
-        float best = 0.0F;
-        for (const SpriteInstance& sprite : session.actorSprites(view)) {
-            const float dx = sprite.x - (static_cast<float>(bartender->x()) / 256.0F);
-            const float dy = sprite.y - (static_cast<float>(bartender->y()) / 256.0F);
-            if (std::abs(dx) + std::abs(dy) > 0.01F) {
-                continue;  // somebody else
-            }
-            best = std::max(best, sprite.colour.r + sprite.colour.g + sprite.colour.b);
-        }
-        return best;
-    };
-    const float front = litnessAt(infront);
-    const float back = litnessAt(behind);
-    REQUIRE(front > 0.0F);
-    REQUIRE(back > 0.0F);
-    // Same actor, same lamps, same hour -- only which way the eye is.
-    CHECK(front > back);
-    // And the difference is the shade the code asks for and not a rounding
-    // error: a mutation that drops the facing term entirely makes these equal.
-    CHECK(back < front * 0.9F);
 }
 
 TEST_CASE("the world keeps its own time while the player stands still") {

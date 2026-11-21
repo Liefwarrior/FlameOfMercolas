@@ -1,0 +1,157 @@
+# name | arguments (the shared prefix and --screenshot are added by shoot.sh)
+# One row per scripted line of `granadad --help` that ends in a capture, with each
+# of its WHERE words where the line has several.
+street-default      |
+street-noon         | --time=12
+street-yaw          | --time=12 --yaw=100
+street-look-up      | --time=8 --pitch=45
+street-look-down    | --time=8 --pitch=-45
+street-dusk         | --time=19
+street-night        | --time=22
+fov-120             | --time=12 --fov=120
+spawn-quay          | --spawn=40,40,21 --time=12
+clock-1             | --clock=1 --time=12
+weather-fog         | --time=12 --weather=fog
+weather-overcast    | --time=12 --weather=overcast
+weather-wind        | --time=12 --weather=wind
+flat-light          | --time=12 --flat-light
+sheet-clips         | --time=12 --nohud --sheet=clips
+sheet-looks         | --time=12 --nohud --sheet=looks
+hands-sword         | --time=12 --hands=sword --block
+hands-club          | --time=12 --hands=club --punch
+nohud               | --time=12 --nohud
+settle-none         | --time=12 --no-settle
+settle-0            | --time=12 --settle-steps=0
+threshold-saltgate  | --threshold=saltgate --time=9
+threshold-saltgate-back | --threshold=saltgate --threshold-end=back --time=9
+threshold-gull      | --threshold=gull --time=20
+threshold-piers     | --threshold=piers --time=9
+threshold-gallows   | --threshold=gallows --time=9
+face-gull           | --face="The Gilded Gull" --time=12
+talk                | --talk
+talk-topic          | --talk --topic=1
+talk-cursor         | --talk --cursor=2
+talk-again          | --talk --again
+talk-offer          | --talk --offer=1
+pause-menu          | --pause
+pause-controls      | --pause=controls
+pause-settings      | --pause=settings
+pause-armed         | --pause=armed
+keys-row            | --keys-row=3
+character           | --character
+character-page2     | --character --tile-page=1
+map-tile            | --map
+refocus             | --character --settle-steps=12 --refocus=map --refocus-steps=3
+map-overlay         | --map-overlay
+map-place           | --map-place="The Weighhouse"
+map-tab-people      | --map-overlay --map-tab=people
+map-zoom            | --map-overlay --map-zoom=2
+travel              | --travel="The Gilded Gull"
+case-lead           | --trail=mission --case-lead=weighhouse-ledger
+case-tab-cases      | --trail=mission --case-lead=weighhouse-ledger --case-tab=cases
+follow              | --trail=mission --follow=weighhouse-ledger
+follow-street       | --trail=mission --follow=weighhouse-ledger --follow-end=street --follow-walk=5
+case-route          | --trail=mission --case-lead=weighhouse-ledger --case-route
+sprint              | --sprint=30 --time=12
+punch               | --time=12 --punch
+charge              | --time=12 --charge=20 --settle-steps=0
+block               | --time=12 --block
+block-5             | --time=12 --block=5
+flame-cast          | --flame --cast
+flame-held          | --flame --cast --time=20
+grimoire            | --flame --grimoire
+wait-page           | --wait
+petition            | --petition
+radiant-offer       | --radiant=offer
+radiant-taken       | --radiant
+radiant-shelf       | --radiant=shelf
+radiant-settled     | --radiant=settled
+radiant-ask         | --radiant=ask
+street-hand         | --street
+street-watch        | --street=watch
+street-priest       | --street=priest --time=12
+street-cat          | --street=cat
+street-topic        | --street --streettopic=1
+street-tone         | --street --tone=blunt
+shop-wares          | --shop=wares
+shop-bought         | --shop=bought --character
+shop-pawn           | --shop=pawn
+shop-sold           | --shop
+quickbar            | --flame --quickbar
+flame-talk          | --flame=talk
+flame-bench         | --flame=bench
+flame-away          | --flame=away
+roofs-roof          | --roofs=roof
+roofs-leap          | --roofs=leap
+roofs-street        | --roofs=street
+skyrun-talk         | --skyrun=talk
+skyrun-away         | --skyrun=away
+watch-halt-halt     | --watch-halt=halt
+watch-halt-street   | --watch-halt=street
+voice-pass          | --voice=pass
+voice-overheard     | --voice=overheard
+voice-farewell      | --voice=farewell
+voice-moved         | --voice=moved
+voice-react         | --voice=react
+voice-watch         | --voice=watch
+assault-scatter     | --street-assault --settle-steps=180
+assault-blow        | --street-assault=blow
+assault-down        | --street-assault=down
+assault-up          | --street-assault=up
+assault-kill        | --street-assault=kill
+assault-hearing     | --street-assault=hearing
+assault-watch-halt  | --street-assault=watch-halt
+assault-watch-sheathe | --street-assault=watch-sheathe
+assault-watch-offence | --street-assault=watch-offence
+court-wanted        | --court=wanted
+court-cull          | --court=cull --settle-steps=0
+court-taken         | --court=taken --settle-steps=0
+court-page          | --court=page
+court-paper         | --court=paper
+court-armed         | --court=armed
+court-plea          | --court=plea
+court-deny          | --court=deny
+court-hand          | --court=hand
+court-serve         | --court=serve --settle-steps=30
+court-bloodtag      | --court=bloodtag
+court-ropepage      | --court=ropepage
+court-rope          | --court=rope
+court-newman        | --flame --court=newman
+kit-take            | --kit=take --settle-steps=0
+kit-theirs          | --kit=theirs --settle-steps=0
+kit-sheet           | --kit=sheet
+kit-equip           | --kit=equip
+kit-slot            | --kit=slot --settle-steps=0
+kit-dr              | --kit=dr --settle-steps=12
+kit-search          | --kit=search
+kit-load            | --kit=load
+kit-drop            | --kit=drop --settle-steps=0
+kit-full            | --kit
+rung-wire           | --rung=wire --settle-steps=0
+rung-roofs          | --rung=roofs --settle-steps=0
+rung-flame          | --rung=flame --settle-steps=0
+rung-trade          | --rung=trade --settle-steps=0
+rung-law            | --rung=law --settle-steps=0
+nemesis-talk        | --nemesis=talk
+nemesis-away        | --nemesis=away
+nemesis-death       | --nemesis=death
+contract-talk       | --contract=talk
+contract-away       | --contract=away
+contract-held       | --contract=held
+burgle-box          | --burgle=box
+burgle-lock         | --burgle=lock
+burgle-taproom      | --burgle=taproom
+burgle-street       | --burgle=street
+case-sheet          | --case=sheet
+case-gull           | --case=gull
+case-night          | --case=night
+case-down           | --case=down
+case-full           | --case
+trail-notes         | --trail=notes
+trail-start         | --trail=start
+trail-mission       | --trail=mission
+trail-weighhouse    | --trail=weighhouse
+trail-hold          | --trail=hold
+trail-letters       | --trail=letters
+trail-opened        | --trail=opened
+trail-keys          | --trail=keys

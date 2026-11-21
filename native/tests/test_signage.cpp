@@ -1,5 +1,6 @@
 // Docks signage: the generated table, the name-resolution priority order,
-// and the world-space label pass that draws it.
+// and the world-space label pass that draws it. The labels draw onto the OVERLAY (a transparent
+// frame) that the 3D backend composites over the world, so these cases start from one.
 
 #include <doctest/doctest.h>
 
@@ -15,6 +16,7 @@
 #include "granadad/sim/angle.hpp"
 #include "granadad/sim/docks.hpp"
 #include "granadad/sim/docks_signs.hpp"
+#include "granadad/sim/tavern.hpp"
 
 using namespace granadad::render;
 namespace sim = granadad::sim;
@@ -191,24 +193,87 @@ TEST_CASE("a building with no docks::kPlaces entry reads its real tmx-recovered 
 TEST_CASE("a sign in view draws its label, and the same sign behind you does not") {
     // The shipped spawn: docks.hpp's own header says the Gull's frontage and
     // its door lamp are in shot from here, which puts sign_k03_gilded_gull's
-    // anchor in view too.
+    // anchor in view too. The line of sight is opened for THAT sign alone, so
+    // what turns the label on and off below is the camera and nothing else
+    // (the rest of the street's names are in view from here too).
     Session session(docksAt(20));
     REQUIRE(session.body().spawnedLegally());
+    const docks::Sign* gull = findSign("sign_k03_gilded_gull");
+    REQUIRE(gull != nullptr);
+    SignageSettings onlyTheGull;
+    onlyTheGull.sightClear = [gull](float x, float y, int) {
+        return x == gull->anchorX && y == gull->anchorY;
+    };
 
     Framebuffer facing(320, 180);
-    session.renderer().renderFrame(facing, session.camera(), RenderSettings{}, {});
-    drawSignage(facing, session.camera());
+    facing.clearTransparent();
+    drawSignage(facing, session.camera(), onlyTheGull);
     CHECK(hasSignInk(facing));
 
     // Turn around: the same sign is now behind the eye and must not draw --
     // the near-cull (SignageSettings::minDistance) is a dot product against
     // forward, so a sign behind the camera projects to a negative distance
-    // and is skipped before it ever reaches the screen or the depth test.
+    // and is skipped before it ever reaches the screen.
     session.body().setYaw(session.body().yaw() + sim::kTurnHalf);
     Framebuffer away(320, 180);
-    session.renderer().renderFrame(away, session.camera(), RenderSettings{}, {});
-    drawSignage(away, session.camera());
+    away.clearTransparent();
+    drawSignage(away, session.camera(), onlyTheGull);
     CHECK_FALSE(hasSignInk(away));
+}
+
+TEST_CASE("a sign the eye has no line of sight to does not draw") {
+    // THE OCCLUSION RULE. The sign layer draws onto an overlay with no depth
+    // under it, so what stands between the eye and a wall is the caller's to
+    // say (SignageSettings::sightClear). The same frame, once with every sign
+    // seen and once with none: all of the ink goes, and not a pixel of anything
+    // else moves.
+    Session session(docksAt(20));
+    REQUIRE(session.body().spawnedLegally());
+
+    SignageSettings seen;
+    seen.sightClear = [](float, float, int) { return true; };
+    Framebuffer with(320, 180);
+    with.clearTransparent();
+    drawSignage(with, session.camera(), seen);
+    CHECK(hasSignInk(with));
+
+    SignageSettings hidden;
+    hidden.sightClear = [](float, float, int) { return false; };
+    Framebuffer without(320, 180);
+    without.clearTransparent();
+    drawSignage(without, session.camera(), hidden);
+    CHECK_FALSE(hasSignInk(without));
+    for (const std::uint32_t pixel : without.pixels()) {
+        REQUIRE(pixel == 0U);
+    }
+}
+
+TEST_CASE("the session's own frame carries the signs the eye can see") {
+    // THE WIRING, end to end: Session::drawFrame hands the signage the lens's
+    // line of sight over the tiles. HUD off (--nohud), so every sign-ink pixel
+    // in the frame is a sign. The shipped spawn has the Gull's frontage in shot.
+    SessionConfig config = docksAt(20);
+    config.hud = false;
+    Session session(config);
+    REQUIRE(session.body().spawnedLegally());
+    Framebuffer frame(320, 180);
+    session.drawFrame(frame);
+    CHECK(hasSignInk(frame));
+
+    // And from inside a closed room, the street's signs are behind its walls:
+    // turned to face the room's own wall, nothing outside is named at us.
+    SessionConfig inside = docksAt(5);
+    inside.hud = false;
+    inside.spawnX = 156;
+    inside.spawnY = 76;
+    inside.spawnBand = sim::gull::kGroundBand;
+    inside.spawnYaw = sim::angle_from_degrees(180);
+    inside.spawnYawGiven = true;
+    Session room(inside);
+    REQUIRE(room.body().spawnedLegally());
+    Framebuffer shut(320, 180);
+    room.drawFrame(shut);
+    CHECK_FALSE(hasSignInk(shut));
 }
 
 TEST_CASE("a sign far past the legibility radius does not draw") {
@@ -227,7 +292,7 @@ TEST_CASE("a sign far past the legibility radius does not draw") {
     }
 
     Framebuffer frame(320, 180);
-    session.renderer().renderFrame(frame, session.camera(), RenderSettings{}, {});
+    frame.clearTransparent();
     drawSignage(frame, session.camera());
     CHECK_FALSE(hasSignInk(frame));
 }
@@ -251,7 +316,7 @@ TEST_CASE("a label whose box lands on the interface is skipped, not painted over
     REQUIRE(session.body().spawnedLegally());
 
     Framebuffer plain(320, 180);
-    session.renderer().renderFrame(plain, session.camera(), RenderSettings{}, {});
+    plain.clearTransparent();
     drawSignage(plain, session.camera());
     REQUIRE(hasSignInk(plain));
     const CentreRect where = signInkBox(plain);
@@ -265,7 +330,7 @@ TEST_CASE("a label whose box lands on the interface is skipped, not painted over
     SignageSettings settings;
     settings.exclusion = where;
     Framebuffer claimed(320, 180);
-    session.renderer().renderFrame(claimed, session.camera(), RenderSettings{}, {});
+    claimed.clearTransparent();
     drawSignage(claimed, session.camera(), settings);
     CHECK(signInkCount(claimed) < before);
     CHECK_FALSE(hasSignInk(claimed));
@@ -276,7 +341,7 @@ TEST_CASE("a label whose box lands on the interface is skipped, not painted over
     // asserted pixel for pixel rather than assumed.
     SignageSettings none;
     Framebuffer same(320, 180);
-    session.renderer().renderFrame(same, session.camera(), RenderSettings{}, {});
+    same.clearTransparent();
     drawSignage(same, session.camera(), none);
     CHECK(same.pixels() == plain.pixels());
 }

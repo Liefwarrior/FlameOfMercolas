@@ -719,7 +719,7 @@ void poseViewmodel(ViewmodelInstance& out, ViewmodelKind kind, const ViewmodelPo
 ViewmodelInstance viewmodelInstance(const render::Session& session, int forceKind) {
     const sim::PlayerBody& body = session.body();
     const render::SkyState sky = render::skyAt(session.timeOfDay());
-    const render::Rgb baked = session.renderer().glow().at(body.tileX(), body.tileY(), body.band());
+    const render::Rgb baked = session.glow().at(body.tileX(), body.tileY(), body.band());
     const render::Rgb live =
         render::dynamicGlowAt(session.tavernLights(), body.tileX(), body.tileY(), body.band());
     ViewmodelInstance out;

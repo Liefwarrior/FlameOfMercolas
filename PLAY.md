@@ -30,10 +30,11 @@ stamps `unknown`.)
 
 The screenshots in this document live in `docs/frames/`. They were captured
 by earlier builds, before the 3D world became the default view on 2026-09-11,
-so the world they show is the older software-drawn one; the HUD and the
-screens around it are the ones the game still draws. Each is one
-`--screenshot=` flag away on your own build — see the repro commands at the
-end of §7.
+so the world they show is the older software-drawn one (that renderer, and its
+`--2d` flag, were removed in phase 7 of `docs/design/OBLIVION-PLAN.md`; the
+world is the 3D one now, lit per pixel); the HUD and the screens around it are
+the ones the game still draws. Each is one `--screenshot=` flag away on your
+own build — see the repro commands at the end of §7.
 
 ---
 

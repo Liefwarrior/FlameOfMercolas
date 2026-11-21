@@ -467,7 +467,7 @@ std::vector<ActorInstance> actorInstances(const render::Session& session,
     // WEATHER: the session's own sky, so a body on a foggy quay is lit as
     // the quay is.
     const render::SkyState sky = session.sky();
-    const render::LampGlow& glow = session.renderer().glow();
+    const render::LampGlow& glow = session.glow();
     static const std::vector<render::Lamp> kNoLive;
     const std::int64_t stepCount = session.body().stepCount();
 

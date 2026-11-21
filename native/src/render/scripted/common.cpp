@@ -174,7 +174,7 @@ void facePlayerAndSync(Session& session, std::int32_t xQ8, std::int32_t yQ8) {
 
 /// Where a ward body is DRAWN this step, Q8: the slide from its last tile
 /// to its current one by the session's own fraction of the second -- the
-/// identical arithmetic wardSprites and the 3D instancer use, so a shot
+/// identical arithmetic the 3D instancer uses, so a shot
 /// aimed here is aimed at the figure and not at the cell its feet will
 /// reach at the top of the second. A body standing still is its centre.
 [[nodiscard]] std::pair<std::int32_t, std::int32_t> wardDrawnQ8(const Session& session,

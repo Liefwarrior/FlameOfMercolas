@@ -737,7 +737,6 @@ void Session::step(const sim::MoveInput& input) {
             ++elapsedSeconds_;
         }
         timeOfDay_ = tavern_->timeOfDay();
-        settings_.timeOfDay = timeOfDay_;
     }
     // STREET PANIC BUILD (feel/build, 9a). THE STREET REACTS TO WHAT IT CAN
     // SEE, and this is the ONE call site that tells it. The tavern's own
@@ -1017,7 +1016,6 @@ void Session::stepMany(const sim::MoveInput& input, int steps) {
 void Session::syncClockAfterSkip() {
     // The shared tail of every clock jump -- see the declaration's header.
     timeOfDay_ = tavern_->timeOfDay();
-    settings_.timeOfDay = timeOfDay_;
     stepsThisSecond_ = 0;
     syncWardToCalendar();
 }

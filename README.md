@@ -118,6 +118,18 @@ mouse-look, solid 3D streets built from the ward's tile data over the authoritat
 simulation, committed dark — torchlit pools against near-black, architecture as silhouette,
 harbour fog. ~~Barony-grade, sharper~~ is superseded.
 
+**One renderer.** The world is drawn by `render3d` through raylib on OpenGL 3.3: the district is
+meshed by chunk from the tile data, every surface is lit per pixel by the simulation's own lamp
+curve plus a sun and a moon from the clock, with a shadow map, a sky and water shader, distance
+fog, bloom and a grade, and the people, their hands and their weapons are low-poly figures built
+in code. The terminal-register HUD, the name signs and every page are a software overlay
+(`render::Session::drawFrame`) composited over that frame, so the interface stays pixel-exact
+whatever the GPU does. There is no second world renderer: the software raycaster this build began
+with, and its `--2d` flag, were retired in phase 7 of `docs/design/OBLIVION-PLAN.md`. On Linux
+(and in the docker gate) the same GLSL runs headless on Mesa's llvmpipe, which is what
+`--screenshot` and the frame tests draw with; on Windows it is the player's GPU. The
+`granadad-workbench` game pane is the same frame.
+
 ## Canon
 
 Lore lives in `Lore\` in this repo and in the sibling repo `..\LordOfTrojia-MVP` (read-only

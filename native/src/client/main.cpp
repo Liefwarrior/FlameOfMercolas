@@ -58,12 +58,15 @@
 #include "granadad/render/menu_view.hpp"
 #include "granadad/render/session.hpp"
 #include "granadad/render/step_pump.hpp"
-#include "granadad/render/world_renderer.hpp"
+#include "granadad/render/scene_types.hpp"
+#include "granadad/render/vertical.hpp"
+#include "granadad/render/voxel_classify.hpp"
 #include "granadad/render3d/backend.hpp"
 #include "granadad/render3d/scene.hpp"
 #include "granadad/render3d/actor_instances.hpp"
 #include "granadad/render3d/ground_items.hpp"
 #include "granadad/render3d/light_model.hpp"
+#include "granadad/render3d/scene_rig.hpp"
 #include "granadad/render3d/viewmodel.hpp"
 #include "granadad/render3d/world_scene.hpp"
 #include "granadad/sim/angle.hpp"
@@ -356,14 +359,6 @@ struct Options {
     render::SmokeRunConfig smoke;
     bool wantsSmoke = false;
     int windowScale = 2;
-    /// 3D BUILD. THE DEFAULT NOW: the world is drawn by the raylib backend
-    /// -- the Docks as chunk meshes (render3d/world_scene.hpp) -- and the
-    /// software frame is drawn WITHOUT its world pass, as a transparent
-    /// overlay over it. `--2d` turns it off: the software world rides inside
-    /// the overlay and the picture is the one this build showed before the
-    /// 3D programme; the window, the composite and the capture go through
-    /// raylib either way. `--3d` is still accepted and means the default.
-    bool video3d = true;
     /// PHASE 5. True by default: the 3D pass is lit per pixel (point lights, a
     /// sun and a moon from the clock, shadows, fog, the sky and water shaders,
     /// bloom). `--flat-light` draws the vertex-colour light this build had
@@ -791,11 +786,9 @@ void print_usage() {
         "                       a window for the shutter and closes it; the\n"
         "                       Linux build opens none (Mesa llvmpipe, no display\n"
         "                       server, no GPU)\n"
-        "  --2d                 draw the world with the software raycaster inside\n"
-        "                       the overlay instead of the 3D chunk meshes (the\n"
-        "                       picture this build showed before the 3D programme)\n"
-        "  --3d                 the default: the Docks as 3D geometry through the\n"
-        "                       raylib backend, the terminal HUD composited over it\n"
+        "  --3d                 accepted and ignored: the Docks are always 3D\n"
+        "                       geometry through the raylib backend, the terminal\n"
+        "                       HUD composited over it\n"
         "  --width=N            internal render width  (default 640)\n"
         "  --height=N           internal render height (default 360)\n"
         "  --scale=N            window / capture upscale, nearest neighbor (default 2)\n"
@@ -1319,9 +1312,9 @@ void print_usage() {
         } else if (std::strcmp(arg, "--invert-y") == 0) {
             options.invertY = true;
         } else if (std::strcmp(arg, "--3d") == 0) {
-            options.video3d = true;
-        } else if (std::strcmp(arg, "--2d") == 0) {
-            options.video3d = false;
+            // Accepted and ignored: the 3D world is the only world there is
+            // (phase 7 retired the software one, with its `--2d`), and a
+            // command line written before that still parses.
         } else if (std::strcmp(arg, "--flat-light") == 0) {
             options.perPixelLight = false;
         } else if (starts_with(arg, "--sheet=", &value)) {
@@ -3887,204 +3880,27 @@ struct VideoBridge {
     }
 };
 
-/// 3D BUILD. THE DOCKS, PLACED FOR A SESSION: the session's own tiles meshed
-/// by chunk (built once, on the first frame), lit from its own clock, its
-/// baked lamps and the Gull's own hearth and candles, the sky dome on the
-/// eye, and the camera from the session's own Camera -- Session::camera(),
-/// the body's Q8 position and BAM facing through Camera::fromBody, combat
-/// impulses included. The rig borrows the session's tiles, atlas and lamp
-/// field, so it must not outlive the session it was first refreshed with
-/// -- it never does: one rig per run_client / shutter.
-/// A LANE. Where the skinned rigs live when the licensed export has been
-/// run: content/art/lot-3d/characters (gitignored; absent on a fresh
-/// checkout and in the docker gate, and the adapter falls back to the
-/// placeholder figures per rig without a word).
-[[nodiscard]] std::string rig_model_dir() {
-    return (granadad::content::contentDir() / "art" / "lot-3d" / "characters").string();
-}
-
-/// V LANE. Where the static weapon exports live (the mace and the dagger
-/// hung on the viewmodel's Hand_R when they exist): content/art/lot-3d/
-/// static, same licence, same gitignore, same silent fallback.
-[[nodiscard]] std::string weapon_model_dir() {
-    return (granadad::content::contentDir() / "art" / "lot-3d" / "static").string();
-}
-
-/// S LANE. Where the static building pieces live -- the same export tree
-/// the weapons come from; the catalogue names "<pack>/<prefab>.gltf" under
-/// it. Same licence, same gitignore, same silent fallback (the chunk mesh).
-[[nodiscard]] std::string static_model_dir() { return weapon_model_dir(); }
-
-/// PHASE 6, VERIFICATION ONLY (--sheet=): a row of figures standing in front
-/// of the eye, facing it, in place of the ward's people. `mode` 1 is one
-/// figure per animation clip, each caught on the frame that shows it best;
-/// 2 is one per kind of body, alternately a man and a woman, standing.
-std::vector<render3d::ActorInstance> figure_sheet(const render::Session& session, int mode) {
-    std::vector<render3d::ActorInstance> out;
-    const render::Camera cam = session.camera();
-    const float fx = std::sin(cam.yaw);
-    const float fy = -std::cos(cam.yaw);
-    const float rx = std::cos(cam.yaw);
-    const float ry = std::sin(cam.yaw);
-    const float up = render::bandSurface(session.body().band());
-    struct Pose {
-        render3d::ActorClip clip;
-        std::uint32_t frame;
-    };
-    const Pose clips[] = {{render3d::ActorClip::Idle, 30},       {render3d::ActorClip::Walk, 13},
-                          {render3d::ActorClip::PunchRight, 17}, {render3d::ActorClip::PunchLeft, 17},
-                          {render3d::ActorClip::Block, 10},      {render3d::ActorClip::Talk, 30},
-                          {render3d::ActorClip::Hit, 6},         {render3d::ActorClip::Recover, 9999},
-                          {render3d::ActorClip::Death, 9999}};
-    const sim::WardType kinds[] = {
-        sim::WardType::Serf,   sim::WardType::Shopkeeper,        sim::WardType::Sailor,
-        sim::WardType::Fisher, sim::WardType::MilitiaWatch,      sim::WardType::Wastrel,
-        sim::WardType::Urchin, sim::WardType::Thief,             sim::WardType::PriestOfTheFlame,
-        sim::WardType::DiscipleOfTheFlame, sim::WardType::AnimalKeeper, sim::WardType::Carter};
-    const int count = mode == 1 ? 9 : 12;
-    for (int i = 0; i < count; ++i) {
-        const float across = (static_cast<float>(i) - static_cast<float>(count - 1) * 0.5F) * 0.8F;
-        const float depth = mode == 1 ? 4.4F : 5.0F;
-        const float px = cam.x + fx * depth + rx * across;
-        const float py = cam.y + fy * depth + ry * across;
-        render3d::ActorInstance body;
-        sim::WardType type = mode == 1 ? sim::WardType::Sailor : kinds[i];
-        const std::int32_t id = mode == 1 ? 21 : 40 + i * 7;
-        const bool female = mode == 1 ? false : (i % 2 == 1);
-        const render3d::ActorLook look = render3d::actorLookFor(type, id, female);
-        body.lookKey = look.key();
-        body.instance.meshId = render3d::figureMeshId(look);
-        body.instance.position = render3d::toScene(px, py, up);
-        body.instance.yaw = cam.yaw + 3.14159265F;
-        body.instance.scale = render3d::actorInstanceScale(type) * render3d::actorHeightJitter(id);
-        body.instance.tint = render3d::Rgba8{255, 255, 255, 255};
-        body.skinned = true;
-        body.clip = mode == 1 ? clips[i].clip : render3d::ActorClip::Idle;
-        body.clipFrame = mode == 1 ? clips[i].frame : 30U;
-        out.push_back(body);
-    }
-    return out;
-}
-
-struct SceneRig {
-    /// PHASE 5: lit per pixel (Options::perPixelLight).
-    bool perPixel = true;
-    /// PHASE 6: Options::handsKind and Options::sheet.
-    int handsKind = -1;
-    int sheet = 0;
-    render3d::SceneDescription scene;
-    std::unique_ptr<render3d::WorldScene> world;
-    /// S LANE. The piece catalogue (content/raws/world3d/docks-pieces.json)
-    /// loaded once per rig; the world scene borrows it. Absent or malformed
-    /// -> empty -> no pieces, the district exactly as before the lane.
-    render3d::StaticCatalogue catalogue;
-
-    void refresh(const render::Session& session, float aspect) {
-        if (world == nullptr) {
-            catalogue = render3d::StaticCatalogue::load(
-                render3d::staticCataloguePath(granadad::content::contentDir()));
-            if (!catalogue.error().empty()) {
-                std::printf("granadad: render3d: piece catalogue: %s -- the chunk mesh stands\n",
-                            catalogue.error().c_str());
-            }
-            for (const std::string& warning : catalogue.warnings()) {
-                std::printf("granadad: render3d: piece catalogue: %s\n", warning.c_str());
-            }
-            world = std::make_unique<render3d::WorldScene>(
-                session.tiles(), session.atlas(), &session.renderer().glow(), &catalogue,
-                &session.renderer().lamps());
-        }
-        render3d::WorldSceneParams params;
-        params.timeOfDaySeconds = session.timeOfDay();
-        // WEATHER: the session's sky -- live off the seed, the day and the
-        // clock, or pinned by --weather. Render-only; the sim never sees it.
-        params.weather = session.weather();
-        params.dynamicLamps = session.tavernLights();
-        params.perPixel = perPixel;
-        // The render clock the flames waver by: the body's own step count at
-        // sixty a second, so a scripted capture is the same frame twice. It
-        // is read by the flicker and by nothing in the sim.
-        params.renderClock = static_cast<float>(session.body().stepCount() % 360000) / 60.0F;
-        world->refresh(scene, session.camera(), aspect, params);
-        // KIT BUILD: the things on the tiles -- the room's hashed ground
-        // list, the four strongboxes and the snug's bale -- as Item pieces
-        // off the same catalogue, appended after the placed pieces (whose
-        // table they index). Per frame, off sim state, never written back:
-        // TAKE removes a thing in the sim and the next frame has one fewer.
-        {
-            const std::vector<render3d::StaticInstance> things = render3d::groundItemInstances(
-                session, catalogue, session.camera(), 40.0F, world->pool(), &world->spill(), perPixel);
-            scene.statics.insert(scene.statics.end(), things.begin(), things.end());
-            // And a lantern on a table burns like one on a wall: its halo,
-            // drawn last with every other (the adapter defers kDrawHalo).
-            const std::vector<render3d::StaticInstance> glows =
-                render3d::groundItemHalos(session, catalogue, session.camera(), 40.0F);
-            scene.statics.insert(scene.statics.end(), glows.begin(), glows.end());
-        }
-        // A LANE: the people. Sixteen placeholder rigs put once (the adapter
-        // swaps in the glb by name where it has one), and the instances
-        // rewritten every frame off the roster with wardSprites' own slide.
-        render3d::putActorRigs(scene);
-        // The bodies stand in the same pool the walls and cobbles wear
-        // (WorldScene::pool), so a figure beside a lantern at night is lit
-        // by that lantern and not drawn in its daylight coat.
-        render3d::ActorSceneParams actorParams;
-        actorParams.pool = world->pool();
-        actorParams.spill = &world->spill();
-        actorParams.perPixel = perPixel;
-        scene.actors = render3d::actorInstances(session, session.camera(), actorParams);
-        // PHASE 6: and the figure of every person in sight (one mesh a look).
-        if (sheet != 0) {
-            scene.actors = figure_sheet(session, sheet);
-        }
-        render3d::putActorFigures(scene, scene.actors);
-        // V LANE: the player's own hands. The placeholder parts put once
-        // (the adapter swaps in the arms glb by name where it has one), the
-        // pose rewritten every frame off Session::viewmodel() -- the machine
-        // step() runs beside the sim, so a scripted swing photographs the
-        // same frame on every machine.
-        render3d::putViewmodelMeshes(scene);
-        scene.viewmodel = render3d::viewmodelInstance(session, handsKind);
-        if (perPixel) {
-            // The hands are drawn in their own pass, in view space, where the
-            // per-pixel light cannot reach: they wear the light at the eye, by
-            // the same model (render3d::litSurface), clipped at one.
-            const render3d::Vec3 light = render3d::litSurface(
-                scene.shading, scene.lights, scene.camera.position, render3d::Vec3{0.0F, 0.6F, 0.8F});
-            const auto channel = [](float l) {
-                return static_cast<std::uint8_t>(std::clamp(l, 0.0F, 1.0F) * 255.0F + 0.5F);
-            };
-            scene.viewmodel.tint =
-                render3d::Rgba8{channel(light.x), channel(light.y), channel(light.z), 255};
-        }
-    }
-};
-
-/// 3D BUILD. ONE FRAME THROUGH THE BACKEND: clear to the sky, the 3D pass
-/// when --3d is on, the software frame as the overlay, present -- and, when
-/// asked, the finished frame read back before the swap.
-render3d::SceneStats present_frame(render3d::Backend& video, const Options& options,
-                                   SceneRig& rig, const render::Session& session,
+/// 3D BUILD. ONE FRAME THROUGH THE BACKEND: clear to the sky, the 3D pass, the
+/// HUD frame as the overlay, present -- and, when asked, the finished frame
+/// read back before the swap.
+render3d::SceneStats present_frame(render3d::Backend& video, render3d::SceneRig& rig,
+                                   const render::Session& session,
                                    const render::Framebuffer& overlay,
                                    render::Framebuffer* capture) {
     const float aspect = static_cast<float>(std::max(1, video.width())) /
                          static_cast<float>(std::max(1, video.height()));
     rig.refresh(session, aspect);
-    render3d::SceneStats stats;
-    if (options.video3d) {
-        video.beginFrame(rig.scene.clearColour);
-        stats = video.drawScene(rig.scene);
-    } else {
-        video.beginFrame(render3d::Rgba8{0, 0, 0, 255});
-    }
+    video.beginFrame(rig.scene.clearColour);
+    const render3d::SceneStats stats = video.drawScene(rig.scene);
     video.drawOverlay(overlay);
     video.endFrame(capture);
     return stats;
 }
 
 /// 3D BUILD. THE SMOKE PATH'S SHUTTER: runSmoke drove the session and drew
-/// its software frame; this composites that frame through the backend the
-/// window uses and writes what the window would have shown. On the shipped
+/// its HUD frame (the overlay); this composites that frame over the 3D world
+/// through the backend the window uses and writes what the window would have
+/// shown. On the shipped
 /// build that opens a real window for the length of one frame -- which is
 /// exactly what scripts/verify-windows.ps1 wants proved on the host -- and on
 /// the Linux build it opens none (headless, Mesa llvmpipe).
@@ -4099,25 +3915,21 @@ render3d::SceneStats present_frame(render3d::Backend& video, const Options& opti
     // The Linux build draws the shutter on a context with no window (Mesa
     // llvmpipe); the shipped .exe opens a real window for one frame.
     config.headless = render3d::Backend::headlessCapable();
-    config.modelDir = rig_model_dir();
-    config.weaponDir = weapon_model_dir();
-    config.staticDir = static_model_dir();
+    config.modelDir = render3d::rigModelDir();
+    config.weaponDir = render3d::weaponModelDir();
+    config.staticDir = render3d::staticModelDir();
     std::unique_ptr<render3d::Backend> video = render3d::Backend::open(config);
     if (video == nullptr) {
         std::printf("granadad: the 3D backend could not open for the shutter\n");
         return false;
     }
-    render::Framebuffer overlay = software;
-    if (options.video3d) {
-        (void)session.drawFrame(overlay, render::Session::FramePasses{.world = false});
-    }
-    SceneRig rig;
+    render3d::SceneRig rig;
     rig.perPixel = options.perPixelLight;
     rig.handsKind = options.handsKind;
     rig.sheet = options.sheet;
     render::Framebuffer shot(1, 1);
     const render3d::SceneStats stats =
-        present_frame(*video, options, rig, session, overlay, &shot);
+        present_frame(*video, rig, session, software, &shot);
     // The headless frame is the framebuffer's own size; the window build
     // already presented at the capture scale.
     const bool needsUpscale =
@@ -4148,8 +3960,7 @@ render3d::SceneStats present_frame(render3d::Backend& video, const Options& opti
                 stats.viewmodelSkinned ? " (skinned glb)" : "",
                 stats.viewmodelWeaponLoaded ? " (weapon file)" : "",
                 static_cast<unsigned long long>(render3d::sceneHash(rig.scene)),
-                options.video3d ? " (the Docks in 3D under the HUD)"
-                                : " (software world in the overlay: --2d)");
+                " (the Docks in 3D under the HUD)");
     // THE BODIES IN FRAME, by rig: the nearest of each look to the eye and
     // its tile, so a frame of a townswoman, a wastrel or an urchin can be
     // composed from the shutter's own report rather than by walking the
@@ -4809,13 +4620,13 @@ int run_client(const Options& options, const render::CreationResult& chosen,
     // bridge is what turns its keys and pointer into the SDL events the
     // loop below reads; the rig is the 3D scene under the overlay.
     VideoBridge bridge;
-    SceneRig rig;
+    render3d::SceneRig rig;
     rig.perPixel = options.perPixelLight;
     rig.handsKind = options.handsKind;
     rig.sheet = options.sheet;
     std::printf("granadad: video %s backend, %dx%d window%s\n",
                 video.kind() == render3d::VideoKind::Headless ? "headless" : "gpu", video.width(),
-                video.height(), options.video3d ? ", 3D world" : ", --2d software world");
+                video.height(), ", 3D world");
 
     render::Framebuffer frame(options.smoke.session.width, options.smoke.session.height);
     /// F12 was pressed: the next presented frame is read back and written.
@@ -5776,10 +5587,9 @@ int run_client(const Options& options, const render::CreationResult& chosen,
             // CaseWatchDirector::composeView.
             watch->composeView(session);
         }
-        // 3D BUILD: with the world in the backend's own 3D pass, this frame
-        // is the OVERLAY -- drawn without the software world pass, on a
-        // transparent ground; --2d keeps the raycaster's world in it.
-        session.drawFrame(frame, render::Session::FramePasses{.world = !options.video3d});
+        // This frame is the OVERLAY: the world is the backend's own 3D pass,
+        // under it.
+        session.drawFrame(frame);
         // THE CARD AND THE CAPTION GO ON LAST, over the finished frame, and
         // the shutter goes after them -- so what a capture holds is exactly
         // what the window presented, furniture included.
@@ -5811,13 +5621,13 @@ int run_client(const Options& options, const render::CreationResult& chosen,
         }
         ++frames;
 
-        // 3D BUILD: the frame goes out through the backend -- the 3D pass
-        // under --3d, then this frame as the overlay, then the swap -- and,
+        // 3D BUILD: the frame goes out through the backend -- the 3D pass,
+        // then this frame as the overlay, then the swap -- and,
         // on the frame after F12, read back before the swap and written.
         if (screenshotPending) {
             screenshotPending = false;
             render::Framebuffer shot(1, 1);
-            (void)present_frame(video, options, rig, session, frame, &shot);
+            (void)present_frame(video, rig, session, frame, &shot);
             const bool needsUpscale = shot.width() == frame.width() && options.windowScale > 1;
             const render::Framebuffer output =
                 needsUpscale ? render::upscaleNearest(shot, options.windowScale) : shot;
@@ -5828,7 +5638,7 @@ int run_client(const Options& options, const render::CreationResult& chosen,
                 std::printf("granadad: FAILED to write granadad-screenshot.png\n");
             }
         } else {
-            (void)present_frame(video, options, rig, session, frame, nullptr);
+            (void)present_frame(video, rig, session, frame, nullptr);
         }
 
         // PACED FOR AN EYE, NOT FOR A BENCHMARK. VSync alone is whatever the
@@ -5969,9 +5779,9 @@ int main(int argc, char** argv) {
             config.width = options.smoke.session.width;
             config.height = options.smoke.session.height;
             config.windowScale = options.windowScale;
-            config.modelDir = rig_model_dir();
-            config.weaponDir = weapon_model_dir();
-            config.staticDir = static_model_dir();
+            config.modelDir = render3d::rigModelDir();
+            config.weaponDir = render3d::weaponModelDir();
+            config.staticDir = render3d::staticModelDir();
             std::unique_ptr<render3d::Backend> video = render3d::Backend::open(config);
             if (video == nullptr) {
                 std::printf("granadad: could not open the window -- closing.\n");
