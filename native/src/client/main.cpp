@@ -1614,9 +1614,11 @@ void print_usage() {
         } else if (starts_with(arg, "--kit=", &value)) {
             options.smoke.kit = true;
             options.smoke.kitEnd = value;
+            options.wantsSmoke = true;
         } else if (std::strcmp(arg, "--pack") == 0) {
             // OBLIVION-PLAN phase 8. See SmokeRunConfig::pack.
             options.smoke.pack = true;
+            options.wantsSmoke = true;
         } else if (starts_with(arg, "--pack=", &value)) {
             options.smoke.pack = true;
             options.smoke.packEnd = value;

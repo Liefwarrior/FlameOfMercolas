@@ -1445,3 +1445,36 @@ TEST_CASE("the detail pane takes the chart's and the letters' room, and only whi
     CHECK(withPane.second == -1);
     CHECK(without.second == kMenuFocusMap);
 }
+
+TEST_CASE("an item table's extra file adds rows AFTER the first table's, so no existing variant moves") {
+    namespace render3d = granadad::render3d;
+    const std::string main = R"({"items": {
+        "knife": {"pack": "P", "file": "knife.gltf"},
+        "rope":  {"pack": "P", "file": "rope.gltf"}}})";
+    const std::string extra = R"({"items": {
+        "ale":   {"pack": "P", "file": "ale.gltf"},
+        "rope":  {"pack": "P", "file": "again.gltf"},
+        "bread": {"pack": "P", "file": "bread.gltf"}}})";
+    const render3d::StaticCatalogue alone = render3d::StaticCatalogue::fromJson(main);
+    const render3d::StaticCatalogue both = render3d::StaticCatalogue::fromJson(main, extra);
+    REQUIRE(alone.itemPiece("knife") != nullptr);
+    REQUIRE(both.itemPiece("knife") != nullptr);
+    // The first table's rows keep their variants, whatever the extra file's
+    // ids sort to (ale would sort first).
+    CHECK(both.itemPiece("knife")->variant == alone.itemPiece("knife")->variant);
+    CHECK(both.itemPiece("rope")->variant == alone.itemPiece("rope")->variant);
+    // A repeated id is refused, not overwritten.
+    CHECK(both.itemPiece("rope")->file == "P/rope.gltf");
+    REQUIRE(both.itemPiece("ale") != nullptr);
+    REQUIRE(both.itemPiece("bread") != nullptr);
+    CHECK(both.itemPiece("ale")->variant > both.itemPiece("rope")->variant);
+    CHECK(both.itemPiece("bread")->variant > both.itemPiece("ale")->variant);
+    CHECK(both.itemIds().size() == 4);
+    // And the shipped catalogue dresses every consumable the raws add.
+    const render3d::StaticCatalogue shipped =
+        render3d::StaticCatalogue::load(render3d::staticCataloguePath(content::contentDir()));
+    for (const char* id : {"bread", "ale", "bandage"}) {
+        INFO("consumable: ", id);
+        CHECK(shipped.itemPiece(id) != nullptr);
+    }
+}
