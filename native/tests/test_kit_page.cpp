@@ -23,6 +23,7 @@
 
 #include <doctest/doctest.h>
 
+#include <algorithm>
 #include <cctype>
 #include <cmath>
 #include <string>
@@ -1156,5 +1157,324 @@ TEST_CASE("the four strongboxes stand on open boards against their beds, never i
         CHECK(clear >= 0.0F);
         // Its foot on the boards, to a centimetre.
         CHECK(std::abs(at->position.y + lo[1] * at->scale.y - boards) <= 0.01F);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// PHASE 8 -- THE PACK: the Character tile's inventory view and its detail pane
+// ---------------------------------------------------------------------------
+
+#include "granadad/render/framebuffer.hpp"
+#include "granadad/render/menu_view.hpp"
+
+namespace {
+
+/// A session at the Gull's bar with a known kit: a worn knife and coat, two
+/// ropes, three loaves and an ale, the hand and the back filled.
+Session packSession() {
+    Session session(gullAt(14, sim::gull::kBartenderX, sim::gull::kBarY - 1, sim::gull::kGroundBand));
+    sim::Tavern& tavern = session.tavern();
+    REQUIRE(tavern.giveItem("knife"));
+    REQUIRE(tavern.giveItem("coat"));
+    REQUIRE(tavern.giveItem("rope", 2));
+    REQUIRE(tavern.giveItem("bread", 3));
+    REQUIRE(tavern.giveItem("ale"));
+    REQUIRE(tavern.wearItem(tavern.items().indexOf("knife")).result == sim::ServiceResult::Served);
+    REQUIRE(tavern.wearItem(tavern.items().indexOf("coat")).result == sim::ServiceResult::Served);
+    session.toggleCharacter();
+    return session;
+}
+
+[[nodiscard]] int rowIndexOf(const std::vector<std::string>& rows, const std::string& prefix) {
+    for (std::size_t i = 0; i < rows.size(); ++i) {
+        if (rows[i].rfind(prefix, 0) == 0) {
+            return static_cast<int>(i);
+        }
+    }
+    return -1;
+}
+
+}  // namespace
+
+TEST_CASE("the pack is WORN then CARRIED, grouped by what a thing is, the worn unit not counted twice") {
+    Session session = packSession();
+    CHECK_FALSE(session.characterPack());
+    session.toggleCharacterPack();
+    REQUIRE(session.characterPack());
+    const std::vector<Session::PackRow> rows = session.packRows();
+    const std::vector<std::string> labels = session.characterRows();
+    REQUIRE(rows.size() == labels.size());
+    // The first row is the WORN header, the cursor starts on the first thing.
+    CHECK(rows.front().kind == Session::PackRow::Kind::Header);
+    CHECK(labels.front() == "WORN");
+    CHECK(session.dialogueView().cursor == 1);
+    // The hand, the back, the head, the feet and the belt: a row per slot
+    // the raws fill, the worn thing by name and a bare slot as NOTHING.
+    const int hand = rowIndexOf(labels, "IN HAND");
+    const int back = rowIndexOf(labels, "BODY");
+    const int head = rowIndexOf(labels, "HEAD");
+    REQUIRE(hand > 0);
+    REQUIRE(back > hand);
+    REQUIRE(head > back);
+    CHECK(labels[static_cast<std::size_t>(hand)].find("KNIFE 11-13 EDGE") != std::string::npos);
+    CHECK(labels[static_cast<std::size_t>(back)].find("COAT  DR 2") != std::string::npos);
+    // The headings are not rows to choose: the view says which they are.
+    const DialogueViewState view = session.characterPanelView();
+    CHECK(view.headerRows.size() == 4);
+    CHECK(std::find(view.headerRows.begin(), view.headerRows.end(), 0) != view.headerRows.end());
+    CHECK(labels[static_cast<std::size_t>(head)].find("NOTHING") != std::string::npos);
+    // CARRIED, then each group that has something, in the enum's order. The
+    // knife and the coat are worn, so neither is listed again.
+    const int carried = rowIndexOf(labels, "CARRIED");
+    const int consumables = rowIndexOf(labels, "CONSUMABLES");
+    const int gear = rowIndexOf(labels, "GEAR");
+    REQUIRE(carried > head);
+    REQUIRE(consumables > carried);
+    REQUIRE(gear > consumables);
+    CHECK(rowIndexOf(labels, "WEAPONS") < 0);
+    CHECK(rowIndexOf(labels, "ARMOUR") < 0);
+    CHECK(rowIndexOf(labels, "KNIFE ") < 0);
+    CHECK(rowIndexOf(labels, "COAT ") < 0);
+    // Registry order inside a group: bread, then ale, as the raws list them.
+    const int bread = rowIndexOf(labels, "BREAD x3");
+    const int ale = rowIndexOf(labels, "ALE");
+    CHECK(bread > consumables);
+    CHECK(ale > bread);
+    CHECK(rowIndexOf(labels, "ROPE x2") > gear);
+    // A stack is one row with its count and its total weight.
+    CHECK(labels[static_cast<std::size_t>(bread)].find("30DR") != std::string::npos);
+    // The sheet is untouched by all this.
+    session.toggleCharacterPack();
+    CHECK_FALSE(session.characterPack());
+    CHECK(rowIndexOf(session.characterRows(), "BREAD x3") < 0);
+    CHECK(rowIndexOf(session.characterRows(), "3 BREAD") > 0);
+}
+
+TEST_CASE("the pack's cursor steps over a header and never rests on one") {
+    Session session = packSession();
+    session.toggleCharacterPack();
+    const std::vector<Session::PackRow> rows = session.packRows();
+    const auto onHeader = [&]() {
+        const int at = session.dialogueView().cursor;
+        return rows[static_cast<std::size_t>(at)].kind == Session::PackRow::Kind::Header;
+    };
+    for (int step = 0; step < 40; ++step) {
+        session.moveTopicCursor(1);
+        CHECK_FALSE(onHeader());
+    }
+    for (int step = 0; step < 40; ++step) {
+        session.moveTopicCursor(-1);
+        CHECK_FALSE(onHeader());
+    }
+    // A page turn lands off a header too.
+    for (int step = 0; step < 6; ++step) {
+        session.nextTopicPage();
+        CHECK_FALSE(onHeader());
+    }
+}
+
+TEST_CASE("the detail pane is the sim's inspect record: the numbers, THEIRS, and the keys on the foot") {
+    Session session = packSession();
+    // Closed on the sheet.
+    CHECK_FALSE(session.inspectPaneView().open);
+    session.toggleCharacterPack();
+    // On the hand's row: the knife, worn.
+    InspectPane pane = session.inspectPaneView();
+    REQUIRE(pane.open);
+    CHECK(pane.title == "KNIFE");
+    CHECK(pane.kind.find("WEAPONS") == 0);
+    CHECK(pane.kind.find("IN HAND") != std::string::npos);
+    CHECK(pane.alert.empty());
+    const auto fact = [&pane](const std::string& label) -> std::string {
+        for (const InspectFact& f : pane.facts) {
+            if (f.label == label) {
+                return f.value;
+            }
+        }
+        return "";
+    };
+    CHECK(fact("WEIGHT") == "8 DR");
+    CHECK(fact("WORTH") == "4 C");
+    CHECK(fact("DAMAGE") == "11-13 EDGE");
+    REQUIRE(pane.verbs.size() == 3);
+    CHECK(pane.verbs.front().label == "BARE");
+    CHECK(pane.verbs.back().label == "DROP");
+    // Down to the coat: DR, no damage.
+    session.moveTopicCursor(1);
+    pane = session.inspectPaneView();
+    CHECK(pane.title == "COAT");
+    CHECK(fact("ARMOUR") == "TURNS 2 A BLOW");
+    CHECK(fact("DAMAGE").empty());
+    // A bare slot says what it is for and has no verbs.
+    session.moveTopicCursor(1);
+    pane = session.inspectPaneView();
+    CHECK(pane.title == "ON THE HEAD");
+    CHECK(pane.verbs.empty());
+    CHECK(pane.prose.find("NOTHING WORN") == 0);
+    // A stack: the count, the weight of one and of all, the use and its verb.
+    int guard = 0;
+    while (session.inspectPaneView().title != "BREAD" && guard++ < 40) {
+        session.moveTopicCursor(1);
+    }
+    pane = session.inspectPaneView();
+    REQUIRE(pane.title == "BREAD");
+    CHECK(pane.kind == "CONSUMABLES");
+    CHECK(fact("CARRIED") == "x3");
+    CHECK(fact("WEIGHT") == "10 DR  (30 FOR 3)");
+    CHECK(fact("EFFECT") == "MENDS 12");
+    CHECK(pane.prose.find("DOCK LOAF") != std::string::npos);
+    REQUIRE(pane.verbs.size() == 2);
+    CHECK(pane.verbs.front().label == "EAT");
+}
+
+TEST_CASE("ENTER on a consumable uses it, ENTER on a coat bares it, X drops one, and the cursor stays on a row") {
+    Session session = packSession();
+    session.toggleCharacterPack();
+    sim::Tavern& tavern = session.tavern();
+    const std::int32_t bread = tavern.items().indexOf("bread");
+    int guard = 0;
+    while (session.inspectPaneView().title != "BREAD" && guard++ < 40) {
+        session.moveTopicCursor(1);
+    }
+    REQUIRE(session.inspectPaneView().title == "BREAD");
+    tavern.setPlayerHealth(40, 100);
+    session.chooseTopic(0);
+    CHECK(tavern.playerHp() == 52);
+    CHECK(tavern.kit().count(bread) == 2);
+    CHECK(session.lastMessage() == "ATE - BREAD. MENDS 12.");
+    // On a whole body the loaf is kept and the line says why.
+    tavern.setPlayerHealth(100, 100);
+    session.chooseTopic(0);
+    CHECK(tavern.kit().count(bread) == 2);
+    CHECK(session.lastMessage() == "YOU ARE WELL ALREADY.");
+    // X drops one of the stack at the feet.
+    const std::size_t ground = tavern.groundItems().size();
+    session.dropHighlightedKitRow();
+    CHECK(tavern.kit().count(bread) == 1);
+    CHECK(tavern.groundItems().size() >= ground);
+    // The last loaf: used, the row is gone, the cursor is on a row that exists.
+    tavern.setPlayerHealth(10, 100);
+    session.chooseTopic(0);
+    CHECK(tavern.kit().count(bread) == 0);
+    const std::vector<Session::PackRow> rows = session.packRows();
+    const int at = session.dialogueView().cursor;
+    REQUIRE(at >= 0);
+    REQUIRE(static_cast<std::size_t>(at) < rows.size());
+    CHECK(rows[static_cast<std::size_t>(at)].kind != Session::PackRow::Kind::Header);
+    // The coat: up two rows from the top, ENTER bares it.
+    session.toggleCharacterPack();
+    session.toggleCharacterPack();
+    session.moveTopicCursor(1);
+    REQUIRE(session.inspectPaneView().title == "COAT");
+    session.chooseTopic(0);
+    CHECK_FALSE(tavern.kit().isWorn(tavern.items().indexOf("coat")));
+    // It is carried now, under ARMOUR, and no longer a worn row.
+    CHECK(rowIndexOf(session.characterRows(), "ARMOUR") > 0);
+    CHECK(rowIndexOf(session.characterRows(), "BODY     NOTHING") >= 0);
+}
+
+TEST_CASE("a lifted thing is THEIRS in the list and on the detail pane, and a dropped one is not") {
+    // The Gull's own ale on the table at (153,70), taken from the tile north of it.
+    Session session(gullAt(14, 153, 69, sim::gull::kGroundBand, 180));
+    sim::Tavern& tavern = session.tavern();
+    session.stepMany(sim::MoveInput{}, sim::kStepsPerSecond);
+    const std::int32_t ale = tavern.items().indexOf("ale");
+    std::int32_t at = -1;
+    for (std::size_t i = 0; i < tavern.groundItems().size(); ++i) {
+        if (tavern.groundItems()[i].item == ale) {
+            at = static_cast<std::int32_t>(i);
+        }
+    }
+    REQUIRE(at >= 0);
+    REQUIRE(tavern.takeGroundItem(at).result == sim::ServiceResult::Served);
+    REQUIRE(tavern.kit().stolen(ale) == 1);
+    session.toggleCharacter();
+    session.toggleCharacterPack();
+    const std::vector<std::string> labels = session.characterRows();
+    const int row = rowIndexOf(labels, "ALE");
+    REQUIRE(row > 0);
+    CHECK(labels[static_cast<std::size_t>(row)].find("THEIRS") != std::string::npos);
+    int guard = 0;
+    while (session.inspectPaneView().title != "ALE" && guard++ < 40) {
+        session.moveTopicCursor(1);
+    }
+    InspectPane pane = session.inspectPaneView();
+    REQUIRE(pane.title == "ALE");
+    CHECK(pane.alert == "THEIRS - LIFTED OFF SOMEBODY");
+    // Put down, it is on the floor and out of the pack.
+    session.dropHighlightedKitRow();
+    CHECK(tavern.kit().count(ale) == 0);
+    CHECK(rowIndexOf(session.characterRows(), "ALE") < 0);
+}
+
+TEST_CASE("the detail pane takes the chart's and the letters' room, and only while the pack is read") {
+    const MenuTileLayout layout = menuTileLayout(960, 540);
+    REQUIRE(layout.usable);
+    // One pane from the chart's left edge to the letters' right edge.
+    CHECK(layout.inspect.x == layout.map.x);
+    CHECK(layout.inspect.right() == layout.letters.right());
+    CHECK(layout.inspect.y == layout.map.y);
+    CHECK(layout.inspect.h == layout.map.h);
+    auto shot = [&](bool inspecting) {
+        Session session = packSession();
+        session.toggleCharacterPack();
+        MenuTileState tiles;
+        tiles.open = true;
+        tiles.character = session.characterPanelView();
+        tiles.inspect = session.inspectPaneView();
+        tiles.inspect.open = inspecting;
+        tiles.map = session.mapPanelView();
+        tiles.letters = session.lettersPanelView();
+        tiles.journal = session.journalPanelView();
+        tiles.focus = kMenuFocusCharacter;
+        Framebuffer frame(960, 540);
+        drawMenuTiles(frame, tiles);
+        std::uint64_t paneSum = 0;
+        for (int y = layout.inspect.y; y < layout.inspect.bottom(); ++y) {
+            for (int x = layout.inspect.x; x < layout.inspect.right(); ++x) {
+                paneSum = paneSum * 1099511628211ULL + frame.pixels()[frame.index(x, y)];
+            }
+        }
+        // A click in the pane is on neither the chart nor the letters.
+        const MenuTileHit hit = menuTileHitAtPixel(tiles, 960, 540, layout.map.x + 4, layout.map.y + 40);
+        return std::pair<std::uint64_t, int>{paneSum, hit.tile};
+    };
+    const auto withPane = shot(true);
+    const auto without = shot(false);
+    CHECK(withPane.first != without.first);
+    CHECK(withPane.second == -1);
+    CHECK(without.second == kMenuFocusMap);
+}
+
+TEST_CASE("an item table's extra file adds rows AFTER the first table's, so no existing variant moves") {
+    namespace render3d = granadad::render3d;
+    const std::string main = R"({"items": {
+        "knife": {"pack": "P", "file": "knife.gltf"},
+        "rope":  {"pack": "P", "file": "rope.gltf"}}})";
+    const std::string extra = R"({"items": {
+        "ale":   {"pack": "P", "file": "ale.gltf"},
+        "rope":  {"pack": "P", "file": "again.gltf"},
+        "bread": {"pack": "P", "file": "bread.gltf"}}})";
+    const render3d::StaticCatalogue alone = render3d::StaticCatalogue::fromJson(main);
+    const render3d::StaticCatalogue both = render3d::StaticCatalogue::fromJson(main, extra);
+    REQUIRE(alone.itemPiece("knife") != nullptr);
+    REQUIRE(both.itemPiece("knife") != nullptr);
+    // The first table's rows keep their variants, whatever the extra file's
+    // ids sort to (ale would sort first).
+    CHECK(both.itemPiece("knife")->variant == alone.itemPiece("knife")->variant);
+    CHECK(both.itemPiece("rope")->variant == alone.itemPiece("rope")->variant);
+    // A repeated id is refused, not overwritten.
+    CHECK(both.itemPiece("rope")->file == "P/rope.gltf");
+    REQUIRE(both.itemPiece("ale") != nullptr);
+    REQUIRE(both.itemPiece("bread") != nullptr);
+    CHECK(both.itemPiece("ale")->variant > both.itemPiece("rope")->variant);
+    CHECK(both.itemPiece("bread")->variant > both.itemPiece("ale")->variant);
+    CHECK(both.itemIds().size() == 4);
+    // And the shipped catalogue dresses every consumable the raws add.
+    const render3d::StaticCatalogue shipped =
+        render3d::StaticCatalogue::load(render3d::staticCataloguePath(content::contentDir()));
+    for (const char* id : {"bread", "ale", "bandage"}) {
+        INFO("consumable: ", id);
+        CHECK(shipped.itemPiece(id) != nullptr);
     }
 }

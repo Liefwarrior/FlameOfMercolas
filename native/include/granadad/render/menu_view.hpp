@@ -93,6 +93,40 @@ inline constexpr int kMenuFocusLetters = 2;
 inline constexpr int kMenuFocusJournal = 3;
 inline constexpr int kMenuFocusCount = 4;
 
+/// THE INSPECT PANE (OBLIVION-PLAN phase 8): the detail half of the pack's
+/// master/detail split. While the Character tile is on its PACK view the list
+/// stays where it is and the two tiles to its right (the chart and the
+/// letters, which are summaries while another tile has focus) give their room
+/// to one pane about the highlighted row: its name, its group, what it is,
+/// its numbers, whose it is, and the keys that act on it. Nothing here is a
+/// choice -- the keys live on the list -- so this is a reading surface, drawn
+/// in the register's own ink roles. Pure content: Session fills it from the
+/// sim's ItemInspect and the draw knows nothing about items.
+struct InspectFact {
+    std::string label;
+    std::string value;
+};
+struct InspectVerb {
+    std::string key;
+    std::string label;
+};
+struct InspectPane {
+    /// False: the three tiles draw as they always did.
+    bool open = false;
+    /// "CUDGEL" -- the badge.
+    std::string title;
+    /// Right-aligned on the badge row, dim: "WEAPONS  IN HAND".
+    std::string kind;
+    /// A warning that outranks the prose: "THEIRS - LIFTED, 1 OF 1".
+    std::string alert;
+    /// Wrapped by the draw to the pane's width.
+    std::string prose;
+    /// Label and value rows, values in one column.
+    std::vector<InspectFact> facts;
+    /// The foot: a key and the word it does, left to right as they fit.
+    std::vector<InspectVerb> verbs;
+};
+
 /// Everything the tiled Menu draws: four panels' worth of content, reusing
 /// the SAME DialogueViewState a single conversation panel already uses
 /// (speaker/epithet/line/topics/cursor/page/caseRef/letter/letterLines all
@@ -105,6 +139,11 @@ struct MenuTileState {
     DialogueViewState map;
     DialogueViewState letters;
     DialogueViewState journal;
+    /// The pack's detail pane. When `inspect.open` and the Character tile has
+    /// focus, it replaces the chart and letters tiles (they are summaries
+    /// then, and the pack is the thing being read); otherwise it draws
+    /// nothing and the four tiles are exactly what they were.
+    InspectPane inspect;
     /// kMenuFocusCharacter/Map/Letters/Journal.
     int focus = kMenuFocusJournal;
     /// 0 (closed) .. 1 (open) -- see DialogueViewState::openAmount's own
@@ -170,6 +209,9 @@ struct MenuTileLayout {
     PanelRect map;
     PanelRect letters;
     PanelRect journal;
+    /// The chart's column, its divider and the letters' column as ONE pane:
+    /// where the inspect pane goes.
+    PanelRect inspect;
     /// Interior rows the top band (the three tiles) holds.
     int topRows = 0;
     /// The interior row the horizontal rule between the bands sits on.

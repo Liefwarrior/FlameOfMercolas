@@ -12,7 +12,12 @@ namespace {
 
 constexpr std::uint8_t kKitMagic0 = 'G';
 constexpr std::uint8_t kKitMagic1 = 'K';
-constexpr std::uint8_t kKitVersion = 1;
+constexpr std::uint8_t kKitVersion = 2;
+/// The last version the decoder still reads (no stolen block).
+constexpr std::uint8_t kKitVersionNoStolen = 1;
+/// The marker that opens the hash's extension tail; see Kit::hashInto.
+constexpr std::uint32_t kKitTailMarker = 0x4B49544FU;  // "KITO"
+constexpr std::uint32_t kKitStolenMarker = 0x4B495453U;  // "KITS"
 constexpr std::uint8_t kGroundMagic0 = 'G';
 constexpr std::uint8_t kGroundMagic1 = 'D';
 constexpr std::uint8_t kGroundVersion = 1;
@@ -190,31 +195,135 @@ std::string itemSheetLine(const ItemDef& item) {
     return line;
 }
 
+ItemCategory itemCategory(const ItemDef& item) noexcept {
+    if (!item.contraband.empty()) {
+        return ItemCategory::Goods;
+    }
+    if (item.slot == ItemSlot::Hand) {
+        return ItemCategory::Weapon;
+    }
+    if (item.slot == ItemSlot::Body || item.slot == ItemSlot::Head ||
+        item.slot == ItemSlot::Feet) {
+        return ItemCategory::Armour;
+    }
+    if (!item.effects.empty()) {
+        return ItemCategory::Consumable;
+    }
+    return ItemCategory::Gear;
+}
+
+std::string_view itemCategoryName(ItemCategory category) noexcept {
+    switch (category) {
+        case ItemCategory::Weapon:
+            return "WEAPONS";
+        case ItemCategory::Armour:
+            return "ARMOUR";
+        case ItemCategory::Consumable:
+            return "CONSUMABLES";
+        case ItemCategory::Gear:
+            return "GEAR";
+        case ItemCategory::Goods:
+            return "GOODS";
+    }
+    return "GEAR";
+}
+
+std::string itemEffectLine(const ItemDef& item) {
+    std::string line;
+    for (const ItemEffect& effect : item.effects) {
+        if (!line.empty()) {
+            line += ", ";
+        }
+        if (effect.kind == ItemEffectKind::Vitality) {
+            line += effect.magnitude > 0 ? "MENDS " : "COSTS ";
+            line += std::to_string(effect.magnitude > 0 ? effect.magnitude : -effect.magnitude);
+        } else {
+            line += std::string(attributeName(effect.attribute));
+            for (char& c : line) {
+                if (c >= 'a' && c <= 'z') {
+                    c = static_cast<char>(c - 'a' + 'A');
+                }
+            }
+            line += effect.magnitude > 0 ? " +" : " -";
+            line += std::to_string(effect.magnitude > 0 ? effect.magnitude : -effect.magnitude);
+            line += " FOR " + std::to_string(effect.seconds) + " S";
+        }
+    }
+    return line;
+}
+
+ItemInspect inspectItem(const ItemDef& item, std::int32_t count, bool worn,
+                        std::int32_t stolen) {
+    ItemInspect out;
+    out.name = item.name;
+    out.desc = item.desc;
+    out.category = itemCategory(item);
+    out.count = std::max(0, count);
+    out.unitDrams = item.drams;
+    out.unitRoyals = item.royals;
+    if (item.slot == ItemSlot::Hand) {
+        out.damageLo = item.damageLo;
+        out.damageHi = item.damageHi;
+        out.damageWord = item.weaponClass == Weapon::Edged ? "EDGE" : "IMPACT";
+    }
+    out.dr = item.dr;
+    out.heat = item.heat;
+    out.worn = worn;
+    out.stolen = std::clamp(stolen, 0, out.count);
+    out.useVerb = item.useVerb;
+    out.useLine = itemEffectLine(item);
+    out.fixed = item.fixed;
+    return out;
+}
+
 std::filesystem::path itemRawsPath(const std::filesystem::path& contentDir) {
     return contentDir / "raws" / "items" / "items.json";
 }
 
 ItemRegistry ItemRegistry::load(const std::filesystem::path& contentDir) {
-    std::ifstream file(itemRawsPath(contentDir), std::ios::binary);
-    if (!file) {
+    const auto slurp = [](const std::filesystem::path& path, std::string& into) {
+        std::ifstream file(path, std::ios::binary);
+        if (!file) {
+            return false;
+        }
+        std::ostringstream text;
+        text << file.rdbuf();
+        into = text.str();
+        return true;
+    };
+    std::string text;
+    if (!slurp(itemRawsPath(contentDir), text)) {
         return ItemRegistry{};
     }
-    std::ostringstream text;
-    text << file.rdbuf();
-    return fromJson(text.str());
+    ItemRegistry out = fromJson(text);
+    // THE EXTRA FILES, after the first: a missing one is simply not there (a
+    // build with the old raws boots as it always did).
+    for (const std::string_view name : kExtraItemFiles) {
+        if (slurp(itemRawsPath(contentDir).parent_path() / std::string(name), text)) {
+            out.appendJson(text);
+        }
+    }
+    return out;
 }
 
 ItemRegistry ItemRegistry::fromJson(std::string_view json) {
     ItemRegistry out;
+    out.appendJson(json);
+    out.baseRows_ = out.items_.size();
+    return out;
+}
+
+void ItemRegistry::appendJson(std::string_view json) {
+    ItemRegistry& out = *this;
     // Never throws out of here: the game must still boot when the raws are
     // missing or half-typed. The spellbook's rule.
     const nlohmann::json document = nlohmann::json::parse(json, nullptr, false);
     if (document.is_discarded() || !document.is_object()) {
-        return out;
+        return;
     }
     const auto items = document.find("items");
     if (items == document.end() || !items->is_array()) {
-        return out;
+        return;
     }
     for (const nlohmann::json& node : *items) {
         if (!node.is_object()) {
@@ -267,6 +376,56 @@ ItemRegistry ItemRegistry::fromJson(std::string_view json) {
         item.contraband = stringOr(node, "contraband", "");
         item.desc = stringOr(node, "desc", "");
         item.fixed = boolOr(node, "fixed", false);
+        // WHAT A USE DOES. `"use": {"verb": "EAT", "effects": [...]}`, each
+        // effect `{"effect": "vitality", "magnitude": 8}` or `{"effect":
+        // "attribute", "param": "MGT", "magnitude": 1, "seconds": 300}` --
+        // the spells' own raw tokens. A use that names an effect the sim has
+        // no reader for, or an attribute it does not know, refuses the whole
+        // row rather than printing a use that does nothing.
+        bool badUse = false;
+        if (const auto use = node.find("use"); use != node.end()) {
+            if (!use->is_object()) {
+                badUse = true;
+            } else {
+                item.useVerb = stringOr(*use, "verb", "USE");
+                item.useDone = stringOr(*use, "done", "USED");
+                const auto effects = use->find("effects");
+                if (effects == use->end() || !effects->is_array() || effects->empty()) {
+                    badUse = true;
+                } else {
+                    for (const nlohmann::json& entry : *effects) {
+                        ItemEffect effect;
+                        const std::string kind = entry.is_object() ? stringOr(entry, "effect", "") : "";
+                        effect.magnitude = entry.is_object() ? intOr(entry, "magnitude", 0) : 0;
+                        if (kind == "vitality") {
+                            effect.kind = ItemEffectKind::Vitality;
+                        } else if (kind == "attribute") {
+                            effect.kind = ItemEffectKind::Attribute;
+                            const std::optional<AttributeId> attribute =
+                                attributeFromRaw(stringOr(entry, "param", ""));
+                            effect.seconds = intOr(entry, "seconds", 0);
+                            if (!attribute.has_value() || effect.seconds <= 0) {
+                                badUse = true;
+                                break;
+                            }
+                            effect.attribute = *attribute;
+                        } else {
+                            badUse = true;
+                            break;
+                        }
+                        if (effect.magnitude == 0) {
+                            badUse = true;
+                            break;
+                        }
+                        item.effects.push_back(effect);
+                    }
+                }
+            }
+        }
+        if (badUse) {
+            out.warnings_.push_back("unusable use on " + item.id);
+            continue;
+        }
         // The span it is drawn over, for the crosshair: two whole
         // centimetres, low before high, or the default stands.
         const auto drawn = node.find("drawnCm");
@@ -338,7 +497,6 @@ ItemRegistry ItemRegistry::fromJson(std::string_view json) {
         std::sort(out.carried_.begin(), out.carried_.end(),
                   [](const CorpseKit& a, const CorpseKit& b) { return a.key < b.key; });
     }
-    return out;
 }
 
 const ItemDef* ItemRegistry::find(std::string_view id) const noexcept {
@@ -390,6 +548,7 @@ bool ItemRegistry::slotHasItems(ItemSlot slot) const noexcept {
 
 void Kit::resize(std::size_t rows) {
     counts_.resize(rows, 0);
+    stolen_.resize(rows, 0);
     for (std::int32_t& index : worn_) {
         if (index >= 0 && static_cast<std::size_t>(index) >= rows) {
             index = -1;
@@ -455,6 +614,10 @@ std::int32_t Kit::take(std::int32_t index, std::int32_t units) {
     std::int32_t& held = counts_[static_cast<std::size_t>(index)];
     const std::int32_t took = std::min(units, held);
     held -= took;
+    // What is left keeps as much of its THEIRS as there is left of it: the
+    // units that are nobody's are the ones that leave first.
+    std::int32_t& lifted = stolen_[static_cast<std::size_t>(index)];
+    lifted = std::min(lifted, held);
     if (held <= 0) {
         for (std::int32_t& wornIndex : worn_) {
             if (wornIndex == index) {
@@ -465,8 +628,26 @@ std::int32_t Kit::take(std::int32_t index, std::int32_t units) {
     return took;
 }
 
+std::int32_t Kit::stolen(std::int32_t index) const noexcept {
+    if (index < 0 || static_cast<std::size_t>(index) >= stolen_.size()) {
+        return 0;
+    }
+    return stolen_[static_cast<std::size_t>(index)];
+}
+
+void Kit::markStolen(std::int32_t index, std::int32_t units) {
+    if (index < 0 || static_cast<std::size_t>(index) >= counts_.size() || units <= 0) {
+        return;
+    }
+    std::int32_t& lifted = stolen_[static_cast<std::size_t>(index)];
+    lifted = std::min(counts_[static_cast<std::size_t>(index)], lifted + units);
+}
+
 void Kit::clear() noexcept {
     for (std::int32_t& n : counts_) {
+        n = 0;
+    }
+    for (std::int32_t& n : stolen_) {
         n = 0;
     }
     for (std::int32_t& index : worn_) {
@@ -560,15 +741,32 @@ std::vector<std::uint8_t> Kit::encode(const ItemRegistry& registry) const {
         const ItemDef* item = registry.at(index);
         putId(out, item != nullptr ? std::string_view(item->id) : std::string_view());
     }
+    // Version 2: the stolen counts, only for rows that carry some, by id.
+    std::int32_t lifted = 0;
+    for (std::size_t i = 0; i < stolen_.size(); ++i) {
+        if (stolen_[i] > 0 && counts_[i] > 0 && registry.at(static_cast<std::int32_t>(i)) != nullptr) {
+            ++lifted;
+        }
+    }
+    putI32(out, lifted);
+    for (std::size_t i = 0; i < stolen_.size(); ++i) {
+        const ItemDef* item = registry.at(static_cast<std::int32_t>(i));
+        if (stolen_[i] <= 0 || counts_[i] <= 0 || item == nullptr) {
+            continue;
+        }
+        putId(out, item->id);
+        putI32(out, stolen_[i]);
+    }
     return out;
 }
 
 bool Kit::decode(const std::vector<std::uint8_t>& bytes, const ItemRegistry& registry,
                  Kit& out) {
     if (bytes.size() < 3 || bytes[0] != kKitMagic0 || bytes[1] != kKitMagic1 ||
-        bytes[2] != kKitVersion) {
+        (bytes[2] != kKitVersion && bytes[2] != kKitVersionNoStolen)) {
         return false;
     }
+    const bool hasStolen = bytes[2] == kKitVersion;
     Kit parsed(registry.size());
     std::size_t cursor = 3;
     std::int32_t held = 0;
@@ -609,6 +807,26 @@ bool Kit::decode(const std::vector<std::uint8_t>& bytes, const ItemRegistry& reg
         }
         parsed.worn_[slot] = index;
     }
+    if (hasStolen) {
+        std::int32_t lifted = 0;
+        if (!takeI32(bytes, cursor, lifted) || lifted < 0) {
+            return false;
+        }
+        for (std::int32_t i = 0; i < lifted; ++i) {
+            std::string id;
+            std::int32_t units = 0;
+            if (!takeId(bytes, cursor, id) || !takeI32(bytes, cursor, units) || units <= 0) {
+                return false;
+            }
+            const std::int32_t index = registry.indexOf(id);
+            // A stolen count past what is carried is a lie the image cannot
+            // tell: refuse the whole of it, like an id the raws lost.
+            if (index < 0 || units > parsed.counts_[static_cast<std::size_t>(index)]) {
+                return false;
+            }
+            parsed.stolen_[static_cast<std::size_t>(index)] = units;
+        }
+    }
     if (cursor != bytes.size()) {
         return false;
     }
@@ -616,13 +834,42 @@ bool Kit::decode(const std::vector<std::uint8_t>& bytes, const ItemRegistry& reg
     return true;
 }
 
-void Kit::hashInto(HashSink& sink) const {
-    sink.put_int(static_cast<std::uint32_t>(counts_.size()));
-    for (const std::int32_t n : counts_) {
-        sink.put_int(static_cast<std::uint32_t>(n));
+void Kit::hashInto(HashSink& sink, std::size_t legacyRows) const {
+    const std::size_t head = std::min(legacyRows, counts_.size());
+    sink.put_int(static_cast<std::uint32_t>(head));
+    for (std::size_t i = 0; i < head; ++i) {
+        sink.put_int(static_cast<std::uint32_t>(counts_[i]));
     }
     for (const std::int32_t index : worn_) {
         sink.put_int(static_cast<std::uint32_t>(index));
+    }
+    // THE TAIL: rows an extra raws file added, and stolen units, written only
+    // when there is something to write -- see the header on why.
+    bool tail = false;
+    for (std::size_t i = head; i < counts_.size() && !tail; ++i) {
+        tail = counts_[i] != 0;
+    }
+    if (tail) {
+        sink.put_int(kKitTailMarker);
+        for (std::size_t i = head; i < counts_.size(); ++i) {
+            if (counts_[i] != 0) {
+                sink.put_int(static_cast<std::uint32_t>(i));
+                sink.put_int(static_cast<std::uint32_t>(counts_[i]));
+            }
+        }
+    }
+    bool lifted = false;
+    for (std::size_t i = 0; i < stolen_.size() && !lifted; ++i) {
+        lifted = stolen_[i] != 0;
+    }
+    if (lifted) {
+        sink.put_int(kKitStolenMarker);
+        for (std::size_t i = 0; i < stolen_.size(); ++i) {
+            if (stolen_[i] != 0) {
+                sink.put_int(static_cast<std::uint32_t>(i));
+                sink.put_int(static_cast<std::uint32_t>(stolen_[i]));
+            }
+        }
     }
 }
 

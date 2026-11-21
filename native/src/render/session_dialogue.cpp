@@ -211,6 +211,9 @@ void Session::moveTopicCursor(int delta) {
                 // THE SAME KEYS, THE SAME PAGING -- see toggleCharacter.
                 wrapCursorAndPage(characterCursor_, characterPage_, delta,
                                   static_cast<int>(characterRows().size()));
+                // THE PACK'S HEADERS ARE NOT ROWS TO STAND ON: a step that
+                // lands on one goes on in the same direction.
+                settlePackCursor(delta);
                 return;
             case kMenuFocusMap:
                 // THE SAME KEYS, THE SAME PAGING -- see toggleMap.
@@ -303,6 +306,7 @@ void Session::nextTopicPage() {
         switch (menuFocus_) {
             case kMenuFocusCharacter:
                 advancePage(characterPage_, characterCursor_, characterRows().size());
+                settlePackCursor(1);
                 return;
             case kMenuFocusMap:
                 advancePage(mapPage_, mapCursor_, mapRows().size());
@@ -704,6 +708,7 @@ void Session::closeConversation() {
         caseEntry_ = -1;
         characterCursor_ = 0;
         characterPage_ = 0;
+        characterPack_ = false;
         mapCursor_ = 0;
         mapPage_ = 0;
         lettersCursor_ = 0;

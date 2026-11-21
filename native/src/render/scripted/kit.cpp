@@ -78,6 +78,30 @@ void lookLevel(Session& session) {
     session.body().setPitch(0);
 }
 
+/// Opens the Character tile on its PACK view and walks the cursor onto the
+/// first row whose printed label starts with `prefix` ("BREAD", "IN HAND").
+/// Walks with the arrows' own wrap, never jumps. False when no row does.
+[[nodiscard]] bool openPackRow(Session& session, const std::string& prefix) {
+    if (!session.characterOpen()) {
+        session.toggleCharacter();
+    } else {
+        session.setMenuFocus(kMenuFocusCharacter);
+    }
+    if (!session.characterPack()) {
+        session.toggleCharacterPack();
+    }
+    for (int guard = 0; guard < 96; ++guard) {
+        const std::vector<std::string> rows = session.characterRows();
+        const int at = session.dialogueView().cursor;
+        if (at >= 0 && static_cast<std::size_t>(at) < rows.size() &&
+            rows[static_cast<std::size_t>(at)].rfind(prefix, 0) == 0) {
+            return true;
+        }
+        session.moveTopicCursor(1);
+    }
+    return false;
+}
+
 }  // namespace
 
 namespace scripted {
@@ -169,6 +193,14 @@ namespace scripted {
     }
     if (ending == "equip") {
         return landed;
+    }
+    // OBLIVION-PLAN phase 8. THE SAME STATE, THE OTHER VIEW: the equip beat's
+    // tile (coat on the back, knife in the hand, the rope and the lantern and
+    // the picks in the pack), stepped from the sheet to the pack with TAB.
+    // The baseline's `--kit=equip` is the "before" of this frame.
+    if (ending == "pack") {
+        session.toggleCharacterPack();
+        return landed + (session.characterPack() && session.inspectPaneView().open ? 1 : 0);
     }
 
     // 5. SLOT: the knife to slot 3 by three presses of RIGHT, then the key.
@@ -358,6 +390,163 @@ namespace scripted {
     // 10. The tile again, on what is left.
     if (openKitRow(session, "coat")) {
         ++landed;  // 10
+    }
+    return landed;
+}
+
+// ---------------------------------------------------------------------------
+// OBLIVION-PLAN phase 8: the pack, played
+// ---------------------------------------------------------------------------
+
+[[nodiscard]] int packBeatsFor(const std::string& ending) {
+    if (ending == "take") {
+        return 1;
+    }
+    if (ending == "theirs") {
+        return 2;
+    }
+    if (ending == "list") {
+        return 3;
+    }
+    if (ending == "use") {
+        return 4;
+    }
+    if (ending == "ate") {
+        return 5;
+    }
+    return 6;
+}
+
+/// THE PACK LINE. Six beats, every ending a stop on the way:
+///
+///   1. take    the quay's free bandages and loaves, off the boards by the
+///              crosshair, nobody's (no crime)
+///   2. theirs  four in the morning, the house empty: the Gull's own ale and
+///              bread from the bar (THEIRS), the knife and the coat
+///   3. list    two in the afternoon, the coat and the knife worn through the
+///              pack's own press: the whole pack, WORN then CARRIED
+///   4. use     the body hurt, the cursor on a loaf: the detail pane with its
+///              verb on the foot
+///   5. ate     ENTER: one loaf spent, the body mended, the line says so
+///   6. load    the body filled to its budget (the weight is GIVEN here, the
+///              line's one staged beat: no stand on the quay is heavy enough
+///              to show the overload row), the cursor on the rope
+[[nodiscard]] int runPackLine(Session& session, const std::string& ending) {
+    int landed = 0;
+    gPackNote.clear();
+    sim::Tavern& tavern = session.tavern();
+    if (!tavern.items().loaded() || tavern.items().find("bread") == nullptr) {
+        gPackNote = " items=unloaded";
+        return landed;
+    }
+    const auto item = [&](std::string_view id) { return tavern.items().indexOf(id); };
+    const auto carried = [&](std::string_view id) { return tavern.kit().count(item(id)); };
+
+    // 1. TAKE. Bandages at (154,63), loaves at (156,63): from the tile between
+    // them, the eye on the boards, one press a unit.
+    standAtFacing(session, 155, 63, 154, 63);
+    lookDownAtBoards(session);
+    session.interact();
+    session.interact();
+    facePlayerAndSync(session, sim::q8_tile_centre(156), sim::q8_tile_centre(63));
+    lookDownAtBoards(session);
+    session.interact();
+    session.interact();
+    lookLevel(session);
+    gPackNote += " bandage=" + std::to_string(carried("bandage")) +
+                 " bread=" + std::to_string(carried("bread"));
+    const bool taken = carried("bandage") == 2 && carried("bread") == 2 &&
+                       tavern.kit().stolen(item("bread")) == 0;
+    if (taken) {
+        ++landed;  // 1
+    }
+    if (ending == "take") {
+        return landed;
+    }
+
+    // 2. THEIRS. Four the next morning. The ale and the bread off the Gull's
+    // bar, the knife and the coat as the kit line lifts them.
+    session.skipToHour(4);
+    session.stepMany(sim::MoveInput{}, sim::kStepsPerSecond);
+    standAtFacing(session, 153, 69, 153, 70);
+    lookDownAtBoards(session);
+    session.interact();  // the ale
+    standAtFacing(session, 154, 68, 154, 69);
+    lookDownAtBoards(session);
+    session.interact();  // the bread
+    standAtFacing(session, 155, 73, 156, 73);
+    lookDownAtBoards(session);
+    session.interact();  // the knife
+    walkToTile(session, 148, 72);
+    session.closeConversation();
+    lookAtFeet(session);
+    session.interact();  // the coat, underfoot
+    lookLevel(session);
+    gPackNote += " ale=" + std::to_string(carried("ale")) + "/" +
+                 std::to_string(tavern.kit().stolen(item("ale"))) +
+                 " bread-theirs=" + std::to_string(tavern.kit().stolen(item("bread")));
+    if (carried("ale") == 1 && tavern.kit().stolen(item("ale")) == 1 &&
+        tavern.kit().stolen(item("bread")) == 1 && carried("knife") == 1 && carried("coat") == 1) {
+        ++landed;  // 2
+    }
+    if (ending == "theirs") {
+        return landed;
+    }
+
+    // 3. LIST. Two in the afternoon; the coat and the knife worn by the pack's
+    // own press, the cursor back on the hand.
+    session.skipToHour(14);
+    session.stepMany(sim::MoveInput{}, sim::kStepsPerSecond);
+    // The coat is carried, not worn, so it sits under ARMOUR.
+    if (openPackRow(session, "COAT")) {
+        session.chooseTopic(0);
+    }
+    if (openPackRow(session, "KNIFE")) {
+        session.chooseTopic(0);
+    }
+    const bool worn = tavern.kit().isWorn(item("coat")) && tavern.kit().isWorn(item("knife"));
+    const bool opened = openPackRow(session, "IN HAND");
+    if (worn && opened && session.characterPack()) {
+        ++landed;  // 3
+    }
+    if (ending == "list") {
+        return landed;
+    }
+
+    // 4. USE. Hurt, the cursor on a loaf.
+    tavern.injurePlayer(40);
+    gPackNote += " hurt=" + std::to_string(tavern.playerHp()) + "/" +
+                 std::to_string(tavern.playerHpMax());
+    const bool onLoaf = openPackRow(session, "BREAD");
+    const InspectPane pane = session.inspectPaneView();
+    if (onLoaf && pane.open && pane.title == "BREAD" && !pane.verbs.empty() &&
+        pane.verbs.front().label == "EAT" && pane.alert.rfind("THEIRS", 0) == 0) {
+        ++landed;  // 4
+    }
+    if (ending == "use") {
+        return landed;
+    }
+
+    // 5. ATE. ENTER on it.
+    const std::int32_t hpBefore = tavern.playerHp();
+    const std::int32_t breadBefore = carried("bread");
+    session.chooseTopic(0);
+    gPackNote += " ate=" + std::to_string(tavern.playerHp() - hpBefore) +
+                 " left=" + std::to_string(carried("bread"));
+    if (tavern.playerHp() > hpBefore && carried("bread") == breadBefore - 1) {
+        ++landed;  // 5
+    }
+    if (ending == "ate") {
+        return landed;
+    }
+
+    // 6. LOAD. The rope, as many as the budget holds: the weight is given.
+    while (tavern.giveItem("rope")) {
+    }
+    gPackNote += " legs=" + std::to_string(tavern.loadSpeedQ8()) + "/256";
+    if (openPackRow(session, "ROPE") && tavern.loadSpeedQ8() < 256 &&
+        tavern.loadDrams() * 4 >= tavern.loadBudget() * 3) {
+        ++landed;  // 6
     }
     return landed;
 }

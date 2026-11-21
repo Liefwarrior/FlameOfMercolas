@@ -572,7 +572,11 @@ public:
     /// Parses the catalogue text. A malformed document yields an empty
     /// catalogue with `error()` set; unknown roles and materials are skipped
     /// (named in `warnings()`), never fatal.
-    [[nodiscard]] static StaticCatalogue fromJson(std::string_view json);
+    /// `extraItemsJson` is an optional second document whose `items` rows are
+    /// appended after the first's (docks-pieces-items.json, Phase 8): the
+    /// variant numbers of the first table's rows never move.
+    [[nodiscard]] static StaticCatalogue fromJson(std::string_view json,
+                                                  std::string_view extraItemsJson = {});
     /// Reads and parses a file; an absent file is an empty catalogue.
     [[nodiscard]] static StaticCatalogue load(const std::filesystem::path& file);
 

@@ -1852,6 +1852,14 @@ public:
     /// press the Character tile makes on a row. Refused for a row with no
     /// slot, a row not carried, and the fixed things.
     StealResult wearItem(std::int32_t index);
+    /// USE one unit of a carried Kit row: its raws' effects, in order, in the
+    /// spells' own integer vocabulary -- a mend through the same dose a
+    /// healing link lands (applySpellDose), a tuning as a held effect the
+    /// attribute readers already consult (effectiveAttributes) -- and the
+    /// unit is spent. Refused, with the unit KEPT, for a row not carried, a
+    /// row with no use, and a mend asked of a body that is already whole.
+    /// Draws no random number.
+    StealResult useItem(std::int32_t index);
     /// Bares a slot outright (a drop, a seizure). Idempotent.
     void bareSlot(ItemSlot slot) noexcept;
     /// Puts `count` of an item into the Kit by id -- a case reward, a

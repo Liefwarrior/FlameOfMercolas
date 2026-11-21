@@ -5367,6 +5367,7 @@ Tavern::StealResult Tavern::takeGroundItem(std::int32_t at) {
         return out;
     }
     const std::string name = item->name;
+    const std::string itemId = item->id;
     const std::int32_t drams = item->drams;
     const bool theirs = entry.owned;
     if (!giveItem(item->id, 1)) {
@@ -5381,6 +5382,12 @@ Tavern::StealResult Tavern::takeGroundItem(std::int32_t at) {
         ground_.erase(ground_.begin() + at);
     }
     out.result = ServiceResult::Served;
+    if (theirs) {
+        // THE PACK REMEMBERS WHOSE IT WAS: the inspect pane's THEIRS. A sack
+        // good never lands in the Kit (its count is the sack's), so there is
+        // nothing to mark for it.
+        kit_.markStolen(items_.indexOf(itemId), 1);
+    }
     if (!theirs) {
         out.line = "TAKEN - " + name + ". " + dramsWord(drams) + ". " + loadWord() + ".";
         return out;
@@ -5463,6 +5470,62 @@ Tavern::StealResult Tavern::wearItem(std::int32_t index) {
     out.result = ServiceResult::Served;
     out.line = item->slot == ItemSlot::Hand ? "IN HAND - " + itemSheetLine(*item) + "."
                                             : item->name + " - ON.";
+    return out;
+}
+
+Tavern::StealResult Tavern::useItem(std::int32_t index) {
+    StealResult out;
+    const ItemDef* item = items_.at(index);
+    if (item == nullptr || kit_.count(index) <= 0) {
+        out.result = ServiceResult::Refused;
+        out.line = "NOTHING TO USE.";
+        return out;
+    }
+    if (item->effects.empty()) {
+        out.result = ServiceResult::Refused;
+        out.line = "THE " + item->name + " HAS NO USE.";
+        return out;
+    }
+    // A mend on a whole body would spend the unit for nothing, and the line
+    // would be a success toast over a no-op (playerCastEquipped's own rule
+    // about not charging for a result nothing reads). Anything else a use
+    // can do -- a harm, a held tuning -- always lands.
+    bool lands = false;
+    for (const ItemEffect& effect : item->effects) {
+        lands = lands || effect.kind == ItemEffectKind::Attribute || effect.magnitude < 0 ||
+                playerHp_ < playerHpMax_;
+    }
+    if (!lands) {
+        out.result = ServiceResult::Refused;
+        out.line = "YOU ARE WELL ALREADY.";
+        return out;
+    }
+    kit_.take(index, 1);
+    for (const ItemEffect& effect : item->effects) {
+        if (effect.kind == ItemEffectKind::Vitality) {
+            applySpellDose(-1, effect.magnitude);
+            continue;
+        }
+        // A held tuning: replaced whole on a second use (clock reset, never
+        // stacked against itself), the recast rule, keyed by the item's id.
+        for (std::size_t i = 0; i < heldEffects_.size();) {
+            if (heldEffects_[i].spellId == item->id && heldEffects_[i].attribute == effect.attribute) {
+                heldEffects_.erase(heldEffects_.begin() + static_cast<std::ptrdiff_t>(i));
+            } else {
+                ++i;
+            }
+        }
+        ActiveHold hold;
+        hold.spellId = item->id;
+        hold.attribute = effect.attribute;
+        hold.magnitude = effect.magnitude;
+        hold.expiresAt = elapsed_ + effect.seconds;
+        heldEffects_.push_back(std::move(hold));
+        applyHeldEffects();
+    }
+    out.result = ServiceResult::Served;
+    out.line = (item->useDone.empty() ? std::string("USED") : item->useDone) + " - " + item->name +
+               ". " + itemEffectLine(*item) + ".";
     return out;
 }
 
@@ -5780,7 +5843,7 @@ void Tavern::hash_into(HashSink& sink) const {
     // (the pinned codec goldens hash fixed byte specs, not this struct; the
     // live gates compare THIS shape against itself); re-blessed ONCE at the
     // lane's landing. The population baseline never reaches this code.
-    kit_.hashInto(sink);
+    kit_.hashInto(sink, items_.baseRows());
     sink.put_int(static_cast<std::uint32_t>(ground_.size()));
     for (const GroundItem& entry : ground_) {
         sink.put_int(static_cast<std::uint32_t>(entry.x));

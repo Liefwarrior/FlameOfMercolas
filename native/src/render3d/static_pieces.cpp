@@ -4152,7 +4152,7 @@ std::filesystem::path staticCataloguePath(const std::filesystem::path& contentDi
 // the catalogue
 // ---------------------------------------------------------------------------
 
-StaticCatalogue StaticCatalogue::fromJson(std::string_view json) {
+StaticCatalogue StaticCatalogue::fromJson(std::string_view json, std::string_view extraItemsJson) {
     StaticCatalogue out;
     const nlohmann::json parsed = nlohmann::json::parse(json, nullptr, false);
     if (parsed.is_discarded() || !parsed.is_object()) {
@@ -4314,10 +4314,16 @@ StaticCatalogue StaticCatalogue::fromJson(std::string_view json) {
     // every machine. An id the sim's registry does not know is still a row
     // here (the catalogue does not read the raws); the instancer simply
     // never asks for it.
-    if (parsed.contains("items") && parsed["items"].is_object()) {
-        const nlohmann::json& items = parsed["items"];
-        std::size_t variant = 0;
+    // PHASE 8: a second file may add item rows (docks-pieces-items.json: the
+    // table is the owner's and is never edited), read AFTER the first table's
+    // rows so every existing row keeps its variant number.
+    std::size_t variant = 0;
+    const auto addItems = [&out, &variant](const nlohmann::json& items) {
         for (const auto& [id, row] : items.items()) {
+            if (out.itemPiece(id) != nullptr) {
+                out.warnings_.push_back("duplicate item row: " + id);
+                continue;
+            }
             if (!row.is_object() || variant >= 255) {
                 continue;
             }
@@ -4376,6 +4382,13 @@ StaticCatalogue StaticCatalogue::fromJson(std::string_view json) {
             out.itemIds_.push_back(id);
             ++variant;
         }
+    };
+    if (parsed.contains("items") && parsed["items"].is_object()) {
+        addItems(parsed["items"]);
+    }
+    if (const nlohmann::json extra = nlohmann::json::parse(extraItemsJson, nullptr, false);
+        extra.is_object() && extra.contains("items") && extra["items"].is_object()) {
+        addItems(extra["items"]);
     }
 
     if (parsed.contains("materials") && parsed["materials"].is_object()) {
@@ -4435,7 +4448,16 @@ StaticCatalogue StaticCatalogue::load(const std::filesystem::path& file) {
     }
     std::ostringstream text;
     text << in.rdbuf();
-    return fromJson(text.str());
+    // The item rows a later phase added ride in a file of their own beside
+    // the catalogue; a missing one is simply not there.
+    std::string extra;
+    std::ifstream more(file.parent_path() / "docks-pieces-items.json", std::ios::binary);
+    if (more) {
+        std::ostringstream extraText;
+        extraText << more.rdbuf();
+        extra = extraText.str();
+    }
+    return fromJson(text.str(), extra);
 }
 
 const PieceSpec* StaticCatalogue::piece(PieceRole role, std::uint8_t variant) const noexcept {

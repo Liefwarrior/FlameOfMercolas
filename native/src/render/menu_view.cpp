@@ -321,11 +321,23 @@ void drawTile(Framebuffer& target, const PanelRect& pane, const PanelMetric& met
     if (!page.rows.empty()) {
         std::vector<PanelOption> options;
         options.reserve(page.rows.size());
+        // The absolute index of the screen's first row, menuTilePageFor's own
+        // arithmetic (one row of the pane goes to the MORE foot when it shows).
+        const int perScreen = page.more ? std::max(1, capacity - 1) : capacity;
+        const int firstRow = page.screen * perScreen;
+        int rowAt = 0;
         for (const MenuTileRow& tileRow : page.rows) {
             PanelOption option;
             option.key = tileRow.key;
             option.label = tileRow.label;
             option.accent = accent;
+            // A group heading is a note, not a choice: no number, no fill.
+            if (std::find(view.headerRows.begin(), view.headerRows.end(), firstRow + rowAt) !=
+                view.headerRows.end()) {
+                option.key.clear();
+                option.selectable = false;
+            }
+            ++rowAt;
             // AN UNFOCUSED TILE STILL SHOWS WHERE ITS CURSOR SAT -- the
             // picked label takes the accent while the fill under it is dim,
             // so state moves the whole row together and nothing is dropped.
@@ -394,6 +406,76 @@ void drawTile(Framebuffer& target, const PanelRect& pane, const PanelMetric& met
     }
 }
 
+/// THE INSPECT PANE, in the register. Row 0 the badge (the thing's name knocked
+/// out of an accent fill, the group right-aligned), row 1 a warning if there
+/// is one (the Journal tile's own alert orange), then the prose, then the
+/// numbers in two columns, and the verbs on the last row. Rows the pane does
+/// not have are dropped from the bottom of the prose and the facts, never the
+/// foot: the keys are the part a player cannot guess.
+void drawInspectPane(Framebuffer& target, const PanelRect& pane, const PanelMetric& metric,
+                     const InspectPane& view, float fade, const Rgb& accent) {
+    const PanelInk& ink = panelInk();
+    const int paneRows = metric.rowsIn(pane.h);
+    const int paneCells = metric.cellsIn(pane.w);
+    if (!view.open || paneRows < 6 || paneCells < 16) {
+        return;
+    }
+    const std::string name =
+        clipLabel(view.title, static_cast<std::size_t>(std::max(1, paneCells - 2)));
+    const int badge = static_cast<int>(name.size()) + 2;
+    drawInvertedFill(target, pane, metric, 0, 0, badge, accent, 0.92F * fade);
+    drawCellTextKnockout(target, pane, metric, 1, 0, name, ink.knockout, fade);
+    if (!view.kind.empty() && badge + static_cast<int>(view.kind.size()) + 3 <= paneCells) {
+        drawCellTextRight(target, pane, metric, 1, 0, view.kind, ink.dim, 0.85F * fade);
+    }
+    const int footRow = paneRows - 1;
+    int row = 1;
+    if (!view.alert.empty()) {
+        drawCellText(target, pane, metric, 0, row,
+                     clipLabel(view.alert, static_cast<std::size_t>(std::max(1, paneCells - 1))),
+                     kAlertInk, fade);
+    }
+    ++row;
+    ++row;  // air
+    const std::size_t cols = static_cast<std::size_t>(std::max(8, paneCells - 2));
+    if (!view.prose.empty()) {
+        for (const std::string& line : wrapText(view.prose, cols)) {
+            if (row >= footRow - 1) {
+                break;
+            }
+            drawCellText(target, pane, metric, 0, row, line, ink.prose, 0.92F * fade);
+            ++row;
+        }
+        ++row;  // air
+    }
+    std::size_t labelWidth = 0;
+    for (const InspectFact& fact : view.facts) {
+        labelWidth = std::max(labelWidth, fact.label.size());
+    }
+    for (const InspectFact& fact : view.facts) {
+        if (row >= footRow - 1) {
+            break;
+        }
+        drawCellText(target, pane, metric, 0, row, fact.label, ink.dim, 0.85F * fade);
+        drawCellText(target, pane, metric, static_cast<int>(labelWidth) + 2, row,
+                     clipLabel(fact.value, static_cast<std::size_t>(std::max(
+                                               1, paneCells - static_cast<int>(labelWidth) - 3))),
+                     ink.number, 0.95F * fade);
+        ++row;
+    }
+    int cell = 0;
+    for (const InspectVerb& verb : view.verbs) {
+        const int width = static_cast<int>(verb.key.size() + 1 + verb.label.size());
+        if (cell + width > paneCells - 1) {
+            break;
+        }
+        drawCellText(target, pane, metric, cell, footRow, verb.key, accent, 0.95F * fade);
+        drawCellText(target, pane, metric, cell + static_cast<int>(verb.key.size()) + 1, footRow,
+                     verb.label, ink.dim, 0.85F * fade);
+        cell += width + 3;
+    }
+}
+
 }  // namespace
 
 MenuTileHit menuTileHitAtPixel(const MenuTileState& state, int width, int height, int px,
@@ -418,7 +500,13 @@ MenuTileHit menuTileHitAtPixel(const MenuTileState& state, int width, int height
         Pane{kMenuFocusLetters, &comp.letters, &state.letters, false},
         Pane{kMenuFocusJournal, &comp.journal, &state.journal, true},
     };
+    const bool inspecting = state.inspect.open && state.focus == kMenuFocusCharacter;
     for (const Pane& pane : panes) {
+        if (inspecting && (pane.tile == kMenuFocusMap || pane.tile == kMenuFocusLetters)) {
+            // The detail pane stands where the chart and the letters were:
+            // a click there is on a reading surface, not on either tile.
+            continue;
+        }
         const PanelRect& rect = *pane.rect;
         if (px < rect.x || px >= rect.right() || py < rect.y || py >= rect.bottom()) {
             continue;
@@ -520,6 +608,7 @@ MenuTileLayout menuTileLayout(int width, int height) {
     out.character = cols[0];
     out.map = cols[2];
     out.letters = cols[4];
+    out.inspect = PanelRect{cols[2].x, cols[2].y, cols[4].right() - cols[2].x, cols[2].h};
     out.dividerCellA = (cols[1].x - interior.x) / out.metric.cellW();
     out.dividerCellB = (cols[3].x - interior.x) / out.metric.cellW();
     out.usable = true;
@@ -605,8 +694,14 @@ void drawMenuTiles(Framebuffer& target, const MenuTileState& state) {
     PanelFrame frame(target, comp.bounds, comp.metric, style);
     frame.addRule(comp.ruleRow);
     frame.addRule(comp.footRuleRow);
+    // THE PACK'S DETAIL PANE takes the chart's and the letters' room as one
+    // pane, so the divider between them is not drawn through it.
+    const bool inspecting = state.inspect.open && state.focus == kMenuFocusCharacter &&
+                            !(state.letters.open && state.letters.letter);
     frame.addDivider(comp.dividerCellA, 0, comp.topRows);
-    frame.addDivider(comp.dividerCellB, 0, comp.topRows);
+    if (!inspecting) {
+        frame.addDivider(comp.dividerCellB, 0, comp.topRows);
+    }
     frame.draw();
 
     // THE LAW OF EARNED TEXT ON THE HUB (UI-EA-SPEC 1.6): the focused tile is
@@ -626,10 +721,15 @@ void drawMenuTiles(Framebuffer& target, const MenuTileState& state) {
     drawTile(target, comp.character, comp.metric, state.character,
              state.focus == kMenuFocusCharacter, state.characterFocus, fade, false, ink.accent,
              modeFor(kMenuFocusCharacter));
-    drawTile(target, comp.map, comp.metric, state.map, state.focus == kMenuFocusMap,
-             state.mapFocus, fade, false, ink.accent, modeFor(kMenuFocusMap));
-    drawTile(target, comp.letters, comp.metric, state.letters, state.focus == kMenuFocusLetters,
-             state.lettersFocus, fade, false, kParchmentInk, modeFor(kMenuFocusLetters));
+    if (inspecting) {
+        drawInspectPane(target, comp.inspect, comp.metric, state.inspect, fade, ink.accent);
+    } else {
+        drawTile(target, comp.map, comp.metric, state.map, state.focus == kMenuFocusMap,
+                 state.mapFocus, fade, false, ink.accent, modeFor(kMenuFocusMap));
+        drawTile(target, comp.letters, comp.metric, state.letters,
+                 state.focus == kMenuFocusLetters, state.lettersFocus, fade, false,
+                 kParchmentInk, modeFor(kMenuFocusLetters));
+    }
     drawTile(target, comp.journal, comp.metric, state.journal, state.focus == kMenuFocusJournal,
              state.journalFocus, fade, true, ink.accent, modeFor(kMenuFocusJournal));
 

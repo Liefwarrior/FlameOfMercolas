@@ -358,9 +358,26 @@ DialogueViewState Session::characterPanelView() const {
                     (dev == InputDevice::Pad ? std::string(1, kMotifDPad)
                                              : std::string{kMotifLeft, kMotifRight}) +
                     " SLOT  ";
+        } else if (thing != nullptr && !thing->effects.empty()) {
+            // A consumable: the one press is its own verb (EAT, DRINK, BIND).
+            verbs = std::string(promptConfirmKey(dev)) + " " + thing->useVerb + "  ";
         }
         verbs += "X DROP";
         view.epithet = verbs;
+    }
+    if (characterPack_) {
+        // THE PACK'S EPITHET IS THE LOAD, always -- the one budget the list
+        // answers to, where the eye lands first -- and the legs under it the
+        // moment they are slowed. The verbs live on the detail pane's foot.
+        view.speaker = "PACK";
+        view.epithet = "LOAD " + std::to_string(tavern_->loadDrams()) + "/" +
+                       std::to_string(tavern_->loadBudget());
+        if (const std::int32_t legs = tavern_->loadSpeedQ8(); legs < 256) {
+            view.epithet += "  LEGS " + std::to_string(legs * 100 / 256) + "%";
+        }
+        view.attitude = std::string(promptTabKeys(promptDevice_)) + " SHEET";
+    } else {
+        view.attitude = std::string(promptTabKeys(promptDevice_)) + " PACK";
     }
     view.line = "WHAT THE STREETS HAVE MADE OF YOU, AND THE HANDS THAT DID IT.";
     for (const std::string& row : characterRows()) {
@@ -368,6 +385,14 @@ DialogueViewState Session::characterPanelView() const {
     }
     view.cursor = characterCursor_;
     view.page = characterPage_;
+    if (characterPack_) {
+        const std::vector<PackRow> rows = packRows();
+        for (std::size_t i = 0; i < rows.size(); ++i) {
+            if (rows[i].kind == PackRow::Kind::Header) {
+                view.headerRows.push_back(static_cast<int>(i));
+            }
+        }
+    }
     return view;
 }
 
@@ -941,6 +966,9 @@ namespace {
 }  // namespace
 
 std::vector<std::string> Session::characterRows() const {
+    if (characterPack_) {
+        return packRowLabels();
+    }
     // FIVE ROWS, THEN FOUR, THEN FIVE, THEN THREE: the five Legend tracks
     // (S8's own "who am I in this city yet", derived and thrown away every
     // frame until this page existed -- see the header), the four skills a
@@ -1248,6 +1276,10 @@ std::vector<Session::KitRow> Session::kitRows() const {
 }
 
 std::size_t Session::characterKitOffset() const {
+    if (characterPack_) {
+        // The pack's rows are the list: nothing precedes them.
+        return 0;
+    }
     // The standings block (five tracks, four skills, four attributes, five
     // ladders, three ward rows), IN HAND, one row per worn slot the raws
     // populate, LOAD. MERGE FIX: this fell out of step with characterRows()
@@ -1267,6 +1299,23 @@ std::size_t Session::characterKitOffset() const {
 }
 
 std::optional<Session::KitRow> Session::highlightedKitRow() const {
+    if (characterPack_) {
+        const std::vector<PackRow> rows = packRows();
+        if (characterCursor_ < 0 || static_cast<std::size_t>(characterCursor_) >= rows.size()) {
+            return std::nullopt;
+        }
+        const PackRow& at = rows[static_cast<std::size_t>(characterCursor_)];
+        if (at.kind == PackRow::Kind::Header || at.item < 0) {
+            return std::nullopt;
+        }
+        KitRow row;
+        row.item = at.item;
+        // A worn row's count is the whole stack the Kit holds of it (the
+        // verbs act on the Kit, which does not split a worn unit off).
+        row.count = at.kind == PackRow::Kind::Slot ? tavern_->kit().count(at.item) : at.count;
+        row.inKit = at.inKit;
+        return row;
+    }
     const std::size_t offset = characterKitOffset();
     if (characterCursor_ < 0 || static_cast<std::size_t>(characterCursor_) < offset) {
         return std::nullopt;
@@ -1300,6 +1349,25 @@ void Session::wearHighlightedKitRow() {
             audio_->playOneShot(audio::SoundId::UiTick);
         }
         say("THE " + thing->name + " IS NOT WORN.");
+        return;
+    }
+    if (!thing->effects.empty() && thing->slot == sim::ItemSlot::None) {
+        // THE ONE PRESS IS THE ROW'S OWN VERB: a thing with a use is used
+        // (one unit spent, the line says what it did), a thing with a slot is
+        // worn. Refusals keep the unit and say why.
+        const sim::Tavern::StealResult used = tavern_->useItem(row->item);
+        if (audio_ != nullptr) {
+            audio_->playOneShot(used.result == sim::ServiceResult::Served
+                                    ? audio::SoundId::UiConfirm
+                                    : audio::SoundId::UiTick);
+        }
+        say(used.line);
+        const int count = static_cast<int>(characterRows().size());
+        if (count > 0 && characterCursor_ >= count) {
+            characterCursor_ = count - 1;
+            characterPage_ = topicPageOf(characterCursor_);
+        }
+        settlePackCursor(-1);
         return;
     }
     const bool wasWorn = tavern_->kit().isWorn(row->item);
@@ -1340,6 +1408,7 @@ void Session::dropHighlightedKitRow() {
         characterCursor_ = count - 1;
         characterPage_ = topicPageOf(characterCursor_);
     }
+    settlePackCursor(-1);
 }
 
 void Session::adjustKitSlot(int delta) {
@@ -1383,6 +1452,342 @@ void Session::adjustKitSlot(int delta) {
     }
     say(next >= 0 ? thing->name + " -- SLOT " + std::to_string(next + 1) + "."
                   : thing->name + " -- NO SLOT.");
+}
+
+// ---------------------------------------------------------------------------
+// THE PACK (OBLIVION-PLAN phase 8)
+// ---------------------------------------------------------------------------
+
+std::vector<Session::PackRow> Session::packRows() const {
+    std::vector<PackRow> rows;
+    const sim::ItemRegistry& items = tavern_->items();
+    const sim::Kit& kit = tavern_->kit();
+    // WORN: one row per slot the raws fill, the hand always (fists are a
+    // real state), the thing in it or a bare slot.
+    PackRow worn;
+    worn.kind = PackRow::Kind::Header;
+    worn.text = "WORN";
+    rows.push_back(worn);
+    for (std::int32_t slotIndex = 0; slotIndex < static_cast<std::int32_t>(sim::kWornSlotCount);
+         ++slotIndex) {
+        const sim::ItemSlot slot = sim::wornSlotAt(slotIndex);
+        if (slot != sim::ItemSlot::Hand && !items.slotHasItems(slot)) {
+            continue;
+        }
+        PackRow row;
+        row.kind = PackRow::Kind::Slot;
+        row.slot = slot;
+        row.item = kit.worn(slot);
+        row.count = row.item >= 0 ? 1 : 0;
+        row.inKit = row.item >= 0;
+        rows.push_back(std::move(row));
+    }
+    // CARRIED: the composed list (Kit, sack, bale, picks), less the unit that
+    // is on the body, grouped by what a thing is and in registry order inside
+    // a group -- a stable sort, so the order is the raws' and never a shop's.
+    std::vector<PackRow> carried;
+    for (const KitRow& kitRow : kitRows()) {
+        PackRow row;
+        row.kind = PackRow::Kind::Item;
+        row.item = kitRow.item;
+        row.count = kitRow.count - ((kitRow.inKit && kit.isWorn(kitRow.item)) ? 1 : 0);
+        row.inKit = kitRow.inKit;
+        if (row.count > 0) {
+            carried.push_back(std::move(row));
+        }
+    }
+    const auto categoryOf = [&items](const PackRow& row) {
+        const sim::ItemDef* thing = items.at(row.item);
+        return thing != nullptr ? static_cast<int>(sim::itemCategory(*thing)) : 0;
+    };
+    std::stable_sort(carried.begin(), carried.end(),
+                     [&categoryOf](const PackRow& a, const PackRow& b) {
+                         return categoryOf(a) < categoryOf(b);
+                     });
+    PackRow carriedHeader;
+    carriedHeader.kind = PackRow::Kind::Header;
+    carriedHeader.text = "CARRIED";
+    rows.push_back(carriedHeader);
+    int category = -1;
+    for (PackRow& row : carried) {
+        if (categoryOf(row) != category) {
+            category = categoryOf(row);
+            PackRow header;
+            header.kind = PackRow::Kind::Header;
+            header.text = std::string(
+                sim::itemCategoryName(static_cast<sim::ItemCategory>(category)));
+            rows.push_back(std::move(header));
+        }
+        rows.push_back(std::move(row));
+    }
+    return rows;
+}
+
+namespace {
+
+/// The pack's own short word for a slot -- the sheet's worded rows (ON THE
+/// BACK, AT THE BELT) are eleven cells wide and the tile is thirty.
+[[nodiscard]] std::string_view packSlotWord(sim::ItemSlot slot) noexcept {
+    switch (slot) {
+        case sim::ItemSlot::Hand:
+            return "IN HAND";
+        case sim::ItemSlot::Body:
+            return "BODY";
+        case sim::ItemSlot::Head:
+            return "HEAD";
+        case sim::ItemSlot::Feet:
+            return "FEET";
+        case sim::ItemSlot::Trinket:
+            return "BELT";
+        case sim::ItemSlot::None:
+            break;
+    }
+    return "CARRIED";
+}
+
+}  // namespace
+
+std::vector<std::string> Session::packRowLabels() const {
+    const sim::ItemRegistry& items = tavern_->items();
+    const std::vector<PackRow> rows = packRows();
+    std::vector<std::string> out;
+    out.reserve(rows.size());
+    // Widths read off the list first, the sheet's own two-pass rule, so every
+    // "NNDR" starts under the last one.
+    std::size_t slotWidth = 0;
+    std::size_t prefixWidth = 0;
+    std::size_t dramsWidth = 0;
+    for (const PackRow& row : rows) {
+        if (row.kind == PackRow::Kind::Slot) {
+            slotWidth = std::max(slotWidth, packSlotWord(row.slot).size());
+        } else if (row.kind == PackRow::Kind::Item) {
+            const sim::ItemDef* thing = items.at(row.item);
+            if (thing == nullptr) {
+                continue;
+            }
+            std::string prefix = thing->name;
+            if (row.count > 1) {
+                prefix += " x" + std::to_string(row.count);
+            }
+            prefixWidth = std::max(prefixWidth, prefix.size());
+            std::int32_t drams = thing->drams * row.count;
+            if (row.item == items.indexOf("bale")) {
+                drams = tavern_->dialogue().crimes().baleUnits() *
+                        sim::contrabandWeight(tavern_->dialogue().crimes().baleGood());
+            }
+            dramsWidth = std::max(dramsWidth, std::to_string(drams).size());
+        }
+    }
+    for (const PackRow& row : rows) {
+        if (row.kind == PackRow::Kind::Header) {
+            out.push_back(row.text);
+            continue;
+        }
+        if (row.kind == PackRow::Kind::Slot) {
+            std::string label(packSlotWord(row.slot));
+            label.append(slotWidth - label.size(), ' ');
+            label += "  ";
+            const sim::ItemDef* thing = items.at(row.item);
+            if (thing != nullptr) {
+                label += row.slot == sim::ItemSlot::Hand ? sim::itemSheetLine(*thing) : thing->name;
+                if (thing->dr > 0) {
+                    label += "  DR " + std::to_string(thing->dr);
+                }
+            } else if (row.slot == sim::ItemSlot::Hand) {
+                label += sim::weaponSheetLine(tavern_->playerWeapon());
+            } else {
+                label += "NOTHING";
+            }
+            out.push_back(std::move(label));
+            continue;
+        }
+        const sim::ItemDef* thing = items.at(row.item);
+        if (thing == nullptr) {
+            out.emplace_back();
+            continue;
+        }
+        std::string prefix = thing->name;
+        if (row.count > 1) {
+            prefix += " x" + std::to_string(row.count);
+        }
+        std::int32_t drams = thing->drams * row.count;
+        if (row.item == items.indexOf("bale")) {
+            drams = tavern_->dialogue().crimes().baleUnits() *
+                    sim::contrabandWeight(tavern_->dialogue().crimes().baleGood());
+        }
+        std::string line = prefix;
+        line.append(prefixWidth - prefix.size(), ' ');
+        line += "  " + rightAlignedDigits(drams, dramsWidth) + "DR";
+        if (row.inKit && tavern_->kit().stolen(row.item) > 0) {
+            line += "  THEIRS";
+        }
+        for (std::int32_t slot = 0; slot < sim::Tavern::kQuickSlotCount; ++slot) {
+            if (tavern_->slotItemIndex(slot) == row.item) {
+                line += "  SLOT " + std::to_string(slot + 1);
+                break;
+            }
+        }
+        if (thing->heat > 0) {
+            line += "  HOT";
+        }
+        out.push_back(std::move(line));
+    }
+    return out;
+}
+
+void Session::settlePackCursor(int direction) {
+    if (!characterPack_) {
+        return;
+    }
+    const std::vector<PackRow> rows = packRows();
+    if (rows.empty()) {
+        return;
+    }
+    int cursor = std::clamp(characterCursor_, 0, static_cast<int>(rows.size()) - 1);
+    const int step = direction < 0 ? -1 : 1;
+    // Off a header, in the direction asked, and back the other way if the
+    // list ends on one (it cannot, but a cursor must never rest on a header).
+    for (int guard = 0; guard < static_cast<int>(rows.size()); ++guard) {
+        if (rows[static_cast<std::size_t>(cursor)].kind != PackRow::Kind::Header) {
+            break;
+        }
+        const int next = cursor + step;
+        cursor = next < 0 || next >= static_cast<int>(rows.size()) ? cursor - step : next;
+    }
+    characterCursor_ = cursor;
+    characterPage_ = topicPageOf(characterCursor_);
+}
+
+void Session::toggleCharacterPack() {
+    characterPack_ = !characterPack_;
+    characterCursor_ = 0;
+    characterPage_ = 0;
+    settlePackCursor(1);
+    if (audio_ != nullptr) {
+        audio_->playOneShot(audio::SoundId::BookFlip);
+    }
+}
+
+InspectPane Session::inspectPaneView() const {
+    InspectPane pane;
+    if (!characterPack_) {
+        return pane;
+    }
+    const std::vector<PackRow> rows = packRows();
+    if (characterCursor_ < 0 || static_cast<std::size_t>(characterCursor_) >= rows.size()) {
+        return pane;
+    }
+    const PackRow& at = rows[static_cast<std::size_t>(characterCursor_)];
+    const sim::ItemRegistry& items = tavern_->items();
+    const sim::Kit& kit = tavern_->kit();
+    const InputDevice dev = promptDevice_;
+    pane.open = true;
+    const auto digits = [](std::int32_t value) { return std::to_string(value); };
+
+    const sim::ItemDef* thing = items.at(at.item);
+    if (at.kind == PackRow::Kind::Header || (at.kind == PackRow::Kind::Slot && thing == nullptr)) {
+        // A group or a bare slot: what it is for, and the sums over it.
+        if (at.kind == PackRow::Kind::Slot) {
+            pane.title = std::string(sim::itemSlotSheetLabel(at.slot));
+            pane.kind = "NOTHING WORN";
+            if (at.slot == sim::ItemSlot::Hand) {
+                pane.title = "BARE HANDS";
+                pane.kind = "IN HAND";
+                pane.prose = "NOTHING IN THE HAND BUT THE HAND.";
+                pane.facts.push_back({"DAMAGE", sim::weaponSheetLine(tavern_->playerWeapon())});
+            } else {
+                pane.prose = "NOTHING WORN HERE. A PIECE FOR THIS SLOT TURNS A BLOW.";
+            }
+        } else {
+            pane.title = at.text;
+            pane.kind = "";
+            pane.prose = at.text == "WORN"
+                             ? "WHAT IS ON YOUR BODY. IT TURNS BLOWS AND IT FILLS THE HAND."
+                             : "WHAT YOU CARRY. EVERY DRAM COUNTS AGAINST THE LOAD.";
+            pane.facts.push_back({"DR WORN", digits(tavern_->wornDr())});
+            pane.facts.push_back({"LOAD", digits(tavern_->loadDrams()) + " / " +
+                                              digits(tavern_->loadBudget()) + " DRAMS"});
+        }
+        return pane;
+    }
+    if (thing == nullptr) {
+        pane.open = false;
+        return pane;
+    }
+    const std::int32_t carriedUnits =
+        at.kind == PackRow::Kind::Slot ? kit.count(at.item) : at.count;
+    const bool worn = at.kind == PackRow::Kind::Slot;
+    const std::int32_t lifted = at.inKit ? kit.stolen(at.item) : 0;
+    const sim::ItemInspect record = sim::inspectItem(*thing, carriedUnits, worn, lifted);
+    pane.title = record.name;
+    pane.kind = std::string(sim::itemCategoryName(record.category));
+    if (worn) {
+        pane.kind += std::string("  ") + std::string(sim::itemSlotSheetLabel(thing->slot));
+    }
+    if (record.stolen > 0) {
+        pane.alert = "THEIRS - LIFTED OFF SOMEBODY";
+        if (record.count > 1) {
+            pane.alert += ", " + digits(record.stolen) + " OF " + digits(record.count);
+        }
+    }
+    pane.prose = record.desc;
+    if (record.count > 1 || (at.kind == PackRow::Kind::Item && record.count > 0)) {
+        pane.facts.push_back({"CARRIED", "x" + digits(record.count)});
+    }
+    std::int32_t unitDrams = record.unitDrams;
+    if (at.item == items.indexOf("bale")) {
+        unitDrams = tavern_->dialogue().crimes().baleUnits() *
+                    sim::contrabandWeight(tavern_->dialogue().crimes().baleGood());
+    }
+    std::string weight = digits(unitDrams) + " DR";
+    if (record.count > 1) {
+        weight += "  (" + digits(unitDrams * record.count) + " FOR " + digits(record.count) + ")";
+    }
+    pane.facts.push_back({"WEIGHT", std::move(weight)});
+    if (record.unitRoyals > 0) {
+        std::string worth = digits(record.unitRoyals) + " C";
+        if (record.count > 1) {
+            worth += "  (" + digits(record.unitRoyals * record.count) + " FOR " +
+                     digits(record.count) + ")";
+        }
+        pane.facts.push_back({"WORTH", std::move(worth)});
+    }
+    if (record.damageHi > 0) {
+        pane.facts.push_back(
+            {"DAMAGE", digits(record.damageLo) + "-" + digits(record.damageHi) + " " +
+                           record.damageWord});
+    }
+    if (record.dr > 0) {
+        pane.facts.push_back({"ARMOUR", "TURNS " + digits(record.dr) + " A BLOW"});
+    }
+    if (!record.useLine.empty()) {
+        pane.facts.push_back({"EFFECT", record.useLine});
+    }
+    if (record.heat > 0) {
+        pane.facts.push_back({"HEAT", "+" + digits(record.heat) + " WITH THE WATCH, EACH"});
+    }
+    if (at.inKit) {
+        for (std::int32_t slot = 0; slot < sim::Tavern::kQuickSlotCount; ++slot) {
+            if (tavern_->slotItemIndex(slot) == at.item) {
+                pane.facts.push_back({"QUICK SLOT", digits(slot + 1)});
+                break;
+            }
+        }
+    }
+    // THE KEYS, on the foot -- the same presses the list takes.
+    if (at.inKit) {
+        const std::string confirm(promptConfirmKey(dev));
+        if (thing->slot != sim::ItemSlot::None && !thing->fixed) {
+            pane.verbs.push_back({confirm, worn ? "BARE" : "WEAR"});
+            pane.verbs.push_back({dev == InputDevice::Pad ? std::string(1, kMotifDPad)
+                                                          : std::string{kMotifLeft, kMotifRight},
+                                  "SLOT"});
+        } else if (!thing->effects.empty()) {
+            pane.verbs.push_back({confirm, thing->useVerb});
+        }
+        pane.verbs.push_back({"X", "DROP"});
+    }
+    return pane;
 }
 
 std::vector<std::string> Session::mapRows() const {

@@ -1,0 +1,38 @@
+{
+  "schemaVersion": 1,
+  "notes": [
+    "PHASE 8 (OBLIVION-PLAN section 8.2): the things a docker USES. Read after items.json and appended to its rows, because items.json is the owner's and is never edited; every id here comes after every id there.",
+    "Same columns as items.json, plus use: {verb, done, effects}. verb is the key's word (EAT), done the message line's (ATE). A row with effects is a consumable: one unit is spent by every use.",
+    "effects speak the spells' own integer vocabulary and nothing else. vitality: a signed hit-point change, instant, a mend when positive. attribute: a held tuning (param MGT AGI VIG WIT, the spells' tokens), seconds of room time, clamped with every other live hold to +/-2.",
+    "No hunger and no thirst (ruling 12 of OBLIVION-PLAN): none of these is a need. They mend, or they steady a hand; a body that does not eat loses nothing.",
+    "There is no lantern-oil row: nothing in the ward burns a held lantern's fuel yet, so a flask would be a row whose use did nothing.",
+    "stands put a thing on a tile before anybody moves it; owned means taking it is theft (THEIRS on the crosshair, and in the pack).",
+    "Provenance: no canon row names these. Loaf, mug and linen are the quayside's plainest goods; the weights and worths are in items.json's own scale (a bottle is 5 drams and 1 royal)."
+  ],
+  "items": [
+    {
+      "id": "bread", "name": "BREAD", "drams": 10, "royals": 1, "slot": "none", "class": "fists",
+      "drawnCm": [0, 12],
+      "use": { "verb": "EAT", "done": "ATE", "effects": [ { "effect": "vitality", "magnitude": 12 } ] },
+      "desc": "A DOCK LOAF, DENSE AS A BRICK AND ABOUT AS KIND. IT MENDS A BRUISING."
+    },
+    {
+      "id": "ale", "name": "ALE", "drams": 14, "royals": 2, "slot": "none", "class": "fists",
+      "drawnCm": [0, 14],
+      "use": { "verb": "DRINK", "done": "DRANK", "effects": [ { "effect": "vitality", "magnitude": 4 }, { "effect": "attribute", "param": "MGT", "magnitude": 1, "seconds": 300 } ] },
+      "desc": "A PEWTER MUG OF THE GULL'S OWN BREW. IT STEADIES THE ARM FOR FIVE MINUTES."
+    },
+    {
+      "id": "bandage", "name": "BANDAGE", "drams": 4, "royals": 3, "slot": "none", "class": "fists",
+      "drawnCm": [0, 6],
+      "use": { "verb": "BIND", "done": "BOUND", "effects": [ { "effect": "vitality", "magnitude": 30 } ] },
+      "desc": "BOILED LINEN, ROLLED TIGHT. THE QUAY'S ANSWER TO A CUT."
+    }
+  ],
+  "stands": [
+    { "item": "bread", "x": 154, "y": 69, "band": 19, "count": 1, "owned": true },
+    { "item": "ale", "x": 153, "y": 70, "band": 19, "count": 1, "owned": true },
+    { "item": "bandage", "x": 154, "y": 63, "band": 19, "count": 2, "owned": false },
+    { "item": "bread", "x": 156, "y": 63, "band": 19, "count": 2, "owned": false }
+  ]
+}

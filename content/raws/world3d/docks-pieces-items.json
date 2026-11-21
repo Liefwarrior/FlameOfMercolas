@@ -1,0 +1,11 @@
+{
+  "notes": [
+    "PHASE 8. The item rows for items_consumables.json, read AFTER docks-pieces.json's own `items` table (static_pieces.cpp, StaticCatalogue::load) so every row there keeps its variant number; docks-pieces.json is never edited.",
+    "Same shape as that table. No art is new: the bottle and the sack are files the table already draws, at a hand's size and a tint that says which thing it is, the way the coat, the hood and the boots are three sizes of one sack."
+  ],
+  "items": {
+    "bread":   { "pack": "PolygonGeneric", "file": "SM_Gen_Prop_Sack_01.gltf", "scale": 0.34, "tint": [176, 134, 78], "maxDistance": 24 },
+    "ale":     { "pack": "PolygonGeneric", "file": "SM_Gen_Prop_Bottle_01.gltf", "scale": 1.0, "tint": [128, 120, 100], "maxDistance": 24 },
+    "bandage": { "pack": "PolygonGeneric", "file": "SM_Gen_Prop_Sack_01.gltf", "scale": 0.24, "tint": [214, 204, 184], "maxDistance": 20 }
+  }
+}

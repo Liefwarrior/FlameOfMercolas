@@ -1081,6 +1081,13 @@ void print_usage() {
         "                       plea, deny, hand (the Skyrunners' oath first), serve,\n"
         "                       bloodtag, ropepage, rope or newman (--flame first to\n"
         "                       have what you gave at the door weighed)\n"
+        "  --pack[=WHERE]       play the pack: take the free bandages and loaves\n"
+        "                       off the quay, lift the Gull's ale, bread, knife\n"
+        "                       and coat (THEIRS) at four, open the Character\n"
+        "                       tile on its PACK view, wear the coat and the\n"
+        "                       knife, eat a loaf, fill the load. WHERE is take,\n"
+        "                       theirs, list, use, ate, load or empty for the\n"
+        "                       whole line\n"
         "  --kit[=WHERE]        play the Kit: name and take the coil on the\n"
         "                       Tarwalk, lift the house's lantern, knife and\n"
         "                       coat (THEIRS) at four, open the Character tile\n"
@@ -1088,8 +1095,8 @@ void print_usage() {
         "                       knife, slot the knife, take Ox's blow on the\n"
         "                       coat, put him down and search him, load up to\n"
         "                       the budget, put the coil down and look at it.\n"
-        "                       WHERE is take, theirs, sheet, equip, slot, dr,\n"
-        "                       search, load, drop or empty for the whole line\n"
+        "                       WHERE is take, theirs, sheet, equip, pack, slot,\n"
+        "                       dr, search, load, drop or empty for the whole line\n"
         "  --rung=TRACK         raise a Legend rung on TRACK through the real\n"
         "                       verbs and stop on the plate, fully up. TRACK\n"
         "                       is wire (a guest's box cracked at two), roofs\n"
@@ -1607,6 +1614,14 @@ void print_usage() {
         } else if (starts_with(arg, "--kit=", &value)) {
             options.smoke.kit = true;
             options.smoke.kitEnd = value;
+            options.wantsSmoke = true;
+        } else if (std::strcmp(arg, "--pack") == 0) {
+            // OBLIVION-PLAN phase 8. See SmokeRunConfig::pack.
+            options.smoke.pack = true;
+            options.wantsSmoke = true;
+        } else if (starts_with(arg, "--pack=", &value)) {
+            options.smoke.pack = true;
+            options.smoke.packEnd = value;
             options.wantsSmoke = true;
         } else if (starts_with(arg, "--rung=", &value)) {
             // THE RUNG PLATE. See SmokeRunConfig::rung.
@@ -2452,7 +2467,14 @@ void print_usage() {
             return true;
         }
         if (tab != 0) {
-            return true;  // the tiles have no sub-tabs -- swallowed, see the pause branch
+            // THE CHARACTER TILE'S ONE SUB-TAB: sheet and pack (OBLIVION-PLAN
+            // phase 8). Every other tile has no sub-tabs and swallows it, see
+            // the pause branch.
+            if (session.casebookOpen() && session.menuFocus() == render::kMenuFocusCharacter) {
+                session.armCommitPulse();
+                session.toggleCharacterPack();
+            }
+            return true;
         }
         if (up) {
             session.moveTopicCursor(-1);
@@ -2676,6 +2698,7 @@ bool session_pointer(render::Session& session, int frameWidth, int frameHeight, 
         render::MenuTileState tiles;
         tiles.open = true;
         tiles.character = session.characterPanelView();
+        tiles.inspect = session.inspectPaneView();
         tiles.map = session.mapPanelView();
         tiles.letters = session.lettersPanelView();
         tiles.journal = session.journalPanelView();
