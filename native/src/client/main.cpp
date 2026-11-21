@@ -373,6 +373,13 @@ struct Options {
     /// per animation clip, or one per kind of body each with its own look.
     /// 0 = off, 1 = clips, 2 = looks. Render-only.
     int sheet = 0;
+    /// VERIFICATION ONLY: `--bench-frames=N` redraws the shutter's composed
+    /// frame N more times after the PNG is written, vsync off, and prints the
+    /// wall time per frame. The same scene every time -- nothing steps -- so
+    /// the number is what that scene costs THIS machine's GPU, which is the
+    /// one thing the Linux gate can never say (OBLIVION-PLAN 10.1 item 2).
+    /// 0 = off. Reads nothing back into the session.
+    int benchFrames = 0;
     /// THE LOT PASS: --music-off. The MusicDirector loads and plays nothing;
     /// every other sound stays. Audio-side only, never in the settings file
     /// (a launch flag, like --nohud).
@@ -801,6 +808,9 @@ void print_usage() {
         "  --sheet=clips|looks  capture a row of figures in front of the eye: one per\n"
         "                       animation clip, or one per kind of body\n"
         "  --hands=KIND         capture with fists, club, dagger or sword in the hands\n"
+        "  --bench-frames=N     VERIFICATION ONLY: after the --screenshot, draw the\n"
+        "                       same frame N more times (vsync off) and print the\n"
+        "                       milliseconds per frame and the frame rate\n"
         "  --flat-light         the 3D world lit as it was before the lighting\n"
         "                       phase (vertex colour): no per-pixel lamps, shadows,\n"
         "                       sky shader or bloom\n"
@@ -1326,6 +1336,8 @@ void print_usage() {
             options.perPixelLight = false;
         } else if (starts_with(arg, "--sheet=", &value)) {
             options.sheet = std::strcmp(value, "clips") == 0 ? 1 : (std::strcmp(value, "looks") == 0 ? 2 : 0);
+        } else if (starts_with(arg, "--bench-frames=", &value)) {
+            options.benchFrames = std::max(0, std::atoi(value));
         } else if (starts_with(arg, "--hands=", &value)) {
             options.handsKind = std::strcmp(value, "fists") == 0    ? 0
                                 : std::strcmp(value, "club") == 0   ? 1
@@ -3960,6 +3972,28 @@ render3d::SceneStats present_frame(render3d::Backend& video, render3d::SceneRig&
     const render::Framebuffer output =
         needsUpscale ? render::upscaleNearest(shot, options.smoke.captureScale) : shot;
     const bool ok = render::writePng(output, options.smoke.screenshot);
+    // --bench-frames: the composed scene again, N times, timed end to end
+    // (refresh, draw, overlay, swap). The shutter's own frame already paid
+    // the loads, so every counted frame is a steady-state one.
+    if (options.benchFrames > 0) {
+        using Clock = std::chrono::steady_clock;
+        double worstMs = 0.0;
+        const Clock::time_point start = Clock::now();
+        for (int i = 0; i < options.benchFrames; ++i) {
+            const Clock::time_point t0 = Clock::now();
+            (void)present_frame(*video, rig, session, software, nullptr);
+            const double ms = std::chrono::duration<double, std::milli>(Clock::now() - t0).count();
+            worstMs = std::max(worstMs, ms);
+        }
+        const double totalMs =
+            std::chrono::duration<double, std::milli>(Clock::now() - start).count();
+        const double avgMs = totalMs / static_cast<double>(options.benchFrames);
+        std::printf("granadad: bench -- %d frame(s) at %dx%d on %s, %.3f ms avg, %.3f ms worst, "
+                    "%.1f fps\n",
+                    options.benchFrames, video->width(), video->height(),
+                    video->rendererName().c_str(), avgMs, worstMs,
+                    avgMs > 0.0 ? 1000.0 / avgMs : 0.0);
+    }
     // THE SCENE HASH IS PRINTED ON PURPOSE: it is the whole SceneDescription
     // (chunks, sky, the crowd, the hands, the camera) folded to one number,
     // so two separate processes of the same scripted drive prove the 3D
