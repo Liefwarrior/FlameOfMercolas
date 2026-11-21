@@ -129,6 +129,7 @@ struct Stack {
                        params);
         putActorRigs(scene);
         scene.actors = actorInstances(session, session.camera());
+        putActorFigures(scene, scene.actors);
         putViewmodelMeshes(scene);
         scene.viewmodel = viewmodelInstance(session);
     }
@@ -381,7 +382,7 @@ TEST_CASE("the viewmodel is described from the sim's own hand and hashes") {
         CHECK(mesh.version == 1);
         CHECK(ids.insert(mesh.id).second);
         CHECK(mesh.triangleCount() > 0);
-        CHECK(mesh.vertexCount() < 100U);
+        CHECK(mesh.vertexCount() < 400U);  // phase 6: a fist is a hand now, not a box
         CHECK(mesh.colours.size() == mesh.vertexCount() * 4);
         for (const std::uint16_t index : mesh.indices) {
             CHECK(index < mesh.vertexCount());

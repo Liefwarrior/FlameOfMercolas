@@ -564,6 +564,10 @@ add_library(granadad-render3d-core STATIC
     src/render3d/ground_items.cpp
     src/render3d/actor_instances.cpp
     src/render3d/viewmodel.cpp
+    # PHASE 6: the procedural people and the solids they and the hands are
+    # built from (OBLIVION-PLAN 6.9, section 7 item 4).
+    src/render3d/shapes.cpp
+    src/render3d/figure.cpp
 )
 target_include_directories(granadad-render3d-core PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
 target_link_libraries(granadad-render3d-core PUBLIC granadad-render)
@@ -1036,6 +1040,9 @@ if(GRANADAD_BUILD_TESTS)
         # stands against, and the washes are overlay pixels. Placeholder
         # arms: no licensed glb required.
         tests/test_viewmodel.cpp
+        # PHASE 6 -- THE PEOPLE: the look, the figure, the clips, and that the
+        # animation is a pure function of sim integers.
+        tests/test_figure.cpp
         # WEATHER, RENDER-ONLY (roadmap D15). The four skies as a pure
         # function of (seed, day, clock): the shipped seed's first days pinned
         # period by period and swept for four hundred, the clear sky proved

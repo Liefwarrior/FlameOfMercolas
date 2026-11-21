@@ -222,6 +222,10 @@ void poseViewmodel(ViewmodelInstance& out, ViewmodelKind kind, const ViewmodelPo
 /// Tavern::playerHeldWeapon(), pose off Session::viewmodel(), light off the
 /// body's own tile (ambient + baked + the Gull's flames, the actor rule).
 /// Always visible; a caller that wants no hands clears `visible`.
-[[nodiscard]] ViewmodelInstance viewmodelInstance(const render::Session& session);
+///
+/// `forceKind`, when it names a ViewmodelKind (0..3), puts that hand model in
+/// the hands whatever the sim holds: a verification aid for the captures
+/// (the client's --hands=), render-only like everything here.
+[[nodiscard]] ViewmodelInstance viewmodelInstance(const render::Session& session, int forceKind = -1);
 
 }  // namespace granadad::render3d

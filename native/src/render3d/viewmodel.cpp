@@ -7,6 +7,7 @@
 #include "granadad/render/lighting.hpp"
 #include "granadad/render/session.hpp"
 #include "granadad/render/scene_types.hpp"
+#include "granadad/render3d/shapes.hpp"
 #include "granadad/sim/tavern.hpp"
 
 namespace granadad::render3d {
@@ -32,99 +33,129 @@ constexpr Rgba8 kCastGlow{255, 232, 180, 255};
     return Rgba8{ch(base.r), ch(base.g), ch(base.b), base.a};
 }
 
-void pushVertex(MeshData& mesh, const Vec3& p, const Rgba8& c) {
-    mesh.positions.push_back(p.x);
-    mesh.positions.push_back(p.y);
-    mesh.positions.push_back(p.z);
-    mesh.texcoords.push_back(0.0F);
-    mesh.texcoords.push_back(0.0F);
-    mesh.colours.push_back(c.r);
-    mesh.colours.push_back(c.g);
-    mesh.colours.push_back(c.b);
-    mesh.colours.push_back(c.a);
+using shapes::Builder;
+using shapes::Ring;
+
+[[nodiscard]] Ring ring(float y, float rx, float rz, const Rgba8& c) noexcept {
+    Ring r;
+    r.y = y;
+    r.rx = rx;
+    r.rz = rz;
+    r.colour = c;
+    return r;
 }
 
-/// A quad from four corners counter-clockwise as seen from outside.
-void pushQuad(MeshData& mesh, const Vec3& a, const Vec3& b, const Vec3& c, const Vec3& d,
-              const Rgba8& colour) {
-    const auto base = static_cast<std::uint16_t>(mesh.vertexCount());
-    pushVertex(mesh, a, colour);
-    pushVertex(mesh, b, colour);
-    pushVertex(mesh, c, colour);
-    pushVertex(mesh, d, colour);
-    mesh.indices.push_back(base);
-    mesh.indices.push_back(static_cast<std::uint16_t>(base + 1));
-    mesh.indices.push_back(static_cast<std::uint16_t>(base + 2));
-    mesh.indices.push_back(base);
-    mesh.indices.push_back(static_cast<std::uint16_t>(base + 2));
-    mesh.indices.push_back(static_cast<std::uint16_t>(base + 3));
+/// A solid of rings standing along the line from `a` to `b` (shapes.hpp
+/// alongAxis). `rings` are (distance along it, rx, rz, colour).
+void along(MeshData& mesh, const Vec3& a, const Vec3& b, const std::vector<Ring>& rings, int sides,
+           bool capBottom = true, bool capTop = true) {
+    float length = 0.0F;
+    Builder builder;
+    builder.mesh = &mesh;
+    builder.xf = shapes::alongAxis(a, b, Vec3{0.0F, 1.0F, 0.0F}, length);
+    shapes::loft(builder, rings, sides, capBottom, capTop);
 }
 
-/// A closed hexahedron from its eight corners: n = the near rectangle
-/// (towards -Z), f = the far one (towards +Z), each as (x0,y0) (x1,y0)
-/// (x1,y1) (x0,y1) seen from -Z. The forearm is one of these with the far
-/// end larger and displaced; a box is the special case of equal ends.
-void pushHull(MeshData& mesh, const Vec3 n[4], const Vec3 f[4], const Rgba8& base) {
-    pushQuad(mesh, n[0], n[1], n[2], n[3], shade(base, 0.90F));  // -Z (front / knuckles)
-    pushQuad(mesh, f[1], f[0], f[3], f[2], shade(base, 0.60F));  // +Z (back)
-    pushQuad(mesh, n[3], n[2], f[2], f[3], shade(base, 1.00F));  // +Y (top)
-    pushQuad(mesh, f[0], f[1], n[1], n[0], shade(base, 0.45F));  // -Y (bottom)
-    pushQuad(mesh, n[1], f[1], f[2], n[2], shade(base, 0.72F));  // +X
-    pushQuad(mesh, f[0], n[0], n[3], f[3], shade(base, 0.62F));  // -X
+void block(MeshData& mesh, float x0, float y0, float z0, float x1, float y1, float z1, const Rgba8& base) {
+    Builder builder;
+    builder.mesh = &mesh;
+    shapes::block(builder, Vec3{(x0 + x1) * 0.5F, (y0 + y1) * 0.5F, (z0 + z1) * 0.5F},
+                  Vec3{(x1 - x0) * 0.5F, (y1 - y0) * 0.5F, (z1 - z0) * 0.5F}, base);
 }
 
-void pushBox(MeshData& mesh, float x0, float y0, float z0, float x1, float y1, float z1,
-             const Rgba8& base) {
-    const Vec3 n[4] = {{x0, y0, z0}, {x1, y0, z0}, {x1, y1, z0}, {x0, y1, z0}};
-    const Vec3 f[4] = {{x0, y0, z1}, {x1, y0, z1}, {x1, y1, z1}, {x0, y1, z1}};
-    pushHull(mesh, n, f, base);
-}
-
-/// The fist: a box about the origin, knuckles towards -Z, with the thumb
-/// laid along the inner side (towards the other hand).
+/// The fist, authored about the origin, knuckles towards -Z (the player's
+/// own hand seen from behind): the back of the hand, a row of four knuckles
+/// with the four fingers curled under them, and the thumb laid across the
+/// front on the inner side (towards the other hand).
 void pushFist(MeshData& mesh, float side) {
-    pushBox(mesh, -0.08F, -0.065F, -0.09F, 0.08F, 0.065F, 0.09F, kSkin);
-    const float inner = -side;  // the right hand's thumb is on its -X
-    const float x0 = inner > 0.0F ? 0.08F : -0.11F;
-    const float x1 = inner > 0.0F ? 0.11F : -0.08F;
-    pushBox(mesh, x0, -0.01F, -0.07F, x1, 0.045F, 0.02F, shade(kSkin, 0.92F));
+    block(mesh, -0.060F, -0.046F, -0.020F, 0.060F, 0.050F, 0.100F, kSkin);
+    const float xs[4] = {-0.0435F, -0.0145F, 0.0145F, 0.0435F};
+    for (int i = 0; i < 4; ++i) {
+        const float x = xs[i];
+        block(mesh, x - 0.0145F, -0.014F, -0.074F, x + 0.0145F, 0.040F, -0.014F, shade(kSkin, 1.02F));
+        block(mesh, x - 0.0135F, -0.060F, -0.088F, x + 0.0135F, -0.010F, -0.050F, shade(kSkin, 0.88F));
+    }
+    // The inner side is the right hand's -X: the thumb crosses the fingers.
+    const float inner = -side;
+    block(mesh, inner * 0.028F - 0.034F, -0.030F, -0.098F, inner * 0.028F + 0.034F, -0.004F, -0.066F,
+          shade(kSkin, 0.94F));
 }
 
-/// The forearm: from just behind the fist (the origin) back, down and out
-/// to the elbow, which sits off the bottom corner of the frame -- 0.30
-/// closer to the eye than the fist, never near the pass's 0.05 near plane
-/// (a fist rests 0.66 out), so the sleeve reads as a band from the corner
-/// rather than a wall of cloth.
+/// The forearm: from the wrist just behind the fist (the origin, at z 0.05)
+/// back, down and out to the elbow, which sits off the bottom corner of the
+/// frame -- 0.30 closer to the eye than the fist, never near the pass's 0.05
+/// near plane (a fist rests 0.66 out), so the sleeve reads as a band from the
+/// corner rather than a wall of cloth. A bare wrist, a cuff, the sleeve.
 void pushForearm(MeshData& mesh, float side) {
-    const Vec3 n[4] = {{-0.07F, -0.07F, 0.05F}, {0.07F, -0.07F, 0.05F},
-                       {0.07F, 0.05F, 0.05F}, {-0.07F, 0.05F, 0.05F}};
-    const float ex = side * 0.30F;
-    const float ey = -0.55F;
-    const float ez = 0.30F;
-    const Vec3 f[4] = {{ex - 0.10F, ey - 0.09F, ez}, {ex + 0.10F, ey - 0.09F, ez},
-                       {ex + 0.10F, ey + 0.09F, ez}, {ex - 0.10F, ey + 0.09F, ez}};
-    pushHull(mesh, n, f, kSleeve);
+    const Vec3 wrist{0.0F, 0.0F, 0.05F};
+    const Vec3 elbow{side * 0.30F, -0.55F, 0.30F};
+    const float length = std::sqrt((elbow.x - wrist.x) * (elbow.x - wrist.x) +
+                                   (elbow.y - wrist.y) * (elbow.y - wrist.y) +
+                                   (elbow.z - wrist.z) * (elbow.z - wrist.z));
+    const Rgba8 cuff = shade(kSleeve, 0.72F);
+    along(mesh, wrist, elbow,
+          {ring(0.0F, 0.052F, 0.048F, kSkin), ring(0.10F * length, 0.058F, 0.054F, kSkin),
+           ring(0.10F * length, 0.074F, 0.070F, cuff), ring(0.20F * length, 0.078F, 0.074F, cuff),
+           ring(0.20F * length, 0.080F, 0.076F, kSleeve), ring(0.60F * length, 0.092F, 0.088F, kSleeve),
+           ring(length, 0.108F, 0.100F, kSleeve)},
+          8);
 }
 
 void pushClub(MeshData& mesh) {
-    // The shaft through the fist, the head out past it.
-    pushBox(mesh, -0.025F, -0.025F, -0.46F, 0.025F, 0.025F, 0.10F, kWood);
-    pushBox(mesh, -0.05F, -0.05F, -0.60F, 0.05F, 0.05F, -0.42F, shade(kWood, 0.85F));
-    pushBox(mesh, -0.055F, -0.055F, -0.50F, 0.055F, 0.055F, -0.47F, kIron);
+    // A wrapped grip through the fist, the shaft swelling to a studded head
+    // out past it, an iron collar, a leather-wrapped butt.
+    const Vec3 butt{0.0F, 0.0F, 0.11F};
+    const Vec3 tip{0.0F, 0.0F, -0.62F};
+    const Rgba8 wrap = shade(kWood, 0.55F);
+    along(mesh, butt, tip,
+          {ring(0.0F, 0.020F, 0.020F, kIron), ring(0.020F, 0.032F, 0.032F, kIron),
+           ring(0.020F, 0.022F, 0.022F, wrap), ring(0.20F, 0.022F, 0.022F, wrap),
+           ring(0.20F, 0.021F, 0.021F, kWood), ring(0.36F, 0.026F, 0.026F, kWood),
+           ring(0.47F, 0.036F, 0.036F, kIron), ring(0.49F, 0.036F, 0.036F, kWood),
+           ring(0.56F, 0.052F, 0.052F, shade(kWood, 0.9F)), ring(0.66F, 0.054F, 0.054F, shade(kWood, 0.82F)),
+           ring(0.73F, 0.040F, 0.040F, shade(kWood, 0.78F))},
+          6);
+    // Iron studs round the head.
+    for (const float sx : {-1.0F, 1.0F}) {
+        block(mesh, sx * 0.050F - 0.008F, -0.008F, -0.50F, sx * 0.050F + 0.008F, 0.008F, -0.48F, kIron);
+        block(mesh, -0.008F, sx * 0.050F - 0.008F, -0.54F, 0.008F, sx * 0.050F + 0.008F, -0.52F, kIron);
+    }
 }
 
 void pushDagger(MeshData& mesh) {
-    pushBox(mesh, -0.014F, -0.005F, -0.36F, 0.014F, 0.005F, -0.09F, kSteel);
-    pushBox(mesh, -0.05F, -0.012F, -0.10F, 0.05F, 0.012F, -0.08F, kIron);
-    pushBox(mesh, -0.018F, -0.018F, 0.09F, 0.018F, 0.018F, 0.11F, kIron);
+    // A short double-edged blade from a crossguard, a wrapped grip, a pommel.
+    const Rgba8 wrap = shade(kWood, 0.55F);
+    along(mesh, Vec3{0.0F, 0.0F, 0.12F}, Vec3{0.0F, 0.0F, -0.09F},
+          {ring(0.0F, 0.016F, 0.016F, kIron), ring(0.012F, 0.022F, 0.022F, kIron), ring(0.012F, 0.016F, 0.016F, wrap),
+           ring(0.19F, 0.017F, 0.017F, wrap), ring(0.21F, 0.019F, 0.019F, kIron)},
+          6);
+    block(mesh, -0.050F, -0.012F, -0.105F, 0.050F, 0.012F, -0.085F, kIron);
+    along(mesh, Vec3{0.0F, 0.0F, -0.10F}, Vec3{0.0F, 0.0F, -0.42F},
+          {ring(0.0F, 0.016F, 0.0045F, kSteel), ring(0.15F, 0.0145F, 0.0050F, kSteel),
+           ring(0.26F, 0.009F, 0.0040F, shade(kSteel, 1.06F)), ring(0.32F, 0.0015F, 0.0015F, kSteel)},
+          4);
 }
 
 void pushSword(MeshData& mesh) {
-    pushBox(mesh, -0.022F, -0.006F, -0.90F, 0.022F, 0.006F, -0.10F, kSteel);
-    // The fuller, a shade darker down the middle of the blade's flat.
-    pushBox(mesh, -0.006F, -0.0065F, -0.82F, 0.006F, 0.0065F, -0.16F, shade(kSteel, 0.86F));
-    pushBox(mesh, -0.09F, -0.014F, -0.11F, 0.09F, 0.014F, -0.08F, kIron);
-    pushBox(mesh, -0.022F, -0.022F, 0.09F, 0.022F, 0.022F, 0.13F, kIron);
+    // The docks' cutlass: a broad blade with a fuller, a disc guard and
+    // knuckle bow, a wrapped grip, an iron pommel.
+    const Rgba8 wrap = shade(kWood, 0.5F);
+    along(mesh, Vec3{0.0F, 0.0F, 0.14F}, Vec3{0.0F, 0.0F, -0.10F},
+          {ring(0.0F, 0.020F, 0.020F, kIron), ring(0.016F, 0.028F, 0.028F, kIron), ring(0.016F, 0.019F, 0.019F, wrap),
+           ring(0.20F, 0.020F, 0.020F, wrap), ring(0.24F, 0.016F, 0.016F, kIron)},
+          6);
+    along(mesh, Vec3{0.0F, 0.0F, -0.10F}, Vec3{0.0F, 0.0F, -0.115F},
+          {ring(0.0F, 0.085F, 0.085F, shade(kIron, 0.85F)), ring(0.015F, 0.085F, 0.085F, kIron)}, 8);
+    block(mesh, -0.095F, -0.012F, -0.118F, 0.095F, 0.012F, -0.100F, kIron);
+    along(mesh, Vec3{0.0F, 0.0F, -0.115F}, Vec3{0.0F, 0.0F, -0.96F},
+          {ring(0.0F, 0.024F, 0.0065F, kSteel), ring(0.30F, 0.026F, 0.0065F, kSteel),
+           ring(0.62F, 0.028F, 0.0060F, shade(kSteel, 1.04F)), ring(0.76F, 0.020F, 0.0045F, kSteel),
+           ring(0.845F, 0.0015F, 0.0015F, kSteel)},
+          4);
+    // The fuller, a shade darker down the middle of the flat.
+    along(mesh, Vec3{0.0F, 0.0F, -0.17F}, Vec3{0.0F, 0.0F, -0.82F},
+          {ring(0.0F, 0.006F, 0.0072F, shade(kSteel, 0.72F)), ring(0.65F, 0.0045F, 0.0066F, shade(kSteel, 0.72F))},
+          4);
 }
 
 /// The light where the body stands, the actor rule: ambient + max(baked,
@@ -685,15 +716,18 @@ void poseViewmodel(ViewmodelInstance& out, ViewmodelKind kind, const ViewmodelPo
     }
 }
 
-ViewmodelInstance viewmodelInstance(const render::Session& session) {
+ViewmodelInstance viewmodelInstance(const render::Session& session, int forceKind) {
     const sim::PlayerBody& body = session.body();
     const render::SkyState sky = render::skyAt(session.timeOfDay());
     const render::Rgb baked = session.renderer().glow().at(body.tileX(), body.tileY(), body.band());
     const render::Rgb live =
         render::dynamicGlowAt(session.tavernLights(), body.tileX(), body.tileY(), body.band());
     ViewmodelInstance out;
-    poseViewmodel(out, viewmodelKindOf(session.tavern().playerHeldWeapon()), session.viewmodel(),
-                  standingTint(sky, baked, live));
+    const ViewmodelKind kind =
+        forceKind >= 0 && forceKind < static_cast<int>(kViewmodelKindCount)
+            ? static_cast<ViewmodelKind>(forceKind)
+            : viewmodelKindOf(session.tavern().playerHeldWeapon());
+    poseViewmodel(out, kind, session.viewmodel(), standingTint(sky, baked, live));
     out.visible = true;
     return out;
 }

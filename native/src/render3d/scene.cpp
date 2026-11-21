@@ -359,6 +359,16 @@ std::uint64_t sceneHash(const SceneDescription& scene) noexcept {
         if (!mesh.colours.empty()) {
             h.mix(mesh.colours.data(), mesh.colours.size());
         }
+        // PHASE 6: the rig of a person, only where there is one -- so every
+        // other mesh's bytes are as they were.
+        if (!mesh.bones.empty()) {
+            h.mixU64(static_cast<std::uint64_t>(mesh.bones.size()));
+            h.mix(mesh.bones.data(), mesh.bones.size());
+            h.mixU64(static_cast<std::uint64_t>(mesh.boneRest.size()));
+            for (const float f : mesh.boneRest) {
+                h.mixF32(f);
+            }
+        }
         h.mixU64(static_cast<std::uint64_t>(mesh.indices.size()));
         for (const std::uint16_t i : mesh.indices) {
             h.mixU16(i);
@@ -402,6 +412,7 @@ std::uint64_t sceneHash(const SceneDescription& scene) noexcept {
     for (const ActorInstance& actor : scene.actors) {
         mixInstance(actor.instance);
         h.mixU8(actor.rig);
+        h.mixU32(actor.lookKey);
         h.mixU8(static_cast<std::uint8_t>(actor.clip));
         h.mixU32(actor.clipFrame);
         h.mixU8(static_cast<std::uint8_t>(actor.skinned ? 1 : 0));

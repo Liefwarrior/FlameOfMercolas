@@ -8,6 +8,8 @@ using namespace rl;
 
 namespace rl {
 Mesh uploadMesh(const MeshData& data) {
+    // A rigged mesh is rewritten per body per frame: a dynamic buffer.
+    const bool dynamic = !data.bones.empty();
     Mesh mesh{};
     const std::size_t vertexCount = data.vertexCount();
     const std::size_t triangleCount = data.triangleCount();
@@ -54,7 +56,7 @@ Mesh uploadMesh(const MeshData& data) {
     mesh.indices = rlAlloc<unsigned short>(triangleCount * 3);
     std::memcpy(mesh.indices, data.indices.data(), triangleCount * 3 * sizeof(unsigned short));
 
-    UploadMesh(&mesh, false);
+    UploadMesh(&mesh, dynamic);
     return mesh;
 }
 

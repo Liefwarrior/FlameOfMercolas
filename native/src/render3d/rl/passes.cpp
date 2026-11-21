@@ -121,22 +121,63 @@ bool Backend::Impl::drawInstance(const Instance& instance, SceneStats& stats) {
                         instance.surface);
 }
 
+bool Backend::Impl::drawFigure(const ActorInstance& actor, SceneStats& stats) {
+    const auto found = meshes.find(actor.instance.meshId);
+    if (found == meshes.end() || found->second.bones.empty()) {
+        return false;
+    }
+    CachedMesh& cached = found->second;
+    const std::size_t count = static_cast<std::size_t>(cached.mesh.vertexCount);
+    const int bytes = cached.mesh.vertexCount * 3 * static_cast<int>(sizeof(float));
+    if (actor.skinned && cached.joints.size() == kFigureBoneCount + 1 && cached.mesh.vboId != nullptr) {
+        const FigurePose pose = evaluateFigurePose(cached.joints.data(), actor.clip, actor.clipFrame);
+        skinPositions.resize(count * 3);
+        skinNormals.resize(count * 3);
+        skinFigure(cached.restPositions.data(), cached.restNormals.data(), cached.bones.data(), count,
+                   cached.joints.data(), pose, skinPositions.data(), skinNormals.data());
+        UpdateMeshBuffer(cached.mesh, 0, skinPositions.data(), bytes, 0);
+        UpdateMeshBuffer(cached.mesh, 2, skinNormals.data(), bytes, 0);
+        cached.posed = true;
+        if (depthOverride == nullptr) {
+            ++stats.actorsSkinned;
+        }
+    } else if (cached.posed && cached.mesh.vboId != nullptr) {
+        // The far draw: the rest pose, put back for every body of this look
+        // that is not near enough to be posed.
+        UpdateMeshBuffer(cached.mesh, 0, cached.restPositions.data(), bytes, 0);
+        UpdateMeshBuffer(cached.mesh, 2, cached.restNormals.data(), bytes, 0);
+        cached.posed = false;
+    }
+    const bool drawn = drawInstance(actor.instance, stats);
+    if (drawn && depthOverride == nullptr) {
+        ++stats.actorsDrawn;
+    }
+    return true;
+}
+
 void Backend::Impl::drawActor(const ActorInstance& actor, SceneStats& stats) {
     RigModel* rig = rigFor(actor.rig);
     if (rig == nullptr || !rig->loaded) {
+        if (drawFigure(actor, stats)) {
+            return;
+        }
         if (drawInstance(actor.instance, stats)) {
             ++stats.actorsDrawn;
         }
         return;
     }
-    const int clipIndex = static_cast<int>(actor.clip);
+    // A glb has no talk clip unless the export grew one: it stands and idles.
+    int clipIndex = static_cast<int>(actor.clip);
+    if (clipIndex >= rig->clipCount) {
+        clipIndex = 0;
+    }
     if (actor.skinned && clipIndex < rig->clipCount) {
         const ModelAnimation& clip = rig->clips[clipIndex];
         if (clip.keyframeCount > 0) {
             // A looping clip wraps (raylib does the modulo); a one-shot
             // holds its last keyframe -- a corpse stays down.
             const auto length = static_cast<std::uint32_t>(clip.keyframeCount);
-            const std::uint32_t frame = actorClipOneShot(actor.clip)
+            const std::uint32_t frame = actorClipOneShot(actor.clip) && clipIndex == static_cast<int>(actor.clip)
                                             ? std::min(actor.clipFrame, length - 1U)
                                             : actor.clipFrame % length;
             UpdateModelAnimation(rig->model, clip, static_cast<float>(frame));
@@ -210,6 +251,17 @@ SceneStats Backend::drawScene(const SceneDescription& scene) {
         CachedMesh cached;
         cached.version = data.version;
         cached.mesh = uploadMesh(data);
+        if (!data.bones.empty() && data.normals.size() == data.positions.size() &&
+            data.boneRest.size() >= (kFigureBoneCount + 1) * 3) {
+            // PHASE 6: a person: the rest arrays and joints, for posing.
+            cached.restPositions = data.positions;
+            cached.restNormals = data.normals;
+            cached.bones = data.bones;
+            for (std::size_t j = 0; j < kFigureBoneCount + 1; ++j) {
+                cached.joints.push_back(
+                    Vec3{data.boneRest[j * 3], data.boneRest[j * 3 + 1], data.boneRest[j * 3 + 2]});
+            }
+        }
         {
             Vec3 lo{std::numeric_limits<float>::max(), std::numeric_limits<float>::max(),
                     std::numeric_limits<float>::max()};
