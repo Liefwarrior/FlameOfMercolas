@@ -15,6 +15,10 @@ namespace granadad::render3d {
 namespace {
 
 constexpr float kPi = 3.14159265358979323846F;
+/// A roof steps aside once the eye is within this of its deck or above it: a
+/// body standing on a deck has its eye 1.7 above it, one on the storey below
+/// has it a good deal more than this under.
+constexpr float kRoofStepAside = 0.5F;
 constexpr int kSkySegments = 32;
 
 [[nodiscard]] std::uint8_t channel8(float value) noexcept {
@@ -350,6 +354,113 @@ MeshData buildSkyDome(int timeOfDaySeconds, const render::Weather& weather) {
 }
 
 // ---------------------------------------------------------------------------
+// the skyline ring
+// ---------------------------------------------------------------------------
+
+namespace {
+
+constexpr int kSkylineSegments = 360;
+
+/// Angles on the ring: 0 east, pi/2 south (+Z), pi west, 3pi/2 north.
+constexpr float kInnerWallAngle = kPi * 0.5F;
+constexpr float kInnerWallHalfSpan = 0.42F;
+constexpr float kGateTowerOffset = 0.075F;
+/// The palace stands far to the south-east: tall, narrow, alone.
+constexpr float kPalaceAngle = kPi * 0.5F - 0.95F;
+
+[[nodiscard]] float gaussian(float x, float width) noexcept {
+    const float t = x / width;
+    return std::exp(-t * t);
+}
+
+[[nodiscard]] float wrapAngle(float a) noexcept {
+    while (a > kPi) {
+        a -= 2.0F * kPi;
+    }
+    while (a < -kPi) {
+        a += 2.0F * kPi;
+    }
+    return a;
+}
+
+}  // namespace
+
+float skylineHeight(float angle) noexcept {
+    // Rolling ground all the way round, a few tiles to a dozen above the eye;
+    // higher to the south, where the district climbs up-slope.
+    const float south = std::max(0.0F, std::sin(angle));
+    float h = 5.0F + 3.0F * std::sin(angle * 5.0F + 1.3F) + 2.0F * std::sin(angle * 11.0F + 0.4F) +
+              1.5F * std::sin(angle * 23.0F + 2.1F) + 16.0F * south * south;
+    // The north is the sea: low, with one far headland.
+    const float north = std::max(0.0F, -std::sin(angle));
+    h = h * (1.0F - 0.65F * north) + 9.0F * gaussian(wrapAngle(angle - kPi * 1.42F), 0.16F);
+    // The Inner Wall: a battlemented run across the south with the gate's two
+    // towers either side of it.
+    const float fromWall = wrapAngle(angle - kInnerWallAngle);
+    if (std::abs(fromWall) < kInnerWallHalfSpan) {
+        const float crenel = (static_cast<int>(std::floor(angle * 180.0F)) & 1) != 0 ? 1.6F : 0.0F;
+        const float edge = std::min(1.0F, (kInnerWallHalfSpan - std::abs(fromWall)) / 0.03F);
+        h = std::max(h, 14.0F + 14.0F * south + crenel * edge);
+        for (const float side : {-1.0F, 1.0F}) {
+            const float d = std::abs(fromWall - side * kGateTowerOffset);
+            if (d < 0.016F) {
+                h = std::max(h, 40.0F + (d < 0.011F ? 3.0F : 0.0F));
+            }
+        }
+    }
+    // The palace: a spire with two domes beside it.
+    const float fromPalace = wrapAngle(angle - kPalaceAngle);
+    const float spire = 46.0F * gaussian(fromPalace, 0.006F) + 18.0F * gaussian(fromPalace - 0.022F, 0.012F) +
+                        14.0F * gaussian(fromPalace + 0.025F, 0.014F);
+    if (spire > 4.0F) {
+        h = std::max(h, 10.0F + spire);
+    }
+    return h;
+}
+
+MeshData buildSkyline(int timeOfDaySeconds, const render::Weather& weather) {
+    MeshData mesh;
+    mesh.id = kSkylineMeshId;
+    mesh.version = skyDomeVersion(timeOfDaySeconds) ^ (weatherVersionKey(weather) << 16);
+    const render::SkyState sky = render::skyAt(timeOfDaySeconds, weather);
+    // The land is a dark green-brown, the stone a cool grey, each lit by the
+    // sky's own ambient and hazed a good way toward the horizon colour: it is
+    // fifteen hundred metres off.
+    const float light = std::clamp((sky.ambient.r + sky.ambient.g + sky.ambient.b) / 3.0F, 0.0F, 1.0F);
+    const auto hazed = [&](const render::Rgb& tone, float haze) {
+        const render::Rgb lit{tone.r * light, tone.g * light, tone.b * light};
+        return render::lerp(lit, sky.skyHorizon, haze);
+    };
+    const render::Rgb land = hazed(render::Rgb{0.20F, 0.25F, 0.19F}, 0.55F);
+    const render::Rgb crest = hazed(render::Rgb{0.26F, 0.29F, 0.22F}, 0.62F);
+    const render::Rgb stone = hazed(render::Rgb{0.30F, 0.31F, 0.35F}, 0.5F);
+    const Rgba8 foot = rgba(sky.skyHorizon);
+    for (int i = 0; i < kSkylineSegments; ++i) {
+        const float angle = 2.0F * kPi * static_cast<float>(i) / static_cast<float>(kSkylineSegments);
+        const float h = skylineHeight(angle);
+        const float x = kSkylineRadius * std::cos(angle);
+        const float z = kSkylineRadius * std::sin(angle);
+        // Built-up silhouettes (the wall, its towers, the palace) wear stone;
+        // the ground wears the land, lighter at its crest.
+        const float fromWall = wrapAngle(angle - kInnerWallAngle);
+        const bool built = h > 22.0F || (std::abs(fromWall) < kInnerWallHalfSpan &&
+                                         h > 14.0F + 14.0F * std::max(0.0F, std::sin(angle)) - 0.01F);
+        pushVertex(mesh, x, -60.0F, z, foot);
+        pushVertex(mesh, x, h, z, rgba(built ? stone : (h > 12.0F ? crest : land)));
+    }
+    for (int i = 0; i < kSkylineSegments; ++i) {
+        const int next = (i + 1) % kSkylineSegments;
+        const auto a0 = static_cast<std::uint16_t>(i * 2);
+        const auto a1 = static_cast<std::uint16_t>(i * 2 + 1);
+        const auto b0 = static_cast<std::uint16_t>(next * 2);
+        const auto b1 = static_cast<std::uint16_t>(next * 2 + 1);
+        pushDoubleTriangle(mesh, a0, b0, b1);
+        pushDoubleTriangle(mesh, a0, b1, a1);
+    }
+    return mesh;
+}
+
+// ---------------------------------------------------------------------------
 // the veil (WEATHER)
 // ---------------------------------------------------------------------------
 
@@ -519,32 +630,40 @@ WorldScene::Slot& WorldScene::slot(ChunkKey key) noexcept {
 void WorldScene::build(Slot& s, ChunkKey key) {
     if (s.built) {
         ++s.rebuildCount;
-        stats_.trianglesBuilt -= s.geometry.triangleCount();
-        if (s.geometry.triangleCount() > 0) {
+        stats_.trianglesBuilt -= s.geometry.totalTriangles();
+        if (s.geometry.totalTriangles() > 0) {
             --stats_.chunksWithGeometry;
         }
     }
     s.geometry = buildChunkGeometry(*tiles_, *atlas_, materials_, key, s.rebuildCount);
+    s.farGeometry = ChunkGeometry{};
+    s.farBuilt = false;
     s.built = true;
     s.stale = false;
     s.putVersion = 0;
     ++stats_.chunksBuilt;
-    stats_.trianglesBuilt += s.geometry.triangleCount();
-    if (s.geometry.triangleCount() > 0) {
+    stats_.trianglesBuilt += s.geometry.totalTriangles();
+    if (s.geometry.totalTriangles() > 0) {
         ++stats_.chunksWithGeometry;
     }
     stats_.anyTruncated = stats_.anyTruncated || s.geometry.truncated;
 
     s.minX = s.minY = s.minZ = std::numeric_limits<float>::max();
     s.maxX = s.maxY = s.maxZ = std::numeric_limits<float>::lowest();
-    const std::vector<float>& p = s.geometry.positions;
-    for (std::size_t i = 0; i + 2 < p.size(); i += 3) {
-        s.minX = std::min(s.minX, p[i]);
-        s.maxX = std::max(s.maxX, p[i]);
-        s.minY = std::min(s.minY, p[i + 1]);
-        s.maxY = std::max(s.maxY, p[i + 1]);
-        s.minZ = std::min(s.minZ, p[i + 2]);
-        s.maxZ = std::max(s.maxZ, p[i + 2]);
+    const auto grow = [&s](const std::vector<float>& p) {
+        for (std::size_t i = 0; i + 2 < p.size(); i += 3) {
+            s.minX = std::min(s.minX, p[i]);
+            s.maxX = std::max(s.maxX, p[i]);
+            s.minY = std::min(s.minY, p[i + 1]);
+            s.maxY = std::max(s.maxY, p[i + 1]);
+            s.minZ = std::min(s.minZ, p[i + 2]);
+            s.maxZ = std::max(s.maxZ, p[i + 2]);
+        }
+    };
+    grow(s.geometry.positions);
+    grow(s.geometry.extra.positions);
+    for (const RoofLayer& roof : s.geometry.roofs) {
+        grow(roof.positions);
     }
 }
 
@@ -963,6 +1082,10 @@ void WorldScene::refresh(SceneDescription& scene, const render::Camera& camera, 
         dome.version = skyVersion;
         scene.putMesh(std::move(dome));
     }
+    const MeshData* skyline = scene.findMesh(kSkylineMeshId);
+    if (skyline == nullptr || skyline->version != skyVersion) {
+        scene.putMesh(buildSkyline(params.timeOfDaySeconds, params.weather));
+    }
     // WEATHER: the veil, on the same bucket. Built when the weather adds fog
     // over the clear day, dropped from the description the moment it does
     // not, so a clear frame's description is exactly a clear frame's.
@@ -1000,13 +1123,19 @@ void WorldScene::refresh(SceneDescription& scene, const render::Camera& camera, 
     // The chunks: recoloured when their version moved, instanced when near.
     const Vec3 eye = toScene(camera.x, camera.y, camera.z);
     const float reach = std::max(0.0F, params.maxDistance);
-    const float reachSq = reach * reach;
+    const float chunkReach = std::max(0.0F, params.chunkDistance);
+    const float reachSq = chunkReach * chunkReach;
     scene.instances.clear();
 
     Instance skyAt;
     skyAt.meshId = kSkyMeshId;
     skyAt.position = eye;
     scene.instances.push_back(skyAt);
+    // The skyline ring rides the eye beside the dome, after it.
+    Instance skylineAt;
+    skylineAt.meshId = kSkylineMeshId;
+    skylineAt.position = eye;
+    scene.instances.push_back(skylineAt);
     if (veiled) {
         // The veil rides the eye exactly as the dome does, and is drawn last.
         Instance veilAt;
@@ -1016,28 +1145,77 @@ void WorldScene::refresh(SceneDescription& scene, const render::Camera& camera, 
     }
 
     stats_.chunksInstanced = 0;
+    stats_.chunksFar = 0;
+    stats_.roofsInstanced = 0;
     for (std::int32_t cy = 0; cy < chunksDown_; ++cy) {
         for (std::int32_t cx = 0; cx < chunksAcross_; ++cx) {
             const ChunkKey key{cx, cy};
             Slot& s = slot(key);
-            if (s.geometry.triangleCount() == 0) {
+            if (s.geometry.totalTriangles() == 0) {
                 continue;
             }
-            const std::uint32_t version = chunkVersion(s.rebuildCount, lighting);
-            const std::uint32_t id = chunkMeshId(key);
-            const MeshData* have = scene.findMesh(id);
+            const float distanceSq = boxDistanceSq(eye.x, eye.z, s.minX, s.minZ, s.maxX, s.maxZ);
+            if (distanceSq > reachSq) {
+                // Out of reach: not drawn; the meshes stay for when it is near.
+                continue;
+            }
+            // THE LEVEL OF DETAIL. Far when past farDistance, near once within
+            // nearDistance, and the level it had in between.
+            const bool wasFar = s.useFar;
+            if (distanceSq > params.farDistance * params.farDistance) {
+                s.useFar = true;
+            } else if (distanceSq < params.nearDistance * params.nearDistance) {
+                s.useFar = false;
+            }
+            if (s.useFar && !s.farBuilt) {
+                s.farGeometry = buildChunkGeometry(*tiles_, *atlas_, materials_, key, s.rebuildCount,
+                                                   Detail::Far);
+                s.farBuilt = true;
+            }
+            const ChunkGeometry& drawn = s.useFar ? s.farGeometry : s.geometry;
+            const std::uint32_t bodyId = s.useFar ? farChunkMeshId(key) : chunkMeshId(key);
+            if (wasFar != s.useFar) {
+                scene.removeMesh(s.useFar ? chunkMeshId(key) : farChunkMeshId(key));
+            }
+            const std::uint32_t version =
+                chunkVersion(s.rebuildCount, lighting) ^ (s.useFar ? kFarVersionBit : 0U);
+            const MeshData* have = scene.findMesh(bodyId);
             if (have == nullptr || have->version != version) {
-                scene.putMesh(colourChunk(s.geometry, lighting));
+                scene.putMesh(colourChunk(drawn, lighting));
                 ++stats_.meshesRecoloured;
             }
-            if (boxDistanceSq(eye.x, eye.z, s.minX, s.minZ, s.maxX, s.maxZ) > reachSq) {
-                continue;
-            }
             Instance at;
-            at.meshId = id;
+            at.meshId = bodyId;
             at.textureId = kChunkAtlasTextureId;
             scene.instances.push_back(at);
             ++stats_.chunksInstanced;
+            if (s.useFar) {
+                ++stats_.chunksFar;
+            }
+            // The roofs, level by level: each is drawn while the eye is below
+            // its deck, and steps aside once you stand on it (the deck under
+            // it is flat, walkable and the sim's own).
+            for (const RoofLayer& roof : drawn.roofs) {
+                const std::uint32_t roofId = roofMeshId(key, roof.level);
+                const MeshData* haveRoof = scene.findMesh(roofId);
+                if (roof.triangleCount() == 0 || !params.pitchedRoofs) {
+                    if (haveRoof != nullptr) {
+                        scene.removeMesh(roofId);
+                    }
+                    continue;
+                }
+                if (haveRoof == nullptr || haveRoof->version != version) {
+                    scene.putMesh(colourRoof(drawn, roof, lighting));
+                    ++stats_.meshesRecoloured;
+                }
+                if (eye.y < roof.deckY - kRoofStepAside) {
+                    Instance roofAt;
+                    roofAt.meshId = roofId;
+                    roofAt.textureId = kChunkAtlasTextureId;
+                    scene.instances.push_back(roofAt);
+                    ++stats_.roofsInstanced;
+                }
+            }
         }
     }
 

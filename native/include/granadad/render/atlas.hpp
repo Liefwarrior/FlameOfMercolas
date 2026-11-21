@@ -58,6 +58,12 @@ inline constexpr std::size_t kFaceKindCount = 6;
 /// getilia-soak treatment mints, sorted as strings.
 [[nodiscard]] std::span<const std::string_view> materialIds() noexcept;
 
+/// The renderer's own base colour for a material registry id (the tone the
+/// procedural fallback tiles are painted in; the authored raws carry no
+/// colour). A mid grey for an id outside the registry. The 3D world's
+/// procedural surfaces (render3d/world_surfaces.hpp) are painted in it.
+[[nodiscard]] Rgb materialTone(std::uint16_t material) noexcept;
+
 /// The atlas. Immutable once built.
 class TileAtlas {
 public:

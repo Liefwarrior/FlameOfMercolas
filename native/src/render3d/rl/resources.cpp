@@ -24,6 +24,15 @@ Mesh uploadMesh(const MeshData& data) {
         std::memcpy(mesh.texcoords, data.texcoords.data(), vertexCount * 2 * sizeof(float));
     }
 
+    // The second texture coordinate of a mesh on a tiling atlas (attribute 5,
+    // vertexTexCoord2): the atlas cell its surface lives in. Absent is
+    // raylib's own default (zero), which the shader reads only when the
+    // bound texture is a tiling atlas.
+    if (data.texcoords2.size() == vertexCount * 2) {
+        mesh.texcoords2 = rlAlloc<float>(vertexCount * 2);
+        std::memcpy(mesh.texcoords2, data.texcoords2.data(), vertexCount * 2 * sizeof(float));
+    }
+
     // Normals for the scene shader (attribute 2, vertexNormal); absent means
     // up, which the shader's pass-through default never reads.
     mesh.normals = rlAlloc<float>(vertexCount * 3);
@@ -58,7 +67,16 @@ Texture2D uploadTexture(const TextureData& data) {
     image.mipmaps = 1;
     image.format = PIXELFORMAT_UNCOMPRESSED_R8G8B8A8;
     Texture2D texture = LoadTextureFromImage(image);
-    SetTextureFilter(texture, TEXTURE_FILTER_POINT);
+    if (data.mipmapped) {
+        // THE WORLD'S SURFACES: a mip chain and trilinear filtering, wrapped
+        // by the shader itself (it folds the coordinates into the atlas cell,
+        // so the sampler stays clamped and never reads a neighbour cell).
+        GenTextureMipmaps(&texture);
+        SetTextureFilter(texture, TEXTURE_FILTER_TRILINEAR);
+        SetTextureWrap(texture, TEXTURE_WRAP_CLAMP);
+    } else {
+        SetTextureFilter(texture, TEXTURE_FILTER_POINT);
+    }
     return texture;
 }
 }  // namespace rl

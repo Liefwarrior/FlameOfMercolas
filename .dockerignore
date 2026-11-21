@@ -59,6 +59,10 @@
 # hundred people LOOK would pass against a fallback that never ships.
 !content/art/sprites/**
 
+# The generated world materials (phase 4): the gate checks the committed PNGs
+# are what the generator writes.
+!content/art/oblivion/**
+
 # --- re-admitted: the spell raws the priest of the Flame teaches from ---
 # 11 KB, one file. S2's priest offers what the owner actually wrote, and the
 # whole reason that matters is the standing direction on magic: effects have to

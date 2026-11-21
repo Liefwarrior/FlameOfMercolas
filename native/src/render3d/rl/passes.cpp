@@ -14,11 +14,19 @@ bool Backend::Impl::drawMeshWith(std::uint32_t meshId, std::uint32_t textureId, 
     }
     material.maps[MATERIAL_MAP_DIFFUSE].color = colourOf(tint);
     material.maps[MATERIAL_MAP_DIFFUSE].texture = defaultTexture;
+    float cell[2] = {0.0F, 0.0F};
     if (textureId != 0) {
         const auto texture = textures.find(textureId);
         if (texture != textures.end()) {
             material.maps[MATERIAL_MAP_DIFFUSE].texture = texture->second.texture;
+            cell[0] = texture->second.tileU;
+            cell[1] = texture->second.tileV;
         }
+    }
+    // A tiling atlas tells the scene shader the size of one cell; every
+    // other texture leaves it at zero and is sampled as it always was.
+    if (scene.id != 0 && sceneAtlasCell >= 0) {
+        SetShaderValue(scene, sceneAtlasCell, cell, SHADER_UNIFORM_VEC2);
     }
     DrawMesh(mesh->second.mesh, material, transform);
     ++stats.instancesDrawn;
@@ -121,6 +129,8 @@ SceneStats Backend::drawScene(const SceneDescription& scene) {
         CachedTexture cached;
         cached.version = data.version;
         cached.texture = uploadTexture(data);
+        cached.tileU = data.tileU;
+        cached.tileV = data.tileV;
         impl.textures.emplace(data.id, cached);
         ++stats.texturesUploaded;
     }

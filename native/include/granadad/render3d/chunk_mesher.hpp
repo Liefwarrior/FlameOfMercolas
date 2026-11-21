@@ -18,11 +18,33 @@
 // the building the sim collides against is the building you see -- the
 // renderer plan's ruling that the tile mesh IS the building.
 //
-// UVs point into ONE atlas texture built from the tile pack (ChunkMaterials
-// below): the same 16x16 tile the software pass would have sampled for the
-// same cell and face, picked with the same variant key. A side face wears
-// its tile stretched over the whole face height, exactly as the software
-// pass stretches it.
+// THE SURFACES (world_surfaces.hpp). A face wears a procedural two-metre
+// surface -- ashlar, brick, cobble, planks, thatch -- tiled over WORLD-METRE
+// UVs (the vertex's own position projected on its plane), so a wall is a run
+// of courses and a floor a field of setts, not one 16-pixel tile stretched
+// over a storey. Per vertex: `texcoords` count repeats of the surface and
+// `texcoords2` name its cell in the atlas; the shader folds one into the other
+// (rl/shaders.cpp). A material with no surface of its own is drawn flat in its
+// tone (the per-vertex `tones`).
+//
+// PHASE 4, WHAT STANDS ON TOP OF THE TILE BOXES. The tile boxes above are the
+// BODY of a chunk, and every claim about faces below is about the body: a quad
+// per face, four vertices each. What phase 4 adds is DETAIL, kept apart so the
+// body stays the building the sim collides with, drawn exactly:
+//
+//   extra   trim and shapes in the same mesh as the body: a plinth under every
+//           street-level wall, a cornice or string course at every wall head,
+//           the posts of a door, ramps as wedges and stairs as steps, ceiling
+//           beams, quay coping, bollards and pilings;
+//   roofs   hipped roofs with eaves, soffits and chimneys over the district's
+//           building tops, one mesh per level, drawn only while the eye is
+//           below the deck (the Skyrunners run those decks, which stay flat
+//           and are the sim's truth: a pitched roof over a walkable plane is a
+//           picture of a roof, so it steps aside when you stand on it);
+//   far     Detail::Far, a second geometry of the same chunk for the far ring
+//           of the district: the body and the roofs, no trim, every face in its
+//           surface's mean colour, so a distant street holds its colour
+//           instead of shimmering into noise.
 //
 // THE LIGHT IS VERTEX COLOUR, in two stages that the version rules keep
 // apart:
@@ -55,6 +77,7 @@
 #include "granadad/render/lamps.hpp"
 #include "granadad/render/lighting.hpp"
 #include "granadad/render3d/scene.hpp"
+#include "granadad/render3d/world_surfaces.hpp"
 
 namespace granadad::sim {
 class TileQuery;
@@ -89,6 +112,30 @@ struct ChunkKey {
 [[nodiscard]] constexpr std::uint32_t chunkMeshId(ChunkKey key) noexcept {
     return kChunkMeshIdBase + static_cast<std::uint32_t>(key.cy * kChunksAcross + key.cx);
 }
+
+/// Levels a district may have in the id scheme below.
+inline constexpr std::int32_t kRoofLevels = 32;
+/// The id of one level's roof over a chunk: 2000 + (chunk * 32 + level).
+/// Inside the chunk range (1000..99999) and clear of the far meshes.
+inline constexpr std::uint32_t kRoofMeshIdBase = 2000;
+[[nodiscard]] constexpr std::uint32_t roofMeshId(ChunkKey key, std::int32_t level) noexcept {
+    return kRoofMeshIdBase +
+           static_cast<std::uint32_t>((key.cy * kChunksAcross + key.cx) * kRoofLevels + level);
+}
+/// The id of a chunk's FAR geometry (Detail::Far), beside the near one.
+inline constexpr std::uint32_t kFarMeshIdBase = 20000;
+[[nodiscard]] constexpr std::uint32_t farChunkMeshId(ChunkKey key) noexcept {
+    return kFarMeshIdBase + static_cast<std::uint32_t>(key.cy * kChunksAcross + key.cx);
+}
+
+/// The bit a far geometry's mesh version is flipped by, so a chunk that
+/// changes level of detail is re-uploaded even where its id is the same (a
+/// roof's is).
+inline constexpr std::uint32_t kFarVersionBit = 0x80000000U;
+
+/// How much of a chunk is meshed. Near is everything; Far is the body and the
+/// roofs only, every face flat in its surface's mean colour.
+enum class Detail : std::uint8_t { Near = 0, Far = 1 };
 
 /// What the colour stage needs besides the geometry.
 struct ChunkLighting {
@@ -149,51 +196,28 @@ struct ChunkLighting {
 // materials
 // ---------------------------------------------------------------------------
 
-/// A rectangle of the atlas texture, in 0..1 texture space.
-struct UvRect {
-    float u0 = 0.0F;
-    float v0 = 0.0F;
-    float u1 = 1.0F;
-    float v1 = 1.0F;
-};
-
-/// THE MATERIAL TABLE. Every tile image the pack holds, laid out on one
-/// RGBA texture (kAtlasColumns across), plus the lookup from (material,
-/// face, variant) to a rectangle of it -- the same lookup TileAtlas::tileFor
-/// answers for the software pass, so a cell wears the same tile in 3D.
+/// THE MATERIAL TABLE of the district: the procedural surface atlas
+/// (world_surfaces.hpp) and what a material wears in each role. Nothing in it
+/// reads the owner's 16-pixel tile pack any more; that pack stays the 2D
+/// sprites' and the old software pass's.
 ///
-/// HOW TO ADD A MATERIAL. A material is a raw under content/raws/materials;
-/// its registry id is its position in render::materialIds() (atlas.cpp's
-/// kMaterialIds, sorted), and the art for its faces is authored in
-/// content/art/custom/art-mapping.json under materials.<id>.forms
-/// (wall/floor/ramp/stair/block). Add the raw, add the id to kMaterialIds
-/// AND kFallbackTones in the same row, add the art (or let the procedural
-/// fallback tone stand in), and every cell of that material meshes with it
-/// -- nothing in this file changes. The colour of a face is the tile's own
-/// texels times the light; there is no second colour table to keep in step.
+/// HOW TO ADD A MATERIAL. A material is a raw under content/raws/materials; its
+/// registry id is its position in render::materialIds() (atlas.cpp). Give it a
+/// tone in the renderer's tone table (atlas.cpp's kFallbackTones) and, if it
+/// should wear a pattern, a row in surfaceFor() (world_surfaces.cpp); with
+/// neither it is drawn flat in its tone.
 class ChunkMaterials {
 public:
-    static constexpr int kAtlasColumns = 16;
-
-    /// Lays the atlas's tiles out on one texture. The procedural pack works
-    /// too (that is what the tests use: no art tree required).
+    /// Builds the surface atlas. The tile atlas is no longer read (kept in the
+    /// signature so every caller stands).
     [[nodiscard]] static ChunkMaterials fromAtlas(const render::TileAtlas& atlas);
 
     /// The texture, ready for SceneDescription::putTexture.
-    [[nodiscard]] const TextureData& texture() const noexcept { return texture_; }
-
-    /// The rectangle of the tile a cell's face wears. `variantKey` is
-    /// sideVariantKey() / flatVariantKey() of the cell.
-    [[nodiscard]] UvRect uv(std::uint16_t material, render::FaceKind face,
-                            std::uint32_t variantKey) const noexcept;
-
-    [[nodiscard]] std::size_t tileCount() const noexcept { return tileCount_; }
+    [[nodiscard]] const TextureData& texture() const noexcept { return surfaces_.texture(); }
+    [[nodiscard]] const SurfaceAtlas& surfaces() const noexcept { return surfaces_; }
 
 private:
-    const render::TileAtlas* atlas_ = nullptr;
-    TextureData texture_;
-    std::size_t tileCount_ = 0;
-    int rows_ = 0;
+    SurfaceAtlas surfaces_;
 };
 
 // ---------------------------------------------------------------------------
@@ -231,12 +255,14 @@ struct ChunkFace {
     std::uint32_t firstVertex = 0;
 };
 
-/// A chunk's geometry with its per-vertex light inputs. See the header.
-struct ChunkGeometry {
-    ChunkKey key;
-    std::uint32_t rebuildCount = 0;
+/// Vertex arrays with their per-vertex light inputs: what the colour stage
+/// reads. The body, the detail and every roof level are one of these each.
+struct SurfaceArrays {
     std::vector<float> positions;
+    /// Repeats of the face's surface: world metres over kSurfaceMetres.
     std::vector<float> texcoords;
+    /// The normalised origin of the surface's cell in the atlas.
+    std::vector<float> texcoords2;
     /// Per vertex: the face's unit normal, cut from its corners (the quad is
     /// counter-clockwise seen from the side the face looks to).
     std::vector<float> normals;
@@ -247,13 +273,42 @@ struct ChunkGeometry {
     std::vector<float> facing;
     /// Per vertex: the pack's water alpha for the face's wetness, 0 = dry.
     std::vector<float> wetAlpha;
+    /// Per vertex: the colour multiplier of the face's surface (1 for a
+    /// textured surface, the material's own tone for a flat one).
+    std::vector<float> tones;
+
+    [[nodiscard]] std::size_t vertexCount() const noexcept { return positions.size() / 3; }
+    [[nodiscard]] std::size_t triangleCount() const noexcept { return indices.size() / 3; }
+};
+
+/// One level's roof over a chunk. `deckY` is the height of the deck it covers:
+/// the world scene draws it only while the eye is lower.
+struct RoofLayer : SurfaceArrays {
+    std::int32_t level = 0;
+    float deckY = 0.0F;
+};
+
+/// A chunk's geometry with its per-vertex light inputs. See the header.
+struct ChunkGeometry : SurfaceArrays {
+    ChunkKey key;
+    std::uint32_t rebuildCount = 0;
+    Detail detail = Detail::Near;
     std::vector<ChunkFace> faces;
+    /// Trim and shapes drawn with the body (the header says which).
+    SurfaceArrays extra;
+    /// Roofs, one per level that has one, lowest first.
+    std::vector<RoofLayer> roofs;
     /// True if the 65535-vertex guard stopped emission early. Never in the
     /// Docks; a test says so.
     bool truncated = false;
 
-    [[nodiscard]] std::size_t vertexCount() const noexcept { return positions.size() / 3; }
-    [[nodiscard]] std::size_t triangleCount() const noexcept { return indices.size() / 3; }
+    [[nodiscard]] std::size_t totalTriangles() const noexcept {
+        std::size_t n = triangleCount() + extra.triangleCount();
+        for (const RoofLayer& roof : roofs) {
+            n += roof.triangleCount();
+        }
+        return n;
+    }
 };
 
 /// The faces a single cell emits, given its neighbours. The wall-vs-floor
@@ -266,11 +321,17 @@ struct ChunkGeometry {
 [[nodiscard]] ChunkGeometry buildChunkGeometry(const sim::TileQuery& tiles,
                                                const render::TileAtlas& atlas,
                                                const ChunkMaterials& materials, ChunkKey key,
-                                               std::uint32_t rebuildCount);
+                                               std::uint32_t rebuildCount,
+                                               Detail detail = Detail::Near);
 
-/// The colour stage: the geometry as a MeshData lit for `lighting`, under
-/// the chunk's id and the version chunkVersion() gives it.
+/// The colour stage: the body and its detail as a MeshData lit for
+/// `lighting`, under the chunk's id (farChunkMeshId for a Far geometry) and
+/// the version chunkVersion() gives it.
 [[nodiscard]] MeshData colourChunk(const ChunkGeometry& geometry, const ChunkLighting& lighting);
+
+/// The colour stage for one roof level of a chunk, under roofMeshId().
+[[nodiscard]] MeshData colourRoof(const ChunkGeometry& geometry, const RoofLayer& roof,
+                                  const ChunkLighting& lighting);
 
 /// Both stages in one call. Empty arrays (with the right id and version)
 /// for a chunk with nothing in it -- the VOID border.
