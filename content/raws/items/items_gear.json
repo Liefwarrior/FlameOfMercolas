@@ -1,0 +1,98 @@
+{
+  "schemaVersion": 1,
+  "notes": [
+    "PHASE 9 (OBLIVION-PLAN section 8.3): the things a docker FIGHTS in. Read after items_consumables.json and appended to the registry, because items.json is the owner's and is never edited; every row here comes after every row there, so no saved or hashed index of an earlier row moves.",
+    "Same columns as items.json, plus grip and model. slot adds offhand (a shield, and nothing else in this build) and hands (gloves).",
+    "grip is how a hand row is held: one or two. A two-handed row bares the other hand when it goes on, and a shield put on bares a two-handed row out of the hand (Kit::wear). An offhand row is always a shield. No other row names a grip.",
+    "Reach and speed are the GRIP's, never the row's (items.hpp gripTiming): one-handed is the shipped swing to the step, two-handed reaches a tile and five eighths and recovers a third slower.",
+    "damage on a hand row here is the row's OWN span, the one the player's blow rolls: at least one, low before high, no wider than eight. items.json's rows keep their class's span; these need not.",
+    "dr is flat damage reduction while worn, summed over every slot but the hand: a shield and a pair of gloves count like a coat. The floor of one point through any kit holds.",
+    "model is the render key: which prop the world, the viewmodel and the figure draw. Never hashed, never read by a rule. The cutlass and the mace are items.json's own rows (their ids are taken there), so they carry no model; their stands are here.",
+    "stands: a sea-chest's worth set out on the quay's north-east corner, where the boats put in, beside the boots items.json already stands at (158,61). Nobody's. Kept clear of the Tarwalk tiles the phase 8 crosshair cases stand on (152-156, 62-64).",
+    "Weights are in items.json's scale and each named loadout fits the base sheet's 240: a cap, a gambeson and a cutlass (83); the iron pot, the brigandine, the gauntlets, the round shield, the mace and the boots (212); the pot, the brigandine, the gauntlets and the maul (182).",
+    "Provenance: no canon row names these. A slop chest's run of quayside arms and harness, nothing a docker could not have seen come off a boat."
+  ],
+  "items": [
+    {
+      "id": "hatchet", "name": "HATCHET", "drams": 26, "royals": 8, "slot": "hand", "class": "edged",
+      "drawnCm": [0, 32],
+      "grip": "one", "damage": [9, 14], "model": "hatchet",
+      "desc": "A CLEAVER HEAD ON A SHORT HAFT. THE GALLEY'S, UNTIL IT WAS NOBODY'S."
+    },
+    {
+      "id": "maul", "name": "MAUL", "drams": 80, "royals": 12, "slot": "hand", "class": "blunt",
+      "drawnCm": [0, 44],
+      "grip": "two", "damage": [10, 16], "model": "maul",
+      "desc": "A CAULKER'S MAUL, IRON-BANDED ELM. BOTH HANDS, AND IT DRIVES WHATEVER IT MEETS."
+    },
+    {
+      "id": "boarding_axe", "name": "BOARDING AXE", "drams": 56, "royals": 34, "slot": "hand", "class": "edged",
+      "drawnCm": [0, 39],
+      "grip": "two", "damage": [13, 19], "model": "boarding_axe",
+      "desc": "A BEARDED HEAD ON A LONG HAFT, MADE FOR GOING OVER A RAIL. BOTH HANDS AND NO SECOND THOUGHT."
+    },
+    {
+      "id": "buckler", "name": "BUCKLER", "drams": 18, "royals": 9, "slot": "offhand", "class": "fists",
+      "drawnCm": [0, 10],
+      "grip": "shield", "dr": 1, "model": "buckler",
+      "desc": "AN IRON BOSS ON A DISC OF OAK, NO WIDER THAN A PLATE. IT TURNS WHAT IT MEETS."
+    },
+    {
+      "id": "round_shield", "name": "ROUND SHIELD", "drams": 32, "royals": 16, "slot": "offhand", "class": "fists",
+      "drawnCm": [0, 16],
+      "grip": "shield", "dr": 2, "model": "round_shield",
+      "desc": "PLANKED AND IRON-RIMMED, OFF SOMEBODY'S RAIL. IT TAKES AN ARM TO CARRY AND A LOT TO GET PAST."
+    },
+    {
+      "id": "wool_cap", "name": "WOOL CAP", "drams": 3, "royals": 1, "slot": "head", "class": "fists",
+      "drawnCm": [0, 16],
+      "dr": 0, "model": "wool_cap",
+      "desc": "A KNITTED WATCH CAP, STIFF WITH SALT. IT KEEPS THE EARS WARM AND NOTHING ELSE."
+    },
+    {
+      "id": "iron_pot", "name": "IRON POT", "drams": 26, "royals": 15, "slot": "head", "class": "fists",
+      "drawnCm": [0, 22],
+      "dr": 2, "model": "iron_pot",
+      "desc": "A PLAIN IRON CAP, DENTED ONCE AND HAMMERED OUT. A WATCHMAN'S, OR IT WAS."
+    },
+    {
+      "id": "gambeson", "name": "GAMBESON", "drams": 44, "royals": 14, "slot": "body", "class": "fists",
+      "drawnCm": [0, 9],
+      "dr": 2, "model": "gambeson",
+      "desc": "QUILTED LINEN STUFFED WITH TOW. IT DRINKS THE RAIN AND SOME OF A BLOW."
+    },
+    {
+      "id": "brigandine", "name": "BRIGANDINE", "drams": 60, "royals": 48, "slot": "body", "class": "fists",
+      "drawnCm": [0, 39],
+      "dr": 4, "model": "brigandine",
+      "desc": "CANVAS OVER RIVETED PLATES. HEAVY ON THE SHOULDERS, HEAVIER ON A BLADE."
+    },
+    {
+      "id": "work_gloves", "name": "WORK GLOVES", "drams": 4, "royals": 2, "slot": "hands", "class": "fists",
+      "drawnCm": [0, 14],
+      "dr": 1, "model": "work_gloves",
+      "desc": "STEVEDORE'S LEATHER, ROPE-BURNED THROUGH AT THE PALM. THEY SAVE THE KNUCKLES."
+    },
+    {
+      "id": "gauntlets", "name": "GAUNTLETS", "drams": 16, "royals": 22, "slot": "hands", "class": "fists",
+      "drawnCm": [0, 15],
+      "dr": 2, "model": "gauntlets",
+      "desc": "MAIL-BACKED LEATHER, A PLATE OVER EACH KNUCKLE. THE HANDS ARE THE FIRST THING A BLADE FINDS."
+    }
+  ],
+  "stands": [
+    { "item": "boarding_axe", "x": 157, "y": 58, "band": 19, "count": 1, "owned": false },
+    { "item": "maul", "x": 158, "y": 58, "band": 19, "count": 1, "owned": false },
+    { "item": "round_shield", "x": 159, "y": 58, "band": 19, "count": 1, "owned": false },
+    { "item": "buckler", "x": 160, "y": 58, "band": 19, "count": 1, "owned": false },
+    { "item": "hatchet", "x": 157, "y": 59, "band": 19, "count": 1, "owned": false },
+    { "item": "cutlass", "x": 158, "y": 59, "band": 19, "count": 1, "owned": false },
+    { "item": "mace", "x": 159, "y": 59, "band": 19, "count": 1, "owned": false },
+    { "item": "iron_pot", "x": 160, "y": 59, "band": 19, "count": 1, "owned": false },
+    { "item": "wool_cap", "x": 161, "y": 59, "band": 19, "count": 1, "owned": false },
+    { "item": "gambeson", "x": 157, "y": 60, "band": 19, "count": 1, "owned": false },
+    { "item": "brigandine", "x": 158, "y": 60, "band": 19, "count": 1, "owned": false },
+    { "item": "gauntlets", "x": 159, "y": 60, "band": 19, "count": 1, "owned": false },
+    { "item": "work_gloves", "x": 160, "y": 60, "band": 19, "count": 1, "owned": false }
+  ]
+}

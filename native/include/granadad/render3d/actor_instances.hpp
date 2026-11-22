@@ -74,6 +74,10 @@ inline constexpr std::uint32_t kActorKindCount = static_cast<std::uint32_t>(sim:
 inline constexpr std::uint8_t kActorRigTownswoman = static_cast<std::uint8_t>(kActorKindCount);
 inline constexpr std::uint32_t kActorRigVariantCount = 1;
 inline constexpr std::uint32_t kActorRigCount = kActorKindCount + kActorRigVariantCount;
+/// PHASE 9: a rig byte no glb is ever named for (actorRigFile is empty past
+/// kActorRigCount): the player's own figure (--sheet=gear) wears it, so it is
+/// always the procedural figure whose kit follows the Kit, in every build.
+inline constexpr std::uint8_t kActorRigProcedural = 255;
 
 /// The placeholder mesh for a kind of body. Ids in the actor range of
 /// scene.hpp. A variant rig has no mesh of its own: a body wearing one
@@ -267,7 +271,25 @@ void putActorRigs(SceneDescription& scene);
 /// PHASE 6. Puts the figure mesh of every person in `actors` (its mesh id is a
 /// figure's) into the description if it is not there already, so the
 /// description holds one mesh per look in sight. Call after actorInstances.
+/// PHASE 9: and the kit mesh of every body that wears one (gearKey), near or
+/// far as its body is.
 void putActorFigures(SceneDescription& scene, const std::vector<ActorInstance>& actors);
+
+/// PHASE 9. Dresses a person's instance in a loadout: the look the cap and
+/// the coat make (dressedLook) as lookKey and the body mesh, the GearLook's
+/// key as gearKey. `look` is the body's own (undressed) look; `far` picks
+/// the far body mesh. Nothing else of the instance moves.
+void dressInGear(ActorInstance& body, const ActorLook& look, const GearLook& gear, bool far);
+
+/// PHASE 9, VERIFICATION ONLY (--sheet=gear): THE PLAYER'S OWN FIGURE,
+/// dressed by `gear` (the caller's gearLookOf(kit, items)), standing
+/// `distance` tiles in front of the eye on the eye's own band surface and
+/// turned to face it, in the idle clip, skinned, white-tinted (the per-pixel
+/// light lights it). The body is playerFigureLook() at the Sailor's height;
+/// the rig byte is kActorRigProcedural, so the kit is drawn in every build.
+/// Pure over its arguments.
+[[nodiscard]] ActorInstance playerFigureInstance(const render::Camera& eye, float surfaceY, const GearLook& gear,
+                                                 float distance = 2.5F);
 
 /// The instance scale of a person of this kind: the figure table's height
 /// over the reference person's, the same ratio the sprite sheet draws at --

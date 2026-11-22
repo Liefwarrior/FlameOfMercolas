@@ -26,6 +26,7 @@
 #include <algorithm>
 #include <cctype>
 #include <cmath>
+#include <iterator>
 #include <string>
 #include <vector>
 
@@ -1221,27 +1222,28 @@ TEST_CASE("the pack is WORN then CARRIED, grouped by what a thing is, the worn u
     CHECK(rows.front().kind == Session::PackRow::Kind::Header);
     CHECK(labels.front() == "WORN");
     CHECK(session.dialogueView().cursor == 1);
-    // The hand, the back, the head, the feet and the belt: a row per slot
-    // the raws fill, the worn thing by name and a bare slot as NOTHING.
-    const int hand = rowIndexOf(labels, "IN HAND");
-    const int back = rowIndexOf(labels, "BODY");
+    // PHASE 9: the seven slots, always, in the screen's order -- the hand,
+    // the other hand, head, body, the hands, feet, the belt -- the worn
+    // thing by name and a bare slot as "-".
+    const int hand = rowIndexOf(labels, "HAND ");
     const int head = rowIndexOf(labels, "HEAD");
-    REQUIRE(hand > 0);
-    REQUIRE(back > hand);
-    REQUIRE(head > back);
+    const int back = rowIndexOf(labels, "BODY");
+    REQUIRE(hand == 1);
+    REQUIRE(head > hand);
+    REQUIRE(back > head);
     CHECK(labels[static_cast<std::size_t>(hand)].find("KNIFE 11-13 EDGE") != std::string::npos);
     CHECK(labels[static_cast<std::size_t>(back)].find("COAT  DR 2") != std::string::npos);
     // The headings are not rows to choose: the view says which they are.
     const DialogueViewState view = session.characterPanelView();
     CHECK(view.headerRows.size() == 4);
     CHECK(std::find(view.headerRows.begin(), view.headerRows.end(), 0) != view.headerRows.end());
-    CHECK(labels[static_cast<std::size_t>(head)].find("NOTHING") != std::string::npos);
+    CHECK(labels[static_cast<std::size_t>(head)] == "HEAD      -");
     // CARRIED, then each group that has something, in the enum's order. The
     // knife and the coat are worn, so neither is listed again.
     const int carried = rowIndexOf(labels, "CARRIED");
     const int consumables = rowIndexOf(labels, "CONSUMABLES");
     const int gear = rowIndexOf(labels, "GEAR");
-    REQUIRE(carried > head);
+    REQUIRE(carried == 1 + static_cast<int>(std::size(sim::kSlotScreenOrder)));
     REQUIRE(consumables > carried);
     REQUIRE(gear > consumables);
     CHECK(rowIndexOf(labels, "WEAPONS") < 0);
@@ -1312,18 +1314,26 @@ TEST_CASE("the detail pane is the sim's inspect record: the numbers, THEIRS, and
     REQUIRE(pane.verbs.size() == 3);
     CHECK(pane.verbs.front().label == "BARE");
     CHECK(pane.verbs.back().label == "DROP");
+    // A worn row compares with nothing: it IS what is worn.
+    CHECK(pane.compare.empty());
+    // A bare slot says what it is for and has no verbs: the other hand,
+    // then the head (PHASE 9's screen order).
+    session.moveTopicCursor(1);
+    pane = session.inspectPaneView();
+    CHECK(pane.title == "IN THE OTHER HAND");
+    CHECK(pane.verbs.empty());
+    CHECK(pane.prose.find("NOTHING WORN") == 0);
+    session.moveTopicCursor(1);
+    pane = session.inspectPaneView();
+    CHECK(pane.title == "ON THE HEAD");
+    CHECK(pane.verbs.empty());
+    CHECK(pane.prose.find("NOTHING WORN") == 0);
     // Down to the coat: DR, no damage.
     session.moveTopicCursor(1);
     pane = session.inspectPaneView();
     CHECK(pane.title == "COAT");
     CHECK(fact("ARMOUR") == "TURNS 2 A BLOW");
     CHECK(fact("DAMAGE").empty());
-    // A bare slot says what it is for and has no verbs.
-    session.moveTopicCursor(1);
-    pane = session.inspectPaneView();
-    CHECK(pane.title == "ON THE HEAD");
-    CHECK(pane.verbs.empty());
-    CHECK(pane.prose.find("NOTHING WORN") == 0);
     // A stack: the count, the weight of one and of all, the use and its verb.
     int guard = 0;
     while (session.inspectPaneView().title != "BREAD" && guard++ < 40) {
@@ -1374,16 +1384,17 @@ TEST_CASE("ENTER on a consumable uses it, ENTER on a coat bares it, X drops one,
     REQUIRE(at >= 0);
     REQUIRE(static_cast<std::size_t>(at) < rows.size());
     CHECK(rows[static_cast<std::size_t>(at)].kind != Session::PackRow::Kind::Header);
-    // The coat: up two rows from the top, ENTER bares it.
+    // The coat: the BODY row, three under the hand (PHASE 9: HAND, OFF-HAND,
+    // HEAD, BODY), ENTER bares it.
     session.toggleCharacterPack();
     session.toggleCharacterPack();
-    session.moveTopicCursor(1);
+    session.moveTopicCursor(3);
     REQUIRE(session.inspectPaneView().title == "COAT");
     session.chooseTopic(0);
     CHECK_FALSE(tavern.kit().isWorn(tavern.items().indexOf("coat")));
     // It is carried now, under ARMOUR, and no longer a worn row.
     CHECK(rowIndexOf(session.characterRows(), "ARMOUR") > 0);
-    CHECK(rowIndexOf(session.characterRows(), "BODY     NOTHING") >= 0);
+    CHECK(rowIndexOf(session.characterRows(), "BODY      -") >= 0);
 }
 
 TEST_CASE("a lifted thing is THEIRS in the list and on the detail pane, and a dropped one is not") {
@@ -1490,4 +1501,296 @@ TEST_CASE("an item table's extra file adds rows AFTER the first table's, so no e
         INFO("consumable: ", id);
         CHECK(shipped.itemPiece(id) != nullptr);
     }
+}
+
+// ---------------------------------------------------------------------------
+// PHASE 9 -- WEAPONS AND EQUIPMENT: the seven slot rows and the comparison
+// ---------------------------------------------------------------------------
+
+namespace {
+
+/// A session at the Gull's bar with an empty Kit, the pack open.
+Session gearSession() {
+    Session session(gullAt(14, sim::gull::kBartenderX, sim::gull::kBarY - 1, sim::gull::kGroundBand));
+    session.toggleCharacter();
+    session.toggleCharacterPack();
+    return session;
+}
+
+/// Walks the pack's cursor down (with the arrows' own wrap) onto the first
+/// row whose label starts with `prefix`.
+[[nodiscard]] bool cursorOnPackRow(Session& session, const std::string& prefix) {
+    for (int guard = 0; guard < 64; ++guard) {
+        const std::vector<std::string> rows = session.characterRows();
+        const int at = session.dialogueView().cursor;
+        if (at >= 0 && static_cast<std::size_t>(at) < rows.size() &&
+            rows[static_cast<std::size_t>(at)].rfind(prefix, 0) == 0) {
+            return true;
+        }
+        session.moveTopicCursor(1);
+    }
+    return false;
+}
+
+/// The first row the raws hold for a slot (a two-hander when asked, for the
+/// hand), skipping `notId`. Read off the registry so the case holds whatever
+/// numbers the gear file authors.
+[[nodiscard]] const sim::ItemDef* firstRowFor(const sim::ItemRegistry& items, sim::ItemSlot slot,
+                                              bool twoHanded = false,
+                                              std::string_view notId = {}) {
+    for (const sim::ItemDef& def : items.items()) {
+        if (def.slot != slot || def.fixed || def.id == notId) {
+            continue;
+        }
+        if (slot == sim::ItemSlot::Hand && (def.grip == sim::WeaponGrip::TwoHanded) != twoHanded) {
+            continue;
+        }
+        return &def;
+    }
+    return nullptr;
+}
+
+[[nodiscard]] std::string spanText(std::int32_t lo, std::int32_t hi) {
+    return std::to_string(lo) + "-" + std::to_string(hi);
+}
+
+}  // namespace
+
+TEST_CASE("PHASE 9: the pack's WORN block is the seven slots in the screen's order, a dash on a bare one, fists in a bare hand") {
+    Session session = gearSession();
+    const std::vector<Session::PackRow> rows = session.packRows();
+    const std::vector<std::string> labels = session.characterRows();
+    REQUIRE(rows.size() == labels.size());
+    REQUIRE(rows.size() > std::size(sim::kSlotScreenOrder) + 1);
+    CHECK(labels[0] == "WORN");
+    // Row 1 onward: HAND, OFF-HAND, HEAD, BODY, HANDS, FEET, TRINKET, every
+    // one a slot row even with nothing on it, then CARRIED.
+    for (std::size_t i = 0; i < std::size(sim::kSlotScreenOrder); ++i) {
+        const Session::PackRow& row = rows[1 + i];
+        INFO("row ", 1 + i, ": ", labels[1 + i]);
+        CHECK(row.kind == Session::PackRow::Kind::Slot);
+        CHECK(row.slot == sim::kSlotScreenOrder[i]);
+        CHECK(labels[1 + i].rfind(std::string(sim::itemSlotShortWord(row.slot)) + " ", 0) == 0);
+    }
+    CHECK(labels[1] == "HAND      FISTS 3-5 IMPACT");
+    CHECK(labels[2] == "OFF-HAND  -");
+    CHECK(labels[3] == "HEAD      -");
+    CHECK(labels[4] == "BODY      -");
+    CHECK(labels[5] == "HANDS     -");
+    CHECK(labels[6] == "FEET      -");
+    CHECK(labels[7] == "TRINKET   -");
+    CHECK(labels[8] == "CARRIED");
+    // The sheet prints the same seven strings, in the same order.
+    session.toggleCharacterPack();
+    const std::vector<std::string> sheet = session.characterRows();
+    const int hand = rowIndexOf(sheet, "HAND ");
+    REQUIRE(hand > 0);
+    const std::size_t first = static_cast<std::size_t>(hand);
+    for (std::size_t i = 0; i < std::size(sim::kSlotScreenOrder); ++i) {
+        CHECK(sheet[first + i] == labels[1 + i]);
+    }
+    // And the row after the block is LOAD, the carried rows after that:
+    // the tile's verbs count from there (characterKitOffset), off the rows.
+    CHECK(sheet[first + std::size(sim::kSlotScreenOrder)].rfind("LOAD  ", 0) == 0);
+    CHECK(session.characterKitOffset() == first + std::size(sim::kSlotScreenOrder) + 1);
+}
+
+TEST_CASE("PHASE 9: a shield and gloves are worn rows of their own, and every bare slot's pane says what it is for") {
+    Session session = gearSession();
+    sim::Tavern& tavern = session.tavern();
+    const sim::ItemDef* shield = firstRowFor(tavern.items(), sim::ItemSlot::OffHand);
+    const sim::ItemDef* gloves = firstRowFor(tavern.items(), sim::ItemSlot::Hands);
+    REQUIRE(shield != nullptr);
+    REQUIRE(gloves != nullptr);
+    CHECK(shield->grip == sim::WeaponGrip::Shield);
+    // Bare: the other hand's pane, with no verbs (nothing to press).
+    REQUIRE(cursorOnPackRow(session, "OFF-HAND"));
+    InspectPane pane = session.inspectPaneView();
+    CHECK(pane.title == "IN THE OTHER HAND");
+    CHECK(pane.kind == "NOTHING WORN");
+    CHECK(pane.verbs.empty());
+    REQUIRE(cursorOnPackRow(session, "HANDS "));
+    CHECK(session.inspectPaneView().title == "ON THE HANDS");
+    // Worn, each sits in its own row with its DR, and a shield is HELD.
+    REQUIRE(tavern.giveItem(shield->id));
+    REQUIRE(tavern.giveItem(gloves->id));
+    REQUIRE(tavern.wearItem(tavern.items().indexOf(shield->id)).result == sim::ServiceResult::Served);
+    REQUIRE(tavern.wearItem(tavern.items().indexOf(gloves->id)).result == sim::ServiceResult::Served);
+    const auto wornLine = [](const std::string& word, const sim::ItemDef& def) {
+        std::string line = word;
+        line.append(10 - line.size(), ' ');
+        line += def.name;
+        if (def.dr > 0) {
+            line += "  DR " + std::to_string(def.dr);
+        }
+        return line;
+    };
+    const std::vector<std::string> labels = session.characterRows();
+    CHECK(labels[2] == wornLine("OFF-HAND", *shield));
+    CHECK(labels[5] == wornLine("HANDS", *gloves));
+    REQUIRE(cursorOnPackRow(session, "OFF-HAND"));
+    pane = session.inspectPaneView();
+    CHECK(pane.title == shield->name);
+    CHECK(pane.kind == "ARMOUR  IN THE OTHER HAND");
+    REQUIRE_FALSE(pane.verbs.empty());
+    CHECK(pane.verbs.front().label == "BARE");
+    // Both count toward what is worn: every slot but the hand turns a blow.
+    CHECK(tavern.wornDr() == shield->dr + gloves->dr);
+    // The sheet marks the shield HELD and the gloves WORN.
+    session.toggleCharacterPack();
+    bool held = false;
+    bool gloved = false;
+    for (const std::string& row : session.characterRows()) {
+        if (row.rfind(shield->name + " ", 0) == 0 && row.find("  HELD") != std::string::npos) {
+            held = true;
+        }
+        if (row.rfind(gloves->name + " ", 0) == 0 && row.find("  WORN") != std::string::npos) {
+            gloved = true;
+        }
+    }
+    CHECK(held);
+    CHECK(gloved);
+}
+
+TEST_CASE("PHASE 9: the comparison line is the sim's numbers -- DR a -> b, DMG lo-hi -> lo-hi, and TAKES OFF what the press bares") {
+    // The items.json rows: their numbers are pinned elsewhere (the coat's DR
+    // 2, the hood's 1, the cudgel's 7-9, the knife's 11-13).
+    Session session = gearSession();
+    sim::Tavern& tavern = session.tavern();
+    REQUIRE(tavern.giveItem("coat"));
+    REQUIRE(tavern.giveItem("hood"));
+    REQUIRE(tavern.giveItem("cudgel"));
+    REQUIRE(tavern.giveItem("knife"));
+    REQUIRE(tavern.wearItem(tavern.items().indexOf("coat")).result == sim::ServiceResult::Served);
+    REQUIRE(tavern.wearItem(tavern.items().indexOf("cudgel")).result == sim::ServiceResult::Served);
+    // A piece for a bare slot: the DR it adds, nothing taken off.
+    REQUIRE(cursorOnPackRow(session, "HOOD "));
+    InspectPane pane = session.inspectPaneView();
+    REQUIRE(pane.title == "HOOD");
+    CHECK(pane.compare == std::vector<std::string>{"DR 2 -> 3"});
+    // A one-hander for a one-hander: the DR line first, unmoved, then the
+    // span, then what comes off. Reach and speed say nothing -- both are
+    // one-handed, and the line only speaks of what changes.
+    REQUIRE(cursorOnPackRow(session, "KNIFE "));
+    pane = session.inspectPaneView();
+    REQUIRE(pane.title == "KNIFE");
+    CHECK(pane.compare ==
+          std::vector<std::string>{"DR 2 -> 2", "DMG 7-9 -> 11-13", "TAKES OFF HAND CUDGEL"});
+    // A row already worn compares with nothing; a thing with no slot neither.
+    REQUIRE(cursorOnPackRow(session, "HAND "));
+    CHECK(session.inspectPaneView().compare.empty());
+    REQUIRE(cursorOnPackRow(session, "PICKS "));
+    CHECK(session.inspectPaneView().compare.empty());
+    // A second head piece over the hood: the hood comes off, by name.
+    const sim::ItemDef* cap = firstRowFor(tavern.items(), sim::ItemSlot::Head, false, "hood");
+    REQUIRE(cap != nullptr);
+    REQUIRE(tavern.wearItem(tavern.items().indexOf("hood")).result == sim::ServiceResult::Served);
+    REQUIRE(tavern.giveItem(cap->id));
+    REQUIRE(cursorOnPackRow(session, cap->name + " "));
+    pane = session.inspectPaneView();
+    REQUIRE(pane.title == cap->name);
+    CHECK(pane.compare == std::vector<std::string>{"DR 3 -> " + std::to_string(2 + cap->dr),
+                                                   "TAKES OFF HEAD HOOD"});
+    // The press does what the line said.
+    session.chooseTopic(0);
+    CHECK(tavern.kit().isWorn(tavern.items().indexOf(cap->id)));
+    CHECK_FALSE(tavern.kit().isWorn(tavern.items().indexOf("hood")));
+    CHECK(tavern.wornDr() == 2 + cap->dr);
+}
+
+TEST_CASE("PHASE 9: a two-hander warns it takes the shield off, does, and a shield warns it takes the two-hander out of the hands") {
+    Session session = gearSession();
+    sim::Tavern& tavern = session.tavern();
+    const sim::ItemDef* shield = firstRowFor(tavern.items(), sim::ItemSlot::OffHand);
+    const sim::ItemDef* twoHander = firstRowFor(tavern.items(), sim::ItemSlot::Hand, true);
+    REQUIRE(shield != nullptr);
+    REQUIRE(twoHander != nullptr);
+    REQUIRE(tavern.giveItem("knife"));
+    REQUIRE(tavern.giveItem(shield->id));
+    REQUIRE(tavern.giveItem(twoHander->id));
+    REQUIRE(tavern.wearItem(tavern.items().indexOf("knife")).result == sim::ServiceResult::Served);
+    REQUIRE(tavern.wearItem(tavern.items().indexOf(shield->id)).result == sim::ServiceResult::Served);
+    // THE TWO-HANDER'S ROW, before the press: the shield's DR lost, the span,
+    // a longer reach and a slower swing (gripTiming's own table), and both
+    // hands' things named coming off.
+    REQUIRE(sim::gripTiming(sim::WeaponGrip::TwoHanded).reachQ8 >
+            sim::gripTiming(sim::WeaponGrip::OneHanded).reachQ8);
+    REQUIRE(sim::gripTiming(sim::WeaponGrip::TwoHanded).recoverySteps >
+            sim::gripTiming(sim::WeaponGrip::OneHanded).recoverySteps);
+    REQUIRE(cursorOnPackRow(session, twoHander->name + " "));
+    InspectPane pane = session.inspectPaneView();
+    REQUIRE(pane.title == twoHander->name);
+    CHECK(pane.compare ==
+          std::vector<std::string>{"DR " + std::to_string(shield->dr) + " -> 0",
+                                   "DMG 11-13 -> " + spanText(twoHander->damageLo, twoHander->damageHi),
+                                   "REACH LONGER", "SPEED SLOWER", "TAKES OFF HAND KNIFE",
+                                   "TAKES OFF OFF-HAND " + shield->name});
+    bool twoHands = false;
+    for (const InspectFact& fact : pane.facts) {
+        twoHands = twoHands || (fact.label == "GRIP" && fact.value == "TWO HANDS");
+    }
+    CHECK(twoHands);
+    // ENTER: what it said. The shield is carried again, the other hand bare,
+    // and the room's line names the shield coming off.
+    session.chooseTopic(0);
+    CHECK(tavern.kit().isWorn(tavern.items().indexOf(twoHander->id)));
+    CHECK(tavern.kit().worn(sim::ItemSlot::OffHand) < 0);
+    CHECK(tavern.kit().count(tavern.items().indexOf(shield->id)) == 1);
+    CHECK(session.lastMessage().find(shield->name + " - OFF.") != std::string::npos);
+    // The bare other hand says why it is bare.
+    REQUIRE(cursorOnPackRow(session, "OFF-HAND"));
+    CHECK(session.characterRows()[2] == "OFF-HAND  -");
+    pane = session.inspectPaneView();
+    CHECK(pane.prose == "BOTH HANDS ARE ON THE " + twoHander->name + ". A SHIELD TAKES IT OFF.");
+    // THE SHIELD'S ROW now: its DR back, the two-hander out of the hands
+    // (fists' 3-5), the reach shorter and the swing faster, and the
+    // two-hander named coming off.
+    REQUIRE(cursorOnPackRow(session, shield->name + " "));
+    pane = session.inspectPaneView();
+    REQUIRE(pane.title == shield->name);
+    CHECK(pane.compare ==
+          std::vector<std::string>{"DR 0 -> " + std::to_string(shield->dr),
+                                   "DMG " + spanText(twoHander->damageLo, twoHander->damageHi) +
+                                       " -> 3-5",
+                                   "REACH SHORTER", "SPEED FASTER",
+                                   "TAKES OFF HAND " + twoHander->name});
+    session.chooseTopic(0);
+    CHECK(tavern.kit().isWorn(tavern.items().indexOf(shield->id)));
+    CHECK(tavern.kit().worn(sim::ItemSlot::Hand) < 0);
+    CHECK(tavern.playerWeapon() == sim::Weapon::Fists);
+}
+
+TEST_CASE("PHASE 9: the comparison block is drawn on the pane, over the foot") {
+    Session session = gearSession();
+    sim::Tavern& tavern = session.tavern();
+    REQUIRE(tavern.giveItem("coat"));
+    REQUIRE(tavern.giveItem("hood"));
+    REQUIRE(tavern.wearItem(tavern.items().indexOf("coat")).result == sim::ServiceResult::Served);
+    REQUIRE(cursorOnPackRow(session, "HOOD "));
+    REQUIRE_FALSE(session.inspectPaneView().compare.empty());
+    const MenuTileLayout layout = menuTileLayout(960, 540);
+    REQUIRE(layout.usable);
+    auto shot = [&](bool compare) {
+        MenuTileState tiles;
+        tiles.open = true;
+        tiles.character = session.characterPanelView();
+        tiles.inspect = session.inspectPaneView();
+        if (!compare) {
+            tiles.inspect.compare.clear();
+        }
+        tiles.map = session.mapPanelView();
+        tiles.letters = session.lettersPanelView();
+        tiles.journal = session.journalPanelView();
+        tiles.focus = kMenuFocusCharacter;
+        Framebuffer frame(960, 540);
+        drawMenuTiles(frame, tiles);
+        std::uint64_t paneSum = 0;
+        for (int y = layout.inspect.y; y < layout.inspect.bottom(); ++y) {
+            for (int x = layout.inspect.x; x < layout.inspect.right(); ++x) {
+                paneSum = paneSum * 1099511628211ULL + frame.pixels()[frame.index(x, y)];
+            }
+        }
+        return paneSum;
+    };
+    CHECK(shot(true) != shot(false));
 }

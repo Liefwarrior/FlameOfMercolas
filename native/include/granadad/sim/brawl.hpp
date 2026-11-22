@@ -277,6 +277,25 @@ struct Blow {
                           std::int32_t fatigueTermQ8 = kFatigueTermFullQ8,
                           std::int32_t chargeQ8 = kSwingChargeQ8) noexcept;
 
+/// The widest span a thing in the hand may author, hi - lo. A row that rolls
+/// across more than this is a lottery, not a weapon.
+inline constexpr std::int32_t kStrikeSpanWidthMax = 8;
+
+/// strike() over an authored span instead of the class's own (PHASE 9: a
+/// thing in the hand rolls ITS span -- a maul is not a cudgel). The variance
+/// is carved off the same bits strike() always carved it from,
+/// lo + ((roll >> 3) % (hi - lo + 1)), so for a span of three (every class
+/// span, base..base+kStrikeVarianceMax) it is (roll >> 3) % 3 to the bit and
+/// strike() is exactly this called with the class's span. `weapon` still
+/// decides everything that is not the number: the Evictor's crown band, and
+/// (in the caller) which side of the brawl line the fight is on. A span with
+/// hi below lo rolls lo. No new draw: the same roll, read the same way.
+[[nodiscard]] Blow strikeWithSpan(Weapon weapon, std::int32_t damageLo, std::int32_t damageHi,
+                                  Fighter& target, std::uint64_t roll,
+                                  std::int32_t damageBonus = 0,
+                                  std::int32_t fatigueTermQ8 = kFatigueTermFullQ8,
+                                  std::int32_t chargeQ8 = kSwingChargeQ8) noexcept;
+
 // ---------------------------------------------------------------------------
 // the guard
 // ---------------------------------------------------------------------------

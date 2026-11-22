@@ -1155,9 +1155,11 @@ void Session::drawFrame(Framebuffer& target) const {
     // nothing is in reach (aimVerb empty), which drawAim's interact-only
     // early-return could not do. The fraction is the hold's progress toward the
     // hard threshold, the tier and the on-line flag are the sim's live reads.
+    // PHASE 9: the threshold is the held grip's (playerHardHoldSteps), so a
+    // two-hander's reticle fills over its longer wind, never past it.
     {
         float held = static_cast<float>(tavern_->playerChargeSteps()) /
-                     static_cast<float>(sim::kHardSwingHoldSteps);
+                     static_cast<float>(tavern_->playerHardHoldSteps());
         held = held < 0.0F ? 0.0F : (held > 1.0F ? 1.0F : held);
         hud.aimChargeFrac = held;
         hud.aimChargeHard = tavern_->playerChargeHard();

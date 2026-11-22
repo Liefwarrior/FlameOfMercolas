@@ -134,6 +134,16 @@ std::int32_t blockedDamage(std::int32_t damage, std::int32_t shieldwallLevel) no
 Blow strike(Weapon weapon, Fighter& target, std::uint64_t roll,
             std::int32_t damageBonus, std::int32_t fatigueTermQ8,
             std::int32_t chargeQ8) noexcept {
+    // The class's own span -- base..base+kStrikeVarianceMax, three wide -- so
+    // the carving below is (roll >> 3) % 3, the shipped variance to the bit.
+    const std::int32_t base = baseDamage(weapon);
+    return strikeWithSpan(weapon, base, base + kStrikeVarianceMax, target, roll, damageBonus,
+                          fatigueTermQ8, chargeQ8);
+}
+
+Blow strikeWithSpan(Weapon weapon, std::int32_t damageLo, std::int32_t damageHi,
+                    Fighter& target, std::uint64_t roll, std::int32_t damageBonus,
+                    std::int32_t fatigueTermQ8, std::int32_t chargeQ8) noexcept {
     Blow blow;
     // One in eight swings misses outright. A brawl that never whiffs reads as a
     // spreadsheet; one that whiffs half the time reads as broken.
@@ -158,7 +168,13 @@ Blow strike(Weapon weapon, Fighter& target, std::uint64_t roll,
     // a fist fight take a dozen exchanges instead of two. The MGT bonus rides
     // the same scale (0 at base 40, +4 at the ceiling) and the floor keeps a
     // landed blow a blow whatever a future negative bonus does.
-    const std::int32_t variance = static_cast<std::int32_t>((roll >> 3) % 3U);
+    //
+    // PHASE 9: the span is the caller's (strike() hands in the class's own,
+    // three wide); the carving is the same bits, (roll >> 3) % width, so a
+    // three-wide span is the shipped (roll >> 3) % 3 exactly.
+    const std::int32_t width = damageHi >= damageLo ? damageHi - damageLo + 1 : 1;
+    const std::int32_t variance =
+        static_cast<std::int32_t>((roll >> 3) % static_cast<std::uint64_t>(width));
     blow.landed = true;
     // ACTION-COMBAT BUILD: the charge tier scales the ROLLED weapon damage
     // (base + variance) before the MGT bonus and the floor. ((base+variance) *
@@ -167,7 +183,7 @@ Blow strike(Weapon weapon, Fighter& target, std::uint64_t roll,
     // widening multiply then a truncating shift, once, so no rounding drifts;
     // the bonus and the max(1,..) floor land after, exactly as before, and a
     // weak arm still bruises. No new draw: the tier is a parameter.
-    const std::int32_t rolled = baseDamage(weapon) + variance;
+    const std::int32_t rolled = damageLo + variance;
     const std::int32_t scaled =
         static_cast<std::int32_t>((static_cast<std::int64_t>(rolled) * chargeQ8) >> 8);
     blow.damage = std::max(1, scaled + damageBonus);

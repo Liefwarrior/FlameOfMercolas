@@ -701,6 +701,555 @@ void putFigure(SceneDescription& scene, const ActorLook& look, bool far) {
 }
 
 // ---------------------------------------------------------------------------
+// PHASE 9: THE KIT
+// ---------------------------------------------------------------------------
+
+ActorLook dressedLook(ActorLook look, const GearLook& gear) noexcept {
+    switch (gear.head) {
+        case GearHead::None:
+            break;
+        case GearHead::WoolCap:
+            look.headGear = static_cast<std::uint8_t>(HeadGear::KnitCap);
+            break;
+        case GearHead::IronPot:
+            look.headGear = static_cast<std::uint8_t>(HeadGear::Helmet);
+            break;
+        case GearHead::Hood:
+            look.headGear = static_cast<std::uint8_t>(HeadGear::Hood);
+            break;
+        case GearHead::Cap:
+            look.headGear = static_cast<std::uint8_t>(HeadGear::FlatCap);
+            break;
+    }
+    switch (gear.body) {
+        case GearBody::Coat:
+            look.coatStyle = static_cast<std::uint8_t>(CoatStyle::Coat);
+            break;
+        case GearBody::None:
+        case GearBody::Gambeson:
+        case GearBody::Brigandine:
+            break;
+    }
+    return look;
+}
+
+ActorLook playerFigureLook() noexcept {
+    ActorLook look;
+    look.type = static_cast<std::uint8_t>(sim::WardType::Sailor);
+    look.sex = 0;
+    look.build = 2;
+    look.skin = 3;
+    look.hairStyle = 1;
+    look.hairColour = 2;
+    look.coatColour = 0;
+    look.legColour = 0;
+    look.headGear = static_cast<std::uint8_t>(HeadGear::None);
+    look.coatStyle = static_cast<std::uint8_t>(CoatStyle::Tunic);
+    look.apron = 0;
+    return look;
+}
+
+namespace {
+
+// The kit's palette: what the things are made of, never the body's kind.
+constexpr Rgba8 kQuilt = rgb(192, 178, 146);
+constexpr Rgba8 kQuiltSeam = rgb(132, 118, 92);
+constexpr Rgba8 kBrigCloth = rgb(110, 46, 40);
+constexpr Rgba8 kRivet = rgb(182, 166, 126);
+constexpr Rgba8 kGloveLeather = rgb(124, 92, 60);
+constexpr Rgba8 kGauntletIron = rgb(126, 132, 142);
+constexpr Rgba8 kBootBrown = rgb(88, 58, 36);
+constexpr Rgba8 kHobnailLeather = rgb(62, 48, 38);
+constexpr Rgba8 kSoleIron = rgb(72, 72, 76);
+constexpr Rgba8 kSteel = rgb(182, 188, 198);
+constexpr Rgba8 kGlass = rgb(62, 94, 64);
+constexpr Rgba8 kShieldPaint = rgb(124, 50, 40);
+constexpr Rgba8 kShieldWood = rgb(118, 88, 56);
+
+/// One breakpoint of a body surface: a ring's height and radii.
+struct Section {
+    float y;
+    float rx;
+    float rz;
+};
+
+/// The widest any segment of `s` is at `y` (both sides of a step count),
+/// folded into rx/rz. Nothing when `y` is outside the surface.
+void widestAt(const std::vector<Section>& s, float y, float& rx, float& rz) noexcept {
+    for (std::size_t i = 0; i + 1 < s.size(); ++i) {
+        if (y < s[i].y || y > s[i + 1].y) {
+            continue;
+        }
+        const float span = s[i + 1].y - s[i].y;
+        const float t = span > 0.0F ? (y - s[i].y) / span : 1.0F;
+        rx = std::max(rx, s[i].rx + (s[i + 1].rx - s[i].rx) * t);
+        rz = std::max(rz, s[i].rz + (s[i + 1].rz - s[i].rz) * t);
+        if (span <= 0.0F) {
+            rx = std::max(rx, s[i].rx);
+            rz = std::max(rz, s[i].rz);
+        }
+    }
+}
+
+/// THE JACK: a shell over the torso from just under the belt's top to the
+/// collar. Its every ring stands `m` proud of the WIDEST thing the body has
+/// at that height (the torso's own rings, the belt, a coat's skirt top, an
+/// apron's bib) and it has a ring at every height any of those has one, so
+/// between two rings the body is a straight line under a straight line and
+/// the clearance holds all the way: a quilted coat that never shows the
+/// shirt through it, at any distance the depth buffer can see.
+void buildJack(const Parts& parts, const ActorLook& look, const Dims& d, GearBody body, int sides, bool far) {
+    const bool quilted = body == GearBody::Gambeson;
+    const float m = quilted ? 0.028F : 0.020F;
+    const float bustRz = d.chestRz + (look.sex != 0 ? 0.014F : 0.0F);
+    const float belly = look.build == 3 ? 0.022F : 0.0F;
+    const auto style = static_cast<CoatStyle>(look.coatStyle);
+    std::vector<std::vector<Section>> surfaces;
+    surfaces.push_back({{1.000F, d.waistRx * 0.98F, d.waistRz + belly * 0.6F},
+                        {1.060F, d.waistRx, d.waistRz + belly},
+                        {1.200F, (d.waistRx + d.chestRx) * 0.5F, (d.waistRz + d.chestRz) * 0.5F + belly * 0.3F},
+                        {1.390F, d.chestRx, bustRz},
+                        {1.530F, d.chestRx * 1.04F, d.chestRz * 0.92F},
+                        {1.585F, d.chestRx * 0.62F, d.chestRz * 0.66F},
+                        {1.600F, 0.082F, 0.074F},
+                        {1.606F, 0.056F, 0.056F}});
+    surfaces.push_back({{1.000F, d.waistRx * 1.02F, d.waistRz + 0.004F},
+                        {1.004F, d.waistRx * 1.04F, d.waistRz + 0.010F},
+                        {1.046F, d.waistRx * 1.04F, d.waistRz + 0.010F}});
+    if (style == CoatStyle::Coat || style == CoatStyle::Robe) {
+        surfaces.push_back({{0.78F, d.hipRx * 1.18F, d.hipRz * 1.22F + 0.01F},
+                            {1.00F, d.waistRx * 1.08F, d.waistRz * 1.10F}});
+    }
+    if (look.apron != 0U) {
+        // The bib's front corners sit a tenth either side of the middle,
+        // where the ellipse is a fifth shallower than at the front.
+        const float bib = 1.25F * (d.waistRz + 0.024F);
+        surfaces.push_back({{1.04F, 0.0F, bib}, {1.32F, 0.0F, bib}});
+    }
+    const auto at = [&surfaces](float y, float proud, const Rgba8& c) {
+        float rx = 0.0F;
+        float rz = 0.0F;
+        for (const std::vector<Section>& s : surfaces) {
+            widestAt(s, y, rx, rz);
+        }
+        return ring(y, rx + proud, rz + proud, c);
+    };
+    const Rgba8 cloth = quilted ? kQuilt : kBrigCloth;
+    const Rgba8 trim = quilted ? shapes::shaded(kQuilt, 0.78F) : kLeather;
+    std::vector<Ring> rings;
+    // A quilting seam: the cloth pinched into a dark line, near only.
+    const auto seam = [&](float y) {
+        if (!quilted || far) {
+            return;
+        }
+        rings.push_back(at(y - 0.005F, m, cloth));
+        rings.push_back(at(y - 0.005F, m - 0.004F, kQuiltSeam));
+        rings.push_back(at(y + 0.005F, m - 0.004F, kQuiltSeam));
+        rings.push_back(at(y + 0.005F, m, cloth));
+    };
+    rings.push_back(at(1.012F, m, trim));
+    rings.push_back(at(1.030F, m, trim));
+    rings.push_back(at(1.030F, m, cloth));
+    rings.push_back(at(1.040F, m, cloth));
+    rings.push_back(at(1.046F, m, cloth));
+    rings.push_back(at(1.060F, m, cloth));
+    seam(1.125F);
+    rings.push_back(at(1.200F, m, cloth));
+    seam(1.260F);
+    rings.push_back(at(1.320F, m, cloth));
+    rings.push_back(at(1.390F, m, cloth));
+    seam(1.460F);
+    rings.push_back(at(1.530F, m, cloth));
+    rings.push_back(at(1.570F, m, cloth));
+    rings.push_back(at(1.570F, m, trim));
+    rings.push_back(at(1.585F, m, trim));
+    rings.push_back(at(1.600F, 0.014F, trim));
+    Builder b = parts.at(FigureBone::Torso);
+    shapes::loft(b, rings, sides, false, false);
+    // The brigandine's rivets: three down the front at four heights, on
+    // the shell's own front faces.
+    if (!quilted && !far) {
+        for (const float y : {1.10F, 1.22F, 1.34F, 1.46F}) {
+            const Ring r = at(y, m, cloth);
+            for (const float x : {-0.07F, 0.0F, 0.07F}) {
+                const float t = std::min(1.0F, std::fabs(x) / (0.70710678F * r.rx));
+                const float z = -r.rz * (1.0F - 0.29289322F * t);
+                shapes::block(b, Vec3{x, y, z - 0.002F}, Vec3{0.007F, 0.007F, 0.005F}, kRivet);
+            }
+        }
+    }
+}
+
+/// THE GLOVES: the hand's own blocks a few millimetres bigger in leather or
+/// iron, and a cuff round the wrist on the forearm.
+void buildGloves(const Parts& parts, const Dims& d, GearHands hands, int sides, bool far) {
+    const bool iron = hands == GearHands::Gauntlets;
+    const Rgba8 colour = iron ? kGauntletIron : kGloveLeather;
+    const float g = iron ? 0.009F : 0.006F;
+    for (int s = 0; s < 2; ++s) {
+        const float sx = s == 0 ? -1.0F : 1.0F;
+        const float ax = sx * d.shoulderX;
+        {
+            Builder b = parts.at(s == 0 ? FigureBone::HandL : FigureBone::HandR);
+            if (far) {
+                shapes::block(b, Vec3{ax, 0.90F, -0.004F}, Vec3{0.034F + g, 0.085F + g, 0.016F + g}, colour);
+            } else {
+                shapes::block(b, Vec3{ax, 0.938F, -0.002F}, Vec3{0.034F + g, 0.046F + g, 0.017F + g}, colour);
+                shapes::block(b, Vec3{ax, 0.862F, -0.006F}, Vec3{0.031F + g, 0.040F + g, 0.013F + g},
+                              shapes::shaded(colour, 0.94F));
+                shapes::block(b, Vec3{ax - sx * 0.030F, 0.940F, -0.028F}, Vec3{0.011F + g, 0.028F + g, 0.011F + g},
+                              shapes::shaded(colour, 0.92F));
+            }
+        }
+        {
+            Builder b = parts.at(s == 0 ? FigureBone::ForearmL : FigureBone::ForearmR);
+            const float r = d.armR * 0.92F;
+            const Rgba8 cuff = shapes::shaded(colour, iron ? 1.08F : 0.86F);
+            if (iron) {
+                shapes::loft(b,
+                             {ring(0.972F, r * 0.80F + 0.014F, r * 0.80F + 0.014F, cuff, ax),
+                              ring(1.068F, r * 1.02F + 0.022F, r * 1.02F + 0.022F, cuff, ax)},
+                             sides, true, true);
+            } else {
+                shapes::loft(b,
+                             {ring(0.972F, r * 0.74F + 0.012F, r * 0.74F + 0.012F, cuff, ax),
+                              ring(1.050F, r * 0.82F + 0.014F, r * 0.82F + 0.014F, cuff, ax)},
+                             sides, true, true);
+            }
+        }
+    }
+}
+
+/// THE BOOTS: a shaft over the boot leather every figure wears, to the
+/// calf with a turned top, and a fuller foot; hobnails are an iron sole.
+void buildBoots(const Parts& parts, const Dims& d, GearFeet feet, int sides, bool far) {
+    const bool nailed = feet == GearFeet::HobnailBoots;
+    const Rgba8 leather = nailed ? kHobnailLeather : kBootBrown;
+    const Rgba8 turned = shapes::shaded(leather, 0.78F);
+    for (int s = 0; s < 2; ++s) {
+        const float sx = s == 0 ? -1.0F : 1.0F;
+        const float lx = sx * d.hipX;
+        {
+            Builder b = parts.at(s == 0 ? FigureBone::ShinL : FigureBone::ShinR);
+            const float r = d.shinR;
+            const float m = 0.010F;
+            shapes::loft(b,
+                         {ring(0.080F, r * 0.92F + m, r * 0.92F + m, leather, lx),
+                          ring(0.270F, r * 0.98F + m, r * 0.98F + m, leather, lx),
+                          ring(0.345F, r * 1.01F + m, r * 1.01F + m, leather, lx),
+                          ring(0.345F, r * 1.01F + m + 0.008F, r * 1.01F + m + 0.008F, turned, lx),
+                          ring(0.375F, r * 1.025F + m + 0.008F, r * 1.025F + m + 0.008F, turned, lx)},
+                         sides, false, true);
+        }
+        {
+            Builder b = parts.at(s == 0 ? FigureBone::FootL : FigureBone::FootR);
+            shapes::wedge(b, Vec3{lx, 0.053F, -0.046F}, Vec3{0.058F, 0.045F, 0.126F}, 0.052F, 0.104F, -0.022F,
+                          leather);
+            if (nailed && !far) {
+                shapes::block(b, Vec3{lx, 0.0055F, -0.046F}, Vec3{0.061F, 0.0055F, 0.132F}, kSoleIron);
+            }
+        }
+    }
+}
+
+/// A builder whose local +Y runs from `butt` along `dir` (unit): rings and
+/// blocks are then authored as distance along the haft (y), across it in
+/// the swing plane (x) and across it sideways (z), the viewmodel's own
+/// convention for a held thing.
+[[nodiscard]] Builder haftAt(const Parts& parts, FigureBone bone, const Vec3& butt, const Vec3& dir, float length) {
+    Builder b = parts.at(bone);
+    float unused = 0.0F;
+    b.xf = shapes::alongAxis(butt, Vec3{butt.x + dir.x * length, butt.y + dir.y * length, butt.z + dir.z * length},
+                             Vec3{1.0F, 0.0F, 0.0F}, unused);
+    return b;
+}
+
+/// THE PROP IN THE RIGHT HAND. The grip is in the closed fingers of the
+/// hanging hand; a one-handed thing leaves it forward and down at 45
+/// degrees (the idle's bent arm brings it up toward the level, the punch's
+/// swing over the shoulder), a two-handed one is carried by the top of the
+/// haft with its head down by the right foot, and the boat hook stands like
+/// a staff. Wood, iron and steel; nothing is art.
+void buildProp(const Parts& parts, const Dims& d, GearProp prop, int sides, bool far) {
+    const Vec3 grip{d.shoulderX, 0.880F, -0.006F};
+    const Vec3 hang{0.0F, -0.70710678F, -0.70710678F};
+    const Vec3 carry{0.0F, -0.93969262F, -0.34202014F};
+    const Vec3 staff{0.0F, 0.93969262F, -0.34202014F};
+    const Rgba8 wrap = shapes::shaded(kWood, 0.55F);
+    const Rgba8 darkWood = shapes::shaded(kWood, 0.82F);
+    const Rgba8 edge = shapes::shaded(kSteel, 1.08F);
+    const int blade = 4;
+    const auto from = [&grip](const Vec3& dir, float back) {
+        return Vec3{grip.x - dir.x * back, grip.y - dir.y * back, grip.z - dir.z * back};
+    };
+    switch (prop) {
+        case GearProp::None:
+            return;
+        case GearProp::Cudgel: {
+            Builder b = haftAt(parts, FigureBone::HandR, from(hang, 0.06F), hang, 0.56F);
+            shapes::loft(b,
+                         {ring(0.0F, 0.016F, 0.016F, kIron), ring(0.012F, 0.020F, 0.020F, kIron),
+                          ring(0.012F, 0.017F, 0.017F, wrap), ring(0.14F, 0.017F, 0.017F, wrap),
+                          ring(0.14F, 0.016F, 0.016F, kWood), ring(0.34F, 0.022F, 0.022F, kWood),
+                          ring(0.50F, 0.030F, 0.030F, darkWood), ring(0.56F, 0.024F, 0.024F, darkWood)},
+                         sides);
+            return;
+        }
+        case GearProp::Evictor: {
+            Builder b = haftAt(parts, FigureBone::HandR, from(hang, 0.06F), hang, 0.58F);
+            shapes::loft(b,
+                         {ring(0.0F, 0.016F, 0.016F, kIron), ring(0.012F, 0.020F, 0.020F, kIron),
+                          ring(0.012F, 0.017F, 0.017F, wrap), ring(0.15F, 0.017F, 0.017F, wrap),
+                          ring(0.15F, 0.016F, 0.016F, kWood), ring(0.36F, 0.022F, 0.022F, kWood),
+                          ring(0.40F, 0.034F, 0.034F, kIron), ring(0.42F, 0.040F, 0.040F, darkWood),
+                          ring(0.50F, 0.044F, 0.044F, darkWood), ring(0.52F, 0.040F, 0.040F, kIron),
+                          ring(0.58F, 0.020F, 0.020F, kIron)},
+                         sides);
+            return;
+        }
+        case GearProp::Bottle: {
+            // Held by the neck, the body of it hanging forward.
+            Builder b = haftAt(parts, FigureBone::HandR, from(hang, 0.02F), hang, 0.28F);
+            shapes::loft(b,
+                         {ring(0.0F, 0.010F, 0.010F, kLeather), ring(0.03F, 0.011F, 0.011F, kGlass),
+                          ring(0.08F, 0.013F, 0.013F, kGlass), ring(0.12F, 0.034F, 0.034F, kGlass),
+                          ring(0.26F, 0.036F, 0.036F, shapes::shaded(kGlass, 0.9F)),
+                          ring(0.28F, 0.030F, 0.030F, shapes::shaded(kGlass, 0.8F))},
+                         sides);
+            return;
+        }
+        case GearProp::Knife: {
+            Builder b = haftAt(parts, FigureBone::HandR, from(hang, 0.04F), hang, 0.25F);
+            shapes::loft(b, {ring(0.0F, 0.012F, 0.012F, kWood), ring(0.10F, 0.013F, 0.013F, kWood)}, sides);
+            shapes::block(b, Vec3{0.0F, 0.105F, 0.0F}, Vec3{0.020F, 0.005F, 0.008F}, kIron);
+            shapes::loft(b,
+                         {ring(0.11F, 0.012F, 0.0035F, kSteel), ring(0.20F, 0.011F, 0.0030F, kSteel),
+                          ring(0.25F, 0.0015F, 0.0015F, edge)},
+                         blade);
+            return;
+        }
+        case GearProp::Dagger: {
+            Builder b = haftAt(parts, FigureBone::HandR, from(hang, 0.05F), hang, 0.33F);
+            shapes::loft(b,
+                         {ring(0.0F, 0.013F, 0.013F, kIron), ring(0.012F, 0.016F, 0.016F, kIron),
+                          ring(0.012F, 0.012F, 0.012F, wrap), ring(0.11F, 0.012F, 0.012F, wrap)},
+                         sides);
+            shapes::block(b, Vec3{0.0F, 0.115F, 0.0F}, Vec3{0.045F, 0.007F, 0.010F}, kIron);
+            shapes::loft(b,
+                         {ring(0.12F, 0.016F, 0.0040F, kSteel), ring(0.26F, 0.012F, 0.0035F, kSteel),
+                          ring(0.33F, 0.0015F, 0.0015F, edge)},
+                         blade);
+            return;
+        }
+        case GearProp::Cutlass: {
+            Builder b = haftAt(parts, FigureBone::HandR, from(hang, 0.07F), hang, 0.75F);
+            shapes::loft(b,
+                         {ring(0.0F, 0.016F, 0.016F, kIron), ring(0.014F, 0.019F, 0.019F, kIron),
+                          ring(0.014F, 0.014F, 0.014F, wrap), ring(0.12F, 0.015F, 0.015F, wrap)},
+                         sides);
+            // The cup guard, and the knuckle bow back to the pommel.
+            shapes::loft(b,
+                         {ring(0.12F, 0.016F, 0.016F, kIron), ring(0.13F, 0.052F, 0.050F, kIron),
+                          ring(0.145F, 0.054F, 0.052F, shapes::shaded(kIron, 0.9F)),
+                          ring(0.145F, 0.016F, 0.016F, kIron)},
+                         sides);
+            if (!far) {
+                shapes::block(b, Vec3{0.042F, 0.072F, 0.0F}, Vec3{0.006F, 0.062F, 0.006F}, kIron);
+            }
+            shapes::loft(b,
+                         {ring(0.145F, 0.022F, 0.0050F, kSteel), ring(0.45F, 0.026F, 0.0050F, kSteel),
+                          ring(0.66F, 0.030F, 0.0045F, kSteel), ring(0.73F, 0.006F, 0.0025F, edge),
+                          ring(0.75F, 0.0015F, 0.0015F, edge)},
+                         blade);
+            return;
+        }
+        case GearProp::BoatHook: {
+            Builder b = haftAt(parts, FigureBone::HandR, from(staff, 0.55F), staff, 1.50F);
+            shapes::loft(b,
+                         {ring(0.0F, 0.016F, 0.016F, kIron), ring(0.03F, 0.018F, 0.018F, kWood),
+                          ring(1.42F, 0.018F, 0.018F, kWood), ring(1.42F, 0.020F, 0.020F, kIron),
+                          ring(1.50F, 0.014F, 0.014F, kIron)},
+                         sides);
+            // The hook (forward, which is this frame's -X), and the spike.
+            shapes::block(b, Vec3{-0.050F, 1.44F, 0.0F}, Vec3{0.045F, 0.010F, 0.008F}, kIron);
+            shapes::block(b, Vec3{-0.088F, 1.47F, 0.0F}, Vec3{0.008F, 0.030F, 0.008F}, kIron);
+            shapes::block(b, Vec3{0.0F, 1.53F, 0.0F}, Vec3{0.008F, 0.030F, 0.008F}, kIron);
+            return;
+        }
+        case GearProp::Hatchet: {
+            // The cleaver head: an iron eye, a broad blade forward, a poll.
+            Builder b = haftAt(parts, FigureBone::HandR, from(hang, 0.05F), hang, 0.47F);
+            shapes::loft(b, {ring(0.0F, 0.017F, 0.017F, kWood), ring(0.40F, 0.020F, 0.020F, kWood),
+                             ring(0.47F, 0.019F, 0.019F, darkWood)},
+                         sides);
+            shapes::block(b, Vec3{0.0F, 0.425F, 0.0F}, Vec3{0.022F, 0.035F, 0.018F}, kIron);
+            shapes::block(b, Vec3{0.066F, 0.420F, 0.0F}, Vec3{0.045F, 0.055F, 0.006F}, kSteel);
+            if (!far) {
+                shapes::block(b, Vec3{0.112F, 0.420F, 0.0F}, Vec3{0.004F, 0.058F, 0.0035F}, edge);
+                shapes::block(b, Vec3{-0.032F, 0.425F, 0.0F}, Vec3{0.012F, 0.022F, 0.016F}, kIron);
+            }
+            return;
+        }
+        case GearProp::Mace: {
+            Builder b = haftAt(parts, FigureBone::HandR, from(hang, 0.06F), hang, 0.57F);
+            shapes::loft(b,
+                         {ring(0.0F, 0.016F, 0.016F, kIron), ring(0.014F, 0.019F, 0.019F, kIron),
+                          ring(0.014F, 0.016F, 0.016F, wrap), ring(0.15F, 0.016F, 0.016F, wrap),
+                          ring(0.15F, 0.015F, 0.015F, kWood), ring(0.42F, 0.017F, 0.017F, kWood)},
+                         sides);
+            shapes::loft(b,
+                         {ring(0.42F, 0.020F, 0.020F, kIron), ring(0.44F, 0.036F, 0.036F, kIron),
+                          ring(0.52F, 0.040F, 0.040F, kIron), ring(0.55F, 0.020F, 0.020F, kIron),
+                          ring(0.57F, 0.010F, 0.010F, kIron)},
+                         sides);
+            if (!far) {
+                // Four flanges round the head.
+                for (const float sgn : {-1.0F, 1.0F}) {
+                    shapes::block(b, Vec3{sgn * 0.046F, 0.485F, 0.0F}, Vec3{0.012F, 0.036F, 0.004F},
+                                  shapes::shaded(kIron, 0.9F));
+                    shapes::block(b, Vec3{0.0F, 0.485F, sgn * 0.046F}, Vec3{0.004F, 0.036F, 0.012F},
+                                  shapes::shaded(kIron, 0.9F));
+                }
+            }
+            return;
+        }
+        case GearProp::Maul: {
+            // Carried by the top of the haft, the head down by the foot.
+            Builder b = haftAt(parts, FigureBone::HandR, from(carry, 0.08F), carry, 0.86F);
+            shapes::loft(b,
+                         {ring(0.0F, 0.020F, 0.020F, kIron), ring(0.02F, 0.021F, 0.021F, kWood),
+                          ring(0.74F, 0.024F, 0.024F, kWood)},
+                         sides);
+            shapes::block(b, Vec3{0.0F, 0.800F, 0.0F}, Vec3{0.130F, 0.065F, 0.065F}, kIron);
+            if (!far) {
+                for (const float sgn : {-1.0F, 1.0F}) {
+                    shapes::block(b, Vec3{sgn * 0.128F, 0.800F, 0.0F}, Vec3{0.008F, 0.070F, 0.070F},
+                                  shapes::shaded(kIron, 0.85F));
+                }
+            }
+            return;
+        }
+        case GearProp::BoardingAxe: {
+            // The same carry: a bearded blade forward, a spike behind.
+            Builder b = haftAt(parts, FigureBone::HandR, from(carry, 0.08F), carry, 0.88F);
+            shapes::loft(b,
+                         {ring(0.0F, 0.018F, 0.018F, kIron), ring(0.02F, 0.019F, 0.019F, kWood),
+                          ring(0.84F, 0.021F, 0.021F, kWood), ring(0.88F, 0.020F, 0.020F, darkWood)},
+                         sides);
+            shapes::block(b, Vec3{0.0F, 0.800F, 0.0F}, Vec3{0.024F, 0.040F, 0.020F}, kIron);
+            shapes::wedge(b, Vec3{0.090F, 0.790F, 0.0F}, Vec3{0.065F, 0.055F, 0.006F}, 0.048F, 0.006F, 0.0F, kSteel);
+            if (!far) {
+                shapes::block(b, Vec3{0.152F, 0.785F, 0.0F}, Vec3{0.004F, 0.058F, 0.004F}, edge);
+                shapes::block(b, Vec3{-0.052F, 0.800F, 0.0F}, Vec3{0.030F, 0.010F, 0.008F}, kIron);
+            }
+            return;
+        }
+    }
+}
+
+/// THE SHIELD ON THE LEFT ARM: a round shield strapped to the outside of
+/// the forearm, its face out; a buckler gripped in the fist, face out. Both
+/// lofts along -X from the arm, so the face is a disc and the boss stands
+/// off it.
+void buildShield(const Parts& parts, const Dims& d, GearShield shield, int sides, bool far) {
+    if (shield == GearShield::None) {
+        return;
+    }
+    const bool round = shield == GearShield::RoundShield;
+    const float r = round ? 0.27F : 0.15F;
+    const float cx = round ? -(d.shoulderX + d.armR + 0.052F) : -(d.shoulderX + 0.064F);
+    const float cy = round ? 1.125F : 0.900F;
+    const float cz = round ? -0.010F : -0.012F;
+    const float inner = round ? 0.022F : 0.012F;
+    const float outer = 0.040F;
+    Builder b = parts.at(round ? FigureBone::ForearmL : FigureBone::HandL);
+    float unused = 0.0F;
+    b.xf = shapes::alongAxis(Vec3{cx + inner, cy, cz}, Vec3{cx - outer, cy, cz}, Vec3{0.0F, 1.0F, 0.0F}, unused);
+    const Rgba8 rim = round ? kIron : shapes::shaded(kIron, 0.9F);
+    const Rgba8 face = round ? kShieldPaint : kSteel;
+    const Rgba8 back = round ? kShieldWood : shapes::shaded(kIron, 0.7F);
+    shapes::loft(b,
+                 {ring(0.000F, r * 0.96F, r * 0.96F, back), ring(0.008F, r, r, rim), ring(0.020F, r, r, rim),
+                  ring(0.020F, r * 0.97F, r * 0.97F, face), ring(0.030F, r * 0.90F, r * 0.90F, face),
+                  ring(0.030F, r * 0.24F, r * 0.24F, rim), ring(0.048F, r * 0.18F, r * 0.18F, rim),
+                  ring(0.058F, r * 0.07F, r * 0.07F, rim)},
+                 sides);
+    if (!round && !far) {
+        // The buckler's grip, from the fist to the boss's back.
+        Builder grip = parts.at(FigureBone::HandL);
+        shapes::block(grip, Vec3{-(d.shoulderX + 0.046F), 0.900F, -0.006F}, Vec3{0.010F, 0.012F, 0.022F}, kLeather);
+    }
+}
+
+}  // namespace
+
+MeshData buildFigureKit(const ActorLook& look, const GearLook& gear, bool far) {
+    MeshData mesh;
+    mesh.id = figureKitMeshId(look, gear, far);
+    mesh.version = 1;
+    if (!gear.hasKit()) {
+        return mesh;
+    }
+    const int bs = far ? 6 : 8;
+    const int ls = far ? 4 : 6;
+    const Dims d = dimsOf(look);
+    const Parts parts{mesh};
+    switch (gear.body) {
+        case GearBody::Gambeson:
+        case GearBody::Brigandine:
+            buildJack(parts, look, d, gear.body, bs, far);
+            break;
+        case GearBody::None:
+        case GearBody::Coat:
+            break;
+    }
+    switch (gear.hands) {
+        case GearHands::WorkGloves:
+        case GearHands::Gauntlets:
+            buildGloves(parts, d, gear.hands, ls, far);
+            break;
+        case GearHands::None:
+            break;
+    }
+    switch (gear.feet) {
+        case GearFeet::Boots:
+        case GearFeet::HobnailBoots:
+            buildBoots(parts, d, gear.feet, ls, far);
+            break;
+        case GearFeet::None:
+            break;
+    }
+    buildProp(parts, d, gear.prop, ls, far);
+    buildShield(parts, d, gear.shield, bs, far);
+
+    fillNormals(mesh);
+    if (far) {
+        mesh.bones.clear();
+        return mesh;
+    }
+    const auto rest = figureRestJoints(look);
+    mesh.boneRest.reserve(rest.size() * 3);
+    for (const Vec3& v : rest) {
+        mesh.boneRest.push_back(v.x);
+        mesh.boneRest.push_back(v.y);
+        mesh.boneRest.push_back(v.z);
+    }
+    return mesh;
+}
+
+void putFigureKit(SceneDescription& scene, const ActorLook& look, const GearLook& gear, bool far) {
+    if (!gear.hasKit()) {
+        return;
+    }
+    const std::uint32_t id = figureKitMeshId(look, gear, far);
+    const MeshData* present = scene.findMesh(id);
+    if (present != nullptr && present->version == 1) {
+        return;
+    }
+    scene.putMesh(buildFigureKit(look, gear, far));
+}
+
+// ---------------------------------------------------------------------------
 // THE ANIMATION
 // ---------------------------------------------------------------------------
 

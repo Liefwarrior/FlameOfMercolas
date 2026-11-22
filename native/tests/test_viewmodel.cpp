@@ -374,11 +374,14 @@ TEST_CASE("the viewmodel is described from the sim's own hand and hashes") {
     SceneDescription scene;
     putViewmodelMeshes(scene);
     const std::size_t meshCount = scene.meshes.size();
-    CHECK(meshCount == 4U * 4U + 3U);  // four arm parts per kind, a weapon for all but fists
+    // Four arm parts per kind, a weapon for all but fists -- and, phase 9,
+    // the two shields.
+    CHECK(meshCount == kViewmodelKindCount * 4U + (kViewmodelKindCount - 1U) + kViewmodelShieldCount);
     std::set<std::uint32_t> ids;
     for (const MeshData& mesh : scene.meshes) {
         CHECK(mesh.id >= kViewmodelMeshIdBase);
-        CHECK(mesh.id < kViewmodelMeshIdBase + 40U);
+        CHECK(mesh.id < kViewmodelShieldMeshIdBase + kViewmodelShieldMeshIdCount);
+        CHECK((mesh.id < kViewmodelMeshIdBase + kViewmodelKindCount * 8U || isViewmodelShieldMeshId(mesh.id)));
         CHECK(mesh.version == 1);
         CHECK(ids.insert(mesh.id).second);
         CHECK(mesh.triangleCount() > 0);
@@ -1053,4 +1056,142 @@ TEST_CASE("the weapon socket, the framing and the clip policy are pure per kind 
     CHECK(sceneHash(scene) != base);
     scene.viewmodel = held;
     CHECK(sceneHash(scene) == base);
+}
+
+TEST_CASE("phase 9: the hand model is the thing in the hand, and the shield shows only with a shield worn") {
+    // KEYED BY ITEM. Bare is fists; every phase 9 hand row (it names its
+    // model) is a kind of its own past phase 6's four, named as its model
+    // is, with a licensed file to hang and a placeholder to draw; a
+    // model-less row the table names by its id is that kind; a model-less
+    // row it does not name falls back to its class, as phase 6 did.
+    CHECK(viewmodelKindForItem(nullptr) == ViewmodelKind::Fists);
+    render::Session session(sessionConfig(8));
+    const sim::ItemRegistry& items = session.tavern().items();
+    REQUIRE(items.loaded());
+    std::set<std::uint8_t> kinds;
+    std::size_t gearHands = 0;
+    for (const sim::ItemDef& item : items.items()) {
+        if (item.slot != sim::ItemSlot::Hand || item.model.empty()) {
+            continue;
+        }
+        INFO(item.id);
+        const ViewmodelKind kind = viewmodelKindForItem(&item);
+        CHECK(static_cast<std::size_t>(kind) >= 4U);
+        CHECK(static_cast<std::size_t>(kind) < kViewmodelKindCount);
+        CHECK(kinds.insert(static_cast<std::uint8_t>(kind)).second);
+        CHECK(viewmodelKindName(kind) == item.model);
+        CHECK(viewmodelKindFromName(item.model) == static_cast<int>(kind));
+        CHECK_FALSE(viewmodelWeaponFile(kind).empty());
+        CHECK(viewmodelRigFile(kind) == "viewmodel_fists.glb");
+        CHECK(viewmodelHasPart(kind, ViewmodelPartId::Weapon));
+        CHECK(viewmodelTwoHanded(kind) == (item.grip == sim::WeaponGrip::TwoHanded));
+        ++gearHands;
+    }
+    CHECK(gearHands >= 3U);
+    for (const char* id : {"the_evictor", "bottle", "boat_hook"}) {
+        const sim::ItemDef* item = items.find(id);
+        INFO(id);
+        REQUIRE(item != nullptr);
+        CHECK(item->model.empty());
+        CHECK(viewmodelKindForItem(item) == viewmodelKindOf(item->weaponClass));
+    }
+    CHECK(viewmodelKindForItem(items.find("cutlass")) == ViewmodelKind::Cutlass);
+    CHECK(viewmodelKindForItem(items.find("mace")) == ViewmodelKind::Mace);
+    CHECK(viewmodelKindForItem(items.find("knife")) == ViewmodelKind::Dagger);
+    CHECK(viewmodelKindForItem(items.find("cudgel")) == ViewmodelKind::Club);
+    // Every kind's name round-trips (the client's --hands= reads them).
+    for (std::size_t k = 0; k < kViewmodelKindCount; ++k) {
+        const auto kind = static_cast<ViewmodelKind>(k);
+        CHECK(viewmodelKindFromName(viewmodelKindName(kind)) == static_cast<int>(k));
+        CHECK(viewmodelSocketOf(static_cast<std::uint8_t>(k)).rotation.x == viewmodelSocket(kind).rotation.x);
+    }
+    CHECK(viewmodelKindFromName("halberd") == -1);
+
+    // THE SHIELD. Bare hands carry no shield part; a buckler is one more
+    // part, on the left fist's own place, in the shield range, and hashed.
+    ViewmodelPose raised;
+    ViewmodelInstance bare;
+    poseViewmodel(bare, ViewmodelKind::Fists, raised, Rgba8{});
+    CHECK(bare.shield == 0U);
+    for (const ViewmodelPart& part : bare.parts) {
+        CHECK_FALSE(isViewmodelShieldMeshId(part.meshId));
+    }
+    ViewmodelInstance guarded;
+    poseViewmodel(guarded, ViewmodelKind::Fists, raised, Rgba8{}, ViewmodelShield::Buckler);
+    CHECK(guarded.shield == static_cast<std::uint8_t>(ViewmodelShield::Buckler));
+    REQUIRE(guarded.parts.size() == bare.parts.size() + 1U);
+    const ViewmodelPart* shield = nullptr;
+    for (const ViewmodelPart& part : guarded.parts) {
+        if (part.meshId == viewmodelShieldMeshId(ViewmodelShield::Buckler)) {
+            shield = &part;
+        }
+    }
+    REQUIRE(shield != nullptr);
+    CHECK(isViewmodelShieldMeshId(shield->meshId));
+    REQUIRE(partOf(guarded, ViewmodelPartId::LeftFist) != nullptr);
+    CHECK(shield->position.x == partOf(guarded, ViewmodelPartId::LeftFist)->position.x);
+    CHECK(shield->position.y == partOf(guarded, ViewmodelPartId::LeftFist)->position.y);
+    SceneDescription withShield;
+    SceneDescription without;
+    putViewmodelMeshes(withShield);
+    putViewmodelMeshes(without);
+    REQUIRE(withShield.findMesh(viewmodelShieldMeshId(ViewmodelShield::Buckler)) != nullptr);
+    REQUIRE(withShield.findMesh(viewmodelShieldMeshId(ViewmodelShield::RoundShield)) != nullptr);
+    CHECK(buildViewmodelShield(ViewmodelShield::None).vertexCount() == 0U);
+    withShield.viewmodel = guarded;
+    without.viewmodel = bare;
+    CHECK(sceneHash(withShield) != sceneHash(without));
+    // The block brings the shield up with the fist.
+    ViewmodelPose blocking;
+    blocking.state = ViewmodelState::Block;
+    blocking.stateSteps = 6;
+    ViewmodelInstance up;
+    poseViewmodel(up, ViewmodelKind::Fists, blocking, Rgba8{}, ViewmodelShield::RoundShield);
+    const ViewmodelPart* raisedShield = nullptr;
+    for (const ViewmodelPart& part : up.parts) {
+        if (isViewmodelShieldMeshId(part.meshId)) {
+            raisedShield = &part;
+        }
+    }
+    REQUIRE(raisedShield != nullptr);
+    CHECK(raisedShield->position.y > shield->position.y);
+
+    // THROUGH THE ROOM'S OWN VERBS: a buckler worn shows; a maul then put
+    // in the hand bares it (the sim's two-hand rule) and puts BOTH fists on
+    // the haft, the left a hand's span up it from the right.
+    sim::Tavern& room = session.tavern();
+    REQUIRE(room.giveItem("buckler"));
+    (void)room.wearItem(items.indexOf("buckler"));
+    REQUIRE(room.kit().worn(sim::ItemSlot::OffHand) == items.indexOf("buckler"));
+    ViewmodelInstance worn = viewmodelInstance(session);
+    CHECK(worn.shield == static_cast<std::uint8_t>(ViewmodelShield::Buckler));
+    CHECK(worn.kind == static_cast<std::uint8_t>(ViewmodelKind::Fists));
+    REQUIRE(room.giveItem("maul"));
+    (void)room.wearItem(items.indexOf("maul"));
+    REQUIRE(room.kit().worn(sim::ItemSlot::Hand) == items.indexOf("maul"));
+    CHECK(room.kit().worn(sim::ItemSlot::OffHand) == -1);
+    worn = viewmodelInstance(session);
+    CHECK(worn.kind == static_cast<std::uint8_t>(ViewmodelKind::Maul));
+    CHECK(worn.shield == 0U);
+    const ViewmodelPart* left = partOf(worn, ViewmodelPartId::LeftFist);
+    const ViewmodelPart* right = partOf(worn, ViewmodelPartId::RightFist);
+    REQUIRE(left != nullptr);
+    REQUIRE(right != nullptr);
+    const float dx = left->position.x - right->position.x;
+    const float dy = left->position.y - right->position.y;
+    const float dz = left->position.z - right->position.z;
+    CHECK(std::sqrt(dx * dx + dy * dy + dz * dz) == doctest::Approx(0.24F).epsilon(0.01));
+    CHECK(left->position.z < right->position.z);  // up the haft, away from the eye
+    CHECK(left->rotation.x == right->rotation.x);
+    // The two-hander's wind-up fills at its own, longer hold: a charge the
+    // one-handed hold calls full is not yet full in two hands.
+    ViewmodelPose charging;
+    charging.state = ViewmodelState::Charging;
+    charging.chargeSteps = kViewmodelHardHoldSteps;
+    const ViewmodelRigClip one = viewmodelRigClip(ViewmodelKind::Maul, charging);
+    const ViewmodelRigClip two =
+        viewmodelRigClip(ViewmodelKind::Maul, charging, room.playerHardHoldSteps());
+    CHECK(room.playerHardHoldSteps() > kViewmodelHardHoldSteps);
+    CHECK(one.frame == doctest::Approx(kViewmodelCockFrame));
+    CHECK(two.frame < one.frame);
 }

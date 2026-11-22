@@ -429,6 +429,15 @@ void drawInspectPane(Framebuffer& target, const PanelRect& pane, const PanelMetr
         drawCellTextRight(target, pane, metric, 1, 0, view.kind, ink.dim, 0.85F * fade);
     }
     const int footRow = paneRows - 1;
+    // PHASE 9 -- THE COMPARISON SITS ON THE FOOT'S SHOULDERS: the rows just
+    // over the air above the keys, reserved before the prose is laid out, so
+    // a long description can push the facts off the pane but never the
+    // answer to "is this better than what I have on". The pane's own floor
+    // (six rows) keeps the badge, the alert and the foot whatever it holds.
+    const int compareRows =
+        std::min(static_cast<int>(view.compare.size()), std::max(0, paneRows - 6));
+    const int compareTop = footRow - 1 - compareRows;
+    const int bodyLimit = compareRows > 0 ? compareTop - 1 : footRow - 1;
     int row = 1;
     if (!view.alert.empty()) {
         drawCellText(target, pane, metric, 0, row,
@@ -440,7 +449,7 @@ void drawInspectPane(Framebuffer& target, const PanelRect& pane, const PanelMetr
     const std::size_t cols = static_cast<std::size_t>(std::max(8, paneCells - 2));
     if (!view.prose.empty()) {
         for (const std::string& line : wrapText(view.prose, cols)) {
-            if (row >= footRow - 1) {
+            if (row >= bodyLimit) {
                 break;
             }
             drawCellText(target, pane, metric, 0, row, line, ink.prose, 0.92F * fade);
@@ -448,12 +457,21 @@ void drawInspectPane(Framebuffer& target, const PanelRect& pane, const PanelMetr
         }
         ++row;  // air
     }
+    for (int i = 0; i < compareRows; ++i) {
+        const std::string& line = view.compare[static_cast<std::size_t>(i)];
+        // What comes OFF is a warning, in the alert's own ink; the numbers
+        // are numbers.
+        const bool takesOff = line.rfind("TAKES OFF", 0) == 0;
+        drawCellText(target, pane, metric, 0, compareTop + i,
+                     clipLabel(line, static_cast<std::size_t>(std::max(1, paneCells - 1))),
+                     takesOff ? kAlertInk : ink.number, 0.95F * fade);
+    }
     std::size_t labelWidth = 0;
     for (const InspectFact& fact : view.facts) {
         labelWidth = std::max(labelWidth, fact.label.size());
     }
     for (const InspectFact& fact : view.facts) {
-        if (row >= footRow - 1) {
+        if (row >= bodyLimit) {
             break;
         }
         drawCellText(target, pane, metric, 0, row, fact.label, ink.dim, 0.85F * fade);

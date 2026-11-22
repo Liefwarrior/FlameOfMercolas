@@ -9,6 +9,7 @@
 #include "granadad/content/content_dir.hpp"
 #include "granadad/render/session.hpp"
 #include "granadad/render3d/actor_instances.hpp"
+#include "granadad/render3d/gear_look.hpp"
 #include "granadad/render3d/ground_items.hpp"
 #include "granadad/render3d/light_model.hpp"
 #include "granadad/render3d/viewmodel.hpp"
@@ -137,8 +138,16 @@ void SceneRig::refresh(const render::Session& session, float aspect) {
     actorParams.perPixel = perPixel;
     scene.actors = actorInstances(session, session.camera(), actorParams);
     // PHASE 6: and the figure of every person in sight (one mesh a look).
-    if (sheet != 0) {
+    if (sheet == 1 || sheet == 2) {
         scene.actors = figure_sheet(session, sheet);
+    } else if (sheet == 3) {
+        // PHASE 9, --sheet=gear: the player's own figure, dressed in what
+        // the Kit says he is wearing, stood in front of the eye and facing
+        // it -- ADDED to the crowd, so the ward's people stay where they
+        // are. Off the sim's worn rows, never written back.
+        const GearLook gear = gearLookOf(session.tavern().kit(), session.tavern().items());
+        scene.actors.push_back(
+            playerFigureInstance(session.camera(), render::bandSurface(session.body().band()), gear));
     }
     putActorFigures(scene, scene.actors);
     // V LANE: the player's own hands. The placeholder parts put once

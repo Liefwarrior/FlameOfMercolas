@@ -464,6 +464,15 @@ inline constexpr std::int32_t kHardSwingHoldSteps = 15;
 /// Attack edges during recovery are dropped, not buffered.
 inline constexpr std::int32_t kSwingRecoverySteps = 36;
 inline constexpr std::int32_t kHardSwingRecoverySteps = 54;
+/// PHASE 9: the swing machine reads these per GRIP (items.hpp's
+/// gripTiming, the player's held row's grip). The one-handed row of that
+/// table IS these constants -- bare fists and every items.json weapon swing
+/// one-handed -- so every existing number holds to the step. Tied here so
+/// neither can move without the other.
+static_assert(gripTiming(WeaponGrip::OneHanded).reachQ8 == kMeleeReach);
+static_assert(gripTiming(WeaponGrip::OneHanded).recoverySteps == kSwingRecoverySteps);
+static_assert(gripTiming(WeaponGrip::OneHanded).hardRecoverySteps == kHardSwingRecoverySteps);
+static_assert(gripTiming(WeaponGrip::OneHanded).hardHoldSteps == kHardSwingHoldSteps);
 /// How long the death ceremony holds its epitaph plate before the revive
 /// plate, in steps. 4.5 s, Barony's measured hold. The SIM only names it and
 /// routes the defeat; the plate itself is PRESENTATION's (section 4.5).
@@ -665,6 +674,25 @@ public:
     [[nodiscard]] Weapon playerWeapon() const noexcept {
         return kit_.worn(ItemSlot::Hand) >= 0 ? kit_.handClass(items_) : playerWeapon_;
     }
+    /// PHASE 9. What the player's swing machine runs on: gripTiming of the
+    /// worn hand row's grip, one-handed when the hand holds no row (bare
+    /// fists, or a class armed straight by setPlayerCombat) -- so the reach
+    /// both sightline casts read, the recovery armPlayerSwing enters and the
+    /// hold that makes a swing hard are the held thing's. NPC swings never
+    /// read this: they hold no Kit, and keep kMeleeReach and the constants.
+    [[nodiscard]] GripTiming playerGripTiming() const noexcept {
+        return gripTiming(kit_.handGrip(items_));
+    }
+    [[nodiscard]] std::int32_t playerReachQ8() const noexcept { return playerGripTiming().reachQ8; }
+    [[nodiscard]] std::int32_t playerHardHoldSteps() const noexcept {
+        return playerGripTiming().hardHoldSteps;
+    }
+    /// PHASE 9. The span the player's blow rolls: the worn hand row's own
+    /// (Kit::handDamageLo/Hi), else the class span of the byte setPlayerCombat
+    /// or grantPlayerWeapon set -- for every items.json weapon and every
+    /// direct arming, exactly the span strike() always rolled.
+    [[nodiscard]] std::int32_t playerDamageLo() const noexcept;
+    [[nodiscard]] std::int32_t playerDamageHi() const noexcept;
 
     /// A shove the room wants applied to the player's body, in Q8, or (0,0).
     /// Read and CLEARED by the caller, which owns the body -- the tavern never
@@ -1541,9 +1569,12 @@ public:
     /// the reticle retracting across this toward kHardSwingHoldSteps.
     [[nodiscard]] std::int32_t playerChargeSteps() const noexcept { return chargeSteps_; }
     /// True while charging AND the hold has reached the hard threshold -- what
-    /// the reticle's warm accent and the HELD HARD row read.
+    /// the reticle's warm accent and the HELD HARD row read. PHASE 9: the
+    /// threshold is the held grip's (playerHardHoldSteps): kHardSwingHoldSteps
+    /// one-handed, longer for a two-handed row.
     [[nodiscard]] bool playerChargeHard() const noexcept {
-        return combatState_ == PlayerCombatState::Charging && chargeSteps_ >= kHardSwingHoldSteps;
+        return combatState_ == PlayerCombatState::Charging &&
+               chargeSteps_ >= playerHardHoldSteps();
     }
     /// Whether a body sits on the look-ray right now (recomputed each step).
     /// The reticle brightens on it; a swing thrown with it false hits nobody.
@@ -1986,7 +2017,20 @@ private:
     /// so two runs cannot disagree. nullptr for an empty line. ONE RULE, TWO
     /// VERBS: the swing (playerAttackUp) and the touch-cast
     /// (playerCastEquipped) both target through here and nowhere else.
-    [[nodiscard]] const Actor* sightlineTarget() const noexcept;
+    /// PHASE 9: the ray is `reachQ8` long -- the swing passes the held
+    /// grip's reach (playerReachQ8), so a maul finds a body a hand further
+    /// off; the touch-cast keeps kMeleeReach, because a hand laid on a man
+    /// is not longer for what the other hand holds.
+    [[nodiscard]] const Actor* sightlineTarget(std::int32_t reachQ8) const noexcept;
+    [[nodiscard]] const Actor* sightlineTarget() const noexcept {
+        return sightlineTarget(kMeleeReach);
+    }
+    /// The player's blow on one fighter: strikeWithSpan with the held
+    /// class (playerWeapon) and the held span (playerDamageLo/Hi). The roll
+    /// is the caller's, drawn where it always was.
+    [[nodiscard]] Blow strikeAsPlayer(Fighter& target, std::uint64_t roll, std::int32_t bonus,
+                                      std::int32_t swingTerm = kFatigueTermFullQ8,
+                                      std::int32_t chargeQ8 = kSwingChargeQ8) const noexcept;
     /// The actor id of the first rat. Roster order: every person, then every
     /// rat, so this plus an index is a rat's id and the bitmask has a home.
     [[nodiscard]] std::int32_t verminFirstId() const noexcept;

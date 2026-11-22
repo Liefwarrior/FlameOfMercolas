@@ -544,7 +544,11 @@ void Session::step(const sim::MoveInput& input) {
     // says so, once per blow, on the same edge shape the guard's clang
     // rides: blowsTurned() moving. The piece named is the heaviest DR on the
     // body (the coat over the hood over the boots), the number is what the
-    // blow lost to it. Its own centred row (hud.turnLabel) with a plate's
+    // blow lost to it. PHASE 9: the shield and the gloves are pieces too
+    // (Kit::wornDr sums every slot but the hand); the shield ranks after the
+    // body and the gloves after the head, so the four old pieces keep their
+    // order and a tie still names the coat it always named. Its own centred
+    // row (hud.turnLabel) with a plate's
     // hold, not the alert: a bouncer's warning outranks the alert for as
     // long as the house minds you, which is exactly when blows land. An
     // EVENT, never furniture: composed only when a blow actually lands and
@@ -553,7 +557,8 @@ void Session::step(const sim::MoveInput& input) {
         std::string piece = "THE KIT";
         std::int32_t best = 0;
         for (const sim::ItemSlot slot :
-             {sim::ItemSlot::Body, sim::ItemSlot::Head, sim::ItemSlot::Feet, sim::ItemSlot::Trinket}) {
+             {sim::ItemSlot::Body, sim::ItemSlot::OffHand, sim::ItemSlot::Head,
+              sim::ItemSlot::Hands, sim::ItemSlot::Feet, sim::ItemSlot::Trinket}) {
             const sim::ItemDef* worn = tavern_->items().at(tavern_->kit().worn(slot));
             if (worn != nullptr && worn->dr > best) {
                 best = worn->dr;

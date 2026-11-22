@@ -1381,12 +1381,13 @@ public:
     // Tavern -- and this tile is where it lives (Oblivion's own Inventory and
     // Character are two tabs of one screen; the four-tile Morrowind layout
     // stays as ruled). So the sheet grows, in the reference's own worded
-    // grammar and never as a doll: IN HAND is ALWAYS printed once the Kit
-    // exists (fists are a real state then), a worn slot prints ONLY when the
-    // raws hold at least one item for it, then the LOAD line against the
-    // budget off MIGHT, then every carried row with its weight and its worth
-    // and its WORN / IN HAND / SLOT marks. The five derived standings and the
-    // four wired skills stay exactly what they were above it.
+    // grammar and never as a doll: the worn block -- PHASE 9: all seven
+    // slots, HAND, OFF-HAND, HEAD, BODY, HANDS, FEET, TRINKET, "-" on a bare
+    // one, the hand always saying what it swings (fists are a real state) --
+    // then the LOAD line against the budget off MIGHT, then every carried row
+    // with its weight and its worth and its WORN / HELD / SLOT marks. The
+    // five derived standings and the four wired skills stay exactly what they
+    // were above it.
     //
     // THE VERBS ON A ROW, through the Menu's own grammar and nothing new:
     // ENTER/A on a carried row WEARS it (or bares it), LEFT/RIGHT walk which
@@ -1444,8 +1445,10 @@ public:
     // The Character tile has two views of itself. The SHEET is everything it
     // always was: the five tracks, the skills, the four strings, the ladders,
     // then the Kit's rows at the foot of a list two pages long. The PACK is the
-    // inventory on its own: the list is WORN (a row per slot the raws fill, the
-    // thing in it or NOTHING) then CARRIED (the Kit and the sack, grouped by
+    // inventory on its own: the list is WORN (PHASE 9: all seven slots in the
+    // screen's order -- HAND, OFF-HAND, HEAD, BODY, HANDS, FEET, TRINKET --
+    // the thing in it or "-", the same seven rows the sheet prints) then
+    // CARRIED (the Kit and the sack, grouped by
     // what a thing is, in registry order inside a group), and the two tiles to
     // its right give their room to a detail pane about the highlighted row --
     // what it is, its numbers, whose it is, the keys that act on it. TAB
@@ -2848,6 +2851,11 @@ private:
     void settlePackCursor(int direction);
     /// The pack list's printed rows (characterRows() on the pack view).
     [[nodiscard]] std::vector<std::string> packRowLabels() const;
+    /// The sheet view's printed rows (characterRows() on the sheet). When
+    /// `kitOffset` is given it receives the index of the first carried row --
+    /// characterKitOffset()'s answer, counted off the rows actually built so
+    /// the two can never disagree again (see that function's own note).
+    [[nodiscard]] std::vector<std::string> sheetRows(std::size_t* kitOffset) const;
     /// THE MAP TILE'S OWN CURSOR AND PAGE. Also read-only.
     int mapCursor_ = 0;
     int mapPage_ = 0;
@@ -3918,6 +3926,20 @@ struct SmokeRunConfig {
     /// beat), or empty for the whole line.
     bool pack = false;
     std::string packEnd;
+    /// OBLIVION-PLAN phase 9. Play the gear: take a light set off its stands
+    /// by the crosshair, wear it through the pack's ENTER, read a two-hander's
+    /// comparison block before wearing it (DR, DMG, REACH, SPEED, TAKES OFF),
+    /// take up a shield beside the one-hander, then the two-hander that takes
+    /// the shield off, swing it at Ox from a step past a one-hander's reach,
+    /// and take his blow back on the iron. WHERE is take, wear, compare,
+    /// shield, twohand, reach, dr, or empty for the whole line; or a LOADOUT
+    /// -- light, guard, heavy -- taken and worn through the same presses and
+    /// stood on the spawn's own tile, band and yaw at nine with the Menu down,
+    /// so the three frames compare with a plain held run's at --time=9; or
+    /// gull, the guard loadout stood in the Gull's taproom at eight in the
+    /// evening, facing the bar. See scripted/gear.cpp.
+    bool gear = false;
+    std::string gearEnd;
     /// S9. Play a burglary: crouch, cross a dark taproom unseen, lift a purse
     /// off somebody who does not feel it, up the stair, wire into a guest's
     /// strongbox, work the pins, and empty it. WHERE is "box" (standing over
@@ -4460,6 +4482,9 @@ struct SmokeRunResult {
     /// KIT BUILD: beats of the Kit line (--kit), by its ending.
     std::int32_t kitBeats = 0;
     std::int32_t packBeats = 0;
+    /// PHASE 9: beats of the gear line (--gear), by its ending (seven for the
+    /// line, three for a loadout).
+    std::int32_t gearBeats = 0;
     /// How many of the six beats of the bounty run landed.
     std::int32_t contractBeats = 0;
     /// How many of the seven beats of the nemesis arc landed.

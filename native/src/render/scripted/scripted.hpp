@@ -138,6 +138,24 @@ void lookAtFace(Session& session, std::int32_t xQ8, std::int32_t yQ8, sim::WardT
 /// What the Kit line saw, for the summary.
 inline std::string gKitNote;
 inline std::string gPackNote;
+/// PHASE 9: what the gear line saw, for the summary -- the takes, the
+/// comparison lines it read, the blow, and the worn set at the shutter.
+inline std::string gGearNote;
+
+// The eye and pack helpers the Kit, pack and gear lines share (kit.cpp).
+/// Walks to a tile and faces a neighbouring tile, so the crosshair reads
+/// what lies there.
+void standAtFacing(Session& session, std::int32_t standX, std::int32_t standY,
+                   std::int32_t faceX, std::int32_t faceY);
+/// The eye fifty degrees down onto the boards a tile ahead.
+void lookDownAtBoards(Session& session);
+/// The eye near straight down, on a thing underfoot.
+void lookAtFeet(Session& session);
+/// The eye level again.
+void lookLevel(Session& session);
+/// Opens the Character tile on its PACK view and walks the cursor onto the
+/// first row whose printed label starts with `prefix`. False when none does.
+[[nodiscard]] bool openPackRow(Session& session, const std::string& prefix);
 
 constexpr std::int32_t kCourtRopePageBeats = 4;
 [[nodiscard]] bool courtEndingHangs(const std::string& ending);
@@ -204,6 +222,12 @@ constexpr std::int32_t kStreetReachTiles = 2;
 [[nodiscard]] int runKitLine(Session& session, const std::string& ending);
 [[nodiscard]] int runPackLine(Session& session, const std::string& ending);
 [[nodiscard]] int packBeatsFor(const std::string& ending);
+[[nodiscard]] int runGearLine(Session& session, const std::string& ending);
+[[nodiscard]] int gearBeatsFor(const std::string& ending);
+/// The worn rows' raws ids in the screen's slot order, comma-joined ("-" when
+/// nothing is worn) -- the gear line's summary, so a capture says what the
+/// body had on at the shutter.
+[[nodiscard]] std::string gearWornIds(const Session& session);
 [[nodiscard]] int runCourtLine(Session& session, const std::string& ending);
 [[nodiscard]] int runTrailLine(Session& session, const std::string& ending);
 [[nodiscard]] int runBurgleLine(Session& session, const std::string& ending);

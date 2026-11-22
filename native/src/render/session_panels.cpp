@@ -963,12 +963,89 @@ namespace {
     return digits;
 }
 
+/// PHASE 9 -- THE WORN BLOCK'S LABEL COLUMN: every slot's short word
+/// (HAND .. TRINKET) padded to the widest of the seven, so the things worn
+/// start in one column on both views of the tile. Measured off the words
+/// themselves rather than typed as 8: a renamed slot moves the column, not
+/// the rows under it.
+[[nodiscard]] std::size_t slotWordWidth() {
+    std::size_t width = 0;
+    for (const sim::ItemSlot slot : sim::kSlotScreenOrder) {
+        width = std::max(width, std::string(sim::itemSlotShortWord(slot)).size());
+    }
+    return width;
+}
+
+/// One worn row, the SAME string on the sheet and in the pack: the slot's
+/// word, then the thing on it -- a hand item as the sheet's own span line
+/// ("CUTLASS 11-13 EDGE"), a piece by name with its DR, "-" for a bare
+/// slot. The hand is the one slot that is never "-": D10 ruled fists a real
+/// state the moment an equipment model exists, so a bare hand prints what it
+/// swings (FISTS 3-5 IMPACT, or the class a sheet put in it directly).
+[[nodiscard]] std::string wornSlotLine(const sim::Tavern& tavern, sim::ItemSlot slot) {
+    std::string line(sim::itemSlotShortWord(slot));
+    line.append(slotWordWidth() - line.size(), ' ');
+    line += "  ";
+    const sim::ItemDef* worn = tavern.items().at(tavern.kit().worn(slot));
+    if (worn != nullptr) {
+        line += slot == sim::ItemSlot::Hand ? sim::itemSheetLine(*worn) : worn->name;
+        if (worn->dr > 0) {
+            line += "  DR " + std::to_string(worn->dr);
+        }
+    } else if (slot == sim::ItemSlot::Hand) {
+        line += sim::weaponSheetLine(tavern.playerWeapon());
+    } else {
+        line += "-";
+    }
+    return line;
+}
+
+/// PHASE 9 -- THE COMPARISON LINE, word for word off the sim's GearCompare
+/// and nothing else (the screen never does the arithmetic the wear will).
+/// DR always and first, so every block opens on the same line and reads as a
+/// table down the pane ("DR 2 -> 2" on a blade says the blade turns nothing,
+/// which is true); the span whenever the hand changes (a hand row, or a
+/// shield that takes a two-hander out of it); reach and the swing's recovery
+/// as words, only when they change; then one TAKES OFF line per slot the
+/// press would bare, named by what is on it now.
+[[nodiscard]] std::vector<std::string> gearCompareLines(const sim::GearCompare& gear,
+                                                        const sim::Tavern& tavern) {
+    std::vector<std::string> lines;
+    if (!gear.applies) {
+        return lines;
+    }
+    const auto n = [](std::int32_t value) { return std::to_string(value); };
+    lines.push_back("DR " + n(gear.drNow) + " -> " + n(gear.drThen));
+    if (gear.showsDamage) {
+        lines.push_back("DMG " + n(gear.dmgLoNow) + "-" + n(gear.dmgHiNow) + " -> " +
+                        n(gear.dmgLoThen) + "-" + n(gear.dmgHiThen));
+    }
+    if (gear.reachThenQ8 != gear.reachNowQ8) {
+        lines.emplace_back(gear.reachThenQ8 > gear.reachNowQ8 ? "REACH LONGER" : "REACH SHORTER");
+    }
+    if (gear.recoveryThen != gear.recoveryNow) {
+        lines.emplace_back(gear.recoveryThen > gear.recoveryNow ? "SPEED SLOWER" : "SPEED FASTER");
+    }
+    for (const sim::ItemSlot slot : gear.bares) {
+        const sim::ItemDef* off = tavern.items().at(tavern.kit().worn(slot));
+        if (off == nullptr) {
+            continue;
+        }
+        lines.push_back("TAKES OFF " + std::string(sim::itemSlotShortWord(slot)) + " " + off->name);
+    }
+    return lines;
+}
+
 }  // namespace
 
 std::vector<std::string> Session::characterRows() const {
     if (characterPack_) {
         return packRowLabels();
     }
+    return sheetRows(nullptr);
+}
+
+std::vector<std::string> Session::sheetRows(std::size_t* kitOffset) const {
     // FIVE ROWS, THEN FOUR, THEN FIVE, THEN THREE: the five Legend tracks
     // (S8's own "who am I in this city yet", derived and thrown away every
     // frame until this page existed -- see the header), the four skills a
@@ -979,8 +1056,9 @@ std::vector<std::string> Session::characterRows() const {
     // for.
     std::vector<std::string> rows;
     // The five tracks, up to twenty skills, four attributes, five ladders,
-    // the three always-printed rows and the IN HAND row the armed sheet adds.
-    rows.reserve(sim::kLegendTracks + 20 + sim::kAttributeCount + 5 + 4);
+    // the three always-printed rows, the seven worn rows and the load.
+    rows.reserve(sim::kLegendTracks + 20 + sim::kAttributeCount + 5 + 3 +
+                 std::size(sim::kSlotScreenOrder) + 1);
     const sim::Legend book = legend();
     for (std::size_t i = 0; i < sim::kLegendTracks; ++i) {
         const sim::LegendRow& row = book.rows()[i];
@@ -1123,40 +1201,25 @@ std::vector<std::string> Session::characterRows() const {
     rows.push_back("REPUTATION  " + std::string(talk.ledger().reputationLabel()));
     rows.push_back("COIN  " + std::to_string(tavern_->playerCoin()));
     rows.push_back("HEAT  " + std::to_string(talk.crimes().heat()));
-    // IN HAND -- the reference sheet's w slot ("cane 1-6 Impact"). KIT
-    // BUILD (D10): ALWAYS printed now, because fists are a real state once
-    // an equipment model exists -- the sheet says what the hand holds, the
-    // item by name when a Kit row is worn there, the class line when a
-    // sheet armed the hand directly, FISTS 3-5 IMPACT otherwise.
-    if (const sim::ItemDef* held = tavern_->heldItem(); held != nullptr) {
-        rows.push_back("IN HAND  " + sim::itemSheetLine(*held));
-    } else {
-        rows.push_back("IN HAND  " + sim::weaponSheetLine(tavern_->playerWeapon()));
-    }
-    // THE WORN SLOTS, printed ONLY for a slot the raws hold at least one
-    // item for (D10's own rule against furniture): the thing worn there by
-    // name, or NOTHING -- the reference's "no trinket" wording.
+    // THE WORN BLOCK (OBLIVION-PLAN phase 9): all seven slots, always, in the
+    // screen's own order -- HAND, OFF-HAND, HEAD, BODY, HANDS, FEET, TRINKET
+    // -- the same seven rows the pack's WORN block prints, "-" on a bare
+    // one. D10 printed a slot only when the raws held an item for it; with a
+    // shield, gloves and a helmet in the raws every slot has one, and a block
+    // that is always seven rows is one the eye learns once. The hand keeps
+    // D10's other rule (wornSlotLine): fists are a state, never a dash.
     const sim::ItemRegistry& items = tavern_->items();
-    for (std::int32_t slotIndex = 0; slotIndex < static_cast<std::int32_t>(sim::kWornSlotCount);
-         ++slotIndex) {
-        const sim::ItemSlot slot = sim::wornSlotAt(slotIndex);
-        if (slot == sim::ItemSlot::Hand || !items.slotHasItems(slot)) {
-            continue;
-        }
-        const sim::ItemDef* worn = items.at(tavern_->kit().worn(slot));
-        std::string line = std::string(sim::itemSlotSheetLabel(slot)) + "  ";
-        if (worn != nullptr) {
-            line += worn->name;
-            if (worn->dr > 0) {
-                line += "  DR " + std::to_string(worn->dr);
-            }
-        } else {
-            line += "NOTHING";
-        }
-        rows.push_back(std::move(line));
+    for (const sim::ItemSlot slot : sim::kSlotScreenOrder) {
+        rows.push_back(wornSlotLine(*tavern_, slot));
     }
     // THE LOAD, the one visible budget, then every carried row.
     rows.push_back(loadLine());
+    // Where the carried rows start: the cursor offset the tile's verbs
+    // subtract (characterKitOffset), counted off the rows actually pushed --
+    // a skill that has moved, a ladder the raws add, a slot -- never typed.
+    if (kitOffset != nullptr) {
+        *kitOffset = rows.size();
+    }
     // KITFIX LANE. THE LIST READ TWICE: once to learn what every row's
     // prefix, drams and worth actually are (and how wide the widest of
     // each runs), once to compose the lines -- rightAlignedDigits()'s own
@@ -1221,8 +1284,10 @@ std::vector<std::string> Session::characterRows() const {
             // word the row lost -- `KNIFE   8DR   4C  IN..` on every common
             // monitor. HELD and WORN are a pair. The SLOT tag below is the
             // column that falls off there, whole (panel.hpp, clipColumns),
-            // and the strip says which slot.
-            line += thing.slot == sim::ItemSlot::Hand ? "  HELD" : "  WORN";
+            // and the strip says which slot. PHASE 9: a shield is held too.
+            line += thing.slot == sim::ItemSlot::Hand || thing.slot == sim::ItemSlot::OffHand
+                        ? "  HELD"
+                        : "  WORN";
         }
         for (std::int32_t slot = 0; slot < sim::Tavern::kQuickSlotCount; ++slot) {
             if (tavern_->slotItemIndex(slot) == row.item) {
@@ -1280,21 +1345,14 @@ std::size_t Session::characterKitOffset() const {
         // The pack's rows are the list: nothing precedes them.
         return 0;
     }
-    // The standings block (five tracks, four skills, four attributes, five
-    // ladders, three ward rows), IN HAND, one row per worn slot the raws
-    // populate, LOAD. MERGE FIX: this fell out of step with characterRows()
-    // when THE HONEST SHEET (pull pack) inserted the four attribute rows --
-    // nothing here counted them, so every cursor-vs-offset comparison in
-    // highlightedKitRow() was off by kAttributeCount the moment both landed
-    // on the same tree.
-    std::size_t offset = sim::kLegendTracks + 4 + sim::kAttributeCount + 5 + 3 + 1 + 1;
-    for (std::int32_t slotIndex = 0; slotIndex < static_cast<std::int32_t>(sim::kWornSlotCount);
-         ++slotIndex) {
-        const sim::ItemSlot slot = sim::wornSlotAt(slotIndex);
-        if (slot != sim::ItemSlot::Hand && tavern_->items().slotHasItems(slot)) {
-            ++offset;
-        }
-    }
+    // Read off the sheet itself, not re-added here. MERGE FIX's lesson, twice
+    // over: this was a typed sum (tracks + four skills + attributes + five
+    // ladders + ward rows + IN HAND + the raws' slots + LOAD) that fell out of
+    // step with characterRows() when the attribute rows went in, and stayed
+    // out of step for any skill a verb had moved past the four always shown.
+    // PHASE 9 made the worn block seven rows; the count below cannot miss it.
+    std::size_t offset = 0;
+    (void)sheetRows(&offset);
     return offset;
 }
 
@@ -1380,6 +1438,9 @@ void Session::wearHighlightedKitRow() {
             audio_->playOneShot(thing->weaponClass >= sim::kFirstLethalWeapon
                                     ? audio::SoundId::KnifeDraw
                                     : audio::SoundId::MetalClick);
+        } else if (thing->slot == sim::ItemSlot::OffHand) {
+            // PHASE 9: a shield is taken up off the floor, not shrugged on.
+            audio_->playOneShot(audio::SoundId::MetalClick);
         } else {
             audio_->playOneShot(audio::SoundId::ClothRustle);
         }
@@ -1462,18 +1523,14 @@ std::vector<Session::PackRow> Session::packRows() const {
     std::vector<PackRow> rows;
     const sim::ItemRegistry& items = tavern_->items();
     const sim::Kit& kit = tavern_->kit();
-    // WORN: one row per slot the raws fill, the hand always (fists are a
-    // real state), the thing in it or a bare slot.
+    // WORN: all seven slots in the screen's order (PHASE 9 -- HAND, OFF-HAND,
+    // HEAD, BODY, HANDS, FEET, TRINKET), the thing in it or a bare slot. A
+    // bare slot is a row the cursor can stand on and read what it is for.
     PackRow worn;
     worn.kind = PackRow::Kind::Header;
     worn.text = "WORN";
     rows.push_back(worn);
-    for (std::int32_t slotIndex = 0; slotIndex < static_cast<std::int32_t>(sim::kWornSlotCount);
-         ++slotIndex) {
-        const sim::ItemSlot slot = sim::wornSlotAt(slotIndex);
-        if (slot != sim::ItemSlot::Hand && !items.slotHasItems(slot)) {
-            continue;
-        }
+    for (const sim::ItemSlot slot : sim::kSlotScreenOrder) {
         PackRow row;
         row.kind = PackRow::Kind::Slot;
         row.slot = slot;
@@ -1523,44 +1580,18 @@ std::vector<Session::PackRow> Session::packRows() const {
     return rows;
 }
 
-namespace {
-
-/// The pack's own short word for a slot -- the sheet's worded rows (ON THE
-/// BACK, AT THE BELT) are eleven cells wide and the tile is thirty.
-[[nodiscard]] std::string_view packSlotWord(sim::ItemSlot slot) noexcept {
-    switch (slot) {
-        case sim::ItemSlot::Hand:
-            return "IN HAND";
-        case sim::ItemSlot::Body:
-            return "BODY";
-        case sim::ItemSlot::Head:
-            return "HEAD";
-        case sim::ItemSlot::Feet:
-            return "FEET";
-        case sim::ItemSlot::Trinket:
-            return "BELT";
-        case sim::ItemSlot::None:
-            break;
-    }
-    return "CARRIED";
-}
-
-}  // namespace
-
 std::vector<std::string> Session::packRowLabels() const {
     const sim::ItemRegistry& items = tavern_->items();
     const std::vector<PackRow> rows = packRows();
     std::vector<std::string> out;
     out.reserve(rows.size());
     // Widths read off the list first, the sheet's own two-pass rule, so every
-    // "NNDR" starts under the last one.
-    std::size_t slotWidth = 0;
+    // "NNDR" starts under the last one. The worn rows' own column is
+    // wornSlotLine's (the sheet prints the same seven strings).
     std::size_t prefixWidth = 0;
     std::size_t dramsWidth = 0;
     for (const PackRow& row : rows) {
-        if (row.kind == PackRow::Kind::Slot) {
-            slotWidth = std::max(slotWidth, packSlotWord(row.slot).size());
-        } else if (row.kind == PackRow::Kind::Item) {
+        if (row.kind == PackRow::Kind::Item) {
             const sim::ItemDef* thing = items.at(row.item);
             if (thing == nullptr) {
                 continue;
@@ -1584,21 +1615,7 @@ std::vector<std::string> Session::packRowLabels() const {
             continue;
         }
         if (row.kind == PackRow::Kind::Slot) {
-            std::string label(packSlotWord(row.slot));
-            label.append(slotWidth - label.size(), ' ');
-            label += "  ";
-            const sim::ItemDef* thing = items.at(row.item);
-            if (thing != nullptr) {
-                label += row.slot == sim::ItemSlot::Hand ? sim::itemSheetLine(*thing) : thing->name;
-                if (thing->dr > 0) {
-                    label += "  DR " + std::to_string(thing->dr);
-                }
-            } else if (row.slot == sim::ItemSlot::Hand) {
-                label += sim::weaponSheetLine(tavern_->playerWeapon());
-            } else {
-                label += "NOTHING";
-            }
-            out.push_back(std::move(label));
+            out.push_back(wornSlotLine(*tavern_, row.slot));
             continue;
         }
         const sim::ItemDef* thing = items.at(row.item);
@@ -1695,6 +1712,11 @@ InspectPane Session::inspectPaneView() const {
                 pane.kind = "IN HAND";
                 pane.prose = "NOTHING IN THE HAND BUT THE HAND.";
                 pane.facts.push_back({"DAMAGE", sim::weaponSheetLine(tavern_->playerWeapon())});
+            } else if (const sim::ItemDef* held = items.at(kit.worn(sim::ItemSlot::Hand));
+                       at.slot == sim::ItemSlot::OffHand && held != nullptr &&
+                       held->grip == sim::WeaponGrip::TwoHanded) {
+                // PHASE 9: the other hand is not empty, it is on the haft.
+                pane.prose = "BOTH HANDS ARE ON THE " + held->name + ". A SHIELD TAKES IT OFF.";
             } else {
                 pane.prose = "NOTHING WORN HERE. A PIECE FOR THIS SLOT TURNS A BLOW.";
             }
@@ -1757,6 +1779,11 @@ InspectPane Session::inspectPaneView() const {
             {"DAMAGE", digits(record.damageLo) + "-" + digits(record.damageHi) + " " +
                            record.damageWord});
     }
+    // PHASE 9: a two-hander says so before it is worn -- it is why the
+    // shield row goes bare (the comparison line names what comes off).
+    if (thing->slot == sim::ItemSlot::Hand && record.grip == sim::WeaponGrip::TwoHanded) {
+        pane.facts.push_back({"GRIP", "TWO HANDS"});
+    }
     if (record.dr > 0) {
         pane.facts.push_back({"ARMOUR", "TURNS " + digits(record.dr) + " A BLOW"});
     }
@@ -1773,6 +1800,13 @@ InspectPane Session::inspectPaneView() const {
                 break;
             }
         }
+    }
+    // PHASE 9 -- WHAT THE PRESS WOULD CHANGE, for a carried thing that goes
+    // on the body: the sim's own comparison (compareGear), printed and never
+    // recomputed. A worn row compares with nothing (it IS what is worn).
+    if (at.kind == PackRow::Kind::Item && at.inKit && thing->slot != sim::ItemSlot::None &&
+        !thing->fixed) {
+        pane.compare = gearCompareLines(sim::compareGear(kit, items, at.item), *tavern_);
     }
     // THE KEYS, on the foot -- the same presses the list takes.
     if (at.inKit) {

@@ -574,9 +574,12 @@ public:
     /// (named in `warnings()`), never fatal.
     /// `extraItemsJson` is an optional second document whose `items` rows are
     /// appended after the first's (docks-pieces-items.json, Phase 8): the
-    /// variant numbers of the first table's rows never move.
+    /// variant numbers of the first table's rows never move. `gearItemsJson`
+    /// is a third, appended after the second (docks-pieces-gear.json, Phase
+    /// 9: the gear rows), by the same rule.
     [[nodiscard]] static StaticCatalogue fromJson(std::string_view json,
-                                                  std::string_view extraItemsJson = {});
+                                                  std::string_view extraItemsJson = {},
+                                                  std::string_view gearItemsJson = {});
     /// Reads and parses a file; an absent file is an empty catalogue.
     [[nodiscard]] static StaticCatalogue load(const std::filesystem::path& file);
 

@@ -260,6 +260,16 @@ void Backend::Impl::drawViewmodel(const ViewmodelInstance& hands, SceneStats& st
             ++stats.instancesDrawn;
             stats.viewmodelWeaponLoaded = true;
         }
+        // PHASE 9: THE SHIELD over the licensed arms. The rig carries none,
+        // so the description's own shield part is drawn here as it is over
+        // the placeholder -- on the pose table's left fist, in the rig's
+        // light -- and rises with the table's block like the arms' guard.
+        for (const ViewmodelPart& part : hands.parts) {
+            if (isViewmodelShieldMeshId(part.meshId) &&
+                drawMeshWith(part.meshId, 0, hands.tint, partTransform(part), stats, kSurfaceLit, true)) {
+                ++stats.viewmodelPartsDrawn;
+            }
+        }
     } else {
         for (const ViewmodelPart& part : hands.parts) {
             if (drawMeshWith(part.meshId, 0, part.tint, partTransform(part), stats, kSurfaceLit, true)) {

@@ -445,9 +445,40 @@ void putActorFigures(SceneDescription& scene, const std::vector<ActorInstance>& 
     for (const ActorInstance& body : actors) {
         if (isFigureMeshId(body.instance.meshId)) {
             const ActorLook look = ActorLook::fromKey(body.lookKey);
-            putFigure(scene, look, isFarFigureMeshId(body.instance.meshId));
+            const bool far = isFarFigureMeshId(body.instance.meshId);
+            putFigure(scene, look, far);
+            // PHASE 9: what the body wears over its clothes, only where it
+            // wears anything -- a bare crowd puts exactly the meshes it did.
+            if (body.gearKey != 0U) {
+                putFigureKit(scene, look, GearLook::fromKey(body.gearKey), far);
+            }
         }
     }
+}
+
+void dressInGear(ActorInstance& body, const ActorLook& look, const GearLook& gear, bool far) {
+    const ActorLook dressed = dressedLook(look, gear);
+    body.lookKey = dressed.key();
+    body.gearKey = gear.key();
+    body.instance.meshId = far ? figureFarMeshId(dressed) : figureMeshId(dressed);
+}
+
+ActorInstance playerFigureInstance(const render::Camera& eye, float surfaceY, const GearLook& gear,
+                                   float distance) {
+    // The --sheet rows' own frame: forward is (sin yaw, -cos yaw) in tiles.
+    const float px = eye.x + std::sin(eye.yaw) * distance;
+    const float py = eye.y - std::cos(eye.yaw) * distance;
+    ActorInstance body;
+    body.rig = kActorRigProcedural;
+    body.instance.position = toScene(px, py, surfaceY);
+    body.instance.yaw = eye.yaw + kPi;
+    body.instance.scale = actorInstanceScale(sim::WardType::Sailor);
+    body.instance.tint = Rgba8{255, 255, 255, 255};
+    dressInGear(body, playerFigureLook(), gear, false);
+    body.skinned = true;
+    body.clip = ActorClip::Idle;
+    body.clipFrame = 30U;
+    return body;
 }
 
 void putActorRigs(SceneDescription& scene) {
@@ -577,6 +608,16 @@ std::vector<ActorInstance> actorInstances(const render::Session& session,
         body.skinned = distance <= params.skinDistance;
         if (!body.skinned && isFigureMeshId(body.instance.meshId)) {
             body.instance.meshId = figureFarMeshId(ActorLook::fromKey(body.lookKey));
+        }
+        // PHASE 9: what the Gull's own hold is in the hand -- the bouncer's
+        // cudgel, the nemesis's knife -- through the same kit the player's
+        // figure wears. The sim's Weapon byte, read, never written.
+        if (isFigureMeshId(body.instance.meshId)) {
+            GearLook held;
+            held.prop = gearPropOfWeapon(actor.weapon());
+            if (held.key() != 0U) {
+                body.gearKey = held.key();
+            }
         }
         out.push_back(body);
     }

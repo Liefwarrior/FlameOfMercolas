@@ -419,6 +419,24 @@ it. `ENTER` wears or bares a worn thing and eats, drinks or binds a consumable; 
 `RIGHT` walk its quick slot. A loaf, a mug of ale and a bandage lie on the quay and in the Gull. `granadad
 --pack` plays the line.
 
+**Weapons and armour** (OBLIVION-PLAN phase 9). The pack's WORN block is seven rows, always in the same
+order: HAND, OFF-HAND, HEAD, BODY, HANDS, FEET, TRINKET, a `-` on a bare one (a bare hand says what your
+fists do). Put the cursor on something you carry and the pane says what wearing it would change before you
+press anything: `DR 2 -> 4`, `DMG 11-13 -> 9-13` for a blade or a club, `REACH LONGER` and `SPEED SLOWER`
+for a two-hander, and `TAKES OFF ...` in orange for whatever comes off. A two-hander takes the shield off
+your arm; a shield takes the two-hander out of your hands. Every piece but the one in your hand turns a
+blow. Same keys as the pack: `ENTER` wears or bares, `X` drops, `LEFT`/`RIGHT` the quick slot.
+
+```
+granadad --gear --screenshot=x.png             # take, wear, compare, a shield, a maul, Ox
+granadad --gear=compare --screenshot=x.png     # the maul's comparison line, before the press
+granadad --gear=guard --screenshot=x.png       # dressed for the door, back on the spawn at 09:00
+granadad --gear=gull --screenshot=x.png        # the same, in the Gull's taproom at 20:00
+```
+
+`--gear=light`, `--gear=guard` and `--gear=heavy` finish on the same tile, facing the same way, at the
+same hour as a plain `--hold --time=9` run, so the three frames sit beside the before frame.
+
 **The purses are real.** What you pay goes into the keeper's own purse in
 the ward's ledger; what Fenner pays comes out of his, and a short pawnbroker
 says so: *"FENNER HAS NOT GOT IT TODAY."* Worn things are not for sale --

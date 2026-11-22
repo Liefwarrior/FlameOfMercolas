@@ -123,6 +123,13 @@ struct InspectPane {
     std::string prose;
     /// Label and value rows, values in one column.
     std::vector<InspectFact> facts;
+    /// PHASE 9 -- the comparison against what is worn, one short line each,
+    /// printed straight off the sim's GearCompare: "DR 2 -> 4", "DMG 7-9 ->
+    /// 6-10", "REACH LONGER", "SPEED SLOWER", "TAKES OFF OFF-HAND ROUND
+    /// SHIELD". Empty for anything that is not a wearable carried row. Drawn
+    /// on the rows just over the foot, which the prose and the facts give way
+    /// to: it is the part of the pane the WEAR key below it acts on.
+    std::vector<std::string> compare;
     /// The foot: a key and the word it does, left to right as they fit.
     std::vector<InspectVerb> verbs;
 };
