@@ -5165,13 +5165,17 @@ const ItemDef* Tavern::heldItem() const noexcept {
 
 std::int32_t Tavern::playerDamageLo() const noexcept {
     // The worn row's own span when the hand holds one; otherwise the class
-    // the legacy byte names -- the span strike() always rolled for it.
-    return kit_.worn(ItemSlot::Hand) >= 0 ? kit_.handDamageLo(items_) : baseDamage(playerWeapon_);
+    // the legacy byte names -- the span strike() always rolled for it. One
+    // function (handSpanOf) answers both this and the inspect pane.
+    return kit_.handDamageLo(items_, playerWeapon_);
 }
 
 std::int32_t Tavern::playerDamageHi() const noexcept {
-    return kit_.worn(ItemSlot::Hand) >= 0 ? kit_.handDamageHi(items_)
-                                          : baseDamage(playerWeapon_) + kStrikeVarianceMax;
+    return kit_.handDamageHi(items_, playerWeapon_);
+}
+
+GearCompare Tavern::compareGear(std::int32_t index) const {
+    return sim::compareGear(kit_, items_, index, playerWeapon_);
 }
 
 Blow Tavern::strikeAsPlayer(Fighter& target, std::uint64_t roll, std::int32_t bonus,

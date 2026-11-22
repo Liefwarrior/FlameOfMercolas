@@ -1081,8 +1081,15 @@ TEST_CASE("phase 9: the hand model is the thing in the hand, and the shield show
         CHECK(kinds.insert(static_cast<std::uint8_t>(kind)).second);
         CHECK(viewmodelKindName(kind) == item.model);
         CHECK(viewmodelKindFromName(item.model) == static_cast<int>(kind));
-        CHECK_FALSE(viewmodelWeaponFile(kind).empty());
-        CHECK(viewmodelRigFile(kind) == "viewmodel_fists.glb");
+        // A two-hander is the placeholder arms in every build (the licensed
+        // clips hold one hand); the others hang their licensed file.
+        if (viewmodelTwoHanded(kind)) {
+            CHECK(viewmodelRigFile(kind).empty());
+            CHECK(viewmodelWeaponFile(kind).empty());
+        } else {
+            CHECK_FALSE(viewmodelWeaponFile(kind).empty());
+            CHECK(viewmodelRigFile(kind) == "viewmodel_fists.glb");
+        }
         CHECK(viewmodelHasPart(kind, ViewmodelPartId::Weapon));
         CHECK(viewmodelTwoHanded(kind) == (item.grip == sim::WeaponGrip::TwoHanded));
         ++gearHands;
@@ -1119,7 +1126,10 @@ TEST_CASE("phase 9: the hand model is the thing in the hand, and the shield show
     ViewmodelInstance guarded;
     poseViewmodel(guarded, ViewmodelKind::Fists, raised, Rgba8{}, ViewmodelShield::Buckler);
     CHECK(guarded.shield == static_cast<std::uint8_t>(ViewmodelShield::Buckler));
-    REQUIRE(guarded.parts.size() == bare.parts.size() + 1U);
+    // ONE LEFT HAND: the shield takes the left fist's place, it does not
+    // join it.
+    REQUIRE(guarded.parts.size() == bare.parts.size());
+    CHECK(partOf(guarded, ViewmodelPartId::LeftFist) == nullptr);
     const ViewmodelPart* shield = nullptr;
     for (const ViewmodelPart& part : guarded.parts) {
         if (part.meshId == viewmodelShieldMeshId(ViewmodelShield::Buckler)) {
@@ -1128,9 +1138,9 @@ TEST_CASE("phase 9: the hand model is the thing in the hand, and the shield show
     }
     REQUIRE(shield != nullptr);
     CHECK(isViewmodelShieldMeshId(shield->meshId));
-    REQUIRE(partOf(guarded, ViewmodelPartId::LeftFist) != nullptr);
-    CHECK(shield->position.x == partOf(guarded, ViewmodelPartId::LeftFist)->position.x);
-    CHECK(shield->position.y == partOf(guarded, ViewmodelPartId::LeftFist)->position.y);
+    REQUIRE(partOf(bare, ViewmodelPartId::LeftFist) != nullptr);
+    CHECK(shield->position.x == partOf(bare, ViewmodelPartId::LeftFist)->position.x);
+    CHECK(shield->position.y == partOf(bare, ViewmodelPartId::LeftFist)->position.y);
     SceneDescription withShield;
     SceneDescription without;
     putViewmodelMeshes(withShield);
@@ -1183,6 +1193,49 @@ TEST_CASE("phase 9: the hand model is the thing in the hand, and the shield show
     CHECK(std::sqrt(dx * dx + dy * dy + dz * dz) == doctest::Approx(0.24F).epsilon(0.01));
     CHECK(left->position.z < right->position.z);  // up the haft, away from the eye
     CHECK(left->rotation.x == right->rotation.x);
+    // Carried across the body: the haft climbs to the upper left.
+    CHECK(left->position.x < right->position.x);
+    CHECK(left->position.y > right->position.y);
+
+    // EVERY KIND'S LEFT HAND, with and without each shield, in the rest,
+    // the charge, the swing and the block: exactly one left-hand thing
+    // (the fist or the shield, never both); a two-hander's left fist on the
+    // haft a span up from the right; a shield where the fist would be.
+    for (std::size_t k = 0; k < kViewmodelKindCount; ++k) {
+        const auto kind = static_cast<ViewmodelKind>(k);
+        for (const ViewmodelShield with :
+             {ViewmodelShield::None, ViewmodelShield::Buckler, ViewmodelShield::RoundShield}) {
+            for (const ViewmodelState state : {ViewmodelState::Idle, ViewmodelState::Charging,
+                                               ViewmodelState::SwingHard, ViewmodelState::Block}) {
+                ViewmodelPose p;
+                p.state = state;
+                p.stateSteps = 4;
+                p.chargeSteps = 8;
+                ViewmodelInstance h;
+                poseViewmodel(h, kind, p, Rgba8{}, with);
+                INFO(viewmodelKindName(kind), " shield ", static_cast<int>(with), " state ",
+                     static_cast<int>(state));
+                std::size_t leftThings = 0;
+                for (const ViewmodelPart& part : h.parts) {
+                    leftThings += (isViewmodelShieldMeshId(part.meshId) ||
+                                   part.meshId == viewmodelMeshId(kind, ViewmodelPartId::LeftFist))
+                                      ? 1U
+                                      : 0U;
+                }
+                CHECK(leftThings == 1U);
+                CHECK((partOf(h, ViewmodelPartId::LeftFist) == nullptr) == (with != ViewmodelShield::None));
+                const ViewmodelPart* r = partOf(h, ViewmodelPartId::RightFist);
+                const ViewmodelPart* l = partOf(h, ViewmodelPartId::LeftFist);
+                REQUIRE(r != nullptr);
+                if (viewmodelTwoHanded(kind) && l != nullptr) {
+                    const float ex = l->position.x - r->position.x;
+                    const float ey = l->position.y - r->position.y;
+                    const float ez = l->position.z - r->position.z;
+                    CHECK(std::sqrt(ex * ex + ey * ey + ez * ez) == doctest::Approx(0.24F).epsilon(0.01));
+                }
+            }
+        }
+    }
     // The two-hander's wind-up fills at its own, longer hold: a charge the
     // one-handed hold calls full is not yet full in two hands.
     ViewmodelPose charging;

@@ -693,6 +693,11 @@ public:
     /// direct arming, exactly the span strike() always rolled.
     [[nodiscard]] std::int32_t playerDamageLo() const noexcept;
     [[nodiscard]] std::int32_t playerDamageHi() const noexcept;
+    /// PHASE 9. The inspect pane's comparison for wearing row `index`, over
+    /// THIS body: sim::compareGear with the class a bare hand swings as now
+    /// (playerWeapon_), so the pane's "now" span is exactly playerDamageLo/Hi
+    /// -- the span the next blow rolls.
+    [[nodiscard]] GearCompare compareGear(std::int32_t index) const;
 
     /// A shove the room wants applied to the player's body, in Q8, or (0,0).
     /// Read and CLEARED by the caller, which owns the body -- the tavern never

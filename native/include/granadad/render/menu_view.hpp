@@ -71,6 +71,7 @@
 // current nine-key window are simply shown unnumbered, reachable by the
 // cursor, the same honesty casebook_page.cpp's kDirectSelectRows keeps.
 
+#include <cstdint>
 #include <string>
 #include <vector>
 
@@ -124,12 +125,18 @@ struct InspectPane {
     /// Label and value rows, values in one column.
     std::vector<InspectFact> facts;
     /// PHASE 9 -- the comparison against what is worn, one short line each,
-    /// printed straight off the sim's GearCompare: "DR 2 -> 4", "DMG 7-9 ->
-    /// 6-10", "REACH LONGER", "SPEED SLOWER", "TAKES OFF OFF-HAND ROUND
-    /// SHIELD". Empty for anything that is not a wearable carried row. Drawn
-    /// on the rows just over the foot, which the prose and the facts give way
-    /// to: it is the part of the pane the WEAR key below it acts on.
+    /// printed straight off the sim's GearCompare and only for what CHANGES:
+    /// "DR 2 -> 4", "DMG 11-13 -> 10-16", "REACH LONGER", "SPEED SLOWER",
+    /// "PUTS DOWN THE CUTLASS", "TAKES OFF THE BUCKLER". Empty for anything
+    /// that is not a wearable carried row. Drawn on the rows just over the
+    /// foot, which the prose and the facts give way to: it is the part of the
+    /// pane the WEAR key below it acts on.
     std::vector<std::string> compare;
+    /// What each compare line means for the body, so the colour carries it:
+    /// better in green, worse (and anything the press takes off) in the
+    /// warning ink, a sideways change plain. Parallel to `compare`.
+    enum class Tone : std::uint8_t { Plain = 0, Better = 1, Worse = 2 };
+    std::vector<Tone> compareTone;
     /// The foot: a key and the word it does, left to right as they fit.
     std::vector<InspectVerb> verbs;
 };
@@ -277,8 +284,13 @@ struct MenuTilePage {
 /// "twelve topics in a twenty-seven-row pane is twelve rows and no MORE" and
 /// "twelve topics in a six-row pane is three screens" without rendering a
 /// pixel.
+/// `unkeyed` lists rows no digit reaches (a pane's group headers): they take
+/// no number and do not use one up, and the window of nine digit keys is
+/// counted over the OTHER rows -- `page` then counts nine of those. Empty
+/// (every caller but the pack) keeps the plain nine-row window.
 [[nodiscard]] MenuTilePage menuTilePageFor(const std::vector<std::string>& topics, int page,
-                                           int cursor, int capacity);
+                                           int cursor, int capacity,
+                                           const std::vector<int>& unkeyed = {});
 
 /// Draws all four tiles at once: Character top-left, Map top-centre, Letters
 /// top-right, Journal full-width along the bottom. A closed Menu

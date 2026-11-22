@@ -885,7 +885,7 @@ void buildJack(const Parts& parts, const ActorLook& look, const Dims& d, GearBod
 void buildGloves(const Parts& parts, const Dims& d, GearHands hands, int sides, bool far) {
     const bool iron = hands == GearHands::Gauntlets;
     const Rgba8 colour = iron ? kGauntletIron : kGloveLeather;
-    const float g = iron ? 0.009F : 0.006F;
+    const float g = iron ? 0.007F : 0.005F;
     for (int s = 0; s < 2; ++s) {
         const float sx = s == 0 ? -1.0F : 1.0F;
         const float ax = sx * d.shoulderX;
@@ -907,8 +907,8 @@ void buildGloves(const Parts& parts, const Dims& d, GearHands hands, int sides, 
             const Rgba8 cuff = shapes::shaded(colour, iron ? 1.08F : 0.86F);
             if (iron) {
                 shapes::loft(b,
-                             {ring(0.972F, r * 0.80F + 0.014F, r * 0.80F + 0.014F, cuff, ax),
-                              ring(1.068F, r * 1.02F + 0.022F, r * 1.02F + 0.022F, cuff, ax)},
+                             {ring(0.972F, r * 0.78F + 0.012F, r * 0.78F + 0.012F, cuff, ax),
+                              ring(1.060F, r * 0.90F + 0.015F, r * 0.90F + 0.015F, cuff, ax)},
                              sides, true, true);
             } else {
                 shapes::loft(b,
@@ -1147,37 +1147,48 @@ void buildProp(const Parts& parts, const Dims& d, GearProp prop, int sides, bool
     }
 }
 
-/// THE SHIELD ON THE LEFT ARM: a round shield strapped to the outside of
-/// the forearm, its face out; a buckler gripped in the fist, face out. Both
-/// lofts along -X from the arm, so the face is a disc and the boss stands
-/// off it.
+/// THE SHIELD ON THE LEFT ARM: a round shield strapped along the forearm, a
+/// buckler gripped in the fist. Both face FORWARD and a little out (a shield
+/// faced square to the side is a line from the front, and the front is where
+/// a body is seen from), standing clear in front of the forearm and the hip,
+/// the boss off the painted face and plank seams across it.
 void buildShield(const Parts& parts, const Dims& d, GearShield shield, int sides, bool far) {
     if (shield == GearShield::None) {
         return;
     }
     const bool round = shield == GearShield::RoundShield;
     const float r = round ? 0.27F : 0.15F;
-    const float cx = round ? -(d.shoulderX + d.armR + 0.052F) : -(d.shoulderX + 0.064F);
-    const float cy = round ? 1.125F : 0.900F;
-    const float cz = round ? -0.010F : -0.012F;
-    const float inner = round ? 0.022F : 0.012F;
-    const float outer = 0.040F;
+    // The face's outward normal: forward (-Z) and out to the left (-X).
+    const Vec3 axis = round ? Vec3{-0.50F, 0.0F, -0.8660254F} : Vec3{-0.40F, 0.0F, -0.9165151F};
+    const Vec3 c = round ? Vec3{-(d.shoulderX + d.armR + 0.060F), 1.120F, -0.080F}
+                         : Vec3{-(d.shoulderX + 0.050F), 0.900F, -0.070F};
+    const float back = round ? 0.022F : 0.012F;
+    const Vec3 origin{c.x - axis.x * back, c.y, c.z - axis.z * back};
+    const Vec3 end{c.x + axis.x * 0.040F, c.y, c.z + axis.z * 0.040F};
     Builder b = parts.at(round ? FigureBone::ForearmL : FigureBone::HandL);
     float unused = 0.0F;
-    b.xf = shapes::alongAxis(Vec3{cx + inner, cy, cz}, Vec3{cx - outer, cy, cz}, Vec3{0.0F, 1.0F, 0.0F}, unused);
+    b.xf = shapes::alongAxis(origin, end, Vec3{0.0F, 1.0F, 0.0F}, unused);
     const Rgba8 rim = round ? kIron : shapes::shaded(kIron, 0.9F);
     const Rgba8 face = round ? kShieldPaint : kSteel;
-    const Rgba8 back = round ? kShieldWood : shapes::shaded(kIron, 0.7F);
+    const Rgba8 rear = round ? kShieldWood : shapes::shaded(kIron, 0.7F);
     shapes::loft(b,
-                 {ring(0.000F, r * 0.96F, r * 0.96F, back), ring(0.008F, r, r, rim), ring(0.020F, r, r, rim),
+                 {ring(0.000F, r * 0.96F, r * 0.96F, rear), ring(0.008F, r, r, rim), ring(0.020F, r, r, rim),
                   ring(0.020F, r * 0.97F, r * 0.97F, face), ring(0.030F, r * 0.90F, r * 0.90F, face),
                   ring(0.030F, r * 0.24F, r * 0.24F, rim), ring(0.048F, r * 0.18F, r * 0.18F, rim),
                   ring(0.058F, r * 0.07F, r * 0.07F, rim)},
                  sides);
-    if (!round && !far) {
-        // The buckler's grip, from the fist to the boss's back.
-        Builder grip = parts.at(FigureBone::HandL);
-        shapes::block(grip, Vec3{-(d.shoulderX + 0.046F), 0.900F, -0.006F}, Vec3{0.010F, 0.012F, 0.022F}, kLeather);
+    if (round && !far) {
+        for (const float x : {-0.14F, -0.05F, 0.05F, 0.14F}) {
+            const float chord = std::sqrt(std::max(0.0F, r * r * 0.82F - x * x));
+            shapes::block(b, Vec3{x, 0.0265F, 0.0F}, Vec3{0.005F, 0.0045F, chord}, shapes::shaded(kShieldPaint, 0.62F));
+        }
+    }
+    if (!far) {
+        // The strap or the grip, from the arm to the shield's back.
+        Builder grip = parts.at(round ? FigureBone::ForearmL : FigureBone::HandL);
+        const Vec3 at = round ? Vec3{-(d.shoulderX + d.armR * 0.5F), 1.12F, -0.085F}
+                              : Vec3{-(d.shoulderX + 0.030F), 0.900F, -0.040F};
+        shapes::block(grip, at, Vec3{0.018F, 0.014F, round ? 0.035F : 0.030F}, kLeather);
     }
 }
 

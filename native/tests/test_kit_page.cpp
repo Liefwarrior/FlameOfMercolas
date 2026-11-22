@@ -123,7 +123,7 @@ TEST_CASE("the crosshair names the thing on the ground, its weight when it is no
     Session::InteractTarget aim = session.interactTarget();
     CHECK(aim.verb == "TAKE");
     CHECK(aim.subject == "ROPE");
-    CHECK(aim.note == "48DR");
+    CHECK(aim.note == "48 DRAMS");
     CHECK(aim.kind == AimKind::Thing);
     // Crouched, the verb says how.
     session.setCrouched(true);
@@ -277,7 +277,7 @@ TEST_CASE("a corpse in reach is SEARCH <NAME>  DEAD, and the press opens his kit
     for (std::size_t i = 0; i < carried.size(); ++i) {
         const sim::ItemDef* thing = session.tavern().items().at(carried[i].item);
         REQUIRE(thing != nullptr);
-        CHECK(rows[i].rfind(thing->name + "  " + std::to_string(thing->drams) + "DR", 0) == 0);
+        CHECK(rows[i].rfind(thing->name + "  " + std::to_string(thing->drams) + "D", 0) == 0);
     }
     // The widget wears his name.
     const DialogueViewState view = session.dialogueView();
@@ -1257,7 +1257,7 @@ TEST_CASE("the pack is WORN then CARRIED, grouped by what a thing is, the worn u
     CHECK(ale > bread);
     CHECK(rowIndexOf(labels, "ROPE x2") > gear);
     // A stack is one row with its count and its total weight.
-    CHECK(labels[static_cast<std::size_t>(bread)].find("30DR") != std::string::npos);
+    CHECK(labels[static_cast<std::size_t>(bread)].find(" 30D") != std::string::npos);
     // The sheet is untouched by all this.
     session.toggleCharacterPack();
     CHECK_FALSE(session.characterPack());
@@ -1308,7 +1308,7 @@ TEST_CASE("the detail pane is the sim's inspect record: the numbers, THEIRS, and
         }
         return "";
     };
-    CHECK(fact("WEIGHT") == "8 DR");
+    CHECK(fact("WEIGHT") == "8 DRAMS");
     CHECK(fact("WORTH") == "4 C");
     CHECK(fact("DAMAGE") == "11-13 EDGE");
     REQUIRE(pane.verbs.size() == 3);
@@ -1343,7 +1343,7 @@ TEST_CASE("the detail pane is the sim's inspect record: the numbers, THEIRS, and
     REQUIRE(pane.title == "BREAD");
     CHECK(pane.kind == "CONSUMABLES");
     CHECK(fact("CARRIED") == "x3");
-    CHECK(fact("WEIGHT") == "10 DR  (30 FOR 3)");
+    CHECK(fact("WEIGHT") == "10 DRAMS  (30 FOR 3)");
     CHECK(fact("EFFECT") == "MENDS 12");
     CHECK(pane.prose.find("DOCK LOAF") != std::string::npos);
     REQUIRE(pane.verbs.size() == 2);
@@ -1652,7 +1652,7 @@ TEST_CASE("PHASE 9: a shield and gloves are worn rows of their own, and every ba
     CHECK(gloved);
 }
 
-TEST_CASE("PHASE 9: the comparison line is the sim's numbers -- DR a -> b, DMG lo-hi -> lo-hi, and TAKES OFF what the press bares") {
+TEST_CASE("PHASE 9: the comparison block is the sim's numbers, only what changes, the thing named before what happens to it") {
     // The items.json rows: their numbers are pinned elsewhere (the coat's DR
     // 2, the hood's 1, the cudgel's 7-9, the knife's 11-13).
     Session session = gearSession();
@@ -1668,14 +1668,17 @@ TEST_CASE("PHASE 9: the comparison line is the sim's numbers -- DR a -> b, DMG l
     InspectPane pane = session.inspectPaneView();
     REQUIRE(pane.title == "HOOD");
     CHECK(pane.compare == std::vector<std::string>{"DR 2 -> 3"});
-    // A one-hander for a one-hander: the DR line first, unmoved, then the
-    // span, then what comes off. Reach and speed say nothing -- both are
-    // one-handed, and the line only speaks of what changes.
+    CHECK(pane.compareTone == std::vector<InspectPane::Tone>{InspectPane::Tone::Better});
+    // A one-hander for a one-hander: no DR line (a blade turns nothing, so
+    // the body's DR does not move), the span, then the cudgel named leaving
+    // the hand. Reach and speed say nothing -- both are one-handed.
     REQUIRE(cursorOnPackRow(session, "KNIFE "));
     pane = session.inspectPaneView();
     REQUIRE(pane.title == "KNIFE");
     CHECK(pane.compare ==
-          std::vector<std::string>{"DR 2 -> 2", "DMG 7-9 -> 11-13", "TAKES OFF HAND CUDGEL"});
+          std::vector<std::string>{"DMG 7-9 -> 11-13", "PUTS DOWN THE CUDGEL"});
+    CHECK(pane.compareTone == std::vector<InspectPane::Tone>{InspectPane::Tone::Better,
+                                                             InspectPane::Tone::Worse});
     // A row already worn compares with nothing; a thing with no slot neither.
     REQUIRE(cursorOnPackRow(session, "HAND "));
     CHECK(session.inspectPaneView().compare.empty());
@@ -1689,8 +1692,13 @@ TEST_CASE("PHASE 9: the comparison line is the sim's numbers -- DR a -> b, DMG l
     REQUIRE(cursorOnPackRow(session, cap->name + " "));
     pane = session.inspectPaneView();
     REQUIRE(pane.title == cap->name);
-    CHECK(pane.compare == std::vector<std::string>{"DR 3 -> " + std::to_string(2 + cap->dr),
-                                                   "TAKES OFF HEAD HOOD"});
+    std::vector<std::string> capLines;
+    if (cap->dr != 1) {
+        capLines.push_back("DR 3 -> " + std::to_string(2 + cap->dr));
+    }
+    capLines.emplace_back("TAKES OFF THE HOOD");
+    CHECK(pane.compare == capLines);
+    CHECK(pane.compareTone.back() == InspectPane::Tone::Worse);
     // The press does what the line said.
     session.chooseTopic(0);
     CHECK(tavern.kit().isWorn(tavern.items().indexOf(cap->id)));
@@ -1720,11 +1728,20 @@ TEST_CASE("PHASE 9: a two-hander warns it takes the shield off, does, and a shie
     REQUIRE(cursorOnPackRow(session, twoHander->name + " "));
     InspectPane pane = session.inspectPaneView();
     REQUIRE(pane.title == twoHander->name);
+    REQUIRE(shield->dr > 0);
     CHECK(pane.compare ==
           std::vector<std::string>{"DR " + std::to_string(shield->dr) + " -> 0",
                                    "DMG 11-13 -> " + spanText(twoHander->damageLo, twoHander->damageHi),
-                                   "REACH LONGER", "SPEED SLOWER", "TAKES OFF HAND KNIFE",
-                                   "TAKES OFF OFF-HAND " + shield->name});
+                                   "REACH LONGER", "SPEED SLOWER", "PUTS DOWN THE KNIFE",
+                                   "TAKES OFF THE " + shield->name});
+    // The colour is the verdict: DR lost, the slower swing and both things
+    // coming off are worse; the longer reach is better.
+    REQUIRE(pane.compareTone.size() == pane.compare.size());
+    CHECK(pane.compareTone[0] == InspectPane::Tone::Worse);
+    CHECK(pane.compareTone[2] == InspectPane::Tone::Better);
+    CHECK(pane.compareTone[3] == InspectPane::Tone::Worse);
+    CHECK(pane.compareTone[4] == InspectPane::Tone::Worse);
+    CHECK(pane.compareTone[5] == InspectPane::Tone::Worse);
     bool twoHands = false;
     for (const InspectFact& fact : pane.facts) {
         twoHands = twoHands || (fact.label == "GRIP" && fact.value == "TWO HANDS");
@@ -1753,7 +1770,9 @@ TEST_CASE("PHASE 9: a two-hander warns it takes the shield off, does, and a shie
                                    "DMG " + spanText(twoHander->damageLo, twoHander->damageHi) +
                                        " -> 3-5",
                                    "REACH SHORTER", "SPEED FASTER",
-                                   "TAKES OFF HAND " + twoHander->name});
+                                   "PUTS DOWN THE " + twoHander->name});
+    CHECK(pane.compareTone[0] == InspectPane::Tone::Better);
+    CHECK(pane.compareTone[3] == InspectPane::Tone::Better);
     session.chooseTopic(0);
     CHECK(tavern.kit().isWorn(tavern.items().indexOf(shield->id)));
     CHECK(tavern.kit().worn(sim::ItemSlot::Hand) < 0);
@@ -1793,4 +1812,42 @@ TEST_CASE("PHASE 9: the comparison block is drawn on the pane, over the foot") {
         return paneSum;
     };
     CHECK(shot(true) != shot(false));
+}
+
+TEST_CASE("PHASE 9: the pack's digits count only the rows a digit reaches -- HAND is 1, a heading takes none") {
+    // A knife and a coat worn, the bread, the ale, the rope and the picks
+    // carried: WORN, the seven slots, CARRIED, CONSUMABLES, BREAD, ALE, GEAR,
+    // ROPE, PICKS.
+    Session session = packSession();
+    session.toggleCharacterPack();
+    const DialogueViewState view = session.characterPanelView();
+    REQUIRE(view.topics.size() == 15);
+    const MenuTilePage page =
+        menuTilePageFor(view.topics, view.page, view.cursor, 40, view.headerRows);
+    REQUIRE(page.rows.size() == view.topics.size());
+    CHECK(page.rows[0].key.empty());   // WORN
+    CHECK(page.rows[1].key == "1");    // HAND
+    CHECK(page.rows[7].key == "7");    // TRINKET
+    CHECK(page.rows[8].key.empty());   // CARRIED
+    CHECK(page.rows[9].key.empty());   // CONSUMABLES
+    CHECK(page.rows[10].key == "8");   // BREAD
+    CHECK(page.rows[11].key == "9");   // ALE
+    CHECK(page.rows[12].key.empty());  // GEAR
+    CHECK(page.rows[13].key.empty());  // ROPE: the next nine
+    // The key lands where its digit is printed.
+    session.chooseVisibleTopic(8);
+    CHECK(session.dialogueView().cursor == 11);
+    CHECK(session.inspectPaneView().title == "ALE");
+    session.chooseVisibleTopic(0);
+    CHECK(session.dialogueView().cursor == 1);
+    // The page key steps to the next nine reachable rows, which start at
+    // the rope, and their digits start at 1 again.
+    session.nextTopicPage();
+    CHECK(session.dialogueView().cursor == 13);
+    const DialogueViewState next = session.characterPanelView();
+    const MenuTilePage second =
+        menuTilePageFor(next.topics, next.page, next.cursor, 40, next.headerRows);
+    CHECK(second.rows[13].key == "1");  // ROPE
+    CHECK(second.rows[14].key == "2");  // PICKS
+    CHECK(second.rows[1].key.empty());
 }

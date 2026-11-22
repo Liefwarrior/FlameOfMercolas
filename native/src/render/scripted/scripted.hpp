@@ -228,6 +228,10 @@ constexpr std::int32_t kStreetReachTiles = 2;
 /// nothing is worn) -- the gear line's summary, so a capture says what the
 /// body had on at the shutter.
 [[nodiscard]] std::string gearWornIds(const Session& session);
+/// What the hand swings, for a summary: the held row's raws id, or the class
+/// a sheet armed straight, and the span the blow rolls -- "maul:10-16",
+/// never the class a maul swings as.
+[[nodiscard]] std::string gearHandLine(const Session& session);
 [[nodiscard]] int runCourtLine(Session& session, const std::string& ending);
 [[nodiscard]] int runTrailLine(Session& session, const std::string& ending);
 [[nodiscard]] int runBurgleLine(Session& session, const std::string& ending);

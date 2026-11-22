@@ -307,7 +307,7 @@ TEST_CASE("the worn block is seven rows always: FISTS in a bare hand, a dash on 
     CHECK(armed[21] == "HAND      THE EVICTOR 7-9 IMPACT");
     bool carried = false;
     for (const std::string& row : armed) {
-        if (row.rfind("THE EVICTOR  44DR  30C  HELD", 0) == 0) {
+        if (row.rfind("THE EVICTOR  44D  30C  HELD", 0) == 0) {
             carried = true;
         }
     }
@@ -386,14 +386,14 @@ TEST_CASE("a carried row prints its weight, its worth and its marks; a worn slot
     CHECK(rows[28] == "LOAD  " + std::to_string(tavern.loadDrams()) + " / 240 DRAMS");
     // Registry order: the cudgel, the coat, the rope, the picks, the dust.
     // KITFIX LANE: the name column is padded to "5 PICKS", the widest name
-    // this list holds (seven cells), and DR/C are each right-justified into
+    // this list holds (seven cells), and D (drams)/C are each right-justified into
     // this list's own widest digit count -- rightAlignedDigits()'s contract,
     // proved here row by row rather than just by the alignment case below.
-    CHECK(rows[29] == "CUDGEL   40DR   6C  HELD  SLOT 3");
-    CHECK(rows[30] == "COAT     60DR  12C  WORN");
-    CHECK(rows[31] == "ROPE     48DR   6C");
-    CHECK(rows[32] == "5 PICKS   5DR  10C");
-    CHECK(rows[33] == "2 DUST    6DR  32C  HOT");
+    CHECK(rows[29] == "CUDGEL   40D   6C  HELD  SLOT 3");
+    CHECK(rows[30] == "COAT     60D  12C  WORN");
+    CHECK(rows[31] == "ROPE     48D   6C");
+    CHECK(rows[32] == "5 PICKS   5D  10C");
+    CHECK(rows[33] == "2 DUST    6D  32C  HOT");
     CHECK(session.loadLine() == rows[28]);
     // The carried rows start where the sheet actually put them, the row
     // after LOAD -- read off the rows themselves, never re-added.
@@ -408,7 +408,7 @@ TEST_CASE("a carried row prints its weight, its worth and its marks; a worn slot
     CHECK_FALSE(kit[4].inKit);  // the sack
 }
 
-TEST_CASE("DR and C share an end column across carried rows however their names run") {
+TEST_CASE("the drams (D) and C columns share an end column across carried rows however their names run") {
     // KITFIX LANE. B06's own finding (docs/frames/kit/): "the DR values
     // start at four different x, the C values at four more." COAT and ROPE
     // are both four glyphs, LANTERN is seven -- three names of two different
@@ -432,14 +432,14 @@ TEST_CASE("DR and C share an end column across carried rows however their names 
             continue;
         }
         ++found;
-        const std::size_t dr = row.find("DR");
+        const std::size_t dr = row.find("D  ");  // the drams column: "60D"
         REQUIRE(dr != std::string::npos);
         if (drColumn == std::string::npos) {
             drColumn = dr;
         } else {
             CHECK(dr == drColumn);
         }
-        const std::size_t c = row.find('C', dr + 2);
+        const std::size_t c = row.find('C', dr + 1);
         REQUIRE(c != std::string::npos);
         if (cColumn == std::string::npos) {
             cColumn = c;

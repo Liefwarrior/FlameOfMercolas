@@ -391,15 +391,13 @@ TEST_CASE("an extra file's hand row authors its own span within sense; a grip th
     REQUIRE(items.find("classed") != nullptr);
     CHECK(items.find("classed")->damageLo == baseDamage(Weapon::Edged));
     CHECK(items.find("classed")->damageHi == baseDamage(Weapon::Edged) + kStrikeVarianceMax);
-    // An off-hand row is a shield whether it says so or not, and carries no
-    // swing numbers; a hand row carries its grip's.
+    // An off-hand row is a shield whether it says so or not; a hand row is
+    // one- or two-handed as authored.
     REQUIRE(items.find("plain_shield") != nullptr);
     CHECK(items.find("plain_shield")->grip == WeaponGrip::Shield);
-    CHECK(items.find("plain_shield")->reachQ8 == 0);
     REQUIRE(items.find("long") != nullptr);
-    CHECK(items.find("long")->reachQ8 == gripTiming(WeaponGrip::TwoHanded).reachQ8);
-    CHECK(items.find("long")->recoverySteps == gripTiming(WeaponGrip::TwoHanded).recoverySteps);
-    CHECK(items.find("classed")->reachQ8 == kMeleeReach);
+    CHECK(items.find("long")->grip == WeaponGrip::TwoHanded);
+    CHECK(items.find("classed")->grip == WeaponGrip::OneHanded);
     // THE FIRST FILE still promises its class's span: even a sane span that
     // is not the class's is refused there.
     const ItemRegistry first = ItemRegistry::fromJson(R"({"items": [
@@ -482,25 +480,23 @@ TEST_CASE("gripTiming: one-handed is the shipped swing to the step, two-handed r
     CHECK(two.recoverySteps > one.recoverySteps);
     CHECK(two.hardRecoverySteps > one.hardRecoverySteps);
     CHECK(two.hardHoldSteps > one.hardHoldSteps);
-    // A shield is never swung; asked anyway, it answers the arm's own numbers.
+    // A shield is never swung, and the swing cannot ask for it: the swing
+    // reads the HAND row's grip, and no hand row is ever a shield (the
+    // loader refuses one -- "hand_shield" in the refusal case above). The
+    // table names it only so its switch is total, with the arm's own numbers
+    // (static_asserted in items.hpp) in case that refusal were ever lost.
     constexpr GripTiming shield = gripTiming(WeaponGrip::Shield);
     CHECK(shield.reachQ8 == one.reachQ8);
     CHECK(shield.recoverySteps == one.recoverySteps);
     CHECK(shield.hardRecoverySteps == one.hardRecoverySteps);
     CHECK(shield.hardHoldSteps == one.hardHoldSteps);
-    // Every loaded hand row carries its grip's numbers; nothing else carries any.
+    // No loaded hand row is a shield, so Kit::handGrip never answers one.
     const ItemRegistry items = ItemRegistry::load(content::contentDir());
     REQUIRE(items.loaded());
     for (const ItemDef& row : items.items()) {
         INFO("row: ", row.id);
         if (row.slot == ItemSlot::Hand) {
-            const GripTiming timing = gripTiming(row.grip);
-            CHECK(row.reachQ8 == timing.reachQ8);
-            CHECK(row.recoverySteps == timing.recoverySteps);
-            CHECK(row.hardRecoverySteps == timing.hardRecoverySteps);
-        } else {
-            CHECK(row.reachQ8 == 0);
-            CHECK(row.recoverySteps == 0);
+            CHECK(row.grip != WeaponGrip::Shield);
         }
     }
 }
@@ -1322,4 +1318,114 @@ TEST_CASE("compareGear is the wear rules run on a copy: DR, the span, reach, spe
     CHECK(kit.wornDr(items) == toShield.drThen);
     CHECK(kit.handDamageLo(items) == toShield.dmgLoThen);
     CHECK(kit.handDamageHi(items) == toShield.dmgHiThen);
+}
+
+// ---------------------------------------------------------------------------
+// the street blow, and one span for the blow and the pane
+// ---------------------------------------------------------------------------
+
+TEST_CASE("a worn cutlass swung at a street body rolls the cutlass span; bare hands roll the fist's on the same roll") {
+    // Twin rooms, same seed, same spot, nobody moved (only the swing machine
+    // steps): the player-action draws come in the same order in both, so
+    // swing k spends the same roll in each. Before phase 9 the street swing
+    // read the legacy byte, which WEAR resets to Fists -- a worn cutlass
+    // landed a fist on the street. It lands the cutlass now, and the bare
+    // room rolls exactly the fist's span.
+    Room bareRoom(hourOfDay(4), 151, 63);
+    Room armedRoom(hourOfDay(4), 151, 63);
+    Tavern& bare = bareRoom.tavern();
+    Tavern& armed = armedRoom.tavern();
+    const std::int32_t cutlass = armed.items().indexOf("cutlass");
+    REQUIRE(armed.giveItem("cutlass"));
+    REQUIRE(armed.wearItem(cutlass).result == ServiceResult::Served);
+    REQUIRE(armed.playerWeapon() == Weapon::Edged);
+    REQUIRE(bare.playerWeapon() == Weapon::Fists);
+    const std::int32_t lo = armed.items().at(cutlass)->damageLo;
+    const std::int32_t hi = armed.items().at(cutlass)->damageHi;
+    auto streetSwing = [](Tavern& tavern) {
+        for (int i = 0; i < 200 && !tavern.playerCombatIdle(); ++i) {
+            tavern.stepPlayerCombat();
+        }
+        tavern.playerAttackDown();
+        tavern.stepPlayerCombat();
+        // The street's own sheet: a fresh docker, hard to floor.
+        Fighter sheet{0, Weapon::Fists, Intent::Subdue, 1000, 1000};
+        return tavern.playerAttackUpStreet(sheet, 7, "A DOCKER", 0);
+    };
+    int landed = 0;
+    for (int k = 0; k < 8; ++k) {
+        INFO("swing ", k);
+        const Tavern::PlayerSwingResult fist = streetSwing(bare);
+        const Tavern::PlayerSwingResult blade = streetSwing(armed);
+        REQUIRE(fist.swung);
+        REQUIRE(blade.swung);
+        CHECK(fist.street);
+        CHECK(blade.street);
+        CHECK(fist.blow.landed == blade.blow.landed);
+        if (!fist.blow.landed) {
+            continue;
+        }
+        ++landed;
+        // Bare: the fist's span (no Might bonus at the base sheet).
+        CHECK(fist.blow.damage >= baseDamage(Weapon::Fists));
+        CHECK(fist.blow.damage <= baseDamage(Weapon::Fists) + kStrikeVarianceMax);
+        // Armed: the cutlass's span, carved off the same variance.
+        CHECK(blade.blow.damage >= lo);
+        CHECK(blade.blow.damage <= hi);
+        CHECK(blade.blow.damage - fist.blow.damage == lo - baseDamage(Weapon::Fists));
+        CHECK(blade.lethal);
+        CHECK_FALSE(fist.lethal);
+    }
+    CHECK(landed > 0);
+}
+
+TEST_CASE("the pane's NOW span is the blow's span: a class armed with no row behind it reads the same in both") {
+    Room room(hourOfDay(14), 151, 63);
+    Tavern& tavern = room.tavern();
+    REQUIRE(tavern.giveItem("hatchet"));
+    REQUIRE(tavern.giveItem("work_gloves"));
+    REQUIRE(tavern.giveItem("maul"));
+    REQUIRE(tavern.giveItem("buckler"));
+    const std::int32_t hatchet = tavern.items().indexOf("hatchet");
+    const std::int32_t gloves = tavern.items().indexOf("work_gloves");
+    const std::int32_t maul = tavern.items().indexOf("maul");
+    const std::int32_t buckler = tavern.items().indexOf("buckler");
+    // Armed straight, no Kit row in the hand: the blow rolls the class's span.
+    tavern.setPlayerCombat(Weapon::Edged, Intent::Subdue);
+    REQUIRE(tavern.kit().worn(ItemSlot::Hand) == -1);
+    REQUIRE(tavern.playerDamageLo() == baseDamage(Weapon::Edged));
+    // A hatchet over it: NOW is that span, THEN the hatchet's.
+    const GearCompare toHatchet = tavern.compareGear(hatchet);
+    CHECK(toHatchet.applies);
+    CHECK(toHatchet.dmgLoNow == tavern.playerDamageLo());
+    CHECK(toHatchet.dmgHiNow == tavern.playerDamageHi());
+    CHECK(toHatchet.dmgLoThen == 9);
+    CHECK(toHatchet.dmgHiThen == 14);
+    // Gloves leave the hand alone: the armed class is still the span after.
+    const GearCompare toGloves = tavern.compareGear(gloves);
+    CHECK(toGloves.dmgLoNow == tavern.playerDamageLo());
+    CHECK(toGloves.dmgLoThen == tavern.playerDamageLo());
+    CHECK(toGloves.dmgHiThen == tavern.playerDamageHi());
+    // And the press does what the pane said.
+    REQUIRE(tavern.wearItem(gloves).result == ServiceResult::Served);
+    CHECK(tavern.playerDamageLo() == toGloves.dmgLoThen);
+    CHECK(tavern.playerDamageHi() == toGloves.dmgHiThen);
+    REQUIRE(tavern.wearItem(hatchet).result == ServiceResult::Served);
+    CHECK(tavern.playerDamageLo() == toHatchet.dmgLoThen);
+    CHECK(tavern.playerDamageHi() == toHatchet.dmgHiThen);
+    // A shield over a two-hander bares the hand: THEN is the fist, because
+    // the press resets the armed class (Tavern::wearItem), as the pane says.
+    REQUIRE(tavern.wearItem(maul).result == ServiceResult::Served);
+    const GearCompare toShield = tavern.compareGear(buckler);
+    CHECK(toShield.dmgLoNow == tavern.playerDamageLo());
+    CHECK(toShield.dmgLoThen == baseDamage(Weapon::Fists));
+    REQUIRE(tavern.wearItem(buckler).result == ServiceResult::Served);
+    CHECK(tavern.playerDamageLo() == toShield.dmgLoThen);
+    CHECK(tavern.playerDamageHi() == toShield.dmgHiThen);
+    // The free function reads the same with the class passed in.
+    const Kit empty(tavern.items().size());
+    CHECK(compareGear(empty, tavern.items(), hatchet, Weapon::Edged).dmgLoNow ==
+          baseDamage(Weapon::Edged));
+    CHECK(empty.handDamageHi(tavern.items(), Weapon::Blunt) ==
+          baseDamage(Weapon::Blunt) + kStrikeVarianceMax);
 }

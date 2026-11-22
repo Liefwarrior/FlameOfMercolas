@@ -17,10 +17,12 @@
 
 #include <doctest/doctest.h>
 
+#include <cstdio>
 #include <string>
 
 #include "granadad/content/content_dir.hpp"
 #include "granadad/render/session.hpp"
+#include "granadad/render3d/actor_instances.hpp"
 #include "granadad/sim/docks.hpp"
 #include "granadad/sim/tavern.hpp"
 
@@ -567,7 +569,7 @@ TEST_CASE("--kit lands all ten of its beats: named, taken, dropped, THEIRS, the 
     CHECK(played.ok);
     CHECK_FALSE(played.scriptFellShort());
     CHECK(played.kitBeats == 10);
-    CHECK(played.summary.find("take=TAKE:ROPE/48DR") != std::string::npos);
+    CHECK(played.summary.find("take=TAKE:ROPE/48 DRAMS") != std::string::npos);
     CHECK(played.summary.find("theirs=TAKE:LANTERN/THEIRS") != std::string::npos);
     CHECK(played.summary.find("search=SEARCH:Ox Gullbane") != std::string::npos);
     CHECK(played.summary.find(" legs=") != std::string::npos);
@@ -623,10 +625,15 @@ TEST_CASE("--gear lands all seven of its beats: taken, worn, compared, a shield,
     // The prompt the first take read, before its press.
     CHECK(played.summary.find(" take=TAKE:") != std::string::npos);
     // The maul's comparison block, read off the pane before it was worn:
-    // DR first, then the span, then what the press would take off.
-    CHECK(played.summary.find(" compare=DR ") != std::string::npos);
-    CHECK(played.summary.find("|DMG ") != std::string::npos);
-    CHECK(played.summary.find("|REACH LONGER|SPEED SLOWER|TAKES OFF HAND ") != std::string::npos);
+    // only what changes (the body's DR does not), the cutlass named first.
+    CHECK(played.summary.find(" compare=DMG 11-13 -> ") != std::string::npos);
+    CHECK(played.summary.find("|REACH LONGER|SPEED SLOWER|PUTS DOWN THE CUTLASS") !=
+          std::string::npos);
+    CHECK(played.summary.find(" compare=DR ") == std::string::npos);
+    // The swing across the gap started the fight, and the hand is named as
+    // the thing in it.
+    CHECK(played.summary.find(" fight=yes") != std::string::npos);
+    CHECK(played.summary.find(" hand=maul:") != std::string::npos);
     // The swing found Ox down a ray longer than a one-hander reaches.
     CHECK(played.summary.find(" helm=on") != std::string::npos);
     CHECK(played.summary.find(" along=-1") == std::string::npos);
@@ -654,6 +661,7 @@ TEST_CASE("--gear=take, wear, compare, shield, twohand and reach each stop on th
         {"twohand", 5, " worn=maul,wool_cap,gambeson"},
         {"reach", 6, " worn=maul,iron_pot,gambeson"},
     };
+    // `reach` stops BEFORE the swing: the frame is the gap, so no fight yet.
     for (const Stop& stop : stops) {
         render::SmokeRunConfig run;
         run.gear = true;
@@ -664,7 +672,24 @@ TEST_CASE("--gear=take, wear, compare, shield, twohand and reach each stop on th
         CHECK_FALSE(played.scriptFellShort());
         CHECK(played.gearBeats == stop.beats);
         CHECK(played.summary.find(stop.worn) != std::string::npos);
+        if (std::string(stop.end) == "reach") {
+            CHECK(played.summary.find(" fight=") == std::string::npos);
+        }
     }
+}
+
+TEST_CASE("--gear=heavy --punch swings the maul the loadout put in the hand") {
+    // The verification verbs run AFTER the gear line, on the body it dressed.
+    render::SmokeRunConfig run;
+    run.gear = true;
+    run.gearEnd = "heavy";
+    run.punch = true;
+    const render::SmokeRunResult played = play(run);
+    INFO(played.summary);
+    CHECK(played.ok);
+    CHECK_FALSE(played.scriptFellShort());
+    CHECK(played.gearBeats == 3);
+    CHECK(played.summary.find(" hand=maul:") != std::string::npos);
 }
 
 TEST_CASE("--gear=light, guard and heavy are worn through the pack and stood on the spawn's own tile at nine, the Menu down") {
@@ -713,6 +738,35 @@ TEST_CASE("--gear=gull is the guard loadout stood inside the Gull's taproom at e
     CHECK(played.summary.find(" taproom=") != std::string::npos);
     CHECK(granadad::sim::gull::insideFootprint(played.endTileX, played.endTileY));
     CHECK(played.endBand == granadad::sim::gull::kGroundBand);
+    // AND --sheet=gear HAS FLOOR TO STAND THE FIGURE ON: the stand looks down
+    // open floor, so render3d's own placement finds a spot on the look ray.
+    // The stand and facing the line chose, read back off its summary, put
+    // a body there at eight in the evening, and the placement asked.
+    const std::size_t at = played.summary.find(" taproom=");
+    REQUIRE(at != std::string::npos);
+    int x = 0;
+    int y = 0;
+    int yaw = 0;
+    REQUIRE(std::sscanf(played.summary.c_str() + at, " taproom=%d,%d,%d", &x, &y, &yaw) == 3);
+    CHECK(x == played.endTileX);
+    CHECK(y == played.endTileY);
+    render::SessionConfig config;
+    config.contentDir = content::contentDir();
+    config.timeOfDay = 20 * 3600;
+    config.spawnX = x;
+    config.spawnY = y;
+    config.spawnBand = granadad::sim::gull::kGroundBand;
+    config.spawnYaw = yaw;
+    config.spawnYawGiven = true;
+    const render::Session session(config);
+    float px = 0.0F;
+    float py = 0.0F;
+    REQUIRE(granadad::render3d::playerFigureSpot(session.tiles(), session.camera(),
+                                                 granadad::sim::gull::kGroundBand, px, py));
+    // In front of the eye, three tiles and more down the ray.
+    const float dx = px - (static_cast<float>(x) + 0.5F);
+    const float dy = py - (static_cast<float>(y) + 0.5F);
+    CHECK(dx * dx + dy * dy >= 9.0F);
 }
 
 TEST_CASE("--kit=pack is the equip beat's tile stepped from the sheet to the pack") {

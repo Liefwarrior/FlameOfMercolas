@@ -526,6 +526,20 @@ SmokeRunResult runSmoke(const SmokeRunConfig& config) {
         session.stepMany(sprintInput, config.sprintSteps);
     }
 
+    if (config.gear) {
+        // OBLIVION-PLAN phase 9. The gear, played through the real verbs --
+        // see runGearLine. Each ending owes its own count. Run AHEAD of the
+        // --punch / --charge / --block verifications below, so a loadout end
+        // is the body those verbs then swing, wind and guard with
+        // (`--gear=heavy --charge=3` is the maul's own wind-up), rather than
+        // the bare spawn they used to act on before the line dressed it.
+        const std::int32_t landed =
+            static_cast<std::int32_t>(runGearLine(session, config.gearEnd));
+        result.gearBeats = landed;
+        result.scriptedWanted += gearBeatsFor(config.gearEnd);
+        result.scriptedLanded += landed;
+    }
+
     if (config.punch) {
         // VERIFICATION ONLY. See SmokeRunConfig::punch's own header. The
         // SAME key F makes -- Session::punch() -- thrown at whoever is
@@ -930,16 +944,6 @@ SmokeRunResult runSmoke(const SmokeRunConfig& config) {
             static_cast<std::int32_t>(runPackLine(session, config.packEnd));
         result.packBeats = landed;
         result.scriptedWanted += packBeatsFor(config.packEnd);
-        result.scriptedLanded += landed;
-    }
-
-    if (config.gear) {
-        // OBLIVION-PLAN phase 9. The gear, played through the real verbs --
-        // see runGearLine. Each ending owes its own count.
-        const std::int32_t landed =
-            static_cast<std::int32_t>(runGearLine(session, config.gearEnd));
-        result.gearBeats = landed;
-        result.scriptedWanted += gearBeatsFor(config.gearEnd);
         result.scriptedLanded += landed;
     }
 
@@ -1708,7 +1712,7 @@ SmokeRunResult runSmoke(const SmokeRunConfig& config) {
     }
     if (config.kit) {
         summary << " | kit beats=" << result.kitBeats << '/' << kitBeatsFor(config.kitEnd)
-                << gKitNote << " hand=" << sim::weaponName(session.tavern().playerWeapon())
+                << gKitNote << " hand=" << gearHandLine(session)
                 << " dr=" << session.tavern().wornDr()
                 << " ground=" << session.tavern().groundItems().size();
     }
@@ -1720,7 +1724,7 @@ SmokeRunResult runSmoke(const SmokeRunConfig& config) {
     }
     if (config.gear) {
         summary << " | gear beats=" << result.gearBeats << '/' << gearBeatsFor(config.gearEnd)
-                << gGearNote << " hand=" << sim::weaponName(session.tavern().playerWeapon())
+                << gGearNote << " hand=" << gearHandLine(session)
                 << " dr=" << session.tavern().wornDr() << " load=" << session.tavern().loadDrams()
                 << '/' << session.tavern().loadBudget() << " hour=" << session.timeOfDay() / 3600
                 << " worn=" << gearWornIds(session);

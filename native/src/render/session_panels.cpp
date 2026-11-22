@@ -54,7 +54,7 @@ std::vector<std::string> Session::grimoireRows() const {
             if (thing == nullptr) {
                 continue;
             }
-            std::string line = thing->name + "  " + std::to_string(thing->drams) + "DR";
+            std::string line = thing->name + "  " + std::to_string(thing->drams) + "D";
             if (thing->royals > 0) {
                 line += "  " + std::to_string(thing->royals) + "C";
             }
@@ -1000,40 +1000,58 @@ namespace {
     return line;
 }
 
-/// PHASE 9 -- THE COMPARISON LINE, word for word off the sim's GearCompare
-/// and nothing else (the screen never does the arithmetic the wear will).
-/// DR always and first, so every block opens on the same line and reads as a
-/// table down the pane ("DR 2 -> 2" on a blade says the blade turns nothing,
-/// which is true); the span whenever the hand changes (a hand row, or a
-/// shield that takes a two-hander out of it); reach and the swing's recovery
-/// as words, only when they change; then one TAKES OFF line per slot the
-/// press would bare, named by what is on it now.
-[[nodiscard]] std::vector<std::string> gearCompareLines(const sim::GearCompare& gear,
-                                                        const sim::Tavern& tavern) {
-    std::vector<std::string> lines;
+/// PHASE 9 -- THE COMPARISON BLOCK, word for word off the sim's GearCompare
+/// and nothing else (the screen never does the arithmetic the wear will),
+/// and ONLY WHAT CHANGES: a line that says "2 -> 2" is a line the eye has to
+/// read to learn nothing. DR when the press moves it; the span when the hand
+/// changes and the span with it; reach and the swing's recovery as words;
+/// then one line per thing the press bares, the THING named first so it
+/// cannot misread as a slot ("TAKES OFF HAND CUTLASS" read as an off-hand
+/// cutlass): PUTS DOWN THE <NAME> for what leaves the hand, TAKES OFF THE
+/// <NAME> for anything else. Each line carries its verdict for the ink:
+/// more DR, a bigger span (by its sum), a longer reach and a faster swing
+/// are better; their opposites, and anything coming off, are worse.
+void gearCompareLines(const sim::GearCompare& gear, const sim::Tavern& tavern,
+                      InspectPane& pane) {
+    pane.compare.clear();
+    pane.compareTone.clear();
     if (!gear.applies) {
-        return lines;
+        return;
     }
+    using Tone = InspectPane::Tone;
+    const auto add = [&pane](std::string line, Tone tone) {
+        pane.compare.push_back(std::move(line));
+        pane.compareTone.push_back(tone);
+    };
     const auto n = [](std::int32_t value) { return std::to_string(value); };
-    lines.push_back("DR " + n(gear.drNow) + " -> " + n(gear.drThen));
-    if (gear.showsDamage) {
-        lines.push_back("DMG " + n(gear.dmgLoNow) + "-" + n(gear.dmgHiNow) + " -> " +
-                        n(gear.dmgLoThen) + "-" + n(gear.dmgHiThen));
+    if (gear.drThen != gear.drNow) {
+        add("DR " + n(gear.drNow) + " -> " + n(gear.drThen),
+            gear.drThen > gear.drNow ? Tone::Better : Tone::Worse);
+    }
+    if (gear.showsDamage &&
+        (gear.dmgLoThen != gear.dmgLoNow || gear.dmgHiThen != gear.dmgHiNow)) {
+        const std::int32_t now = gear.dmgLoNow + gear.dmgHiNow;
+        const std::int32_t then = gear.dmgLoThen + gear.dmgHiThen;
+        add("DMG " + n(gear.dmgLoNow) + "-" + n(gear.dmgHiNow) + " -> " + n(gear.dmgLoThen) +
+                "-" + n(gear.dmgHiThen),
+            then > now ? Tone::Better : (then < now ? Tone::Worse : Tone::Plain));
     }
     if (gear.reachThenQ8 != gear.reachNowQ8) {
-        lines.emplace_back(gear.reachThenQ8 > gear.reachNowQ8 ? "REACH LONGER" : "REACH SHORTER");
+        add(gear.reachThenQ8 > gear.reachNowQ8 ? "REACH LONGER" : "REACH SHORTER",
+            gear.reachThenQ8 > gear.reachNowQ8 ? Tone::Better : Tone::Worse);
     }
     if (gear.recoveryThen != gear.recoveryNow) {
-        lines.emplace_back(gear.recoveryThen > gear.recoveryNow ? "SPEED SLOWER" : "SPEED FASTER");
+        add(gear.recoveryThen > gear.recoveryNow ? "SPEED SLOWER" : "SPEED FASTER",
+            gear.recoveryThen > gear.recoveryNow ? Tone::Worse : Tone::Better);
     }
     for (const sim::ItemSlot slot : gear.bares) {
         const sim::ItemDef* off = tavern.items().at(tavern.kit().worn(slot));
         if (off == nullptr) {
             continue;
         }
-        lines.push_back("TAKES OFF " + std::string(sim::itemSlotShortWord(slot)) + " " + off->name);
+        add((slot == sim::ItemSlot::Hand ? "PUTS DOWN THE " : "TAKES OFF THE ") + off->name,
+            Tone::Worse);
     }
-    return lines;
 }
 
 }  // namespace
@@ -1274,7 +1292,7 @@ std::vector<std::string> Session::sheetRows(std::size_t* kitOffset) const {
         // everything above just measured for it.
         std::string line = entry.prefix;
         line.append(prefixWidth - entry.prefix.size(), ' ');
-        line += "  " + rightAlignedDigits(entry.drams, dramsWidth) + "DR";
+        line += "  " + rightAlignedDigits(entry.drams, dramsWidth) + "D";
         if (entry.royals > 0) {
             line += "  " + rightAlignedDigits(entry.royals, royalsWidth) + "C";
         }
@@ -1634,7 +1652,7 @@ std::vector<std::string> Session::packRowLabels() const {
         }
         std::string line = prefix;
         line.append(prefixWidth - prefix.size(), ' ');
-        line += "  " + rightAlignedDigits(drams, dramsWidth) + "DR";
+        line += "  " + rightAlignedDigits(drams, dramsWidth) + "D";
         if (row.inKit && tavern_->kit().stolen(row.item) > 0) {
             line += "  THEIRS";
         }
@@ -1672,7 +1690,52 @@ void Session::settlePackCursor(int direction) {
         cursor = next < 0 || next >= static_cast<int>(rows.size()) ? cursor - step : next;
     }
     characterCursor_ = cursor;
-    characterPage_ = topicPageOf(characterCursor_);
+    // The digit window the cursor's row sits in, counted over keyed rows.
+    characterPage_ = packKeyedOrdinal(characterCursor_) / kTopicPageSize;
+}
+
+int Session::packKeyedOrdinal(int row) const {
+    const std::vector<PackRow> rows = packRows();
+    int ordinal = 0;
+    for (int i = 0; i < row && i < static_cast<int>(rows.size()); ++i) {
+        if (rows[static_cast<std::size_t>(i)].kind != PackRow::Kind::Header) {
+            ++ordinal;
+        }
+    }
+    return ordinal;
+}
+
+void Session::packPickVisible(int slot) {
+    const std::vector<PackRow> rows = packRows();
+    const int wanted = characterPage_ * kTopicPageSize + slot;
+    int ordinal = 0;
+    for (std::size_t i = 0; i < rows.size(); ++i) {
+        if (rows[i].kind == PackRow::Kind::Header) {
+            continue;
+        }
+        if (ordinal == wanted) {
+            characterCursor_ = static_cast<int>(i);
+            return;
+        }
+        ++ordinal;
+    }
+}
+
+void Session::packPageNext() {
+    const std::vector<PackRow> rows = packRows();
+    int keyed = 0;
+    for (const PackRow& row : rows) {
+        if (row.kind != PackRow::Kind::Header) {
+            ++keyed;
+        }
+    }
+    if (keyed <= 0) {
+        return;
+    }
+    const int pages = (keyed + kTopicPageSize - 1) / kTopicPageSize;
+    characterPage_ = (characterPage_ + 1) % pages;
+    packPickVisible(0);
+    settlePackCursor(1);
 }
 
 void Session::toggleCharacterPack() {
@@ -1761,7 +1824,9 @@ InspectPane Session::inspectPaneView() const {
         unitDrams = tavern_->dialogue().crimes().baleUnits() *
                     sim::contrabandWeight(tavern_->dialogue().crimes().baleGood());
     }
-    std::string weight = digits(unitDrams) + " DR";
+    // DRAMS IN FULL: this pane also prints DR for what a piece turns, and
+    // "80 DR" beside "DR 2 -> 4" reads as armour. The LOAD line's own word.
+    std::string weight = digits(unitDrams) + " DRAMS";
     if (record.count > 1) {
         weight += "  (" + digits(unitDrams * record.count) + " FOR " + digits(record.count) + ")";
     }
@@ -1806,7 +1871,7 @@ InspectPane Session::inspectPaneView() const {
     // recomputed. A worn row compares with nothing (it IS what is worn).
     if (at.kind == PackRow::Kind::Item && at.inKit && thing->slot != sim::ItemSlot::None &&
         !thing->fixed) {
-        pane.compare = gearCompareLines(sim::compareGear(kit, items, at.item), *tavern_);
+        gearCompareLines(tavern_->compareGear(at.item), *tavern_, pane);
     }
     // THE KEYS, on the foot -- the same presses the list takes.
     if (at.inKit) {

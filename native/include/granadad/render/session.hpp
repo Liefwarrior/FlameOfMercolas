@@ -154,6 +154,11 @@ struct SessionConfig {
     /// is interface -- no estimating, no counting glyphs by hand, and the
     /// answer is checkable by anybody who runs the two commands.
     bool hud = true;
+    /// PHASE 9. The crosshair names nothing and offers no verb: the
+    /// `--sheet=gear` verification view puts the player's own figure in front
+    /// of the eye, and a TALK prompt for whoever stands behind it is a verb
+    /// the frame is not about. The rest of the HUD stays.
+    bool hideInteractPrompt = false;
 };
 
 // ---------------------------------------------------------------------------
@@ -2849,6 +2854,15 @@ private:
     bool characterPack_ = false;
     /// Steps the cursor off a pack header, in `direction`.
     void settlePackCursor(int direction);
+    /// PHASE 9 -- THE PACK'S DIGITS COUNT ONLY THE ROWS A DIGIT REACHES:
+    /// the headers (WORN, CARRIED, the groups) take no number, so the keys
+    /// 1-9 walk the slot and carried rows in order -- HAND is 1 -- and a
+    /// page is nine of THOSE (menuTilePageFor's unkeyed rows, the same
+    /// count). How many such rows precede `row`, the number key `slot`'s
+    /// row on the current page, and the page key's step.
+    [[nodiscard]] int packKeyedOrdinal(int row) const;
+    void packPickVisible(int slot);
+    void packPageNext();
     /// The pack list's printed rows (characterRows() on the pack view).
     [[nodiscard]] std::vector<std::string> packRowLabels() const;
     /// The sheet view's printed rows (characterRows() on the sheet). When

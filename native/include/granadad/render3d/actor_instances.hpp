@@ -56,6 +56,7 @@
 #include "granadad/render3d/scene.hpp"
 #include "granadad/sim/actor.hpp"
 #include "granadad/render/lighting.hpp"
+#include "granadad/sim/tile_query.hpp"
 #include "granadad/sim/ward_actors.hpp"
 
 namespace granadad::render {
@@ -281,15 +282,25 @@ void putActorFigures(SceneDescription& scene, const std::vector<ActorInstance>& 
 /// the far body mesh. Nothing else of the instance moves.
 void dressInGear(ActorInstance& body, const ActorLook& look, const GearLook& gear, bool far);
 
-/// PHASE 9, VERIFICATION ONLY (--sheet=gear): THE PLAYER'S OWN FIGURE,
-/// dressed by `gear` (the caller's gearLookOf(kit, items)), standing
-/// `distance` tiles in front of the eye on the eye's own band surface and
-/// turned to face it, in the idle clip, skinned, white-tinted (the per-pixel
+/// PHASE 9, VERIFICATION ONLY (--sheet=gear): WHERE THE PLAYER'S OWN FIGURE
+/// STANDS. The first tile along the look ray, at about kPlayerFigureDistance
+/// tiles (then further, then a tile either side), that a body can
+/// stand on at the eye's own band and that the eye can see from its own tile
+/// -- so in the Gull the figure stands on the boards between the tables, not
+/// in the counter or the wall behind the eye. The point on the ray, in tiles.
+/// False when nothing in reach is standable (the figure is then not added).
+inline constexpr float kPlayerFigureDistance = 3.2F;
+[[nodiscard]] bool playerFigureSpot(const sim::TileQuery& tiles, const render::Camera& eye, std::int32_t band,
+                                    float& px, float& py);
+
+/// THE PLAYER'S OWN FIGURE, dressed by `gear` (the caller's gearLookOf(kit,
+/// items)), standing at (px, py) tiles on the floor at `surfaceY` and turned
+/// to face the eye, in the idle clip, skinned, white-tinted (the per-pixel
 /// light lights it). The body is playerFigureLook() at the Sailor's height;
 /// the rig byte is kActorRigProcedural, so the kit is drawn in every build.
 /// Pure over its arguments.
-[[nodiscard]] ActorInstance playerFigureInstance(const render::Camera& eye, float surfaceY, const GearLook& gear,
-                                                 float distance = 2.5F);
+[[nodiscard]] ActorInstance playerFigureInstance(const render::Camera& eye, float px, float py, float surfaceY,
+                                                 const GearLook& gear);
 
 /// The instance scale of a person of this kind: the figure table's height
 /// over the reference person's, the same ratio the sprite sheet draws at --

@@ -542,28 +542,31 @@ void Session::step(const sim::MoveInput& input) {
     }
     // KIT BUILD -- DEFENCE v1 ON ITS OWN ROW. A blow the worn kit softened
     // says so, once per blow, on the same edge shape the guard's clang
-    // rides: blowsTurned() moving. The piece named is the heaviest DR on the
-    // body (the coat over the hood over the boots), the number is what the
-    // blow lost to it. PHASE 9: the shield and the gloves are pieces too
-    // (Kit::wornDr sums every slot but the hand); the shield ranks after the
-    // body and the gloves after the head, so the four old pieces keep their
-    // order and a tie still names the coat it always named. Its own centred
-    // row (hud.turnLabel) with a plate's
-    // hold, not the alert: a bouncer's warning outranks the alert for as
-    // long as the house minds you, which is exactly when blows land. An
-    // EVENT, never furniture: composed only when a blow actually lands and
-    // the kit actually turned some of it.
+    // rides: blowsTurned() moving; the number is what the blow lost to the
+    // kit. PHASE 9: DR is summed over every worn slot but the hand
+    // (Kit::wornDr), so the row names a piece only when ONE piece turned it
+    // -- COAT TURNS 2 -- and says ARMOUR TURNS 4 when several did: crediting
+    // the gambeson with the iron pot's share was a sentence the sim never
+    // said. Its own centred row (hud.turnLabel) with a plate's hold, not the
+    // alert: a bouncer's warning outranks the alert for as long as the house
+    // minds you, which is exactly when blows land. An EVENT, never
+    // furniture: composed only when a blow actually lands and the kit
+    // actually turned some of it.
     if (const std::int32_t turnedNow = tavern_->blowsTurned(); turnedNow > lastBlowsTurned_) {
         std::string piece = "THE KIT";
-        std::int32_t best = 0;
-        for (const sim::ItemSlot slot :
-             {sim::ItemSlot::Body, sim::ItemSlot::OffHand, sim::ItemSlot::Head,
-              sim::ItemSlot::Hands, sim::ItemSlot::Feet, sim::ItemSlot::Trinket}) {
+        int pieces = 0;
+        for (const sim::ItemSlot slot : sim::kSlotScreenOrder) {
+            if (slot == sim::ItemSlot::Hand) {
+                continue;
+            }
             const sim::ItemDef* worn = tavern_->items().at(tavern_->kit().worn(slot));
-            if (worn != nullptr && worn->dr > best) {
-                best = worn->dr;
+            if (worn != nullptr && worn->dr > 0) {
+                ++pieces;
                 piece = worn->name;
             }
+        }
+        if (pieces > 1) {
+            piece = "ARMOUR";
         }
         turnLine_ = piece + " TURNS " + std::to_string(tavern_->lastTurned());
         turnSteps_ = kPlateHoldSteps;

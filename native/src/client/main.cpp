@@ -1355,6 +1355,9 @@ void print_usage() {
                             : std::strcmp(value, "looks") == 0 ? 2
                             : std::strcmp(value, "gear") == 0  ? 3
                                                                : 0;
+            // PHASE 9: looking at your own figure is not aiming at anybody;
+            // the crosshair offers no verb under --sheet=gear.
+            options.smoke.session.hideInteractPrompt = options.sheet == 3;
         } else if (starts_with(arg, "--bench-frames=", &value)) {
             options.benchFrames = std::max(0, std::atoi(value));
         } else if (starts_with(arg, "--hands=", &value)) {

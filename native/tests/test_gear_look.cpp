@@ -204,11 +204,22 @@ TEST_CASE("a cutlass puts a blade in the right hand, and a shield goes on the le
     const MeshData big = buildFigureKit(base, round);
     CHECK(vertsOnBone(small, FigureBone::HandL) == small.vertexCount());
     CHECK(vertsOnBone(big, FigureBone::ForearmL) == big.vertexCount());
-    const auto rest = figureRestJoints(base);
-    const float shoulder = rest[static_cast<std::size_t>(FigureBone::UpperArmL)].x;
+    // On the left of the body, its face turned FORWARD (seen from the
+    // front, not edge-on): the shield reaches well in front of the body and
+    // spans more across than it is deep.
+    float minX = 1.0F;
+    float maxX = -1.0F;
+    float minZ = 1.0F;
+    float maxZ = -1.0F;
     for (std::size_t v = 0; v < big.vertexCount(); ++v) {
-        CHECK(big.positions[v * 3] < shoulder - 0.05F);
+        minX = std::min(minX, big.positions[v * 3]);
+        maxX = std::max(maxX, big.positions[v * 3]);
+        minZ = std::min(minZ, big.positions[v * 3 + 2]);
+        maxZ = std::max(maxZ, big.positions[v * 3 + 2]);
     }
+    CHECK(maxX < 0.0F);
+    CHECK(minZ < -0.15F);
+    CHECK(maxX - minX > 0.3F);
     // A shield and a blade together: both, one mesh.
     const GearLook both = lookOf({"cutlass", "round_shield"});
     CHECK(both.prop == GearProp::Cutlass);
@@ -390,7 +401,7 @@ TEST_CASE("THE APPEARANCE HASH: the player's figure hashes by what he wears, and
     const render::Camera eye = eyeAt(150.5F, 60.5F, 0.0F);
     const auto described = [&eye](const GearLook& gear) {
         SceneDescription scene;
-        scene.actors.push_back(playerFigureInstance(eye, 0.0F, gear));
+        scene.actors.push_back(playerFigureInstance(eye, 150.5F, 57.5F, 0.0F, gear));
         putActorFigures(scene, scene.actors);
         return scene;
     };
@@ -407,9 +418,10 @@ TEST_CASE("THE APPEARANCE HASH: the player's figure hashes by what he wears, and
     CHECK(sceneHash(described(lookOf({"wool_cap", "gambeson"}))) != sceneHash(a));
     // The figure stands in front of the eye and faces it, in the idle.
     const ActorInstance& figure = a.actors[0];
-    CHECK(figure.instance.position.z == doctest::Approx(toScene(eye.x, eye.y, 0.0F).z - 2.5F));
-    CHECK(figure.instance.position.x == doctest::Approx(eye.x));
-    CHECK(figure.instance.yaw == doctest::Approx(eye.yaw + 3.14159265F));
+    CHECK(figure.instance.position.z == doctest::Approx(57.5F));
+    CHECK(figure.instance.position.x == doctest::Approx(150.5F));
+    // Facing the eye, three tiles south of it: a half turn.
+    CHECK(std::fabs(figure.instance.yaw) == doctest::Approx(3.14159265F));
     CHECK(figure.clip == ActorClip::Idle);
     CHECK(figure.skinned);
     CHECK(figure.rig == kActorRigProcedural);
@@ -490,4 +502,56 @@ TEST_CASE("the ward wears nothing of the Kit's, and the Gull's own hold what the
     putActorFigures(twice, twice.actors);
     scene.actors = actors;
     CHECK(sceneHash(scene) == sceneHash(twice));
+}
+
+TEST_CASE("the --sheet=gear figure stands on a floor in sight, framed head to boots in the view") {
+    // THE 2026-11 DIRECTOR: in the Gull the figure stood in the counter and
+    // only a mace head showed. Now it stands on the first standable tile along
+    // the look in sight of the eye, and projected through the eye's own view
+    // it lands inside the frame from its boots to the crown of its head.
+    render::SessionConfig config;
+    config.width = 320;
+    config.height = 180;
+    config.timeOfDay = 9 * 3600;
+    config.timeOfDayGiven = true;
+    render::Session session(config);
+    const render::Camera base = session.camera();
+    const std::int32_t band = session.body().band();
+    const float aspect = 320.0F / 180.0F;
+    std::size_t placed = 0;
+    for (int turn = 0; turn < 8; ++turn) {
+        render::Camera eye = base;
+        eye.yaw = base.yaw + static_cast<float>(turn) * 0.78539816F;
+        eye.pitch = 0.0F;
+        float px = 0.0F;
+        float py = 0.0F;
+        if (!playerFigureSpot(session.tiles(), eye, band, px, py)) {
+            continue;
+        }
+        ++placed;
+        INFO("turn ", turn, " at ", px, ",", py);
+        const std::int32_t tx = static_cast<std::int32_t>(std::floor(px));
+        const std::int32_t ty = static_cast<std::int32_t>(std::floor(py));
+        CHECK(session.tiles().standable(tx, ty, band));
+        const ActorInstance body =
+            playerFigureInstance(eye, px, py, render::bandSurface(band), GearLook{});
+        // Into the eye's frame: depth along the look, across it, and up.
+        const float dx = px - eye.x;
+        const float dy = py - eye.y;
+        const float depth = dx * std::sin(eye.yaw) - dy * std::cos(eye.yaw);
+        const float across = dx * std::cos(eye.yaw) + dy * std::sin(eye.yaw);
+        REQUIRE(depth > 1.5F);
+        const float tall = 1.875F * body.instance.scale;
+        const float feet = render::bandSurface(band) - eye.z;
+        const float crown = feet + tall;
+        const float vTan = eye.hfovTan / aspect;
+        CHECK(std::fabs(across) / depth < eye.hfovTan);
+        CHECK(feet / depth > -vTan);
+        CHECK(crown / depth < vTan);
+        // And it faces the eye.
+        const float fx = std::sin(body.instance.yaw);
+        const float fy = -std::cos(body.instance.yaw);
+        CHECK(fx * -dx + fy * -dy > 0.9F * std::sqrt(dx * dx + dy * dy));
+    }
+    CHECK(placed > 0U);
 }

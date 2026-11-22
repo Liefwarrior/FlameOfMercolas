@@ -160,19 +160,6 @@ bool wearInto(Loadout& loadout, const ItemRegistry& registry, std::int32_t index
     return true;
 }
 
-/// The span a loadout's hand rolls: the worn hand row's own, or the fist's.
-void handSpanOf(const Loadout& loadout, const ItemRegistry& registry, std::int32_t& lo,
-                std::int32_t& hi) noexcept {
-    const ItemDef* item = registry.at(loadout.worn(ItemSlot::Hand));
-    if (item != nullptr) {
-        lo = item->damageLo;
-        hi = item->damageHi;
-        return;
-    }
-    lo = baseDamage(Weapon::Fists);
-    hi = lo + kStrikeVarianceMax;
-}
-
 /// Every non-hand slot's DR, summed: Kit::wornDr's rule over a loadout.
 [[nodiscard]] std::int32_t drOf(const Loadout& loadout, const ItemRegistry& registry) noexcept {
     std::int32_t dr = 0;
@@ -544,12 +531,6 @@ void ItemRegistry::appendRows(std::string_view json, bool firstFile) {
                 continue;
             }
             item.grip = grip;
-            if (item.slot == ItemSlot::Hand) {
-                const GripTiming timing = gripTiming(grip);
-                item.reachQ8 = timing.reachQ8;
-                item.recoverySteps = timing.recoverySteps;
-                item.hardRecoverySteps = timing.hardRecoverySteps;
-            }
         }
         item.model = stringOr(node, "model", "");
         item.dr = intOr(node, "dr", 0);
@@ -998,18 +979,22 @@ Weapon Kit::handClass(const ItemRegistry& registry) const noexcept {
     return item != nullptr ? item->weaponClass : Weapon::Fists;
 }
 
-std::int32_t Kit::handDamageLo(const ItemRegistry& registry) const noexcept {
-    std::int32_t lo = 0;
-    std::int32_t hi = 0;
-    handSpanOf(loadout_, registry, lo, hi);
-    return lo;
+DamageSpan handSpanOf(const Loadout& loadout, const ItemRegistry& registry,
+                      Weapon bareClass) noexcept {
+    const ItemDef* item = registry.at(loadout.worn(ItemSlot::Hand));
+    if (item != nullptr) {
+        return DamageSpan{item->damageLo, item->damageHi};
+    }
+    const std::int32_t lo = baseDamage(bareClass);
+    return DamageSpan{lo, lo + kStrikeVarianceMax};
 }
 
-std::int32_t Kit::handDamageHi(const ItemRegistry& registry) const noexcept {
-    std::int32_t lo = 0;
-    std::int32_t hi = 0;
-    handSpanOf(loadout_, registry, lo, hi);
-    return hi;
+std::int32_t Kit::handDamageLo(const ItemRegistry& registry, Weapon bareClass) const noexcept {
+    return handSpanOf(loadout_, registry, bareClass).lo;
+}
+
+std::int32_t Kit::handDamageHi(const ItemRegistry& registry, Weapon bareClass) const noexcept {
+    return handSpanOf(loadout_, registry, bareClass).hi;
 }
 
 WeaponGrip Kit::handGrip(const ItemRegistry& registry) const noexcept {
@@ -1207,7 +1192,8 @@ void Kit::hashInto(HashSink& sink, std::size_t legacyRows) const {
 // the comparison
 // ---------------------------------------------------------------------------
 
-GearCompare compareGear(const Kit& kit, const ItemRegistry& registry, std::int32_t index) {
+GearCompare compareGear(const Kit& kit, const ItemRegistry& registry, std::int32_t index,
+                        Weapon bareClass) {
     GearCompare out;
     const ItemDef* item = registry.at(index);
     if (item == nullptr || item->slot == ItemSlot::None || item->fixed ||
@@ -1225,8 +1211,16 @@ GearCompare compareGear(const Kit& kit, const ItemRegistry& registry, std::int32
     out.drNow = drOf(now, registry);
     out.drThen = drOf(then, registry);
     out.showsDamage = item->slot == ItemSlot::Hand || then.worn(ItemSlot::Hand) != now.worn(ItemSlot::Hand);
-    handSpanOf(now, registry, out.dmgLoNow, out.dmgHiNow);
-    handSpanOf(then, registry, out.dmgLoThen, out.dmgHiThen);
+    // NOW is the span the next blow rolls; THEN is the span after the press.
+    // A press that changes the hand resets a directly armed class to fists
+    // (Tavern::wearItem), so a bare hand after it swings as Fists.
+    const bool handChanges = then.worn(ItemSlot::Hand) != now.worn(ItemSlot::Hand);
+    const DamageSpan spanNow = handSpanOf(now, registry, bareClass);
+    const DamageSpan spanThen = handSpanOf(then, registry, handChanges ? Weapon::Fists : bareClass);
+    out.dmgLoNow = spanNow.lo;
+    out.dmgHiNow = spanNow.hi;
+    out.dmgLoThen = spanThen.lo;
+    out.dmgHiThen = spanThen.hi;
     const GripTiming timingNow = gripTiming(handGripOf(now, registry));
     const GripTiming timingThen = gripTiming(handGripOf(then, registry));
     out.reachNowQ8 = timingNow.reachQ8;

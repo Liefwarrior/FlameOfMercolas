@@ -145,9 +145,17 @@ void SceneRig::refresh(const render::Session& session, float aspect) {
         // the Kit says he is wearing, stood in front of the eye and facing
         // it -- ADDED to the crowd, so the ward's people stay where they
         // are. Off the sim's worn rows, never written back.
+        // It stands on a tile a body could stand on, in sight of the eye, at
+        // about three tiles -- framed head to boots at the level look -- or
+        // is not added at all.
         const GearLook gear = gearLookOf(session.tavern().kit(), session.tavern().items());
-        scene.actors.push_back(
-            playerFigureInstance(session.camera(), render::bandSurface(session.body().band()), gear));
+        const render::Camera eye = session.camera();
+        const std::int32_t band = session.body().band();
+        float px = 0.0F;
+        float py = 0.0F;
+        if (playerFigureSpot(session.tiles(), eye, band, px, py)) {
+            scene.actors.push_back(playerFigureInstance(eye, px, py, render::bandSurface(band), gear));
+        }
     }
     putActorFigures(scene, scene.actors);
     // V LANE: the player's own hands. The placeholder parts put once
@@ -157,6 +165,11 @@ void SceneRig::refresh(const render::Session& session, float aspect) {
     // same frame on every machine.
     putViewmodelMeshes(scene);
     scene.viewmodel = viewmodelInstance(session, handsKind);
+    if (sheet == 3) {
+        // --sheet=gear is a look at yourself: your own hands in front of the
+        // eye would stand over the figure they belong to.
+        scene.viewmodel.visible = false;
+    }
     if (perPixel) {
         // The hands are drawn in their own pass, in view space, where the
         // per-pixel light cannot reach: they wear the light at the eye, by

@@ -19,7 +19,7 @@
       "file": "SM_Wep_WarHammer_Large_01.gltf",
       "pitchDegrees": 90,
       "lift": 0.22,
-      "tint": [196, 184, 168],
+      "tint": [128, 120, 112],
       "maxDistance": 32
     },
     "boarding_axe": {

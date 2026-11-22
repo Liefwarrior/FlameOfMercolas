@@ -463,15 +463,48 @@ void dressInGear(ActorInstance& body, const ActorLook& look, const GearLook& gea
     body.instance.meshId = far ? figureFarMeshId(dressed) : figureMeshId(dressed);
 }
 
-ActorInstance playerFigureInstance(const render::Camera& eye, float surfaceY, const GearLook& gear,
-                                   float distance) {
-    // The --sheet rows' own frame: forward is (sin yaw, -cos yaw) in tiles.
-    const float px = eye.x + std::sin(eye.yaw) * distance;
-    const float py = eye.y - std::cos(eye.yaw) * distance;
+bool playerFigureSpot(const sim::TileQuery& tiles, const render::Camera& eye, std::int32_t band, float& px,
+                      float& py) {
+    // The --sheet rows' own frame: forward is (sin yaw, -cos yaw) in tiles,
+    // right is (cos yaw, sin yaw).
+    const float fx = std::sin(eye.yaw);
+    const float fy = -std::cos(eye.yaw);
+    const float rx = std::cos(eye.yaw);
+    const float ry = std::sin(eye.yaw);
+    const auto tileOf = [](float v) { return static_cast<std::int32_t>(std::floor(v)); };
+    const std::int32_t eyeX = tileOf(eye.x);
+    const std::int32_t eyeY = tileOf(eye.y);
+    // Never nearer than about three tiles: at the default ninety-degree view
+    // and the eye's height, nearer puts the boots under the frame.
+    constexpr float kDepths[] = {kPlayerFigureDistance, 3.6F, 4.0F, 4.4F};
+    constexpr float kSides[] = {0.0F, -1.0F, 1.0F};
+    for (const float side : kSides) {
+        for (const float depth : kDepths) {
+            const float wx = eye.x + fx * depth + rx * side;
+            const float wy = eye.y + fy * depth + ry * side;
+            const std::int32_t x = tileOf(wx);
+            const std::int32_t y = tileOf(wy);
+            if ((x == eyeX && y == eyeY) || !tiles.inBounds(x, y, band) || !tiles.standable(x, y, band) ||
+                !tiles.lineOfSight(eyeX, eyeY, x, y, band)) {
+                continue;
+            }
+            // On the ray itself (inside the standable tile), so the framing is
+            // the distance asked for and not a tile-centre rounding of it.
+            px = wx;
+            py = wy;
+            return true;
+        }
+    }
+    return false;
+}
+
+ActorInstance playerFigureInstance(const render::Camera& eye, float px, float py, float surfaceY,
+                                   const GearLook& gear) {
     ActorInstance body;
     body.rig = kActorRigProcedural;
     body.instance.position = toScene(px, py, surfaceY);
-    body.instance.yaw = eye.yaw + kPi;
+    // Facing the eye: the yaw whose forward (sin, -cos) runs to it.
+    body.instance.yaw = std::atan2(eye.x - px, -(eye.y - py));
     body.instance.scale = actorInstanceScale(sim::WardType::Sailor);
     body.instance.tint = Rgba8{255, 255, 255, 255};
     dressInGear(body, playerFigureLook(), gear, false);

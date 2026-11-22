@@ -52,14 +52,14 @@ constexpr std::int32_t kStreetSpotBand = sim::docks::kSpawnBand;
 constexpr sim::Angle kStreetSpotYaw = sim::docks::kSpawnYaw;
 constexpr int kLoadoutHour = 9;
 
-/// THE GULL'S EVENING: inside the door, facing south down the room -- the
-/// bar's seven tiles across the frame three tiles off, Gerta behind it, the
-/// near tables on the right. Cull's stool at (152,68) is empty until nine
-/// (test_street_voice pins the tile and its sightlines); the tile east of it
-/// and the open floor south of it (test_roofrun spawns a body there) are the
-/// fall-backs, in that order, so the stand is fixed per map.
-constexpr std::int32_t kTaproomTiles[3][2] = {{152, 68}, {153, 68}, {152, 69}};
-constexpr sim::Angle kTaproomYaw = sim::kFacingSouth;
+/// THE GULL'S EVENING: a stand inside the walls looking down the taproom's
+/// LONGEST OPEN FLOOR with the bar (or the hearth) in the view -- read off
+/// the map at run time (taproomViews), the way the stands are read off the
+/// ground list. A fixed tile facing the shelf wall a tile off gave the
+/// --sheet=gear figure nowhere to stand (render3d's playerFigureSpot walks
+/// the look ray 3.2-4.4 tiles out for open, visible floor), so the frame
+/// asks for at least kTaproomMinRun tiles of it straight ahead.
+constexpr std::int32_t kTaproomMinRun = 5;
 constexpr int kTaproomHour = 20;
 
 // ---------------------------------------------------------------------------
@@ -343,19 +343,95 @@ void enterTakeHour(Session& session, std::span<const std::string_view> ids) {
            !session.characterOpen() && session.timeOfDay() / 3600 == hour;
 }
 
-/// The Gull's evening frame: the first of the taproom's three stands the map
-/// lets a body onto.
-[[nodiscard]] bool standInTaproom(Session& session) {
-    for (const auto& tile : kTaproomTiles) {
-        if (!session.tiles().standable(tile[0], tile[1], sim::gull::kGroundBand)) {
-            continue;
-        }
-        if (standForFrame(session, tile[0], tile[1], sim::gull::kGroundBand, kTaproomYaw,
-                          kTaproomHour)) {
-            gGearNote += " taproom=" + std::to_string(tile[0]) + "," + std::to_string(tile[1]);
-            return sim::gull::insideFootprint(tile[0], tile[1]);
+/// One way to look down the taproom: a stand, a cardinal facing, and how many
+/// tiles of standable floor in sight run straight ahead of it.
+struct TaproomView {
+    std::int32_t x = 0;
+    std::int32_t y = 0;
+    sim::Angle yaw = 0;
+    std::int32_t run = 0;
+};
+
+/// Whether a point (tile centre, in tiles x2 so the bar's centre is whole)
+/// sits within forty degrees of a facing from a stand -- in the frame's
+/// middle, where the 90-degree view keeps it whatever the aspect.
+[[nodiscard]] bool inViewOf(std::int32_t x, std::int32_t y, std::int32_t dx, std::int32_t dy,
+                            std::int32_t px2, std::int32_t py2) {
+    const std::int64_t vx = static_cast<std::int64_t>(px2) - (2 * x + 1);
+    const std::int64_t vy = static_cast<std::int64_t>(py2) - (2 * y + 1);
+    const std::int64_t dot = vx * dx + vy * dy;
+    // cos(40 deg)^2 is 0.587: dot^2 >= 0.587 |v|^2, in hundredths.
+    return dot > 0 && dot * dot * 100 >= 59 * (vx * vx + vy * vy);
+}
+
+/// EVERY STAND IN THE GULL'S GROUND FLOOR AND EVERY CARDINAL FACING whose
+/// look runs at least kTaproomMinRun tiles over standable floor the eye can
+/// see, with the bar's middle or the hearth in view -- longest run first,
+/// ties to the northmost, then westmost stand and N/E/S/W, so the choice is
+/// fixed per map.
+[[nodiscard]] std::vector<TaproomView> taproomViews(const sim::TileQuery& tiles) {
+    namespace gull = sim::gull;
+    const std::int32_t band = gull::kGroundBand;
+    constexpr std::int32_t kFacings[4][2] = {{0, -1}, {1, 0}, {0, 1}, {-1, 0}};
+    constexpr sim::Angle kYaws[4] = {sim::kFacingNorth, sim::kFacingEast, sim::kFacingSouth,
+                                     sim::kFacingWest};
+    const std::int32_t barX2 = gull::kBarX0 + gull::kBarX1 + 1;
+    const std::int32_t barY2 = 2 * gull::kBarY + 1;
+    const std::int32_t hearthX2 = gull::kHearthX0 + gull::kHearthX1 + 1;
+    const std::int32_t hearthY2 = 2 * gull::kHearthY + 1;
+    std::vector<TaproomView> views;
+    for (std::int32_t y = gull::kFootprintY0 + 1; y < gull::kFootprintY1; ++y) {
+        for (std::int32_t x = gull::kFootprintX0 + 1; x < gull::kFootprintX1; ++x) {
+            if (!tiles.standable(x, y, band)) {
+                continue;
+            }
+            for (std::size_t f = 0; f < 4; ++f) {
+                const std::int32_t dx = kFacings[f][0];
+                const std::int32_t dy = kFacings[f][1];
+                std::int32_t run = 0;
+                for (std::int32_t k = 1; k <= 12; ++k) {
+                    const std::int32_t tx = x + dx * k;
+                    const std::int32_t ty = y + dy * k;
+                    if (!gull::insideFootprint(tx, ty) || !tiles.standable(tx, ty, band) ||
+                        !tiles.lineOfSight(x, y, tx, ty, band)) {
+                        break;
+                    }
+                    run = k;
+                }
+                if (run < kTaproomMinRun) {
+                    continue;
+                }
+                if (!inViewOf(x, y, dx, dy, barX2, barY2) &&
+                    !inViewOf(x, y, dx, dy, hearthX2, hearthY2)) {
+                    continue;
+                }
+                views.push_back(TaproomView{x, y, kYaws[f], run});
+            }
         }
     }
+    std::stable_sort(views.begin(), views.end(), [](const TaproomView& a, const TaproomView& b) {
+        return a.run > b.run;
+    });
+    return views;
+}
+
+/// The Gull's evening frame: the first of the taproom's views (taproomViews)
+/// the walker reaches, stood on at eight in the evening.
+[[nodiscard]] bool standInTaproom(Session& session) {
+    const std::vector<TaproomView> views = taproomViews(session.tiles());
+    int tries = 0;
+    for (const TaproomView& view : views) {
+        if (++tries > 6) {
+            break;
+        }
+        if (standForFrame(session, view.x, view.y, sim::gull::kGroundBand, view.yaw,
+                          kTaproomHour)) {
+            gGearNote += " taproom=" + std::to_string(view.x) + "," + std::to_string(view.y) +
+                         "," + std::to_string(view.yaw) + " run=" + std::to_string(view.run);
+            return sim::gull::insideFootprint(view.x, view.y);
+        }
+    }
+    gGearNote += " taproom=none/" + std::to_string(views.size());
     return false;
 }
 
@@ -503,6 +579,15 @@ namespace scripted {
     return 7;
 }
 
+std::string gearHandLine(const Session& session) {
+    const sim::Tavern& tavern = session.tavern();
+    const sim::ItemDef* held = tavern.heldItem();
+    const std::string name =
+        held != nullptr ? held->id : std::string(sim::weaponName(tavern.playerWeapon()));
+    return name + ":" + std::to_string(tavern.playerDamageLo()) + "-" +
+           std::to_string(tavern.playerDamageHi());
+}
+
 std::string gearWornIds(const Session& session) {
     const sim::Tavern& tavern = session.tavern();
     std::string out;
@@ -526,18 +611,22 @@ std::string gearWornIds(const Session& session) {
 ///   2. wear     the three worn through the pack's own ENTER; the pack open on
 ///               the worn block, the cursor on the HAND row
 ///   3. compare  the maul taken; the pack on its carried row, the detail pane's
-///               comparison block reading DR, DMG, REACH LONGER, SPEED SLOWER
-///               and TAKES OFF HAND CUTLASS before anything is pressed
+///               comparison block reading what changes -- DMG, REACH LONGER,
+///               SPEED SLOWER, PUTS DOWN THE CUTLASS -- before anything is
+///               pressed (no DR line: the body's DR does not move)
 ///   4. shield   the buckler taken up beside the cutlass; the cursor on the
 ///               OFF-HAND row, the pane on the shield
-///   5. twohand  the maul's row again, now warning TAKES OFF OFF-HAND BUCKLER,
+///   5. twohand  the maul's row again, now with DR 3 -> 2 and TAKES OFF THE
+///               BUCKLER,
 ///               and ENTER: the maul in both hands, the buckler carried, the
 ///               cursor on the bare OFF-HAND row that says why it is bare
 ///   6. reach    the iron pot on, two in the afternoon, Ox Gullbane at the
 ///               door from a diagonal step -- past a one-hander's reach,
-///               inside the maul's -- the reticle on him, one swing
-///   7. dr       his blow back, turned by what is worn (the iron among it),
-///               stepped one step at a time so the run stops on X TURNS n
+///               inside the maul's -- the reticle lit on him, BEFORE the
+///               swing, so the frame shows the gap
+///   7. dr       the swing across it, and his blow back, turned by what is
+///               worn (the iron among it), stepped one step at a time so the
+///               run stops on ARMOUR TURNS n
 ///
 /// Or a LOADOUT: light, guard, heavy -- taken, worn, and walked back to the
 /// spawn's own tile, band and yaw at nine with the Menu down -- or gull, the
@@ -611,8 +700,8 @@ std::string gearWornIds(const Session& session) {
         read += (read.empty() ? "" : "|") + line;
     }
     gGearNote += " compare=" + (read.empty() ? std::string("-") : read);
-    if (haveMaul && hasLine(pane.compare, "DR ") && hasLine(pane.compare, "DMG ") &&
-        hasLine(pane.compare, "TAKES OFF HAND " + nameOf(session, "cutlass"))) {
+    if (haveMaul && hasLine(pane.compare, "DMG ") && hasLine(pane.compare, "REACH LONGER") &&
+        hasLine(pane.compare, "PUTS DOWN THE " + nameOf(session, "cutlass"))) {
         ++landed;  // 3
     }
     if (ending == "compare") {
@@ -637,7 +726,7 @@ std::string gearWornIds(const Session& session) {
         before = session.inspectPaneView();
         session.chooseTopic(0);
     }
-    const bool warned = hasLine(before.compare, "TAKES OFF OFF-HAND " + nameOf(session, kShield));
+    const bool warned = hasLine(before.compare, "TAKES OFF THE " + nameOf(session, kShield));
     const bool swapped = wornGear(session, kTwoHander) &&
                          tavern.kit().worn(sim::ItemSlot::OffHand) < 0 &&
                          carriedGear(session, kShield);
@@ -662,14 +751,11 @@ std::string gearWornIds(const Session& session) {
     const std::int32_t oxId = ox != nullptr ? ox->id() : -1;
     const std::int32_t turnedBefore = tavern.blowsTurned();
     std::int64_t along = -1;
-    bool reached = false;
-    if (oxId >= 0 && wornGear(session, kTwoHander)) {
-        reached = standPastOneHand(session, oxId, along);
-        if (reached) {
-            session.punch();
-            reached = inTheFight(session, oxId);
-        }
-    }
+    // The beat is the GAP: the maul's reticle lit on him from a step a
+    // one-hander could not swing across. `reach` stops here, before the
+    // blow, so its frame shows the distance and not the clinch after it.
+    const bool reached =
+        oxId >= 0 && wornGear(session, kTwoHander) && standPastOneHand(session, oxId, along);
     gGearNote += " along=" + std::to_string(along) + "/" +
                  std::to_string(tavern.playerReachQ8()) + " helm=" + (helmed ? "on" : "off");
     if (reached) {
@@ -679,8 +765,15 @@ std::string gearWornIds(const Session& session) {
         return landed;
     }
 
-    // 7. DR. His blow back, one step at a time.
-    if (oxId >= 0 && reached) {
+    // 7. DR. The swing across the gap starts the fight; his blow comes back,
+    // stepped one step at a time.
+    bool fighting = false;
+    if (reached) {
+        session.punch();
+        fighting = inTheFight(session, oxId);
+    }
+    gGearNote += std::string(" fight=") + (fighting ? "yes" : "no");
+    if (oxId >= 0 && fighting) {
         for (int step = 0;
              step < 20 * sim::kStepsPerSecond && tavern.blowsTurned() == turnedBefore; ++step) {
             if (step % sim::kStepsPerSecond == 0) {

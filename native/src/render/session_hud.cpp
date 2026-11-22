@@ -353,7 +353,7 @@ void Session::syncPanelAnim() noexcept {
     // and the note ride interactCache_'s own visibility so a name cannot
     // outlive the verb it belongs to mid-fade.
     const InteractTarget aim = interactTarget();
-    const bool aimVisible = !conversing && !aim.verb.empty();
+    const bool aimVisible = !conversing && !aim.verb.empty() && !config_.hideInteractPrompt;
     if (aimVisible) {
         interactCache_ = aim.verb;
         interactSubjectCache_ = aim.subject;
@@ -681,7 +681,7 @@ std::string Session::stashLine() const {
         line += std::to_string(held) + " " + std::string(sim::contrabandLabelFor(good, held));
     }
     if (sack.illicitWeight() > 0) {
-        line += "  " + std::to_string(sack.illicitWeight()) + "DR";
+        line += "  " + std::to_string(sack.illicitWeight()) + " DRAMS";
     }
     return clip(std::move(line), 34);
 }
@@ -726,12 +726,18 @@ std::string Session::chargeLine() const {
     }
     const sim::Weapon weapon = tavern_->playerHeldWeapon();
     // THE HARD SPAN, which is the swing span through the hard tier: the same
-    // ((base + variance) * chargeQ8) >> 8 strike() applies, at kHardSwingChargeQ8
-    // -- so the numbers on the row are exactly the numbers a release will throw.
-    const std::int32_t base = sim::baseDamage(weapon);
-    const std::int32_t lo = (base * sim::kHardSwingChargeQ8) >> 8;
-    const std::int32_t hi =
-        ((base + sim::kStrikeVarianceMax) * sim::kHardSwingChargeQ8) >> 8;
+    // (span * chargeQ8) >> 8 strike() applies, at kHardSwingChargeQ8 -- so the
+    // numbers on the row are exactly the numbers a release will throw. PHASE
+    // 9: the span is the HELD THING's (playerDamageLo/Hi -- a maul rolls its
+    // own, not its class's), and for every class armed straight it is the
+    // class's base..base+variance exactly as before.
+    const std::int32_t lo = (tavern_->playerDamageLo() * sim::kHardSwingChargeQ8) >> 8;
+    const std::int32_t hi = (tavern_->playerDamageHi() * sim::kHardSwingChargeQ8) >> 8;
+    // A thing worn in the hand is named as itself (handsLine's KIT BUILD
+    // rule): HELD HARD -- MAUL, never the class it swings as.
+    if (const sim::ItemDef* held = tavern_->heldItem(); held != nullptr) {
+        return "HELD HARD -- " + held->name + " " + std::to_string(lo) + "-" + std::to_string(hi);
+    }
     // THE WEAPON NAME is weaponSheetLine's own casing (which is why this reads
     // through it rather than keeping a second copy of the name table): take
     // everything up to the sheet's own span, so "THE EVICTOR 7-9 IMPACT" yields

@@ -498,7 +498,7 @@ bool Session::groundTargetFor(InteractTarget& out) const {
     out = InteractTarget{};
     out.verb = stance() == sim::Stance::Crouched ? "TAKE QUIETLY" : "TAKE";
     out.subject = entry.count > 1 ? std::to_string(entry.count) + " " + thing->name : thing->name;
-    out.note = entry.owned ? std::string("THEIRS") : std::to_string(thing->drams) + "DR";
+    out.note = entry.owned ? std::string("THEIRS") : std::to_string(thing->drams) + " DRAMS";
     out.kind = entry.owned ? AimKind::Owned : AimKind::Thing;
     return true;
 }

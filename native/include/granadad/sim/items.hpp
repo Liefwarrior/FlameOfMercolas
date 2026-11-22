@@ -174,8 +174,15 @@ struct GripTiming {
 /// are one-handed, so nothing that existed before this table moves by a
 /// step. TWO-HANDED reaches a tile and five eighths (416) and pays for it a
 /// third slower on every count: 48 and 72 to recover, 21 to wind a hard
-/// swing. A SHIELD is never swung; its row is the one-handed row so a reader
-/// that asks anyway gets the arm's own numbers.
+/// swing.
+///
+/// A SHIELD IS NEVER SWUNG, AND THE SWING CAN NEVER ASK FOR IT. The only
+/// reader is the player's swing, through Kit::handGrip -- the grip of the row
+/// in the HAND -- and the loader refuses a Hand row whose grip is "shield"
+/// (ItemRegistry::appendRows), so no Kit ever holds one there. Its case exists
+/// only because the switch must name every enumerator (-Wswitch); it returns
+/// the one-handed row, static_asserted below, so that if the refusal were
+/// ever lost the swing would read the arm's own numbers and nothing more.
 [[nodiscard]] constexpr GripTiming gripTiming(WeaponGrip grip) noexcept {
     switch (grip) {
         case WeaponGrip::OneHanded:
@@ -187,6 +194,14 @@ struct GripTiming {
     }
     return GripTiming{kMeleeReach, 36, 54, 15};
 }
+static_assert(gripTiming(WeaponGrip::Shield).reachQ8 == gripTiming(WeaponGrip::OneHanded).reachQ8 &&
+              gripTiming(WeaponGrip::Shield).recoverySteps ==
+                  gripTiming(WeaponGrip::OneHanded).recoverySteps &&
+              gripTiming(WeaponGrip::Shield).hardRecoverySteps ==
+                  gripTiming(WeaponGrip::OneHanded).hardRecoverySteps &&
+              gripTiming(WeaponGrip::Shield).hardHoldSteps ==
+                  gripTiming(WeaponGrip::OneHanded).hardHoldSteps,
+              "the unreachable shield row is the arm's own");
 
 /// The raws' spelling: "one", "two", "shield".
 [[nodiscard]] std::string_view weaponGripSymbol(WeaponGrip grip) noexcept;
@@ -260,13 +275,6 @@ struct ItemDef {
     /// How it is held. One-handed unless the raws say "two" (a Hand row) or
     /// it is an OffHand row (always a Shield). See WeaponGrip.
     WeaponGrip grip = WeaponGrip::OneHanded;
-    /// gripTiming(grip)'s numbers, copied onto a Hand row at load so a
-    /// reader holding only the row can print them; zero on every other row.
-    /// The swing reads gripTiming(grip), never these -- the table is the
-    /// one source, and these can only ever agree with it.
-    std::int32_t reachQ8 = 0;
-    std::int32_t recoverySteps = 0;
-    std::int32_t hardRecoverySteps = 0;
     /// The render key for the thing ("maul", "buckler"): which prop the
     /// world, the viewmodel and the figure draw for it. Empty for a row that
     /// names none (every items.json row), where the renderer falls back by
@@ -614,10 +622,15 @@ public:
     [[nodiscard]] std::int32_t wornDr(const ItemRegistry& registry) const noexcept;
     /// The class of the worn hand row, or Fists.
     [[nodiscard]] Weapon handClass(const ItemRegistry& registry) const noexcept;
-    /// The span the player's blow rolls: the worn hand row's own span, or
-    /// baseDamage(Fists)..+kStrikeVarianceMax bare.
-    [[nodiscard]] std::int32_t handDamageLo(const ItemRegistry& registry) const noexcept;
-    [[nodiscard]] std::int32_t handDamageHi(const ItemRegistry& registry) const noexcept;
+    /// The span the player's blow rolls: the worn hand row's own span, or,
+    /// with the hand bare, `bareClass`'s span (baseDamage..+kStrikeVarianceMax)
+    /// -- Fists, or the class Tavern::setPlayerCombat armed with no row behind
+    /// it. handSpanOf below is the one function; the blow and the inspect
+    /// pane both read it.
+    [[nodiscard]] std::int32_t handDamageLo(const ItemRegistry& registry,
+                                            Weapon bareClass = Weapon::Fists) const noexcept;
+    [[nodiscard]] std::int32_t handDamageHi(const ItemRegistry& registry,
+                                            Weapon bareClass = Weapon::Fists) const noexcept;
     /// The worn hand row's grip, or OneHanded bare (fists swing one-handed).
     [[nodiscard]] WeaponGrip handGrip(const ItemRegistry& registry) const noexcept;
     /// Every worn row, as its own state with its own codec.
@@ -689,11 +702,25 @@ struct GearCompare {
     std::vector<ItemSlot> bares;
 };
 
+/// The span a loadout's hand rolls: the worn hand row's own, or, bare,
+/// `bareClass`'s class span. THE ONE FUNCTION behind the player's blow
+/// (Tavern::playerDamageLo/Hi, through Kit::handDamageLo/Hi) and the pane's
+/// comparison, so the two can never disagree.
+struct DamageSpan {
+    std::int32_t lo = 0;
+    std::int32_t hi = 0;
+};
+[[nodiscard]] DamageSpan handSpanOf(const Loadout& loadout, const ItemRegistry& registry,
+                                    Weapon bareClass) noexcept;
+
 /// The comparison for wearing row `index` over what `kit` wears now. Pure:
 /// the kit is not touched. Asks what wearing does, not whether the row is
-/// carried (the pane only shows carried rows).
+/// carried (the pane only shows carried rows). `bareClass` is what a bare
+/// hand swings as NOW (Tavern::compareGear passes the class setPlayerCombat
+/// armed); wearing that changes the hand resets it to Fists, as
+/// Tavern::wearItem does, so THEN follows the press exactly.
 [[nodiscard]] GearCompare compareGear(const Kit& kit, const ItemRegistry& registry,
-                                      std::int32_t index);
+                                      std::int32_t index, Weapon bareClass = Weapon::Fists);
 
 // ---------------------------------------------------------------------------
 // what is on the ground
