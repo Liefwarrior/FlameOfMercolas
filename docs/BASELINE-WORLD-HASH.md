@@ -1067,3 +1067,38 @@ carry short-term memory -- a materially bigger change than this lane's four roun
 director hat's broader asks (personal space near the player, street-width crowd distribution,
 idle-standing animation) are a different scope of work than the bug this lane was opened to fix.
 See DECISIONS.md for the full four-round account and the follow-up list.
+
+## Phase 8 (inventory), the move on the record, now on both toolchains (2026-11-21)
+
+Phase 8 (PR #12) moved the tavern twin and recorded it in DECISIONS.md, but not here, and blessed
+it on Linux only. Recorded now from both toolchains on `1209691a` (phase 8's merge plus the three
+inherited fixes at the bottom of the phase 9 branch, none of which touches sim state):
+
+```
+granadad-twin-gate --tavern --ticks 900
+COMBINED WORLD HASH: 0x63F354D02A6B600F -> 0xB36BFF03C7603051      <- DECLARED (phase 8) and RE-BLESSED
+```
+
+`run A` == `run B` == `0xB36BFF03C7603051`, 3,153 bytes, two invocations each on Linux/GCC 12 (the
+gate's toolchain image) and on Windows/mingw (`dist\granadad-twin-gate.exe` from the gate stamped
+`1209691a`). With `items_consumables.json` removed the Windows number is `0x63F354D02A6B600F`
+exactly, so phase 8's stands are the whole move. Population unmoved, `0x499B2D62A49840B5`, 23,419
+bytes, both toolchains. Docker gate 109/109, `verify-windows.ps1` PASS on that tree.
+
+## Phase 9 (weapons and equipment) -- the ONE declared tavern move (2026-11-21)
+
+```
+granadad-twin-gate --tavern --ticks 900
+COMBINED WORLD HASH: 0xB36BFF03C7603051 -> 0x24C0AECDC0DB77DB      <- DECLARED and RE-BLESSED
+```
+
+What moved it: the thirteen gear stands `items_gear.json` puts on the quay join the hashed ground
+list. Nothing else in the workload sees phase 9: it never takes, wears or swings, the Kit's hash
+writes its old five-slot words unless OFF-HAND or HANDS holds something, and rows past the base
+file join the hash only when held. With `items_gear.json` removed the number is
+`0xB36BFF03C7603051` exactly.
+
+`run A` == `run B` == `0x24C0AECDC0DB77DB`, 3,153 bytes, two invocations each on Linux/GCC 12 and on
+Windows/mingw (`dist\granadad-twin-gate.exe`). Population unmoved at `0x499B2D62A49840B5`, 23,419
+bytes, both toolchains. The gate stamp and `verify-windows.ps1` result for the head are in the
+phase 9 PR.

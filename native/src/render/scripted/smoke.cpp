@@ -334,6 +334,16 @@ int scriptedStartHour(const SmokeRunConfig& config) noexcept {
     if (config.kit || config.pack) {
         return 14;
     }
+    // OBLIVION-PLAN phase 9. Eight in the morning: daylight on the quay for
+    // the stands, and an hour short of the loadouts' frame, which the line
+    // puts on nine itself (the same morning) once the body is dressed and
+    // back on the spawn -- the hour the before frames (--time=9) were taken
+    // at. The line moves its own clock to four for a stand that is somebody's,
+    // to two in the afternoon for Ox, and to eight in the evening for the
+    // Gull's frame -- see runGearLine.
+    if (config.gear) {
+        return 8;
+    }
     // Father Maell takes an evening hour in the Gull between seven and half
     // past nine. Eight is the middle of it, which is also the default.
     if (config.flame) {
@@ -514,6 +524,20 @@ SmokeRunResult runSmoke(const SmokeRunConfig& config) {
         sprintInput.forward = 1;
         sprintInput.sprint = true;
         session.stepMany(sprintInput, config.sprintSteps);
+    }
+
+    if (config.gear) {
+        // OBLIVION-PLAN phase 9. The gear, played through the real verbs --
+        // see runGearLine. Each ending owes its own count. Run AHEAD of the
+        // --punch / --charge / --block verifications below, so a loadout end
+        // is the body those verbs then swing, wind and guard with
+        // (`--gear=heavy --charge=3` is the maul's own wind-up), rather than
+        // the bare spawn they used to act on before the line dressed it.
+        const std::int32_t landed =
+            static_cast<std::int32_t>(runGearLine(session, config.gearEnd));
+        result.gearBeats = landed;
+        result.scriptedWanted += gearBeatsFor(config.gearEnd);
+        result.scriptedLanded += landed;
     }
 
     if (config.punch) {
@@ -1688,7 +1712,7 @@ SmokeRunResult runSmoke(const SmokeRunConfig& config) {
     }
     if (config.kit) {
         summary << " | kit beats=" << result.kitBeats << '/' << kitBeatsFor(config.kitEnd)
-                << gKitNote << " hand=" << sim::weaponName(session.tavern().playerWeapon())
+                << gKitNote << " hand=" << gearHandLine(session)
                 << " dr=" << session.tavern().wornDr()
                 << " ground=" << session.tavern().groundItems().size();
     }
@@ -1697,6 +1721,13 @@ SmokeRunResult runSmoke(const SmokeRunConfig& config) {
                 << gPackNote << " load=" << session.tavern().loadDrams() << '/'
                 << session.tavern().loadBudget() << " hp=" << session.tavern().playerHp()
                 << " ground=" << session.tavern().groundItems().size();
+    }
+    if (config.gear) {
+        summary << " | gear beats=" << result.gearBeats << '/' << gearBeatsFor(config.gearEnd)
+                << gGearNote << " hand=" << gearHandLine(session)
+                << " dr=" << session.tavern().wornDr() << " load=" << session.tavern().loadDrams()
+                << '/' << session.tavern().loadBudget() << " hour=" << session.timeOfDay() / 3600
+                << " worn=" << gearWornIds(session);
     }
     if (config.court) {
         summary << " | court beats=" << result.courtBeats << '/' << courtBeatsFor(config.courtEnd)

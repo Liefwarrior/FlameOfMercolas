@@ -367,12 +367,22 @@ struct Options {
     bool perPixelLight = true;
     /// PHASE 6, VERIFICATION ONLY: `--hands=fists|club|dagger|sword` puts that
     /// hand model in the hands of the capture (-1 = what the sim holds).
+    /// PHASE 9: and cutlass|hatchet|mace|maul|boarding_axe.
     int handsKind = -1;
     /// PHASE 6, VERIFICATION ONLY: `--sheet=clips` or `--sheet=looks` stands a
     /// row of figures in front of the eye instead of the ward's people: one
     /// per animation clip, or one per kind of body each with its own look.
-    /// 0 = off, 1 = clips, 2 = looks. Render-only.
+    /// PHASE 9: `--sheet=gear` ADDS the player's own figure in the Kit's
+    /// worn gear, 2.5 tiles ahead and facing the eye, to the crowd.
+    /// 0 = off, 1 = clips, 2 = looks, 3 = gear. Render-only.
     int sheet = 0;
+    /// VERIFICATION ONLY: `--bench-frames=N` redraws the shutter's composed
+    /// frame N more times after the PNG is written, vsync off, and prints the
+    /// wall time per frame. The same scene every time -- nothing steps -- so
+    /// the number is what that scene costs THIS machine's GPU, which is the
+    /// one thing the Linux gate can never say (OBLIVION-PLAN 10.1 item 2).
+    /// 0 = off. Reads nothing back into the session.
+    int benchFrames = 0;
     /// THE LOT PASS: --music-off. The MusicDirector loads and plays nothing;
     /// every other sound stays. Audio-side only, never in the settings file
     /// (a launch flag, like --nohud).
@@ -798,9 +808,15 @@ void print_usage() {
         "                       scripted line sets its own hour when this is not\n"
         "                       given -- --skyrun wants 22, when Finch is in\n"
         "                       the snug -- and never overrides one that is\n"
-        "  --sheet=clips|looks  capture a row of figures in front of the eye: one per\n"
-        "                       animation clip, or one per kind of body\n"
-        "  --hands=KIND         capture with fists, club, dagger or sword in the hands\n"
+        "  --sheet=clips|looks|gear\n"
+        "                       capture a row of figures in front of the eye: one per\n"
+        "                       animation clip, or one per kind of body; gear adds\n"
+        "                       your own figure, in what you wear, to the crowd\n"
+        "  --hands=KIND         capture with fists, club, dagger, sword, cutlass,\n"
+        "                       hatchet, mace, maul or boarding_axe in the hands\n"
+        "  --bench-frames=N     VERIFICATION ONLY: after the --screenshot, draw the\n"
+        "                       same frame N more times (vsync off) and print the\n"
+        "                       milliseconds per frame and the frame rate\n"
         "  --flat-light         the 3D world lit as it was before the lighting\n"
         "                       phase (vertex colour): no per-pixel lamps, shadows,\n"
         "                       sky shader or bloom\n"
@@ -1088,6 +1104,16 @@ void print_usage() {
         "                       knife, eat a loaf, fill the load. WHERE is take,\n"
         "                       theirs, list, use, ate, load or empty for the\n"
         "                       whole line\n"
+        "  --gear[=WHERE]       play the gear: take a cap, a gambeson and a\n"
+        "                       cutlass off their stands and wear them from the\n"
+        "                       pack, read the maul's DR/DMG line, take up a\n"
+        "                       buckler, then the maul that takes it off, swing\n"
+        "                       at Ox from past a one-hander's reach and take\n"
+        "                       his blow on the iron. WHERE is take, wear,\n"
+        "                       compare, shield, twohand, reach, dr, or a\n"
+        "                       loadout -- light, guard, heavy (worn, back on\n"
+        "                       the spawn at 09:00) or gull (guard, in the\n"
+        "                       Gull's taproom at 20:00)\n"
         "  --kit[=WHERE]        play the Kit: name and take the coil on the\n"
         "                       Tarwalk, lift the house's lantern, knife and\n"
         "                       coat (THEIRS) at four, open the Character tile\n"
@@ -1325,13 +1351,19 @@ void print_usage() {
         } else if (std::strcmp(arg, "--flat-light") == 0) {
             options.perPixelLight = false;
         } else if (starts_with(arg, "--sheet=", &value)) {
-            options.sheet = std::strcmp(value, "clips") == 0 ? 1 : (std::strcmp(value, "looks") == 0 ? 2 : 0);
+            options.sheet = std::strcmp(value, "clips") == 0   ? 1
+                            : std::strcmp(value, "looks") == 0 ? 2
+                            : std::strcmp(value, "gear") == 0  ? 3
+                                                               : 0;
+            // PHASE 9: looking at your own figure is not aiming at anybody;
+            // the crosshair offers no verb under --sheet=gear.
+            options.smoke.session.hideInteractPrompt = options.sheet == 3;
+        } else if (starts_with(arg, "--bench-frames=", &value)) {
+            options.benchFrames = std::max(0, std::atoi(value));
         } else if (starts_with(arg, "--hands=", &value)) {
-            options.handsKind = std::strcmp(value, "fists") == 0    ? 0
-                                : std::strcmp(value, "club") == 0   ? 1
-                                : std::strcmp(value, "dagger") == 0 ? 2
-                                : std::strcmp(value, "sword") == 0  ? 3
-                                                                    : -1;
+            // The hand models' own names (viewmodelKindName), so a kind
+            // appended to the table is a name here the same day.
+            options.handsKind = render3d::viewmodelKindFromName(value);
         } else if (starts_with(arg, "--controls=", &value)) {
             options.controlsFile = value;
         } else if (starts_with(arg, "--clock=", &value)) {
@@ -1622,6 +1654,14 @@ void print_usage() {
         } else if (starts_with(arg, "--pack=", &value)) {
             options.smoke.pack = true;
             options.smoke.packEnd = value;
+            options.wantsSmoke = true;
+        } else if (std::strcmp(arg, "--gear") == 0) {
+            // OBLIVION-PLAN phase 9. See SmokeRunConfig::gear.
+            options.smoke.gear = true;
+            options.wantsSmoke = true;
+        } else if (starts_with(arg, "--gear=", &value)) {
+            options.smoke.gear = true;
+            options.smoke.gearEnd = value;
             options.wantsSmoke = true;
         } else if (starts_with(arg, "--rung=", &value)) {
             // THE RUNG PLATE. See SmokeRunConfig::rung.
@@ -3960,6 +4000,28 @@ render3d::SceneStats present_frame(render3d::Backend& video, render3d::SceneRig&
     const render::Framebuffer output =
         needsUpscale ? render::upscaleNearest(shot, options.smoke.captureScale) : shot;
     const bool ok = render::writePng(output, options.smoke.screenshot);
+    // --bench-frames: the composed scene again, N times, timed end to end
+    // (refresh, draw, overlay, swap). The shutter's own frame already paid
+    // the loads, so every counted frame is a steady-state one.
+    if (options.benchFrames > 0) {
+        using Clock = std::chrono::steady_clock;
+        double worstMs = 0.0;
+        const Clock::time_point start = Clock::now();
+        for (int i = 0; i < options.benchFrames; ++i) {
+            const Clock::time_point t0 = Clock::now();
+            (void)present_frame(*video, rig, session, software, nullptr);
+            const double ms = std::chrono::duration<double, std::milli>(Clock::now() - t0).count();
+            worstMs = std::max(worstMs, ms);
+        }
+        const double totalMs =
+            std::chrono::duration<double, std::milli>(Clock::now() - start).count();
+        const double avgMs = totalMs / static_cast<double>(options.benchFrames);
+        std::printf("granadad: bench -- %d frame(s) at %dx%d on %s, %.3f ms avg, %.3f ms worst, "
+                    "%.1f fps\n",
+                    options.benchFrames, video->width(), video->height(),
+                    video->rendererName().c_str(), avgMs, worstMs,
+                    avgMs > 0.0 ? 1000.0 / avgMs : 0.0);
+    }
     // THE SCENE HASH IS PRINTED ON PURPOSE: it is the whole SceneDescription
     // (chunks, sky, the crowd, the hands, the camera) folded to one number,
     // so two separate processes of the same scripted drive prove the 3D

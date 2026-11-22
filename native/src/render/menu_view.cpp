@@ -315,7 +315,8 @@ void drawTile(Framebuffer& target, const PanelRect& pane, const PanelMetric& met
     if (capacity <= 0) {
         return;
     }
-    const MenuTilePage page = menuTilePageFor(view.topics, view.page, view.cursor, capacity);
+    const MenuTilePage page =
+        menuTilePageFor(view.topics, view.page, view.cursor, capacity, view.headerRows);
     const PanelRect listRect = rowBand(pane, metric, row, capacity);
     int used = 0;
     if (!page.rows.empty()) {
@@ -342,6 +343,13 @@ void drawTile(Framebuffer& target, const PanelRect& pane, const PanelMetric& met
             // picked label takes the accent while the fill under it is dim,
             // so state moves the whole row together and nothing is dropped.
             option.labelTakesAccent = tileRow.picked && !focused;
+            // PHASE 9: A HEADING IS AN INK STEP. Dim grey sat one notch under
+            // the rows it heads and the list read as one block; a heading in
+            // the tile's own accent (never filled, never numbered) breaks the
+            // pack into WORN / CARRIED / the groups at a glance.
+            if (!option.selectable) {
+                option.labelTakesAccent = true;
+            }
             options.push_back(std::move(option));
         }
         // PLANNED AGAINST THE WHOLE LIST, drawn against the page -- panel.hpp's
@@ -429,6 +437,15 @@ void drawInspectPane(Framebuffer& target, const PanelRect& pane, const PanelMetr
         drawCellTextRight(target, pane, metric, 1, 0, view.kind, ink.dim, 0.85F * fade);
     }
     const int footRow = paneRows - 1;
+    // PHASE 9 -- THE COMPARISON SITS ON THE FOOT'S SHOULDERS: the rows just
+    // over the air above the keys, reserved before the prose is laid out, so
+    // a long description can push the facts off the pane but never the
+    // answer to "is this better than what I have on". The pane's own floor
+    // (six rows) keeps the badge, the alert and the foot whatever it holds.
+    const int compareRows =
+        std::min(static_cast<int>(view.compare.size()), std::max(0, paneRows - 6));
+    const int compareTop = footRow - 1 - compareRows;
+    const int bodyLimit = compareRows > 0 ? compareTop - 1 : footRow - 1;
     int row = 1;
     if (!view.alert.empty()) {
         drawCellText(target, pane, metric, 0, row,
@@ -440,7 +457,7 @@ void drawInspectPane(Framebuffer& target, const PanelRect& pane, const PanelMetr
     const std::size_t cols = static_cast<std::size_t>(std::max(8, paneCells - 2));
     if (!view.prose.empty()) {
         for (const std::string& line : wrapText(view.prose, cols)) {
-            if (row >= footRow - 1) {
+            if (row >= bodyLimit) {
                 break;
             }
             drawCellText(target, pane, metric, 0, row, line, ink.prose, 0.92F * fade);
@@ -448,12 +465,37 @@ void drawInspectPane(Framebuffer& target, const PanelRect& pane, const PanelMetr
         }
         ++row;  // air
     }
+    for (int i = 0; i < compareRows; ++i) {
+        const std::size_t at = static_cast<std::size_t>(i);
+        const std::string& line = view.compare[at];
+        // THE COLOUR IS THE VERDICT: better in the numbers' own green, worse
+        // -- and whatever the press takes off -- in the alert's ink, a
+        // sideways change in plain prose ink, so the eye reads "is this
+        // better" before it reads a digit.
+        const InspectPane::Tone tone =
+            at < view.compareTone.size() ? view.compareTone[at] : InspectPane::Tone::Plain;
+        Rgb lineInk = ink.prose;
+        switch (tone) {
+            case InspectPane::Tone::Plain:
+                lineInk = ink.prose;
+                break;
+            case InspectPane::Tone::Better:
+                lineInk = ink.number;
+                break;
+            case InspectPane::Tone::Worse:
+                lineInk = kAlertInk;
+                break;
+        }
+        drawCellText(target, pane, metric, 0, compareTop + i,
+                     clipLabel(line, static_cast<std::size_t>(std::max(1, paneCells - 1))),
+                     lineInk, 0.95F * fade);
+    }
     std::size_t labelWidth = 0;
     for (const InspectFact& fact : view.facts) {
         labelWidth = std::max(labelWidth, fact.label.size());
     }
     for (const InspectFact& fact : view.facts) {
-        if (row >= footRow - 1) {
+        if (row >= bodyLimit) {
             break;
         }
         drawCellText(target, pane, metric, 0, row, fact.label, ink.dim, 0.85F * fade);
@@ -533,7 +575,8 @@ MenuTileHit menuTileHitAtPixel(const MenuTileState& state, int width, int height
         if (capacity <= 0) {
             return hit;
         }
-        const MenuTilePage page = menuTilePageFor(view.topics, view.page, view.cursor, capacity);
+        const MenuTilePage page =
+        menuTilePageFor(view.topics, view.page, view.cursor, capacity, view.headerRows);
         if (page.rows.empty()) {
             return hit;
         }
@@ -616,7 +659,7 @@ MenuTileLayout menuTileLayout(int width, int height) {
 }
 
 MenuTilePage menuTilePageFor(const std::vector<std::string>& topics, int page, int cursor,
-                             int capacity) {
+                             int capacity, const std::vector<int>& unkeyed) {
     MenuTilePage out;
     const int total = static_cast<int>(topics.size());
     if (total <= 0 || capacity <= 0) {
@@ -642,11 +685,27 @@ MenuTilePage menuTilePageFor(const std::vector<std::string>& topics, int page, i
         last = std::min(total, first + perScreen);
         out.more = true;
     }
+    // PHASE 9: with unkeyed rows, a row's digit is its place among the KEYED
+    // rows, so a header never eats a number (the pack's HAND is 1, not 2).
+    const auto isUnkeyed = [&unkeyed](int i) {
+        return std::find(unkeyed.begin(), unkeyed.end(), i) != unkeyed.end();
+    };
+    int ordinal = 0;
+    if (!unkeyed.empty()) {
+        for (int i = 0; i < first; ++i) {
+            ordinal += isUnkeyed(i) ? 0 : 1;
+        }
+    }
+    const int keyedWindow = std::max(0, page) * kTopicPageSize;
     for (int i = first; i < last; ++i) {
-        const int slot = i - window;
+        const int slot = unkeyed.empty() ? i - window : ordinal - keyedWindow;
         MenuTileRow row;
-        if (slot >= 0 && slot < kTopicPageSize) {
+        const bool keyed = unkeyed.empty() || !isUnkeyed(i);
+        if (keyed && slot >= 0 && slot < kTopicPageSize) {
             row.key = std::to_string(slot + 1);
+        }
+        if (!unkeyed.empty() && keyed) {
+            ++ordinal;
         }
         row.label = topics[static_cast<std::size_t>(i)];
         row.picked = i == cursor;

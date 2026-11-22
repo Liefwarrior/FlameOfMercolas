@@ -42,6 +42,25 @@
 // it today -- the knife the nemesis draws is Edged, and Edged is the
 // cutlass. Kept on the table, said out loud, so the day a knife enters the
 // sim the hand model is one row away.
+//
+// PHASE 9: KEYED BY ITEM. The Kit puts a THING in the hand, and the hand
+// model is now the thing's (viewmodelKindForItem): its render key -- the
+// raws' "model", or its id where it has none -- through the table below,
+// and only a row the table does not hold falls back to the class above.
+//
+//     cudgel        -> Club         (the existing club and mace file)
+//     knife, dagger -> Dagger       (the day the knife entered the sim)
+//     cutlass       -> Cutlass      SM_Wep_Sword_Small_01, the ground's own
+//     hatchet       -> Hatchet      SM_Wep_Axe_Small_04, the cleaver head
+//     mace          -> Mace         SM_Wep_Mace_01, the existing mace
+//     maul          -> Maul         SM_Wep_WarHammer_Large_01, two hands
+//     boarding_axe  -> BoardingAxe  SM_Wep_Axe_01, the bearded axe, two hands
+//     anything else -> viewmodelKindOf(its Weapon class)
+//
+// A two-handed kind puts the LEFT fist on the haft above the right, in every
+// state but the cast. The other hand's SHIELD (the buckler, the round
+// shield) is a part of its own on the left fist, in the shield id range, and
+// is drawn over the licensed arms too.
 
 #include <cstddef>
 #include <cstdint>
@@ -56,6 +75,10 @@ namespace granadad::render {
 class Session;
 }
 
+namespace granadad::sim {
+struct ItemDef;
+}
+
 namespace granadad::render3d {
 
 // The machine's names, in this namespace as the toolchain lane declared them
@@ -65,12 +88,58 @@ using render::ViewmodelMachine;
 using render::ViewmodelPose;
 using render::ViewmodelState;
 
-/// Which hand model. The byte ViewmodelInstance::kind carries.
-enum class ViewmodelKind : std::uint8_t { Fists = 0, Club = 1, Dagger = 2, Sword = 3 };
-inline constexpr std::size_t kViewmodelKindCount = 4;
+/// The one-handed grip's hard hold (sim::kHardSwingHoldSteps, static_asserted
+/// equal in viewmodel.cpp): the pose functions' default, so a caller with no
+/// grip in hand poses exactly as before phase 9.
+inline constexpr std::int32_t kViewmodelHardHoldSteps = 15;
+
+/// Which hand model. The byte ViewmodelInstance::kind carries. Append-only:
+/// the first four are phase 6's, phase 9 appended one per thing a hand can
+/// hold that none of them is.
+enum class ViewmodelKind : std::uint8_t {
+    Fists = 0,
+    Club = 1,
+    Dagger = 2,
+    Sword = 3,
+    Cutlass = 4,
+    Hatchet = 5,
+    Mace = 6,
+    Maul = 7,
+    BoardingAxe = 8,
+};
+inline constexpr std::size_t kViewmodelKindCount = 9;
 
 [[nodiscard]] ViewmodelKind viewmodelKindOf(sim::Weapon weapon) noexcept;
+/// PHASE 9: the hand model for the row worn in the hand (nullptr: bare,
+/// Fists). The render key is the row's model, or its id when it has none;
+/// a key the table does not hold falls back to viewmodelKindOf(class).
+[[nodiscard]] ViewmodelKind viewmodelKindForItem(const sim::ItemDef* item) noexcept;
+/// The kind a render key names, or false for a key the table does not hold.
+[[nodiscard]] bool viewmodelKindOfModel(std::string_view model, ViewmodelKind& out) noexcept;
 [[nodiscard]] std::string_view viewmodelKindName(ViewmodelKind kind) noexcept;
+/// The kind viewmodelKindName names ("maul", "boarding_axe"), or -1: the
+/// client's --hands= reads its names through this.
+[[nodiscard]] int viewmodelKindFromName(std::string_view name) noexcept;
+/// True for a kind held in both hands (the left fist on the haft).
+[[nodiscard]] bool viewmodelTwoHanded(ViewmodelKind kind) noexcept;
+
+/// PHASE 9: what the other hand carries. The byte ViewmodelInstance::shield
+/// carries. Append-only.
+enum class ViewmodelShield : std::uint8_t { None = 0, Buckler = 1, RoundShield = 2 };
+inline constexpr std::size_t kViewmodelShieldCount = 2;  // past None
+/// The shield for the row worn in the other hand (nullptr: none): its
+/// render key through the table, any other other-hand row the round one.
+[[nodiscard]] ViewmodelShield viewmodelShieldForItem(const sim::ItemDef* item) noexcept;
+/// Mesh ids: kViewmodelShieldMeshIdBase + shield (200257, 200258).
+[[nodiscard]] constexpr std::uint32_t viewmodelShieldMeshId(ViewmodelShield shield) noexcept {
+    return kViewmodelShieldMeshIdBase + static_cast<std::uint32_t>(shield);
+}
+/// The placeholder shield, authored in the left fist's frame: a disc facing
+/// -Z (away from the eye), its boss forward, the grip at the fist; a buckler
+/// held in the fist, a round shield strapped along the forearm so most of it
+/// lies below and left of the fist. Version 1, vertex colours, under 200
+/// vertices. Empty for None.
+[[nodiscard]] MeshData buildViewmodelShield(ViewmodelShield shield);
 
 /// The arms glb the adapter looks for under BackendConfig::modelDir
 /// (content/art/lot-3d/characters): viewmodel_fists.glb for every kind but
@@ -95,7 +164,8 @@ enum class ViewmodelPartId : std::uint8_t {
 };
 inline constexpr std::size_t kViewmodelPartCount = 5;
 
-/// Mesh ids: kViewmodelMeshIdBase + kind * 8 + part. 200000..200036.
+/// Mesh ids: kViewmodelMeshIdBase + kind * 8 + part. 200000..200068 for the
+/// nine kinds; thirty-two kinds fit under the shields at +256.
 [[nodiscard]] constexpr std::uint32_t viewmodelMeshId(ViewmodelKind kind,
                                                       ViewmodelPartId part) noexcept {
     return kViewmodelMeshIdBase + static_cast<std::uint32_t>(kind) * 8U +
@@ -184,7 +254,12 @@ struct ViewmodelRigClip {
     std::uint8_t clip = 0;
     float frame = 0.0F;
 };
-[[nodiscard]] ViewmodelRigClip viewmodelRigClip(ViewmodelKind kind, const ViewmodelPose& pose) noexcept;
+/// `hardHoldSteps` is the hold that makes a swing hard for the grip in the
+/// hand (Tavern::playerHardHoldSteps: 15 one-handed, 21 two-handed), so a
+/// two-hander's wind-up fills at its own count. The default is the shipped
+/// one-handed hold.
+[[nodiscard]] ViewmodelRigClip viewmodelRigClip(ViewmodelKind kind, const ViewmodelPose& pose,
+                                                std::int32_t hardHoldSteps = kViewmodelHardHoldSteps) noexcept;
 
 /// The guard frame of the block clip (0..1), and its hold frame: the two
 /// the policy above stands on.
@@ -214,18 +289,25 @@ inline constexpr std::int32_t kViewmodelEaseSteps = 6;
 /// THE POSE TABLES. Fills `out.parts` (and state/stateSteps/phase/kind) for
 /// a kind and a machine pose -- a pure function, so a test can pose the
 /// hands without a session. `tint` is the standing light, applied to every
-/// part (the cast hand adds its own glow on top).
+/// part (the cast hand adds its own glow on top). PHASE 9: `shield` puts its
+/// part on the left fist (and in out.shield); `hardHoldSteps` is the held
+/// grip's hard hold (viewmodelRigClip).
 void poseViewmodel(ViewmodelInstance& out, ViewmodelKind kind, const ViewmodelPose& pose,
-                   const Rgba8& tint);
+                   const Rgba8& tint, ViewmodelShield shield = ViewmodelShield::None,
+                   std::int32_t hardHoldSteps = kViewmodelHardHoldSteps);
 
 /// THE COMPOSER: the description of the hands for this session -- kind off
-/// Tavern::playerHeldWeapon(), pose off Session::viewmodel(), light off the
-/// body's own tile (ambient + baked + the Gull's flames, the actor rule).
+/// the Kit's worn HAND row (viewmodelKindForItem), or off
+/// Tavern::playerHeldWeapon() when the hand row is bare (a weapon granted as
+/// a bare byte, with no registry), the shield off the Kit's OFF-HAND row,
+/// the hard hold off the held grip, pose off Session::viewmodel(), light off
+/// the body's own tile (ambient + baked + the Gull's flames, the actor rule).
 /// Always visible; a caller that wants no hands clears `visible`.
 ///
-/// `forceKind`, when it names a ViewmodelKind (0..3), puts that hand model in
-/// the hands whatever the sim holds: a verification aid for the captures
-/// (the client's --hands=), render-only like everything here.
+/// `forceKind`, when it names a ViewmodelKind (0..kViewmodelKindCount-1), puts
+/// that hand model in the hands whatever the sim holds: a verification aid
+/// for the captures (the client's --hands=), render-only like everything
+/// here. The shield stays the Kit's.
 [[nodiscard]] ViewmodelInstance viewmodelInstance(const render::Session& session, int forceKind = -1);
 
 }  // namespace granadad::render3d

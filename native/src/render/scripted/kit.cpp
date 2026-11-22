@@ -34,6 +34,12 @@ namespace {
     return false;
 }
 
+}  // namespace
+
+// The eye and the pack helpers below are shared with the gear line
+// (scripted/gear.cpp) and declared in scripted.hpp.
+namespace scripted {
+
 /// Walks to a tile and faces a neighbouring tile, so the crosshair reads
 /// what lies there.
 void standAtFacing(Session& session, std::int32_t standX, std::int32_t standY,
@@ -79,7 +85,7 @@ void lookLevel(Session& session) {
 }
 
 /// Opens the Character tile on its PACK view and walks the cursor onto the
-/// first row whose printed label starts with `prefix` ("BREAD", "IN HAND").
+/// first row whose printed label starts with `prefix` ("BREAD", "HAND ").
 /// Walks with the arrows' own wrap, never jumps. False when no row does.
 [[nodiscard]] bool openPackRow(Session& session, const std::string& prefix) {
     if (!session.characterOpen()) {
@@ -101,10 +107,6 @@ void lookLevel(Session& session) {
     }
     return false;
 }
-
-}  // namespace
-
-namespace scripted {
 
 [[nodiscard]] int runKitLine(Session& session, const std::string& ending) {
     int landed = 0;
@@ -505,7 +507,9 @@ namespace scripted {
         session.chooseTopic(0);
     }
     const bool worn = tavern.kit().isWorn(item("coat")) && tavern.kit().isWorn(item("knife"));
-    const bool opened = openPackRow(session, "IN HAND");
+    // PHASE 9: the worn block's hand row is "HAND" padded to the slot column
+    // (the space keeps it off the HANDS row).
+    const bool opened = openPackRow(session, "HAND ");
     if (worn && opened && session.characterPack()) {
         ++landed;  // 3
     }

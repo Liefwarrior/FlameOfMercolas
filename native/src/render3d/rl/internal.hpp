@@ -527,6 +527,11 @@ struct Backend::Impl {
     /// for a near one the clip's pose skinned on the CPU into a copy of the
     /// GPU's buffers first. False when the body has no rigged mesh here.
     bool drawFigure(const ActorInstance& actor, SceneStats& stats);
+    /// PHASE 9: a body's kit mesh (figureKitMeshId off its lookKey and
+    /// gearKey, near or far as its body), skinned by the body's `pose` when
+    /// there is one and drawn at rest when there is not. Nothing for a body
+    /// with no gear or a kit not in the cache.
+    void drawKit(const ActorInstance& actor, const FigurePose* pose, SceneStats& stats);
     /// Scratch for the posed arrays, reused by every body.
     std::vector<float> skinPositions;
     std::vector<float> skinNormals;

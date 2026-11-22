@@ -445,9 +445,104 @@ void putActorFigures(SceneDescription& scene, const std::vector<ActorInstance>& 
     for (const ActorInstance& body : actors) {
         if (isFigureMeshId(body.instance.meshId)) {
             const ActorLook look = ActorLook::fromKey(body.lookKey);
-            putFigure(scene, look, isFarFigureMeshId(body.instance.meshId));
+            const bool far = isFarFigureMeshId(body.instance.meshId);
+            putFigure(scene, look, far);
+            // PHASE 9: what the body wears over its clothes, only where it
+            // wears anything -- a bare crowd puts exactly the meshes it did.
+            if (body.gearKey != 0U) {
+                putFigureKit(scene, look, GearLook::fromKey(body.gearKey), far);
+            }
         }
     }
+}
+
+void dressInGear(ActorInstance& body, const ActorLook& look, const GearLook& gear, bool far) {
+    const ActorLook dressed = dressedLook(look, gear);
+    body.lookKey = dressed.key();
+    body.gearKey = gear.key();
+    body.instance.meshId = far ? figureFarMeshId(dressed) : figureMeshId(dressed);
+}
+
+bool playerFigureSpot(const sim::TileQuery& tiles, const render::Camera& eye, std::int32_t band, float& px,
+                      float& py) {
+    // The --sheet rows' own frame: forward is (sin yaw, -cos yaw) in tiles,
+    // right is (cos yaw, sin yaw).
+    const float fx = std::sin(eye.yaw);
+    const float fy = -std::cos(eye.yaw);
+    const float rx = std::cos(eye.yaw);
+    const float ry = std::sin(eye.yaw);
+    const auto tileOf = [](float v) { return static_cast<std::int32_t>(std::floor(v)); };
+    const std::int32_t eyeX = tileOf(eye.x);
+    const std::int32_t eyeY = tileOf(eye.y);
+    // Never nearer than about three tiles: at the default ninety-degree view
+    // and the eye's height, nearer puts the boots under the frame.
+    constexpr float kDepths[] = {kPlayerFigureDistance, 4.0F, 4.4F, 3.2F};
+    constexpr float kSides[] = {0.0F, -1.0F, 1.0F};
+    for (const float side : kSides) {
+        for (const float depth : kDepths) {
+            const float wx = eye.x + fx * depth + rx * side;
+            const float wy = eye.y + fy * depth + ry * side;
+            const std::int32_t x = tileOf(wx);
+            const std::int32_t y = tileOf(wy);
+            if ((x == eyeX && y == eyeY) || !tiles.inBounds(x, y, band) || !tiles.standable(x, y, band) ||
+                !tiles.lineOfSight(eyeX, eyeY, x, y, band)) {
+                continue;
+            }
+            // On the ray itself (inside the standable tile), so the framing is
+            // the distance asked for and not a tile-centre rounding of it.
+            px = wx;
+            py = wy;
+            return true;
+        }
+    }
+    return false;
+}
+
+void clearSheetStage(std::vector<ActorInstance>& actors, const render::Camera& eye, float px, float py) {
+    const float lx = px - eye.x;
+    const float ly = py - eye.y;
+    const float reach = std::sqrt(lx * lx + ly * ly);
+    const auto crowded = [&](const ActorInstance& body) {
+        // Scene x is east, z is south: the tile plane's own (x, y).
+        const float bx = body.instance.position.x;
+        const float by = body.instance.position.z;
+        const float fx = bx - px;
+        const float fy = by - py;
+        if (fx * fx + fy * fy < kStageFigureClear * kStageFigureClear) {
+            return true;
+        }
+        const float ex = bx - eye.x;
+        const float ey = by - eye.y;
+        if (ex * ex + ey * ey < kStageEyeClear * kStageEyeClear) {
+            return true;
+        }
+        if (reach > 0.01F) {
+            const float along = (ex * lx + ey * ly) / reach;
+            const float across = std::fabs(ex * ly - ey * lx) / reach;
+            if (along > 0.0F && along < reach && across < kStageLane) {
+                return true;
+            }
+        }
+        return false;
+    };
+    actors.erase(std::remove_if(actors.begin(), actors.end(), crowded), actors.end());
+}
+
+ActorInstance playerFigureInstance(const render::Camera& eye, float px, float py, float surfaceY,
+                                   const GearLook& gear) {
+    ActorInstance body;
+    body.rig = kActorRigProcedural;
+    body.instance.position = toScene(px, py, surfaceY);
+    // Facing the eye -- the yaw whose forward (sin, -cos) runs to it -- and
+    // turned to its own right by the three-quarter, the shield arm forward.
+    body.instance.yaw = std::atan2(eye.x - px, -(eye.y - py)) + kPlayerFigureThreeQuarter;
+    body.instance.scale = actorInstanceScale(sim::WardType::Sailor);
+    body.instance.tint = Rgba8{255, 255, 255, 255};
+    dressInGear(body, playerFigureLook(), gear, false);
+    body.skinned = true;
+    body.clip = ActorClip::Idle;
+    body.clipFrame = 30U;
+    return body;
 }
 
 void putActorRigs(SceneDescription& scene) {
@@ -577,6 +672,16 @@ std::vector<ActorInstance> actorInstances(const render::Session& session,
         body.skinned = distance <= params.skinDistance;
         if (!body.skinned && isFigureMeshId(body.instance.meshId)) {
             body.instance.meshId = figureFarMeshId(ActorLook::fromKey(body.lookKey));
+        }
+        // PHASE 9: what the Gull's own hold is in the hand -- the bouncer's
+        // cudgel, the nemesis's knife -- through the same kit the player's
+        // figure wears. The sim's Weapon byte, read, never written.
+        if (isFigureMeshId(body.instance.meshId)) {
+            GearLook held;
+            held.prop = gearPropOfWeapon(actor.weapon());
+            if (held.key() != 0U) {
+                body.gearKey = held.key();
+            }
         }
         out.push_back(body);
     }

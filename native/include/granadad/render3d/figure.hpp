@@ -49,6 +49,7 @@
 #include <string_view>
 #include <vector>
 
+#include "granadad/render3d/gear_look.hpp"
 #include "granadad/render3d/scene.hpp"
 #include "granadad/render3d/shapes.hpp"
 #include "granadad/sim/ward_actors.hpp"
@@ -206,6 +207,72 @@ inline constexpr std::size_t kFarFigureTriangleBudget = 650;
 /// Puts the look's mesh (the far one when `far`) into the description unless
 /// it is already there.
 void putFigure(SceneDescription& scene, const ActorLook& look, bool far = false);
+
+// ---------------------------------------------------------------------------
+// PHASE 9: THE KIT -- what the Kit's worn rows put on a body
+// ---------------------------------------------------------------------------
+//
+// A geared body is TWO meshes posed by one skeleton. The cap and the coat
+// change who the body looks like, so they go through the look itself
+// (dressedLook: the head gear, the coat's cut) and the body mesh is simply
+// another look's -- still one mesh per look, still in the people's range.
+// Everything else is the KIT MESH: the jack over the torso, the gloves, the
+// boots over the boot leather, the prop weighted to HandR, the shield to the
+// left forearm or fist -- rigged to the same fifteen bones, built in the same
+// rest space as the body it is worn on, and skinned by the adapter with the
+// body's own pose. Its id is a function of the body's SHAPE (the only part of
+// the look the kit's geometry reads: build, sex, the coat's cut and the
+// apron) and the GearLook key, 21 bits under kFigureKitMeshIdBase, so the
+// pair (body id, kit id) is unique per (look, gear) and no id is shared by
+// two shapes.
+
+/// The bits of a look the kit's geometry depends on: build (2), sex (1),
+/// coat style (2), apron (1).
+[[nodiscard]] constexpr std::uint32_t figureKitShape(const ActorLook& look) noexcept {
+    return (static_cast<std::uint32_t>(look.build) & 3U) | (static_cast<std::uint32_t>(look.sex) & 1U) << 2U |
+           (static_cast<std::uint32_t>(look.coatStyle) & 3U) << 3U |
+           (static_cast<std::uint32_t>(look.apron) & 1U) << 5U;
+}
+/// The far kit sits one key-space above the near.
+inline constexpr std::uint32_t kFigureKitFarOffset = 1U << 21U;
+[[nodiscard]] constexpr std::uint32_t figureKitMeshId(const ActorLook& look, const GearLook& gear,
+                                                      bool far = false) noexcept {
+    return kFigureKitMeshIdBase + (far ? kFigureKitFarOffset : 0U) +
+           (figureKitShape(look) << kGearKeyBits | gear.key());
+}
+[[nodiscard]] constexpr bool isFigureKitMeshId(std::uint32_t id) noexcept {
+    return id >= kFigureKitMeshIdBase && id < kFigureKitMeshIdBase + 2U * kFigureKitFarOffset;
+}
+static_assert(kFigureKitMeshIdBase + 2U * kFigureKitFarOffset <= kFigureMeshIdBase,
+              "the kit range stays under the people's");
+static_assert(kGearKeyBits + 6U <= 21U, "a kit key is 21 bits");
+
+/// The look a body wears once its head and back rows are on it: the wool
+/// cap is the knit cap, the iron pot the helmet, the hood the hood, any
+/// other head row the flat cap; the coat is the knee coat in the body's own
+/// colour. The jacks, the hands and the feet change nothing here (the kit
+/// draws them). A bare GearLook returns the look unchanged.
+[[nodiscard]] ActorLook dressedLook(ActorLook look, const GearLook& gear) noexcept;
+
+/// The kit mesh: id figureKitMeshId(look, gear, far), version 1, every
+/// vertex weighted to one of the fifteen bones, boneRest the look's own rest
+/// joints (so it skins with the body's pose), normals filled. Empty (no
+/// vertices) when !gear.hasKit(). The far kit has fewer sides, no small
+/// parts and no rig (it is drawn at rest, as the far figure is). `look` is
+/// the DRESSED look (dressedLook), the one the body mesh was built from.
+[[nodiscard]] MeshData buildFigureKit(const ActorLook& look, const GearLook& gear, bool far = false);
+inline constexpr std::size_t kFigureKitTriangleBudget = 1500;
+
+/// Puts the kit mesh into the description unless it is there already or
+/// there is nothing to draw.
+void putFigureKit(SceneDescription& scene, const ActorLook& look, const GearLook& gear, bool far = false);
+
+/// The look the player's own figure wears under the Kit (--sheet=gear). The
+/// session holds no creation appearance (render::CreationResult's look is
+/// the creation flow's and is not kept), so this is a fixed docker of the
+/// quay: a Sailor, a man of broad build in a navy tunic, cropped brown hair,
+/// bare-headed, no apron.
+[[nodiscard]] ActorLook playerFigureLook() noexcept;
 
 /// A pose: the world rotation of every bone and where its joint is, in the
 /// figure's own space (the adapter's instance matrix places it).

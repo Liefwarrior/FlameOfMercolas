@@ -240,7 +240,10 @@ TEST_CASE("every hand item's span is its class's own, so the sheet and the roll 
     const ItemRegistry items = ItemRegistry::load(content::contentDir());
     REQUIRE(items.loaded());
     int hands = 0;
-    for (const ItemDef& item : items.items()) {
+    // items.json's rows: they promise their class's span. A gear row
+    // (items_gear.json, phase 9) rolls its own, and test_gear proves that.
+    for (std::size_t i = 0; i < items.baseRows(); ++i) {
+        const ItemDef& item = items.items()[i];
         if (item.slot != ItemSlot::Hand) {
             continue;
         }
@@ -1025,7 +1028,8 @@ TEST_CASE("the consumables file loads after items.json: appended rows, a use on 
     CHECK(items.warnings().empty());
     // items.json's own rows are the base; the consumables come after every one.
     CHECK(items.baseRows() == 23);
-    CHECK(items.size() == 26);
+    // 23 + the three consumables + the eleven phase 9 gear rows.
+    CHECK(items.size() == 37);
     for (const char* id : {"bread", "ale", "bandage"}) {
         INFO("consumable: ", id);
         const ItemDef* row = items.find(id);
@@ -1145,21 +1149,21 @@ TEST_CASE("the Kit round-trips THEIRS through its codec, still reads a version-1
     Kit plainBack;
     REQUIRE(Kit::decode(plain.encode(items), items, plainBack));
     CHECK(plainBack.stolen(coat) == 0);
-    // Version 1 is the image this build used to write: counts and worn, no
-    // stolen block. It still decodes, as a body that lifted nothing.
-    std::vector<std::uint8_t> v1 = plain.encode(items);
-    REQUIRE(v1.size() > 7);
-    v1[2] = 1;
-    v1.resize(v1.size() - 4);  // the empty stolen block's count
+    // Version 1 is the image the Kit build wrote: the counts and the
+    // five-slot worn block, no stolen block. Built by hand, because this
+    // build writes version 3 (the worn rows as the Loadout's own image). It
+    // still decodes, as a body that lifted nothing.
+    const std::vector<std::uint8_t> v1 = {'G', 'K', 1, 1, 0, 0, 0, 4, 'c', 'o', 'a', 't',
+                                          1,   0,   0, 0, 5, 0, 0, 0, 0,   0};
     Kit old;
     REQUIRE(Kit::decode(v1, items, old));
     CHECK(old.count(coat) == 1);
     CHECK(old.stolen(coat) == 0);
     // A version this build does not read is refused whole, and so is a
     // stolen count past what is carried.
-    std::vector<std::uint8_t> v3 = bytes;
-    v3[2] = 3;
-    CHECK_FALSE(Kit::decode(v3, items, back));
+    std::vector<std::uint8_t> v4 = bytes;
+    v4[2] = 4;
+    CHECK_FALSE(Kit::decode(v4, items, back));
     Kit liar(items.size());
     liar.add(coat, 1);
     std::vector<std::uint8_t> lie = liar.encode(items);

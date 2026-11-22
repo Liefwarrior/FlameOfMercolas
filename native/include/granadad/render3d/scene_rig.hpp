@@ -46,7 +46,8 @@ struct SceneRig {
     /// PHASE 5: lit per pixel (--flat-light turns it off).
     bool perPixel = true;
     /// PHASE 6, VERIFICATION ONLY: --hands= (-1 = what the sim holds) and
-    /// --sheet= (0 off, 1 one figure per clip, 2 one per kind of body).
+    /// --sheet= (0 off, 1 one figure per clip, 2 one per kind of body,
+    /// 3 the player's own figure in the Kit's gear added to the crowd).
     int handsKind = -1;
     int sheet = 0;
     SceneDescription scene;

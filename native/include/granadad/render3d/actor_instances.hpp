@@ -56,6 +56,7 @@
 #include "granadad/render3d/scene.hpp"
 #include "granadad/sim/actor.hpp"
 #include "granadad/render/lighting.hpp"
+#include "granadad/sim/tile_query.hpp"
 #include "granadad/sim/ward_actors.hpp"
 
 namespace granadad::render {
@@ -74,6 +75,10 @@ inline constexpr std::uint32_t kActorKindCount = static_cast<std::uint32_t>(sim:
 inline constexpr std::uint8_t kActorRigTownswoman = static_cast<std::uint8_t>(kActorKindCount);
 inline constexpr std::uint32_t kActorRigVariantCount = 1;
 inline constexpr std::uint32_t kActorRigCount = kActorKindCount + kActorRigVariantCount;
+/// PHASE 9: a rig byte no glb is ever named for (actorRigFile is empty past
+/// kActorRigCount): the player's own figure (--sheet=gear) wears it, so it is
+/// always the procedural figure whose kit follows the Kit, in every build.
+inline constexpr std::uint8_t kActorRigProcedural = 255;
 
 /// The placeholder mesh for a kind of body. Ids in the actor range of
 /// scene.hpp. A variant rig has no mesh of its own: a body wearing one
@@ -267,7 +272,53 @@ void putActorRigs(SceneDescription& scene);
 /// PHASE 6. Puts the figure mesh of every person in `actors` (its mesh id is a
 /// figure's) into the description if it is not there already, so the
 /// description holds one mesh per look in sight. Call after actorInstances.
+/// PHASE 9: and the kit mesh of every body that wears one (gearKey), near or
+/// far as its body is.
 void putActorFigures(SceneDescription& scene, const std::vector<ActorInstance>& actors);
+
+/// PHASE 9. Dresses a person's instance in a loadout: the look the cap and
+/// the coat make (dressedLook) as lookKey and the body mesh, the GearLook's
+/// key as gearKey. `look` is the body's own (undressed) look; `far` picks
+/// the far body mesh. Nothing else of the instance moves.
+void dressInGear(ActorInstance& body, const ActorLook& look, const GearLook& gear, bool far);
+
+/// PHASE 9, VERIFICATION ONLY (--sheet=gear): WHERE THE PLAYER'S OWN FIGURE
+/// STANDS. The first tile along the look ray, at about kPlayerFigureDistance
+/// tiles (then further, then a tile either side), that a body can
+/// stand on at the eye's own band and that the eye can see from its own tile
+/// -- so in the Gull the figure stands on the boards between the tables, not
+/// in the counter or the wall behind the eye. The point on the ray, in tiles.
+/// False when nothing in reach is standable (the figure is then not added).
+inline constexpr float kPlayerFigureDistance = 3.6F;
+[[nodiscard]] bool playerFigureSpot(const sim::TileQuery& tiles, const render::Camera& eye, std::int32_t band,
+                                    float& px, float& py);
+
+/// PHASE 9, VERIFICATION ONLY (--sheet=gear): THE STAGE. Drops from `actors`
+/// every body standing within kStageFigureClear tiles of the figure's spot
+/// (px, py), within kStageEyeClear of the eye, or in the lane between them
+/// (ahead of the eye, short of the figure, within kStageLane of the line), so
+/// the crowd neither hems the figure in nor stands across it nor fills the
+/// eye. Render-only: the description's list, never the sim's roster.
+inline constexpr float kStageFigureClear = 2.2F;
+inline constexpr float kStageEyeClear = 2.8F;
+inline constexpr float kStageLane = 1.0F;
+void clearSheetStage(std::vector<ActorInstance>& actors, const render::Camera& eye, float px, float py);
+
+/// The figure's turn off facing the eye straight on: a three-quarter view,
+/// radians clockwise (the figure turns to its own right), so its left side --
+/// the shield arm -- comes toward the eye and the right hand's weapon still
+/// shows.
+inline constexpr float kPlayerFigureThreeQuarter = 0.61F;
+
+/// THE PLAYER'S OWN FIGURE, dressed by `gear` (the caller's gearLookOf(kit,
+/// items)), standing at (px, py) tiles on the floor at `surfaceY` and turned
+/// to face the eye at a three-quarter angle (kPlayerFigureThreeQuarter), in
+/// the idle clip, skinned, white-tinted (the per-pixel
+/// light lights it). The body is playerFigureLook() at the Sailor's height;
+/// the rig byte is kActorRigProcedural, so the kit is drawn in every build.
+/// Pure over its arguments.
+[[nodiscard]] ActorInstance playerFigureInstance(const render::Camera& eye, float px, float py, float surfaceY,
+                                                 const GearLook& gear);
 
 /// The instance scale of a person of this kind: the figure table's height
 /// over the reference person's, the same ratio the sprite sheet draws at --

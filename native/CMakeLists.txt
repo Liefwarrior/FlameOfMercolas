@@ -364,6 +364,8 @@ add_library(granadad-render STATIC
     src/render/scripted/eviction.cpp
     src/render/scripted/flame.cpp
     src/render/scripted/kit.cpp
+    # PHASE 9 -- the --gear line: loadouts worn through the real verbs.
+    src/render/scripted/gear.cpp
     src/render/scripted/nemesis.cpp
     src/render/scripted/radiant.cpp
     src/render/scripted/roofs_skyrun.cpp
@@ -568,6 +570,8 @@ add_library(granadad-render3d-core STATIC
     # built from (OBLIVION-PLAN 6.9, section 7 item 4).
     src/render3d/shapes.cpp
     src/render3d/figure.cpp
+    # PHASE 9 -- what the worn rows look like on a body (gearLookOf).
+    src/render3d/gear_look.cpp
 )
 target_include_directories(granadad-render3d-core PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
 target_link_libraries(granadad-render3d-core PUBLIC granadad-render)
@@ -829,6 +833,9 @@ if(GRANADAD_BUILD_TESTS)
         # the corpse's SEARCH list on the Grimoire widget, the load slowing
         # the legs at the one movement seam, the hands row naming the item.
         tests/test_kit_page.cpp
+        # PHASE 9 -- the off-hand and hands slots, grips, the loadout's own
+        # codec, the Kit's v3 image, the comparison record.
+        tests/test_gear.cpp
         # #82 -- THE DISTRICT MAP. Daggerfall's own travel map, scaled to one
         # district: known ground, open leads (each with a bearing and a range
         # from where the player is standing) and who among the named will
@@ -1043,6 +1050,8 @@ if(GRANADAD_BUILD_TESTS)
         # PHASE 6 -- THE PEOPLE: the look, the figure, the clips, and that the
         # animation is a pure function of sim integers.
         tests/test_figure.cpp
+        # PHASE 9 -- the look off the Kit's worn rows, and its hash.
+        tests/test_gear_look.cpp
         # WEATHER, RENDER-ONLY (roadmap D15). The four skies as a pure
         # function of (seed, day, clock): the shipped seed's first days pinned
         # period by period and swept for four hundred, the clear sky proved

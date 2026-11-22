@@ -8,9 +8,14 @@
 #include "granadad/render/session.hpp"
 #include "granadad/render/scene_types.hpp"
 #include "granadad/render3d/shapes.hpp"
+#include "granadad/sim/items.hpp"
 #include "granadad/sim/tavern.hpp"
 
 namespace granadad::render3d {
+
+static_assert(kViewmodelHardHoldSteps == sim::kHardSwingHoldSteps,
+              "the pose functions' default hold is the one-handed grip's");
+static_assert(kViewmodelKindCount * 8U <= 256U, "every kind's parts sit under the shields");
 
 namespace {
 
@@ -25,6 +30,7 @@ constexpr Rgba8 kWood{118, 86, 52, 255};
 constexpr Rgba8 kIron{96, 100, 108, 255};
 constexpr Rgba8 kSteel{178, 184, 194, 255};
 constexpr Rgba8 kCastGlow{255, 232, 180, 255};
+constexpr Rgba8 kShieldPaint{124, 50, 40, 255};
 
 [[nodiscard]] Rgba8 shade(const Rgba8& base, float factor) noexcept {
     const auto ch = [factor](std::uint8_t c) {
@@ -158,6 +164,140 @@ void pushSword(MeshData& mesh) {
           4);
 }
 
+// PHASE 9: the things the Kit puts in the hand. The same frame as the club
+// and the sword: the grip through the fist at the origin, the business end
+// down -Z, the flats of a blade facing up.
+
+void pushCutlass(MeshData& mesh) {
+    // The docks' own short blade: a wrapped grip, a cup guard over the
+    // knuckles and a bow under them, a blade that broadens to its tip.
+    const Rgba8 wrap = shade(kWood, 0.5F);
+    along(mesh, Vec3{0.0F, 0.0F, 0.13F}, Vec3{0.0F, 0.0F, -0.10F},
+          {ring(0.0F, 0.020F, 0.020F, kIron), ring(0.016F, 0.026F, 0.026F, kIron), ring(0.016F, 0.018F, 0.018F, wrap),
+           ring(0.21F, 0.019F, 0.019F, wrap), ring(0.23F, 0.016F, 0.016F, kIron)},
+          6);
+    along(mesh, Vec3{0.0F, 0.0F, -0.09F}, Vec3{0.0F, 0.0F, -0.13F},
+          {ring(0.0F, 0.030F, 0.030F, kIron), ring(0.025F, 0.074F, 0.070F, shade(kIron, 0.9F)),
+           ring(0.035F, 0.076F, 0.072F, kIron), ring(0.035F, 0.020F, 0.020F, kIron)},
+          8);
+    block(mesh, -0.006F, -0.074F, -0.11F, 0.006F, -0.062F, 0.12F, kIron);
+    along(mesh, Vec3{0.0F, 0.0F, -0.125F}, Vec3{0.0F, 0.0F, -0.85F},
+          {ring(0.0F, 0.024F, 0.0060F, kSteel), ring(0.40F, 0.028F, 0.0060F, kSteel),
+           ring(0.62F, 0.034F, 0.0055F, shade(kSteel, 1.04F)), ring(0.70F, 0.012F, 0.0040F, kSteel),
+           ring(0.725F, 0.0015F, 0.0015F, kSteel)},
+          4);
+}
+
+void pushHatchet(MeshData& mesh) {
+    // A short haft to a cleaver head: the iron eye, a broad blade standing
+    // up off it, its edge forward, and a stub of a poll under.
+    along(mesh, Vec3{0.0F, 0.0F, 0.10F}, Vec3{0.0F, 0.0F, -0.45F},
+          {ring(0.0F, 0.019F, 0.019F, shade(kWood, 0.7F)), ring(0.10F, 0.019F, 0.019F, shade(kWood, 0.55F)),
+           ring(0.20F, 0.020F, 0.020F, kWood), ring(0.55F, 0.023F, 0.023F, shade(kWood, 0.9F))},
+          6);
+    block(mesh, -0.026F, -0.030F, -0.45F, 0.026F, 0.032F, -0.37F, kIron);
+    block(mesh, -0.012F, 0.032F, -0.47F, 0.012F, 0.140F, -0.35F, kSteel);
+    block(mesh, -0.006F, 0.040F, -0.485F, 0.006F, 0.146F, -0.47F, shade(kSteel, 1.08F));
+    block(mesh, -0.018F, -0.060F, -0.44F, 0.018F, -0.030F, -0.38F, shade(kIron, 0.85F));
+}
+
+void pushMace(MeshData& mesh) {
+    // The club's wrapped grip to an iron head of six flanges.
+    const Rgba8 wrap = shade(kWood, 0.55F);
+    along(mesh, Vec3{0.0F, 0.0F, 0.11F}, Vec3{0.0F, 0.0F, -0.42F},
+          {ring(0.0F, 0.020F, 0.020F, kIron), ring(0.020F, 0.030F, 0.030F, kIron), ring(0.020F, 0.021F, 0.021F, wrap),
+           ring(0.20F, 0.021F, 0.021F, wrap), ring(0.20F, 0.020F, 0.020F, kWood), ring(0.53F, 0.022F, 0.022F, kWood)},
+          6);
+    along(mesh, Vec3{0.0F, 0.0F, -0.40F}, Vec3{0.0F, 0.0F, -0.58F},
+          {ring(0.0F, 0.024F, 0.024F, kIron), ring(0.03F, 0.042F, 0.042F, kIron), ring(0.13F, 0.046F, 0.046F, kIron),
+           ring(0.16F, 0.024F, 0.024F, kIron), ring(0.18F, 0.010F, 0.010F, kIron)},
+          6);
+    for (const float s : {-1.0F, 1.0F}) {
+        block(mesh, s * 0.064F - 0.012F, -0.005F, -0.54F, s * 0.064F + 0.012F, 0.005F, -0.44F, shade(kIron, 0.9F));
+        block(mesh, -0.005F, s * 0.064F - 0.012F, -0.54F, 0.005F, s * 0.064F + 0.012F, -0.44F, shade(kIron, 0.9F));
+    }
+}
+
+void pushMaul(MeshData& mesh) {
+    // Two hands' worth: a long haft (the left fist rides it a hand above
+    // the right) to a sledge head across the line, so even end-on it is a
+    // hammer and not a stick.
+    along(mesh, Vec3{0.0F, 0.0F, 0.30F}, Vec3{0.0F, 0.0F, -0.80F},
+          {ring(0.0F, 0.022F, 0.022F, shade(kIron, 0.7F)), ring(0.02F, 0.023F, 0.023F, shade(kWood, 0.45F)),
+           ring(0.55F, 0.024F, 0.024F, shade(kWood, 0.55F)), ring(1.10F, 0.027F, 0.027F, shade(kWood, 0.5F))},
+          6);
+    // Black iron, not a toy: a sooty head with darker faces.
+    block(mesh, -0.130F, -0.066F, -0.86F, 0.130F, 0.066F, -0.72F, shade(kIron, 0.62F));
+    block(mesh, -0.140F, -0.072F, -0.865F, -0.124F, 0.072F, -0.715F, shade(kIron, 0.45F));
+    block(mesh, 0.124F, -0.072F, -0.865F, 0.140F, 0.072F, -0.715F, shade(kIron, 0.45F));
+}
+
+void pushBoardingAxe(MeshData& mesh) {
+    // The same long haft to a bearded blade off to the right and a spike
+    // off to the left: a hook for a rail and an edge for a rope.
+    along(mesh, Vec3{0.0F, 0.0F, 0.30F}, Vec3{0.0F, 0.0F, -0.84F},
+          {ring(0.0F, 0.020F, 0.020F, kIron), ring(0.02F, 0.021F, 0.021F, shade(kWood, 0.8F)),
+           ring(0.60F, 0.022F, 0.022F, kWood), ring(1.14F, 0.022F, 0.022F, shade(kWood, 0.9F))},
+          6);
+    block(mesh, -0.026F, -0.028F, -0.84F, 0.026F, 0.028F, -0.74F, kIron);
+    block(mesh, 0.026F, -0.008F, -0.86F, 0.150F, 0.008F, -0.76F, kSteel);
+    block(mesh, 0.090F, -0.008F, -0.76F, 0.150F, 0.008F, -0.68F, shade(kSteel, 0.94F));
+    block(mesh, 0.146F, -0.010F, -0.87F, 0.158F, 0.010F, -0.67F, shade(kSteel, 1.08F));
+    block(mesh, -0.110F, -0.010F, -0.81F, -0.026F, 0.010F, -0.79F, kIron);
+}
+
+/// The other hand's shield, in the left fist's frame: a buckler gripped in
+/// the fist, a round shield strapped along the forearm so most of it lies
+/// below and left of the fist, both faces away from the eye (the eye sees
+/// the back of its own shield, as a body does).
+void pushShield(MeshData& mesh, ViewmodelShield shield) {
+    switch (shield) {
+        case ViewmodelShield::None:
+            return;
+        case ViewmodelShield::Buckler:
+        case ViewmodelShield::RoundShield: {
+            // HELD, NOT WORN AS A WALL. The shield replaces the left fist
+            // (the fist is behind it): a disc whose face is turned out to
+            // the left and back toward the eye, so it reads edge-on-ish --
+            // rim, a domed face with plank seams (or a steel face), and the
+            // boss standing off it -- and never as a flat slab across the
+            // view. The disc's back sits on the grip at the fist.
+            const bool round = shield == ViewmodelShield::RoundShield;
+            const float r = round ? 0.130F : 0.095F;
+            const Vec3 centre{-0.03F, -0.02F, -0.02F};
+            // The face's outward normal, unit: left, a touch up, toward the eye.
+            const Vec3 axis{-0.60F, 0.15F, 0.78574F};
+            const float depth = round ? 0.050F : 0.040F;
+            const Vec3 face{centre.x + axis.x * depth, centre.y + axis.y * depth, centre.z + axis.z * depth};
+            float length = 0.0F;
+            Builder builder;
+            builder.mesh = &mesh;
+            builder.xf = shapes::alongAxis(centre, face, Vec3{0.0F, 1.0F, 0.0F}, length);
+            const Rgba8 back = round ? shade(kWood, 0.62F) : shade(kIron, 0.70F);
+            const Rgba8 rim = round ? shade(kIron, 0.85F) : kIron;
+            const Rgba8 field = round ? kShieldPaint : kSteel;
+            shapes::loft(builder,
+                         {ring(0.000F, r * 0.94F, r * 0.94F, back), ring(0.006F, r, r, rim),
+                          ring(0.016F, r, r, rim), ring(0.016F, r * 0.93F, r * 0.93F, field),
+                          ring(0.026F, r * 0.82F, r * 0.82F, field), ring(0.030F, r * 0.30F, r * 0.30F, field),
+                          ring(0.030F, r * 0.26F, r * 0.26F, kIron), ring(0.044F, r * 0.20F, r * 0.20F, kIron),
+                          ring(0.054F, r * 0.06F, r * 0.06F, shade(kSteel, 1.05F))},
+                         8);
+            if (round) {
+                // Plank seams across the painted face, a shade darker.
+                for (const float x : {-0.085F, -0.030F, 0.030F, 0.085F}) {
+                    const float chord = std::sqrt(std::max(0.0F, r * r * 0.80F - x * x));
+                    shapes::block(builder, Vec3{x, 0.0275F, 0.0F}, Vec3{0.0035F, 0.004F, chord},
+                                  shade(kShieldPaint, 0.62F));
+                }
+            }
+            // The grip the hidden fist holds, behind the disc.
+            block(mesh, -0.045F, -0.035F, -0.03F, 0.015F, 0.005F, 0.02F, shade(kWood, 0.45F));
+            return;
+        }
+    }
+}
+
 /// The light where the body stands, the actor rule: ambient + max(baked,
 /// dynamic), clamped near 1 so a hand in a lamp pool is lit, not blown out.
 [[nodiscard]] Rgba8 standingTint(const render::SkyState& sky, const render::Rgb& baked,
@@ -259,6 +399,23 @@ constexpr float kSwingReturnFrom = 0.7F;
 /// forearm across the near plane instead. The stance flip eases the rig
 /// back up while the clip raises the hands, so the guard rises into view.
 constexpr float kLoweredDrop = 0.9F;
+/// A HELD THING with the hands down drops half as far: the hilt and the guard
+/// stay in the bottom of the frame, carried at the side, where bare fists
+/// show nothing at all.
+constexpr float kLoweredDropArmed = 0.32F;
+/// THE TWO-HANDED CARRY: the right fist moved down, in and back and turned
+/// up and to the left, so the haft runs diagonally across the body from the
+/// lower right to the head at the upper left, the left fist on it. Added to
+/// every pose of the right hand, so the swings keep their own motion.
+constexpr Vec3 kTwoHandShift{-0.06F, -0.05F, 0.06F};
+constexpr Vec3 kTwoHandTurn{0.25F, 0.75F, 0.0F};
+/// THE SHIELD CARRY: a left hand with a shield rests out here, hands up or
+/// down -- a shield is carried ready, never hung at the hip -- so its rim
+/// and boss sit in the lower-left fifth of the frame, turned out and angled.
+/// Every other state but the block (its own target) and the cast rides
+/// this rest's offset from the bare left rest.
+constexpr Vec3 kShieldCarryAt{-0.38F, -0.26F, -0.76F};
+constexpr Vec3 kShieldCarryTurn{0.22F, -0.40F, -0.18F};
 
 [[nodiscard]] ViewmodelRigPlacement lerp(const ViewmodelRigPlacement& a, const ViewmodelRigPlacement& b,
                                          float t) noexcept {
@@ -301,9 +458,9 @@ ViewmodelKind viewmodelKindOf(sim::Weapon weapon) noexcept {
         case sim::Weapon::Edged:
             return ViewmodelKind::Sword;
         case sim::Weapon::Fists:
-        default:
             return ViewmodelKind::Fists;
     }
+    return ViewmodelKind::Fists;
 }
 
 std::string_view viewmodelKindName(ViewmodelKind kind) noexcept {
@@ -312,11 +469,100 @@ std::string_view viewmodelKindName(ViewmodelKind kind) noexcept {
         case ViewmodelKind::Club: return "club";
         case ViewmodelKind::Dagger: return "dagger";
         case ViewmodelKind::Sword: return "sword";
+        case ViewmodelKind::Cutlass: return "cutlass";
+        case ViewmodelKind::Hatchet: return "hatchet";
+        case ViewmodelKind::Mace: return "mace";
+        case ViewmodelKind::Maul: return "maul";
+        case ViewmodelKind::BoardingAxe: return "boarding_axe";
     }
     return "fists";
 }
 
+int viewmodelKindFromName(std::string_view name) noexcept {
+    for (std::size_t k = 0; k < kViewmodelKindCount; ++k) {
+        if (viewmodelKindName(static_cast<ViewmodelKind>(k)) == name) {
+            return static_cast<int>(k);
+        }
+    }
+    return -1;
+}
+
+bool viewmodelKindOfModel(std::string_view model, ViewmodelKind& out) noexcept {
+    struct Row {
+        std::string_view key;
+        ViewmodelKind kind;
+    };
+    // The render keys a hand model is drawn for. The cudgel keeps the club;
+    // the knife and the dagger share the dagger; everything else is a kind
+    // of its own.
+    constexpr Row kRows[] = {
+        {"cudgel", ViewmodelKind::Club},        {"knife", ViewmodelKind::Dagger},
+        {"dagger", ViewmodelKind::Dagger},      {"cutlass", ViewmodelKind::Cutlass},
+        {"hatchet", ViewmodelKind::Hatchet},    {"mace", ViewmodelKind::Mace},
+        {"maul", ViewmodelKind::Maul},          {"boarding_axe", ViewmodelKind::BoardingAxe},
+    };
+    for (const Row& row : kRows) {
+        if (row.key == model) {
+            out = row.kind;
+            return true;
+        }
+    }
+    return false;
+}
+
+ViewmodelKind viewmodelKindForItem(const sim::ItemDef* item) noexcept {
+    if (item == nullptr) {
+        return ViewmodelKind::Fists;
+    }
+    const std::string_view key = item->model.empty() ? std::string_view(item->id) : std::string_view(item->model);
+    ViewmodelKind kind = ViewmodelKind::Fists;
+    if (viewmodelKindOfModel(key, kind)) {
+        return kind;
+    }
+    return viewmodelKindOf(item->weaponClass);
+}
+
+bool viewmodelTwoHanded(ViewmodelKind kind) noexcept {
+    switch (kind) {
+        case ViewmodelKind::Maul:
+        case ViewmodelKind::BoardingAxe:
+            return true;
+        case ViewmodelKind::Fists:
+        case ViewmodelKind::Club:
+        case ViewmodelKind::Dagger:
+        case ViewmodelKind::Sword:
+        case ViewmodelKind::Cutlass:
+        case ViewmodelKind::Hatchet:
+        case ViewmodelKind::Mace:
+            return false;
+    }
+    return false;
+}
+
+ViewmodelShield viewmodelShieldForItem(const sim::ItemDef* item) noexcept {
+    if (item == nullptr || item->slot != sim::ItemSlot::OffHand) {
+        return ViewmodelShield::None;
+    }
+    const std::string_view key = item->model.empty() ? std::string_view(item->id) : std::string_view(item->model);
+    return key == "buckler" ? ViewmodelShield::Buckler : ViewmodelShield::RoundShield;
+}
+
+MeshData buildViewmodelShield(ViewmodelShield shield) {
+    MeshData mesh;
+    mesh.id = viewmodelShieldMeshId(shield);
+    mesh.version = 1;
+    pushShield(mesh, shield);
+    return mesh;
+}
+
 std::string_view viewmodelRigFile(ViewmodelKind kind) noexcept {
+    // TWO HANDS ON THE HAFT is something the licensed arms cannot do: their
+    // clips are a one-handed body's, so a maul hung on Hand_R left the other
+    // fist floating mid-frame. A two-hander is the placeholder arms, both
+    // fists on the haft, in every build.
+    if (viewmodelTwoHanded(kind)) {
+        return {};
+    }
     return kind == ViewmodelKind::Sword ? "viewmodel_sword.glb" : "viewmodel_fists.glb";
 }
 
@@ -326,11 +572,23 @@ std::string_view viewmodelWeaponFile(ViewmodelKind kind) noexcept {
             return "PolygonFantasyHeroCharacters/SM_Wep_Mace_01.gltf";
         case ViewmodelKind::Dagger:
             return "PolygonFantasyHeroCharacters/SM_Wep_Dagger_01.gltf";
+        // PHASE 9: the files the ground's items table lies the same things
+        // down as, where it has one, so the thing picked up is the thing held.
+        case ViewmodelKind::Cutlass:
+            return "PolygonFantasyHeroCharacters/SM_Wep_Sword_Small_01.gltf";
+        case ViewmodelKind::Hatchet:
+            return "PolygonDungeonRealms/SM_Wep_Axe_Small_04.gltf";
+        case ViewmodelKind::Mace:
+            return "PolygonFantasyHeroCharacters/SM_Wep_Mace_01.gltf";
+        // The two-handers draw with the placeholder arms (viewmodelRigFile),
+        // which hang no file: their own iron and dark wood.
+        case ViewmodelKind::Maul:
+        case ViewmodelKind::BoardingAxe:
         case ViewmodelKind::Fists:
         case ViewmodelKind::Sword:
-        default:
             return {};
     }
+    return {};
 }
 
 std::string_view viewmodelRigFileOf(std::uint8_t kind) noexcept {
@@ -348,11 +606,16 @@ ViewmodelSocket viewmodelSocket(ViewmodelKind kind) noexcept {
         case ViewmodelKind::Club:
         case ViewmodelKind::Dagger:
         case ViewmodelKind::Sword:
+        case ViewmodelKind::Cutlass:
+        case ViewmodelKind::Hatchet:
+        case ViewmodelKind::Mace:
+        case ViewmodelKind::Maul:
+        case ViewmodelKind::BoardingAxe:
             return kHammerGrip;
         case ViewmodelKind::Fists:
-        default:
             return ViewmodelSocket{};
     }
+    return ViewmodelSocket{};
 }
 
 bool viewmodelWeaponFused(ViewmodelKind kind) noexcept { return kind == ViewmodelKind::Sword; }
@@ -383,7 +646,9 @@ ViewmodelRigPlacement viewmodelSwingPlacement(ViewmodelKind kind) noexcept {
     return kind == ViewmodelKind::Fists ? kFistsPunch : kSwordGuard;
 }
 
-ViewmodelRigClip viewmodelRigClip(ViewmodelKind kind, const ViewmodelPose& pose) noexcept {
+ViewmodelRigClip viewmodelRigClip(ViewmodelKind kind, const ViewmodelPose& pose,
+                                  std::int32_t hardHoldSteps) noexcept {
+    const float holdSteps = static_cast<float>(std::max<std::int32_t>(1, hardHoldSteps));
     const bool armed = kind != ViewmodelKind::Fists;
     const float guard = armed ? kViewmodelSwordGuardFrame : kViewmodelGuardFrame;
     const float hold = armed ? kViewmodelSwordBlockHoldFrame : kViewmodelBlockHoldFrame;
@@ -414,9 +679,7 @@ ViewmodelRigClip viewmodelRigClip(ViewmodelKind kind, const ViewmodelPose& pose)
         }
         case ViewmodelState::Charging: {
             out.clip = cockClip;
-            out.frame = kViewmodelCockFrame *
-                        clamp01(static_cast<float>(pose.chargeSteps) /
-                                static_cast<float>(sim::kHardSwingHoldSteps));
+            out.frame = kViewmodelCockFrame * clamp01(static_cast<float>(pose.chargeSteps) / holdSteps);
             break;
         }
         case ViewmodelState::ChargedHard:
@@ -475,8 +738,22 @@ MeshData buildViewmodelPart(ViewmodelKind kind, ViewmodelPartId part) {
                 case ViewmodelKind::Sword:
                     pushSword(mesh);
                     break;
+                case ViewmodelKind::Cutlass:
+                    pushCutlass(mesh);
+                    break;
+                case ViewmodelKind::Hatchet:
+                    pushHatchet(mesh);
+                    break;
+                case ViewmodelKind::Mace:
+                    pushMace(mesh);
+                    break;
+                case ViewmodelKind::Maul:
+                    pushMaul(mesh);
+                    break;
+                case ViewmodelKind::BoardingAxe:
+                    pushBoardingAxe(mesh);
+                    break;
                 case ViewmodelKind::Fists:
-                default:
                     break;  // bare hands: an empty mesh, never put
             }
             break;
@@ -499,11 +776,21 @@ void putViewmodelMeshes(SceneDescription& scene) {
             scene.putMesh(buildViewmodelPart(kind, part));
         }
     }
+    // PHASE 9: the shields, one each, whatever the hand holds.
+    for (std::uint32_t s = 1; s <= kViewmodelShieldCount; ++s) {
+        const auto shield = static_cast<ViewmodelShield>(s);
+        const MeshData* present = scene.findMesh(viewmodelShieldMeshId(shield));
+        if (present != nullptr && present->version == 1) {
+            continue;
+        }
+        scene.putMesh(buildViewmodelShield(shield));
+    }
 }
 
 void poseViewmodel(ViewmodelInstance& out, ViewmodelKind kind, const ViewmodelPose& pose,
-                   const Rgba8& tint) {
+                   const Rgba8& tint, ViewmodelShield shield, std::int32_t hardHoldSteps) {
     out.kind = static_cast<std::uint8_t>(kind);
+    out.shield = static_cast<std::uint8_t>(shield);
     out.state = pose.state;
     out.stateSteps = pose.stateSteps;
     out.fovyDegrees = kViewmodelFovyDegrees;
@@ -554,7 +841,7 @@ void poseViewmodel(ViewmodelInstance& out, ViewmodelKind kind, const ViewmodelPo
             // Down: the rig sinks under the bottom edge with the stance,
             // eased like the clip. Up: the breathing sway, from rest at
             // re-entry.
-            at.offset.y -= kLoweredDrop * down;
+            at.offset.y -= (kind == ViewmodelKind::Fists ? kLoweredDrop : kLoweredDropArmed) * down;
             const float t = static_cast<float>(pose.stateSteps);
             at.offset.y += (1.0F - down) * 0.006F * std::sin(t * (2.0F * kPi / 96.0F));
             at.offset.x += (1.0F - down) * 0.003F * std::sin(t * (2.0F * kPi / 192.0F));
@@ -563,7 +850,7 @@ void poseViewmodel(ViewmodelInstance& out, ViewmodelKind kind, const ViewmodelPo
         out.rigYaw = at.yaw;
         out.rigPitch = at.pitch;
         out.rigScale = 1.0F;
-        const ViewmodelRigClip clip = viewmodelRigClip(kind, pose);
+        const ViewmodelRigClip clip = viewmodelRigClip(kind, pose, hardHoldSteps);
         out.rigClip = clip.clip;
         out.rigFrame = clip.frame;
         const ViewmodelSocket socket = viewmodelSocket(kind);
@@ -581,8 +868,11 @@ void poseViewmodel(ViewmodelInstance& out, ViewmodelKind kind, const ViewmodelPo
         pose.state == ViewmodelState::SwingLight || pose.state == ViewmodelState::SwingHard;
     const std::int32_t swingNumber = inFlight ? pose.swingSeq : pose.swingSeq + 1;
     const float strike = (armed || (swingNumber & 1) != 0) ? 1.0F : -1.0F;
-    const float chargeFraction =
-        clamp01(static_cast<float>(pose.chargeSteps) / static_cast<float>(sim::kHardSwingHoldSteps));
+    // The wind-up fills at the held grip's own hard hold (a two-hander's is
+    // longer), so the hand is cocked all the way exactly when the room says
+    // the swing is hard.
+    const float chargeFraction = clamp01(static_cast<float>(pose.chargeSteps) /
+                                         static_cast<float>(std::max<std::int32_t>(1, hardHoldSteps)));
     const std::int32_t length = render::viewmodelStateSteps(pose.state);
     float phase = 0.0F;
     if (pose.state == ViewmodelState::Charging || pose.state == ViewmodelState::ChargedHard) {
@@ -656,6 +946,13 @@ void poseViewmodel(ViewmodelInstance& out, ViewmodelKind kind, const ViewmodelPo
                 HandPose target;
                 target.position = Vec3{side * 0.17F, 0.02F, -0.56F};
                 target.rotation = Vec3{1.0F, side * 0.15F, side * 0.45F};
+                if (side < 0.0F && shield != ViewmodelShield::None) {
+                    // The shield comes up and across, kept out at arm's
+                    // length and angled, so it covers the left middle and
+                    // not the whole view.
+                    target.position = Vec3{-0.22F, -0.04F, -0.74F};
+                    target.rotation = Vec3{0.45F, -0.25F, -0.20F};
+                }
                 hand.position = lerp(idle.position, target.position, e);
                 hand.rotation = lerp(idle.rotation, target.rotation, e);
                 break;
@@ -692,7 +989,40 @@ void poseViewmodel(ViewmodelInstance& out, ViewmodelKind kind, const ViewmodelPo
                 break;
             }
         }
+        if (side < 0.0F && shield != ViewmodelShield::None) {
+            if (pose.state == ViewmodelState::Idle) {
+                const float t = static_cast<float>(pose.stateSteps);
+                hand.position = kShieldCarryAt;
+                hand.position.y += 0.006F * std::sin(t * (2.0F * kPi / 96.0F));
+                hand.rotation = kShieldCarryTurn;
+            } else if (pose.state != ViewmodelState::Block && pose.state != ViewmodelState::Cast) {
+                const HandPose bare = idlePose(-1.0F);
+                hand.position = add(hand.position, Vec3{kShieldCarryAt.x - bare.position.x,
+                                                        kShieldCarryAt.y - bare.position.y,
+                                                        kShieldCarryAt.z - bare.position.z});
+                hand.rotation = add(hand.rotation, Vec3{kShieldCarryTurn.x - bare.rotation.x,
+                                                        kShieldCarryTurn.y - bare.rotation.y,
+                                                        kShieldCarryTurn.z - bare.rotation.z});
+            }
+        }
         hands[i] = hand;
+    }
+    // PHASE 9: TWO HANDS ON THE HAFT. A maul or a boarding axe is held by
+    // both fists: the left closes on the haft a hand's span up from the
+    // right, turned as the right is, wherever the right goes -- except in a
+    // cast, when the off hand lets go to throw. The haft leaves the fist down
+    // its -Z, turned by the fist's pitch then yaw (ViewmodelPart's order;
+    // the roll is about the haft and moves nothing along it).
+    if (viewmodelTwoHanded(kind)) {
+        hands[1].position = add(hands[1].position, kTwoHandShift);
+        hands[1].rotation = add(hands[1].rotation, kTwoHandTurn);
+    }
+    if (viewmodelTwoHanded(kind) && pose.state != ViewmodelState::Cast) {
+        constexpr float kSpan = 0.24F;
+        const Vec3 r = hands[1].rotation;
+        const Vec3 haft{-std::cos(r.x) * std::sin(r.y), std::sin(r.x), -std::cos(r.x) * std::cos(r.y)};
+        hands[0].position = add(hands[1].position, Vec3{haft.x * kSpan, haft.y * kSpan, haft.z * kSpan});
+        hands[0].rotation = hands[1].rotation;
     }
 
     const auto put = [&out](ViewmodelKind k, ViewmodelPartId part, const HandPose& hand,
@@ -708,7 +1038,21 @@ void poseViewmodel(ViewmodelInstance& out, ViewmodelKind kind, const ViewmodelPo
     // Far to near within each hand (the arm behind the fist), left before
     // right; the depth buffer sorts the rest.
     put(kind, ViewmodelPartId::LeftArm, hands[0], tint);
-    put(kind, ViewmodelPartId::LeftFist, hands[0], handTint[0]);
+    // ONE LEFT HAND: with a shield, the shield is what the left hand is
+    // (the fist is behind it), so the fist is not drawn as well.
+    if (shield == ViewmodelShield::None) {
+        put(kind, ViewmodelPartId::LeftFist, hands[0], handTint[0]);
+    } else {
+        // The shield rides the left fist, lit by the standing light (a
+        // cast's glow is the hand's, not the shield's).
+        ViewmodelPart p;
+        p.meshId = viewmodelShieldMeshId(shield);
+        p.position = hands[0].position;
+        p.rotation = hands[0].rotation;
+        p.scale = 1.0F;
+        p.tint = tint;
+        out.parts.push_back(p);
+    }
     put(kind, ViewmodelPartId::RightArm, hands[1], tint);
     put(kind, ViewmodelPartId::RightFist, hands[1], handTint[1]);
     if (armed) {
@@ -723,11 +1067,18 @@ ViewmodelInstance viewmodelInstance(const render::Session& session, int forceKin
     const render::Rgb live =
         render::dynamicGlowAt(session.tavernLights(), body.tileX(), body.tileY(), body.band());
     ViewmodelInstance out;
+    // PHASE 9: the hand model is the THING in the hand -- the Kit's worn
+    // hand row -- and the room's own Weapon byte only when the hand row is
+    // bare (a weapon granted as a byte, with no registry to be a row of).
+    const sim::Tavern& room = session.tavern();
+    const sim::ItemDef* held = room.items().at(room.kit().worn(sim::ItemSlot::Hand));
+    const sim::ItemDef* other = room.items().at(room.kit().worn(sim::ItemSlot::OffHand));
     const ViewmodelKind kind =
         forceKind >= 0 && forceKind < static_cast<int>(kViewmodelKindCount)
             ? static_cast<ViewmodelKind>(forceKind)
-            : viewmodelKindOf(session.tavern().playerHeldWeapon());
-    poseViewmodel(out, kind, session.viewmodel(), standingTint(sky, baked, live));
+            : (held != nullptr ? viewmodelKindForItem(held) : viewmodelKindOf(room.playerHeldWeapon()));
+    poseViewmodel(out, kind, session.viewmodel(), standingTint(sky, baked, live), viewmodelShieldForItem(other),
+                  room.playerHardHoldSteps());
     out.visible = true;
     return out;
 }

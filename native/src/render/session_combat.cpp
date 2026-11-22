@@ -214,8 +214,10 @@ void Session::attackUp() {
     const sim::WardActor* street = nullptr;
     std::int64_t streetAlong = -1;
     if (people_ != nullptr) {
+        // PHASE 9: the street's ray is the swing's too, so it reaches as far
+        // as the held grip does (kMeleeReach one-handed, as it always was).
         street = people_->sightlineTarget(body_->x(), body_->y(), body_->band(), body_->yaw(),
-                                          &streetAlong);
+                                          &streetAlong, tavern_->playerReachQ8());
     }
     const std::int64_t roomAlong = tavern_->playerSightlineAlong();
     if (street != nullptr && (roomAlong < 0 || streetAlong < roomAlong)) {

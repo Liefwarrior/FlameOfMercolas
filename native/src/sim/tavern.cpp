@@ -1278,11 +1278,14 @@ std::uint64_t Tavern::drawForPlayerAction() noexcept {
 
 Tavern::PunchResult Tavern::playerPunchNearest() {
     PunchResult result;
-    const Actor* found = nearestTo(playerX_, playerY_, kMeleeReach);
+    // PHASE 9: the legacy tap is a player swing too, so it reaches as far as
+    // the held grip does (kMeleeReach one-handed, as it always was).
+    const std::int32_t reach = playerReachQ8();
+    const Actor* found = nearestTo(playerX_, playerY_, reach);
     // A RAT IS A TARGET AND A PERSON IS NOT NECESSARILY ONE. nearestTo answers
     // with people, because everything else that asks it means somebody; a fist
     // wants whichever of the two is actually closer.
-    const Actor* quarry = nearestVerminTo(playerX_, playerY_, kMeleeReach);
+    const Actor* quarry = nearestVerminTo(playerX_, playerY_, reach);
     if (quarry != nullptr &&
         (found == nullptr || quarry->distanceTo(playerX_, playerY_) <
                                  found->distanceTo(playerX_, playerY_))) {
@@ -1310,9 +1313,9 @@ Tavern::PunchResult Tavern::playerPunchNearest() {
         // damage. Same draw, same order; see strike()'s own header.
         const std::int32_t swingTerm = fatigue_.termQ8();
         fatigue_.drain(kPunchFatiguePoints * kFatiguePointFine);
-        result.blow = strike(playerWeapon(), prey, drawForPlayerAction(),
-                             meleeDamageBonus(effectiveAttributes().value(AttributeId::Might)),
-                             swingTerm);
+        result.blow = strikeAsPlayer(prey, drawForPlayerAction(),
+                                     meleeDamageBonus(effectiveAttributes().value(AttributeId::Might)),
+                                     swingTerm);
         rat->setHealth(prey.hp, prey.hpMax);
         rat->setActivity(result.blow.downed ? Activity::Downed : Activity::Walking);
         return result;
@@ -1421,7 +1424,7 @@ void Tavern::joinBrawl(Actor& actor) {
     actor.setNpcSwingTimer(actor.id() % kNpcSwingStaggerSteps);
 }
 
-const Actor* Tavern::sightlineTarget() const noexcept {
+const Actor* Tavern::sightlineTarget(std::int32_t reachQ8) const noexcept {
     if (!playerKnown_) {
         return nullptr;
     }
@@ -1433,10 +1436,13 @@ const Actor* Tavern::sightlineTarget() const noexcept {
     // is the on-line body with the smallest `along`. No species preference --
     // person or rat, whoever is on the line first (friendly fire is the aim's
     // fault). Ties on `along` break on the lower id so two runs cannot disagree.
+    // PHASE 9: `reach` is the caller's -- the held grip's for a swing, the
+    // shipped kMeleeReach for a touch.
+    const std::int64_t reach = static_cast<std::int64_t>(reachQ8);
     const std::int64_t fx = forward_x_q16(playerYaw_);
     const std::int64_t fy = forward_y_q16(playerYaw_);
     const Actor* best = nullptr;
-    std::int64_t bestAlong = static_cast<std::int64_t>(kMeleeReach) + 1;
+    std::int64_t bestAlong = reach + 1;
     for (const Actor& actor : actors_) {
         if (!actor.present() || isFloored(actor.activity())) {
             continue;
@@ -1444,7 +1450,7 @@ const Actor* Tavern::sightlineTarget() const noexcept {
         const std::int64_t dx = static_cast<std::int64_t>(actor.x()) - playerX_;
         const std::int64_t dy = static_cast<std::int64_t>(actor.y()) - playerY_;
         const std::int64_t along = (fx * dx + fy * dy) >> 16;
-        if (along <= 0 || along > kMeleeReach) {
+        if (along <= 0 || along > reach) {
             continue;
         }
         const std::int64_t perp = (-fy * dx + fx * dy) >> 16;
@@ -1554,8 +1560,9 @@ void Tavern::stepPlayerCombat() noexcept {
         case PlayerCombatState::Charging:
             // Holding is free and capped at the hard threshold: past it the tier
             // does not change, so the counter stops there and the hash for any
-            // hold >= kHardSwingHoldSteps is one number.
-            if (chargeSteps_ < kHardSwingHoldSteps) {
+            // hold >= the threshold is one number. PHASE 9: the threshold is
+            // the held grip's (kHardSwingHoldSteps one-handed).
+            if (chargeSteps_ < playerHardHoldSteps()) {
                 ++chargeSteps_;
             }
             break;
@@ -1590,8 +1597,9 @@ void Tavern::stepPlayerCombat() noexcept {
             break;
     }
     // The live sightline flag, recomputed every step whatever the state -- the
-    // reticle brightens on a valid target even at rest.
-    sightlineFlag_ = sightlineTarget() != nullptr;
+    // reticle brightens on a valid target even at rest. It is the SWING's
+    // target, so it is cast at the held grip's reach.
+    sightlineFlag_ = sightlineTarget(playerReachQ8()) != nullptr;
 }
 
 bool Tavern::armPlayerSwing(PlayerSwingResult& result, std::int32_t& chargeQ8,
@@ -1601,7 +1609,11 @@ bool Tavern::armPlayerSwing(PlayerSwingResult& result, std::int32_t& chargeQ8,
         // or idle) throws nothing.
         return false;
     }
-    const bool hard = chargeSteps_ >= kHardSwingHoldSteps;
+    // PHASE 9: the hold that makes it hard and the lockout it buys are the
+    // held grip's -- one-handed is the shipped 15/36/54 exactly, a
+    // two-handed row winds longer and recovers slower.
+    const GripTiming timing = playerGripTiming();
+    const bool hard = chargeSteps_ >= timing.hardHoldSteps;
     result.hard = hard;
     // Winded refuses the HARD swing -- the hand cannot commit it -- and says so
     // once. A winded tap still swings (the fatigue whiff band is its penalty).
@@ -1618,7 +1630,7 @@ bool Tavern::armPlayerSwing(PlayerSwingResult& result, std::int32_t& chargeQ8,
     const std::int32_t windCost =
         (hard ? kHardSwingFatiguePoints : kPunchFatiguePoints) * kFatiguePointFine;
     combatState_ = PlayerCombatState::Recovery;
-    recoverySteps_ = hard ? kHardSwingRecoverySteps : kSwingRecoverySteps;
+    recoverySteps_ = hard ? timing.hardRecoverySteps : timing.recoverySteps;
     chargeSteps_ = 0;
     result.swung = true;
     // STANCE: a swing THROWN refills the lull (the down-edge raised the hands;
@@ -1642,7 +1654,7 @@ Tavern::PlayerSwingResult Tavern::playerAttackUp() {
         return result;
     }
     const bool hard = result.hard;
-    const Actor* found = sightlineTarget();
+    const Actor* found = sightlineTarget(playerReachQ8());
     if (found == nullptr) {
         // Swung at air: committed and paid, hit nobody. The row says NOBODY IN
         // REACH; the wind is still spent, because the arm still swung.
@@ -1663,8 +1675,7 @@ Tavern::PlayerSwingResult Tavern::playerAttackUp() {
             return result;
         }
         Fighter prey = rat->asFighter();
-        result.blow =
-            strike(playerWeapon(), prey, drawForPlayerAction(), bonus, swingTerm, chargeQ8);
+        result.blow = strikeAsPlayer(prey, drawForPlayerAction(), bonus, swingTerm, chargeQ8);
         rat->setHealth(prey.hp, prey.hpMax);
         rat->setActivity(result.blow.downed ? Activity::Downed : Activity::Walking);
         return result;
@@ -1735,9 +1746,11 @@ std::int64_t Tavern::playerSightlineAlong() const noexcept {
     if (!playerKnown_) {
         return -1;
     }
+    // PHASE 9: the swing's ray, so the held grip's reach.
+    const std::int64_t reach = static_cast<std::int64_t>(playerReachQ8());
     const std::int64_t fx = forward_x_q16(playerYaw_);
     const std::int64_t fy = forward_y_q16(playerYaw_);
-    std::int64_t bestAlong = static_cast<std::int64_t>(kMeleeReach) + 1;
+    std::int64_t bestAlong = reach + 1;
     bool any = false;
     for (const Actor& actor : actors_) {
         if (!actor.present() || isFloored(actor.activity())) {
@@ -1746,7 +1759,7 @@ std::int64_t Tavern::playerSightlineAlong() const noexcept {
         const std::int64_t dx = static_cast<std::int64_t>(actor.x()) - playerX_;
         const std::int64_t dy = static_cast<std::int64_t>(actor.y()) - playerY_;
         const std::int64_t along = (fx * dx + fy * dy) >> 16;
-        if (along <= 0 || along > kMeleeReach) {
+        if (along <= 0 || along > reach) {
             continue;
         }
         const std::int64_t perp = (-fy * dx + fx * dy) >> 16;
@@ -1810,7 +1823,13 @@ Tavern::PlayerSwingResult Tavern::playerAttackUpStreet(Fighter& sheet, std::int3
     // the hold read and the wind the arm had. No guard and no wind-up on a
     // street body in v1: strike()'s own whiff, variance and crown bands, off
     // this one roll, are the whole of it.
-    result.blow = strike(playerWeapon_, sheet, drawForPlayerAction(), bonus, swingTerm, chargeQ8);
+    //
+    // PHASE 9: the blow is the HELD thing's (strikeAsPlayer: playerWeapon()'s
+    // class and the held row's span), as on the roster. This read the legacy
+    // byte playerWeapon_ before, which the Kit build leaves at Fists while a
+    // row is worn in the hand -- so a worn cutlass classified the street
+    // fight as steel and then landed a fist. Same draw, same position.
+    result.blow = strikeAsPlayer(sheet, drawForPlayerAction(), bonus, swingTerm, chargeQ8);
     if (result.blow.landed) {
         if (result.blow.downed && lethal && !result.blow.crowned) {
             // A KILLING BLOW on the open street. MURDER LAW, exactly
@@ -2292,7 +2311,7 @@ Blow Tavern::landPlayerBlow(Actor& target, bool hard, std::int32_t bonus, std::i
     Fighter victim = target.asFighter();
     const Fighter before = victim;
     // THE ONE DRAW this blow makes, in the order it always made it.
-    Blow blow = strike(playerWeapon(), victim, drawForPlayerAction(), bonus, swingTerm, chargeQ8);
+    Blow blow = strikeAsPlayer(victim, drawForPlayerAction(), bonus, swingTerm, chargeQ8);
     if (!blow.landed) {
         return blow;
     }
@@ -5144,6 +5163,31 @@ const ItemDef* Tavern::heldItem() const noexcept {
     return items_.at(kit_.worn(ItemSlot::Hand));
 }
 
+std::int32_t Tavern::playerDamageLo() const noexcept {
+    // The worn row's own span when the hand holds one; otherwise the class
+    // the legacy byte names -- the span strike() always rolled for it. One
+    // function (handSpanOf) answers both this and the inspect pane.
+    return kit_.handDamageLo(items_, playerWeapon_);
+}
+
+std::int32_t Tavern::playerDamageHi() const noexcept {
+    return kit_.handDamageHi(items_, playerWeapon_);
+}
+
+GearCompare Tavern::compareGear(std::int32_t index) const {
+    return sim::compareGear(kit_, items_, index, playerWeapon_);
+}
+
+Blow Tavern::strikeAsPlayer(Fighter& target, std::uint64_t roll, std::int32_t bonus,
+                            std::int32_t swingTerm, std::int32_t chargeQ8) const noexcept {
+    // PHASE 9: THE PLAYER'S BLOW ROLLS THE HELD THING'S SPAN. For every
+    // items.json weapon and every class armed straight, that span is the
+    // class's own three-wide span and strikeWithSpan is strike() to the bit;
+    // only an extra file's row (items_gear.json) can roll anything else.
+    return strikeWithSpan(playerWeapon(), playerDamageLo(), playerDamageHi(), target, roll, bonus,
+                          swingTerm, chargeQ8);
+}
+
 bool Tavern::loadRefuses(std::int32_t drams) const noexcept {
     return drams > 0 && loadDrams() + drams > loadBudget();
 }
@@ -5461,15 +5505,33 @@ Tavern::StealResult Tavern::wearItem(std::int32_t index) {
         out.line = item->name + " - OFF.";
         return out;
     }
+    // PHASE 9, THE TWO-HAND RULE: what the press takes off besides the
+    // slot's own occupant -- the shield a two-handed row bares, or the
+    // two-handed row a shield bares out of the hand -- named on the row, so
+    // the player hears the shield come off instead of finding it gone.
+    std::vector<std::string> alsoOff;
+    for (const ItemSlot slot : kit_.wouldBare(items_, index)) {
+        if (slot == item->slot) {
+            continue;
+        }
+        if (const ItemDef* off = items_.at(kit_.worn(slot)); off != nullptr) {
+            alsoOff.push_back(off->name);
+        }
+    }
+    const bool handWasWorn = kit_.worn(ItemSlot::Hand) >= 0;
     kit_.wear(items_, index);
-    if (item->slot == ItemSlot::Hand) {
+    if (item->slot == ItemSlot::Hand || (handWasWorn && kit_.worn(ItemSlot::Hand) < 0)) {
         // The Kit is the source now; the legacy byte falls back to fists so
-        // baring the hand later reads as fists and not as an old grant.
+        // baring the hand later reads as fists and not as an old grant. The
+        // same when a shield took a two-handed row out of the hand.
         playerWeapon_ = Weapon::Fists;
     }
     out.result = ServiceResult::Served;
     out.line = item->slot == ItemSlot::Hand ? "IN HAND - " + itemSheetLine(*item) + "."
                                             : item->name + " - ON.";
+    for (const std::string& name : alsoOff) {
+        out.line += " " + name + " - OFF.";
+    }
     return out;
 }
 

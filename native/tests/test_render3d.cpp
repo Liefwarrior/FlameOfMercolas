@@ -595,7 +595,18 @@ TEST_CASE("the ward's people render as figures in the 3D frame") {
     }
     CHECK(stats.actorsSkinned == nearBodies);
     CHECK(stats.rigModelsLoaded == 0);
-    CHECK(stats.instancesDrawn == scene.instances.size() + scene.actors.size());
+    // PHASE 9: and a body in kit (the Gull's bouncers with their cudgels)
+    // draws its kit mesh as one more instance, posed with it.
+    std::size_t kits = 0;
+    for (const ActorInstance& body : scene.actors) {
+        if (body.gearKey != 0U && isFigureMeshId(body.instance.meshId)) {
+            const GearLook gear = GearLook::fromKey(body.gearKey);
+            const std::uint32_t kit = figureKitMeshId(ActorLook::fromKey(body.lookKey), gear,
+                                                      isFarFigureMeshId(body.instance.meshId));
+            kits += (gear.hasKit() && scene.findMesh(kit) != nullptr) ? 1U : 0U;
+        }
+    }
+    CHECK(stats.instancesDrawn == scene.instances.size() + scene.actors.size() + kits);
 
     // The world alone, for the difference: everything the people put there.
     SceneDescription empty = scene;

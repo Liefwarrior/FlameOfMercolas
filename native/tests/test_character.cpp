@@ -12,12 +12,13 @@
 //
 // WHAT THIS IS NOT. Still no paper doll and no armour rating. KIT BUILD
 // (D10): there IS an item and an equipment-slot model now (sim/items.hpp),
-// and the sheet carries it in words -- IN HAND always, a worn slot only when
-// the raws hold an item for it, the LOAD line, and every carried row with
-// its weight and worth -- after the five derived standings and the four
-// skills a verb in this build actually levels, which are unchanged. The
-// bare sheet is twenty-four rows now: the seventeen, IN HAND FISTS, the
-// four worn slots the shipped raws populate (back, head, feet, belt), LOAD,
+// and the sheet carries it in words -- the worn block, the LOAD line, and
+// every carried row with its weight and worth -- after the five derived
+// standings and the four skills a verb in this build actually levels, which
+// are unchanged. PHASE 9 (OBLIVION-PLAN 8.3): the worn block is all seven
+// slots, always, in the screen's order -- HAND, OFF-HAND, HEAD, BODY, HANDS,
+// FEET, TRINKET -- "-" on a bare one and FISTS on a bare hand. The bare sheet
+// is thirty rows: the twenty-one standings rows, the seven worn rows, LOAD,
 // and the five picks every body starts with.
 //
 // WHAT IS AND IS NOT TESTED HERE. Session owns toggleCharacter/characterRows,
@@ -30,6 +31,7 @@
 
 #include <doctest/doctest.h>
 
+#include <iterator>
 #include <string>
 #include <vector>
 
@@ -121,9 +123,10 @@ TEST_CASE("the character sheet lists all five Legend tracks, the skills the trac
     // the SkillTrack itself now -- any skill with a level above zero or uses
     // banked toward one prints, and the sixteen a verb has never touched
     // stay off, so a wall of LV 0 still cannot claim the game is watching a
-    // skill it is not. KIT BUILD: +7 more -- IN HAND, four worn slots, LOAD,
-    // the starting picks.
-    REQUIRE(rows.size() == kLegendTracks + 4 + kAttributeCount + 5 + 3 + 7);
+    // skill it is not. KIT BUILD, re-counted by PHASE 9: the seven worn
+    // rows, LOAD, the starting picks.
+    REQUIRE(rows.size() ==
+            kLegendTracks + 4 + kAttributeCount + 5 + 3 + std::size(kSlotScreenOrder) + 2);
 
     // THE FIVE TRACKS, IN legend.hpp's OWN ORDER -- Wire, Roofs, Flame, Trade,
     // Law -- each a short name and a rung title, "THE " dropped off the front
@@ -262,51 +265,62 @@ TEST_CASE("a joined ladder's sheet row carries the rank title, the standing numb
     CHECK(row.find("NEXT 22/LV5") != std::string::npos);
 }
 
-TEST_CASE("IN HAND is always printed once the Kit exists: FISTS bare, THE EVICTOR when the world arms you") {
+TEST_CASE("the worn block is seven rows always: FISTS in a bare hand, a dash on a bare slot, THE EVICTOR when the world arms you") {
     // EVICTOR BUILD, re-ruled by D10 (KIT BUILD): the reference sheet's w
-    // slot ("cane 1-6 Impact", UI-REFERENCE-TERMINAL.md) is ALWAYS here now,
-    // because fists are a real state once an equipment model exists -- the
-    // old "no furniture claiming a state we do not simulate" rule is what
-    // the Kit retired. The grant puts THE EVICTOR in the Kit as a THING, so
-    // the sheet gains a carried row for it too. Base is the honest sheet's
-    // twenty-one (five tracks, four skills, four attributes, five ladders,
-    // REPUTATION/COIN/HEAT) plus the Kit's own seven (IN HAND, four worn
-    // slots, LOAD, the starting picks): twenty-eight bare, twenty-nine
-    // armed, the IN HAND row itself in the same seat both times.
+    // slot ("cane 1-6 Impact", UI-REFERENCE-TERMINAL.md) is ALWAYS here,
+    // because fists are a real state once an equipment model exists. PHASE 9
+    // (OBLIVION-PLAN 8.3) makes every slot a row, always, in the screen's
+    // order -- HAND, OFF-HAND, HEAD, BODY, HANDS, FEET, TRINKET -- the words
+    // padded to one column, "-" on a bare one. The grant puts THE EVICTOR in
+    // the Kit as a THING, so the sheet gains a carried row for it too. Base
+    // is the honest sheet's twenty-one (five tracks, four skills, four
+    // attributes, five ladders, REPUTATION/COIN/HEAT) plus the Kit's own
+    // nine (seven worn rows, LOAD, the starting picks): thirty bare,
+    // thirty-one armed, the HAND row itself in the same seat both times.
     render::Session session = standing();
     const std::vector<std::string> bare = session.characterRows();
-    REQUIRE(bare.size() == 28);
-    CHECK(bare[21] == "IN HAND  FISTS 3-5 IMPACT");
-    CHECK(bare[22] == "ON THE BACK  NOTHING");
-    CHECK(bare[23] == "ON THE HEAD  NOTHING");
-    CHECK(bare[24] == "ON THE FEET  NOTHING");
-    CHECK(bare[25] == "AT THE BELT  NOTHING");
-    CHECK(bare[26].rfind("LOAD  ", 0) == 0);
-    CHECK(bare[26].find(" / 240 DRAMS") != std::string::npos);
-    CHECK(bare[27].rfind("5 PICKS", 0) == 0);
+    REQUIRE(bare.size() == 30);
+    CHECK(bare[21] == "HAND      FISTS 3-5 IMPACT");
+    CHECK(bare[22] == "OFF-HAND  -");
+    CHECK(bare[23] == "HEAD      -");
+    CHECK(bare[24] == "BODY      -");
+    CHECK(bare[25] == "HANDS     -");
+    CHECK(bare[26] == "FEET      -");
+    CHECK(bare[27] == "TRINKET   -");
+    CHECK(bare[28].rfind("LOAD  ", 0) == 0);
+    CHECK(bare[28].find(" / 240 DRAMS") != std::string::npos);
+    CHECK(bare[29].rfind("5 PICKS", 0) == 0);
+    // Every slot's word starts its row, in kSlotScreenOrder, and every thing
+    // worn starts in one column.
+    for (std::size_t i = 0; i < std::size(kSlotScreenOrder); ++i) {
+        const std::string word(itemSlotShortWord(kSlotScreenOrder[i]));
+        INFO("row: ", bare[21 + i]);
+        CHECK(bare[21 + i].rfind(word + " ", 0) == 0);
+        CHECK(bare[21 + i].find_first_not_of(' ', word.size()) == 10);
+    }
 
     // The same grant seam the eviction case's close beat calls, by the same
     // authored id -- see Tavern::grantPlayerWeapon.
     REQUIRE(session.tavern().grantPlayerWeapon(kEvictorWeaponId));
     const std::vector<std::string> armed = session.characterRows();
-    REQUIRE(armed.size() == 29);
-    CHECK(armed[21] == "IN HAND  THE EVICTOR 7-9 IMPACT");
+    REQUIRE(armed.size() == 31);
+    CHECK(armed[21] == "HAND      THE EVICTOR 7-9 IMPACT");
     bool carried = false;
     for (const std::string& row : armed) {
-        if (row.rfind("THE EVICTOR  44DR  30C  HELD", 0) == 0) {
+        if (row.rfind("THE EVICTOR  44D  30C  HELD", 0) == 0) {
             carried = true;
         }
     }
     CHECK(carried);
     // And the load moved by the cudgel's own drams.
-    CHECK(armed[26].rfind("LOAD  49 / 240 DRAMS", 0) == 0);
+    CHECK(armed[28].rfind("LOAD  49 / 240 DRAMS", 0) == 0);
 }
 
-TEST_CASE("twenty-eight rows is more than three pages, and the character sheet turns like every other list here") {
+TEST_CASE("thirty rows is more than three pages, and the character sheet turns like every other list here") {
     render::Session session = standing();
     session.toggleCharacter();
     REQUIRE(session.characterOpen());
-    REQUIRE(session.characterRows().size() == 28);
+    REQUIRE(session.characterRows().size() == 30);
 
     render::DialogueViewState view = session.dialogueView();
     CHECK(view.page == 0);
@@ -323,9 +337,9 @@ TEST_CASE("twenty-eight rows is more than three pages, and the character sheet t
     CHECK(render::topicPageOf(view.cursor) == view.page);
 
     // 0 -- the MORE key -- turns the page directly, same as F1 and the
-    // casebook: page two (the carried rows), then a fourth page for the
-    // twenty-eighth row twenty-eight rows leaves over on its own (three
-    // full pages of nine spend twenty-seven), then round to the first.
+    // casebook: page two, then a fourth page for the three rows thirty
+    // leaves over (three full pages of nine spend twenty-seven), then round
+    // to the first.
     session.nextTopicPage();
     view = session.dialogueView();
     CHECK(view.page == 2);
@@ -340,10 +354,10 @@ TEST_CASE("twenty-eight rows is more than three pages, and the character sheet t
     CHECK(view.cursor == 0);
 
     // The cursor wraps rather than stopping dead at either end, to the last
-    // of the twenty-eight rows.
+    // of the thirty rows.
     session.moveTopicCursor(-1);
     view = session.dialogueView();
-    CHECK(view.cursor == 27);
+    CHECK(view.cursor == 29);
 }
 
 // ---------------------------------------------------------------------------
@@ -364,23 +378,26 @@ TEST_CASE("a carried row prints its weight, its worth and its marks; a worn slot
     REQUIRE(tavern.bindItemToSlot(2, cudgel));
 
     const std::vector<std::string> rows = session.characterRows();
-    // Twenty-eight bare, plus four carried rows (the picks were already one).
-    REQUIRE(rows.size() == 32);
-    CHECK(rows[21] == "IN HAND  CUDGEL 7-9 IMPACT");
-    CHECK(rows[22] == "ON THE BACK  COAT  DR 2");
-    CHECK(rows[26] == "LOAD  " + std::to_string(tavern.loadDrams()) + " / 240 DRAMS");
+    // Thirty bare, plus four carried rows (the picks were already one).
+    REQUIRE(rows.size() == 34);
+    CHECK(rows[21] == "HAND      CUDGEL 7-9 IMPACT");
+    CHECK(rows[22] == "OFF-HAND  -");
+    CHECK(rows[24] == "BODY      COAT  DR 2");
+    CHECK(rows[28] == "LOAD  " + std::to_string(tavern.loadDrams()) + " / 240 DRAMS");
     // Registry order: the cudgel, the coat, the rope, the picks, the dust.
     // KITFIX LANE: the name column is padded to "5 PICKS", the widest name
-    // this list holds (seven cells), and DR/C are each right-justified into
+    // this list holds (seven cells), and D (drams)/C are each right-justified into
     // this list's own widest digit count -- rightAlignedDigits()'s contract,
     // proved here row by row rather than just by the alignment case below.
-    CHECK(rows[27] == "CUDGEL   40DR   6C  HELD  SLOT 3");
-    CHECK(rows[28] == "COAT     60DR  12C  WORN");
-    CHECK(rows[29] == "ROPE     48DR   6C");
-    CHECK(rows[30] == "5 PICKS   5DR  10C");
-    CHECK(rows[31] == "2 DUST    6DR  32C  HOT");
-    CHECK(session.loadLine() == rows[26]);
-    CHECK(session.characterKitOffset() == 27);
+    CHECK(rows[29] == "CUDGEL   40D   6C  HELD  SLOT 3");
+    CHECK(rows[30] == "COAT     60D  12C  WORN");
+    CHECK(rows[31] == "ROPE     48D   6C");
+    CHECK(rows[32] == "5 PICKS   5D  10C");
+    CHECK(rows[33] == "2 DUST    6D  32C  HOT");
+    CHECK(session.loadLine() == rows[28]);
+    // The carried rows start where the sheet actually put them, the row
+    // after LOAD -- read off the rows themselves, never re-added.
+    CHECK(session.characterKitOffset() == 29);
     // The composed list behind the rows: the Kit's own rows are the only
     // ones a verb can act on.
     const std::vector<render::Session::KitRow> kit = session.kitRows();
@@ -391,7 +408,7 @@ TEST_CASE("a carried row prints its weight, its worth and its marks; a worn slot
     CHECK_FALSE(kit[4].inKit);  // the sack
 }
 
-TEST_CASE("DR and C share an end column across carried rows however their names run") {
+TEST_CASE("the drams (D) and C columns share an end column across carried rows however their names run") {
     // KITFIX LANE. B06's own finding (docs/frames/kit/): "the DR values
     // start at four different x, the C values at four more." COAT and ROPE
     // are both four glyphs, LANTERN is seven -- three names of two different
@@ -415,14 +432,14 @@ TEST_CASE("DR and C share an end column across carried rows however their names 
             continue;
         }
         ++found;
-        const std::size_t dr = row.find("DR");
+        const std::size_t dr = row.find("D  ");  // the drams column: "60D"
         REQUIRE(dr != std::string::npos);
         if (drColumn == std::string::npos) {
             drColumn = dr;
         } else {
             CHECK(dr == drColumn);
         }
-        const std::size_t c = row.find('C', dr + 2);
+        const std::size_t c = row.find('C', dr + 1);
         REQUIRE(c != std::string::npos);
         if (cColumn == std::string::npos) {
             cColumn = c;
@@ -440,7 +457,7 @@ TEST_CASE("ENTER on a carried row wears it or bares it; on a sheet row it does n
     REQUIRE(tavern.giveItem("rope"));
     session.toggleCharacter();
     REQUIRE(session.characterOpen());
-    // Walk the cursor onto the coat: offset 27, the coat is the first
+    // Walk the cursor onto the coat: offset 29, the coat is the first
     // carried row (registry order puts it before the rope and the picks).
     const int coatRow = static_cast<int>(session.characterKitOffset());
     for (int i = 0; i < coatRow; ++i) {
@@ -519,7 +536,7 @@ TEST_CASE("LEFT and RIGHT on a carried row walk its quick slot, and X drops it a
     // strip's inverted cell, read off Session rather than a screenshot.
     CHECK(session.equippedQuickSlot() == 2);
     CHECK(tavern.playerWeapon() == Weapon::Blunt);
-    CHECK(session.characterRows()[21] == "IN HAND  CUDGEL 7-9 IMPACT");
+    CHECK(session.characterRows()[21] == "HAND      CUDGEL 7-9 IMPACT");
     // X: dropped at the feet, the row gone, the hand bare, the slot stale.
     // The tile is still up with its cursor on the cudgel's row (the number
     // key never puts the Menu down).

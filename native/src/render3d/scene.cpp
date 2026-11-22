@@ -416,6 +416,13 @@ std::uint64_t sceneHash(const SceneDescription& scene) noexcept {
         h.mixU8(static_cast<std::uint8_t>(actor.clip));
         h.mixU32(actor.clipFrame);
         h.mixU8(static_cast<std::uint8_t>(actor.skinned ? 1 : 0));
+        // PHASE 9: the kit, only where there is one (the veils' rule), so a
+        // body that wears nothing of the Kit's -- every body before phase 9,
+        // every body of the ward -- hashes exactly as it did.
+        if (actor.gearKey != 0U) {
+            h.mixU32(0x47454152U);  // "GEAR"
+            h.mixU32(actor.gearKey);
+        }
     }
     // The hands: the machine's state and every part's placement. A frame of
     // a swing that moved is a different picture, so it is a different digest.
@@ -435,6 +442,11 @@ std::uint64_t sceneHash(const SceneDescription& scene) noexcept {
     mixVec3(h, hands.socketOffset);
     mixVec3(h, hands.socketRotation);
     mixRgba(h, hands.tint);
+    // PHASE 9: the shield on the left fist, only when one is worn.
+    if (hands.shield != 0U) {
+        h.mixU32(0x53484C44U);  // "SHLD"
+        h.mixU8(hands.shield);
+    }
     h.mixU64(static_cast<std::uint64_t>(hands.parts.size()));
     for (const ViewmodelPart& part : hands.parts) {
         h.mixU32(part.meshId);

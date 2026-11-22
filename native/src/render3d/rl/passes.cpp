@@ -129,8 +129,10 @@ bool Backend::Impl::drawFigure(const ActorInstance& actor, SceneStats& stats) {
     CachedMesh& cached = found->second;
     const std::size_t count = static_cast<std::size_t>(cached.mesh.vertexCount);
     const int bytes = cached.mesh.vertexCount * 3 * static_cast<int>(sizeof(float));
-    if (actor.skinned && cached.joints.size() == kFigureBoneCount + 1 && cached.mesh.vboId != nullptr) {
-        const FigurePose pose = evaluateFigurePose(cached.joints.data(), actor.clip, actor.clipFrame);
+    const bool posing = actor.skinned && cached.joints.size() == kFigureBoneCount + 1 && cached.mesh.vboId != nullptr;
+    FigurePose pose{};
+    if (posing) {
+        pose = evaluateFigurePose(cached.joints.data(), actor.clip, actor.clipFrame);
         skinPositions.resize(count * 3);
         skinNormals.resize(count * 3);
         skinFigure(cached.restPositions.data(), cached.restNormals.data(), cached.bones.data(), count,
@@ -152,17 +154,59 @@ bool Backend::Impl::drawFigure(const ActorInstance& actor, SceneStats& stats) {
     if (drawn && depthOverride == nullptr) {
         ++stats.actorsDrawn;
     }
+    // PHASE 9: what the body wears over its clothes, posed by the body's
+    // own pose (the same skeleton, the same rest joints).
+    drawKit(actor, posing ? &pose : nullptr, stats);
     return true;
 }
 
+void Backend::Impl::drawKit(const ActorInstance& actor, const FigurePose* pose, SceneStats& stats) {
+    if (actor.gearKey == 0U || !isFigureMeshId(actor.instance.meshId)) {
+        return;
+    }
+    const bool far = isFarFigureMeshId(actor.instance.meshId);
+    const std::uint32_t id =
+        figureKitMeshId(ActorLook::fromKey(actor.lookKey), GearLook::fromKey(actor.gearKey), far);
+    const auto found = meshes.find(id);
+    if (found == meshes.end()) {
+        return;
+    }
+    CachedMesh& kit = found->second;
+    const int bytes = kit.mesh.vertexCount * 3 * static_cast<int>(sizeof(float));
+    if (pose != nullptr && !kit.bones.empty() && kit.joints.size() == kFigureBoneCount + 1 &&
+        kit.mesh.vboId != nullptr) {
+        const std::size_t count = static_cast<std::size_t>(kit.mesh.vertexCount);
+        skinPositions.resize(count * 3);
+        skinNormals.resize(count * 3);
+        skinFigure(kit.restPositions.data(), kit.restNormals.data(), kit.bones.data(), count, kit.joints.data(),
+                   *pose, skinPositions.data(), skinNormals.data());
+        UpdateMeshBuffer(kit.mesh, 0, skinPositions.data(), bytes, 0);
+        UpdateMeshBuffer(kit.mesh, 2, skinNormals.data(), bytes, 0);
+        kit.posed = true;
+    } else if (kit.posed && kit.mesh.vboId != nullptr) {
+        UpdateMeshBuffer(kit.mesh, 0, kit.restPositions.data(), bytes, 0);
+        UpdateMeshBuffer(kit.mesh, 2, kit.restNormals.data(), bytes, 0);
+        kit.posed = false;
+    }
+    Instance worn = actor.instance;
+    worn.meshId = id;
+    drawInstance(worn, stats);
+}
+
 void Backend::Impl::drawActor(const ActorInstance& actor, SceneStats& stats) {
-    RigModel* rig = rigFor(actor.rig);
+    // PHASE 9: a body in kit is the procedural figure in every build -- the
+    // glb rigs carry no props, no shields and no jacks, and a bouncer whose
+    // cudgel vanished on the machine with the licensed art would be a
+    // different picture from the gate's.
+    RigModel* rig = actor.gearKey != 0U ? nullptr : rigFor(actor.rig);
     if (rig == nullptr || !rig->loaded) {
         if (drawFigure(actor, stats)) {
             return;
         }
         if (drawInstance(actor.instance, stats)) {
             ++stats.actorsDrawn;
+            // The far figure is drawn at rest, and so is its kit.
+            drawKit(actor, nullptr, stats);
         }
         return;
     }

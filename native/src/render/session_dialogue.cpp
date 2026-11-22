@@ -305,6 +305,12 @@ void Session::nextTopicPage() {
         }
         switch (menuFocus_) {
             case kMenuFocusCharacter:
+                if (characterPack_) {
+                    // PHASE 9: the pack pages over the rows a digit reaches
+                    // (packPageNext), not over raw rows with headers in them.
+                    packPageNext();
+                    return;
+                }
                 advancePage(characterPage_, characterCursor_, characterRows().size());
                 settlePackCursor(1);
                 return;
@@ -376,6 +382,10 @@ void Session::chooseVisibleTopic(int slot) {
             case kMenuFocusCharacter:
                 // A ROW ON THIS TILE IS SOMETHING TO READ, not a choice --
                 // the same honest no-op the keys page gives a number press.
+                if (characterPack_) {
+                    packPickVisible(slot);
+                    return;
+                }
                 pickCursorIfVisible(characterCursor_, characterPage_, slot,
                                     characterRows().size());
                 return;
@@ -950,7 +960,7 @@ DialogueViewState Session::dialogueView() const {
         view.speaker = corpse != nullptr ? upperAscii(corpse->name()) : std::string("THE DEAD");
         view.epithet = confirm + " TAKES  " + back + " LEAVES HIM";
         const std::vector<std::string> rows = grimoireRows();
-        view.line = rows.empty() ? "NOTHING ON HIM." : "WHAT HE HAD ON HIM. DR IS DRAMS.";
+        view.line = rows.empty() ? "NOTHING ON HIM." : "WHAT HE HAD ON HIM. D IS DRAMS.";
         for (const std::string& row : rows) {
             view.topics.push_back(row);
         }

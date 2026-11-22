@@ -2635,17 +2635,20 @@ void WardPopulation::setPlayer(std::int32_t x, std::int32_t y, std::int32_t band
 
 const WardActor* WardPopulation::sightlineTarget(std::int32_t playerXQ8, std::int32_t playerYQ8,
                                                   std::int32_t band, Angle yaw,
-                                                  std::int64_t* alongOut) const noexcept {
+                                                  std::int64_t* alongOut,
+                                                  std::int32_t reachQ8) const noexcept {
     // VETO 1, THE SAME RULE ON THE OTHER ROSTER. Tavern::sightlineTarget's
     // projection, line for line: the forward vector angle.hpp owns, along and
     // perp in Q16 >> 16, on the line iff ahead within reach and within half a
     // cell of the ray, smallest along wins, strictly-less so a tie is the lower
     // id on every machine (actors_ is id order). A body's Q8 position is its
-    // tile centre -- the ward walks in whole tiles. Draw-free.
+    // tile centre -- the ward walks in whole tiles. Draw-free. PHASE 9: the
+    // ray runs `reachQ8` (the held grip's, kMeleeReach by default).
+    const std::int64_t reach = static_cast<std::int64_t>(reachQ8);
     const std::int64_t fx = forward_x_q16(yaw);
     const std::int64_t fy = forward_y_q16(yaw);
     const WardActor* best = nullptr;
-    std::int64_t bestAlong = static_cast<std::int64_t>(kMeleeReach) + 1;
+    std::int64_t bestAlong = reach + 1;
     for (const WardActor& actor : actors_) {
         // Standing persons on the player's band: a floored body is not a
         // target, a beast is not on the street's ray in v1, and a body one
@@ -2656,7 +2659,7 @@ const WardActor* WardPopulation::sightlineTarget(std::int32_t playerXQ8, std::in
         const std::int64_t dx = static_cast<std::int64_t>(q8_tile_centre(actor.x)) - playerXQ8;
         const std::int64_t dy = static_cast<std::int64_t>(q8_tile_centre(actor.y)) - playerYQ8;
         const std::int64_t along = (fx * dx + fy * dy) >> 16;
-        if (along <= 0 || along > kMeleeReach) {
+        if (along <= 0 || along > reach) {
             continue;
         }
         const std::int64_t perp = (-fy * dx + fx * dy) >> 16;

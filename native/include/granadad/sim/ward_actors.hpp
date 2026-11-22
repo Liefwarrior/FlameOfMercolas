@@ -1244,10 +1244,16 @@ public:
     /// is not a target, a beast is not on the street's ray in v1. Draw-free.
     /// `alongOut` (optional) receives the winner's along so the client can pick
     /// the nearer of this roster and the Gull's -- one rule, two rosters.
+    /// PHASE 9: `reachQ8` is how far the ray runs. The swing passes the held
+    /// grip's reach (Tavern::playerReachQ8) so a two-handed row finds a street
+    /// body as far off as it finds a patron; the default is the shipped
+    /// kMeleeReach, which is the one-handed grip's, so every caller that
+    /// passes nothing casts exactly the ray it always cast.
     [[nodiscard]] const WardActor* sightlineTarget(std::int32_t playerXQ8,
                                                    std::int32_t playerYQ8, std::int32_t band,
                                                    Angle yaw,
-                                                   std::int64_t* alongOut = nullptr) const noexcept;
+                                                   std::int64_t* alongOut = nullptr,
+                                                   std::int32_t reachQ8 = kMeleeReach) const noexcept;
 
     /// WHO SAW IT. Standing persons -- the Watch included, `exceptId` excluded
     /// -- who can see (x, y) on `band` from within `radiusTiles` by the three

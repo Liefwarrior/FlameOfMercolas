@@ -4152,7 +4152,8 @@ std::filesystem::path staticCataloguePath(const std::filesystem::path& contentDi
 // the catalogue
 // ---------------------------------------------------------------------------
 
-StaticCatalogue StaticCatalogue::fromJson(std::string_view json, std::string_view extraItemsJson) {
+StaticCatalogue StaticCatalogue::fromJson(std::string_view json, std::string_view extraItemsJson,
+                                          std::string_view gearItemsJson) {
     StaticCatalogue out;
     const nlohmann::json parsed = nlohmann::json::parse(json, nullptr, false);
     if (parsed.is_discarded() || !parsed.is_object()) {
@@ -4390,6 +4391,12 @@ StaticCatalogue StaticCatalogue::fromJson(std::string_view json, std::string_vie
         extra.is_object() && extra.contains("items") && extra["items"].is_object()) {
         addItems(extra["items"]);
     }
+    // PHASE 9: the gear rows (docks-pieces-gear.json), after both tables
+    // before them, so neither table's variants move.
+    if (const nlohmann::json gear = nlohmann::json::parse(gearItemsJson, nullptr, false);
+        gear.is_object() && gear.contains("items") && gear["items"].is_object()) {
+        addItems(gear["items"]);
+    }
 
     if (parsed.contains("materials") && parsed["materials"].is_object()) {
         const std::span<const std::string_view> known = render::materialIds();
@@ -4457,7 +4464,14 @@ StaticCatalogue StaticCatalogue::load(const std::filesystem::path& file) {
         extraText << more.rdbuf();
         extra = extraText.str();
     }
-    return fromJson(text.str(), extra);
+    std::string gear;
+    std::ifstream gearFile(file.parent_path() / "docks-pieces-gear.json", std::ios::binary);
+    if (gearFile) {
+        std::ostringstream gearText;
+        gearText << gearFile.rdbuf();
+        gear = gearText.str();
+    }
+    return fromJson(text.str(), extra, gear);
 }
 
 const PieceSpec* StaticCatalogue::piece(PieceRole role, std::uint8_t variant) const noexcept {

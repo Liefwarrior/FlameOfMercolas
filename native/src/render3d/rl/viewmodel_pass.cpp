@@ -189,7 +189,11 @@ void Backend::Impl::drawViewmodel(const ViewmodelInstance& hands, SceneStats& st
     rlMultMatrixf(MatrixToFloat(proj));
     rlMatrixMode(RL_MODELVIEW);
 
-    RigModel* rig = handRigFor(hands.kind);
+    // PHASE 9: ONE LEFT HAND. The licensed arms' left fist is the clips',
+    // and a shield hung beside it made three hands; with a shield worn the
+    // placeholder arms draw instead, the shield in the left hand's place.
+    // (A two-hander has no arms file at all: viewmodelRigFile.)
+    RigModel* rig = hands.shield != 0U ? nullptr : handRigFor(hands.kind);
     if (rig != nullptr && rig->loaded) {
         // THE CLIP AND THE FRAME are the description's (viewmodel.cpp's
         // policy: a guard held on the block clip's guard frame, a swing

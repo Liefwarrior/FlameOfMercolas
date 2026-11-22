@@ -1,0 +1,93 @@
+{
+  "notes": [
+    "PHASE 9. The item rows for items_gear.json, read AFTER docks-pieces-items.json (static_pieces.cpp, StaticCatalogue::load) so every row of the two files before it keeps its variant number; neither of them is edited.",
+    "Same shape as those tables. The weapons and the shields are the licensed packs' own SM_Wep files laid down by a pitch: a quarter turn the positive way stands an axe or a hammer on the face of its head, the negative way lays the boarding axe on its back with the blade up, and a shield lies flat on its rim. The hatchet is the cleaver head, the maul the long war hammer, the boarding axe the bearded axe the viewmodel holds.",
+    "The armour has no file of its own in any pack, so it is what the coat, the hood and the boots already are: a sack at a hand's size and a tint, the gambeson a rolled quilt, the iron pot the camp pot it is named for.",
+    "Every row's lift puts its lowest point on the boards; the drawn span (lift + the turned mesh at its scale) is what items_gear.json's drawnCm says, pinned against the meshes by test_kit_page."
+  ],
+  "items": {
+    "hatchet": {
+      "pack": "PolygonDungeonRealms",
+      "file": "SM_Wep_Axe_Small_04.gltf",
+      "pitchDegrees": 90,
+      "lift": 0.162,
+      "scale": 0.7,
+      "maxDistance": 32
+    },
+    "maul": {
+      "pack": "PolygonDungeonRealms",
+      "file": "SM_Wep_WarHammer_Large_01.gltf",
+      "pitchDegrees": 90,
+      "lift": 0.22,
+      "tint": [128, 120, 112],
+      "maxDistance": 32
+    },
+    "boarding_axe": {
+      "pack": "PolygonFantasyHeroCharacters",
+      "file": "SM_Wep_Axe_01.gltf",
+      "pitchDegrees": -90,
+      "lift": 0.059,
+      "scale": 0.8,
+      "maxDistance": 32
+    },
+    "buckler": {
+      "pack": "PolygonDungeonRealms",
+      "file": "SM_Wep_Shield_02.gltf",
+      "pitchDegrees": 90,
+      "lift": 0.052,
+      "scale": 0.5,
+      "maxDistance": 32
+    },
+    "round_shield": {
+      "pack": "PolygonDungeonRealms",
+      "file": "SM_Wep_Shield_01.gltf",
+      "pitchDegrees": 90,
+      "lift": 0.082,
+      "scale": 0.85,
+      "maxDistance": 32
+    },
+    "wool_cap": {
+      "pack": "PolygonGeneric",
+      "file": "SM_Gen_Prop_Sack_01.gltf",
+      "scale": 0.28,
+      "tint": [84, 92, 118],
+      "maxDistance": 24
+    },
+    "iron_pot": {
+      "pack": "PolygonDungeonRealms",
+      "file": "SM_Prop_Camp_Pot_04.gltf",
+      "scale": 0.55,
+      "tint": [118, 118, 124],
+      "maxDistance": 24
+    },
+    "gambeson": {
+      "pack": "PolygonDungeonRealms",
+      "file": "SM_Prop_Camp_Roll_02.gltf",
+      "lift": 0.045,
+      "scale": 0.22,
+      "tint": [214, 200, 164],
+      "maxDistance": 32
+    },
+    "brigandine": {
+      "pack": "PolygonGeneric",
+      "file": "SM_Gen_Prop_Sack_01.gltf",
+      "scale": 0.68,
+      "tint": [118, 54, 46],
+      "maxDistance": 32
+    },
+    "work_gloves": {
+      "pack": "PolygonGeneric",
+      "file": "SM_Gen_Prop_Sack_01.gltf",
+      "scale": 0.24,
+      "tint": [140, 104, 70],
+      "maxDistance": 20
+    },
+    "gauntlets": {
+      "pack": "PolygonGeneric",
+      "file": "SM_Gen_Prop_Sack_01.gltf",
+      "scale": 0.26,
+      "tint": [138, 142, 150],
+      "maxDistance": 20
+    }
+  }
+}

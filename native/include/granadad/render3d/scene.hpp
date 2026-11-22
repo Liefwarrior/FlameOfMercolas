@@ -43,6 +43,9 @@
 //     1000 .. 99999     chunk meshes  -- chunk_mesher.hpp
 //     100000 .. 199999  actor rigs    -- actor_instances.hpp
 //     200000 .. 209999  viewmodel     -- viewmodel.hpp
+//     0x00400000 ..     a person's KIT -- figure.hpp (phase 9: what the worn
+//       0x007FFFFF      rows put on a body over its own clothes, one rigged
+//                       mesh per body shape and GearLook key)
 //     0x01000000 ..     rigged people -- figure.hpp (one rest mesh per LOOK:
 //                       the id is the base plus the packed look key)
 //
@@ -89,6 +92,18 @@ inline constexpr std::uint32_t kStarterCubeMeshId = 2;
 inline constexpr std::uint32_t kChunkMeshIdBase = 1000;
 inline constexpr std::uint32_t kActorMeshIdBase = 100000;
 inline constexpr std::uint32_t kViewmodelMeshIdBase = 200000;
+/// PHASE 9: the off-hand shields of the viewmodel, past every hand kind's
+/// eight part slots (kind * 8 + part) with room for thirty-two kinds, so an
+/// appended kind never lands on one. The adapter draws a part in this range
+/// over the licensed arms too (the rig has no shield of its own).
+inline constexpr std::uint32_t kViewmodelShieldMeshIdBase = kViewmodelMeshIdBase + 256U;
+inline constexpr std::uint32_t kViewmodelShieldMeshIdCount = 8U;
+[[nodiscard]] constexpr bool isViewmodelShieldMeshId(std::uint32_t id) noexcept {
+    return id >= kViewmodelShieldMeshIdBase && id < kViewmodelShieldMeshIdBase + kViewmodelShieldMeshIdCount;
+}
+/// PHASE 9: a person's kit (figure.hpp, figureKitMeshId): 21 bits of key,
+/// near then far, wholly under the people's base.
+inline constexpr std::uint32_t kFigureKitMeshIdBase = 0x00400000U;
 /// PHASE 6: the procedural people. Above every other range so a look key
 /// (26 bits) never meets one; see figure.hpp.
 inline constexpr std::uint32_t kFigureMeshIdBase = 0x01000000U;
@@ -236,6 +251,15 @@ struct ActorInstance {
     /// procedural person, 0 for a beast. instance.meshId names the rest
     /// mesh built from it. Hashed.
     std::uint32_t lookKey = 0;
+    /// PHASE 9: what the body wears and holds (gear_look.hpp GearLook::key):
+    /// the hand's prop, the shield, the jack, the gloves, the boots -- drawn
+    /// as the kit mesh figureKitMeshId(look, gear) posed with the body. The
+    /// cap and the coat ride in lookKey (dressedLook). 0 for a body that
+    /// wears nothing of the Kit's, which is every body before phase 9 and
+    /// every body of the ward; hashed ONLY when non-zero, so a description
+    /// with no gear in it hashes exactly as it did. A body with a kit is
+    /// always drawn as the procedural figure (the glb rigs carry no props).
+    std::uint32_t gearKey = 0;
     ActorClip clip = ActorClip::Idle;
     /// Clip frame at 60 per second (one per movement step, which is what
     /// the glb keyframes are baked at): body().stepCount() phase-shifted by
@@ -347,6 +371,11 @@ struct ViewmodelInstance {
     Vec3 socketRotation;
     /// The light where the body stands, as a tint over every part.
     Rgba8 tint;
+    /// PHASE 9: the shield on the left fist (viewmodel.hpp ViewmodelShield
+    /// as a byte, 0 none). Its part is in `parts` either way and in the
+    /// shield id range; hashed ONLY when non-zero, so bare hands hash as
+    /// they did.
+    std::uint8_t shield = 0;
     std::vector<ViewmodelPart> parts;
 };
 
