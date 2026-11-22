@@ -41,3 +41,5 @@ The base can't wear a loadout, so these have no before. The closest base shots a
 Light is wool cap, gambeson and cutlass. Guard is iron pot, brigandine, gauntlets, mace, round shield and boots. Heavy is iron pot, brigandine, gauntlets and the maul, two hands. All of it gets picked up off the quay and put on through the pack, same as a player would. `--sheet=gear` stands your own figure about three and a half tiles out, turned three-quarters so the shield and the weapon both show. Gull is the guard set inside the taproom at 20:00.
 
 The light, guard and heavy shots all end on the spawn tile at 09:00, so they line up with each other and with fp-sword, fp-club and figures-looks from before.
+
+One heads-up on first person. With a shield or a two-hander the hands are the plain placeholder arms, not the licensed ones. The licensed arms only have one way to hold the left hand, and it can't grip a shield or a haft. One-handers still get the licensed arms.

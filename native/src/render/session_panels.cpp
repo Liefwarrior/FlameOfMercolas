@@ -802,7 +802,7 @@ CreationPage Session::stripCard() const {
         const sim::Actor* corpse = tavern_->actorById(searchActorId_);
         out.title = corpse != nullptr ? upperAscii(corpse->name()) : std::string("THE DEAD");
         rows = grimoireRows();
-        out.instruction = rows.empty() ? "NOTHING ON HIM." : "DR - DRAMS.";
+        out.instruction = rows.empty() ? "NOTHING ON HIM." : "D - DRAMS.";
         cursor = grimoireCursor_;
         window = grimoirePage_;
     } else if (grimoireOpen_) {

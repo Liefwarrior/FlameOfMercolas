@@ -425,7 +425,7 @@ fists do). Put the cursor on something you carry and the pane says what wearing 
 press anything, and only what would change: `DR 2 -> 4`, `DMG 11-13 -> 10-16` for a blade or a club,
 `REACH LONGER` and `SPEED SLOWER` for a two-hander, then `PUTS DOWN THE CUTLASS` or `TAKES OFF THE BUCKLER`
 for whatever comes off. Green is better, orange is worse. Weights read in drams (`80 DRAMS` on the pane,
-`80D` in the lists and on a body you search -- "D IS DRAMS"); DR only ever means what a piece turns. The number keys pick the rows they're printed
+`80D` in the lists and on a body you search -- "D - DRAMS"); DR only ever means what a piece turns. The number keys pick the rows they're printed
 beside -- the headings don't take one. A two-hander takes the shield off
 your arm; a shield takes the two-hander out of your hands. Every piece but the one in your hand turns a
 blow. Same keys as the pack: `ENTER` wears or bares, `X` drops, `LEFT`/`RIGHT` the quick slot.
