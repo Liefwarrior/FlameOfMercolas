@@ -476,7 +476,7 @@ bool playerFigureSpot(const sim::TileQuery& tiles, const render::Camera& eye, st
     const std::int32_t eyeY = tileOf(eye.y);
     // Never nearer than about three tiles: at the default ninety-degree view
     // and the eye's height, nearer puts the boots under the frame.
-    constexpr float kDepths[] = {kPlayerFigureDistance, 3.6F, 4.0F, 4.4F};
+    constexpr float kDepths[] = {kPlayerFigureDistance, 4.0F, 4.4F, 3.2F};
     constexpr float kSides[] = {0.0F, -1.0F, 1.0F};
     for (const float side : kSides) {
         for (const float depth : kDepths) {
@@ -498,13 +498,44 @@ bool playerFigureSpot(const sim::TileQuery& tiles, const render::Camera& eye, st
     return false;
 }
 
+void clearSheetStage(std::vector<ActorInstance>& actors, const render::Camera& eye, float px, float py) {
+    const float lx = px - eye.x;
+    const float ly = py - eye.y;
+    const float reach = std::sqrt(lx * lx + ly * ly);
+    const auto crowded = [&](const ActorInstance& body) {
+        // Scene x is east, z is south: the tile plane's own (x, y).
+        const float bx = body.instance.position.x;
+        const float by = body.instance.position.z;
+        const float fx = bx - px;
+        const float fy = by - py;
+        if (fx * fx + fy * fy < kStageFigureClear * kStageFigureClear) {
+            return true;
+        }
+        const float ex = bx - eye.x;
+        const float ey = by - eye.y;
+        if (ex * ex + ey * ey < kStageEyeClear * kStageEyeClear) {
+            return true;
+        }
+        if (reach > 0.01F) {
+            const float along = (ex * lx + ey * ly) / reach;
+            const float across = std::fabs(ex * ly - ey * lx) / reach;
+            if (along > 0.0F && along < reach && across < kStageLane) {
+                return true;
+            }
+        }
+        return false;
+    };
+    actors.erase(std::remove_if(actors.begin(), actors.end(), crowded), actors.end());
+}
+
 ActorInstance playerFigureInstance(const render::Camera& eye, float px, float py, float surfaceY,
                                    const GearLook& gear) {
     ActorInstance body;
     body.rig = kActorRigProcedural;
     body.instance.position = toScene(px, py, surfaceY);
-    // Facing the eye: the yaw whose forward (sin, -cos) runs to it.
-    body.instance.yaw = std::atan2(eye.x - px, -(eye.y - py));
+    // Facing the eye -- the yaw whose forward (sin, -cos) runs to it -- and
+    // turned to its own right by the three-quarter, the shield arm forward.
+    body.instance.yaw = std::atan2(eye.x - px, -(eye.y - py)) + kPlayerFigureThreeQuarter;
     body.instance.scale = actorInstanceScale(sim::WardType::Sailor);
     body.instance.tint = Rgba8{255, 255, 255, 255};
     dressInGear(body, playerFigureLook(), gear, false);

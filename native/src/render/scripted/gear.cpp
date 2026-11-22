@@ -336,11 +336,13 @@ void enterTakeHour(Session& session, std::span<const std::string_view> ids) {
     session.placeBodyAt(tileX, tileY, band);
     session.body().setYaw(yaw);
     lookLevel(session);
-    session.skipToHour(hour);
+    if (hour >= 0) {
+        session.skipToHour(hour);
+    }
     session.stepMany(sim::MoveInput{}, 1);
     return session.body().tileX() == tileX && session.body().tileY() == tileY &&
            session.body().band() == band && session.body().yaw() == yaw &&
-           !session.characterOpen() && session.timeOfDay() / 3600 == hour;
+           !session.characterOpen() && (hour < 0 || session.timeOfDay() / 3600 == hour);
 }
 
 /// One way to look down the taproom: a stand, a cardinal facing, and how many
@@ -348,9 +350,16 @@ void enterTakeHour(Session& session, std::span<const std::string_view> ids) {
 struct TaproomView {
     std::int32_t x = 0;
     std::int32_t y = 0;
+    std::int32_t dx = 0;
+    std::int32_t dy = 0;
     sim::Angle yaw = 0;
     std::int32_t run = 0;
 };
+
+/// How far down the look ray the frame must be clear: the figure stands 3.2
+/// to 4.4 tiles out (render3d's playerFigureSpot), so the ray is read from
+/// the first tile ahead through the fourth.
+constexpr std::int32_t kTaproomClearTiles = 4;
 
 /// Whether a point (tile centre, in tiles x2 so the bar's centre is whole)
 /// sits within forty degrees of a facing from a stand -- in the frame's
@@ -364,13 +373,50 @@ struct TaproomView {
     return dot > 0 && dot * dot * 100 >= 59 * (vx * vx + vy * vy);
 }
 
+/// Whether something on the ground (a stand's lantern on its barrel, a
+/// dropped coat) lies on a tile -- the sim's ground list, the same entries the
+/// rig draws a piece for.
+[[nodiscard]] bool groundAt(const sim::Tavern& tavern, std::int32_t x, std::int32_t y,
+                            std::int32_t band) {
+    for (const sim::GroundItem& entry : tavern.groundItems()) {
+        if (entry.x == x && entry.y == y && entry.band == band && entry.count > 0) {
+            return true;
+        }
+    }
+    return false;
+}
+
+/// Whether a roster body (a patron, the girl with the tray, the bouncer)
+/// stands on one of the view's first kTaproomClearTiles tiles right now.
+[[nodiscard]] bool bodyOnRay(const sim::Tavern& tavern, const TaproomView& view) {
+    for (const sim::Actor& actor : tavern.actors()) {
+        if (!actor.present() || actor.band() != sim::gull::kGroundBand) {
+            continue;
+        }
+        for (std::int32_t k = 1; k <= kTaproomClearTiles; ++k) {
+            if (actor.tileX() == view.x + view.dx * k && actor.tileY() == view.y + view.dy * k) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
 /// EVERY STAND IN THE GULL'S GROUND FLOOR AND EVERY CARDINAL FACING whose
 /// look runs at least kTaproomMinRun tiles over standable floor the eye can
-/// see, with the bar's middle or the hearth in view -- longest run first,
-/// ties to the northmost, then westmost stand and N/E/S/W, so the choice is
-/// fixed per map.
-[[nodiscard]] std::vector<TaproomView> taproomViews(const sim::TileQuery& tiles) {
+/// see, with the bar's middle or the hearth in view. From the frame: a view
+/// down the longest run hugged the west wall (a third of the frame was
+/// wall) and looked through a barrel. So the eye's own tile and the first
+/// kTaproomClearTiles ahead must each have standable floor a whole tile to
+/// BOTH sides of the ray (a tile and a half from the ray's centre: no jamb,
+/// no wall, no table edge in the near frame), and nothing on the ground list
+/// on those tiles or on the ray. Longest run first, ties to the northmost,
+/// then westmost stand and N/E/S/W, so the choice is fixed per map; the
+/// roster is checked at the hour (bodyOnRay), not here.
+[[nodiscard]] std::vector<TaproomView> taproomViews(const Session& session, bool strict) {
     namespace gull = sim::gull;
+    const sim::TileQuery& tiles = session.tiles();
+    const sim::Tavern& tavern = session.tavern();
     const std::int32_t band = gull::kGroundBand;
     constexpr std::int32_t kFacings[4][2] = {{0, -1}, {1, 0}, {0, 1}, {-1, 0}};
     constexpr sim::Angle kYaws[4] = {sim::kFacingNorth, sim::kFacingEast, sim::kFacingSouth,
@@ -379,6 +425,10 @@ struct TaproomView {
     const std::int32_t barY2 = 2 * gull::kBarY + 1;
     const std::int32_t hearthX2 = gull::kHearthX0 + gull::kHearthX1 + 1;
     const std::int32_t hearthY2 = 2 * gull::kHearthY + 1;
+    const auto open = [&](std::int32_t tx, std::int32_t ty) {
+        return gull::insideFootprint(tx, ty) && tiles.standable(tx, ty, band) &&
+               !groundAt(tavern, tx, ty, band);
+    };
     std::vector<TaproomView> views;
     for (std::int32_t y = gull::kFootprintY0 + 1; y < gull::kFootprintY1; ++y) {
         for (std::int32_t x = gull::kFootprintX0 + 1; x < gull::kFootprintX1; ++x) {
@@ -401,11 +451,22 @@ struct TaproomView {
                 if (run < kTaproomMinRun) {
                     continue;
                 }
+                // The near frame clear: the ray and a tile either side of it.
+                bool clear = true;
+                for (std::int32_t k = 0; strict && k <= kTaproomClearTiles && clear; ++k) {
+                    const std::int32_t cx = x + dx * k;
+                    const std::int32_t cy = y + dy * k;
+                    clear = (k == 0 || open(cx, cy)) && open(cx - dy, cy + dx) &&
+                            open(cx + dy, cy - dx);
+                }
+                if (!clear) {
+                    continue;
+                }
                 if (!inViewOf(x, y, dx, dy, barX2, barY2) &&
                     !inViewOf(x, y, dx, dy, hearthX2, hearthY2)) {
                     continue;
                 }
-                views.push_back(TaproomView{x, y, kYaws[f], run});
+                views.push_back(TaproomView{x, y, dx, dy, kYaws[f], run});
             }
         }
     }
@@ -415,17 +476,32 @@ struct TaproomView {
     return views;
 }
 
-/// The Gull's evening frame: the first of the taproom's views (taproomViews)
-/// the walker reaches, stood on at eight in the evening.
+/// The Gull's evening frame. The clock goes to eight FIRST, so the room's
+/// own people are where they are at the shutter; then the first of the
+/// taproom's views (taproomViews) with nobody standing on its near ray is
+/// walked to and stood on, and the ray asked again once the body is there
+/// (somebody may have walked into it meanwhile).
 [[nodiscard]] bool standInTaproom(Session& session) {
-    const std::vector<TaproomView> views = taproomViews(session.tiles());
+    session.closeConversation();
+    session.skipToHour(kTaproomHour);
+    session.stepMany(sim::MoveInput{}, sim::kStepsPerSecond);
+    // The strict views first; should the map have none, the open runs
+    // alone (the earlier rule), and the summary says which it was.
+    std::vector<TaproomView> views = taproomViews(session, true);
+    if (views.empty()) {
+        views = taproomViews(session, false);
+        gGearNote += " taproom-relaxed";
+    }
     int tries = 0;
     for (const TaproomView& view : views) {
+        if (bodyOnRay(session.tavern(), view)) {
+            continue;
+        }
         if (++tries > 6) {
             break;
         }
-        if (standForFrame(session, view.x, view.y, sim::gull::kGroundBand, view.yaw,
-                          kTaproomHour)) {
+        if (standForFrame(session, view.x, view.y, sim::gull::kGroundBand, view.yaw, -1) &&
+            !bodyOnRay(session.tavern(), view) && session.timeOfDay() / 3600 == kTaproomHour) {
             gGearNote += " taproom=" + std::to_string(view.x) + "," + std::to_string(view.y) +
                          "," + std::to_string(view.yaw) + " run=" + std::to_string(view.run);
             return sim::gull::insideFootprint(view.x, view.y);

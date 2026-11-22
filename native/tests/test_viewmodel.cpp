@@ -1139,8 +1139,11 @@ TEST_CASE("phase 9: the hand model is the thing in the hand, and the shield show
     REQUIRE(shield != nullptr);
     CHECK(isViewmodelShieldMeshId(shield->meshId));
     REQUIRE(partOf(bare, ViewmodelPartId::LeftFist) != nullptr);
-    CHECK(shield->position.x == partOf(bare, ViewmodelPartId::LeftFist)->position.x);
-    CHECK(shield->position.y == partOf(bare, ViewmodelPartId::LeftFist)->position.y);
+    // The shield rides its own carry spot (lower left, raised clear of the
+    // frame's edge), not the bare fist's: it sits left of and above where
+    // the fist would hang, so its rim and boss read in the frame.
+    CHECK(shield->position.x < 0.0F);
+    CHECK(shield->position.y >= partOf(bare, ViewmodelPartId::LeftFist)->position.y);
     SceneDescription withShield;
     SceneDescription without;
     putViewmodelMeshes(withShield);

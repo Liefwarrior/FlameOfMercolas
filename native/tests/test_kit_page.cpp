@@ -1744,7 +1744,7 @@ TEST_CASE("PHASE 9: a two-hander warns it takes the shield off, does, and a shie
     CHECK(pane.compareTone[5] == InspectPane::Tone::Worse);
     bool twoHands = false;
     for (const InspectFact& fact : pane.facts) {
-        twoHands = twoHands || (fact.label == "GRIP" && fact.value == "TWO HANDS");
+        twoHands = twoHands || (fact.label == "GRIP" && fact.value == "TWO-HANDED");
     }
     CHECK(twoHands);
     // ENTER: what it said. The shield is carried again, the other hand bare,

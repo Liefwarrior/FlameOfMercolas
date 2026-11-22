@@ -960,7 +960,7 @@ DialogueViewState Session::dialogueView() const {
         view.speaker = corpse != nullptr ? upperAscii(corpse->name()) : std::string("THE DEAD");
         view.epithet = confirm + " TAKES  " + back + " LEAVES HIM";
         const std::vector<std::string> rows = grimoireRows();
-        view.line = rows.empty() ? "NOTHING ON HIM." : "WHAT HE HAD ON HIM. DR IS DRAMS.";
+        view.line = rows.empty() ? "NOTHING ON HIM." : "WHAT HE HAD ON HIM. D IS DRAMS.";
         for (const std::string& row : rows) {
             view.topics.push_back(row);
         }

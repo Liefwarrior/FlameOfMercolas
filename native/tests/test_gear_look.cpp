@@ -420,8 +420,9 @@ TEST_CASE("THE APPEARANCE HASH: the player's figure hashes by what he wears, and
     const ActorInstance& figure = a.actors[0];
     CHECK(figure.instance.position.z == doctest::Approx(57.5F));
     CHECK(figure.instance.position.x == doctest::Approx(150.5F));
-    // Facing the eye, three tiles south of it: a half turn.
-    CHECK(std::fabs(figure.instance.yaw) == doctest::Approx(3.14159265F));
+    // Three tiles north of the eye and facing back at it: a half turn, and the
+    // three-quarter turn to its own right so the shield arm comes forward.
+    CHECK(figure.instance.yaw == doctest::Approx(3.14159265F + kPlayerFigureThreeQuarter));
     CHECK(figure.clip == ActorClip::Idle);
     CHECK(figure.skinned);
     CHECK(figure.rig == kActorRigProcedural);
@@ -548,10 +549,61 @@ TEST_CASE("the --sheet=gear figure stands on a floor in sight, framed head to bo
         CHECK(std::fabs(across) / depth < eye.hfovTan);
         CHECK(feet / depth > -vTan);
         CHECK(crown / depth < vTan);
-        // And it faces the eye.
+        // And it faces the eye at the three-quarter: turned off straight-on
+        // by exactly kPlayerFigureThreeQuarter, whatever way the eye looks.
         const float fx = std::sin(body.instance.yaw);
         const float fy = -std::cos(body.instance.yaw);
-        CHECK(fx * -dx + fy * -dy > 0.9F * std::sqrt(dx * dx + dy * dy));
+        const float dist = std::sqrt(dx * dx + dy * dy);
+        CHECK((fx * -dx + fy * -dy) / dist == doctest::Approx(std::cos(kPlayerFigureThreeQuarter)).epsilon(0.001));
+        // Its own right turned away: the facing is the to-the-eye direction
+        // turned clockwise, so the cross product says which side.
+        CHECK(-dx * fy - -dy * fx > 0.0F);
     }
     CHECK(placed > 0U);
+}
+
+TEST_CASE("the --sheet=gear stage is cleared of the crowd round the figure, round the eye and between them") {
+    const render::Camera eye = eyeAt(100.5F, 100.5F, 0.0F);  // looking north (-y)
+    const float px = 100.5F;
+    const float py = 96.9F;  // 3.6 tiles ahead
+    const auto at = [](float x, float y) {
+        ActorInstance body;
+        body.instance.position = toScene(x, y, 0.0F);
+        return body;
+    };
+    std::vector<ActorInstance> crowd = {
+        at(100.5F, 99.2F),   // at the eye's shoulder: out
+        at(101.5F, 97.5F),   // at the figure's elbow: out
+        at(100.7F, 98.6F),   // in the lane between: out
+        at(104.5F, 98.5F),   // off to the side, clear of all three: stays
+        at(100.5F, 92.0F),   // behind the figure, past both clearances: stays
+        at(100.5F, 104.0F),  // behind the eye: stays
+    };
+    clearSheetStage(crowd, eye, px, py);
+    REQUIRE(crowd.size() == 3U);
+    CHECK(crowd[0].instance.position.x == doctest::Approx(104.5F));
+    CHECK(crowd[1].instance.position.z == doctest::Approx(92.0F));
+    CHECK(crowd[2].instance.position.z == doctest::Approx(104.0F));
+    // A real crowd from a session, cleared: nobody left inside a clearance.
+    render::SessionConfig config;
+    config.width = 160;
+    config.height = 90;
+    config.timeOfDay = 9 * 3600;
+    config.timeOfDayGiven = true;
+    render::Session session(config);
+    const render::Camera look = session.camera();
+    float fx = 0.0F;
+    float fy = 0.0F;
+    if (playerFigureSpot(session.tiles(), look, session.body().band(), fx, fy)) {
+        std::vector<ActorInstance> people = actorInstances(session, look);
+        clearSheetStage(people, look, fx, fy);
+        for (const ActorInstance& body : people) {
+            const float ex = body.instance.position.x - look.x;
+            const float ey = body.instance.position.z - look.y;
+            const float gx = body.instance.position.x - fx;
+            const float gy = body.instance.position.z - fy;
+            CHECK(ex * ex + ey * ey >= kStageEyeClear * kStageEyeClear);
+            CHECK(gx * gx + gy * gy >= kStageFigureClear * kStageFigureClear);
+        }
+    }
 }

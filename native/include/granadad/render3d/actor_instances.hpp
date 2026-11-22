@@ -289,13 +289,31 @@ void dressInGear(ActorInstance& body, const ActorLook& look, const GearLook& gea
 /// -- so in the Gull the figure stands on the boards between the tables, not
 /// in the counter or the wall behind the eye. The point on the ray, in tiles.
 /// False when nothing in reach is standable (the figure is then not added).
-inline constexpr float kPlayerFigureDistance = 3.2F;
+inline constexpr float kPlayerFigureDistance = 3.6F;
 [[nodiscard]] bool playerFigureSpot(const sim::TileQuery& tiles, const render::Camera& eye, std::int32_t band,
                                     float& px, float& py);
 
+/// PHASE 9, VERIFICATION ONLY (--sheet=gear): THE STAGE. Drops from `actors`
+/// every body standing within kStageFigureClear tiles of the figure's spot
+/// (px, py), within kStageEyeClear of the eye, or in the lane between them
+/// (ahead of the eye, short of the figure, within kStageLane of the line), so
+/// the crowd neither hems the figure in nor stands across it nor fills the
+/// eye. Render-only: the description's list, never the sim's roster.
+inline constexpr float kStageFigureClear = 2.2F;
+inline constexpr float kStageEyeClear = 2.8F;
+inline constexpr float kStageLane = 1.0F;
+void clearSheetStage(std::vector<ActorInstance>& actors, const render::Camera& eye, float px, float py);
+
+/// The figure's turn off facing the eye straight on: a three-quarter view,
+/// radians clockwise (the figure turns to its own right), so its left side --
+/// the shield arm -- comes toward the eye and the right hand's weapon still
+/// shows.
+inline constexpr float kPlayerFigureThreeQuarter = 0.61F;
+
 /// THE PLAYER'S OWN FIGURE, dressed by `gear` (the caller's gearLookOf(kit,
 /// items)), standing at (px, py) tiles on the floor at `surfaceY` and turned
-/// to face the eye, in the idle clip, skinned, white-tinted (the per-pixel
+/// to face the eye at a three-quarter angle (kPlayerFigureThreeQuarter), in
+/// the idle clip, skinned, white-tinted (the per-pixel
 /// light lights it). The body is playerFigureLook() at the Sailor's height;
 /// the rig byte is kActorRigProcedural, so the kit is drawn in every build.
 /// Pure over its arguments.

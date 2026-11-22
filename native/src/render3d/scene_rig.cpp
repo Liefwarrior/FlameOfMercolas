@@ -154,6 +154,10 @@ void SceneRig::refresh(const render::Session& session, float aspect) {
         float px = 0.0F;
         float py = 0.0F;
         if (playerFigureSpot(session.tiles(), eye, band, px, py)) {
+            // The stage cleared first: nobody of the crowd at the figure's
+            // elbow, at the eye's, or standing between them. Render-only;
+            // the sim's people are where they are.
+            clearSheetStage(scene.actors, eye, px, py);
             scene.actors.push_back(playerFigureInstance(eye, px, py, render::bandSurface(band), gear));
         }
     }

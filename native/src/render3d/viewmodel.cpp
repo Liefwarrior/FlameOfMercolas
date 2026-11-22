@@ -263,7 +263,7 @@ void pushShield(MeshData& mesh, ViewmodelShield shield) {
             // boss standing off it -- and never as a flat slab across the
             // view. The disc's back sits on the grip at the fist.
             const bool round = shield == ViewmodelShield::RoundShield;
-            const float r = round ? 0.170F : 0.110F;
+            const float r = round ? 0.130F : 0.095F;
             const Vec3 centre{-0.03F, -0.02F, -0.02F};
             // The face's outward normal, unit: left, a touch up, toward the eye.
             const Vec3 axis{-0.60F, 0.15F, 0.78574F};
@@ -402,13 +402,20 @@ constexpr float kLoweredDrop = 0.9F;
 /// A HELD THING with the hands down drops half as far: the hilt and the guard
 /// stay in the bottom of the frame, carried at the side, where bare fists
 /// show nothing at all.
-constexpr float kLoweredDropArmed = 0.45F;
+constexpr float kLoweredDropArmed = 0.32F;
 /// THE TWO-HANDED CARRY: the right fist moved down, in and back and turned
 /// up and to the left, so the haft runs diagonally across the body from the
 /// lower right to the head at the upper left, the left fist on it. Added to
 /// every pose of the right hand, so the swings keep their own motion.
 constexpr Vec3 kTwoHandShift{-0.06F, -0.05F, 0.06F};
 constexpr Vec3 kTwoHandTurn{0.25F, 0.75F, 0.0F};
+/// THE SHIELD CARRY: a left hand with a shield rests out here, hands up or
+/// down -- a shield is carried ready, never hung at the hip -- so its rim
+/// and boss sit in the lower-left fifth of the frame, turned out and angled.
+/// Every other state but the block (its own target) and the cast rides
+/// this rest's offset from the bare left rest.
+constexpr Vec3 kShieldCarryAt{-0.38F, -0.26F, -0.76F};
+constexpr Vec3 kShieldCarryTurn{0.22F, -0.40F, -0.18F};
 
 [[nodiscard]] ViewmodelRigPlacement lerp(const ViewmodelRigPlacement& a, const ViewmodelRigPlacement& b,
                                          float t) noexcept {
@@ -980,6 +987,22 @@ void poseViewmodel(ViewmodelInstance& out, ViewmodelKind kind, const ViewmodelPo
                 hand.position = add(idle.position, Vec3{0.0F, -0.16F * k, 0.12F * k});
                 hand.rotation = add(idle.rotation, Vec3{-0.30F * k, 0.0F, side * 0.25F * k});
                 break;
+            }
+        }
+        if (side < 0.0F && shield != ViewmodelShield::None) {
+            if (pose.state == ViewmodelState::Idle) {
+                const float t = static_cast<float>(pose.stateSteps);
+                hand.position = kShieldCarryAt;
+                hand.position.y += 0.006F * std::sin(t * (2.0F * kPi / 96.0F));
+                hand.rotation = kShieldCarryTurn;
+            } else if (pose.state != ViewmodelState::Block && pose.state != ViewmodelState::Cast) {
+                const HandPose bare = idlePose(-1.0F);
+                hand.position = add(hand.position, Vec3{kShieldCarryAt.x - bare.position.x,
+                                                        kShieldCarryAt.y - bare.position.y,
+                                                        kShieldCarryAt.z - bare.position.z});
+                hand.rotation = add(hand.rotation, Vec3{kShieldCarryTurn.x - bare.rotation.x,
+                                                        kShieldCarryTurn.y - bare.rotation.y,
+                                                        kShieldCarryTurn.z - bare.rotation.z});
             }
         }
         hands[i] = hand;

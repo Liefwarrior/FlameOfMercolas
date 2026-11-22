@@ -1847,7 +1847,7 @@ InspectPane Session::inspectPaneView() const {
     // PHASE 9: a two-hander says so before it is worn -- it is why the
     // shield row goes bare (the comparison line names what comes off).
     if (thing->slot == sim::ItemSlot::Hand && record.grip == sim::WeaponGrip::TwoHanded) {
-        pane.facts.push_back({"GRIP", "TWO HANDS"});
+        pane.facts.push_back({"GRIP", "TWO-HANDED"});
     }
     if (record.dr > 0) {
         pane.facts.push_back({"ARMOUR", "TURNS " + digits(record.dr) + " A BLOW"});
